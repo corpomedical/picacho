@@ -1,0 +1,156 @@
+import { createClient } from "@/lib/supabase/server";
+import { toggleFeatureFlag, setVideoModel, setImageModel } from "@/lib/admin/actions";
+import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
+import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/cn";
+
+export default async function AdminProvidersPage() {
+  const supabase = await createClient();
+
+  const [{ data: flag }, { data: modelSetting }, { data: imageModelSetting }] = await Promise.all([
+    supabase.from("feature_flags").select("*").eq("key", "real_ai_providers").single(),
+    supabase.from("app_settings").select("value").eq("key", "video_model").single(),
+    supabase.from("app_settings").select("value").eq("key", "image_model").single(),
+  ]);
+
+  const activeModel = modelSetting?.value ?? "kling";
+  const activeImageModel = imageModelSetting?.value ?? "gpt-image";
+
+  const keyStatus = [
+    { name: "Anthropic (draft)", present: Boolean(process.env.ANTHROPIC_API_KEY) },
+    { name: "OpenAI (review)", present: Boolean(process.env.OPENAI_API_KEY) },
+    { name: "fal.ai (video + image)", present: Boolean(process.env.FAL_KEY) },
+    { name: "OpenAI (voice command — Whisper + TTS)", present: Boolean(process.env.OPENAI_API_KEY) },
+    { name: "fal.ai (character dialogue — ElevenLabs + Sync Labs)", present: Boolean(process.env.FAL_KEY) },
+  ];
+
+  return (
+    <div>
+      <h1 className="text-lg font-semibold text-neutral-900">AI providers</h1>
+      <p className="mt-1 text-sm text-neutral-500">
+        Claude drafts, OpenAI reviews, fal.ai generates the clip. Voice command and voice mode
+        reuse the same OpenAI key for transcription and speech. Character dialogue (spoken lines,
+        lip-synced onto the video) runs on ElevenLabs + Sync Labs — both fronted by the same
+        fal.ai key, no separate account needed. Manage which voices are available in{" "}
+        <a href="/admin/voices" className="underline">
+          Admin &gt; Voices
+        </a>
+        .
+      </p>
+
+      <Card className="mt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-semibold text-neutral-900">Real providers</h2>
+            <p className="mt-1 text-xs text-neutral-500">
+              {flag?.enabled
+                ? "On — generations call real APIs and may incur real cost."
+                : "Off — generations use the mock pipeline. No API calls, no cost."}
+            </p>
+          </div>
+          <Badge tone={flag?.enabled ? "success" : "neutral"}>
+            {flag?.enabled ? "on" : "off"}
+          </Badge>
+        </div>
+        {flag && (
+          <form action={toggleFeatureFlag} className="mt-4">
+            <input type="hidden" name="key" value={flag.key} />
+            <input type="hidden" name="enabled" value={String(flag.enabled)} />
+            <Button variant="secondary" size="sm" type="submit">
+              Turn {flag.enabled ? "off" : "on"}
+            </Button>
+          </form>
+        )}
+
+        <div className="mt-6 space-y-2 border-t border-neutral-100 pt-4">
+          {keyStatus.map((k) => (
+            <div key={k.name} className="flex items-center justify-between text-sm">
+              <span className="text-neutral-600">{k.name}</span>
+              <Badge tone={k.present ? "success" : "danger"}>
+                {k.present ? "detected" : "missing"}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="mt-6">
+        <h2 className="text-sm font-semibold text-neutral-900">Video model</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          All models run through the same fal.ai key — switching is instant, no new keys needed.
+        </p>
+
+        <div className="mt-4 flex gap-2 border-b border-neutral-100">
+          {VIDEO_MODELS.map((model) => (
+            <form key={model.id} action={setVideoModel}>
+              <input type="hidden" name="model_id" value={model.id} />
+              <button
+                type="submit"
+                className={cn(
+                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm transition-colors",
+                  activeModel === model.id
+                    ? "border-neutral-900 font-medium text-neutral-900"
+                    : "border-transparent text-neutral-500 hover:text-neutral-900",
+                )}
+              >
+                {model.name}
+                {model.recommended && <Badge tone="success">Recommended</Badge>}
+              </button>
+            </form>
+          ))}
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {VIDEO_MODELS.filter((m) => m.id === activeModel).map((model) => (
+            <div key={model.id}>
+              <p className="text-sm text-neutral-700">{model.description}</p>
+              <p className="mt-1 text-xs text-neutral-400">{model.falEndpoint}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card className="mt-6">
+        <h2 className="text-sm font-semibold text-neutral-900">Image model</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          Used for scene generation and character reference photos. GPT Image 2 anchors to the
+          character&apos;s saved reference photo for consistency; Flux is faster and cheaper.
+        </p>
+
+        <div className="mt-4 flex gap-2 border-b border-neutral-100">
+          {IMAGE_MODELS.map((model) => (
+            <form key={model.id} action={setImageModel}>
+              <input type="hidden" name="model_id" value={model.id} />
+              <button
+                type="submit"
+                className={cn(
+                  "-mb-px flex items-center gap-2 border-b-2 px-4 py-3 text-sm transition-colors",
+                  activeImageModel === model.id
+                    ? "border-neutral-900 font-medium text-neutral-900"
+                    : "border-transparent text-neutral-500 hover:text-neutral-900",
+                )}
+              >
+                {model.name}
+                {model.recommended && <Badge tone="success">Recommended</Badge>}
+              </button>
+            </form>
+          ))}
+        </div>
+
+        <div className="mt-4 space-y-3">
+          {IMAGE_MODELS.filter((m) => m.id === activeImageModel).map((model) => (
+            <div key={model.id}>
+              <p className="text-sm text-neutral-700">{model.description}</p>
+              <p className="mt-1 text-xs text-neutral-400">
+                {model.provider === "openai" ? "OpenAI Images API" : "fal.ai"}
+              </p>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}

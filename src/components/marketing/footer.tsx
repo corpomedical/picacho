@@ -1,0 +1,36 @@
+import Link from "next/link";
+import { getServerMessages } from "@/lib/i18n/server";
+
+export async function MarketingFooter() {
+  const { t } = await getServerMessages();
+
+  return (
+    <footer className="border-t border-neutral-200/70">
+      <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-8 py-10 text-sm text-neutral-500 sm:flex-row">
+        <p>
+          © {new Date().getFullYear()} Picacho — {t.marketing.footer.rights}
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-6">
+          <Link href="/pricing" className="hover:text-neutral-900">
+            {t.marketing.nav.pricing}
+          </Link>
+          <Link href="/login" className="hover:text-neutral-900">
+            {t.marketing.nav.login}
+          </Link>
+          <Link href="/signup" className="hover:text-neutral-900">
+            {t.marketing.nav.signup}
+          </Link>
+          <Link href="/privacy" className="hover:text-neutral-900">
+            {t.marketing.footer.privacy}
+          </Link>
+          <Link href="/terms" className="hover:text-neutral-900">
+            {t.marketing.footer.terms}
+          </Link>
+          <Link href="/content-policy" className="hover:text-neutral-900">
+            {t.marketing.footer.contentPolicy}
+          </Link>
+        </div>
+      </div>
+    </footer>
+  );
+}

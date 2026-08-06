@@ -1,0 +1,54 @@
+@import "tailwindcss";
+
+/* Tailwind v4's dark: variant defaults to the prefers-color-scheme media
+   query. We need it driven by a class instead, so "Light"/"Dark" can force
+   a choice regardless of the OS setting (only "Default" follows the OS). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* one quiet, dark-neutral accent — no bright colors per design direction */
+  --color-ink: #1c1c1e;
+  --color-paper: #f7f6f4;
+  --radius-card: 18px;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+}
+
+/* Dark theme — re-declares the neutral scale (and white, used throughout as
+   the card/surface color) so every existing bg-neutral, text-neutral,
+   border-neutral, and bg-white class in the app repaints automatically
+   without needing a dark: variant on every single element. */
+.dark {
+  --color-neutral-50: oklch(14.5% 0 none);
+  --color-neutral-100: oklch(26.9% 0 none);
+  --color-neutral-200: oklch(33% 0 none);
+  --color-neutral-300: oklch(43.9% 0 none);
+  --color-neutral-400: oklch(55.6% 0 none);
+  --color-neutral-500: oklch(70.8% 0 none);
+  --color-neutral-600: oklch(87% 0 none);
+  --color-neutral-700: oklch(92.2% 0 none);
+  --color-neutral-800: oklch(97% 0 none);
+  --color-neutral-900: oklch(98.5% 0 none);
+  /* neutral-950 is intentionally left alone — a fixed near-black anchor for
+     things that should always stay dark (e.g. video letterboxing). */
+
+  --color-white: oklch(20.5% 0 none);
+
+  --color-paper: oklch(14.5% 0 none);
+  --color-ink: oklch(98.5% 0 none);
+}
+
+html,
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
