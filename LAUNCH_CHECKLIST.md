@@ -1,6 +1,12 @@
 # Picacho launch checklist
 
-From a full read-through of every page, every server action, and the live database, done 2026-08-06. Refreshed 2026-08-08 with a final-revision pass (see bottom section) before deploy.
+From a full read-through of every page, every server action, and the live database, done 2026-08-06. Refreshed 2026-08-08 with a final-revision pass, then again the same day once the app actually went live.
+
+## Live now
+
+Picacho is deployed and reachable at **https://picacho.io** and **https://picacho.ai** (both point at the same Vercel project, no redirect between them — that was a deliberate choice). GitHub repo: `corpomedical/picacho`. Every push to `master` auto-deploys.
+
+One caveat worth flagging: Vercel's free Hobby plan caps a single request at 300 seconds. The video pipeline (Kling generation + optional dialogue/lipsync) can in rare worst-case combinations take longer than that — a generation that's still legitimately running would get cut off. Covers normal use fine; if "timed out" reports start showing up for longer/dialogue-heavy generations, upgrading to Vercel Pro + enabling Fluid Compute raises the ceiling back to 800s (see the comment in `src/app/app/generate/page.tsx`).
 
 ## Before launch (blocking)
 
@@ -10,13 +16,14 @@ From a full read-through of every page, every server action, and the live databa
 - [x] **"Allow new signups" flag.** Now a real kill switch (2026-08-06) — `/signup` and the `signup` action both check it server-side. Off shows a "signups are closed" screen instead of the form; missing/errored row fails open so a database hiccup can't silently lock everyone out.
 - [x] **Connect Stripe.** Checkout, the Customer Portal, and a webhook that keeps `profiles.plan` in sync are all built (2026-08-06), running on test-mode keys. Three things still needed before real money can move:
   - [x] Create the 4 products/prices in the Stripe Dashboard and give Claude the Price IDs so `src/lib/stripe/plans.ts` can be filled in. Done 2026-08-06 — checkout buttons on `/pricing` and Settings > Usage & plan now work end-to-end in test mode.
-  - [ ] Once deployed, register the webhook endpoint (Stripe Dashboard > Developers > Webhooks > Add endpoint, URL `https://<your-domain>/api/webhooks/stripe`, events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`) and put the signing secret it gives you into `STRIPE_WEBHOOK_SECRET`.
+  - [x] Webhook endpoint registered (2026-08-08) — `https://picacho.io/api/webhooks/stripe`, listening for `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`. Signing secret is in `STRIPE_WEBHOOK_SECRET` in both `.env.local` and Vercel. Still test-mode, matching the rest of the Stripe setup.
   - [ ] Turn on the Customer Portal's "customers can switch plans" setting (Stripe Dashboard > Settings > Billing > Customer portal) so existing subscribers can actually change tiers, not just cancel.
   - [ ] Swap the test-mode keys in `.env.local` / production env for live keys once Stripe finishes approving the account.
 - [x] **Studio/Elite overage pricing.** Dropped the "$2.50 per additional generation" promise from the pricing page and plan cards (2026-08-06) — it matches real behavior now (hard cap, upgrade to raise it). Also found and removed a second dead control while in there: a `studio_overage_billing` feature flag that, like the signups flag above, existed in the database with zero code ever reading it. If metered overage billing gets built later, it's a new feature from scratch, not a flag flip.
-- [ ] **Set `NEXT_PUBLIC_SITE_URL`** in production (confirmed still missing from `.env.local` as of 2026-08-08) so `sitemap.ts` (and Stripe's checkout redirect URLs) point at the real domain instead of falling back to a placeholder/localhost. Blocked on picking a domain / deploying — I'll set it the moment there's a real URL to point at.
-- [ ] **Confirm Supabase's email-confirmation setting** matches the "check your email to confirm your account" message shown after signup — if confirmation is off, that message is misleading; if it's on, make sure the confirmation email itself is set up and on-brand. Couldn't check this one myself (2026-08-08) — it's a GoTrue/Auth platform setting, not something queryable through the database connection my tools have; needs a look in Supabase Dashboard > Authentication > Sign In / Providers > Email.
-- [ ] **No git remote / never deployed anywhere.** Confirmed 2026-08-08: the local repo has no `git remote` configured and has never been pushed to GitHub or connected to Vercel. Nothing else on this list involving "once deployed" can happen until this is done — needs a GitHub repo and a Vercel account (both yours to create/connect; I can walk through each step).
+- [x] **Set `NEXT_PUBLIC_SITE_URL`** — set to `https://picacho.io` (2026-08-08) in both `.env.local` and Vercel, so `sitemap.ts` and Stripe's checkout redirect URLs point at the real domain.
+- [ ] **Confirm Supabase's email-confirmation setting** matches the "check your email to confirm your account" message shown after signup — if confirmation is off, that message is misleading; if it's on, make sure the confirmation email itself is set up and on-brand. Still can't check this one myself — it's a GoTrue/Auth platform setting, not something queryable through the database connection my tools have; needs a look in Supabase Dashboard > Authentication > Sign In / Providers > Email.
+- [x] **Deployed.** GitHub repo (`corpomedical/picacho`) connected to Vercel (2026-08-08), auto-deploys on push to `master`. Live at picacho.io / picacho.ai. See "Live now" above for the one caveat (Hobby plan's 300s function timeout).
+- [x] **Found and fixed a blank secret that would've silently broken billing.** `SUPABASE_SERVICE_ROLE_KEY` was empty in `.env.local` (2026-08-08) — it's what the Stripe webhook handler uses to update a customer's plan after checkout, bypassing RLS. Blank meant that update would've failed silently once real traffic hit it. Filled in from the Supabase dashboard and added to both `.env.local` and Vercel.
 
 ## After launch (polish, not blocking)
 
