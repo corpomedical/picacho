@@ -7,23 +7,24 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 
-// Video generation (Kling, via fal.ai) now polls fal.ai's queue API for up
-// to 10 minutes per attempt (see MAX_WAIT_MS in providers/fal.ts) before
-// giving up and cancelling — raised from a 180s client timeout after that
-// shorter timeout caused us to abandon (and re-bill) jobs that were still
-// running server-side. On top of that, optional dialogue post-processing
-// (ElevenLabs speech + Sync Labs lipsync) can add up to another 3 minutes.
-// 800s is Vercel's own ceiling for a Pro plan with Fluid Compute enabled —
-// set this to the max allowed rather than a number we picked, since a
-// generation that's legitimately still running must never be killed by our
-// own platform config.
+// Video generation (Kling, via fal.ai) polls fal.ai's queue API for up to
+// 10 minutes per attempt (see MAX_WAIT_MS in providers/fal.ts) before giving
+// up and cancelling. On top of that, optional dialogue post-processing
+// (ElevenLabs speech + Sync Labs lipsync) can add up to another 3 minutes —
+// so the real worst case is close to 13 minutes.
 //
-// IMPORTANT before deploying to Vercel: Fluid Compute must be turned on for
-// this project. Without it, Hobby caps at 10s and Pro caps at 300s (5 min)
-// — both well under what a real video generation needs, which would bring
-// back the exact "killed while still running, billed anyway" problem this
-// was meant to fix.
-export const maxDuration = 800;
+// 300 is set here because that's the hard ceiling Vercel enforces on the
+// Hobby plan (confirmed by an actual failed deploy on 2026-08-08 — Vercel
+// rejected 800 outright with "must have a maxDuration between 1 and 300 for
+// plan hobby"). This covers the common case (a single video, no dialogue)
+// but a long multi-angle or dialogue-heavy generation can still get killed
+// mid-flight without warning the user, and fal.ai's side of the job keeps
+// running (and billing) even after we've abandoned it.
+//
+// Upgrading to Vercel Pro + enabling Fluid Compute raises the ceiling back
+// to 800s — worth doing once there's real usage, or sooner if "generation
+// timed out" reports start coming in from longer jobs.
+export const maxDuration = 300;
 
 export default async function GeneratePage() {
   const { t } = await getServerMessages();

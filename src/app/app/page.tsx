@@ -9,11 +9,9 @@ import { formatMsg } from "@/lib/i18n/format";
 // This page hosts the same GenerateForm composer as /app/generate (hero
 // mode — see the comment on GenerateForm below), so a generation can be
 // kicked off from here too. It needs the same run-time ceiling as
-// /app/generate/page.tsx for the same reason: fal.ai's video queue can take
-// up to 10 minutes, and killing the request early doesn't stop fal.ai's
-// side of the job — it just makes us abandon (and still pay for) it. See
-// the longer comment in app/generate/page.tsx for the Fluid Compute caveat.
-export const maxDuration = 800;
+// /app/generate/page.tsx — see the longer comment there for why 300 (not
+// the 800 we'd actually want) is what's set here.
+export const maxDuration = 300;
 
 export default async function AppHome() {
   const { t } = await getServerMessages();
