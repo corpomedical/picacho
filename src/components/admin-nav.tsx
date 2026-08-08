@@ -32,7 +32,15 @@ export function AdminNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="mx-auto flex max-w-6xl gap-6 px-8 text-sm text-neutral-500">
+    // 12 tabs don't fit a phone-width viewport. Without its own scroll
+    // container this nav used to overflow the whole page horizontally (the
+    // entire admin screen would slide sideways instead of just the tab
+    // strip) — a real user report on mobile. overflow-x-auto contains the
+    // scroll to this bar; overscroll-x-contain stops that scroll from
+    // chaining into a page-level bounce/rubber-band on iOS; flex-shrink-0 on
+    // each tab stops labels from getting squished/wrapped instead of just
+    // scrolling off-screen.
+    <nav className="mx-auto flex max-w-6xl gap-6 overflow-x-auto overscroll-x-contain px-8 text-sm text-neutral-500">
       {NAV_ITEMS.map((item) => {
         const active = isActive(pathname, item.href);
         return (
@@ -41,7 +49,7 @@ export function AdminNav() {
             href={item.href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "border-b-2 py-3 transition-colors",
+              "flex-shrink-0 border-b-2 py-3 whitespace-nowrap transition-colors",
               active
                 ? "border-neutral-900 font-medium text-neutral-900"
                 : "border-transparent hover:text-neutral-900",
