@@ -124,13 +124,19 @@ export function AdminCommandBar() {
                 aria-label={item.label}
                 aria-current={active ? "page" : undefined}
                 className={cn(
-                  "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px] transition-colors",
+                  "flex h-8 flex-shrink-0 items-center justify-center gap-2 rounded-[10px] px-2 text-sm transition-colors sm:justify-start sm:px-3",
                   active
                     ? "bg-neutral-900 text-white"
                     : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900",
                 )}
               >
-                <Icon className="h-[18px] w-[18px]" />
+                <Icon className="h-[18px] w-[18px] flex-shrink-0" />
+                {/* Icon-only on phone width, label appears from sm: up — the
+                    nav has its own overflow-x-auto scroll container above so
+                    even if labels push the total width past the header on a
+                    mid-size tablet, it scrolls within the bar instead of
+                    dragging the whole page, which was the original bug. */}
+                <span className="hidden sm:inline">{item.label}</span>
               </Link>
             );
           })}
