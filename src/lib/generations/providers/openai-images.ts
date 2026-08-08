@@ -75,6 +75,21 @@ export async function generateImageWithOpenAI(
 
   if (!res.ok) {
     const text = await res.text();
+    // GPT Image's safety classifier is aggressive and rejects a lot of
+    // perfectly innocent descriptions (it flags this as a distinct
+    // "image_generation_user_error" with a safety_violations list). Dumping
+    // that raw JSON — including OpenAI's internal request ID — straight into
+    // the UI is neither helpful nor good practice, so this specific case
+    // gets a plain, actionable message instead. Anything else (auth,
+    // billing, rate limit, etc.) still surfaces the real API response, since
+    // that detail is what's actually useful for debugging those.
+    if (text.includes("safety system") || text.includes("safety_violations")) {
+      throw new Error(
+        "That description was flagged by OpenAI's safety filter and couldn't be generated. " +
+          "Try simpler, unambiguous wording (for example, describing age and appearance " +
+          "plainly rather than combining conflicting details), or upload a photo instead.",
+      );
+    }
     throw new Error(`OpenAI image API error (${res.status}): ${text.slice(0, 300)}`);
   }
 
