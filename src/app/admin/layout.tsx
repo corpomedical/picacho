@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { AdminNav } from "@/components/admin-nav";
+import { AdminCommandBar } from "@/components/admin-command-bar";
 import { Logo } from "@/components/logo";
 
 export default async function AdminLayout({
@@ -39,7 +39,9 @@ export default async function AdminLayout({
             Back to app
           </Link>
         </div>
-        <AdminNav />
+        <div className="border-t border-neutral-100">
+          <AdminCommandBar />
+        </div>
       </header>
       <div className="mx-auto max-w-6xl px-8 py-10">{children}</div>
     </div>
