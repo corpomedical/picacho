@@ -6,6 +6,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { ProjectRow } from "@/components/project-row";
+import { DeleteGenerationButton } from "@/components/delete-generation-button";
+import { DeleteCharacterButton } from "@/components/delete-character-button";
 import { SearchDialog } from "@/components/search-dialog";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { parseVoiceCommand } from "@/lib/voice/commands";
@@ -14,6 +16,8 @@ import { logout } from "@/lib/auth/actions";
 import { useTheme, type ThemeMode } from "@/lib/theme/theme-provider";
 import { useLocale } from "@/lib/i18n/provider";
 import type { Messages } from "@/lib/i18n/messages";
+import { Logo } from "@/components/logo";
+import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
 
 const COLLAPSED_STORAGE_KEY = "picacho_sidebar_collapsed";
 
@@ -150,6 +154,34 @@ function VideoIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function MediaIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="4" width="18" height="12" rx="2" />
+      <circle cx="8.5" cy="9" r="1.4" />
+      <path d="m4.5 15 4-3.5 3 2.7 3.5-3.7L20 15" />
+      <path d="M3 20h18" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+function CompassIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m14.5 9.5-1.7 5.3-5.3 1.7 1.7-5.3 5.3-1.7Z" />
+    </svg>
+  );
+}
+
 function CheckIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -248,15 +280,28 @@ const THEME_OPTIONS: { value: ThemeMode; icon: (props: SVGProps<SVGSVGElement>) 
   { value: "dark", icon: MoonIcon },
 ];
 
+// Images and Videos are grouped under a collapsible "Media" submenu (see
+// mediaOpen below) rather than sitting as two flat top-level items — split
+// out here so the two halves can be rendered around that group in the JSX
+// while keeping the original top-to-bottom order (generate, projects,
+// characters, history, [Media], notes).
 function getNavItems(t: Messages["nav"]) {
   return [
     { href: "/app/generate", label: t.generate, icon: BoltIcon },
     { href: "/app/projects", label: t.projects, icon: FolderIcon },
     { href: "/app/character", label: t.characters, icon: UserIcon },
     { href: "/app/history", label: t.history, icon: ClockIcon },
+  ];
+}
+
+function getTrailingNavItems(t: Messages["nav"]) {
+  return [{ href: "/app/notes", label: t.notes, icon: NotesIcon }];
+}
+
+function getMediaItems(t: Messages["nav"]) {
+  return [
     { href: "/app/images", label: t.images, icon: ImageIcon },
     { href: "/app/videos", label: t.videos, icon: VideoIcon },
-    { href: "/app/notes", label: t.notes, icon: NotesIcon },
   ];
 }
 
@@ -267,6 +312,7 @@ export function AppSidebar({
   characters,
   projects,
   supportEmail,
+  skipAiRefinement,
 }: {
   isAdmin: boolean;
   username: string;
@@ -274,6 +320,7 @@ export function AppSidebar({
   characters: RecentCharacter[];
   projects: RecentProject[];
   supportEmail: string;
+  skipAiRefinement: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -281,6 +328,9 @@ export function AppSidebar({
   const { t } = useLocale();
   const s = t.settings;
   const NAV_ITEMS = getNavItems(t.nav);
+  const TRAILING_NAV_ITEMS = getTrailingNavItems(t.nav);
+  const MEDIA_ITEMS = getMediaItems(t.nav);
+  const [mediaOpen, setMediaOpen] = useState(false);
   const themeLabel: Record<ThemeMode, string> = {
     default: s.themeDefault,
     light: s.themeLight,
@@ -432,6 +482,13 @@ export function AppSidebar({
     return pathname === href || pathname?.startsWith(`${href}/`);
   }
 
+  // Whether either child of the Media group is the current page — used both
+  // to highlight the group's own row and to auto-expand it so landing
+  // directly on /app/images or /app/videos (e.g. from a bookmark) doesn't
+  // hide the active page inside a collapsed submenu.
+  const isMediaActive = isActive("/app/images") || isActive("/app/videos");
+  const mediaExpanded = mediaOpen || isMediaActive;
+
   // Global voice command — "open characters" navigates, "new chat" clears
   // the Generate thread, and anything else is forwarded to Generate as a
   // prompt (which auto-sends it and speaks the result back).
@@ -464,10 +521,7 @@ export function AppSidebar({
           <MenuIcon className="h-5 w-5" />
         </button>
         <Link href="/app/generate" className="flex items-center gap-2">
-          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">
-            P
-          </span>
-          <span className="text-sm font-semibold text-neutral-900">Picacho</span>
+          <Logo className="h-6" />
         </Link>
         <span className="h-9 w-9" aria-hidden="true" />
       </div>
@@ -495,11 +549,14 @@ export function AppSidebar({
           title="Picacho"
           className={cn("flex items-center gap-2", iconOnly && "justify-center")}
         >
-          <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">
-            P
-          </span>
-          {!iconOnly && (
-            <span className="whitespace-nowrap text-sm font-semibold text-neutral-900">Picacho</span>
+          {iconOnly ? (
+            // The wordmark is too wide to read as a small square icon, so
+            // the collapsed rail keeps the compact "P" badge instead.
+            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">
+              P
+            </span>
+          ) : (
+            <Logo className="h-6" />
           )}
         </Link>
         <button
@@ -551,6 +608,89 @@ export function AppSidebar({
             href={item.href}
             title={item.label}
             aria-label={item.label}
+            data-tour-id={item.href === "/app/character" ? "tour-characters" : undefined}
+            className={cn(
+              "flex items-center gap-2.5 whitespace-nowrap rounded-[10px] text-sm transition-colors",
+              iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
+              isActive(item.href)
+                ? "bg-neutral-900 text-white"
+                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+            )}
+          >
+            <item.icon className="h-4 w-4 flex-shrink-0" />
+            {!iconOnly && item.label}
+          </Link>
+        ))}
+
+        {/* Media group — Images + Videos collapsed under one entry instead of
+            two flat top-level items. Collapsed-rail (iconOnly) mode skips the
+            expand/collapse UX entirely (cramped in a 56px-wide rail) and just
+            links straight to Images. */}
+        {iconOnly ? (
+          <Link
+            href="/app/images"
+            title={t.nav.media}
+            aria-label={t.nav.media}
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-[10px] text-sm transition-colors",
+              isMediaActive
+                ? "bg-neutral-900 text-white"
+                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+            )}
+          >
+            <MediaIcon className="h-4 w-4 flex-shrink-0" />
+          </Link>
+        ) : (
+          <div>
+            <button
+              type="button"
+              onClick={() => setMediaOpen((v) => !v)}
+              title={t.nav.media}
+              aria-label={t.nav.media}
+              aria-expanded={mediaExpanded}
+              className={cn(
+                "flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-sm transition-colors",
+                isMediaActive
+                  ? "bg-neutral-900 text-white"
+                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+              )}
+            >
+              <MediaIcon className="h-4 w-4 flex-shrink-0" />
+              <span className="flex-1 text-left">{t.nav.media}</span>
+              <ChevronDownIcon
+                className={cn("h-3.5 w-3.5 flex-shrink-0 transition-transform", mediaExpanded && "rotate-180")}
+              />
+            </button>
+            {mediaExpanded && (
+              <div className="ml-4 mt-0.5 space-y-0.5 border-l border-neutral-100 pl-2">
+                {MEDIA_ITEMS.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    title={item.label}
+                    aria-label={item.label}
+                    className={cn(
+                      "flex items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-1.5 text-sm transition-colors",
+                      isActive(item.href)
+                        ? "bg-neutral-900 text-white"
+                        : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                    )}
+                  >
+                    <item.icon className="h-3.5 w-3.5 flex-shrink-0" />
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {TRAILING_NAV_ITEMS.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            title={item.label}
+            aria-label={item.label}
             className={cn(
               "flex items-center gap-2.5 whitespace-nowrap rounded-[10px] text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
@@ -597,7 +737,7 @@ export function AppSidebar({
                     <Link
                       href={`/app/history/${job.id}`}
                       className={cn(
-                        "flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-xs transition-colors",
+                        "group flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-xs transition-colors",
                         pathname === `/app/history/${job.id}`
                           ? "bg-neutral-100 text-neutral-900"
                           : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
@@ -613,7 +753,11 @@ export function AppSidebar({
                               : "bg-neutral-300",
                         )}
                       />
-                      <span className="truncate">{job.prompt_input}</span>
+                      <span className="min-w-0 flex-1 truncate">{job.prompt_input}</span>
+                      <DeleteGenerationButton
+                        id={job.id}
+                        className="h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      />
                     </Link>
                   </li>
                 ))}
@@ -661,7 +805,7 @@ export function AppSidebar({
                     <Link
                       href={`/app/character/${c.id}`}
                       className={cn(
-                        "flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-xs transition-colors",
+                        "group flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-xs transition-colors",
                         pathname === `/app/character/${c.id}`
                           ? "bg-neutral-100 text-neutral-900"
                           : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
@@ -670,7 +814,12 @@ export function AppSidebar({
                       <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[9px] font-semibold text-neutral-600">
                         {c.name.charAt(0).toUpperCase()}
                       </span>
-                      <span className="truncate">{c.name}</span>
+                      <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                      <DeleteCharacterButton
+                        id={c.id}
+                        name={c.name}
+                        className="h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      />
                     </Link>
                   </li>
                 ))}
@@ -783,9 +932,13 @@ export function AppSidebar({
               )}
             </div>
 
+            <div className="border-t border-neutral-100 px-2 py-2">
+              <SkipRefinementToggle initialEnabled={skipAiRefinement} variant="compact" />
+            </div>
+
             <div className="border-t border-neutral-100 py-1">
               <Link
-                href="/app/profile"
+                href="/app/settings"
                 onClick={() => setSettingsOpen(false)}
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >
@@ -793,7 +946,7 @@ export function AppSidebar({
                 {s.profileDetails}
               </Link>
               <Link
-                href="/app/usage"
+                href="/app/settings?tab=usage"
                 onClick={() => setSettingsOpen(false)}
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >
@@ -803,6 +956,14 @@ export function AppSidebar({
             </div>
 
             <div className="border-t border-neutral-100 py-1">
+              <Link
+                href="/app?tour=1"
+                onClick={() => setSettingsOpen(false)}
+                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+              >
+                <CompassIcon className="h-4 w-4 flex-shrink-0" />
+                {s.replayWalkthrough}
+              </Link>
               <a
                 href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho feedback")}`}
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"

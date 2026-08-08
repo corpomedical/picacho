@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { LanguageSwitcher } from "@/components/language-switcher";
+import { Logo } from "@/components/logo";
 
 // Async Server Component — checks the session so someone who's already
 // logged in sees a way back into the app instead of "Log in"/"Sign up",
@@ -17,10 +18,7 @@ export async function MarketingHeader() {
     <header className="border-b border-neutral-200/70">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-8 py-5">
         <Link href="/" className="flex items-center gap-2">
-          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">
-            P
-          </span>
-          <span className="text-sm font-semibold text-neutral-900">Picacho</span>
+          <Logo className="h-6" />
         </Link>
         <nav className="flex items-center gap-6 text-sm text-neutral-500">
           <Link href="/pricing" className="transition-colors hover:text-neutral-900">

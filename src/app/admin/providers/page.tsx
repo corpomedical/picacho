@@ -5,9 +5,15 @@ import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { cn } from "@/lib/cn";
 
-export default async function AdminProvidersPage() {
+export default async function AdminProvidersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error: actionError } = await searchParams;
   const supabase = await createClient();
 
   const [{ data: flag }, { data: modelSetting }, { data: imageModelSetting }] = await Promise.all([
@@ -29,6 +35,7 @@ export default async function AdminProvidersPage() {
 
   return (
     <div>
+      <AdminErrorBanner error={actionError} />
       <h1 className="text-lg font-semibold text-neutral-900">AI providers</h1>
       <p className="mt-1 text-sm text-neutral-500">
         Claude drafts, OpenAI reviews, fal.ai generates the clip. Voice command and voice mode
@@ -108,9 +115,22 @@ export default async function AdminProvidersPage() {
             <div key={model.id}>
               <p className="text-sm text-neutral-700">{model.description}</p>
               <p className="mt-1 text-xs text-neutral-400">{model.falEndpoint}</p>
+              <p className="mt-1 text-xs text-neutral-400">
+                Costs{" "}
+                {model.durations
+                  .map((d) => `${d.creditWeight} credit${d.creditWeight === 1 ? "" : "s"} at ${d.seconds}s`)
+                  .join(", ")}{" "}
+                of a user&apos;s monthly plan allowance per video.
+              </p>
             </div>
           ))}
         </div>
+        <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-400">
+          This is the default used when a user hasn&apos;t picked a model themselves — the composer
+          now lets users choose per generation (see the model switcher next to the character
+          picker in Generate), and pricier models cost more of their monthly allowance
+          automatically.
+        </p>
       </Card>
 
       <Card className="mt-6">

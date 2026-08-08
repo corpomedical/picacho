@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Label, Input } from "@/components/ui/field";
 import { OAuthButtons } from "@/components/oauth-buttons";
 import { getServerMessages } from "@/lib/i18n/server";
+import { Logo } from "@/components/logo";
 
 export default async function SignupPage({
   searchParams,
@@ -20,16 +21,45 @@ export default async function SignupPage({
   const { data } = await supabase.auth.getUser();
   if (data.user) redirect("/app");
 
+  // Real kill switch — Admin > Feature flags. Missing/errored row fails
+  // open (signups stay on) so a database hiccup can't silently lock
+  // everyone out; only an explicit `enabled: false` closes signups.
+  const { data: flag } = await supabase
+    .from("feature_flags")
+    .select("enabled")
+    .eq("key", "signups_enabled")
+    .single();
+  const signupsEnabled = flag?.enabled !== false;
+
   const { t } = await getServerMessages();
   const a = t.auth.signup;
+
+  if (!signupsEnabled) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-8">
+        <div className="w-full max-w-sm">
+          <div className="mb-6 flex justify-center">
+            <Logo className="h-8" />
+          </div>
+          <Card>
+            <h1 className="text-xl font-semibold text-neutral-900">{a.closedTitle}</h1>
+            <p className="mt-2 text-sm text-neutral-500">{a.closedBody}</p>
+            <Link href="/login" className="mt-6 block">
+              <Button variant="secondary" className="w-full">
+                {a.loginLink}
+              </Button>
+            </Link>
+          </Card>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-8">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex justify-center">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-sm font-semibold text-white">
-            P
-          </span>
+          <Logo className="h-8" />
         </div>
         <Card>
           <h1 className="text-xl font-semibold text-neutral-900">{a.title}</h1>

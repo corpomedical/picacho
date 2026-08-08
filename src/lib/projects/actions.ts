@@ -56,6 +56,68 @@ export async function saveProject(formData: FormData) {
   redirect(`/app/projects/${inserted.id}`);
 }
 
+// Lets one or more existing characters be moved into this project without
+// going through each character's own edit page — the project detail page
+// only ever showed characters already pointing at it via project_id, with
+// no way to point existing ones here. The form posts a checkbox per
+// character, all sharing the "character_id" name, so getAll picks up
+// however many were checked in a single submit.
+export async function assignCharacterToProject(formData: FormData) {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) redirect("/login");
+
+  const projectId = formData.get("project_id") as string;
+  const characterIds = formData.getAll("character_id").filter(Boolean) as string[];
+
+  if (characterIds.length === 0) {
+    redirect(`/app/projects/${projectId}?error=${encodeURIComponent("Pick at least one character to assign.")}`);
+  }
+
+  const { error } = await supabase
+    .from("character_profiles")
+    .update({ project_id: projectId })
+    .in("id", characterIds)
+    .eq("user_id", data.user.id);
+
+  if (error) {
+    console.error("assignCharacterToProject failed:", error.message);
+    redirect(`/app/projects/${projectId}?error=${encodeURIComponent("Couldn't assign those characters — try again.")}`);
+  }
+
+  revalidatePath("/app", "layout");
+  revalidatePath("/app/projects");
+  revalidatePath(`/app/projects/${projectId}`);
+  revalidatePath("/app/character");
+  redirect(`/app/projects/${projectId}`);
+}
+
+export async function removeCharacterFromProject(formData: FormData) {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) redirect("/login");
+
+  const projectId = formData.get("project_id") as string;
+  const characterId = formData.get("character_id") as string;
+
+  const { error } = await supabase
+    .from("character_profiles")
+    .update({ project_id: null })
+    .eq("id", characterId)
+    .eq("user_id", data.user.id);
+
+  if (error) {
+    console.error("removeCharacterFromProject failed:", error.message);
+    redirect(`/app/projects/${projectId}?error=${encodeURIComponent("Couldn't remove that character — try again.")}`);
+  }
+
+  revalidatePath("/app", "layout");
+  revalidatePath("/app/projects");
+  revalidatePath(`/app/projects/${projectId}`);
+  revalidatePath("/app/character");
+  redirect(`/app/projects/${projectId}`);
+}
+
 export async function deleteProject(formData: FormData) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();

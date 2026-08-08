@@ -12,7 +12,7 @@ async function fetchAsBlob(url: string): Promise<Blob> {
 
 export async function generateImageWithOpenAI(
   prompt: string,
-  referenceImageUrl?: string | null,
+  referenceImageUrl?: string | string[] | null,
 ): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -24,14 +24,30 @@ export async function generateImageWithOpenAI(
 
   let res: Response;
 
-  if (referenceImageUrl) {
-    // Anchor to the character's existing reference photo so the result
-    // actually looks like the same character (image edit / identity lock).
-    const imageBlob = await fetchAsBlob(referenceImageUrl);
+  // Normalize to an array so the single-photo (ordinary) and multi-photo
+  // (multi-character) cases can share one code path below.
+  const referenceUrls = Array.isArray(referenceImageUrl)
+    ? referenceImageUrl
+    : referenceImageUrl
+      ? [referenceImageUrl]
+      : [];
+
+  if (referenceUrls.length > 0) {
+    // Anchor to the character's existing reference photo(s) so the result
+    // actually looks like the same character(s) (image edit / identity
+    // lock). OpenAI's /v1/images/edits accepts multiple images via repeated
+    // image[] fields — with 2+, it composites all of them into one result
+    // instead of editing just one, which is exactly what multi-character
+    // generations need.
+    const imageBlobs = await Promise.all(referenceUrls.map((url) => fetchAsBlob(url)));
     const form = new FormData();
     form.set("model", "gpt-image-2");
     form.set("prompt", prompt);
-    form.set("image", imageBlob, "reference.png");
+    if (imageBlobs.length === 1) {
+      form.set("image", imageBlobs[0], "reference.png");
+    } else {
+      imageBlobs.forEach((blob, i) => form.append("image[]", blob, `reference-${i}.png`));
+    }
 
     res = await fetchWithTimeout(
       "https://api.openai.com/v1/images/edits",

@@ -63,6 +63,48 @@ export async function updateUsername(formData: FormData): Promise<ActionResult> 
   return { error: null };
 }
 
+// Client-invoked from the sidebar's quick settings menu AND the fuller
+// Settings page (same action, two entry points) — a plain toggle, so it
+// returns a result rather than calling redirect() like updateUsername above.
+// Per-user, not a global admin flag: each account controls whether ITS OWN
+// generations skip the paid Claude draft + OpenAI review steps (see
+// runRealPipeline's skipRefinement option in pipeline.ts).
+export async function setSkipAiRefinement(enabled: boolean): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ skip_ai_refinement: enabled })
+    .eq("id", data.user.id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/app", "layout");
+  return { error: null };
+}
+
+// Flips profiles.has_completed_onboarding — called once the first-login
+// walkthrough (OnboardingTour, see generate-form.tsx) finishes OR is
+// skipped, either way the tour shouldn't auto-show again. "Replay
+// walkthrough" in the sidebar settings menu brings it back on demand without
+// touching this flag (it navigates with ?tour=1 instead).
+export async function setHasCompletedOnboarding(): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ has_completed_onboarding: true })
+    .eq("id", data.user.id);
+
+  if (error) return { error: error.message };
+
+  return { error: null };
+}
+
 // Company and gender are both optional, self-reported fields — nothing here
 // is inferred or looked up. A native <form> action, so it uses redirect()
 // rather than returning a result.

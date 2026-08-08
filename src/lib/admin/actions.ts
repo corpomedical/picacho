@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PLAN_LIMITS } from "@/lib/plans";
 
@@ -20,28 +21,40 @@ async function requireAdmin() {
 }
 
 // These actions are all wired to native <form action={...}> elements with no
-// client-side result handling, so they return void (errors are logged for
-// now — shows up in the Terminal running `npm run dev`). If Wigly wants
-// errors surfaced in the UI later, these forms would need to become Client
-// Components using useActionState.
+// client-side result handling. On failure they redirect back to wherever the
+// form was submitted from with ?error=<message> — the admin pages read that
+// and show it via <AdminErrorBanner>, instead of the failure only landing in
+// a server log nobody's watching.
+//
+// setUserStatus renders on both /admin/users and /admin/users/[id], so its
+// forms include a hidden redirect_to field saying which one to bounce back
+// to; every other action here only appears on one page, so its redirect
+// target is just hardcoded.
 
 export async function setUserStatus(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const status = formData.get("status") as string;
+  const redirectTo = (formData.get("redirect_to") as string) || "/admin/users";
 
   if (status !== "active" && status !== "suspended") {
-    console.error("setUserStatus: invalid status", status);
-    return;
+    redirect(`${redirectTo}?error=${encodeURIComponent("Invalid status.")}`);
+  }
+
+  // An admin suspending their own account would lock them out with no one
+  // else able to undo it if they're the only admin — block it outright
+  // rather than trust everyone to remember not to.
+  if (userId === actingUserId && status === "suspended") {
+    redirect(`${redirectTo}?error=${encodeURIComponent("You can't suspend your own account.")}`);
   }
 
   const { error } = await supabase.from("profiles").update({ status }).eq("id", userId);
   if (error) {
-    console.error("setUserStatus failed:", error.message);
-    return;
+    redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/admin/users");
+  revalidatePath(`/admin/users/${userId}`);
 }
 
 export async function toggleFeatureFlag(formData: FormData) {
@@ -55,8 +68,7 @@ export async function toggleFeatureFlag(formData: FormData) {
     .eq("key", key);
 
   if (error) {
-    console.error("toggleFeatureFlag failed:", error.message);
-    return;
+    redirect(`/admin/flags?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/admin/flags");
@@ -68,8 +80,7 @@ export async function updateAppSetting(formData: FormData) {
   const value = (formData.get("value") as string)?.trim();
 
   if (!value) {
-    console.error("updateAppSetting: value can't be empty");
-    return;
+    redirect(`/admin/settings?error=${encodeURIComponent("Value can't be empty.")}`);
   }
 
   const { error } = await supabase
@@ -78,27 +89,32 @@ export async function updateAppSetting(formData: FormData) {
     .eq("key", key);
 
   if (error) {
-    console.error("updateAppSetting failed:", error.message);
-    return;
+    redirect(`/admin/settings?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/admin/settings");
 }
 
 export async function setUserRole(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const role = formData.get("role") as string;
+  const redirectTo = `/admin/users/${userId}`;
 
   if (role !== "user" && role !== "admin") {
-    console.error("setUserRole: invalid role", role);
-    return;
+    redirect(`${redirectTo}?error=${encodeURIComponent("Invalid role.")}`);
+  }
+
+  // Demoting yourself out of admin, with no one else in the room to undo
+  // it, is the kind of mistake that's only obvious after it's locked you
+  // out — block it rather than rely on remembering not to.
+  if (userId === actingUserId && role !== "admin") {
+    redirect(`${redirectTo}?error=${encodeURIComponent("You can't remove your own admin role.")}`);
   }
 
   const { error } = await supabase.from("profiles").update({ role }).eq("id", userId);
   if (error) {
-    console.error("setUserRole failed:", error.message);
-    return;
+    redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath(`/admin/users/${userId}`);
@@ -115,8 +131,7 @@ export async function setVideoModel(formData: FormData) {
     .eq("key", "video_model");
 
   if (error) {
-    console.error("setVideoModel failed:", error.message);
-    return;
+    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/admin/providers");
@@ -132,8 +147,7 @@ export async function setImageModel(formData: FormData) {
     .eq("key", "image_model");
 
   if (error) {
-    console.error("setImageModel failed:", error.message);
-    return;
+    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/admin/providers");
@@ -151,8 +165,9 @@ export async function addVoicePreset(formData: FormData) {
   const elevenlabsVoiceId = (formData.get("elevenlabs_voice_id") as string)?.trim();
 
   if (!label || !elevenlabsVoiceId) {
-    console.error("addVoicePreset: label and elevenlabs_voice_id are required");
-    return;
+    redirect(
+      `/admin/voices?error=${encodeURIComponent("Label and ElevenLabs voice ID are both required.")}`,
+    );
   }
 
   const { error } = await supabase.from("voice_presets").insert({
@@ -162,8 +177,7 @@ export async function addVoicePreset(formData: FormData) {
   });
 
   if (error) {
-    console.error("addVoicePreset failed:", error.message);
-    return;
+    redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/admin/voices");
@@ -175,28 +189,75 @@ export async function deleteVoicePreset(formData: FormData) {
 
   const { error } = await supabase.from("voice_presets").delete().eq("id", id);
   if (error) {
-    console.error("deleteVoicePreset failed:", error.message);
-    return;
+    redirect(`/admin/voices?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/admin/voices");
   revalidatePath("/app/character");
 }
 
+// Toggles a user-submitted "report a problem" between open and resolved —
+// see generation_reports and /admin/reports. Reopening is deliberately
+// allowed (not just a one-way "resolve" button): marking something resolved
+// too early and needing to walk it back shouldn't require going through the
+// database directly.
+export async function setGenerationReportStatus(formData: FormData) {
+  const { supabase } = await requireAdmin();
+  const reportId = formData.get("report_id") as string;
+  const status = formData.get("status") as string;
+
+  if (status !== "open" && status !== "resolved") {
+    redirect(`/admin/reports?error=${encodeURIComponent("Invalid status.")}`);
+  }
+
+  const { error } = await supabase
+    .from("generation_reports")
+    .update({ status, resolved_at: status === "resolved" ? new Date().toISOString() : null })
+    .eq("id", reportId);
+
+  if (error) {
+    redirect(`/admin/reports?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/admin/reports");
+}
+
+// Same open/resolved toggle as setGenerationReportStatus above, for the
+// general feedback queue instead — see the feedback table and /admin/feedback.
+export async function setFeedbackStatus(formData: FormData) {
+  const { supabase } = await requireAdmin();
+  const feedbackId = formData.get("feedback_id") as string;
+  const status = formData.get("status") as string;
+
+  if (status !== "open" && status !== "resolved") {
+    redirect(`/admin/feedback?error=${encodeURIComponent("Invalid status.")}`);
+  }
+
+  const { error } = await supabase
+    .from("feedback")
+    .update({ status, resolved_at: status === "resolved" ? new Date().toISOString() : null })
+    .eq("id", feedbackId);
+
+  if (error) {
+    redirect(`/admin/feedback?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/admin/feedback");
+}
+
 export async function setUserPlan(formData: FormData) {
   const { supabase } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const plan = formData.get("plan") as string;
+  const redirectTo = `/admin/users/${userId}`;
 
   if (!Object.keys(PLAN_LIMITS).includes(plan)) {
-    console.error("setUserPlan: invalid plan", plan);
-    return;
+    redirect(`${redirectTo}?error=${encodeURIComponent("Invalid plan.")}`);
   }
 
   const { error } = await supabase.from("profiles").update({ plan }).eq("id", userId);
   if (error) {
-    console.error("setUserPlan failed:", error.message);
-    return;
+    redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath(`/admin/users/${userId}`);

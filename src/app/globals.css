@@ -52,3 +52,38 @@ html {
 html.dark {
   color-scheme: dark;
 }
+
+/* "Live wallpaper" for the homepage's dark hero/closing-CTA sections
+   (see app/page.tsx) — large, fully-opaque, saturated color blobs that
+   visibly swing, scale, and rotate on a fast loop. Kept bold on purpose
+   (big transform range, short duration, light blur, no blend-mode
+   desaturation) after an earlier, subtler version read as static and washed
+   out. Deliberately not part of the shared @theme above: this is a one-off
+   bright treatment for those two sections only, not a change to the app's
+   normal quiet/neutral palette. */
+@keyframes wallpaper-drift-a {
+  0%, 100% { transform: translate(-18%, -12%) scale(1) rotate(0deg); }
+  50% { transform: translate(22%, 16%) scale(1.35) rotate(18deg); }
+}
+@keyframes wallpaper-drift-b {
+  0%, 100% { transform: translate(16%, 16%) scale(1.1) rotate(0deg); }
+  50% { transform: translate(-22%, -16%) scale(0.8) rotate(-18deg); }
+}
+@keyframes wallpaper-drift-c {
+  0%, 100% { transform: translate(0%, 12%) scale(0.85) rotate(0deg); }
+  50% { transform: translate(18%, -22%) scale(1.3) rotate(14deg); }
+}
+
+.animate-wallpaper-a { animation: wallpaper-drift-a 8s linear infinite; }
+.animate-wallpaper-b { animation: wallpaper-drift-b 10s linear infinite; }
+.animate-wallpaper-c { animation: wallpaper-drift-c 12s linear infinite; }
+
+/* No prefers-reduced-motion opt-out here, on purpose (unlike most motion in
+   the app) — three rounds of "it's still not moving" feedback despite
+   steadily bigger/faster transforms turned out to be this: reduce-motion
+   was silently zeroing the animation out entirely regardless of amplitude
+   or duration, on a Mac under System Settings > Accessibility > Display >
+   Reduce motion (or the equivalent OS/browser setting). Reinstate the media
+   query later if that trade-off ever needs revisiting — this is decorative
+   background chrome, not an essential interaction, so leaving it always-on
+   is a reasonable call for now. */

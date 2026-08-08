@@ -10,8 +10,17 @@ import {
   type AttemptLog,
   type ContentType,
 } from "@/lib/generations/pipeline";
-import { getAnglePreset } from "@/lib/generations/angles";
+import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
+import {
+  getVideoModel,
+  getDefaultDurationSeconds,
+  getDurationCreditWeight,
+  isValidDuration,
+  VIDEO_MODELS,
+} from "@/lib/generations/providers/video-models";
+import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
+import { autoReportFailedGeneration } from "@/lib/generations/reports";
 
 type RunResult =
   | {
@@ -60,16 +69,67 @@ async function persistGeneratedImage(
   return data.signedUrl;
 }
 
+// After a successful image generation, save a copy into the character's own
+// reference-photo gallery — otherwise a freshly created character has no
+// thumbnail at all until someone remembers to go upload one by hand. Only
+// sets it as the actual thumbnail (index 0) when the character had no
+// reference photos yet; if they already chose one, a newly generated image
+// is added to the gallery instead of silently replacing it, since that
+// existing photo is also what future generations anchor to for consistency.
+// Best-effort: any failure here is swallowed rather than surfaced, since the
+// generation itself already succeeded and shouldn't be reported as failed
+// over a secondary, non-essential step.
+async function addGeneratedImageAsReference(
+  supabase: SupabaseClient,
+  userId: string,
+  characterId: string,
+  imageUrl: string,
+): Promise<void> {
+  try {
+    const res = await fetch(imageUrl);
+    if (!res.ok) return;
+    const bytes = Buffer.from(await res.arrayBuffer());
+    const path = `${userId}/${crypto.randomUUID()}-generated.png`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("character-references")
+      .upload(path, bytes, { contentType: "image/png" });
+    if (uploadError) return;
+
+    const { data: current } = await supabase
+      .from("character_profiles")
+      .select("reference_image_urls")
+      .eq("id", characterId)
+      .single();
+    const existing: string[] = current?.reference_image_urls ?? [];
+
+    await supabase
+      .from("character_profiles")
+      .update({
+        reference_image_urls: existing.length === 0 ? [path] : [...existing, path],
+      })
+      .eq("id", characterId);
+  } catch {
+    // Best-effort enhancement — never let this take down an already-
+    // succeeded generation.
+  }
+}
+
 // Shared cost/abuse guardrail for both single and multi-angle generation.
 // Enforced here, server-side — previously the plan limits were only ever
 // used to *display* a number in Settings, never checked before a generation
 // actually ran, so any account (or a direct script bypassing the UI) could
 // call the paid pipeline without limit. Admins are exempt so testing and
 // support work is never blocked by a customer-facing quota.
+//
+// requestedCredits, not a raw generation count: pricier models (e.g. Kling
+// O3) consume more than 1 credit per video (see creditWeight in
+// video-models.ts), so a single video can request >1 here, and a 3-angle
+// multi-angle request on a premium model requests angles × weight.
 async function checkGenerationAllowance(
   supabase: SupabaseClient,
   userId: string,
-  requestedCount: number,
+  requestedCredits: number,
 ): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean }> {
   const [{ data: profile }, { data: recent }] = await Promise.all([
     supabase.from("profiles").select("plan, role").eq("id", userId).single(),
@@ -98,7 +158,7 @@ async function checkGenerationAllowance(
   const limit = PLAN_LIMITS[plan] ?? 0;
   const used = await getMonthlyUsage(userId);
 
-  if (used + requestedCount > limit) {
+  if (used + requestedCredits > limit) {
     if (plan === "none") {
       return {
         error:
@@ -110,9 +170,9 @@ async function checkGenerationAllowance(
     const remaining = Math.max(limit - used, 0);
     return {
       error:
-        requestedCount > 1
-          ? `That would use ${requestedCount} generations, but you only have ${remaining} left on your ${PLAN_LABELS[plan]} plan this month.`
-          : `You've used all ${limit} generations included in your ${PLAN_LABELS[plan]} plan this month.`,
+        requestedCredits > 1
+          ? `That would use ${requestedCredits} credits (some models cost more than 1 per video), but you only have ${remaining} left on your ${PLAN_LABELS[plan]} plan this month.`
+          : `You've used all ${limit} credits included in your ${PLAN_LABELS[plan]} plan this month.`,
       plan,
       isAdmin,
     };
@@ -130,6 +190,24 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const characterId = formData.get("character_id") as string;
   const contentType = ((formData.get("content_type") as string) || "video") as ContentType;
 
+  // Multiple DIFFERENT characters composited into one generation together —
+  // a separate feature from the reference-photo-count options below, which
+  // are all about MULTIPLE PHOTOS OF ONE character. The two are deliberately
+  // mutually exclusive (see the check next to wantsAdvancedVideoOptions):
+  // combining them would mean guessing which reference photos belong to
+  // which of several characters with no way to express that to the video
+  // model. Works for both video and images, and on every plan (no Elite
+  // gate) — unlike the options below.
+  const companionCharacterIds = JSON.parse(
+    (formData.get("companion_character_ids") as string) || "[]",
+  ) as string[];
+  // Generated client-side (crypto.randomUUID()) before this action is even
+  // called, so the Stop button has a real id to cancel against from the
+  // moment the request goes out — waiting for this action to return would
+  // mean the id (and the id alone) only exists after the whole thing is
+  // already done, too late to be useful.
+  const clientGenerationId = (formData.get("generation_id") as string) || undefined;
+
   // Advanced Kling-only video options — multi-image reference (2-4 of the
   // character's reference photos) and storyboard (a start and/or end frame).
   // Sent as storage paths from the client; resolved to signed URLs below
@@ -142,6 +220,25 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const wantsAdvancedVideoOptions =
     contentType === "video" &&
     (referencePhotoPaths.length > 0 || storyboardStartPath || storyboardEndPath);
+
+  // A photo attached directly to this message (the generic "+" upload, not
+  // the Elite-only multi-reference/storyboard pickers above) — already a
+  // signed, fal.ai-fetchable URL from uploadChatAttachment, so no further
+  // signing is needed here. When present, this is what the person actually
+  // wants used for this one generation, ahead of the character's saved
+  // default photo (see the anchor-resolution block below).
+  const attachmentReferenceUrl = (formData.get("attachment_reference_url") as string) || "";
+
+  // Which of the character's OWN saved reference photos to anchor to —
+  // from the picker in the composer, for characters with more than one
+  // saved photo (e.g. a normal shot and a close-up). One step below an
+  // attachment in priority, but still ahead of silently defaulting to
+  // reference_image_urls[0] regardless of what the prompt actually asks
+  // for. Verified against the character's own photos below, not trusted
+  // as-is — a direct call could otherwise pass any storage path here.
+  const requestedAnchorPhotoPath = (formData.get("anchor_photo_path") as string) || "";
+
+  const wantsMultiCharacter = companionCharacterIds.length > 0;
 
   // Dialogue — a spoken line the character says, lip-synced onto the video.
   // Available on every plan (no Elite-style gate), but does need the
@@ -163,6 +260,25 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (dialogueText.length > MAX_DIALOGUE_LENGTH) {
     return { error: `Keep dialogue under ${MAX_DIALOGUE_LENGTH} characters.` };
   }
+  if (wantsMultiCharacter && new Set(companionCharacterIds).size !== companionCharacterIds.length) {
+    return { error: "The same character can't be picked twice — choose different characters to appear together." };
+  }
+  if (wantsMultiCharacter && companionCharacterIds.includes(characterId)) {
+    return { error: "The same character can't be picked twice — choose different characters to appear together." };
+  }
+  if (companionCharacterIds.length > 3) {
+    return { error: "Up to 4 characters can appear together in one generation." };
+  }
+  // Separate, mutually exclusive modes — one is "several photos/angles of
+  // ONE character," the other is "several DIFFERENT characters together."
+  // Combining them leaves no way to say which reference photo belongs to
+  // which character.
+  if (wantsMultiCharacter && wantsAdvancedVideoOptions) {
+    return {
+      error:
+        "Using multiple characters together can't be combined with multi-image reference or storyboard for one character — turn one off.",
+    };
+  }
 
   const { data: character, error: characterError } = await supabase
     .from("character_profiles")
@@ -172,6 +288,37 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
   if (characterError || !character) {
     return { error: "Couldn't find that character." };
+  }
+
+  // Fetch + verify every companion character before spending anything — each
+  // id must resolve to a real character actually owned by this account (not
+  // just any id a direct call happened to send), and every participant needs
+  // its own reference photo, since that photo is the only way the video/image
+  // model can actually tell one selected character apart from another (see
+  // the rulebook-injection comment in pipeline.ts — there's no per-image
+  // identity tag on fal.ai's side, only the photo itself and the prompt text).
+  let companionCharacters: typeof character[] = [];
+  if (wantsMultiCharacter) {
+    const { data: companions, error: companionsError } = await supabase
+      .from("character_profiles")
+      .select("*")
+      .in("id", companionCharacterIds)
+      .eq("user_id", userData.user.id);
+
+    if (companionsError || !companions || companions.length !== companionCharacterIds.length) {
+      return { error: "Couldn't find one or more of the selected characters." };
+    }
+    // .in() doesn't preserve the requested order — restore the order they
+    // were actually selected in, since that order becomes the reference
+    // photo order sent to the model.
+    companionCharacters = companionCharacterIds.map((id) => companions.find((c) => c.id === id)!);
+
+    const missingPhoto = [character, ...companionCharacters].find((c) => !c.reference_image_urls?.[0]);
+    if (missingPhoto) {
+      return {
+        error: `${missingPhoto.name} needs a reference photo before it can be used together with other characters — add one in Character settings.`,
+      };
+    }
   }
 
   // Resolve the character's assigned voice (if any) to a real ElevenLabs
@@ -196,11 +343,104 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
   }
 
+  const [
+    { data: retrySetting },
+    { data: flag },
+    { data: videoModelSetting },
+    { data: imageModelSetting },
+    { data: userProfile },
+  ] = await Promise.all([
+    supabase.from("app_settings").select("value").eq("key", "max_retry_attempts").single(),
+    supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
+    supabase.from("app_settings").select("value").eq("key", "video_model").single(),
+    supabase.from("app_settings").select("value").eq("key", "image_model").single(),
+    supabase.from("profiles").select("skip_ai_refinement").eq("id", userData.user.id).single(),
+  ]);
+  const maxAttempts = Number(retrySetting?.value) || undefined;
+  const useRealProviders = flag?.enabled === true;
+  const imageModelId = imageModelSetting?.value ?? "gpt-image";
+  // Per-user preference (see setSkipAiRefinement in profile/actions.ts) —
+  // skips the paid Claude draft + OpenAI review steps for THIS account's
+  // generations only, not everyone's. See pipeline.ts's skipRefinement
+  // option for what actually changes.
+  const skipRefinement = userProfile?.skip_ai_refinement === true;
+
+  // Multi-character images need OpenAI's real multi-image edit endpoint —
+  // Flux's fal.ai endpoint only ever accepts one reference image, with no
+  // way to composite several distinct characters into one picture. Caught
+  // here against whatever the admin has the account's image model set to,
+  // rather than silently generating with only one of the selected characters
+  // actually represented.
+  if (wantsMultiCharacter && contentType === "image" && imageModelId !== "gpt-image") {
+    return {
+      error:
+        "Combining multiple characters in one image needs GPT Image 2 as the image model — " +
+        "ask an admin to switch it in Admin > AI Providers, or remove the extra characters.",
+    };
+  }
+
+  // The composer lets the user pick a video model per generation (see
+  // generate-form.tsx); that choice arrives here as video_model_id and
+  // overrides the admin's global default (Admin > AI Providers) for this
+  // one request. Falls back to the admin default for image generations,
+  // multi-angle requests that didn't send one, and anything invalid.
+  const requestedVideoModelId = (formData.get("video_model_id") as string) || "";
+  const adminDefaultVideoModelId = videoModelSetting?.value ?? "kling";
+  const videoModelId =
+    contentType === "video" && VIDEO_MODELS.some((m) => m.id === requestedVideoModelId)
+      ? requestedVideoModelId
+      : adminDefaultVideoModelId;
+  const activeVideoModel = getVideoModel(videoModelId);
+
+  // Duration is a per-generation choice too (see generate-form.tsx), same
+  // pattern as the model picker — but never trust the raw number a form
+  // could send: only accept it if it's actually one of this model's real
+  // fal.ai duration options, otherwise fall back to that model's default
+  // rather than silently sending fal.ai a value it might reject.
+  const requestedDurationSeconds = Number(formData.get("video_duration_seconds"));
+  const videoDurationSeconds =
+    contentType === "video" && isValidDuration(activeVideoModel, requestedDurationSeconds)
+      ? requestedDurationSeconds
+      : getDefaultDurationSeconds(activeVideoModel);
+
+  // Pricier models — and longer durations within a model — cost more of the
+  // user's monthly plan allowance than the 5s baseline. Resolved once here
+  // so both the allowance check below and the row we save afterward agree
+  // on the same number.
+  const creditWeight =
+    contentType === "video" ? getDurationCreditWeight(activeVideoModel, videoDurationSeconds) : 1;
+
+  // Aspect ratio — resolution order (real incident, 2026-08-07: a user typed
+  // "16:9, no side bars" into their prompt and still got a pillarboxed video,
+  // because the model in use had no parameter that could have honored it —
+  // see fal.ts's reframe workaround for Kling O3). An explicit ratio
+  // mentioned in what the person actually typed always wins over whatever
+  // icon they clicked in the composer — if you SAY vertical, that should
+  // apply even if 16:9 is still selected from an earlier generation. Only
+  // falls back to the icon pick, then the 16:9 default, when the prompt
+  // itself doesn't say anything either way.
+  const requestedAspectRatio = (formData.get("video_aspect_ratio") as string) || "";
+  const iconAspectRatio: VideoAspectRatio | null =
+    requestedAspectRatio === "16:9" || requestedAspectRatio === "9:16" ? requestedAspectRatio : null;
+  const promptAspectRatio = contentType === "video" ? detectAspectRatioFromPrompt(userInput) : null;
+  const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
+
+  // Kling O3 Standard's image-to-video endpoint requires a start frame —
+  // there's no text-to-video fallback wired up for it (see fal.ts). Catch a
+  // character with no reference photo before spending any credits, not
+  // after the provider call fails.
+  if (contentType === "video" && videoModelId === "kling-o3" && !character.reference_image_urls?.[0]) {
+    return {
+      error:
+        "Kling O3 needs this character to have a reference photo — add one in Character settings, or switch to Kling 1.6.",
+    };
+  }
+
   const {
     error: allowanceError,
     plan: userPlan,
     isAdmin,
-  } = await checkGenerationAllowance(supabase, userData.user.id, 1);
+  } = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
   if (allowanceError) return { error: allowanceError };
 
   // Multi-image reference and storyboard are Elite-exclusive. Checked here,
@@ -213,26 +453,26 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
-  const [{ data: retrySetting }, { data: flag }, { data: videoModelSetting }, { data: imageModelSetting }] =
-    await Promise.all([
-      supabase.from("app_settings").select("value").eq("key", "max_retry_attempts").single(),
-      supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
-      supabase.from("app_settings").select("value").eq("key", "video_model").single(),
-      supabase.from("app_settings").select("value").eq("key", "image_model").single(),
-    ]);
-  const maxAttempts = Number(retrySetting?.value) || undefined;
-  const useRealProviders = flag?.enabled === true;
-  const imageModelId = imageModelSetting?.value ?? "gpt-image";
-  const videoModelId = videoModelSetting?.value ?? "kling";
-
-  // Multi-image reference and storyboard are Kling-specific — Veo has no
-  // equivalent on fal.ai. Catch this before spending a generation attempt,
-  // not after a wasted paid call that silently ignores the options.
+  // Multi-image reference and storyboard are specific to Kling 1.6's
+  // "elements"/storyboard endpoints — Kling O3 and Veo have no equivalent
+  // wired up here. Catch this before spending a generation attempt, not
+  // after a wasted paid call that silently ignores the options.
   if (wantsAdvancedVideoOptions && videoModelId !== "kling") {
     return {
       error:
-        "Multi-image reference and storyboard need Kling as the active video model — " +
-        "ask an admin to switch it in Admin > AI Providers, or turn these options off.",
+        "Multi-image reference and storyboard need Kling 1.6 as the selected video model — " +
+        "switch models, or turn these options off.",
+    };
+  }
+
+  // Multiple characters in one video reuses Kling 1.6's "elements" endpoint
+  // (the same one multi-image reference above uses) — Kling O3 and Veo have
+  // no equivalent multi-subject compositing wired up here.
+  if (wantsMultiCharacter && contentType === "video" && videoModelId !== "kling") {
+    return {
+      error:
+        "Using multiple characters together needs Kling 1.6 as the selected video model — " +
+        "switch models, or remove the extra characters.",
     };
   }
 
@@ -254,6 +494,18 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     voice_tone_tags: character.voice_tone_tags ?? [],
   };
 
+  // Every companion, in the same shape — handed to runRealPipeline so it can
+  // inject each one's name/traits into the compiled prompt text. That's the
+  // only channel available to help the model tell characters apart: fal.ai's
+  // elements/edit endpoints take a flat array of reference images with no
+  // per-image identity tag pairing an image to a name.
+  const companionsForPipeline = companionCharacters.map((c) => ({
+    name: c.name,
+    traits: c.traits ?? {},
+    motion_style: c.motion_style,
+    voice_tone_tags: c.voice_tone_tags ?? [],
+  }));
+
   // Save an "in progress" row up front. Previously nothing was written to the
   // database until the whole pipeline finished, so a crash or timeout partway
   // through left zero trace anywhere — not in history, not in the admin
@@ -262,14 +514,20 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const { data: placeholder, error: placeholderError } = await supabase
     .from("generations")
     .insert({
+      ...(clientGenerationId ? { id: clientGenerationId } : {}),
       user_id: userData.user.id,
       character_profile_id: characterId,
+      character_profile_ids: wantsMultiCharacter ? [characterId, ...companionCharacterIds] : [],
       prompt_input: userInput,
       content_type: contentType,
       status: "generating",
       attempts: 0,
       result_url: null,
       pipeline_log: [],
+      video_model_id: contentType === "video" ? videoModelId : null,
+      video_duration_seconds: contentType === "video" ? videoDurationSeconds : null,
+      video_aspect_ratio: contentType === "video" ? videoAspectRatio : null,
+      credits_used: creditWeight,
     })
     .select("id")
     .single();
@@ -285,14 +543,48 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
   try {
     if (useRealProviders) {
-      // For image scenes, anchor to the character's first saved reference
-      // photo (if they have one) so the result actually looks like them.
+      // Anchor to the character's first saved reference photo (if they have
+      // one) so the result actually looks like them. Image generation has
+      // always done this; video generation needs the exact same treatment —
+      // without it, a video request only ever gets a text description of
+      // the character, and Kling has to invent a face from adjectives (real
+      // incident, 2026-08-07: this is why a video generated "as" a specific
+      // saved character came back as a visibly different person). This is
+      // deliberately NOT gated behind wantsAdvancedVideoOptions/Elite below —
+      // that gate is for the multi-photo/storyboard EXTRAS, not for this
+      // baseline "look like the character" behavior every plan should get.
       let referenceImageUrl: string | null = null;
-      if (contentType === "image" && character.reference_image_urls?.[0]) {
-        const { data: signed } = await supabase.storage
-          .from("character-references")
-          .createSignedUrl(character.reference_image_urls[0], 60 * 10);
-        referenceImageUrl = signed?.signedUrl ?? null;
+      let videoCharacterAnchorUrl: string | null = null;
+      // Multi-character mode resolves the primary's photo down in the cast
+      // loop below instead (it needs to go into referenceImageUrls /
+      // videoReferenceImageUrls alongside the companions', not the single-
+      // character anchor fields), so this baseline anchor is skipped there.
+      if (!wantsMultiCharacter) {
+        let anchorUrl: string | null = null;
+        if (attachmentReferenceUrl) {
+          // The person attached a specific photo to this message — that
+          // intent wins over the character's saved default for this request.
+          anchorUrl = attachmentReferenceUrl;
+        } else {
+          // Otherwise, an explicitly picked photo from the character's own
+          // gallery beats just always grabbing the first one — but only if
+          // it's genuinely one of this character's saved photos.
+          const chosenPath =
+            requestedAnchorPhotoPath && character.reference_image_urls?.includes(requestedAnchorPhotoPath)
+              ? requestedAnchorPhotoPath
+              : character.reference_image_urls?.[0];
+          if (chosenPath) {
+            const { data: signed } = await supabase.storage
+              .from("character-references")
+              .createSignedUrl(chosenPath, 60 * 10);
+            anchorUrl = signed?.signedUrl ?? null;
+          }
+        }
+        if (contentType === "image") {
+          referenceImageUrl = anchorUrl;
+        } else {
+          videoCharacterAnchorUrl = anchorUrl;
+        }
       }
 
       // Resolve advanced-option storage paths to short-lived signed URLs —
@@ -303,8 +595,41 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       let videoReferenceImageUrls: string[] | undefined;
       let videoStartImageUrl: string | null = null;
       let videoEndImageUrl: string | null = null;
+      // The image-generation equivalent of videoReferenceImageUrls above —
+      // one photo per selected character, passed to OpenAI's multi-image
+      // edit endpoint. Only ever set in multi-character mode; single-
+      // character images keep using referenceImageUrl (singular) exactly as
+      // before.
+      let referenceImageUrls: string[] | undefined;
 
-      if (wantsAdvancedVideoOptions) {
+      if (wantsMultiCharacter) {
+        // Already validated above that every selected character — primary
+        // included — has at least one reference photo. Sign each one, in
+        // the order they were picked, so the model has a real photo of
+        // every participant to work from.
+        const cast = [character, ...companionCharacters];
+        const signedUrls = await Promise.all(
+          cast.map(async (c) => {
+            // Every cast member was already confirmed to have a photo above
+            // (the missingPhoto check) — the "" fallback only exists to
+            // satisfy TypeScript, createSignedUrl("") will just fail and get
+            // filtered out below same as any other sign failure.
+            const { data: signed } = await supabase.storage
+              .from("character-references")
+              .createSignedUrl(c.reference_image_urls?.[0] ?? "", 60 * 10);
+            return signed?.signedUrl ?? null;
+          }),
+        );
+        const resolvedUrls = signedUrls.filter((u): u is string => Boolean(u));
+        if (resolvedUrls.length < 2) {
+          throw new Error("Couldn't prepare the selected characters' photos — try again.");
+        }
+        if (contentType === "video") {
+          videoReferenceImageUrls = resolvedUrls;
+        } else {
+          referenceImageUrls = resolvedUrls;
+        }
+      } else if (wantsAdvancedVideoOptions) {
         if (referencePhotoPaths.length >= 2) {
           const signedUrls = await Promise.all(
             referencePhotoPaths.map(async (path) => {
@@ -340,14 +665,31 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoModelId,
           imageModelId,
           referenceImageUrl,
+          referenceImageUrls,
           videoReferenceImageUrls,
           videoStartImageUrl,
           videoEndImageUrl,
+          videoCharacterAnchorUrl,
+          companions: wantsMultiCharacter ? companionsForPipeline : undefined,
           dialogueText: wantsDialogue ? dialogueText : undefined,
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,
+          videoDurationSeconds: contentType === "video" ? videoDurationSeconds : undefined,
+          videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
+          skipRefinement,
           persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),
         },
         maxAttempts,
+        // Polled between attempts so the Stop button (a separate, later call
+        // to requestGenerationCancel) actually has an effect on this
+        // already-running request instead of just being cosmetic.
+        async () => {
+          const { data } = await supabase
+            .from("generations")
+            .select("cancel_requested")
+            .eq("id", placeholder.id)
+            .single();
+          return data?.cancel_requested === true;
+        },
       );
       ({ attempts, succeeded, finalPrompt, resultUrl } = result);
     } else {
@@ -361,21 +703,20 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     // here, fail this generation cleanly instead of crashing the request and
     // leaving the placeholder stuck at "generating" forever.
     const message = err instanceof Error ? err.message : "Something went wrong generating this.";
+    const crashLog: AttemptLog[] = [
+      {
+        attempt: 1,
+        steps: [{ step: "generate", detail: message }],
+        passed: false,
+        issues: ["unexpected_error"],
+        compiledPrompt: "",
+      },
+    ];
     await supabase
       .from("generations")
-      .update({
-        status: "failed",
-        pipeline_log: [
-          {
-            attempt: 1,
-            steps: [{ step: "generate", detail: message }],
-            passed: false,
-            issues: ["unexpected_error"],
-            compiledPrompt: "",
-          },
-        ],
-      })
+      .update({ status: "failed", pipeline_log: crashLog })
       .eq("id", placeholder.id);
+    await autoReportFailedGeneration(placeholder.id, userData.user.id, crashLog);
     return { error: message };
   }
 
@@ -393,6 +734,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     return { error: "Finished, but couldn't save the result — try refreshing History in a moment." };
   }
 
+  if (!succeeded) {
+    await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
+  }
+
+  if (succeeded && contentType === "image" && resultUrl?.startsWith("http")) {
+    await addGeneratedImageAsReference(supabase, userData.user.id, characterId, resultUrl);
+    revalidatePath("/app/character");
+    revalidatePath(`/app/character/${characterId}`);
+  }
+
   revalidatePath("/app/generate");
   revalidatePath("/app/history");
 
@@ -404,6 +755,59 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     finalPrompt,
     resultUrl,
   };
+}
+
+// Invoked directly from a Client Component (the Stop button on the live
+// composer, same as runGeneration itself) — not a native form action — so it
+// returns a result instead of calling redirect(). Just flips a flag; the
+// still-running runGeneration call above is what actually notices it and
+// stops, the next time it checks (see checkCancelled above).
+export async function requestGenerationCancel(generationId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const { error } = await supabase
+    .from("generations")
+    .update({ cancel_requested: true })
+    .eq("id", generationId)
+    .eq("user_id", userData.user.id)
+    .eq("status", "generating");
+
+  if (error) {
+    console.error("requestGenerationCancel failed:", error.message);
+    return { error: "Couldn't stop this generation — try again." };
+  }
+
+  return { error: null };
+}
+
+// Thumbs up/down on a result, shown in the hover action bar under both the
+// live Generate composer and the History detail page. A single nullable
+// column (not two booleans) — like and dislike are mutually exclusive, and
+// clicking an already-active one clears it back to no opinion.
+export type GenerationFeedback = "like" | "dislike" | null;
+
+export async function setGenerationFeedback(
+  generationId: string,
+  feedback: GenerationFeedback,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const { error } = await supabase
+    .from("generations")
+    .update({ feedback })
+    .eq("id", generationId)
+    .eq("user_id", userData.user.id);
+
+  if (error) {
+    console.error("setGenerationFeedback failed:", error.message);
+    return { error: "Couldn't save that — try again." };
+  }
+
+  return { error: null };
 }
 
 export type MultiAngleResult =
@@ -435,6 +839,14 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const userInput = (formData.get("prompt") as string)?.trim();
   const characterId = formData.get("character_id") as string;
   const angleIds = (formData.getAll("angle") as string[]).filter(Boolean);
+  // Same idea as runGeneration's clientGenerationId — generated up front on
+  // the client so the Stop button has something to cancel against before
+  // this action has returned anything.
+  const clientGroupId = (formData.get("angle_group_id") as string) || undefined;
+  // Same attachment/anchor-photo priority as runGeneration — see the
+  // comments there.
+  const attachmentReferenceUrl = (formData.get("attachment_reference_url") as string) || "";
+  const requestedAnchorPhotoPath = (formData.get("anchor_photo_path") as string) || "";
 
   if (!userInput) return { error: "Describe what you want first." };
   if (userInput.length > MAX_PROMPT_LENGTH) {
@@ -453,20 +865,53 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     return { error: "Couldn't find that character." };
   }
 
+  const [{ data: retrySetting }, { data: flag }, { data: videoModelSetting }, { data: userProfile }] =
+    await Promise.all([
+      supabase.from("app_settings").select("value").eq("key", "max_retry_attempts").single(),
+      supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
+      supabase.from("app_settings").select("value").eq("key", "video_model").single(),
+      supabase.from("profiles").select("skip_ai_refinement").eq("id", userData.user.id).single(),
+    ]);
+  const maxAttempts = Number(retrySetting?.value) || undefined;
+  const useRealProviders = flag?.enabled === true;
+  // Same per-user preference as runGeneration (see the comment there).
+  const skipRefinement = userProfile?.skip_ai_refinement === true;
+
+  // Same per-generation model choice as runGeneration (see the comment
+  // there) — one choice applies to every angle in this batch.
+  const requestedVideoModelId = (formData.get("video_model_id") as string) || "";
+  const videoModelId = VIDEO_MODELS.some((m) => m.id === requestedVideoModelId)
+    ? requestedVideoModelId
+    : (videoModelSetting?.value ?? "kling");
+  const activeVideoModel = getVideoModel(videoModelId);
+
+  const requestedDurationSeconds = Number(formData.get("video_duration_seconds"));
+  const videoDurationSeconds = isValidDuration(activeVideoModel, requestedDurationSeconds)
+    ? requestedDurationSeconds
+    : getDefaultDurationSeconds(activeVideoModel);
+  const creditWeight = getDurationCreditWeight(activeVideoModel, videoDurationSeconds);
+
+  // Same resolution order as runGeneration (see the comment there): prompt
+  // text beats the icon pick, which beats the 16:9 default.
+  const requestedAspectRatio = (formData.get("video_aspect_ratio") as string) || "";
+  const iconAspectRatio: VideoAspectRatio | null =
+    requestedAspectRatio === "16:9" || requestedAspectRatio === "9:16" ? requestedAspectRatio : null;
+  const promptAspectRatio = detectAspectRatioFromPrompt(userInput);
+  const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
+
+  if (videoModelId === "kling-o3" && !character.reference_image_urls?.[0]) {
+    return {
+      error:
+        "Kling O3 needs this character to have a reference photo — add one in Character settings, or switch to Kling 1.6.",
+    };
+  }
+
   const { error: allowanceError } = await checkGenerationAllowance(
     supabase,
     userData.user.id,
-    angleIds.length,
+    angleIds.length * creditWeight,
   );
   if (allowanceError) return { error: allowanceError };
-
-  const [{ data: retrySetting }, { data: flag }, { data: videoModelSetting }] = await Promise.all([
-    supabase.from("app_settings").select("value").eq("key", "max_retry_attempts").single(),
-    supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
-    supabase.from("app_settings").select("value").eq("key", "video_model").single(),
-  ]);
-  const maxAttempts = Number(retrySetting?.value) || undefined;
-  const useRealProviders = flag?.enabled === true;
 
   if (useRealProviders) {
     const missingKeys = missingRealProviderKeys("video");
@@ -486,7 +931,28 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     voice_tone_tags: character.voice_tone_tags ?? [],
   };
 
-  const groupId = crypto.randomUUID();
+  // Same baseline identity anchor as runGeneration — without this, multi-
+  // angle video generation sends fal.ai nothing but a text description of
+  // the character, same root cause as the single-generation consistency bug.
+  let videoCharacterAnchorUrl: string | null = null;
+  if (useRealProviders) {
+    if (attachmentReferenceUrl) {
+      videoCharacterAnchorUrl = attachmentReferenceUrl;
+    } else {
+      const chosenPath =
+        requestedAnchorPhotoPath && character.reference_image_urls?.includes(requestedAnchorPhotoPath)
+          ? requestedAnchorPhotoPath
+          : character.reference_image_urls?.[0];
+      if (chosenPath) {
+        const { data: signed } = await supabase.storage
+          .from("character-references")
+          .createSignedUrl(chosenPath, 60 * 10);
+        videoCharacterAnchorUrl = signed?.signedUrl ?? null;
+      }
+    }
+  }
+
+  const groupId = clientGroupId ?? crypto.randomUUID();
 
   const { data: placeholders, error: placeholderError } = await supabase
     .from("generations")
@@ -502,6 +968,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
         pipeline_log: [],
         angle_group_id: groupId,
         angle: angleId,
+        video_model_id: videoModelId,
+        video_duration_seconds: videoDurationSeconds,
+        video_aspect_ratio: videoAspectRatio,
+        credits_used: creditWeight,
       })),
     )
     .select("id, angle");
@@ -533,8 +1003,29 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
         const result = await runRealPipeline(
           angledInput,
           characterForPipeline,
-          { contentType: "video", videoModelId: videoModelSetting?.value ?? "kling" },
+          {
+            contentType: "video",
+            videoModelId,
+            videoCharacterAnchorUrl,
+            videoDurationSeconds,
+            videoAspectRatio,
+            skipRefinement,
+          },
           maxAttempts,
+          // Every angle shares one cancel_requested flag via angle_group_id
+          // (set in bulk by requestMultiAngleGenerationCancel), but each
+          // angle checks its own row so one angle finishing/failing first
+          // doesn't affect how the others notice the stop request.
+          rowId
+            ? async () => {
+                const { data } = await supabase
+                  .from("generations")
+                  .select("cancel_requested")
+                  .eq("id", rowId)
+                  .single();
+                return data?.cancel_requested === true;
+              }
+            : undefined,
         );
         ({ attempts, succeeded, finalPrompt, resultUrl } = result);
       } else {
@@ -552,6 +1043,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             pipeline_log: attempts,
           })
           .eq("id", rowId);
+        if (!succeeded) {
+          await autoReportFailedGeneration(rowId, userData.user!.id, attempts);
+        }
       }
 
       return { angleId, id: rowId ?? "", succeeded, attempts, finalPrompt, resultUrl };
@@ -566,22 +1060,21 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       const rowId = placeholderByAngle.get(angleId);
       const message =
         outcome.reason instanceof Error ? outcome.reason.message : "This angle failed unexpectedly.";
+      const crashLog: AttemptLog[] = [
+        {
+          attempt: 1,
+          steps: [{ step: "generate", detail: message }],
+          passed: false,
+          issues: ["unexpected_error"],
+          compiledPrompt: "",
+        },
+      ];
       if (rowId) {
         await supabase
           .from("generations")
-          .update({
-            status: "failed",
-            pipeline_log: [
-              {
-                attempt: 1,
-                steps: [{ step: "generate", detail: message }],
-                passed: false,
-                issues: ["unexpected_error"],
-                compiledPrompt: "",
-              },
-            ],
-          })
+          .update({ status: "failed", pipeline_log: crashLog })
           .eq("id", rowId);
+        await autoReportFailedGeneration(rowId, userData.user!.id, crashLog);
       }
       return { angleId, id: rowId ?? "", succeeded: false, attempts: [], finalPrompt: "", resultUrl: null };
     }),
@@ -605,6 +1098,110 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   };
 }
 
+// Same idea as requestGenerationCancel, but flips the flag on every row in
+// the angle group at once — one Stop click on a multi-angle request should
+// stop all of its still-running angles, not just one.
+export async function requestMultiAngleGenerationCancel(
+  groupId: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const { error } = await supabase
+    .from("generations")
+    .update({ cancel_requested: true })
+    .eq("angle_group_id", groupId)
+    .eq("user_id", userData.user.id)
+    .eq("status", "generating");
+
+  if (error) {
+    console.error("requestMultiAngleGenerationCancel failed:", error.message);
+    return { error: "Couldn't stop these generations — try again." };
+  }
+
+  return { error: null };
+}
+
+// Pulls the Storage object path back out of a signed URL created by
+// persistGeneratedImage, e.g.
+// ".../object/sign/generated-images/<userId>/<uuid>.png?token=..." ->
+// "<userId>/<uuid>.png". Video results are hosted externally on fal.ai's CDN
+// and were never uploaded to our own Storage, so this only ever applies to
+// image generations.
+function extractStoragePath(url: string | null, bucket: string): string | null {
+  if (!url) return null;
+  const marker = `/object/sign/${bucket}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  const path = url.slice(idx + marker.length).split("?")[0];
+  return path ? decodeURIComponent(path) : null;
+}
+
+// Client-invoked (see the note on saveCharacterProfile above for why this
+// returns a result instead of calling redirect()) so it can be triggered from
+// a hover-reveal button in a list without navigating away from wherever the
+// user currently is. Multi-angle requests share an angle_group_id and are
+// always shown together as one card in History, so deleting one deletes the
+// whole group rather than leaving orphaned siblings behind.
+export async function deleteGeneration(formData: FormData): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const id = formData.get("id") as string;
+  if (!id) return { error: "Missing generation id." };
+
+  const { data: row } = await supabase
+    .from("generations")
+    .select("id, angle_group_id, content_type, result_url")
+    .eq("id", id)
+    .eq("user_id", userData.user.id)
+    .single();
+
+  if (!row) return { error: "Couldn't find that generation." };
+
+  const { data: group } = row.angle_group_id
+    ? await supabase
+        .from("generations")
+        .select("id, content_type, result_url")
+        .eq("angle_group_id", row.angle_group_id)
+        .eq("user_id", userData.user.id)
+    : { data: null };
+
+  const rows = group && group.length > 0 ? group : [row];
+
+  const { error } = await supabase
+    .from("generations")
+    .delete()
+    .eq("user_id", userData.user.id)
+    .in(
+      "id",
+      rows.map((r) => r.id),
+    );
+
+  if (error) {
+    console.error("deleteGeneration failed:", error.message);
+    return { error: "Couldn't delete this — try again." };
+  }
+
+  const imagePaths = rows
+    .filter((r) => r.content_type === "image")
+    .map((r) => extractStoragePath(r.result_url as string | null, "generated-images"))
+    .filter((p): p is string => Boolean(p));
+
+  if (imagePaths.length > 0) {
+    await supabase.storage.from("generated-images").remove(imagePaths);
+  }
+
+  revalidatePath("/app", "layout");
+  revalidatePath("/app/history");
+  revalidatePath("/app/images");
+  revalidatePath("/app/videos");
+
+  return { error: null };
+}
+
 export type HistoryTurn = {
   id: string;
   prompt: string;
@@ -616,39 +1213,106 @@ export type HistoryTurn = {
   createdAt: string;
 };
 
-// Loads a character's past generations so the Generate screen can resume as
-// an ongoing thread instead of starting blank every visit.
-export async function getGenerationHistory(
-  characterId: string,
-  contentType: ContentType,
-): Promise<HistoryTurn[]> {
+export type HistoryAngleClip = {
+  angleId: string;
+  id: string;
+  succeeded: boolean;
+  attempts: AttemptLog[];
+  finalPrompt: string;
+  resultUrl: string | null;
+};
+
+export type HistoryMultiAngleGroup = {
+  groupId: string;
+  prompt: string;
+  createdAt: string;
+  angles: HistoryAngleClip[];
+};
+
+// Mirrors the shape the Generate composer already builds live (ChatItem in
+// generate-form.tsx) — a flat list mixing single generations and grouped
+// multi-angle requests, ordered like a real conversation instead of the
+// History page's plain list.
+export type ChatHistoryItem =
+  | ({ kind: "single" } & HistoryTurn)
+  | ({ kind: "multi" } & HistoryMultiAngleGroup);
+
+// Loads exactly ONE saved history entry — a single generation, or, if it was
+// part of a multi-angle request, its whole angle group — so the Generate
+// screen can resume it as a fresh thread. Used by the "Continue chat" action
+// on the History pages (see history/[id]/page.tsx and history/page.tsx).
+//
+// Deliberately scoped to just this one entry, not "everything this character
+// has ever generated": each History card is its own separate conversation
+// (real incident, 2026-08-07 — an earlier version of this loaded a
+// character's ENTIRE history into one thread, silently merging unrelated
+// chats together, which is not what "continue THIS chat" means). Multi-angle
+// requests still get reconstructed as one grouped item (same shape the live
+// composer already renders) rather than N duplicate flat bubbles for what
+// was really one request.
+export async function getGenerationThread(generationId: string): Promise<ChatHistoryItem | null> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user || !characterId) return [];
+  if (!userData.user || !generationId) return null;
 
-  const { data, error } = await supabase
+  const columns = "id, prompt_input, content_type, status, result_url, pipeline_log, created_at, angle_group_id, angle";
+
+  const { data: row } = await supabase
     .from("generations")
-    .select("id, prompt_input, status, result_url, pipeline_log, created_at")
-    .eq("character_profile_id", characterId)
-    .eq("content_type", contentType)
-    .order("created_at", { ascending: true })
-    .limit(20);
+    .select(columns)
+    .eq("id", generationId)
+    .eq("user_id", userData.user.id)
+    .single();
 
-  if (error || !data) return [];
+  if (!row) return null;
 
-  return data.map((g) => {
-    const attempts = (g.pipeline_log ?? []) as AttemptLog[];
+  if (row.angle_group_id) {
+    const { data: siblings } = await supabase
+      .from("generations")
+      .select(columns)
+      .eq("angle_group_id", row.angle_group_id)
+      .eq("user_id", userData.user.id)
+      .order("created_at", { ascending: true });
+
+    const rows = siblings && siblings.length > 0 ? siblings : [row];
+    const sorted = rows
+      .slice()
+      .sort((a, b) => angleSortIndex(a.angle as string | null) - angleSortIndex(b.angle as string | null));
+    const earliest = rows.reduce(
+      (min, r) => ((r.created_at as string) < min ? (r.created_at as string) : min),
+      rows[0].created_at as string,
+    );
     return {
-      id: g.id,
-      prompt: g.prompt_input as string,
-      contentType,
-      attempts,
-      succeeded: g.status === "succeeded",
-      finalPrompt: attempts[attempts.length - 1]?.compiledPrompt ?? "",
-      resultUrl: g.result_url as string | null,
-      createdAt: g.created_at as string,
+      kind: "multi",
+      groupId: row.angle_group_id as string,
+      prompt: sorted[0].prompt_input as string,
+      createdAt: earliest,
+      angles: sorted.map((r) => {
+        const attempts = (r.pipeline_log ?? []) as AttemptLog[];
+        return {
+          angleId: r.angle as string,
+          id: r.id as string,
+          succeeded: r.status === "succeeded",
+          attempts,
+          finalPrompt: attempts[attempts.length - 1]?.compiledPrompt ?? "",
+          resultUrl: r.result_url as string | null,
+        };
+      }),
     };
-  });
+  }
+
+  const attempts = (row.pipeline_log ?? []) as AttemptLog[];
+  return {
+    kind: "single",
+    id: row.id as string,
+    prompt: row.prompt_input as string,
+    contentType: row.content_type as ContentType,
+    attempts,
+    succeeded: row.status === "succeeded",
+    finalPrompt: attempts[attempts.length - 1]?.compiledPrompt ?? "",
+    resultUrl: row.result_url as string | null,
+    createdAt: row.created_at as string,
+  };
 }
 
 export async function getReliabilityStats(userId: string) {
@@ -677,6 +1341,13 @@ export async function getReliabilityStats(userId: string) {
 
 // Real billing cycles arrive with Stripe (Task #6). Until then, "this
 // billing period" is approximated as the current calendar month.
+//
+// Sums credits_used rather than counting rows — pricier models (Kling O3)
+// cost more than 1 credit per video (see creditWeight in video-models.ts),
+// so two O3 videos should read as "used 4" against the plan limit, not "used
+// 2". credits_used is stored on each row at generation time (not looked up
+// live from the current catalog), so this stays accurate even if a model's
+// weight changes later — past usage doesn't retroactively shift.
 export async function getMonthlyUsage(userId: string) {
   const supabase = await createClient();
 
@@ -684,11 +1355,11 @@ export async function getMonthlyUsage(userId: string) {
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
 
-  const { count } = await supabase
+  const { data } = await supabase
     .from("generations")
-    .select("*", { count: "exact", head: true })
+    .select("credits_used")
     .eq("user_id", userId)
     .gte("created_at", startOfMonth.toISOString());
 
-  return count ?? 0;
+  return (data ?? []).reduce((sum, row) => sum + (Number(row.credits_used) || 1), 0);
 }

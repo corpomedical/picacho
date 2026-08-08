@@ -1,16 +1,29 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getReliabilityStats } from "@/lib/generations/actions";
+import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { GenerateForm } from "@/components/generate-form";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 
-// Video generation (Kling, via fal.ai) routinely takes 30s-3min. Most hosts
-// (Vercel included) cap a server action's run time well below that by
-// default — raise it here so a normal, successful-but-slow generation isn't
-// killed mid-flight.
-export const maxDuration = 200;
+// Video generation (Kling, via fal.ai) now polls fal.ai's queue API for up
+// to 10 minutes per attempt (see MAX_WAIT_MS in providers/fal.ts) before
+// giving up and cancelling — raised from a 180s client timeout after that
+// shorter timeout caused us to abandon (and re-bill) jobs that were still
+// running server-side. On top of that, optional dialogue post-processing
+// (ElevenLabs speech + Sync Labs lipsync) can add up to another 3 minutes.
+// 800s is Vercel's own ceiling for a Pro plan with Fluid Compute enabled —
+// set this to the max allowed rather than a number we picked, since a
+// generation that's legitimately still running must never be killed by our
+// own platform config.
+//
+// IMPORTANT before deploying to Vercel: Fluid Compute must be turned on for
+// this project. Without it, Hobby caps at 10s and Pro caps at 300s (5 min)
+// — both well under what a real video generation needs, which would bring
+// back the exact "killed while still running, billed anyway" problem this
+// was meant to fix.
+export const maxDuration = 800;
 
 export default async function GeneratePage() {
   const { t } = await getServerMessages();
@@ -18,12 +31,10 @@ export default async function GeneratePage() {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
 
-  const { data: characters } = await supabase
-    .from("character_profiles")
-    .select("id, name, reference_image_urls, voice_id")
-    .order("created_at", { ascending: false });
+  const { hasCharacter, charactersForForm, videoModels, defaultVideoModelId, elitePlanActive, approachingLimit } =
+    await getGenerateWorkspaceData(supabase, userData.user?.id);
 
-  if (!characters || characters.length === 0) {
+  if (!hasCharacter) {
     return (
       <div className="mx-auto max-w-md text-center">
         <Card>
@@ -41,56 +52,26 @@ export default async function GeneratePage() {
     ? await getReliabilityStats(userData.user.id)
     : { firstTryRate: null, avgAttempts: null, total: 0 };
 
-  // Reference photos, signed up front so the storyboard/multi-reference
-  // pickers in the composer (Kling advanced options) have something to show
-  // without a round trip when a character is selected. One batched sign
-  // call across every character's photos, rather than one call per photo.
-  const allPaths = characters.flatMap((c) => (c.reference_image_urls as string[] | null) ?? []);
-  const signedByPath = new Map<string, string>();
-  if (allPaths.length > 0) {
-    const { data: signedList } = await supabase.storage
-      .from("character-references")
-      .createSignedUrls(allPaths, 60 * 60);
-    for (const s of signedList ?? []) {
-      if (s.path && s.signedUrl) signedByPath.set(s.path, s.signedUrl);
-    }
-  }
-  const charactersForForm = characters.map((c) => ({
-    id: c.id as string,
-    name: c.name as string,
-    referencePhotos: ((c.reference_image_urls as string[] | null) ?? [])
-      .map((path) => ({ path, url: signedByPath.get(path) }))
-      .filter((p): p is { path: string; url: string } => Boolean(p.url)),
-    voiceId: (c.voice_id as string | null) ?? null,
-  }));
-
-  const { data: videoModelSetting } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", "video_model")
-    .single();
-  const klingActive = (videoModelSetting?.value ?? "kling") === "kling";
-
-  // Storyboard and multi-image reference are Elite-exclusive (admins get a
-  // free pass, same as the generation-cap exemption elsewhere).
-  const { data: profile } = userData.user
-    ? await supabase.from("profiles").select("plan, role").eq("id", userData.user.id).single()
-    : { data: null };
-  const elitePlanActive = profile?.plan === "elite" || profile?.role === "admin";
-
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">Generate</h1>
+      {!elitePlanActive && (
+        <div className="mb-3 flex justify-end">
+          <Link href="/app/settings?tab=usage">
+            <Button size="sm">{t.settings.upgrade}</Button>
+          </Link>
+        </div>
+      )}
+      <div className="mb-7 flex items-center justify-between gap-3">
+        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">Generate</h1>
         {stats.total > 0 && (
-          <div className="flex gap-6 text-right">
-            <div>
-              <p className="text-lg font-semibold text-neutral-900">{stats.firstTryRate}%</p>
-              <p className="text-xs text-neutral-500">first-try success</p>
+          <div className="flex gap-2">
+            <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 px-3.5 py-2 text-right">
+              <p className="text-base font-semibold text-neutral-900">{stats.firstTryRate}%</p>
+              <p className="text-[11px] text-neutral-500">first-try success</p>
             </div>
-            <div>
-              <p className="text-lg font-semibold text-neutral-900">{stats.avgAttempts}</p>
-              <p className="text-xs text-neutral-500">avg. attempts</p>
+            <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 px-3.5 py-2 text-right">
+              <p className="text-base font-semibold text-neutral-900">{stats.avgAttempts}</p>
+              <p className="text-[11px] text-neutral-500">avg. attempts</p>
             </div>
           </div>
         )}
@@ -98,8 +79,10 @@ export default async function GeneratePage() {
 
       <GenerateForm
         characters={charactersForForm}
-        klingActive={klingActive}
+        videoModels={videoModels}
+        defaultVideoModelId={defaultVideoModelId}
         elitePlanActive={elitePlanActive}
+        approachingLimit={approachingLimit}
       />
     </div>
   );

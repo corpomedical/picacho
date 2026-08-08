@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, type SVGProps } from "react";
-import { useRouter } from "next/navigation";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { useLocale } from "@/lib/i18n/provider";
 
@@ -17,15 +16,28 @@ function SendIcon(props: SVGProps<SVGSVGElement>) {
 // The dashboard's landing composer — typing here and sending just hands the
 // text off to the real Generate chat (as ?prompt=) rather than generating
 // anything itself, since that needs a character and content-type picked.
-export function HomeComposer() {
-  const router = useRouter();
+//
+// This component doesn't own the transition animation or the navigation
+// itself — it just reports "the user submitted this" up to HomeHero, which
+// fades the whole hero block out as one piece before navigating. See
+// home-hero.tsx for why: an earlier version tried to have this box travel
+// across the screen and reshape itself mid-flight, which looked like a glitch
+// rather than a transition. A plain, coordinated fade is far more reliable.
+export function HomeComposer({
+  disabled = false,
+  onSubmitPrompt,
+}: {
+  disabled?: boolean;
+  onSubmitPrompt: (dest: string) => void;
+}) {
   const { t } = useLocale();
   const d = t.dashboard;
   const [value, setValue] = useState("");
 
   function go() {
+    if (disabled) return;
     const trimmed = value.trim();
-    router.push(trimmed ? `/app/generate?prompt=${encodeURIComponent(trimmed)}` : "/app/generate");
+    onSubmitPrompt(trimmed ? `/app/generate?prompt=${encodeURIComponent(trimmed)}` : "/app/generate");
   }
 
   return (
@@ -48,7 +60,8 @@ export function HomeComposer() {
           }}
           placeholder={d.composerPlaceholder}
           autoFocus
-          className="min-w-0 flex-1 border-none bg-transparent px-2.5 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+          disabled={disabled}
+          className="min-w-0 flex-1 border-none bg-transparent px-2.5 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 disabled:opacity-60"
         />
         <VoiceRecorderButton
           onTranscript={(text) => setValue((prev) => (prev ? `${prev} ${text}` : text))}
@@ -58,7 +71,8 @@ export function HomeComposer() {
           type="submit"
           title={d.start}
           aria-label={d.start}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white transition-colors hover:bg-neutral-800"
+          disabled={disabled}
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-70"
         >
           <SendIcon className="h-4 w-4" />
         </button>

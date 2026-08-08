@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { createClient as createRawClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 /**
@@ -38,7 +39,6 @@ export async function createClient() {
  * (never sent to the browser) — e.g. the /admin area's data lookups.
  */
 export function createAdminClient() {
-  const { createClient: createRawClient } = require("@supabase/supabase-js");
   return createRawClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,

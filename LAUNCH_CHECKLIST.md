@@ -1,0 +1,38 @@
+# Picacho launch checklist
+
+From a full read-through of every page, every server action, and the live database, done 2026-08-06. Refreshed 2026-08-08 with a final-revision pass (see bottom section) before deploy.
+
+## Before launch (blocking)
+
+- [x] **Turn on real AI providers.** All three keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `FAL_KEY`) are saved in `.env.local` (2026-08-07), and `real_ai_providers` is now ON in the live database. Important caveat: I couldn't verify these keys actually work — my sandbox blocks outbound calls to api.anthropic.com, api.openai.com, and fal.ai (only an allowlisted set of domains, like Supabase, are reachable from here), so I could only confirm the keys were saved correctly, not that they're valid or that billing is set up on each provider. **First real test should be a real generation once the app is deployed (or run locally)** — if a generation fails, the most likely causes are a typo in a key or billing not finished on one of the three provider dashboards.
+- [ ] **Add at least one real voice.** `voice_presets` is still empty — the dialogue/lip-sync feature is fully built but inert. Go to elevenlabs.io/voice-library, preview a few, and paste one's `voice_id` in (Admin > Voices, or just hand it to me and I'll add the row directly). One thing worth knowing: ElevenLabs' classic named voices (Rachel, Adam, Bella, George, etc.) are being retired and expire December 31, 2026 — pick from their current library, not those.
+- [x] **Verify OAuth sign-in actually works.** Google and Facebook are both configured (2026-08-07) — real Client ID/Secret entered in Supabase for each, both providers enabled. Facebook's app is still in Development mode on Meta's side, so only you (and anyone added as a tester on the Facebook app) can sign in with it until it's switched to Live — fine for now, revisit before public launch. Microsoft is on hold: the personal Microsoft account hit a wall needing a real Azure AD tenant (M365 Developer sandbox declined it, Azure free signup wants a card) — its button is commented out in `oauth-buttons.tsx` until that's sorted, so it won't show as a broken option on the login page.
+- [x] **"Allow new signups" flag.** Now a real kill switch (2026-08-06) — `/signup` and the `signup` action both check it server-side. Off shows a "signups are closed" screen instead of the form; missing/errored row fails open so a database hiccup can't silently lock everyone out.
+- [x] **Connect Stripe.** Checkout, the Customer Portal, and a webhook that keeps `profiles.plan` in sync are all built (2026-08-06), running on test-mode keys. Three things still needed before real money can move:
+  - [x] Create the 4 products/prices in the Stripe Dashboard and give Claude the Price IDs so `src/lib/stripe/plans.ts` can be filled in. Done 2026-08-06 — checkout buttons on `/pricing` and Settings > Usage & plan now work end-to-end in test mode.
+  - [ ] Once deployed, register the webhook endpoint (Stripe Dashboard > Developers > Webhooks > Add endpoint, URL `https://<your-domain>/api/webhooks/stripe`, events: `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`) and put the signing secret it gives you into `STRIPE_WEBHOOK_SECRET`.
+  - [ ] Turn on the Customer Portal's "customers can switch plans" setting (Stripe Dashboard > Settings > Billing > Customer portal) so existing subscribers can actually change tiers, not just cancel.
+  - [ ] Swap the test-mode keys in `.env.local` / production env for live keys once Stripe finishes approving the account.
+- [x] **Studio/Elite overage pricing.** Dropped the "$2.50 per additional generation" promise from the pricing page and plan cards (2026-08-06) — it matches real behavior now (hard cap, upgrade to raise it). Also found and removed a second dead control while in there: a `studio_overage_billing` feature flag that, like the signups flag above, existed in the database with zero code ever reading it. If metered overage billing gets built later, it's a new feature from scratch, not a flag flip.
+- [ ] **Set `NEXT_PUBLIC_SITE_URL`** in production (confirmed still missing from `.env.local` as of 2026-08-08) so `sitemap.ts` (and Stripe's checkout redirect URLs) point at the real domain instead of falling back to a placeholder/localhost. Blocked on picking a domain / deploying — I'll set it the moment there's a real URL to point at.
+- [ ] **Confirm Supabase's email-confirmation setting** matches the "check your email to confirm your account" message shown after signup — if confirmation is off, that message is misleading; if it's on, make sure the confirmation email itself is set up and on-brand. Couldn't check this one myself (2026-08-08) — it's a GoTrue/Auth platform setting, not something queryable through the database connection my tools have; needs a look in Supabase Dashboard > Authentication > Sign In / Providers > Email.
+- [ ] **No git remote / never deployed anywhere.** Confirmed 2026-08-08: the local repo has no `git remote` configured and has never been pushed to GitHub or connected to Vercel. Nothing else on this list involving "once deployed" can happen until this is done — needs a GitHub repo and a Vercel account (both yours to create/connect; I can walk through each step).
+
+## After launch (polish, not blocking)
+
+- [x] Highlight the active tab in the admin nav bar (2026-08-07) — new `AdminNav` client component compares the current path and bolds/underlines the matching tab.
+- [x] Surface admin action failures in the UI (2026-08-07) — every admin server action (suspend/reinstate user, change role, change plan, toggle flag, edit setting, switch AI model, add/remove voice) now redirects back with `?error=...` on failure instead of only logging server-side; each admin page reads that param and shows it via a shared `AdminErrorBanner`.
+- [x] Add a guardrail so an admin can't accidentally suspend or demote their own account (2026-08-07) — `setUserStatus` blocks self-suspend and `setUserRole` blocks self-demotion, both surfaced as an error banner instead of failing silently.
+- [ ] Add "Sign in with Apple" once there's a paid Apple Developer account — already scaffolded in `oauth-buttons.tsx`, just commented out.
+- [ ] Add a real subscription-events log so Admin > Billing's "Canceled" card can become an actual churn *rate* over time, instead of a current snapshot.
+- [ ] Revisit Admin > Stats' country breakdown once deployed to Vercel — it reads geolocation headers that only exist in production.
+- [ ] Consider whether admin's own generation/history views should visually distinguish "viewing someone else's data" from your own, since clicking into a user's generation from Admin > Users currently looks identical to your own History page.
+
+## Already solid (verified, no action needed)
+
+- Row-level security is enabled and correctly scoped (`auth.uid() = user_id`) on every table — checked directly against the live database's policies.
+- Every admin server action independently re-checks admin status server-side, not just the page-level guard.
+- Admin > Billing now shows real MRR/failed-payment/canceled numbers from Stripe's webhook data instead of placeholders. System-health pages still show honest "—" placeholders where nothing real exists yet.
+- Cookie consent is legally sound — analytics genuinely stays off until explicitly accepted.
+- All 4 languages (EN/ES/PT/IT) have identical message-key coverage, enforced by TypeScript.
+- Destructive actions (delete account/project/character/generation) all require confirmation.

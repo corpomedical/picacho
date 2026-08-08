@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { Logo } from "@/components/logo";
 
 // Next.js requires error.tsx to be a Client Component — it receives the
 // thrown error and a reset() callback to re-render the segment without a
@@ -23,9 +24,7 @@ export default function ErrorBoundary({
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 px-8 text-center">
-      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-neutral-900 text-sm font-semibold text-white">
-        P
-      </span>
+      <Logo className="h-9" />
       <h1 className="mt-6 text-xl font-semibold text-neutral-900">{t.errors.somethingWrongTitle}</h1>
       <p className="mt-2 max-w-sm text-sm text-neutral-500">{t.errors.somethingWrongSubtitle}</p>
       <div className="mt-6 flex items-center gap-3">

@@ -66,7 +66,10 @@ const PROVIDERS: { id: Provider; label: string; icon: (props: SVGProps<SVGSVGEle
   // Apple is left out until there's a paid Apple Developer account to set up
   // "Sign in with Apple" credentials — add it back in here once that's done:
   // { id: "apple", label: "Continue with Apple", icon: AppleIcon },
-  { id: "azure", label: "Continue with Microsoft", icon: MicrosoftIcon },
+  // Microsoft is left out until its Azure AD app registration is sorted out
+  // (personal Microsoft accounts need a real Azure tenant, which hit signup
+  // friction on 2026-08-07) — add it back in here once that's resolved:
+  // { id: "azure", label: "Continue with Microsoft", icon: MicrosoftIcon },
   { id: "facebook", label: "Continue with Facebook", icon: FacebookIcon },
 ];
 

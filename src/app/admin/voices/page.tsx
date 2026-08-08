@@ -3,8 +3,14 @@ import { addVoicePreset, deleteVoicePreset } from "@/lib/admin/actions";
 import { Card } from "@/components/ui/card";
 import { Label, Input } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
+import { AdminErrorBanner } from "@/components/admin-error-banner";
 
-export default async function AdminVoicesPage() {
+export default async function AdminVoicesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error: actionError } = await searchParams;
   const supabase = await createClient();
   const { data: voices } = await supabase
     .from("voice_presets")
@@ -13,6 +19,7 @@ export default async function AdminVoicesPage() {
 
   return (
     <div>
+      <AdminErrorBanner error={actionError} />
       <h1 className="text-lg font-semibold text-neutral-900">Character voices</h1>
       <p className="mt-1 text-sm text-neutral-500">
         Curated ElevenLabs voices users can assign to a character for lip-synced dialogue (runs

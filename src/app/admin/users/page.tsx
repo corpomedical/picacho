@@ -5,6 +5,7 @@ import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
+import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { cn } from "@/lib/cn";
 
 const TABS = [
@@ -17,9 +18,9 @@ const TABS = [
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; error?: string }>;
 }) {
-  const { q, status } = await searchParams;
+  const { q, status, error: actionError } = await searchParams;
   const activeTab = TABS.some((t) => t.id === status) ? status! : "all";
   const supabase = await createClient();
 
@@ -37,6 +38,7 @@ export default async function AdminUsersPage({
 
   return (
     <div>
+      <AdminErrorBanner error={actionError} />
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-neutral-900">Users</h1>
         <form className="w-64">
@@ -84,6 +86,7 @@ export default async function AdminUsersPage({
                   </Badge>
                   <form action={setUserStatus}>
                     <input type="hidden" name="user_id" value={user.id} />
+                    <input type="hidden" name="redirect_to" value="/admin/users" />
                     <input
                       type="hidden"
                       name="status"

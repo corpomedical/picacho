@@ -37,7 +37,27 @@ export async function draftWithClaude(instructions: string): Promise<string> {
   }
 
   const data = await res.json();
-  const text = data?.content?.[0]?.text as string | undefined;
-  if (!text) throw new Error("Claude returned an empty response.");
-  return text.trim();
+  // Scan every content block for the first one with real text, rather than
+  // only ever trusting content[0] — Claude's response can include non-text
+  // blocks (e.g. a thinking block) ahead of the actual text block, and
+  // content[0].text would be undefined in that case even though the model
+  // did produce a usable response. Real incident, 2026-08-08: a retried
+  // generation failed 3/3 attempts with a bare "empty response" and no way
+  // to tell why — this both fixes the case where a real answer was sitting
+  // later in the array, and (if the response genuinely has no text
+  // anywhere) surfaces the actual stop_reason and raw payload instead of a
+  // dead-end message, so the next failure is diagnosable.
+  const blocks = Array.isArray(data?.content) ? data.content : [];
+  const textBlock = blocks.find(
+    (block: unknown): block is { text: string } =>
+      typeof block === "object" && block !== null && typeof (block as { text?: unknown }).text === "string" &&
+      (block as { text: string }).text.length > 0,
+  );
+  if (!textBlock) {
+    const stopReason = data?.stop_reason ? ` stop_reason=${data.stop_reason}` : "";
+    throw new Error(
+      `Claude returned an empty response.${stopReason} ${JSON.stringify(data).slice(0, 300)}`,
+    );
+  }
+  return textBlock.text.trim();
 }

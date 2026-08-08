@@ -27,7 +27,11 @@ export async function reviewWithOpenAI(instructions: string): Promise<string> {
       body: JSON.stringify({
         model,
         messages: [{ role: "user", content: instructions }],
-        max_tokens: 500,
+        // OpenAI deprecated `max_tokens` in favor of this for current chat
+        // models (gpt-5.4-mini and newer reject max_tokens outright with a
+        // 400 "unsupported_parameter" error) — found via a real end-to-end
+        // test run, 2026-08-07.
+        max_completion_tokens: 500,
       }),
     },
     25_000,

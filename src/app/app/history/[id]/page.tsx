@@ -7,6 +7,10 @@ import { Button } from "@/components/ui/button";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
 import { angleSortIndex } from "@/lib/generations/angles";
 import { AngleResultViewer } from "@/components/angle-result-viewer";
+import { DeleteGenerationButton } from "@/components/delete-generation-button";
+import { DownloadButton } from "@/components/download-button";
+import { ResultActions } from "@/components/result-actions";
+import type { GenerationFeedback } from "@/lib/generations/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -49,7 +53,7 @@ export default async function HistoryDetailPage({
   const { data: angleSiblings } = generation.angle_group_id
     ? await supabase
         .from("generations")
-        .select("id, angle, status, result_url, pipeline_log")
+        .select("id, angle, status, result_url, pipeline_log, feedback")
         .eq("angle_group_id", generation.angle_group_id)
         .order("created_at", { ascending: true })
     : { data: null };
@@ -58,7 +62,18 @@ export default async function HistoryDetailPage({
     .slice()
     .sort((a, b) => angleSortIndex(a.angle) - angleSortIndex(b.angle));
 
+  // Which of these generation(s) already have a "report a problem" on file —
+  // just enough to show the flag button in its already-reported state, not
+  // the report contents themselves (that's admin/reports' job).
+  const reportableIds = [generation.id, ...sortedAngleRows.map((r) => r.id)];
+  const { data: existingReports } = await supabase
+    .from("generation_reports")
+    .select("generation_id")
+    .in("generation_id", reportableIds);
+  const reportedIds = new Set((existingReports ?? []).map((r) => r.generation_id));
+
   const attempts = (generation.pipeline_log ?? []) as AttemptLog[];
+  const finalPrompt = attempts[attempts.length - 1]?.compiledPrompt || generation.prompt_input || "";
 
   const statusLabel =
     generation.status === "succeeded"
@@ -70,9 +85,23 @@ export default async function HistoryDetailPage({
 
   return (
     <div className="mx-auto max-w-2xl">
-      <Link href="/app/history" className="text-sm text-neutral-500 hover:text-neutral-900">
-        ← {h.backToHistory}
-      </Link>
+      <div className="flex items-center justify-between gap-4">
+        <Link href="/app/history" className="text-sm text-neutral-500 hover:text-neutral-900">
+          ← {h.backToHistory}
+        </Link>
+        <div className="flex items-center gap-3">
+          {generation.character_profile_id && (
+            <Link
+              href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}
+            >
+              <Button variant="secondary" size="sm">
+                {h.continueChat}
+              </Button>
+            </Link>
+          )}
+          <DeleteGenerationButton id={generation.id} variant="full" redirectAfter="/app/history" />
+        </div>
+      </div>
 
       <Card className="mt-4">
         <div className="flex items-start justify-between gap-4">
@@ -94,7 +123,9 @@ export default async function HistoryDetailPage({
       </Card>
 
       {sortedAngleRows.length > 1 ? (
-        <AngleResultViewer rows={sortedAngleRows} />
+        <AngleResultViewer
+          rows={sortedAngleRows.map((r) => ({ ...r, reported: reportedIds.has(r.id) }))}
+        />
       ) : (
         <>
           <Card className="mt-4">
@@ -121,44 +152,54 @@ export default async function HistoryDetailPage({
             </ol>
           </Card>
 
-          <Card className="mt-4">
+          <Card className="group mt-4">
             <h2 className="text-sm font-semibold text-neutral-900">{h.result}</h2>
             {generation.status === "succeeded" ? (
               <>
                 {generation.result_url?.startsWith("http") ? (
                   generation.content_type === "image" ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={generation.result_url}
-                      alt={generation.prompt_input || t.generate.resultAlt}
-                      className="mt-3 w-full rounded-[14px] bg-neutral-100 object-cover"
-                    />
+                    <div className="relative mt-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={generation.result_url}
+                        alt={generation.prompt_input || t.generate.resultAlt}
+                        className="w-full rounded-[14px] bg-neutral-100 object-cover"
+                      />
+                      <DownloadButton url={generation.result_url} contentType="image" />
+                    </div>
                   ) : (
-                    <video
-                      src={generation.result_url}
-                      controls
-                      aria-label={generation.prompt_input}
-                      className="mt-3 aspect-video w-full rounded-[14px] bg-neutral-950"
-                    />
+                    <div className="relative mt-3">
+                      <video
+                        src={generation.result_url}
+                        controls
+                        aria-label={generation.prompt_input}
+                        className="aspect-video w-full rounded-[14px] bg-neutral-950"
+                      />
+                      <DownloadButton url={generation.result_url} contentType="video" />
+                    </div>
                   )
                 ) : (
-                  <div className="mt-3 flex aspect-video items-center justify-center rounded-[14px] bg-neutral-100 text-center">
-                    <p className="max-w-xs px-4 text-xs text-neutral-500">
-                      {formatMsg(t.generate.simulatedResult, { type: typeLabel.toLowerCase() })}
-                    </p>
-                  </div>
+                  <>
+                    <div className="mt-3 flex aspect-video items-center justify-center rounded-[14px] bg-neutral-100 text-center">
+                      <p className="max-w-xs px-4 text-xs text-neutral-500">
+                        {formatMsg(t.generate.simulatedResult, { type: typeLabel.toLowerCase() })}
+                      </p>
+                    </div>
+                    <div className="mt-4">
+                      <Button variant="secondary" disabled>
+                        {h.downloadUnavailable}
+                      </Button>
+                    </div>
+                  </>
                 )}
-                <div className="mt-4">
-                  {generation.result_url?.startsWith("http") ? (
-                    <a href={generation.result_url} download>
-                      <Button variant="secondary">{h.download}</Button>
-                    </a>
-                  ) : (
-                    <Button variant="secondary" disabled>
-                      {h.downloadUnavailable}
-                    </Button>
-                  )}
-                </div>
+                {generation.result_url?.startsWith("http") && (
+                  <ResultActions
+                    generationId={generation.id}
+                    copyText={finalPrompt}
+                    initialFeedback={(generation.feedback ?? null) as GenerationFeedback}
+                    initialReported={reportedIds.has(generation.id)}
+                  />
+                )}
               </>
             ) : (
               <p className="mt-2 text-sm text-neutral-500">

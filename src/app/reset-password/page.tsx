@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { ResetPasswordForm } from "@/components/reset-password-form";
 import { getServerMessages } from "@/lib/i18n/server";
+import { Logo } from "@/components/logo";
 
 export default async function ResetPasswordPage() {
   // Only reachable with a valid (recovery) session — someone landing here
@@ -19,9 +20,7 @@ export default async function ResetPasswordPage() {
     <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-8">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex justify-center">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-neutral-900 text-sm font-semibold text-white">
-            P
-          </span>
+          <Logo className="h-8" />
         </div>
         <Card>
           <h1 className="text-xl font-semibold text-neutral-900">{r.title}</h1>

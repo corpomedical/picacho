@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { DownloadButton } from "@/components/download-button";
+import { ResultActions } from "@/components/result-actions";
+import type { GenerationFeedback } from "@/lib/generations/actions";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
 import { getAnglePreset } from "@/lib/generations/angles";
 import { useLocale } from "@/lib/i18n/provider";
@@ -15,6 +18,8 @@ export type AngleRow = {
   status: string;
   result_url: string | null;
   pipeline_log: unknown;
+  feedback: string | null;
+  reported: boolean;
 };
 
 // Replaces the single "Pipeline log" + "Result" cards on the history detail
@@ -34,6 +39,7 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
   const [activeId, setActiveId] = useState(rows[0]?.id ?? "");
   const active = rows.find((r) => r.id === activeId) ?? rows[0];
   const attempts = (active?.pipeline_log ?? []) as AttemptLog[];
+  const finalPrompt = attempts[attempts.length - 1]?.compiledPrompt || "";
 
   return (
     <>
@@ -82,35 +88,43 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
         </ol>
       </Card>
 
-      <Card className="mt-4">
+      <Card className="group mt-4">
         <h2 className="text-sm font-semibold text-neutral-900">{h.result}</h2>
         {active?.status === "succeeded" ? (
           <>
             {active.result_url?.startsWith("http") ? (
-              <video
-                src={active.result_url}
-                controls
-                aria-label={getAnglePreset(active.angle ?? "")?.label ?? h.angleFallback}
-                className="mt-3 aspect-video w-full rounded-[14px] bg-neutral-950"
-              />
-            ) : (
-              <div className="mt-3 flex aspect-video items-center justify-center rounded-[14px] bg-neutral-100 text-center">
-                <p className="max-w-xs px-4 text-xs text-neutral-500">
-                  {formatMsg(t.generate.simulatedResult, { type: t.generate.video.toLowerCase() })}
-                </p>
+              <div className="relative mt-3">
+                <video
+                  src={active.result_url}
+                  controls
+                  aria-label={getAnglePreset(active.angle ?? "")?.label ?? h.angleFallback}
+                  className="aspect-video w-full rounded-[14px] bg-neutral-950"
+                />
+                <DownloadButton url={active.result_url} contentType="video" />
               </div>
+            ) : (
+              <>
+                <div className="mt-3 flex aspect-video items-center justify-center rounded-[14px] bg-neutral-100 text-center">
+                  <p className="max-w-xs px-4 text-xs text-neutral-500">
+                    {formatMsg(t.generate.simulatedResult, { type: t.generate.video.toLowerCase() })}
+                  </p>
+                </div>
+                <div className="mt-4">
+                  <Button variant="secondary" disabled>
+                    {h.downloadUnavailable}
+                  </Button>
+                </div>
+              </>
             )}
-            <div className="mt-4">
-              {active.result_url?.startsWith("http") ? (
-                <a href={active.result_url} download>
-                  <Button variant="secondary">{h.download}</Button>
-                </a>
-              ) : (
-                <Button variant="secondary" disabled>
-                  {h.downloadUnavailable}
-                </Button>
-              )}
-            </div>
+            {active.result_url?.startsWith("http") && (
+              <ResultActions
+                key={active.id}
+                generationId={active.id}
+                copyText={finalPrompt}
+                initialFeedback={(active.feedback ?? null) as GenerationFeedback}
+                initialReported={active.reported}
+              />
+            )}
           </>
         ) : (
           <p className="mt-2 text-sm text-neutral-500">

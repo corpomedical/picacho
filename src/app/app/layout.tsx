@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
+import { AppErrorReporter } from "@/components/app-error-reporter";
 
 export default async function AppLayout({
   children,
@@ -21,7 +22,7 @@ export default async function AppLayout({
     { data: projects },
     { data: supportEmailSetting },
   ] = await Promise.all([
-    supabase.from("profiles").select("role, username").eq("id", data.user.id).single(),
+    supabase.from("profiles").select("role, username, skip_ai_refinement").eq("id", data.user.id).single(),
     supabase
       .from("generations")
       .select("id, prompt_input, status, content_type")
@@ -47,6 +48,7 @@ export default async function AppLayout({
 
   return (
     <div className="flex h-screen overflow-hidden">
+      <AppErrorReporter />
       <AppSidebar
         isAdmin={isAdmin}
         username={profile?.username ?? (data.user.email ?? "").split("@")[0]}
@@ -54,6 +56,7 @@ export default async function AppLayout({
         characters={characters ?? []}
         projects={projects ?? []}
         supportEmail={supportEmailSetting?.value ?? "support@picacho.app"}
+        skipAiRefinement={profile?.skip_ai_refinement === true}
       />
       <div className="min-w-0 flex-1 overflow-y-auto">
         {/* pt-14 clears the fixed mobile top bar (see AppSidebar); not needed

@@ -9,7 +9,7 @@ const PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
 
 export default async function AdminBillingPage() {
   const supabase = await createClient();
-  const { data: profiles } = await supabase.from("profiles").select("plan");
+  const { data: profiles } = await supabase.from("profiles").select("plan, plan_status");
 
   const distribution = Object.fromEntries(
     (Object.keys(PLAN_LIMITS) as PlanId[]).map((plan) => [plan, 0]),
@@ -20,10 +20,16 @@ export default async function AdminBillingPage() {
     distribution[plan] = (distribution[plan] ?? 0) + 1;
   });
 
-  const mrr = (Object.keys(distribution) as PlanId[]).reduce(
-    (sum, plan) => sum + distribution[plan] * (PRICE_BY_PLAN[plan] ?? 0),
-    0,
-  );
+  // Only "active" reflects money actually being collected right now —
+  // comped plans (assigned manually, no real subscription) and past_due
+  // ones (payment failed, hasn't retried successfully yet) don't count.
+  const mrr = (profiles ?? []).reduce((sum, p) => {
+    if (p.plan_status !== "active") return sum;
+    const plan = (p.plan ?? "none") as PlanId;
+    return sum + (PRICE_BY_PLAN[plan] ?? 0);
+  }, 0);
+  const pastDueCount = (profiles ?? []).filter((p) => p.plan_status === "past_due").length;
+  const canceledCount = (profiles ?? []).filter((p) => p.plan_status === "canceled").length;
 
   return (
     <div>
@@ -33,17 +39,19 @@ export default async function AdminBillingPage() {
         <Card>
           <p className="text-sm text-neutral-500">MRR</p>
           <p className="mt-1 text-2xl font-semibold text-neutral-900">${mrr}</p>
-          <p className="mt-1 text-xs text-neutral-400">Computed from assigned plans</p>
-        </Card>
-        <Card>
-          <p className="text-sm text-neutral-500">Churn</p>
-          <p className="mt-1 text-2xl font-semibold text-neutral-300">—</p>
-          <p className="mt-1 text-xs text-neutral-400">Needs Stripe connected</p>
+          <p className="mt-1 text-xs text-neutral-400">From active Stripe subscriptions only</p>
         </Card>
         <Card>
           <p className="text-sm text-neutral-500">Failed payments</p>
-          <p className="mt-1 text-2xl font-semibold text-neutral-300">—</p>
-          <p className="mt-1 text-xs text-neutral-400">Needs Stripe connected</p>
+          <p className="mt-1 text-2xl font-semibold text-neutral-900">{pastDueCount}</p>
+          <p className="mt-1 text-xs text-neutral-400">Accounts past due right now</p>
+        </Card>
+        <Card>
+          <p className="text-sm text-neutral-500">Canceled</p>
+          <p className="mt-1 text-2xl font-semibold text-neutral-900">{canceledCount}</p>
+          <p className="mt-1 text-xs text-neutral-400">
+            Snapshot, not a rate — a proper churn-rate needs a subscription-events log we don&apos;t have yet
+          </p>
         </Card>
       </div>
 

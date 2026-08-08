@@ -10,6 +10,7 @@ import {
 } from "@/lib/characters/actions";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
+import { ImageLightbox } from "@/components/image-lightbox";
 
 type ExistingImage = { path: string; url: string };
 
@@ -62,6 +63,7 @@ export function CharacterForm({
 
   const [keptImages, setKeptImages] = useState<ExistingImage[]>(existingImages);
   const [newFiles, setNewFiles] = useState<{ file: File; preview: string }[]>([]);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(errorMessage ?? "");
@@ -228,8 +230,15 @@ export function CharacterForm({
         <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
           {keptImages.map((img) => (
             <div key={img.path} className="group relative aspect-square overflow-hidden rounded-[10px] bg-neutral-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={img.url} alt="" className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => setLightboxUrl(img.url)}
+                aria-label={c.viewImage}
+                className="block h-full w-full cursor-zoom-in"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.url} alt="" className="h-full w-full object-cover" />
+              </button>
               <button
                 type="button"
                 onClick={() => setKeptImages(keptImages.filter((i) => i.path !== img.path))}
@@ -241,8 +250,15 @@ export function CharacterForm({
           ))}
           {newFiles.map((f, idx) => (
             <div key={f.preview} className="group relative aspect-square overflow-hidden rounded-[10px] bg-neutral-100">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={f.preview} alt="" className="h-full w-full object-cover" />
+              <button
+                type="button"
+                onClick={() => setLightboxUrl(f.preview)}
+                aria-label={c.viewImage}
+                className="block h-full w-full cursor-zoom-in"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={f.preview} alt="" className="h-full w-full object-cover" />
+              </button>
               <button
                 type="button"
                 onClick={() => setNewFiles(newFiles.filter((_, i) => i !== idx))}
@@ -438,6 +454,7 @@ export function CharacterForm({
           </button>
         </form>
       )}
+      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
     </div>
   );
 }

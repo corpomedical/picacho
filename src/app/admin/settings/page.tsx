@@ -3,8 +3,14 @@ import { updateAppSetting } from "@/lib/admin/actions";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label, Input } from "@/components/ui/field";
+import { AdminErrorBanner } from "@/components/admin-error-banner";
 
-export default async function AdminSettingsPage() {
+export default async function AdminSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error: actionError } = await searchParams;
   const supabase = await createClient();
   const { data: settings } = await supabase
     .from("app_settings")
@@ -13,6 +19,7 @@ export default async function AdminSettingsPage() {
 
   return (
     <div>
+      <AdminErrorBanner error={actionError} />
       <h1 className="text-lg font-semibold text-neutral-900">Settings</h1>
       <p className="mt-1 text-sm text-neutral-500">
         App-wide configuration. Changes apply immediately, no redeploy needed.

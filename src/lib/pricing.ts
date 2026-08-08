@@ -33,10 +33,8 @@ export const PRICING_TIERS = [
     price: 299,
     generations: 150,
     highlight: false,
-    overageNote: "then $2.50 per additional generation",
     features: [
       "150 generations / month",
-      "$2.50 per generation after that",
       "Unlimited character profiles",
       "Full draft → review → validate pipeline",
     ],
@@ -47,10 +45,8 @@ export const PRICING_TIERS = [
     price: 499,
     generations: 300,
     highlight: false,
-    overageNote: "then $2.50 per additional generation",
     features: [
       "300 generations / month",
-      "$2.50 per generation after that",
       "Unlimited character profiles",
       "Full draft → review → validate pipeline",
       "Storyboard — set a start and end frame for a shot",

@@ -154,6 +154,47 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   }
 }
 
+// Same delete as below, but client-invoked and returning a result instead of
+// redirecting — for the sidebar's quick-delete button, which can be clicked
+// from any page and shouldn't yank the user over to the character list just
+// because they deleted one from the Recent/Characters rail. Mirrors the
+// deleteProject/removeProject split in lib/projects/actions.ts.
+export async function removeCharacterProfile(formData: FormData): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const id = formData.get("id") as string;
+  if (!id) return { error: "Missing character id." };
+
+  const { data: existing } = await supabase
+    .from("character_profiles")
+    .select("reference_image_urls")
+    .eq("id", id)
+    .eq("user_id", data.user.id)
+    .single();
+
+  const { error } = await supabase
+    .from("character_profiles")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", data.user.id);
+
+  if (error) {
+    console.error("removeCharacterProfile failed:", error.message);
+    return { error: "Couldn't delete this character — try again." };
+  }
+
+  const paths = (existing?.reference_image_urls as string[] | null) ?? [];
+  if (paths.length > 0) {
+    await supabase.storage.from("character-references").remove(paths);
+  }
+
+  revalidatePath("/app", "layout");
+  revalidatePath("/app/character");
+  return { error: null };
+}
+
 export async function deleteCharacterProfile(formData: FormData) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();

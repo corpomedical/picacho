@@ -6,6 +6,8 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
+import { DeleteGenerationButton } from "@/components/delete-generation-button";
+import { ContinueChatButton } from "@/components/continue-chat-button";
 
 export default async function HistoryPage() {
   const { t } = await getServerMessages();
@@ -106,7 +108,7 @@ export default async function HistoryPage() {
           </Card>
         ) : (
           cards.map((g) => (
-            <Link key={g.id} href={`/app/history/${g.id}`} className="block">
+            <Link key={g.id} href={`/app/history/${g.id}`} className="group block">
               <Card className="flex items-center justify-between gap-4 p-5 transition-shadow hover:shadow-[0_8px_20px_-10px_rgba(0,0,0,0.12)]">
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium text-neutral-900">
@@ -135,6 +137,18 @@ export default async function HistoryPage() {
                   >
                     {statusLabel(g.status)}
                   </Badge>
+                  {g.character_profile_id && (
+                    <ContinueChatButton
+                      characterId={g.character_profile_id}
+                      contentType={g.content_type}
+                      generationId={g.id}
+                      className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                    />
+                  )}
+                  <DeleteGenerationButton
+                    id={g.id}
+                    className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                  />
                 </div>
               </Card>
             </Link>

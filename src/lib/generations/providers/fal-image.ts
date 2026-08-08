@@ -7,7 +7,7 @@ import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout
 
 export async function generateImageWithFlux(
   prompt: string,
-  referenceImageUrl?: string | null,
+  referenceImageUrl?: string | string[] | null,
 ): Promise<string> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) {
@@ -17,11 +17,25 @@ export async function generateImageWithFlux(
     );
   }
 
+  // Flux's image-to-image endpoint here (fal-ai/flux/dev/image-to-image)
+  // only ever accepts one source image to edit/vary — it has no equivalent
+  // of OpenAI's multi-image edit for compositing several distinct
+  // characters into one picture. actions.ts already blocks this combination
+  // before spending a generation attempt (see the imageModelId check in
+  // runGeneration); this is a backstop in case this function is ever called
+  // directly with 2+ URLs some other way.
+  if (Array.isArray(referenceImageUrl) && referenceImageUrl.length >= 2) {
+    throw new Error(
+      "Flux can't combine multiple different characters into one image — switch the image model to GPT Image 2.",
+    );
+  }
+  const singleReferenceUrl = Array.isArray(referenceImageUrl) ? referenceImageUrl[0] : referenceImageUrl;
+
   const model = getImageModel("flux");
   if (model.provider !== "fal") throw new Error("Flux model config is misconfigured.");
 
-  const endpoint = referenceImageUrl ? model.falImageToImage : model.falTextToImage;
-  const body = referenceImageUrl ? { prompt, image_url: referenceImageUrl } : { prompt };
+  const endpoint = singleReferenceUrl ? model.falImageToImage : model.falTextToImage;
+  const body = singleReferenceUrl ? { prompt, image_url: singleReferenceUrl } : { prompt };
 
   const res = await fetchWithTimeout(
     `https://fal.run/${endpoint}`,

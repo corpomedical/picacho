@@ -21,6 +21,19 @@ export async function login(formData: FormData) {
 export async function signup(formData: FormData) {
   const supabase = await createClient();
 
+  // Re-checked here, not just hidden in the UI — the signup page itself
+  // already gates on this, but this is the actual enforcement in case
+  // someone posts to this action directly. Fails open on a missing/errored
+  // row, same as the page.
+  const { data: flag } = await supabase
+    .from("feature_flags")
+    .select("enabled")
+    .eq("key", "signups_enabled")
+    .single();
+  if (flag?.enabled === false) {
+    redirect(`/signup?error=${encodeURIComponent("New signups are currently closed.")}`);
+  }
+
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const agreed = formData.get("agree_to_terms") === "on";

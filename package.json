@@ -13,7 +13,8 @@
     "react": "latest",
     "react-dom": "latest",
     "@supabase/supabase-js": "latest",
-    "@supabase/ssr": "latest"
+    "@supabase/ssr": "latest",
+    "stripe": "latest"
   },
   "devDependencies": {
     "typescript": "latest",

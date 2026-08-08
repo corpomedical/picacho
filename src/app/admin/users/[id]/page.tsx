@@ -6,13 +6,17 @@ import { PLAN_LIMITS } from "@/lib/plans";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AdminErrorBanner } from "@/components/admin-error-banner";
 
 export default async function AdminUserDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
   const { id } = await params;
+  const { error: actionError } = await searchParams;
   const supabase = await createClient();
 
   const { data: user } = await supabase.from("profiles").select("*").eq("id", id).single();
@@ -38,6 +42,10 @@ export default async function AdminUserDetailPage({
         ← Users
       </Link>
 
+      <div className="mt-4">
+        <AdminErrorBanner error={actionError} />
+      </div>
+
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1">
           <p className="text-sm font-medium text-neutral-900">{user.email}</p>
@@ -50,6 +58,7 @@ export default async function AdminUserDetailPage({
 
           <form action={setUserStatus} className="mt-4">
             <input type="hidden" name="user_id" value={user.id} />
+            <input type="hidden" name="redirect_to" value={`/admin/users/${user.id}`} />
             <input
               type="hidden"
               name="status"
@@ -79,9 +88,7 @@ export default async function AdminUserDetailPage({
           </div>
 
           <div className="mt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
-              Plan (manual override until Stripe)
-            </p>
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Plan (manual override)</p>
             <form action={setUserPlan} className="mt-2 flex gap-2">
               <input type="hidden" name="user_id" value={user.id} />
               <select
@@ -99,6 +106,45 @@ export default async function AdminUserDetailPage({
                 Save
               </Button>
             </form>
+            <p className="mt-1.5 text-xs text-neutral-400">
+              For comping accounts. If this user has a real Stripe subscription, the next billing
+              event will overwrite this back to whatever they&apos;re actually paying for.
+            </p>
+          </div>
+
+          <div className="mt-6 border-t border-neutral-100 pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">Billing</p>
+            <div className="mt-2 flex items-center gap-2">
+              <Badge
+                tone={
+                  user.plan_status === "active"
+                    ? "success"
+                    : user.plan_status === "past_due"
+                      ? "warning"
+                      : user.plan_status === "canceled"
+                        ? "danger"
+                        : "neutral"
+                }
+              >
+                {user.plan_status ?? "inactive"}
+              </Badge>
+            </div>
+            {user.stripe_customer_id ? (
+              <dl className="mt-2 space-y-1 text-xs text-neutral-500">
+                <div className="flex gap-1.5">
+                  <dt className="text-neutral-400">Customer:</dt>
+                  <dd className="font-mono">{user.stripe_customer_id}</dd>
+                </div>
+                {user.stripe_subscription_id && (
+                  <div className="flex gap-1.5">
+                    <dt className="text-neutral-400">Subscription:</dt>
+                    <dd className="font-mono">{user.stripe_subscription_id}</dd>
+                  </div>
+                )}
+              </dl>
+            ) : (
+              <p className="mt-2 text-xs text-neutral-400">No Stripe customer yet.</p>
+            )}
           </div>
         </Card>
 

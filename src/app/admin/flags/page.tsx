@@ -1,10 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { toggleFeatureFlag } from "@/lib/admin/actions";
-import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { AdminErrorBanner } from "@/components/admin-error-banner";
 
-export default async function AdminFlagsPage() {
+export default async function AdminFlagsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error: actionError } = await searchParams;
   const supabase = await createClient();
   const { data: flags } = await supabase
     .from("feature_flags")
@@ -13,6 +18,7 @@ export default async function AdminFlagsPage() {
 
   return (
     <div>
+      <AdminErrorBanner error={actionError} />
       <h1 className="text-lg font-semibold text-neutral-900">Feature flags</h1>
       <p className="mt-1 text-sm text-neutral-500">
         Toggle app behavior without a redeploy.
