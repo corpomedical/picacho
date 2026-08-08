@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
+import { toUserFacingError } from "@/lib/generations/user-facing-error";
 
 type SaveResult = { error: string } | { error: null };
 
@@ -150,7 +151,11 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
     return { error: null, path, url: signed.signedUrl };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Couldn't generate that image." };
+    const message = err instanceof Error ? err.message : "Couldn't generate that image.";
+    // Full detail (including any raw provider JSON) goes to the server log
+    // for debugging; the user only ever sees the sanitized version.
+    console.error("generateReferenceImage failed:", message);
+    return { error: toUserFacingError(message) };
   }
 }
 

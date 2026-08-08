@@ -15,6 +15,7 @@ import {
   type ChatHistoryItem,
 } from "@/lib/generations/actions";
 import { synthesizeVoice } from "@/lib/voice/actions";
+import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
@@ -87,9 +88,12 @@ function summarizeFailure(attempts: AttemptLog[], stoppedLabel?: string): string
     if (errorStep) {
       // Provider errors usually come back as raw JSON — pull out just the
       // "message" field if there is one, instead of showing the whole blob.
+      // toUserFacingError is a second, catch-all pass for whatever's left
+      // over (no "message" field, an unfamiliar shape, etc.) so nothing
+      // resembling raw JSON ever reaches the UI.
       const jsonMatch = errorStep.detail.match(/"message"\s*:\s*"([^"]+)"/);
       const short = (jsonMatch?.[1] ?? errorStep.detail.split("\n")[0]).trim();
-      return short.slice(0, 280);
+      return toUserFacingError(short).slice(0, 280);
     }
   }
 
