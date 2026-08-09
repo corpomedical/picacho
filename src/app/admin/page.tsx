@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
+import { currencyForPriceId } from "@/lib/stripe/plans";
 
 const PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
   PRICING_TIERS.map((t) => [t.id, t.price]),
@@ -166,7 +167,9 @@ export default async function AdminDashboard() {
     { data: reports },
     { data: feedbackRows },
   ] = await Promise.all([
-    supabase.from("profiles").select("id, email, created_at, plan, plan_status, status"),
+    supabase
+      .from("profiles")
+      .select("id, email, created_at, plan, plan_status, status, stripe_price_id"),
     supabase
       .from("generations")
       .select("id, user_id, status, content_type, credits_used, created_at"),
@@ -193,10 +196,18 @@ export default async function AdminDashboard() {
   const suspendedUsers = allProfiles.filter((p) => p.status === "suspended").length;
   const conversionRate = totalUsers > 0 ? (activeSubscribers / totalUsers) * 100 : 0;
 
-  const mrr = allProfiles.reduce((sum, p) => {
-    if (p.plan_status !== "active") return sum;
-    return sum + (PRICE_BY_PLAN[(p.plan ?? "none") as PlanId] ?? 0);
-  }, 0);
+  // Split by currency, not combined into one sum — see admin/billing/page.tsx
+  // for why (€19 + $19 isn't a meaningful single number, even though the
+  // digits match per plan under the same-number-swap pricing decision).
+  const mrrByCurrency = allProfiles.reduce(
+    (acc, p) => {
+      if (p.plan_status !== "active") return acc;
+      const currency = currencyForPriceId(p.stripe_price_id);
+      acc[currency] += PRICE_BY_PLAN[(p.plan ?? "none") as PlanId] ?? 0;
+      return acc;
+    },
+    { usd: 0, eur: 0 },
+  );
 
   const planDistribution = new Map<PlanId, number>(PLAN_ORDER.map((p) => [p, 0]));
   allProfiles.forEach((p) => {
@@ -302,7 +313,12 @@ export default async function AdminDashboard() {
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <p className="text-sm text-neutral-500">MRR</p>
-          <p className="mt-1 text-2xl font-semibold text-neutral-900">${mrr}</p>
+          <p className="mt-1 text-2xl font-semibold text-neutral-900">
+            ${mrrByCurrency.usd}
+            {mrrByCurrency.eur > 0 && (
+              <span className="text-neutral-400"> + €{mrrByCurrency.eur}</span>
+            )}
+          </p>
           <p className="mt-1 text-xs text-neutral-400">
             {activeSubscribers} paying subscriber{activeSubscribers === 1 ? "" : "s"}
           </p>

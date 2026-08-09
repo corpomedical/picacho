@@ -466,7 +466,7 @@ const it = {
     ofLimitThisMonth: "di {limit} questo mese",
     getStartedWith: "Inizia con {tier}",
     upgradeTo: "Passa a {tier}",
-    priceLine: "${price}/mese · {generations} generazioni",
+    priceLine: "{price}/mese · {generations} generazioni",
     upgrade: "Esegui l'upgrade",
     getStarted: "Inizia",
     manageBilling: "Gestisci fatturazione",

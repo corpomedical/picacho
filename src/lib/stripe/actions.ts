@@ -3,9 +3,10 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stripe } from "@/lib/stripe/client";
-import { PLAN_PRICE_IDS } from "@/lib/stripe/plans";
+import { PLAN_PRICE_IDS, PLAN_PRICE_IDS_EUR } from "@/lib/stripe/plans";
 import type { PlanId } from "@/lib/plans";
 import { getOrigin } from "@/lib/origin";
+import { isEUVisitor } from "@/lib/geo";
 
 // Starts a Stripe Checkout session for a brand-new subscription. Existing
 // subscribers should use createPortalSession instead — Stripe's Customer
@@ -18,7 +19,14 @@ export async function createCheckoutSession(formData: FormData) {
     redirect(`/app/settings?tab=usage&error=${encodeURIComponent("That plan isn't available.")}`);
   }
 
-  const priceId = PLAN_PRICE_IDS[planId as Exclude<PlanId, "none">];
+  const paidPlanId = planId as Exclude<PlanId, "none">;
+  // EU visitors get charged in EUR directly (real Stripe Price in that
+  // currency, not Adaptive Pricing) when that plan's EUR price exists yet —
+  // see PLAN_PRICE_IDS_EUR in stripe/plans.ts. Falls back to the USD price
+  // for everyone else, and for EU visitors too until setup-eur-pricing.js
+  // has been run.
+  const wantsEUR = await isEUVisitor();
+  const priceId = (wantsEUR ? PLAN_PRICE_IDS_EUR[paidPlanId] : null) ?? PLAN_PRICE_IDS[paidPlanId];
   if (!priceId) {
     redirect(`/app/settings?tab=usage&error=${encodeURIComponent("This plan isn't set up for checkout yet.")}`);
   }

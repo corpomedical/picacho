@@ -466,7 +466,7 @@ const pt = {
     ofLimitThisMonth: "de {limit} este mês",
     getStartedWith: "Comece com {tier}",
     upgradeTo: "Fazer upgrade para {tier}",
-    priceLine: "${price}/mês · {generations} gerações",
+    priceLine: "{price}/mês · {generations} gerações",
     upgrade: "Fazer upgrade",
     getStarted: "Começar",
     manageBilling: "Gerenciar cobrança",

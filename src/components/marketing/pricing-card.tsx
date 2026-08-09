@@ -6,6 +6,7 @@ import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
 import { createClient } from "@/lib/supabase/server";
 import { createCheckoutSession, createPortalSession } from "@/lib/stripe/actions";
+import { isEUVisitor } from "@/lib/geo";
 
 type Tier = (typeof PRICING_TIERS)[number];
 
@@ -21,6 +22,9 @@ export async function PricingCard({ tier }: { tier: Tier }) {
   // someone who's already paying.
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
+  // Same-number swap (€19 not a literal $->€ conversion) — see plans.ts —
+  // so only the symbol changes here, not the digits.
+  const currencySymbol = (await isEUVisitor()) ? "€" : "$";
 
   let currentPlan: string | null = null;
   let hasLiveSubscription = false;
@@ -50,7 +54,10 @@ export async function PricingCard({ tier }: { tier: Tier }) {
       )}
       <h3 className="text-sm font-semibold text-neutral-900">{localized.name}</h3>
       <p className="mt-2">
-        <span className="text-3xl font-semibold text-neutral-900">${tier.price}</span>
+        <span className="text-3xl font-semibold text-neutral-900">
+          {currencySymbol}
+          {tier.price}
+        </span>
         <span className="text-sm text-neutral-500">{t.marketing.pricing.perMonth}</span>
       </p>
 

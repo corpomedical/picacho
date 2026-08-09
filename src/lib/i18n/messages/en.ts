@@ -478,7 +478,7 @@ const en = {
     ofLimitThisMonth: "of {limit} this month",
     getStartedWith: "Get started with {tier}",
     upgradeTo: "Upgrade to {tier}",
-    priceLine: "${price}/month · {generations} generations",
+    priceLine: "{price}/month · {generations} generations",
     upgrade: "Upgrade",
     getStarted: "Get started",
     manageBilling: "Manage billing",

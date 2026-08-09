@@ -18,6 +18,7 @@ import { logout } from "@/lib/auth/actions";
 import { createCheckoutSession, createPortalSession } from "@/lib/stripe/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
+import { isEUVisitor } from "@/lib/geo";
 import { cn } from "@/lib/cn";
 
 const TIER_ORDER: PlanId[] = ["none", "starter", "growth", "studio"];
@@ -107,6 +108,9 @@ export default async function SettingsPage({
   const pct = limit > 0 ? Math.min(100, Math.round((usedThisMonth / limit) * 100)) : 0;
   const nextPlanId = TIER_ORDER[TIER_ORDER.indexOf(plan) + 1];
   const nextTier = nextPlanId ? PRICING_TIERS.find((t) => t.id === nextPlanId) : undefined;
+  // Same-number swap (€19 not a $->€ conversion) — matches the price this
+  // person would actually be charged at checkout, see stripe/actions.ts.
+  const currencySymbol = (await isEUVisitor()) ? "€" : "$";
   const supportEmail = supportEmailSetting?.value ?? "support@picacho.app";
   // A "live" Stripe subscription (active or behind on payment) means all
   // plan changes should go through the Customer Portal, which handles
@@ -274,7 +278,10 @@ export default async function SettingsPage({
                           : formatMsg(s.upgradeTo, { tier: t.pricingTiers[nextTier.id].name })}
                       </p>
                       <p className="mt-0.5 text-xs text-neutral-300">
-                        {formatMsg(s.priceLine, { price: nextTier.price, generations: nextTier.generations })}
+                        {formatMsg(s.priceLine, {
+                          price: `${currencySymbol}${nextTier.price}`,
+                          generations: nextTier.generations,
+                        })}
                       </p>
                     </div>
                     <form action={createCheckoutSession}>
