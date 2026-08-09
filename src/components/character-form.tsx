@@ -320,7 +320,12 @@ export function CharacterForm({
               onChange={(e) => setGenPrompt(e.target.value)}
               disabled={generating || totalImages >= 5}
               placeholder={c.describePlaceholder}
-              className="flex-1 rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400 disabled:bg-neutral-50"
+              // min-w-0 overrides the browser's default intrinsic min-width
+              // on text inputs (~170-200px) — without it, flex-1 can still
+              // grow but can't shrink past that floor, so on a phone-width
+              // screen the input refuses to compress enough to leave room
+              // for the Generate button, pushing it out past the card edge.
+              className="min-w-0 flex-1 rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400 disabled:bg-neutral-50"
             />
             <button
               type="button"

@@ -2406,8 +2406,8 @@ function GenerateFormInner({
                 </div>
               )}
 
-              <div className="flex items-center justify-between px-2.5 pb-3">
-                <div ref={plusMenuRef} className="relative flex items-center gap-2">
+              <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 pb-3">
+                <div ref={plusMenuRef} className="relative flex flex-shrink-0 items-center gap-2">
                   <button
                     type="button"
                     onClick={() => setPlusMenuOpen((v) => !v)}
@@ -2510,7 +2510,18 @@ function GenerateFormInner({
                   )}
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  {/* Real incident, 2026-08-09: this whole icon strip (up to
+                      7 buttons once video + advancedOpen reveal the extra
+                      pair) had no way to shrink or wrap, so on a phone-width
+                      screen it simply overflowed the composer card — the
+                      rightmost button (Send) got pushed out past the visible
+                      edge instead of staying reachable. Everything except
+                      Send/Stop now lives in its own min-w-0 + overflow-x-auto
+                      strip, same pattern as the admin nav's mobile fix, so it
+                      scrolls internally instead of pushing Send off-screen —
+                      Send/Stop stays outside it, always visible. */}
+                  <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
                   {contentType === "video" && (
                     <>
                       <div
@@ -2633,6 +2644,7 @@ function GenerateFormInner({
                   </button>
 
                   <VoiceRecorderButton onTranscript={handleVoiceTranscript} disabled={submitting} size="md" />
+                  </div>
 
                   {submitting ? (
                     <button
