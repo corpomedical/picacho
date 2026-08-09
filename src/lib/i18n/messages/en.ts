@@ -280,6 +280,8 @@ const en = {
     speakFailedOne: "That one didn't pass validation after 1 attempt.",
     speakFailedOther: "That one didn't pass validation after {n} attempts.",
     speakError: "Something went wrong: {error}",
+    refreshNeeded: "A new version of Picacho just went live — refreshing the page…",
+    submitFailed: "Couldn't reach the server — check your connection and try again.",
     notifyReadyTitle: "Your generation is ready",
     notifyFailedTitle: "Generation didn't pass",
     download: "Download",

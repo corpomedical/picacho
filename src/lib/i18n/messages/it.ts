@@ -269,6 +269,8 @@ const it = {
     speakFailedOne: "Non ha superato la convalida dopo 1 tentativo.",
     speakFailedOther: "Non ha superato la convalida dopo {n} tentativi.",
     speakError: "Qualcosa è andato storto: {error}",
+    refreshNeeded: "È appena stata pubblicata una nuova versione di Picacho — aggiornamento della pagina…",
+    submitFailed: "Impossibile raggiungere il server — controlla la connessione e riprova.",
     notifyReadyTitle: "La tua generazione è pronta",
     notifyFailedTitle: "La generazione non è passata",
     download: "Scarica",

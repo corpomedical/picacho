@@ -269,6 +269,8 @@ const es = {
     speakFailedOne: "Ese no pasó la validación tras 1 intento.",
     speakFailedOther: "Ese no pasó la validación tras {n} intentos.",
     speakError: "Algo salió mal: {error}",
+    refreshNeeded: "Se acaba de publicar una nueva versión de Picacho — actualizando la página…",
+    submitFailed: "No se pudo conectar con el servidor — revisa tu conexión e inténtalo de nuevo.",
     notifyReadyTitle: "Tu generación está lista",
     notifyFailedTitle: "La generación no pasó",
     download: "Descargar",

@@ -105,6 +105,27 @@ function summarizeFailure(attempts: AttemptLog[], stoppedLabel?: string): string
   return null;
 }
 
+// Real incident, 2026-08-09: both runGeneration and runMultiAngleGeneration
+// were called with no try/catch around them. That's fine when the action
+// itself returns a normal { error } — but when the *call* throws instead
+// (Next.js can't parse the Server Action's response at all), the await
+// rejects, nothing after it ever runs, and the composer is left stuck in
+// submitting=true forever with zero visible feedback — confirmed via a real
+// auto-filed report (generation_reports id abd93549), which only exists
+// because the global unhandled-rejection listener in app-error-reporter.tsx
+// caught what this component didn't. The single most common cause of the
+// call itself throwing (vs. returning an error) is a deploy landing while
+// the tab was already open — the browser is still running the previous
+// build's JS, which references a Server Action id the now-live server no
+// longer recognizes. No amount of retrying fixes that from the stale tab;
+// only a real page reload fetches the new build. Detecting that specific
+// signature and reloading automatically turns a dead end into a one-second
+// hiccup instead of a silent hang.
+function isStaleDeployError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return /unexpected response was received from the server/i.test(message);
+}
+
 // Real generations can take anywhere from a few seconds to a few minutes —
 // long enough that switching tabs or apps while waiting is completely
 // reasonable. A system notification catches the person when they do, so
@@ -1280,7 +1301,29 @@ function GenerateFormInner({
       formData.set("anchor_photo_path", anchorPhotoPath);
     }
 
-    const result = await runMultiAngleGeneration(formData);
+    let result;
+    try {
+      result = await runMultiAngleGeneration(formData);
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      setError(stale ? g.refreshNeeded : g.submitFailed);
+      setPrompt(mPrompt);
+      setPendingAttachments(
+        attachments.map((a) => ({
+          id: crypto.randomUUID(),
+          name: a.name,
+          type: a.type,
+          size: a.size,
+          status: "ready",
+          url: a.url,
+          path: a.path,
+        })),
+      );
+      setLiveMultiAngle(null);
+      setSubmitting(false);
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+      return;
+    }
 
     if (result.error !== null) {
       setError(result.error);
@@ -1588,7 +1631,33 @@ function GenerateFormInner({
     }
     setDialogueText("");
 
-    const result = await runGeneration(formData);
+    let result;
+    try {
+      result = await runGeneration(formData);
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      const message = stale ? g.refreshNeeded : g.submitFailed;
+      setError(message);
+      setPrompt(submittedPrompt);
+      setDialogueText(submittedDialogue);
+      setPendingAttachments(
+        submittedAttachments.map((a) => ({
+          id: crypto.randomUUID(),
+          name: a.name,
+          type: a.type,
+          size: a.size,
+          status: "ready",
+          url: a.url,
+          path: a.path,
+        })),
+      );
+      setLivePrompt(null);
+      setLiveAttachments([]);
+      setSubmitting(false);
+      if (shouldSpeak) speak(formatMsg(g.speakError, { error: message }));
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+      return;
+    }
 
     if (result.error !== null) {
       setError(result.error);
