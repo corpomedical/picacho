@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { getAdminBadgeCounts } from "@/lib/admin/actions";
 
 // Replaces the old always-expanded 12-tab text nav (AdminNav), which had no
 // scroll container of its own and used to drag the whole page sideways on a
@@ -32,6 +33,25 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
+// How often the command bar re-checks badge counts. This is what makes the
+// red dots "live" -- admin/layout.tsx only computes them once, on the
+// request that rendered the current page, so without polling they'd be
+// frozen until the next navigation or manual refresh.
+const BADGE_POLL_MS = 10_000;
+
+// One human-readable line per pollable badge, used for the drop-down
+// notification's text when that badge's count goes up between polls. All
+// four counts here only ever grow from a genuinely new item (a real signup,
+// a real flag, a real report, real feedback) -- none of them can tick up
+// just because the polling window shifted -- so every increase is worth
+// surfacing, not just the badge going up silently.
+const BADGE_NOTICE: Record<string, (n: number) => string> = {
+  "/admin/users": (n) => (n === 1 ? "New signup" : `${n} new signups`),
+  "/admin/moderation": (n) => (n === 1 ? "New flagged content" : `${n} new flagged items`),
+  "/admin/reports": (n) => (n === 1 ? "New report" : `${n} new reports`),
+  "/admin/feedback": (n) => (n === 1 ? "New feedback" : `${n} new feedback messages`),
+};
+
 // iOS-style unread dot: iOS system red, a thin white keyline separating it
 // from whatever's behind it, and — the actual bug report — pushed further
 // out toward the corner (-2.5 instead of -1) so it perches on the icon's
@@ -50,12 +70,54 @@ function NotificationBadge({ count }: { count: number }) {
   );
 }
 
+// The live-notification pill for the admin area -- same pill shape, color,
+// shadow and enter/exit timing as ComposerToast in generate-form.tsx (the
+// "one you did" this is modeled on), just re-pointed to drop down from the
+// top center of the whole screen instead of rising up from behind the
+// composer, since there's no composer here for it to tuck behind. Keyed by
+// its caller on the notice's own id, so back-to-back notices (two reports
+// filed a few seconds apart) each get their own full drop-in instead of one
+// silently replacing the other's text mid-animation.
+function AdminNotificationBanner({ message, onDone }: { message: string; onDone: () => void }) {
+  const [entered, setEntered] = useState(false);
+
+  useEffect(() => {
+    const enter = requestAnimationFrame(() => setEntered(true));
+    const startExit = setTimeout(() => setEntered(false), 4200);
+    const remove = setTimeout(onDone, 4500);
+    return () => {
+      cancelAnimationFrame(enter);
+      clearTimeout(startExit);
+      clearTimeout(remove);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div className="pointer-events-none fixed inset-x-0 top-4 z-[70] flex justify-center px-4">
+      <div
+        role="status"
+        aria-live="polite"
+        className={cn(
+          "pointer-events-auto max-w-[92%] rounded-full bg-neutral-900 px-4 py-2.5 text-center text-sm text-white shadow-[0_12px_28px_-10px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out",
+          entered ? "translate-y-0 opacity-100" : "-translate-y-[130%] opacity-0",
+        )}
+      >
+        {message}
+      </div>
+    </div>
+  );
+}
+
 export function AdminCommandBar({
-  badges = {},
+  badges: initialBadges = {},
 }: {
-  // Keyed by href, e.g. "/admin/users" — matches NAV_ITEMS below, computed
-  // server-side in admin/layout.tsx since this component is client-side and
-  // can't query Supabase itself.
+  // Keyed by href, e.g. "/admin/users" — matches NAV_ITEMS below. This is
+  // only the seed value, computed server-side in admin/layout.tsx on
+  // whichever request first rendered the page (so there's no flash of zero
+  // badges on load, since this component is client-side and can't query
+  // Supabase itself). From here the polling effect below takes over and
+  // keeps it live.
   badges?: Record<string, number>;
 }) {
   const pathname = usePathname();
@@ -64,6 +126,45 @@ export function AdminCommandBar({
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const [badges, setBadges] = useState<Record<string, number>>(initialBadges);
+  const badgesRef = useRef(badges);
+  useEffect(() => {
+    badgesRef.current = badges;
+  }, [badges]);
+  const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
+  const noticeIdRef = useRef(0);
+
+  // Polls getAdminBadgeCounts on a timer so the red dots (and this drop-down
+  // banner) update while the page just sits open, instead of only refreshing
+  // on the next navigation. A plain interval rather than Supabase Realtime —
+  // consistent with how AutoRefresh already keeps admin/stats numbers live
+  // elsewhere, and one query round-trip every 10s per open admin tab is
+  // cheap enough not to need a persistent websocket subscription for it.
+  useEffect(() => {
+    const id = setInterval(async () => {
+      let next: Record<string, number>;
+      try {
+        next = await getAdminBadgeCounts();
+      } catch {
+        // Transient network/session hiccup -- just wait for the next tick
+        // rather than surfacing an error for something this minor.
+        return;
+      }
+      const prev = badgesRef.current;
+      for (const [href, describe] of Object.entries(BADGE_NOTICE)) {
+        const count = next[href] ?? 0;
+        const before = prev[href] ?? 0;
+        if (count > before) {
+          noticeIdRef.current += 1;
+          setNotice({ id: noticeIdRef.current, message: describe(count - before) });
+          break; // one banner per tick is plenty -- the badge itself shows the rest
+        }
+      }
+      setBadges(next);
+    }, BADGE_POLL_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -136,6 +237,14 @@ export function AdminCommandBar({
 
   return (
     <>
+      {notice && (
+        <AdminNotificationBanner
+          key={notice.id}
+          message={notice.message}
+          onDone={() => setNotice(null)}
+        />
+      )}
+
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-8 py-2.5">
         {/* py-2 here isn't decorative — nav has overflow-x-auto for the
             mobile scroll fix, which per the CSS overflow spec forces

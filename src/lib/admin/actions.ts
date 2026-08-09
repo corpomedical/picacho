@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PLAN_LIMITS } from "@/lib/plans";
+import { computeAdminBadgeCounts, type AdminBadgeCounts } from "@/lib/admin/badges";
 
 async function requireAdmin() {
   const supabase = await createClient();
@@ -18,6 +19,17 @@ async function requireAdmin() {
 
   if (profile?.role !== "admin") throw new Error("Admin access required.");
   return { supabase, userId: data.user.id };
+}
+
+// Called imperatively (not from a <form>) by AdminCommandBar, which polls
+// this on an interval to keep the nav's red-dot badges live without the
+// admin having to refresh the page. requireAdmin() re-checks the session on
+// every poll rather than trusting a stale client-side "yes I'm an admin" --
+// this runs every ~10s for as long as any admin page is open, so it has to
+// hold up to being called that often, not just once per page load.
+export async function getAdminBadgeCounts(): Promise<AdminBadgeCounts> {
+  const { supabase } = await requireAdmin();
+  return computeAdminBadgeCounts(supabase);
 }
 
 // These actions are all wired to native <form action={...}> elements with no

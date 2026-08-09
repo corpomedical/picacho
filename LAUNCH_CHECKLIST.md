@@ -51,6 +51,16 @@ The specific trigger that reported user hit: this landed during an unusually den
 
 Fixed properly rather than just patched: both call sites now catch the failure, restore the composer to a usable state (prompt/attachments/dialogue given back, `submitting` reset), and show a message — specifically recognizing the stale-deploy signature and auto-reloading the page after a beat, generic "check your connection" message otherwise. `tsc`/`eslint` clean. Report `abd93549` marked resolved.
 
+## Admin nav made live — 2026-08-10
+
+Two related requests: make the red-dot badge counts on the admin command bar update without a refresh, and add a drop-down notification banner for the admin area, modeled on `ComposerToast` in `generate-form.tsx` (the pill that rises up from behind the composer on upload errors/limits).
+
+Badge counts were computed once per page load in `admin/layout.tsx` (a Server Component) and handed to `AdminCommandBar` as a static prop — accurate on arrival, frozen after that. Pulled the query logic out into `lib/admin/badges.ts` (`computeAdminBadgeCounts`), added an admin-gated `getAdminBadgeCounts` server action in `lib/admin/actions.ts`, and had `AdminCommandBar` poll it every 10s, updating its own badge state. Plain interval polling, not Supabase Realtime — same "no websocket infrastructure" approach `AutoRefresh` already uses to keep admin/stats numbers live, and cheap enough at one query per open admin tab per 10s.
+
+New `AdminNotificationBanner` component (same file): fixed to the top-center of the viewport, drops down into place instead of rising up (no composer to hide behind in the admin area), same pill shape/color/shadow/timing as `ComposerToast` so it reads as the same design language. Fires whenever a poll finds a badge count went up — a real new signup, flagged item, report, or feedback message, never a false positive from the polling window shifting.
+
+`tsc`/`eslint` clean.
+
 ## After launch (polish, not blocking)
 
 - [x] Highlight the active tab in the admin nav bar (2026-08-07) — new `AdminNav` client component compares the current path and bolds/underlines the matching tab.

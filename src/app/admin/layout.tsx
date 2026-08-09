@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { computeAdminBadgeCounts } from "@/lib/admin/badges";
 import { AdminCommandBar } from "@/components/admin-command-bar";
 import { Logo } from "@/components/logo";
 
@@ -27,51 +28,13 @@ export default async function AdminLayout({
     redirect("/app");
   }
 
-  // Badge counts for the nav — computed here (Server Component) and passed
-  // down, since AdminCommandBar is a Client Component and can't query
-  // Supabase itself. Reports and Feedback already have a real open/resolved
-  // workflow, so their count is genuinely "still needs handling" and shrinks
-  // as items get resolved, same as an iOS Mail unread badge. Moderation has
-  // no such state to hook into, so it's "new in the last 24h" — a real,
-  // non-fabricated number that still behaves like a notification. Users
-  // instead reads app_settings.admin_users_last_viewed_at, the same
-  // timestamp admin/users/page.tsx updates on every visit — so opening that
-  // page clears its own badge, rather than the badge just fading out on a
-  // fixed timer whether or not anyone actually looked (see that page for the
-  // full reasoning; it also drives the "new user" row highlight there).
-  const last24hDate = new Date();
-  last24hDate.setDate(last24hDate.getDate() - 1);
-  const last24h = last24hDate.toISOString();
-  const [
-    { data: usersLastViewedSetting },
-    { count: newFlagged },
-    { count: openReports },
-    { count: openFeedback },
-  ] = await Promise.all([
-    supabase
-      .from("app_settings")
-      .select("value")
-      .eq("key", "admin_users_last_viewed_at")
-      .single(),
-    supabase
-      .from("generations")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "failed")
-      .gte("created_at", last24h),
-    supabase
-      .from("generation_reports")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "open"),
-    supabase
-      .from("feedback")
-      .select("*", { count: "exact", head: true })
-      .eq("status", "open"),
-  ]);
-  const usersLastViewedAt = usersLastViewedSetting?.value ?? new Date(0).toISOString();
-  const { count: newUsers } = await supabase
-    .from("profiles")
-    .select("*", { count: "exact", head: true })
-    .gt("created_at", usersLastViewedAt);
+  // Badge counts for the nav — computed here (Server Component) so the
+  // first paint never shows a flash of zero badges, then handed to
+  // AdminCommandBar as its seed value. From there the command bar polls
+  // getAdminBadgeCounts (a server action wrapping this same
+  // computeAdminBadgeCounts helper) on its own timer to keep the red dots
+  // live without a page refresh — see admin-command-bar.tsx.
+  const badges = await computeAdminBadgeCounts(supabase);
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -86,14 +49,7 @@ export default async function AdminLayout({
           </Link>
         </div>
         <div className="border-t border-neutral-100">
-          <AdminCommandBar
-            badges={{
-              "/admin/users": newUsers ?? 0,
-              "/admin/moderation": newFlagged ?? 0,
-              "/admin/reports": openReports ?? 0,
-              "/admin/feedback": openFeedback ?? 0,
-            }}
-          />
+          <AdminCommandBar badges={badges} />
         </div>
       </header>
       <div className="mx-auto max-w-6xl px-8 py-10">{children}</div>
