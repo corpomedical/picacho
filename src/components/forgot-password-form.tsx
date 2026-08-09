@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useLocale } from "@/lib/i18n/provider";
 import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
+import { clientOrigin } from "@/lib/client-origin";
 
 export function ForgotPasswordForm() {
   const { t } = useLocale();
@@ -21,7 +22,7 @@ export function ForgotPasswordForm() {
     // surfaced — always show the same message either way, so this can't be
     // used to check which emails have an account.
     await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+      redirectTo: `${clientOrigin()}/auth/callback?next=/reset-password`,
     });
 
     setStatus("sent");

@@ -3,6 +3,7 @@
 import { useState, type SVGProps } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/cn";
+import { clientOrigin } from "@/lib/client-origin";
 
 // Supabase's provider ids — "azure" is what Supabase calls Microsoft/Entra ID
 // (covers Outlook, Hotmail, and work/school Microsoft accounts).
@@ -84,7 +85,7 @@ export function OAuthButtons() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: { redirectTo: `${clientOrigin()}/auth/callback` },
     });
 
     if (error) {
