@@ -8,6 +8,16 @@ import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 
+// Real incident, 2026-08-09: a plan=none account generated an AI reference
+// photo for free — this function had no plan/credit check at all, unlike
+// the main Generate composer (see checkGenerationAllowance in
+// generations/actions.ts), so it happily called OpenAI/fal.ai on the
+// business's own key for anyone who was simply logged in. Free accounts now
+// get exactly this many lifetime AI-generated reference photos before
+// they're asked to subscribe; uploading your own photo stays free and
+// unlimited, since that costs nothing to serve.
+const FREE_REFERENCE_GENERATIONS_LIMIT = 2;
+
 type SaveResult = { error: string } | { error: null };
 
 // NOTE: this is called directly from a Client Component (not via a plain
@@ -96,6 +106,28 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   const prompt = (formData.get("prompt") as string)?.trim();
   if (!prompt) return { error: "Describe what they look like first." };
 
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("plan, role, free_reference_generations_used")
+    .eq("id", data.user.id)
+    .single();
+
+  // Only plan=none, non-admin accounts are metered here — anyone on a paid
+  // plan is already a customer, so this stays a free perk for them rather
+  // than drawing from their monthly credit pool, and admins are exempt for
+  // the same reason checkGenerationAllowance exempts them (generations.ts):
+  // testing and support work should never trip a consumer-facing free-tier
+  // cap. See the constant's comment above for why this check exists at all.
+  const isFreeTier = (profile?.plan ?? "none") === "none" && profile?.role !== "admin";
+  const freeUsed = profile?.free_reference_generations_used ?? 0;
+  if (isFreeTier && freeUsed >= FREE_REFERENCE_GENERATIONS_LIMIT) {
+    return {
+      error:
+        `You've used your ${FREE_REFERENCE_GENERATIONS_LIMIT} free AI-generated character photos. ` +
+        "Subscribe to a plan to keep generating, or upload your own photo instead — that's always free.",
+    };
+  }
+
   const { data: flag } = await supabase
     .from("feature_flags")
     .select("enabled")
@@ -147,6 +179,16 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
       .createSignedUrl(path, 60 * 60);
     if (signError || !signed?.signedUrl) {
       throw new Error("Generated the image but couldn't create a preview link.");
+    }
+
+    // Only counted against the free quota once a photo actually came back —
+    // a safety-filter rejection or provider error above throws before this
+    // line, so it never burns one of the user's free tries.
+    if (isFreeTier) {
+      await supabase
+        .from("profiles")
+        .update({ free_reference_generations_used: freeUsed + 1 })
+        .eq("id", data.user.id);
     }
 
     return { error: null, path, url: signed.signedUrl };
