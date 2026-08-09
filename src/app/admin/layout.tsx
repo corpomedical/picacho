@@ -31,23 +31,28 @@ export default async function AdminLayout({
   // down, since AdminCommandBar is a Client Component and can't query
   // Supabase itself. Reports and Feedback already have a real open/resolved
   // workflow, so their count is genuinely "still needs handling" and shrinks
-  // as items get resolved, same as an iOS Mail unread badge. Users and
-  // Moderation have no such state to hook into, so their badge is instead
-  // "new in the last 24h" — a real, non-fabricated number that still behaves
-  // like a notification (appears with new activity, doesn't grow forever).
+  // as items get resolved, same as an iOS Mail unread badge. Moderation has
+  // no such state to hook into, so it's "new in the last 24h" — a real,
+  // non-fabricated number that still behaves like a notification. Users
+  // instead reads app_settings.admin_users_last_viewed_at, the same
+  // timestamp admin/users/page.tsx updates on every visit — so opening that
+  // page clears its own badge, rather than the badge just fading out on a
+  // fixed timer whether or not anyone actually looked (see that page for the
+  // full reasoning; it also drives the "new user" row highlight there).
   const last24hDate = new Date();
   last24hDate.setDate(last24hDate.getDate() - 1);
   const last24h = last24hDate.toISOString();
   const [
-    { count: newUsers },
+    { data: usersLastViewedSetting },
     { count: newFlagged },
     { count: openReports },
     { count: openFeedback },
   ] = await Promise.all([
     supabase
-      .from("profiles")
-      .select("*", { count: "exact", head: true })
-      .gte("created_at", last24h),
+      .from("app_settings")
+      .select("value")
+      .eq("key", "admin_users_last_viewed_at")
+      .single(),
     supabase
       .from("generations")
       .select("*", { count: "exact", head: true })
@@ -62,6 +67,11 @@ export default async function AdminLayout({
       .select("*", { count: "exact", head: true })
       .eq("status", "open"),
   ]);
+  const usersLastViewedAt = usersLastViewedSetting?.value ?? new Date(0).toISOString();
+  const { count: newUsers } = await supabase
+    .from("profiles")
+    .select("*", { count: "exact", head: true })
+    .gt("created_at", usersLastViewedAt);
 
   return (
     <div className="min-h-screen bg-neutral-50">

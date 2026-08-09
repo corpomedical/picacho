@@ -24,6 +24,17 @@ export default async function AdminUsersPage({
   const activeTab = TABS.some((t) => t.id === status) ? status! : "all";
   const supabase = await createClient();
 
+  // Same timestamp the Users nav badge reads (see admin/layout.tsx) — a
+  // profile created after it is "new" for both. Read it before updating it
+  // below, so this render still shows what's new *since your last visit*,
+  // not since right now.
+  const { data: lastViewedSetting } = await supabase
+    .from("app_settings")
+    .select("value")
+    .eq("key", "admin_users_last_viewed_at")
+    .single();
+  const lastViewedAt = lastViewedSetting?.value ? new Date(lastViewedSetting.value) : new Date(0);
+
   let query = supabase
     .from("profiles")
     .select("id, email, role, plan, status, created_at, last_seen_at")
@@ -35,6 +46,16 @@ export default async function AdminUsersPage({
   if (activeTab === "admin") query = query.eq("role", "admin");
 
   const { data: users, error } = await query;
+
+  // Mark everything as seen as of right now — this is what makes the badge
+  // and the highlight below both clear once you've actually opened this
+  // page, instead of just fading out on a fixed timer regardless of whether
+  // anyone looked. Best-effort: a failed write here shouldn't break the page,
+  // it just means the badge won't clear until the next successful visit.
+  await supabase
+    .from("app_settings")
+    .update({ value: new Date().toISOString(), updated_at: new Date().toISOString() })
+    .eq("key", "admin_users_last_viewed_at");
 
   return (
     <div>
@@ -70,38 +91,51 @@ export default async function AdminUsersPage({
           <p className="p-6 text-sm text-neutral-500">No users found.</p>
         ) : (
           <div className="divide-y divide-neutral-100">
-            {users.map((user) => (
-              <div key={user.id} className="flex items-center justify-between gap-4 p-5">
-                <Link href={`/admin/users/${user.id}`} className="min-w-0 hover:opacity-70">
-                  <p className="truncate text-sm font-medium text-neutral-900">{user.email}</p>
-                  <p className="mt-0.5 text-xs text-neutral-500">
-                    {PLAN_LABELS[(user.plan ?? "none") as PlanId]}
-                    {user.role === "admin" && " · admin"} · joined{" "}
-                    {new Date(user.created_at).toLocaleDateString()} ·{" "}
-                    {user.last_seen_at
-                      ? `active ${new Date(user.last_seen_at).toLocaleDateString()}`
-                      : "never active"}
-                  </p>
-                </Link>
-                <div className="flex flex-shrink-0 items-center gap-3">
-                  <Badge tone={user.status === "active" ? "success" : "danger"}>
-                    {user.status}
-                  </Badge>
-                  <form action={setUserStatus}>
-                    <input type="hidden" name="user_id" value={user.id} />
-                    <input type="hidden" name="redirect_to" value="/admin/users" />
-                    <input
-                      type="hidden"
-                      name="status"
-                      value={user.status === "active" ? "suspended" : "active"}
-                    />
-                    <Button variant="secondary" size="sm" type="submit">
-                      {user.status === "active" ? "Suspend" : "Unsuspend"}
-                    </Button>
-                  </form>
+            {users.map((user) => {
+              const isNew = new Date(user.created_at) > lastViewedAt;
+              return (
+                <div
+                  key={user.id}
+                  className={cn(
+                    "flex items-center justify-between gap-4 p-5",
+                    // Slightly darker than the row's default white so a new
+                    // signup stands out at a glance — clears back to default
+                    // the next time this page loads, once lastViewedAt has
+                    // moved past their created_at (see the update above).
+                    isNew && "bg-neutral-50",
+                  )}
+                >
+                  <Link href={`/admin/users/${user.id}`} className="min-w-0 hover:opacity-70">
+                    <p className="truncate text-sm font-medium text-neutral-900">{user.email}</p>
+                    <p className="mt-0.5 text-xs text-neutral-500">
+                      {PLAN_LABELS[(user.plan ?? "none") as PlanId]}
+                      {user.role === "admin" && " · admin"} · joined{" "}
+                      {new Date(user.created_at).toLocaleDateString()} ·{" "}
+                      {user.last_seen_at
+                        ? `active ${new Date(user.last_seen_at).toLocaleDateString()}`
+                        : "never active"}
+                    </p>
+                  </Link>
+                  <div className="flex flex-shrink-0 items-center gap-3">
+                    <Badge tone={user.status === "active" ? "success" : "danger"}>
+                      {user.status}
+                    </Badge>
+                    <form action={setUserStatus}>
+                      <input type="hidden" name="user_id" value={user.id} />
+                      <input type="hidden" name="redirect_to" value="/admin/users" />
+                      <input
+                        type="hidden"
+                        name="status"
+                        value={user.status === "active" ? "suspended" : "active"}
+                      />
+                      <Button variant="secondary" size="sm" type="submit">
+                        {user.status === "active" ? "Suspend" : "Unsuspend"}
+                      </Button>
+                    </form>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
