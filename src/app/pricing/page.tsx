@@ -1,8 +1,20 @@
+import type { Metadata } from "next";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
+
+// Renders as "Pricing | Picacho" via the title.template set in the root
+// layout. Without this the tab title and search-result link for this page
+// were just "Picacho" — identical to every other page, so Google had no
+// signal this was the page to rank for pricing-related searches.
+export const metadata: Metadata = {
+  title: "Pricing",
+  description:
+    "Simple, transparent pricing for consistent AI character photos and videos. Compare plans and find the right fit, from casual creators to studios.",
+  alternates: { canonical: "/pricing" },
+};
 
 export default async function PricingPage() {
   const { t } = await getServerMessages();

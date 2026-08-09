@@ -1,8 +1,15 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { getServerMessages } from "@/lib/i18n/server";
 import termsDoc from "@/lib/i18n/legal/terms";
+
+export const metadata: Metadata = {
+  title: "Terms of Service",
+  description: "The terms that govern your use of Picacho.",
+  alternates: { canonical: "/terms" },
+};
 
 export default async function TermsPage() {
   const { locale, t } = await getServerMessages();

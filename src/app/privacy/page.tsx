@@ -1,8 +1,15 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { getServerMessages } from "@/lib/i18n/server";
 import privacyDoc from "@/lib/i18n/legal/privacy";
+
+export const metadata: Metadata = {
+  title: "Privacy Policy",
+  description: "How Picacho collects, uses, and protects your data.",
+  alternates: { canonical: "/privacy" },
+};
 
 export default async function PrivacyPage() {
   const { locale, t } = await getServerMessages();

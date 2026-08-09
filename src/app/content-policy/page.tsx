@@ -1,8 +1,15 @@
+import type { Metadata } from "next";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { getServerMessages } from "@/lib/i18n/server";
 import contentPolicyDoc from "@/lib/i18n/legal/content-policy";
 import { cn } from "@/lib/cn";
+
+export const metadata: Metadata = {
+  title: "Content Policy",
+  description: "What's allowed and not allowed to be generated on Picacho.",
+  alternates: { canonical: "/content-policy" },
+};
 
 export default async function ContentPolicyPage() {
   const { locale, t } = await getServerMessages();

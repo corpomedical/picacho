@@ -61,6 +61,25 @@ New `AdminNotificationBanner` component (same file): fixed to the top-center of 
 
 `tsc`/`eslint` clean.
 
+## Global SEO pass — 2026-08-10
+
+Request: "make the site appear on google everywhere anywhere in the world." Found the site had no per-page metadata (every page — pricing, privacy, terms, content policy — showed the identical generic title/description in search results), no structured data, and no Google Search Console verification set up.
+
+Also found something bigger: Picacho already has Spanish, Portuguese, and Italian translations built in, but the language is chosen by a cookie (`picacho_locale`), not the URL — every page only ever exists at one URL regardless of language. Googlebot doesn't carry cookies between crawls, so every crawl sees the English version; the other three languages are effectively invisible to Google no matter where in the world someone searches. Fixing that for real means giving each language its own crawlable URL (`/es`, `/pt`, `/it`) with hreflang tags — a real routing change across the app. Wigly chose the quick pass for now (below); the full multi-language routing is still on the table if international search traffic becomes a priority.
+
+What shipped today:
+- [x] **Per-page titles/descriptions.** `/pricing`, `/privacy`, `/terms`, `/content-policy` each now export their own `metadata` (title, description, canonical) instead of inheriting the homepage's. Root layout's `title` is now `{ default, template: "%s | Picacho" }`, so e.g. the pricing page renders as "Pricing | Picacho" instead of just "Picacho" — previously every single page showed the identical title in a Google result, which gives Google nothing to tell them apart with.
+- [x] **Homepage `<title>` made descriptive.** It was plain "Picacho" — a real name, but not something a stranger searching would type, and not what OG/Twitter were already using. Now "Picacho — Consistent AI Character Content, On the First Try" everywhere, matching what was already in the Open Graph tags.
+- [x] **Structured data (JSON-LD).** `Organization` schema site-wide (root layout — name, url, logo, for Google's knowledge-panel/logo attribution), `SoftwareApplication` schema on the homepage. Deliberately left out ratings/reviews/prices in the structured data — nothing on the page shows a star rating, and fabricating one to get a richer search snippet is what Google's spam policy on structured data exists to catch, not a shortcut worth the risk.
+- [x] **Google Search Console verification slot wired up.** `layout.tsx` reads `GOOGLE_SITE_VERIFICATION` and renders the meta tag only when it's set — no broken empty tag in the meantime.
+
+**Still needed from Wigly** (all require a Google/Bing login, which I can't do):
+- [ ] **Verify picacho.ai in Google Search Console.** Go to [search.google.com/search-console](https://search.google.com/search-console), "Add property" → Domain → `picacho.ai`. Google will give a TXT record to add at your domain registrar (works for both picacho.ai and picacho.io in one shot since it's a domain-level, not URL-level, verification) — that's usually faster than the HTML-meta-tag method. Once verified, go to Sitemaps in the left nav and submit `https://picacho.ai/sitemap.xml`.
+  - Alternative if the DNS TXT route is inconvenient: choose the "URL prefix" method instead, copy the meta tag content value it gives you, and send it to me — I'll set it as `GOOGLE_SITE_VERIFICATION` in Vercel and it'll go live on the next deploy.
+- [ ] **Do the same for picacho.io** as a separate property in Search Console (domain verification covers subdomains but not a second TLD), so Google indexes and reports on both.
+- [ ] **Bing Webmaster Tools** ([bing.com/webmasters](https://www.bing.com/webmasters)) — same idea, and covers Bing/Yahoo/DuckDuckGo's index too. Easiest path is "Import from Google Search Console," which pulls in the already-verified site and sitemap in one click once the above is done.
+- [ ] Real indexing takes days to weeks after submission either way — nothing to do but wait once the sitemap's submitted.
+
 ## After launch (polish, not blocking)
 
 - [x] Highlight the active tab in the admin nav bar (2026-08-07) — new `AdminNav` client component compares the current path and bolds/underlines the matching tab.

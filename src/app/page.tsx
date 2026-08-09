@@ -7,6 +7,23 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { cn } from "@/lib/cn";
 import { ShowcaseVideoPlayer } from "@/components/showcase-video-player";
 
+// SoftwareApplication structured data, homepage-only (unlike the Organization
+// block in the root layout, this describes the product itself, which only
+// makes sense to attach where the product is actually being introduced).
+// No aggregateRating/review/offers fields — nothing on this page shows a
+// star rating or a specific price, and inventing either for the sake of a
+// richer search snippet is exactly what Google's structured-data guidelines
+// treat as spam, risking a manual action instead of the intended benefit.
+const SOFTWARE_APPLICATION_JSON_LD = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "Picacho",
+  applicationCategory: "MultimediaApplication",
+  operatingSystem: "Web",
+  description: "The reliability layer for AI-generated character content.",
+  url: "https://picacho.ai",
+};
+
 // Small hand-rolled icons for the feature mockups below — same inline-SVG
 // convention used everywhere else in the app (see download-button.tsx,
 // result-actions.tsx, etc.), not a new icon dependency.
@@ -187,6 +204,10 @@ export default async function Home() {
 
   return (
     <div className="min-h-screen bg-neutral-50">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
+      />
       <MarketingHeader />
 
       {/* Hero — bg-sky-50 (not bg-white/bg-neutral-50, both of which the
