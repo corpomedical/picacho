@@ -132,7 +132,7 @@ async function checkGenerationAllowance(
   requestedCredits: number,
 ): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean }> {
   const [{ data: profile }, { data: recent }] = await Promise.all([
-    supabase.from("profiles").select("plan, role").eq("id", userId).single(),
+    supabase.from("profiles").select("plan, role, bonus_credits").eq("id", userId).single(),
     supabase
       .from("generations")
       .select("created_at")
@@ -155,11 +155,18 @@ async function checkGenerationAllowance(
     };
   }
 
-  const limit = PLAN_LIMITS[plan] ?? 0;
+  // Bonus credits (admin-granted, see setBonusCredits) stack on top of the
+  // plan's normal allowance rather than replacing it.
+  const limit = (PLAN_LIMITS[plan] ?? 0) + (profile?.bonus_credits ?? 0);
   const used = await getMonthlyUsage(userId);
 
   if (used + requestedCredits > limit) {
-    if (plan === "none") {
+    // Only the true zero-allowance case (no plan, and no bonus credits
+    // covering them either) gets the "no plan yet" message — a "none" plan
+    // user who's been granted bonus credits and used all of those should see
+    // the normal "used them all" message instead, not be told they have no
+    // plan when they clearly did have some allowance a moment ago.
+    if (plan === "none" && limit === 0) {
       return {
         error:
           "Your account doesn't have an active plan yet, so generations aren't available yet. Reach out and we'll get you set up.",
@@ -168,11 +175,12 @@ async function checkGenerationAllowance(
       };
     }
     const remaining = Math.max(limit - used, 0);
+    const planOrBonusLabel = plan === "none" ? "bonus" : PLAN_LABELS[plan];
     return {
       error:
         requestedCredits > 1
-          ? `That would use ${requestedCredits} credits (some models cost more than 1 per video), but you only have ${remaining} left on your ${PLAN_LABELS[plan]} plan this month.`
-          : `You've used all ${limit} credits included in your ${PLAN_LABELS[plan]} plan this month.`,
+          ? `That would use ${requestedCredits} credits (some models cost more than 1 per video), but you only have ${remaining} left${plan === "none" ? "" : ` on your ${planOrBonusLabel} plan`} this month.`
+          : `You've used all ${limit} credits${plan === "none" ? " you've been given" : ` included in your ${planOrBonusLabel} plan`} this month.`,
       plan,
       isAdmin,
     };

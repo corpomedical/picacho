@@ -90,7 +90,9 @@ export default async function SettingsPage({
   const [{ data: profile }, usedThisMonth, { data: supportEmailSetting }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement")
+      .select(
+        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, bonus_credits",
+      )
       .eq("id", data.user.id)
       .single(),
     getMonthlyUsage(data.user.id),
@@ -99,7 +101,9 @@ export default async function SettingsPage({
 
   const username = profile?.username ?? (data.user.email ?? "").split("@")[0];
   const plan = (profile?.plan ?? "none") as PlanId;
-  const limit = PLAN_LIMITS[plan];
+  // Bonus credits (admin-granted) stack on top of the plan limit — same rule
+  // as the actual enforcement in checkGenerationAllowance.
+  const limit = PLAN_LIMITS[plan] + (profile?.bonus_credits ?? 0);
   const pct = limit > 0 ? Math.min(100, Math.round((usedThisMonth / limit) * 100)) : 0;
   const nextPlanId = TIER_ORDER[TIER_ORDER.indexOf(plan) + 1];
   const nextTier = nextPlanId ? PRICING_TIERS.find((t) => t.id === nextPlanId) : undefined;

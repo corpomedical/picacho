@@ -32,14 +32,18 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-// iOS-style unread dot: a filled circle for 1-9, "9+" past that so it never
-// stretches into an oval that misreads as part of the icon.
+// iOS-style unread dot: iOS system red, a thin white keyline separating it
+// from whatever's behind it, and — the actual bug report — pushed further
+// out toward the corner (-2.5 instead of -1) so it perches on the icon's
+// edge instead of sitting on top of it and blocking the glyph. Stays a
+// circle up to 9, then naturally becomes a small pill for "9+" via
+// min-width + rounded-full, same as iOS badges do past a single digit.
 function NotificationBadge({ count }: { count: number }) {
   if (count <= 0) return null;
   return (
     <span
       aria-label={`${count} notification${count === 1 ? "" : "s"}`}
-      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white"
+      className="absolute -right-2.5 -top-2.5 z-10 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#FF3B30] px-[3px] text-[10px] font-bold leading-none text-white ring-[1.5px] ring-white"
     >
       {count > 9 ? "9+" : count}
     </span>
@@ -133,7 +137,12 @@ export function AdminCommandBar({
   return (
     <>
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-8 py-2.5">
-        <nav className="flex items-center gap-1 overflow-x-auto overscroll-x-contain">
+        {/* py-2 here isn't decorative — nav has overflow-x-auto for the
+            mobile scroll fix, which per the CSS overflow spec forces
+            overflow-y to auto too, clipping anything that pokes outside the
+            nav's own box. The badge sits partly above each icon's edge, so
+            without this padding the top of every badge would get cut off. */}
+        <nav className="flex items-center gap-1 overflow-x-auto overscroll-x-contain py-2">
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
@@ -238,8 +247,10 @@ export function AdminCommandBar({
                         {count > 0 && (
                           <span
                             className={cn(
-                              "absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-semibold leading-none",
-                              active ? "bg-white text-neutral-900" : "bg-red-500 text-white",
+                              "absolute -right-2 -top-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ring-[1.5px]",
+                              active
+                                ? "bg-white text-neutral-900 ring-neutral-900"
+                                : "bg-[#FF3B30] text-white ring-white",
                             )}
                           >
                             {count > 9 ? "9+" : count}

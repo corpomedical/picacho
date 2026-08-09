@@ -26,7 +26,7 @@ export default async function AdminUsersPage({
 
   let query = supabase
     .from("profiles")
-    .select("id, email, role, plan, status, created_at")
+    .select("id, email, role, plan, status, created_at, last_seen_at")
     .order("created_at", { ascending: false });
 
   if (q) query = query.ilike("email", `%${q}%`);
@@ -77,7 +77,10 @@ export default async function AdminUsersPage({
                   <p className="mt-0.5 text-xs text-neutral-500">
                     {PLAN_LABELS[(user.plan ?? "none") as PlanId]}
                     {user.role === "admin" && " · admin"} · joined{" "}
-                    {new Date(user.created_at).toLocaleDateString()}
+                    {new Date(user.created_at).toLocaleDateString()} ·{" "}
+                    {user.last_seen_at
+                      ? `active ${new Date(user.last_seen_at).toLocaleDateString()}`
+                      : "never active"}
                   </p>
                 </Link>
                 <div className="flex flex-shrink-0 items-center gap-3">

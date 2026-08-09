@@ -95,7 +95,7 @@ export async function getGenerateWorkspaceData(
   // Storyboard and multi-image reference are Elite-exclusive (admins get a
   // free pass, same as the generation-cap exemption below).
   const { data: profile } = userId
-    ? await supabase.from("profiles").select("plan, role").eq("id", userId).single()
+    ? await supabase.from("profiles").select("plan, role, bonus_credits").eq("id", userId).single()
     : { data: null };
   const elitePlanActive = profile?.plan === "elite" || profile?.role === "admin";
 
@@ -103,9 +103,12 @@ export async function getGenerateWorkspaceData(
   // composer once you're close to a usage cap — admins are exempt since
   // they're not actually capped (see checkGenerationAllowance), and it only
   // shows in the 80%-99% band; at 100% the hard block in runGeneration
-  // already takes over with its own message.
+  // already takes over with its own message. Bonus credits (admin-granted)
+  // widen the limit here too, same as the actual enforcement check, so this
+  // nudge doesn't fire early for someone who still has bonus credits left.
   const isAdminUser = profile?.role === "admin";
-  const planLimit = PLAN_LIMITS[(profile?.plan ?? "none") as PlanId];
+  const planLimit =
+    PLAN_LIMITS[(profile?.plan ?? "none") as PlanId] + (profile?.bonus_credits ?? 0);
   const usedThisMonth = userId ? await getMonthlyUsage(userId) : 0;
   const approachingLimit =
     !isAdminUser && planLimit > 0 && usedThisMonth < planLimit && usedThisMonth / planLimit >= 0.8;

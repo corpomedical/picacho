@@ -25,7 +25,7 @@ export default async function HistoryPage() {
       .eq("user_id", userData.user.id)
       .order("created_at", { ascending: false })
       .limit(50),
-    supabase.from("profiles").select("plan").eq("id", userData.user.id).single(),
+    supabase.from("profiles").select("plan, bonus_credits").eq("id", userData.user.id).single(),
     getMonthlyUsage(userData.user.id),
   ]);
 
@@ -41,7 +41,9 @@ export default async function HistoryPage() {
   const nameById = new Map((characters ?? []).map((c) => [c.id, c.name]));
 
   const plan = (profile?.plan ?? "none") as PlanId;
-  const limit = PLAN_LIMITS[plan];
+  // Bonus credits (admin-granted) stack on top of the plan limit — same rule
+  // as the actual enforcement in checkGenerationAllowance.
+  const limit = PLAN_LIMITS[plan] + (profile?.bonus_credits ?? 0);
 
   // Multi-angle requests insert one row per angle sharing angle_group_id —
   // collapse those into a single history card (linking to the front angle,

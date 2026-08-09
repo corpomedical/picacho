@@ -263,3 +263,31 @@ export async function setUserPlan(formData: FormData) {
   revalidatePath(`/admin/users/${userId}`);
   revalidatePath("/admin/users");
 }
+
+// "Give this user a token" — bonus generation credits for the current month,
+// on top of whatever their plan normally allows (see checkGenerationAllowance
+// in generations/actions.ts, which adds this to the plan limit). Sets the
+// absolute value rather than incrementing, same as setUserPlan above — the
+// field always shows the true current amount so there's no mental math to
+// "add 3 more" on top of a number you'd otherwise have to look up first.
+export async function setBonusCredits(formData: FormData) {
+  const { supabase } = await requireAdmin();
+  const userId = formData.get("user_id") as string;
+  const redirectTo = `/admin/users/${userId}`;
+  const raw = formData.get("bonus_credits") as string;
+  const bonusCredits = Number.parseInt(raw, 10);
+
+  if (!Number.isFinite(bonusCredits) || bonusCredits < 0) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("Bonus credits must be 0 or more.")}`);
+  }
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ bonus_credits: bonusCredits })
+    .eq("id", userId);
+  if (error) {
+    redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/admin/users/${userId}`);
+}
