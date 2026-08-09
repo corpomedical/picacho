@@ -50,7 +50,9 @@ export default async function VideosPage() {
         result_url: representative.result_url,
         content_type: representative.content_type,
         created_at: representative.created_at,
-        characterName: nameById.get(representative.character_profile_id) ?? t.history.unknownCharacter,
+        characterName: representative.character_profile_id
+          ? (nameById.get(representative.character_profile_id) ?? t.history.unknownCharacter)
+          : t.history.noCharacter,
         angleCount: rows.length > 1 ? rows.length : undefined,
       };
     })

@@ -945,6 +945,20 @@ function GenerateFormInner({
   const [storyboardEndPath, setStoryboardEndPath] = useState<string | null>(null);
   const [multiRefPaths, setMultiRefPaths] = useState<string[]>([]);
 
+  // Photos uploaded specifically for the storyboard/multi-reference panel —
+  // a person can now anchor these to an uploaded photo instead of, or
+  // alongside, a saved character reference photo (see the upload tile
+  // rendered first in each grid below), whether or not a character is even
+  // selected. Kept separate from pendingAttachments (the general chat-
+  // message attachments) since these are slotted straight into storyboard/
+  // multi-ref rather than shown as a chat bubble attachment. Identified by
+  // their signed url (always starts with "http") rather than a storage
+  // path — that's how the server (actions.ts) tells an upload apart from a
+  // character's own saved photo with no extra form field needed.
+  const [panelUploads, setPanelUploads] = useState<{ path: string; url: string }[]>([]);
+  const [panelUploadBusy, setPanelUploadBusy] = useState(false);
+  const panelUploadInputRef = useRef<HTMLInputElement>(null);
+
   // Which of the selected character's OWN saved reference photos anchors
   // this generation — only meaningful once a character has more than one
   // (see the picker below). null means "use the character's first/default
@@ -987,6 +1001,17 @@ function GenerateFormInner({
   const currentCharacter = characters.find((c) => c.id === characterId);
   const referencePhotos = currentCharacter?.referencePhotos ?? [];
 
+  // The combined pool the storyboard/multi-reference pickers draw from —
+  // freshly uploaded photos first (most recent intent), then whatever the
+  // selected character already has saved. `value` is what actually gets
+  // sent on submit (a raw url for uploads, a storage path for a character's
+  // own photo — see resolveMaybeSignedUrl in actions.ts); `thumbUrl` is
+  // always a displayable url either way.
+  const advancedPhotoOptions = [
+    ...panelUploads.map((p) => ({ key: p.url, thumbUrl: p.url, value: p.url })),
+    ...referencePhotos.map((p) => ({ key: p.path, thumbUrl: p.url, value: p.path })),
+  ];
+
   // Multi-character cast — the primary plus every companion, resolved back
   // to full CharacterOption objects so their reference-photo counts and
   // names are available for the inline validation/warning copy below.
@@ -1001,11 +1026,10 @@ function GenerateFormInner({
     : undefined;
 
   // Whether storyboard/multi-reference is a plan+model fit at all — doesn't
-  // depend on a character being picked yet, so the option stays visible
-  // (with a "pick a character first" hint inside) instead of quietly
-  // vanishing now that no character is auto-selected on load.
+  // depend on a character being picked, or having any saved photos, since
+  // the panel now also accepts freshly uploaded photos (see panelUploads
+  // above and the upload tile in each grid below).
   const advancedVideoEligible = contentType === "video" && videoModelId === "kling" && elitePlanActive;
-  const canUseAdvancedVideo = advancedVideoEligible && referencePhotos.length > 0;
 
   useEffect(() => {
     const saved = window.localStorage.getItem(VOICE_MODE_STORAGE_KEY);
@@ -1123,6 +1147,7 @@ function GenerateFormInner({
     setStoryboardStartPath(null);
     setStoryboardEndPath(null);
     setMultiRefPaths([]);
+    setPanelUploads([]);
   }
 
   function openAdvancedVideo(mode: "storyboard" | "multiref") {
@@ -1173,6 +1198,33 @@ function GenerateFormInner({
       if (prev.length >= 4) return prev;
       return [...prev, path];
     });
+  }
+
+  // Uploads a photo straight into the storyboard/multi-reference pool (see
+  // advancedPhotoOptions above) — reuses the same chat-attachments upload
+  // used for regular message attachments, since a signed url from either one
+  // works identically as a fal.ai-fetchable reference. Single-file (not the
+  // multi-select handleFilesSelected above) since each click here is "add
+  // one more option to pick from," not "attach these to send."
+  function handlePanelFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setPanelUploadBusy(true);
+    const formData = new FormData();
+    formData.set("file", file);
+    uploadChatAttachment(formData)
+      .then((result) => {
+        if (result.error !== null || !result.attachment) {
+          setError(result.error ?? "Couldn't upload that photo.");
+          return;
+        }
+        setPanelUploads((prev) => [...prev, { path: result.attachment!.path, url: result.attachment!.url }]);
+      })
+      .catch(() => {
+        setError(`${file.name} couldn't be uploaded — it may be too large or the connection dropped.`);
+      })
+      .finally(() => setPanelUploadBusy(false));
   }
 
   function cancelMultiAngle() {
@@ -1456,10 +1508,12 @@ function GenerateFormInner({
       setError(g.describeFirst);
       return;
     }
-    if (!characterId) {
-      setError(g.pickCharacter);
-      return;
-    }
+    // A character is no longer required here — someone may just want to
+    // generate from an uploaded photo, or from the prompt alone, with
+    // nothing saved to a character (see runGeneration in actions.ts, which
+    // now accepts an empty character_id). Multi-angle mode (handleSubmit)
+    // and multi-character mode below still require one, since both are
+    // inherently about a saved character's consistency across several shots.
     if (videoAdvancedMode === "storyboard" && !storyboardStartPath) {
       setError(g.storyboardNeedsStart);
       return;
@@ -2283,13 +2337,7 @@ function GenerateFormInner({
                 </div>
               )}
 
-              {advancedPanelOpen && advancedVideoEligible && !canUseAdvancedVideo && (
-                <div className="border-t border-neutral-100 px-3 py-3">
-                  <p className="text-xs text-neutral-500">{g.needsCharacterForAdvanced}</p>
-                </div>
-              )}
-
-              {advancedPanelOpen && canUseAdvancedVideo && (
+              {advancedPanelOpen && advancedVideoEligible && (
                 <div className="space-y-3 border-t border-neutral-100 px-3 py-3">
                   <div className="flex gap-1 rounded-full bg-neutral-100 p-1">
                     {(["storyboard", "multiref"] as const).map((mode) => (
@@ -2317,18 +2365,32 @@ function GenerateFormInner({
                           {g.startFrameLabel}
                         </p>
                         <div className="mt-1.5 grid grid-cols-5 gap-1.5">
-                          {referencePhotos.map((p) => (
+                          <button
+                            type="button"
+                            title={g.uploadPhotoTitle}
+                            aria-label={g.uploadPhotoTitle}
+                            onClick={() => panelUploadInputRef.current?.click()}
+                            disabled={panelUploadBusy}
+                            className="flex aspect-square items-center justify-center rounded-[10px] border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 disabled:opacity-50"
+                          >
+                            {panelUploadBusy ? (
+                              <LoaderIcon className="h-4 w-4" />
+                            ) : (
+                              <PlusIcon className="h-4 w-4" />
+                            )}
+                          </button>
+                          {advancedPhotoOptions.map((p) => (
                             <button
-                              key={p.path}
+                              key={p.key}
                               type="button"
-                              onClick={() => toggleStoryboardPhoto(p.path, "start")}
+                              onClick={() => toggleStoryboardPhoto(p.value, "start")}
                               className={cn(
                                 "relative aspect-square overflow-hidden rounded-[10px] border-2",
-                                storyboardStartPath === p.path ? "border-neutral-900" : "border-transparent",
+                                storyboardStartPath === p.value ? "border-neutral-900" : "border-transparent",
                               )}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={p.url} alt="" className="h-full w-full object-cover" />
+                              <img src={p.thumbUrl} alt="" className="h-full w-full object-cover" />
                             </button>
                           ))}
                         </div>
@@ -2338,18 +2400,32 @@ function GenerateFormInner({
                           {g.endFrameLabel}
                         </p>
                         <div className="mt-1.5 grid grid-cols-5 gap-1.5">
-                          {referencePhotos.map((p) => (
+                          <button
+                            type="button"
+                            title={g.uploadPhotoTitle}
+                            aria-label={g.uploadPhotoTitle}
+                            onClick={() => panelUploadInputRef.current?.click()}
+                            disabled={panelUploadBusy}
+                            className="flex aspect-square items-center justify-center rounded-[10px] border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 disabled:opacity-50"
+                          >
+                            {panelUploadBusy ? (
+                              <LoaderIcon className="h-4 w-4" />
+                            ) : (
+                              <PlusIcon className="h-4 w-4" />
+                            )}
+                          </button>
+                          {advancedPhotoOptions.map((p) => (
                             <button
-                              key={p.path}
+                              key={p.key}
                               type="button"
-                              onClick={() => toggleStoryboardPhoto(p.path, "end")}
+                              onClick={() => toggleStoryboardPhoto(p.value, "end")}
                               className={cn(
                                 "relative aspect-square overflow-hidden rounded-[10px] border-2",
-                                storyboardEndPath === p.path ? "border-neutral-900" : "border-transparent",
+                                storyboardEndPath === p.value ? "border-neutral-900" : "border-transparent",
                               )}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={p.url} alt="" className="h-full w-full object-cover" />
+                              <img src={p.thumbUrl} alt="" className="h-full w-full object-cover" />
                             </button>
                           ))}
                         </div>
@@ -2361,20 +2437,34 @@ function GenerateFormInner({
                     <div className="space-y-2">
                       <p className="text-xs text-neutral-500">{g.multiRefHint}</p>
                       <div className="grid grid-cols-5 gap-1.5">
-                        {referencePhotos.map((p) => {
-                          const checked = multiRefPaths.includes(p.path);
+                        <button
+                          type="button"
+                          title={g.uploadPhotoTitle}
+                          aria-label={g.uploadPhotoTitle}
+                          onClick={() => panelUploadInputRef.current?.click()}
+                          disabled={panelUploadBusy}
+                          className="flex aspect-square items-center justify-center rounded-[10px] border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 disabled:opacity-50"
+                        >
+                          {panelUploadBusy ? (
+                            <LoaderIcon className="h-4 w-4" />
+                          ) : (
+                            <PlusIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                        {advancedPhotoOptions.map((p) => {
+                          const checked = multiRefPaths.includes(p.value);
                           return (
                             <button
-                              key={p.path}
+                              key={p.key}
                               type="button"
-                              onClick={() => toggleMultiRefPhoto(p.path)}
+                              onClick={() => toggleMultiRefPhoto(p.value)}
                               className={cn(
                                 "relative aspect-square overflow-hidden rounded-[10px] border-2",
                                 checked ? "border-neutral-900" : "border-transparent",
                               )}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={p.url} alt="" className="h-full w-full object-cover" />
+                              <img src={p.thumbUrl} alt="" className="h-full w-full object-cover" />
                               {checked && (
                                 <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-900 text-white">
                                   <CheckIcon className="h-2.5 w-2.5" />
@@ -2386,6 +2476,14 @@ function GenerateFormInner({
                       </div>
                     </div>
                   )}
+
+                  <input
+                    ref={panelUploadInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handlePanelFileSelected}
+                  />
 
                   <div className="flex justify-end gap-2 pt-1">
                     <button

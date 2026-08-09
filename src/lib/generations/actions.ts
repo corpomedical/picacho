@@ -69,6 +69,25 @@ async function persistGeneratedImage(
   return data.signedUrl;
 }
 
+// Storyboard/multi-reference slots (see runGeneration below) can now come
+// from either a character's own saved reference-photo bucket path (needs
+// signing here, as before) or a photo freshly uploaded through the composer,
+// which the client already has a ready, pre-signed URL for (see
+// uploadChatAttachment in attachments/actions.ts) — passed straight through
+// with no extra signing needed. A signed URL always starts with "http"; a
+// character-references storage path never does, so that's a simple, reliable
+// way to tell the two apart without a second formData field per slot.
+async function resolveMaybeSignedUrl(
+  supabase: SupabaseClient,
+  pathOrUrl: string,
+): Promise<string | null> {
+  if (pathOrUrl.startsWith("http")) return pathOrUrl;
+  const { data: signed } = await supabase.storage
+    .from("character-references")
+    .createSignedUrl(pathOrUrl, 60 * 10);
+  return signed?.signedUrl ?? null;
+}
+
 // After a successful image generation, save a copy into the character's own
 // reference-photo gallery — otherwise a freshly created character has no
 // thumbnail at all until someone remembers to go upload one by hand. Only
@@ -258,7 +277,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (userInput.length > MAX_PROMPT_LENGTH) {
     return { error: `Keep prompts under ${MAX_PROMPT_LENGTH} characters.` };
   }
-  if (!characterId) return { error: "Pick a character to generate with." };
+  // A character is no longer required — a person may just want to generate
+  // a one-off image/video from an uploaded photo, or from the prompt alone,
+  // with nothing saved to a character. Real request, 2026-08-09: this used
+  // to hard-block every generation without one. Multi-angle and multi-
+  // character mode still require a primary character (checked below, where
+  // each of those options is actually validated) since both are inherently
+  // about one saved character's consistency across several shots.
   if (referencePhotoPaths.length > 0 && referencePhotoPaths.length < 2) {
     return { error: "Pick at least 2 reference photos, or none, for multi-image reference." };
   }
@@ -288,13 +313,18 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
-  const { data: character, error: characterError } = await supabase
-    .from("character_profiles")
-    .select("*")
-    .eq("id", characterId)
-    .single();
+  // Only fetched when a character was actually picked — see the removed
+  // `!characterId` guard above. Everything below that dereferences
+  // `character` is now null-guarded (optional chaining for the paths that
+  // stay optional without one, an explicit check + early return for the
+  // few — dialogue, multi-character — that still inherently need one).
+  const characterQuery = characterId
+    ? await supabase.from("character_profiles").select("*").eq("id", characterId).single()
+    : { data: null, error: null };
+  const character = characterQuery.data;
+  type CharacterRow = NonNullable<typeof character>;
 
-  if (characterError || !character) {
+  if (characterId && (characterQuery.error || !character)) {
     return { error: "Couldn't find that character." };
   }
 
@@ -305,8 +335,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // model can actually tell one selected character apart from another (see
   // the rulebook-injection comment in pipeline.ts — there's no per-image
   // identity tag on fal.ai's side, only the photo itself and the prompt text).
-  let companionCharacters: typeof character[] = [];
+  let companionCharacters: CharacterRow[] = [];
   if (wantsMultiCharacter) {
+    // Multiple DIFFERENT characters appearing together is inherently about
+    // a primary character plus companions — there's no "no primary" version
+    // of this feature, unlike ordinary single-subject generation.
+    if (!character) {
+      return { error: "Pick a primary character to appear together with the others." };
+    }
     const { data: companions, error: companionsError } = await supabase
       .from("character_profiles")
       .select("*")
@@ -334,6 +370,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // can't actually produce speech.
   let dialogueVoiceId: string | null = null;
   if (wantsDialogue) {
+    // Dialogue is lip-synced onto the video using a specific character's
+    // assigned ElevenLabs voice — there's no "anonymous voice" to fall back
+    // to, so this one still genuinely needs a character selected.
+    if (!character) {
+      return {
+        error: "Pick a character with a voice assigned to add dialogue, or clear the dialogue field.",
+      };
+    }
     if (!character.voice_id) {
       return {
         error:
@@ -434,13 +478,20 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
 
   // Kling O3 Standard's image-to-video endpoint requires a start frame —
-  // there's no text-to-video fallback wired up for it (see fal.ts). Catch a
-  // character with no reference photo before spending any credits, not
-  // after the provider call fails.
-  if (contentType === "video" && videoModelId === "kling-o3" && !character.reference_image_urls?.[0]) {
+  // there's no text-to-video fallback wired up for it (see fal.ts). That
+  // frame can come from either the character's own saved reference photo or
+  // a photo attached directly to this message (see attachmentReferenceUrl
+  // above) — either satisfies it. Catch having neither before spending any
+  // credits, not after the provider call fails.
+  if (
+    contentType === "video" &&
+    videoModelId === "kling-o3" &&
+    !attachmentReferenceUrl &&
+    !character?.reference_image_urls?.[0]
+  ) {
     return {
       error:
-        "Kling O3 needs this character to have a reference photo — add one in Character settings, or switch to Kling 1.6.",
+        "Kling O3 needs a reference photo — add one to this character, attach a photo to this message, or switch to Kling 1.6.",
     };
   }
 
@@ -495,12 +546,17 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
   }
 
-  const characterForPipeline = {
-    name: character.name,
-    traits: character.traits ?? {},
-    motion_style: character.motion_style,
-    voice_tone_tags: character.voice_tone_tags ?? [],
-  };
+  // The empty-name placeholder is what tells pipeline.ts "no character was
+  // selected" — draft()/buildRulebook() there both special-case an empty
+  // name rather than writing an awkward "Character: ." into the prompt.
+  const characterForPipeline = character
+    ? {
+        name: character.name,
+        traits: character.traits ?? {},
+        motion_style: character.motion_style,
+        voice_tone_tags: character.voice_tone_tags ?? [],
+      }
+    : { name: "", traits: {}, motion_style: null, voice_tone_tags: [] };
 
   // Every companion, in the same shape — handed to runRealPipeline so it can
   // inject each one's name/traits into the compiled prompt text. That's the
@@ -524,7 +580,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     .insert({
       ...(clientGenerationId ? { id: clientGenerationId } : {}),
       user_id: userData.user.id,
-      character_profile_id: characterId,
+      // Nullable — an empty string isn't a valid uuid, so "no character"
+      // has to be a real null here, not "".
+      character_profile_id: characterId || null,
       character_profile_ids: wantsMultiCharacter ? [characterId, ...companionCharacterIds] : [],
       prompt_input: userInput,
       content_type: contentType,
@@ -576,11 +634,15 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         } else {
           // Otherwise, an explicitly picked photo from the character's own
           // gallery beats just always grabbing the first one — but only if
-          // it's genuinely one of this character's saved photos.
+          // it's genuinely one of this character's saved photos. character
+          // is null when no character was selected — every access below is
+          // optional-chained, leaving anchorUrl/chosenPath null in that case
+          // (a plain text-to-image/video generation, or one anchored purely
+          // to an attachment, both already handled above).
           const chosenPath =
-            requestedAnchorPhotoPath && character.reference_image_urls?.includes(requestedAnchorPhotoPath)
+            requestedAnchorPhotoPath && character?.reference_image_urls?.includes(requestedAnchorPhotoPath)
               ? requestedAnchorPhotoPath
-              : character.reference_image_urls?.[0];
+              : character?.reference_image_urls?.[0];
           if (chosenPath) {
             const { data: signed } = await supabase.storage
               .from("character-references")
@@ -614,8 +676,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         // Already validated above that every selected character — primary
         // included — has at least one reference photo. Sign each one, in
         // the order they were picked, so the model has a real photo of
-        // every participant to work from.
-        const cast = [character, ...companionCharacters];
+        // every participant to work from. wantsMultiCharacter can only be
+        // true when a primary character is set (validated earlier in this
+        // function, in the block right after companion ids are parsed) —
+        // TS just can't see that far back, hence the assertion.
+        const cast = [character!, ...companionCharacters];
         const signedUrls = await Promise.all(
           cast.map(async (c) => {
             // Every cast member was already confirmed to have a photo above
@@ -640,27 +705,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       } else if (wantsAdvancedVideoOptions) {
         if (referencePhotoPaths.length >= 2) {
           const signedUrls = await Promise.all(
-            referencePhotoPaths.map(async (path) => {
-              const { data: signed } = await supabase.storage
-                .from("character-references")
-                .createSignedUrl(path, 60 * 10);
-              return signed?.signedUrl ?? null;
-            }),
+            referencePhotoPaths.map((path) => resolveMaybeSignedUrl(supabase, path)),
           );
           videoReferenceImageUrls = signedUrls.filter((u): u is string => Boolean(u));
           if (videoReferenceImageUrls.length < 2) videoReferenceImageUrls = undefined;
         } else {
           if (storyboardStartPath) {
-            const { data: signed } = await supabase.storage
-              .from("character-references")
-              .createSignedUrl(storyboardStartPath, 60 * 10);
-            videoStartImageUrl = signed?.signedUrl ?? null;
+            videoStartImageUrl = await resolveMaybeSignedUrl(supabase, storyboardStartPath);
           }
           if (storyboardEndPath) {
-            const { data: signed } = await supabase.storage
-              .from("character-references")
-              .createSignedUrl(storyboardEndPath, 60 * 10);
-            videoEndImageUrl = signed?.signedUrl ?? null;
+            videoEndImageUrl = await resolveMaybeSignedUrl(supabase, storyboardEndPath);
           }
         }
       }
@@ -746,7 +800,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }
 
-  if (succeeded && contentType === "image" && resultUrl?.startsWith("http")) {
+  // Nothing to add this to when the generation wasn't tied to any character
+  // in the first place — a plain upload/no-character image just isn't saved
+  // anywhere but History.
+  if (succeeded && contentType === "image" && characterId && resultUrl?.startsWith("http")) {
     await addGeneratedImageAsReference(supabase, userData.user.id, characterId, resultUrl);
     revalidatePath("/app/character");
     revalidatePath(`/app/character/${characterId}`);

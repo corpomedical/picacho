@@ -118,7 +118,7 @@ export default async function HistoryPage() {
                     {g.prompt_input}
                   </p>
                   <p className="mt-0.5 truncate text-xs text-neutral-500">
-                    {nameById.get(g.character_profile_id) ?? h.unknownCharacter} ·{" "}
+                    {g.character_profile_id ? (nameById.get(g.character_profile_id) ?? h.unknownCharacter) : h.noCharacter} ·{" "}
                     {new Date(g.created_at).toLocaleDateString()} ·{" "}
                     {g.angleCount
                       ? formatMsg(h.angleCountOther, { n: g.angleCount })

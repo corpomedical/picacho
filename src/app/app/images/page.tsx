@@ -33,7 +33,9 @@ export default async function ImagesPage() {
     result_url: g.result_url,
     content_type: g.content_type,
     created_at: g.created_at,
-    characterName: nameById.get(g.character_profile_id) ?? t.history.unknownCharacter,
+    characterName: g.character_profile_id
+      ? (nameById.get(g.character_profile_id) ?? t.history.unknownCharacter)
+      : t.history.noCharacter,
   }));
 
   return (

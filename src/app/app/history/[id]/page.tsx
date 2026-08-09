@@ -127,7 +127,7 @@ export default async function HistoryDetailPage({
           <div>
             <p className="text-sm font-medium text-neutral-900">{generation.prompt_input}</p>
             <p className="mt-1 text-xs text-neutral-500">
-              {character?.name ?? h.unknownCharacter} ·{" "}
+              {generation.character_profile_id ? (character?.name ?? h.unknownCharacter) : h.noCharacter} ·{" "}
               {new Date(generation.created_at).toLocaleString()}
               {sortedAngleRows.length > 1 && ` · ${formatMsg(h.angleCountOther, { n: sortedAngleRows.length })}`}
             </p>

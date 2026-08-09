@@ -164,7 +164,11 @@ function isElementPresent(prompt: string, value: string): boolean {
 
 function draft(userInput: string, character: CharacterForPipeline, omitMotion: boolean) {
   const parts = [
-    `Character: ${character.name}.`,
+    // Empty name means no character was selected for this generation (see
+    // the placeholder object actions.ts builds in that case) — omitting the
+    // line entirely instead of emitting a bare "Character: ." keeps the mock
+    // prompt readable.
+    character.name && `Character: ${character.name}.`,
     character.traits.hair && `Hair: ${character.traits.hair}.`,
     character.traits.outfit && `Outfit: ${character.traits.outfit}.`,
     character.traits.personality && `Personality: ${character.traits.personality}.`,
@@ -435,6 +439,10 @@ export async function runRealPipeline(
   const attempts: AttemptLog[] = [];
   let finalPrompt = "";
   const hasCompanions = Boolean(options.companions?.length);
+  // Empty name is the signal actions.ts uses for "no character selected"
+  // (see the placeholder object it builds in that case) — everything below
+  // that would otherwise reference the character by name skips doing so.
+  const hasCharacter = Boolean(character.name?.trim());
   const primaryElements = requiredElements(character, options.contentType);
   const companionElementSets = (options.companions ?? []).map((c) => ({
     name: c.name,
@@ -453,12 +461,15 @@ export async function runRealPipeline(
     companions: { name: string; elements: { label: string; value: string }[] }[],
   ): string {
     if (!hasCompanions) {
+      if (!hasCharacter) {
+        return "(no specific character for this generation — follow the request and any attached reference photo as-is.)";
+      }
       return primary.length
         ? primary.map((el) => `- ${el.label}: ${el.value}`).join("\n")
         : "(no fixed traits set on this character yet)";
     }
     return [
-      characterRulebookBlock(character.name, primary, "primary character"),
+      ...(hasCharacter ? [characterRulebookBlock(character.name, primary, "primary character")] : []),
       ...companions.map((c) => characterRulebookBlock(c.name, c.elements, "also appears in this scene")),
     ].join("\n\n");
   }
