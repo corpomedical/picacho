@@ -89,7 +89,26 @@ export function CharacterForm({
     setGenerating(true);
     const formData = new FormData();
     formData.set("prompt", genPrompt);
-    const result = await generateReferenceImage(formData);
+
+    // This call itself (not just what it returns) can fail — on a weak
+    // mobile connection the fetch Next.js makes to invoke the server action
+    // can drop before a response ever comes back, throwing a raw network
+    // TypeError. Uncaught, that became an unhandled rejection: no message
+    // ever reached genError, the button stayed stuck on "Generating…"
+    // forever, and the only trace was an auto-filed report with a bare
+    // "TypeError: network error" — exactly what surfaced this bug. Provider
+    // errors (bad prompt, safety filter, etc.) still come back as a normal
+    // result.error below; this catch is only for the request never
+    // completing at all.
+    let result;
+    try {
+      result = await generateReferenceImage(formData);
+    } catch (err) {
+      console.error("generateReferenceImage request failed:", err);
+      setGenError(c.connectionError);
+      setGenerating(false);
+      return;
+    }
 
     if (result.error !== null) {
       setGenError(result.error);
@@ -177,7 +196,13 @@ export function CharacterForm({
       window.location.assign(initial?.id ? "/app/character" : "/app/generate");
     } catch (err) {
       console.error("Failed to save character:", err);
-      setError(err instanceof Error ? err.message : c.somethingWrong);
+      // The direct-to-storage photo upload above can hit the same raw
+      // network TypeError as the reference-image generator on a weak
+      // connection — same fix here: recognize it and show the plain
+      // connection message instead of the technical one.
+      const message = err instanceof Error ? err.message : "";
+      const isNetworkError = /network|fetch|failed to load/i.test(message);
+      setError(isNetworkError ? c.connectionError : message || c.somethingWrong);
       setSubmitting(false);
     }
   }

@@ -408,6 +408,7 @@ const en = {
     maxImages: "Max 5 reference images — remove one first.",
     giveName: "Give your character a name.",
     somethingWrong: "Something went wrong saving this.",
+    connectionError: "Couldn't reach the server — check your connection and try again.",
   },
   projects: {
     title: "Projects",

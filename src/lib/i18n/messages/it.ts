@@ -396,6 +396,7 @@ const it = {
     maxImages: "Massimo 5 immagini di riferimento — rimuovine una prima.",
     giveName: "Dai un nome al tuo personaggio.",
     somethingWrong: "Qualcosa è andato storto nel salvataggio.",
+    connectionError: "Impossibile raggiungere il server — controlla la connessione e riprova.",
   },
   projects: {
     title: "Progetti",
