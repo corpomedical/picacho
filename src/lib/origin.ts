@@ -10,23 +10,39 @@ const CANONICAL_ORIGIN = "https://picacho.io";
 // Stripe Checkout success/cancel URLs). Prefers NEXT_PUBLIC_SITE_URL when
 // it's set (production), otherwise reads the incoming request's Host header
 // so this also works correctly during local dev, before that env var exists.
+// Every hostname we actually serve the app on. A redirect built for a
+// visitor already on one of these must stay on that exact host — see the
+// incident note in getOrigin().
+const KNOWN_HOSTS = [
+  "picacho.io",
+  "www.picacho.io",
+  "picacho.ai",
+  "www.picacho.ai",
+];
+
 export async function getOrigin() {
-  // Real incident, 2026-08-09: this returned NEXT_PUBLIC_SITE_URL as-is,
-  // trusting it was actually set to https://picacho.io. It turned out to be
-  // set to the raw *.vercel.app deployment URL instead — so every Stripe
-  // Checkout success_url sent the customer to a domain that doesn't share
-  // the picacho.io/.ai auth cookie, making them look signed out right after
-  // paying. Checking the env var's own value (not just the Host-header
-  // fallback below) closes that gap regardless of what it's misconfigured to.
-  if (process.env.NEXT_PUBLIC_SITE_URL && !process.env.NEXT_PUBLIC_SITE_URL.includes(".vercel.app")) {
-    return process.env.NEXT_PUBLIC_SITE_URL;
-  }
   const host = (await headers()).get("host");
-  if (!host) return CANONICAL_ORIGIN;
-  const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
-  if (isLocal) return `http://${host}`;
-  // Same reasoning as above, for the Host-header fallback path (used when
-  // NEXT_PUBLIC_SITE_URL isn't set at all, e.g. local dev before it exists).
-  if (host.endsWith(".vercel.app")) return CANONICAL_ORIGIN;
-  return `https://${host}`;
+
+  if (host) {
+    const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
+    if (isLocal) return `http://${host}`;
+    // Real incident #2, 2026-08-09 (found in a full-site scan): this used to
+    // return NEXT_PUBLIC_SITE_URL first whenever it was set. That env var is
+    // set to https://picacho.ai — so a customer signed in on picacho.io who
+    // started Checkout got sent back to picacho.ai afterwards. Different
+    // domain, so the Supabase auth cookie doesn't come along, and they land
+    // "signed out" right after paying. Exactly the same failure the earlier
+    // *.vercel.app guard was added for, just between the two real domains
+    // instead. Staying on whichever known host the request actually came in
+    // on fixes it for every combination, and needs no env-var change.
+    if (KNOWN_HOSTS.includes(host.toLowerCase())) return `https://${host}`;
+  }
+
+  // Unrecognized host (a raw *.vercel.app deployment URL, a preview alias, a
+  // missing Host header). Never build a redirect back to one of those — the
+  // session cookie doesn't exist there either. Prefer the configured site
+  // URL, ignoring it if it's itself pointed at a Vercel deployment domain.
+  const configured = process.env.NEXT_PUBLIC_SITE_URL;
+  if (configured && !configured.includes(".vercel.app")) return configured;
+  return CANONICAL_ORIGIN;
 }
