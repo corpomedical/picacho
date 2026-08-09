@@ -1,5 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
+import { getFalAccountBalance } from "@/lib/generations/providers/fal";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { AutoRefresh } from "@/components/auto-refresh";
 
 const STANDARD_GENDERS = ["Woman", "Man", "Non-binary"];
@@ -87,6 +89,7 @@ export default async function AdminStatsPage() {
     { data: countryRows30d },
     { data: genderRows },
     { data: companyRows },
+    falBalance,
   ] = await Promise.all([
     supabase.from("profiles").select("*", { count: "exact", head: true }),
     supabase
@@ -111,6 +114,11 @@ export default async function AdminStatsPage() {
     supabase.from("page_views").select("country").gte("created_at", thirtyDaysAgo).limit(20000),
     supabase.from("profiles").select("gender"),
     supabase.from("profiles").select("company"),
+    // Not a Supabase query — hits fal.ai's own billing API directly. Kept in
+    // this same Promise.all purely so it loads in parallel with everything
+    // else instead of adding its own extra round-trip; never throws (see
+    // getFalAccountBalance), so it can't take the rest of the page down.
+    getFalAccountBalance(),
   ]);
 
   const total = totalUsers ?? 0;
@@ -162,6 +170,64 @@ export default async function AdminStatsPage() {
         <StatCard label="Page views (7d)" value={pageViews7d ?? 0} hint={`${pageViews30d ?? 0} in 30d · ${pageViewsTotal ?? 0} all-time`} />
         <StatCard label="Unique visitors (7d)" value={uniqueVisitors7d} />
       </div>
+
+      <Card className="mt-6">
+        <h2 className="text-sm font-semibold text-neutral-900">AI provider funds</h2>
+        <p className="mt-1 text-xs text-neutral-500">
+          Remaining balance on each account used to generate content. Only fal.ai publishes an API
+          for this — OpenAI and Anthropic don&apos;t expose credit balance programmatically at
+          all, so those two have to be checked on their own dashboards.
+        </p>
+        <div className="mt-4 divide-y divide-neutral-100">
+          <div className="flex items-center justify-between py-3">
+            <div>
+              <p className="text-sm text-neutral-900">fal.ai</p>
+              <p className="mt-0.5 text-xs text-neutral-400">Video, Flux images, ElevenLabs + Sync Labs</p>
+            </div>
+            {falBalance.ok ? (
+              <p className="text-lg font-semibold text-neutral-900">
+                {falBalance.currency === "USD" ? "$" : `${falBalance.currency} `}
+                {falBalance.balance.toFixed(2)}
+              </p>
+            ) : (
+              <div className="text-right">
+                <Badge tone="warning">unavailable</Badge>
+                <p className="mt-1 max-w-64 text-xs text-neutral-400">{falBalance.reason}</p>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between py-3">
+            <div>
+              <p className="text-sm text-neutral-900">OpenAI</p>
+              <p className="mt-0.5 text-xs text-neutral-400">GPT Image (review), Whisper + TTS</p>
+            </div>
+            <a
+              href="https://platform.openai.com/settings/organization/billing/overview"
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-neutral-500 underline hover:text-neutral-900"
+            >
+              Check on OpenAI &rarr;
+            </a>
+          </div>
+
+          <div className="flex items-center justify-between py-3">
+            <div>
+              <p className="text-sm text-neutral-900">Anthropic</p>
+              <p className="mt-0.5 text-xs text-neutral-400">Claude (prompt drafting)</p>
+            </div>
+            <a
+              href="https://console.anthropic.com/settings/billing"
+              target="_blank"
+              rel="noreferrer"
+              className="text-xs text-neutral-500 underline hover:text-neutral-900"
+            >
+              Check on Anthropic &rarr;
+            </a>
+          </div>
+        </div>
+      </Card>
 
       <Card className="mt-6">
         <h2 className="text-sm font-semibold text-neutral-900">Feature adoption</h2>

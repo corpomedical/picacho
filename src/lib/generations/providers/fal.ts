@@ -466,3 +466,56 @@ export async function lipSyncVideo(videoUrl: string, audioUrl: string): Promise<
   if (!url) throw new Error("fal.ai (Sync Lipsync) response didn't include a video URL.");
   return url;
 }
+
+// Account balance — for the "AI provider funds" card on Admin > Stats.
+// Confirmed against fal.ai's published Platform API docs
+// (https://fal.ai/docs/platform-apis/v1/account/billing, 2026-08-09):
+// GET https://api.fal.ai/v1/account/billing?expand=credits, same
+// `authorization: Key <key>` header style as every other call in this file.
+// One real wrinkle: that endpoint's docs list its security scheme as
+// "adminApiKey" specifically — fal.ai lets a key be scoped to admin/account
+// access or not when it's created in their dashboard, separate from whether
+// it can run models. FAL_KEY here is whatever key was set up for generation
+// calls, so this may 401/403 if that particular key wasn't given admin
+// scope — that's a real, expected outcome (not a bug), surfaced to the
+// caller as `ok: false` with a reason rather than thrown, so a scope
+// mismatch on one provider never breaks the whole stats page. Never throws.
+export type FalAccountBalance =
+  | { ok: true; balance: number; currency: string }
+  | { ok: false; reason: string };
+
+export async function getFalAccountBalance(): Promise<FalAccountBalance> {
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) {
+    return { ok: false, reason: "FAL_KEY is not set." };
+  }
+
+  try {
+    const res = await fetchWithTimeout(
+      "https://api.fal.ai/v1/account/billing?expand=credits",
+      { headers: { authorization: `Key ${apiKey}` } },
+      8_000,
+    );
+
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        return {
+          ok: false,
+          reason: "This key isn't scoped for account/billing access on fal.ai.",
+        };
+      }
+      const errText = await res.text();
+      return { ok: false, reason: `fal.ai billing API error (${res.status}): ${errText.slice(0, 200)}` };
+    }
+
+    const data = await res.json();
+    const balance = data?.credits?.current_balance;
+    const currency = data?.credits?.currency;
+    if (typeof balance !== "number" || typeof currency !== "string") {
+      return { ok: false, reason: "fal.ai billing response didn't include a credit balance." };
+    }
+    return { ok: true, balance, currency };
+  } catch (err) {
+    return { ok: false, reason: err instanceof Error ? err.message : "Request failed." };
+  }
+}
