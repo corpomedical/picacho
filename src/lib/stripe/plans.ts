@@ -26,15 +26,14 @@ export const PLAN_PRICE_IDS: Record<PaidPlanId, string | null> = {
 // otherwise apply when a USD charge gets converted to EUR at payout (the
 // Stripe account settles in Spain, in EUR).
 //
-// Null until setup-eur-pricing.js (run locally, since this sandbox can't
-// reach api.stripe.com) creates the real live Prices — checkout safely falls
-// back to the USD price for every plan until these are filled in, so this
-// file can ship ahead of that script actually being run.
+// Created 2026-08-09 via setup-eur-pricing.js (run locally, since this
+// sandbox can't reach api.stripe.com), each attached to the same Product as
+// its USD counterpart above.
 export const PLAN_PRICE_IDS_EUR: Record<PaidPlanId, string | null> = {
-  starter: null,
-  growth: null,
-  studio: null,
-  elite: null,
+  starter: "price_1U2ZItApOHKJpXjxMWvOYMa1",
+  growth: "price_1U2ZIuApOHKJpXjxnwr2dakn",
+  studio: "price_1U2ZIuApOHKJpXjxhvJSDafF",
+  elite: "price_1U2ZIvApOHKJpXjxfEaFxife",
 };
 
 export function planIdForPriceId(priceId: string): PaidPlanId | undefined {
