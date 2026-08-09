@@ -11,19 +11,22 @@ const CANONICAL_ORIGIN = "https://picacho.io";
 // it's set (production), otherwise reads the incoming request's Host header
 // so this also works correctly during local dev, before that env var exists.
 export async function getOrigin() {
-  if (process.env.NEXT_PUBLIC_SITE_URL) return process.env.NEXT_PUBLIC_SITE_URL;
+  // Real incident, 2026-08-09: this returned NEXT_PUBLIC_SITE_URL as-is,
+  // trusting it was actually set to https://picacho.io. It turned out to be
+  // set to the raw *.vercel.app deployment URL instead — so every Stripe
+  // Checkout success_url sent the customer to a domain that doesn't share
+  // the picacho.io/.ai auth cookie, making them look signed out right after
+  // paying. Checking the env var's own value (not just the Host-header
+  // fallback below) closes that gap regardless of what it's misconfigured to.
+  if (process.env.NEXT_PUBLIC_SITE_URL && !process.env.NEXT_PUBLIC_SITE_URL.includes(".vercel.app")) {
+    return process.env.NEXT_PUBLIC_SITE_URL;
+  }
   const host = (await headers()).get("host");
-  if (!host) return "http://localhost:3000";
+  if (!host) return CANONICAL_ORIGIN;
   const isLocal = host.startsWith("localhost") || host.startsWith("127.0.0.1");
   if (isLocal) return `http://${host}`;
-  // Real incident, 2026-08-09: NEXT_PUBLIC_SITE_URL wasn't taking effect on
-  // the live deployment, so this fell through to the Host header — which,
-  // on Vercel, can be the project's own auto-generated *.vercel.app domain
-  // rather than the custom one. A Stripe Checkout success_url built from
-  // that domain sends the customer to a host that doesn't share the
-  // picacho.io/.ai auth cookie at all, so right after paying they land on a
-  // page where they appear signed out. Never let that domain leak into a
-  // redirect URL — fall back to the real one instead.
+  // Same reasoning as above, for the Host-header fallback path (used when
+  // NEXT_PUBLIC_SITE_URL isn't set at all, e.g. local dev before it exists).
   if (host.endsWith(".vercel.app")) return CANONICAL_ORIGIN;
   return `https://${host}`;
 }
