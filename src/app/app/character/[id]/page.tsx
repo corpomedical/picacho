@@ -17,10 +17,16 @@ export default async function EditCharacterPage({
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
 
+  // .eq("user_id", ...) here isn't optional — without it, an admin's SELECT
+  // policy (which intentionally allows reading every user's characters, for
+  // /admin/users/[id]) would let this page load and let CharacterForm edit
+  // someone else's character. Same reasoning for the projects list below,
+  // which should only offer this user's own projects in the picker.
   const { data: profile } = await supabase
     .from("character_profiles")
     .select("*")
     .eq("id", id)
+    .eq("user_id", userData.user.id)
     .single();
 
   if (!profile) notFound();
@@ -34,7 +40,11 @@ export default async function EditCharacterPage({
         return { path, url: data?.signedUrl ?? "" };
       }),
     ),
-    supabase.from("projects").select("id, name").order("name", { ascending: true }),
+    supabase
+      .from("projects")
+      .select("id, name")
+      .eq("user_id", userData.user.id)
+      .order("name", { ascending: true }),
     supabase.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }),
   ]);
 

@@ -23,7 +23,16 @@ export default async function ProjectDetailPage({
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
 
-  const { data: project } = await supabase.from("projects").select("*").eq("id", id).single();
+  // .eq("user_id", ...) here isn't optional — an admin's SELECT policy
+  // intentionally allows reading every user's projects (for /admin), so
+  // without this an admin could open, edit, or delete someone else's
+  // project via this page's own forms.
+  const { data: project } = await supabase
+    .from("projects")
+    .select("*")
+    .eq("id", id)
+    .eq("user_id", userData.user.id)
+    .single();
 
   if (!project) notFound();
 
@@ -31,6 +40,7 @@ export default async function ProjectDetailPage({
     .from("character_profiles")
     .select("id, name")
     .eq("project_id", id)
+    .eq("user_id", userData.user.id)
     .order("created_at", { ascending: false });
 
   // Every other character this user owns — unassigned ones and ones sitting

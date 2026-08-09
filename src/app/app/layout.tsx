@@ -23,19 +23,27 @@ export default async function AppLayout({
     { data: supportEmailSetting },
   ] = await Promise.all([
     supabase.from("profiles").select("role, username, skip_ai_refinement").eq("id", data.user.id).single(),
+    // Explicit user_id filters below, not just RLS — an admin's SELECT
+    // policy on these tables intentionally allows reading every user's rows
+    // (that's what powers /admin), so without this an admin browsing their
+    // own /app pages would see everyone else's recent jobs/characters/
+    // projects here instead of just their own.
     supabase
       .from("generations")
       .select("id, prompt_input, status, content_type")
+      .eq("user_id", data.user.id)
       .order("created_at", { ascending: false })
       .limit(6),
     supabase
       .from("character_profiles")
       .select("id, name")
+      .eq("user_id", data.user.id)
       .order("created_at", { ascending: false })
       .limit(6),
     supabase
       .from("projects")
       .select("id, name, is_starred, is_pinned, is_archived")
+      .eq("user_id", data.user.id)
       .eq("is_archived", false)
       .order("is_pinned", { ascending: false })
       .order("is_starred", { ascending: false })

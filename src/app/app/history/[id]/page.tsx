@@ -34,11 +34,23 @@ export default async function HistoryDetailPage({
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
 
-  const { data: generation } = await supabase
-    .from("generations")
-    .select("*")
-    .eq("id", id)
+  // This page doubles as a review view for admins — /admin/moderation,
+  // /admin/reports, and /admin/users/[id] all link straight into a specific
+  // generation here. So access is "own row OR admin", matching the RLS
+  // policy's actual intent, not a blanket owner-only check (that would 404
+  // an admin trying to review a flagged generation that isn't theirs).
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", userData.user.id)
     .single();
+  const isAdmin = profile?.role === "admin";
+
+  const generationQuery = supabase.from("generations").select("*").eq("id", id);
+  const { data: generation } = await (isAdmin
+    ? generationQuery
+    : generationQuery.eq("user_id", userData.user.id)
+  ).single();
 
   if (!generation) notFound();
 
@@ -82,6 +94,11 @@ export default async function HistoryDetailPage({
         ? h.statusFailed
         : h.statusDrafted;
   const typeLabel = generation.content_type === "image" ? t.generate.image : t.generate.video;
+  // An admin reviewing someone else's flagged generation shouldn't see
+  // actions that only work on your own rows — those writes would just fail
+  // against RLS (there's no admin bypass for editing/deleting other users'
+  // generations, only for reading them).
+  const isOwner = generation.user_id === userData.user.id;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -89,18 +106,20 @@ export default async function HistoryDetailPage({
         <Link href="/app/history" className="text-sm text-neutral-500 hover:text-neutral-900">
           ← {h.backToHistory}
         </Link>
-        <div className="flex items-center gap-3">
-          {generation.character_profile_id && (
-            <Link
-              href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}
-            >
-              <Button variant="secondary" size="sm">
-                {h.continueChat}
-              </Button>
-            </Link>
-          )}
-          <DeleteGenerationButton id={generation.id} variant="full" redirectAfter="/app/history" />
-        </div>
+        {isOwner && (
+          <div className="flex items-center gap-3">
+            {generation.character_profile_id && (
+              <Link
+                href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}
+              >
+                <Button variant="secondary" size="sm">
+                  {h.continueChat}
+                </Button>
+              </Link>
+            )}
+            <DeleteGenerationButton id={generation.id} variant="full" redirectAfter="/app/history" />
+          </div>
+        )}
       </div>
 
       <Card className="mt-4">
@@ -192,7 +211,7 @@ export default async function HistoryDetailPage({
                     </div>
                   </>
                 )}
-                {generation.result_url?.startsWith("http") && (
+                {isOwner && generation.result_url?.startsWith("http") && (
                   <ResultActions
                     generationId={generation.id}
                     copyText={finalPrompt}

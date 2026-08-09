@@ -11,6 +11,7 @@ export default async function ImagesPage() {
   const { data: generations, error } = await supabase
     .from("generations")
     .select("id, prompt_input, status, result_url, content_type, created_at, character_profile_id")
+    .eq("user_id", userData.user.id)
     .eq("content_type", "image")
     .order("created_at", { ascending: false })
     .limit(60);

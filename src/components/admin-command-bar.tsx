@@ -32,7 +32,28 @@ function isActive(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AdminCommandBar() {
+// iOS-style unread dot: a filled circle for 1-9, "9+" past that so it never
+// stretches into an oval that misreads as part of the icon.
+function NotificationBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span
+      aria-label={`${count} notification${count === 1 ? "" : "s"}`}
+      className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white ring-2 ring-white"
+    >
+      {count > 9 ? "9+" : count}
+    </span>
+  );
+}
+
+export function AdminCommandBar({
+  badges = {},
+}: {
+  // Keyed by href, e.g. "/admin/users" — matches NAV_ITEMS below, computed
+  // server-side in admin/layout.tsx since this component is client-side and
+  // can't query Supabase itself.
+  badges?: Record<string, number>;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -116,6 +137,7 @@ export function AdminCommandBar() {
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
+            const count = badges[item.href] ?? 0;
             return (
               <Link
                 key={item.href}
@@ -130,7 +152,10 @@ export function AdminCommandBar() {
                     : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900",
                 )}
               >
-                <Icon className="h-[18px] w-[18px] flex-shrink-0" />
+                <span className="relative flex-shrink-0">
+                  <Icon className="h-[18px] w-[18px]" />
+                  <NotificationBadge count={count} />
+                </span>
                 {/* Icon-only on phone width, label appears from sm: up — the
                     nav has its own overflow-x-auto scroll container above so
                     even if labels push the total width past the header on a
@@ -196,6 +221,7 @@ export function AdminCommandBar() {
               {results.map((item, i) => {
                 const Icon = item.icon;
                 const active = i === selected;
+                const count = badges[item.href] ?? 0;
                 return (
                   <li key={item.href}>
                     <button
@@ -207,8 +233,30 @@ export function AdminCommandBar() {
                         active ? "bg-neutral-900 text-white" : "text-neutral-700",
                       )}
                     >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
-                      {item.label}
+                      <span className="relative flex-shrink-0">
+                        <Icon className="h-4 w-4" />
+                        {count > 0 && (
+                          <span
+                            className={cn(
+                              "absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-semibold leading-none",
+                              active ? "bg-white text-neutral-900" : "bg-red-500 text-white",
+                            )}
+                          >
+                            {count > 9 ? "9+" : count}
+                          </span>
+                        )}
+                      </span>
+                      <span className="flex-1">{item.label}</span>
+                      {count > 0 && (
+                        <span
+                          className={cn(
+                            "flex-shrink-0 text-xs",
+                            active ? "text-white/70" : "text-neutral-400",
+                          )}
+                        >
+                          {count}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );

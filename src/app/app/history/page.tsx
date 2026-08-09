@@ -22,6 +22,7 @@ export default async function HistoryPage() {
       .select(
         "id, prompt_input, status, attempts, character_profile_id, content_type, created_at, angle_group_id, angle",
       )
+      .eq("user_id", userData.user.id)
       .order("created_at", { ascending: false })
       .limit(50),
     supabase.from("profiles").select("plan").eq("id", userData.user.id).single(),

@@ -40,9 +40,17 @@ export async function getGenerateWorkspaceData(
   supabase: SupabaseServerClient,
   userId: string | undefined,
 ): Promise<GenerateWorkspaceData> {
+  // .eq("user_id", ...) here isn't optional — an admin's SELECT policy
+  // intentionally allows reading every user's characters (for /admin), so
+  // without this the Generate composer's character picker would list every
+  // user's characters to an admin, not just their own (and the reference
+  // photo signing below would then fail for anyone else's paths anyway,
+  // since storage RLS has no admin bypass — the same failure mode as the
+  // /app/character list bug).
   const { data: characters } = await supabase
     .from("character_profiles")
     .select("id, name, reference_image_urls, voice_id")
+    .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   const hasCharacter = Boolean(characters && characters.length > 0);

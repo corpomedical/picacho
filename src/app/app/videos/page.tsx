@@ -13,6 +13,7 @@ export default async function VideosPage() {
     .select(
       "id, prompt_input, status, result_url, content_type, created_at, character_profile_id, angle_group_id, angle",
     )
+    .eq("user_id", userData.user.id)
     .eq("content_type", "video")
     .order("created_at", { ascending: false })
     .limit(60);

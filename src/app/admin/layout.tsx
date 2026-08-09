@@ -27,6 +27,42 @@ export default async function AdminLayout({
     redirect("/app");
   }
 
+  // Badge counts for the nav — computed here (Server Component) and passed
+  // down, since AdminCommandBar is a Client Component and can't query
+  // Supabase itself. Reports and Feedback already have a real open/resolved
+  // workflow, so their count is genuinely "still needs handling" and shrinks
+  // as items get resolved, same as an iOS Mail unread badge. Users and
+  // Moderation have no such state to hook into, so their badge is instead
+  // "new in the last 24h" — a real, non-fabricated number that still behaves
+  // like a notification (appears with new activity, doesn't grow forever).
+  const last24hDate = new Date();
+  last24hDate.setDate(last24hDate.getDate() - 1);
+  const last24h = last24hDate.toISOString();
+  const [
+    { count: newUsers },
+    { count: newFlagged },
+    { count: openReports },
+    { count: openFeedback },
+  ] = await Promise.all([
+    supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", last24h),
+    supabase
+      .from("generations")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "failed")
+      .gte("created_at", last24h),
+    supabase
+      .from("generation_reports")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "open"),
+    supabase
+      .from("feedback")
+      .select("*", { count: "exact", head: true })
+      .eq("status", "open"),
+  ]);
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <header className="border-b border-neutral-200/70 bg-white">
@@ -40,7 +76,14 @@ export default async function AdminLayout({
           </Link>
         </div>
         <div className="border-t border-neutral-100">
-          <AdminCommandBar />
+          <AdminCommandBar
+            badges={{
+              "/admin/users": newUsers ?? 0,
+              "/admin/moderation": newFlagged ?? 0,
+              "/admin/reports": openReports ?? 0,
+              "/admin/feedback": openFeedback ?? 0,
+            }}
+          />
         </div>
       </header>
       <div className="mx-auto max-w-6xl px-8 py-10">{children}</div>

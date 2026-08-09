@@ -8,9 +8,25 @@ export default async function CharacterListPage() {
   const { t } = await getServerMessages();
   const c = t.character;
   const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) {
+    return null; // AppLayout already redirects unauthenticated users to /login
+  }
+
+  // Explicit user_id filter, not just RLS — admins have a SELECT policy on
+  // this table that intentionally returns every user's characters (that's
+  // what /admin/users/[id] relies on), so without this an admin's own
+  // "My characters" page would show every user's characters, not just
+  // theirs. This was the bug: the row was visible here, but the reference
+  // photo's signed URL still correctly failed (storage RLS is per-user and
+  // has no admin bypass), so the name showed with a broken/blank thumbnail.
   const [{ data: profiles, error }, { data: projects }] = await Promise.all([
-    supabase.from("character_profiles").select("*").order("created_at", { ascending: false }),
-    supabase.from("projects").select("id, name"),
+    supabase
+      .from("character_profiles")
+      .select("*")
+      .eq("user_id", userData.user.id)
+      .order("created_at", { ascending: false }),
+    supabase.from("projects").select("id, name").eq("user_id", userData.user.id),
   ]);
 
   if (error) {

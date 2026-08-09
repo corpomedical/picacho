@@ -15,16 +15,22 @@ export default async function ProjectsPage({
   const { view } = await searchParams;
   const showArchived = view === "archived";
   const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return null; // AppLayout already redirects unauthenticated users to /login
 
   const [{ data: projects, error }, { data: characters }] = await Promise.all([
     supabase
       .from("projects")
       .select("*")
+      .eq("user_id", userData.user.id)
       .eq("is_archived", showArchived)
       .order("is_pinned", { ascending: false })
       .order("is_starred", { ascending: false })
       .order("created_at", { ascending: false }),
-    supabase.from("character_profiles").select("id, project_id"),
+    supabase
+      .from("character_profiles")
+      .select("id, project_id")
+      .eq("user_id", userData.user.id),
   ]);
 
   if (error) console.error("Failed to load projects:", error);
