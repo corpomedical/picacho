@@ -2526,7 +2526,19 @@ function GenerateFormInner({
                     <>
                       <div
                         className={cn(
-                          "overflow-hidden transition-all duration-300 ease-out",
+                          // flex-shrink-0 matters here specifically because
+                          // this div has overflow-hidden (needed for the
+                          // width-clip animation) — per the flexbox spec, an
+                          // overflow:hidden flex item's automatic minimum
+                          // size is 0, not its content size. Inside the new
+                          // overflow-x-auto strip above, that made this one
+                          // element (uniquely, of everything in the row) a
+                          // candidate to get squeezed toward 0 width under
+                          // space pressure instead of just scrolling into
+                          // view — which is what made the two icons collapse
+                          // to a sliver behind the neighboring chip when
+                          // expanded, real incident 2026-08-09.
+                          "flex-shrink-0 overflow-hidden transition-all duration-300 ease-out",
                           advancedOpen ? "max-w-[96px] opacity-100" : "max-w-0 opacity-0",
                         )}
                       >
