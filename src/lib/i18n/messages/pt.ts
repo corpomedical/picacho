@@ -387,6 +387,7 @@ const pt = {
       "Atribua uma voz para que este personagem possa falar falas de diálogo com sincronia labial em Gerar.",
     noVoicesYet: "Ainda não há vozes configuradas — um administrador precisa adicionar uma primeiro.",
     noVoice: "Sem voz — apenas vídeo",
+    previewVoice: "Ouvir amostra da voz",
     voiceToneTags: "Tags de voz e tom",
     tagPlaceholder: "digite uma tag, pressione Enter",
     cancel: "Cancelar",

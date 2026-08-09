@@ -387,6 +387,7 @@ const it = {
       "Assegna una voce così questo personaggio può pronunciare battute di dialogo con sincronizzazione labiale in Genera.",
     noVoicesYet: "Nessuna voce configurata ancora — un amministratore deve aggiungerne una prima.",
     noVoice: "Nessuna voce — solo video",
+    previewVoice: "Ascolta anteprima voce",
     voiceToneTags: "Tag di voce e tono",
     tagPlaceholder: "scrivi un tag, premi Invio",
     cancel: "Annulla",

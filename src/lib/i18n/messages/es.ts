@@ -387,6 +387,7 @@ const es = {
       "Asigna una voz para que este personaje pueda decir líneas de diálogo sincronizadas con los labios en Generar.",
     noVoicesYet: "Aún no hay voces configuradas — un administrador debe añadir una primero.",
     noVoice: "Sin voz — solo video",
+    previewVoice: "Escuchar muestra de voz",
     voiceToneTags: "Etiquetas de voz y tono",
     tagPlaceholder: "escribe una etiqueta, pulsa Enter",
     cancel: "Cancelar",

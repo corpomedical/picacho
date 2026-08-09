@@ -11,6 +11,7 @@ import {
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { VoicePreviewButton } from "@/components/voice-preview-button";
 
 type ExistingImage = { path: string; url: string };
 
@@ -401,19 +402,22 @@ export function CharacterForm({
         {voices.length === 0 ? (
           <p className="mt-4 text-sm text-neutral-400">{c.noVoicesYet}</p>
         ) : (
-          <select
-            value={voiceId}
-            onChange={(e) => setVoiceId(e.target.value)}
-            className="mt-4 w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
-          >
-            <option value="">{c.noVoice}</option>
-            {voices.map((v) => (
-              <option key={v.id} value={v.id}>
-                {v.label}
-                {v.description ? ` — ${v.description}` : ""}
-              </option>
-            ))}
-          </select>
+          <div className="mt-4 flex items-center gap-2">
+            <select
+              value={voiceId}
+              onChange={(e) => setVoiceId(e.target.value)}
+              className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+            >
+              <option value="">{c.noVoice}</option>
+              {voices.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                  {v.description ? ` — ${v.description}` : ""}
+                </option>
+              ))}
+            </select>
+            <VoicePreviewButton voicePresetId={voiceId} label={c.previewVoice} />
+          </div>
         )}
       </section>
 

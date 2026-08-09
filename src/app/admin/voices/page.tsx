@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Label, Input } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
+import { VoicePreviewButton } from "@/components/voice-preview-button";
 
 export default async function AdminVoicesPage({
   searchParams,
@@ -79,12 +80,15 @@ export default async function AdminVoicesPage({
                     {voice.elevenlabs_voice_id}
                   </p>
                 </div>
-                <form action={deleteVoicePreset} className="flex-shrink-0">
-                  <input type="hidden" name="id" value={voice.id} />
-                  <SubmitButton variant="secondary" size="sm">
-                    Remove
-                  </SubmitButton>
-                </form>
+                <div className="flex flex-shrink-0 items-center gap-2">
+                  <VoicePreviewButton voicePresetId={voice.id} label={`Preview ${voice.label}`} />
+                  <form action={deleteVoicePreset}>
+                    <input type="hidden" name="id" value={voice.id} />
+                    <SubmitButton variant="secondary" size="sm">
+                      Remove
+                    </SubmitButton>
+                  </form>
+                </div>
               </div>
             ))}
           </div>

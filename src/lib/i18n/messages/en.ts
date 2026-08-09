@@ -399,6 +399,7 @@ const en = {
       "Assign a voice so this character can speak lip-synced dialogue lines in Generate.",
     noVoicesYet: "No voices set up yet — an admin needs to add one first.",
     noVoice: "No voice — video only",
+    previewVoice: "Preview voice",
     voiceToneTags: "Voice & tone tags",
     tagPlaceholder: "type a tag, press Enter",
     cancel: "Cancel",
