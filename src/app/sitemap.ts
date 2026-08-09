@@ -7,12 +7,13 @@ import type { MetadataRoute } from "next";
 // domain is live.
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://picacho.app";
 
+// Marketing + legal pages only. /login, /signup and /forgot-password used to
+// be listed here too, but auth screens have no business ranking in search —
+// they're destinations you arrive at from inside the product, and indexing
+// them just competes with the pages that should rank.
 const PUBLIC_ROUTES = [
   "",
   "/pricing",
-  "/login",
-  "/signup",
-  "/forgot-password",
   "/privacy",
   "/terms",
   "/content-policy",
