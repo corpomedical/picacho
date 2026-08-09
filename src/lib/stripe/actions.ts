@@ -51,6 +51,12 @@ export async function createCheckoutSession(formData: FormData) {
       customer_email: profile?.stripe_customer_id ? undefined : (userData.user.email ?? undefined),
       client_reference_id: userData.user.id,
       line_items: [{ price: priceId, quantity: 1 }],
+      // Stripe Tax activated 2026-08-09 (Dashboard > Settings > Tax) — this
+      // is what actually turns that on for real charges. Stripe collects
+      // whatever address it needs and calculates VAT/sales tax itself based
+      // on the registrations configured there; nothing else on our end
+      // depends on which jurisdictions those are.
+      automatic_tax: { enabled: true },
       success_url: `${origin}/app/settings?tab=usage&saved=1`,
       cancel_url: `${origin}/app/settings?tab=usage`,
       subscription_data: { metadata: { supabase_user_id: userData.user.id } },
