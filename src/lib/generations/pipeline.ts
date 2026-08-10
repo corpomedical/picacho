@@ -8,7 +8,13 @@
 
 import { draftWithClaude } from "@/lib/generations/providers/anthropic";
 import { reviewWithOpenAI } from "@/lib/generations/providers/openai";
-import { generateVideo, generateSpeech, lipSyncVideo } from "@/lib/generations/providers/fal";
+import {
+  generateVideo,
+  generateSpeech,
+  lipSyncVideo,
+  submitVideoJob,
+  type QueuedJob,
+} from "@/lib/generations/providers/fal";
 import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { generateImage } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
@@ -63,6 +69,11 @@ export type PipelineResult = {
   // the caller (and eventually the UI) show "Stopped" instead of a generic
   // failure message.
   cancelled?: boolean;
+  // Set only when runRealPipeline was called with submitVideoOnly: the render
+  // has been handed to fal.ai's queue and this is the handle to poll it with.
+  // `succeeded` is false and `resultUrl` null in this case — the job isn't
+  // done, it's in flight. See job-runner.ts, which owns it from here.
+  pendingVideoJob?: QueuedJob;
 };
 
 // Polled between attempts (and once per attempt, right before the slow
@@ -433,6 +444,19 @@ export type RealPipelineOptions = {
   // often, for traits that are "nice to include" rather than the one
   // character this generation is fundamentally about.
   companions?: CharacterForPipeline[];
+  // Fire-and-poll mode for video. When true, the pipeline prepares the prompt
+  // exactly as normal and then hands the render to fal.ai's queue and returns
+  // straight away with `pendingVideoJob` set, instead of waiting for it.
+  //
+  // Needed because a Kling render takes ~6-10 minutes and dialogue
+  // post-processing can add ~3 more, while Vercel's Hobby plan kills any
+  // function at 300s. That's why multi-angle and storyboard had never once
+  // completed. With this on, no request stays open for the render at all —
+  // job-runner.ts advances the job in short polls afterwards.
+  //
+  // Ignored for image generation, which is a single bounded call that
+  // comfortably fits in one request and gains nothing from being staged.
+  submitVideoOnly?: boolean;
 };
 
 export async function runRealPipeline(
@@ -824,20 +848,15 @@ export async function runRealPipeline(
           const usingSeparateDialoguePipeline = Boolean(
             options.dialogueText?.trim() && options.dialogueVoiceId,
           );
-          resultUrl = await generateVideo(
-            reviewedPrompt,
-            options.videoModelId ?? "kling",
-            {
-              referenceImageUrls: options.videoReferenceImageUrls,
-              startImageUrl: options.videoStartImageUrl,
-              endImageUrl: options.videoEndImageUrl,
-              characterAnchorImageUrl: options.videoCharacterAnchorUrl,
-              generateNativeAudio: !usingSeparateDialoguePipeline,
-              durationSeconds: options.videoDurationSeconds,
-              aspectRatio: options.videoAspectRatio,
-            },
-            checkCancelled,
-          );
+          const videoOptions = {
+            referenceImageUrls: options.videoReferenceImageUrls,
+            startImageUrl: options.videoStartImageUrl,
+            endImageUrl: options.videoEndImageUrl,
+            characterAnchorImageUrl: options.videoCharacterAnchorUrl,
+            generateNativeAudio: !usingSeparateDialoguePipeline,
+            durationSeconds: options.videoDurationSeconds,
+            aspectRatio: options.videoAspectRatio,
+          };
           const modeNote = usingMultiRef
             ? " (multi-image reference)"
             : usingStoryboard
@@ -847,9 +866,62 @@ export async function runRealPipeline(
                 : "";
           const durationNote = options.videoDurationSeconds ? `, ${options.videoDurationSeconds}s` : "";
           const aspectNote = options.videoAspectRatio ? `, ${options.videoAspectRatio}` : "";
+          const modelName = getVideoModel(options.videoModelId ?? "kling").name;
+
+          // Fire-and-poll: hand the job to fal.ai's queue and stop here rather
+          // than waiting for it.
+          //
+          // This is the whole fix for the 300s ceiling. Everything above this
+          // point — drafting, review, the rulebook validate/repair gate — is
+          // fast and bounded, so it's fine to do inline. The video render is
+          // the only genuinely long wait (a Kling job runs ~6-10 minutes),
+          // and no serverless function on the Hobby plan may live that long.
+          // So we return the queue handle instead of a result, and job-runner
+          // advances the rest in short polls once fal.ai reports it's done.
+          //
+          // Suspending HERE specifically, rather than restructuring the whole
+          // function into a state machine, is deliberate: the retry loop and
+          // the multi-attempt redraft above carry a lot of hard-won behaviour,
+          // and the generate call is the single point where all of it has
+          // already finished and nothing is left in flight. Note there's no
+          // retry to preserve at this point either — validation ran before
+          // generation, so the only thing that can fail here is the submit
+          // itself, which is fast and safe to retry on the caller's side.
+          if (options.submitVideoOnly) {
+            const pendingVideoJob = await submitVideoJob(
+              reviewedPrompt,
+              options.videoModelId ?? "kling",
+              videoOptions,
+            );
+            steps.push({
+              step: "generate",
+              detail: `Queued with ${modelName}${modeNote}${durationNote}${aspectNote}.`,
+            });
+            attempts.push({
+              attempt: attemptNumber,
+              steps,
+              passed: true,
+              issues: [],
+              compiledPrompt: reviewedPrompt,
+            });
+            return {
+              attempts,
+              succeeded: false,
+              finalPrompt: reviewedPrompt,
+              resultUrl: null,
+              pendingVideoJob,
+            };
+          }
+
+          resultUrl = await generateVideo(
+            reviewedPrompt,
+            options.videoModelId ?? "kling",
+            videoOptions,
+            checkCancelled,
+          );
           steps.push({
             step: "generate",
-            detail: `Generated via ${getVideoModel(options.videoModelId ?? "kling").name}${modeNote}${durationNote}${aspectNote}${
+            detail: `Generated via ${modelName}${modeNote}${durationNote}${aspectNote}${
               genTry > 1 ? ` (recovered after a retry).` : "."
             }`,
           });

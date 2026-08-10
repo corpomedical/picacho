@@ -184,12 +184,7 @@ async function cancelQueueRequest(cancelUrl: string, apiKey: string): Promise<vo
   }
 }
 
-export async function generateVideo(
-  prompt: string,
-  modelId: string,
-  options: VideoGenerationOptions = {},
-  checkCancelled?: () => Promise<boolean>,
-): Promise<string> {
+function requireApiKey(): string {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) {
     throw new Error(
@@ -197,7 +192,25 @@ export async function generateVideo(
         "'real_ai_providers' flag in Admin > Feature flags to use the mock pipeline.",
     );
   }
+  return apiKey;
+}
 
+// Works out which fal.ai endpoint and request body a given set of options maps
+// to, without submitting anything.
+//
+// Split out of generateVideo so the blocking path and the queued
+// fire-and-poll path (submitVideoJob) share ONE definition of this routing.
+// The branches below encode a lot of hard-won detail — which endpoints accept
+// aspect_ratio, which need a reframed reference photo instead, which one
+// blends a likeness into a new scene versus merely animating the input photo —
+// and every one of those was a real bug at some point. Duplicating it for the
+// queued path would guarantee the two drift.
+async function buildVideoRequest(
+  prompt: string,
+  modelId: string,
+  options: VideoGenerationOptions,
+  apiKey: string,
+): Promise<{ endpoint: string; body: Record<string, unknown>; label: string }> {
   const referenceImageUrls = (options.referenceImageUrls ?? []).filter(Boolean);
   const resolvedAspectRatio: VideoAspectRatio = options.aspectRatio ?? DEFAULT_ASPECT_RATIO;
 
@@ -307,14 +320,48 @@ export async function generateVideo(
     label = model.name;
   }
 
+  return { endpoint, body, label };
+}
+
+// ---------------------------------------------------------------------------
+// Queue primitives
+//
+// These exist so a caller can start a job and walk away. The blocking helpers
+// further down (generateVideo, generateSpeech, lipSyncVideo) are written on
+// top of them and keep their original behaviour, but the orchestrator in
+// lib/generations/job-runner.ts uses these directly: it submits, stores the
+// returned handle in generation_jobs, and returns. Later polls each do a
+// single fast status check.
+//
+// This is what removes the 300s ceiling. Nothing has to stay alive for the
+// ten-plus minutes a Kling render with dialogue can take, because fal.ai is
+// holding the work and we're only ever asking "done yet?".
+// ---------------------------------------------------------------------------
+
+export type QueuedJob = {
+  requestId: string;
+  statusUrl: string;
+  responseUrl: string;
+  cancelUrl: string;
+  label: string;
+};
+
+export type QueuedJobState =
+  | { state: "pending" }
+  | { state: "completed" }
+  | { state: "failed"; error: string };
+
+async function submitToQueue(
+  endpoint: string,
+  body: Record<string, unknown>,
+  label: string,
+  apiKey: string,
+): Promise<QueuedJob> {
   const submitRes = await fetchWithTimeout(
     `https://queue.fal.run/${endpoint}`,
     {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Key ${apiKey}`,
-      },
+      headers: { "content-type": "application/json", authorization: `Key ${apiKey}` },
       body: JSON.stringify(body),
     },
     30_000, // just queuing the job — this itself should be fast
@@ -330,51 +377,148 @@ export async function generateVideo(
     throw new Error(`fal.ai (${label}) queue response was missing status/result URLs.`);
   }
 
+  return {
+    requestId: submitted.request_id,
+    statusUrl: submitted.status_url,
+    responseUrl: submitted.response_url,
+    cancelUrl: submitted.cancel_url,
+    label,
+  };
+}
+
+export async function submitVideoJob(
+  prompt: string,
+  modelId: string,
+  options: VideoGenerationOptions = {},
+): Promise<QueuedJob> {
+  const apiKey = requireApiKey();
+  const { endpoint, body, label } = await buildVideoRequest(prompt, modelId, options, apiKey);
+  return submitToQueue(endpoint, body, label, apiKey);
+}
+
+export async function submitSpeechJob(text: string, elevenLabsVoiceId: string): Promise<QueuedJob> {
+  return submitToQueue(
+    ELEVENLABS_TTS_ENDPOINT,
+    { text, voice: elevenLabsVoiceId },
+    "ElevenLabs TTS",
+    requireApiKey(),
+  );
+}
+
+export async function submitLipSyncJob(videoUrl: string, audioUrl: string): Promise<QueuedJob> {
+  return submitToQueue(
+    SYNC_LIPSYNC_ENDPOINT,
+    { video_url: videoUrl, audio_url: audioUrl },
+    "Sync Lipsync",
+    requireApiKey(),
+  );
+}
+
+// One status check. Never throws on a job-level failure — a job that failed on
+// fal's side comes back as { state: "failed" } so the caller can record a real
+// error against the generation. Only genuine transport problems throw, because
+// those are worth retrying on the next poll rather than failing the job.
+export async function checkQueuedJob(job: QueuedJob): Promise<QueuedJobState> {
+  const apiKey = requireApiKey();
+  const res = await fetchWithTimeout(
+    job.statusUrl,
+    { headers: { authorization: `Key ${apiKey}` } },
+    15_000,
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    // 4xx here means the request id is gone or malformed — that won't heal, so
+    // treat it as terminal. 5xx is fal having a moment; let the next poll retry.
+    if (res.status >= 400 && res.status < 500) {
+      return {
+        state: "failed",
+        error: `fal.ai (${job.label}) lost track of this job (${res.status}): ${text.slice(0, 200)}`,
+      };
+    }
+    throw new Error(`fal.ai (${job.label}) status check error (${res.status}): ${text.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as QueueStatusResponse;
+  if (data.status === "COMPLETED") return { state: "completed" };
+  if (data.error) return { state: "failed", error: `fal.ai (${job.label}): ${data.error}` };
+  return { state: "pending" };
+}
+
+async function fetchQueuedResult(job: QueuedJob): Promise<unknown> {
+  const apiKey = requireApiKey();
+  const res = await fetchWithTimeout(
+    job.responseUrl,
+    { headers: { authorization: `Key ${apiKey}` } },
+    30_000,
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    const errorMessage = (data as { error?: string } | null)?.error;
+    throw new Error(
+      `fal.ai (${job.label}) error (${res.status}): ${errorMessage ?? JSON.stringify(data).slice(0, 300)}`,
+    );
+  }
+  return data;
+}
+
+export async function fetchQueuedVideoUrl(job: QueuedJob): Promise<string> {
+  const url = extractVideoUrl(await fetchQueuedResult(job));
+  if (!url) throw new Error(`fal.ai (${job.label}) response didn't include a video URL.`);
+  return url;
+}
+
+export async function fetchQueuedAudioUrl(job: QueuedJob): Promise<string> {
+  const url = extractAudioUrl(await fetchQueuedResult(job));
+  if (!url) throw new Error(`fal.ai (${job.label}) response didn't include an audio URL.`);
+  return url;
+}
+
+// Best effort, and deliberately never throws — this is called from cancel and
+// cleanup paths where failing to reach fal must not mask the original reason
+// we were cancelling.
+export async function cancelQueuedJob(job: Pick<QueuedJob, "cancelUrl">): Promise<void> {
+  if (!job.cancelUrl) return;
+  await cancelQueueRequest(job.cancelUrl, process.env.FAL_KEY ?? "");
+}
+
+// Blocking video generation — submit, then hold the connection open polling
+// until it finishes.
+//
+// Retained for the paths that genuinely are short and synchronous, and as a
+// fallback, but note this is the shape that caused the original problem: it
+// can run for ten minutes, which no serverless function is allowed to do on
+// the Hobby plan. New code should use submitVideoJob + checkQueuedJob.
+export async function generateVideo(
+  prompt: string,
+  modelId: string,
+  options: VideoGenerationOptions = {},
+  checkCancelled?: () => Promise<boolean>,
+): Promise<string> {
+  const job = await submitVideoJob(prompt, modelId, options);
   const startedAt = Date.now();
+
   while (true) {
     if (Date.now() - startedAt > MAX_WAIT_MS) {
-      await cancelQueueRequest(submitted.cancel_url, apiKey);
+      await cancelQueuedJob(job);
       throw new Error(
-        `fal.ai (${label}) didn't finish within ${Math.round(MAX_WAIT_MS / 60_000)} minutes — cancelled it.`,
+        `fal.ai (${job.label}) didn't finish within ${Math.round(MAX_WAIT_MS / 60_000)} minutes — cancelled it.`,
       );
     }
 
     if (await checkCancelled?.()) {
-      await cancelQueueRequest(submitted.cancel_url, apiKey);
+      await cancelQueuedJob(job);
       throw new Error("__cancelled__");
     }
 
-    const statusRes = await fetchWithTimeout(
-      submitted.status_url,
-      { headers: { authorization: `Key ${apiKey}` } },
-      15_000,
-    );
-    if (!statusRes.ok) {
-      const text = await statusRes.text();
-      throw new Error(`fal.ai (${label}) status check error (${statusRes.status}): ${text.slice(0, 300)}`);
-    }
-    const statusData = (await statusRes.json()) as QueueStatusResponse;
-
-    if (statusData.status === "COMPLETED") break;
+    const state = await checkQueuedJob(job);
+    if (state.state === "completed") break;
+    if (state.state === "failed") throw new Error(state.error);
 
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 
-  const resultRes = await fetchWithTimeout(
-    submitted.response_url,
-    { headers: { authorization: `Key ${apiKey}` } },
-    30_000,
-  );
-  const data = await resultRes.json();
-
-  if (!resultRes.ok) {
-    const errorMessage = (data as { error?: string } | null)?.error;
-    throw new Error(`fal.ai (${label}) error (${resultRes.status}): ${errorMessage ?? JSON.stringify(data).slice(0, 300)}`);
-  }
-
-  const url = extractVideoUrl(data);
-  if (!url) throw new Error(`fal.ai (${label}) response didn't include a video URL.`);
-  return url;
+  return fetchQueuedVideoUrl(job);
 }
 
 // Character dialogue — speech generation + lip-sync. Both run on the same

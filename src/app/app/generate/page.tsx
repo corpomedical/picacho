@@ -1,29 +1,32 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getReliabilityStats } from "@/lib/generations/actions";
+import { getReliabilityStats, reapAbandonedGenerations } from "@/lib/generations/actions";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { GenerateForm } from "@/components/generate-form";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 
-// Video generation (Kling, via fal.ai) polls fal.ai's queue API for up to
-// 10 minutes per attempt (see MAX_WAIT_MS in providers/fal.ts) before giving
-// up and cancelling. On top of that, optional dialogue post-processing
-// (ElevenLabs speech + Sync Labs lipsync) can add up to another 3 minutes —
-// so the real worst case is close to 13 minutes.
+// No longer the constraint it used to be.
 //
-// 300 is set here because that's the hard ceiling Vercel enforces on the
-// Hobby plan (confirmed by an actual failed deploy on 2026-08-08 — Vercel
-// rejected 800 outright with "must have a maxDuration between 1 and 300 for
-// plan hobby"). This covers the common case (a single video, no dialogue)
-// but a long multi-angle or dialogue-heavy generation can still get killed
-// mid-flight without warning the user, and fal.ai's side of the job keeps
-// running (and billing) even after we've abandoned it.
+// This page used to hold a single server action open for an entire video
+// render. A Kling job takes six to ten minutes and dialogue post-processing
+// (ElevenLabs speech + Sync Labs lipsync) added up to three more, against a
+// hard 300s ceiling Vercel enforces on the Hobby plan — confirmed by a failed
+// deploy on 2026-08-08, where Vercel rejected 800 outright with "must have a
+// maxDuration between 1 and 300 for plan hobby". Long jobs were therefore run
+// and billed on fal.ai's side and then killed on ours before the result could
+// be saved. Multi-angle and storyboard, the longest jobs of all, had never
+// once completed.
 //
-// Upgrading to Vercel Pro + enabling Fluid Compute raises the ceiling back
-// to 800s — worth doing once there's real usage, or sooner if "generation
-// timed out" reports start coming in from longer jobs.
+// Renders are now handed to fal.ai's queue and advanced by short polls
+// instead (see lib/generations/job-runner.ts), so nothing here runs for more
+// than a few seconds and the ceiling stops mattering. 300 is kept purely as
+// headroom for the prompt-refinement calls that still happen inline, which
+// take tens of seconds at worst.
+//
+// The upgrade to Vercel Pro is consequently no longer needed to make long
+// generations work.
 export const maxDuration = 300;
 
 export default async function GeneratePage() {
@@ -31,6 +34,16 @@ export default async function GeneratePage() {
   const g = t.generate;
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
+
+  // Tidy up renders that were abandoned mid-flight — tab closed, phone died,
+  // person walked away. Cancels them on fal.ai so we stop paying for output
+  // nobody will collect, and refunds the credits.
+  //
+  // Done here on page load rather than from a cron because Vercel's Hobby plan
+  // allows only one cron run per day, which is far too coarse. Deliberately
+  // not awaited: this is housekeeping for jobs that are already half an hour
+  // stale, and it must never delay rendering the page.
+  void reapAbandonedGenerations();
 
   const {
     hasCharacter,

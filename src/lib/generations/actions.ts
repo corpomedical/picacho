@@ -10,6 +10,12 @@ import {
   type AttemptLog,
   type ContentType,
 } from "@/lib/generations/pipeline";
+import {
+  saveVideoJob,
+  advanceGeneration,
+  reapStaleJobs,
+  type AdvanceResult,
+} from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
 import {
   PLAN_LIMITS,
@@ -112,6 +118,17 @@ type RunResult =
       attempts: AttemptLog[];
       finalPrompt: string;
       resultUrl: string | null;
+      // True when the render has been queued with fal.ai and this call is
+      // returning without waiting for it (video only — see submitVideoOnly in
+      // pipeline.ts). `succeeded` is false and `resultUrl` null in that case
+      // because nothing has finished yet; the caller must poll
+      // advanceGeneration until it reports a terminal state.
+      //
+      // This is what keeps a ten-minute render from dying against Vercel's
+      // 300s function limit, and what lets a generation survive a reload or a
+      // locked phone.
+      pending?: boolean;
+      progress?: string;
     };
 
 // Long enough for a genuinely detailed request, short enough that a stray
@@ -906,6 +923,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           skipRefinement,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),
+          // Video renders get queued and polled instead of awaited — see
+          // job-runner.ts. Images stay inline: a single bounded call that
+          // finishes well inside one request and gains nothing from staging.
+          submitVideoOnly: contentType === "video",
         },
         maxAttempts,
         // Polled between attempts so the Stop button (a separate, later call
@@ -920,6 +941,41 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           return data?.cancel_requested === true;
         },
       );
+
+      // The render is now sitting in fal.ai's queue. Record the handle and
+      // hand back control immediately — the client takes it from here by
+      // polling pollGeneration. Deliberately returns BEFORE the "succeeded /
+      // failed" update below, because neither is true yet: the row stays at
+      // "generating" and job-runner writes the real outcome when it lands.
+      if (result.pendingVideoJob) {
+        await saveVideoJob({
+          generationId: placeholder.id,
+          userId: userData.user.id,
+          job: result.pendingVideoJob,
+          dialogueText: wantsDialogue ? dialogueText : undefined,
+          dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,
+          attempts: result.attempts,
+        });
+
+        await supabase
+          .from("generations")
+          .update({ attempts: result.attempts.length, pipeline_log: result.attempts })
+          .eq("id", placeholder.id);
+
+        revalidatePath("/app/history");
+
+        return {
+          error: null,
+          id: placeholder.id,
+          succeeded: false,
+          attempts: result.attempts,
+          finalPrompt: result.finalPrompt,
+          resultUrl: null,
+          pending: true,
+          progress: "Rendering your video",
+        };
+      }
+
       ({ attempts, succeeded, finalPrompt, resultUrl } = result);
     } else {
       const result = runPipeline(userInput, characterForPipeline, maxAttempts, contentType);
@@ -987,6 +1043,51 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     finalPrompt,
     resultUrl,
   };
+}
+
+// Advances a queued video generation by one step, and reports where it got to.
+//
+// Called on a timer by the composer for as long as a generation is in flight.
+// Each call is short — one status check against fal.ai, and at most one new
+// job submitted — which is the entire point: no request has to survive the
+// ten-plus minutes the render itself takes, so Vercel's 300s function ceiling
+// stops mattering.
+//
+// Ownership is enforced by passing the caller's own user id down to
+// advanceGeneration, which filters on it. That matters more here than usual:
+// the orchestrator runs on the service-role client to reach generation_jobs
+// (which has RLS enabled and no policies, so it's server-only), and the
+// service role bypasses RLS, so this is the check.
+export async function pollGeneration(generationId: string): Promise<
+  { error: string } | ({ error: null } & AdvanceResult)
+> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const result = await advanceGeneration(generationId, userData.user.id);
+
+  // Terminal states change what History and the workspace should show.
+  if (result.state !== "pending") {
+    revalidatePath("/app/generate");
+    revalidatePath("/app/history");
+  }
+
+  return { error: null, ...result };
+}
+
+// Cleans up generations that were abandoned mid-render — the tab was closed,
+// the phone died, the person walked away. Cancels them on fal.ai (so we stop
+// paying for output nobody will collect) and refunds the credits.
+//
+// Called on workspace page load rather than from a cron, because Vercel's
+// Hobby plan caps cron at one run per day. Safe to call often; it only touches
+// jobs that have gone unpolled for a long time.
+export async function reapAbandonedGenerations(): Promise<void> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return;
+  await reapStaleJobs(userData.user.id);
 }
 
 // Invoked directly from a Client Component (the Stop button on the live
@@ -1087,6 +1188,15 @@ export type MultiAngleResult =
         attempts: AttemptLog[];
         finalPrompt: string;
         resultUrl: string | null;
+        // Queued with fal.ai and still rendering — poll pollGeneration with
+        // this angle's id until it reports a terminal state.
+        //
+        // Multi-angle is the feature that made the old design untenable:
+        // four angles at six to ten minutes each could never fit inside one
+        // 300s function, which is why it had never once completed. Now every
+        // angle is submitted in parallel and polled independently, so total
+        // wall time is roughly one render rather than four.
+        pending?: boolean;
       }[];
     };
 
@@ -1318,6 +1428,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             videoAspectRatio,
             skipRefinement,
             brandRules: angleBrandRules,
+            submitVideoOnly: true,
           },
           maxAttempts,
           // Every angle shares one cancel_requested flag via angle_group_id
@@ -1335,6 +1446,33 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
               }
             : undefined,
         );
+        // Queued, not finished. Record the handle and leave this angle's row
+        // at "generating" — the client polls it from here. Returning early
+        // skips the status update below, which would otherwise write "failed"
+        // for a render that is merely still in progress.
+        if (result.pendingVideoJob && rowId) {
+          await saveVideoJob({
+            generationId: rowId,
+            userId: userData.user!.id,
+            job: result.pendingVideoJob,
+            attempts: result.attempts,
+          });
+          await supabase
+            .from("generations")
+            .update({ attempts: result.attempts.length, pipeline_log: result.attempts })
+            .eq("id", rowId);
+
+          return {
+            angleId,
+            id: rowId,
+            succeeded: false,
+            attempts: result.attempts,
+            finalPrompt: result.finalPrompt,
+            resultUrl: null,
+            pending: true,
+          };
+        }
+
         ({ attempts, succeeded, finalPrompt, resultUrl } = result);
       } else {
         const result = runPipeline(angledInput, characterForPipeline, maxAttempts, "video");

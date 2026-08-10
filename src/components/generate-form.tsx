@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/field";
 import {
   runGeneration,
   runMultiAngleGeneration,
+  pollGeneration,
   requestGenerationCancel,
   requestMultiAngleGenerationCancel,
   discardStoppedGeneration,
@@ -113,6 +114,89 @@ function summarizeFailure(attempts: AttemptLog[], stoppedLabel?: string): string
   }
 
   return null;
+}
+
+type QueuedOutcome =
+  | { state: "succeeded"; resultUrl: string | null }
+  | { state: "failed"; error: string }
+  | { state: "cancelled" }
+  | { state: "abandoned" };
+
+// Waits for a queued video render by asking the server how it's going, rather
+// than by holding a request open for the whole render.
+//
+// Video generation used to run inside a single server action that stayed open
+// until the render finished. Kling takes six to ten minutes and dialogue adds
+// two or three more, but Vercel kills any function at 300 seconds on the
+// Hobby plan, so the longest jobs — multi-angle above all — were being paid
+// for on fal.ai's side and then killed on ours before the result could be
+// saved. Multi-angle had never once completed.
+//
+// Now the server queues the job and returns straight away, and this drives it
+// to completion from the browser. Because the job's state lives in the
+// database, closing the tab or locking the phone no longer loses it: the work
+// carries on and the result is in History either way. That property is what
+// makes the mobile apps viable at all.
+async function awaitQueuedGeneration(
+  generationId: string,
+  onProgress: (label: string) => void,
+  shouldAbandon: () => boolean,
+): Promise<QueuedOutcome> {
+  // Starts responsive, then eases off. Short renders feel immediate, while a
+  // ten-minute one settles to a poll every eight seconds — roughly 80 requests
+  // rather than the 300 a flat 2s interval would make, for no perceptible
+  // difference to the person waiting.
+  let delayMs = 2_000;
+  const MAX_DELAY_MS = 8_000;
+  // Transient network blips must not fail a render that's going fine, but an
+  // endlessly unreachable server shouldn't spin forever either.
+  let consecutiveErrors = 0;
+
+  while (true) {
+    if (shouldAbandon()) return { state: "abandoned" };
+
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    delayMs = Math.min(Math.round(delayMs * 1.35), MAX_DELAY_MS);
+
+    if (shouldAbandon()) return { state: "abandoned" };
+
+    let poll;
+    try {
+      poll = await pollGeneration(generationId);
+      consecutiveErrors = 0;
+    } catch {
+      consecutiveErrors += 1;
+      // ~2 minutes of failed polls at the capped interval. The job itself is
+      // unaffected and still recorded server-side, so this only gives up on
+      // WATCHING it — the result still lands in History.
+      if (consecutiveErrors >= 15) {
+        return {
+          state: "failed",
+          error: "Lost contact with the server while this was rendering. Check History in a moment.",
+        };
+      }
+      continue;
+    }
+
+    if (poll.error !== null) return { state: "failed", error: poll.error };
+
+    switch (poll.state) {
+      case "pending":
+        onProgress(poll.progress);
+        break;
+      case "succeeded":
+        return { state: "succeeded", resultUrl: poll.resultUrl };
+      case "failed":
+        return { state: "failed", error: poll.message };
+      case "cancelled":
+        return { state: "cancelled" };
+      case "gone":
+        // The job row is already gone, so it finished on some other poll —
+        // another tab, or a duplicate in-flight request. Not an error; the
+        // caller re-reads the generation to find out how it went.
+        return { state: "succeeded", resultUrl: null };
+    }
+  }
 }
 
 // Real incident, 2026-08-09: both runGeneration and runMultiAngleGeneration
@@ -1117,6 +1201,11 @@ function GenerateFormInner({
     finalPrompt: string;
   } | null>(null);
   const [revealedCount, setRevealedCount] = useState(0);
+  // What the queued render is currently doing ("Rendering your video",
+  // "Generating the voice", ...). Null when nothing is queued. A video can
+  // take ten minutes, and a single unlabelled spinner for that long reads as
+  // a hang — this is the difference between "it's working" and "it's broken".
+  const [liveProgress, setLiveProgress] = useState<string | null>(null);
 
   // Multi-angle: turning the toggle on doesn't generate immediately — hitting
   // send stashes the prompt in pendingMultiAngle and shows a confirm panel
@@ -1731,12 +1820,52 @@ function GenerateFormInner({
       return;
     }
 
-    const anyAngleSucceeded = result.angles.some((a) => a.succeeded);
+    // Every angle was queued with fal.ai in parallel and is still rendering.
+    // Wait on all of them at once, so total wall time is about one render
+    // rather than four in sequence.
+    //
+    // This is the case that forced the rewrite. Four angles at six to ten
+    // minutes each could never fit inside a 300s function, which is why
+    // multi-angle had never produced a single finished result.
+    let angles = result.angles;
+    if (angles.some((a) => a.pending)) {
+      setLiveProgress("Rendering your angles");
+      let finishedCount = 0;
+      const pendingCount = angles.filter((a) => a.pending).length;
+
+      angles = await Promise.all(
+        angles.map(async (angle) => {
+          if (!angle.pending) return angle;
+
+          const outcome = await awaitQueuedGeneration(
+            angle.id,
+            // One shared label, since four angles finish at different times and
+            // four competing progress strings would just flicker.
+            () => setLiveProgress(`Rendering your angles (${finishedCount} of ${pendingCount} done)`),
+            () => userStoppedRef.current,
+          );
+          finishedCount += 1;
+
+          if (outcome.state === "succeeded") {
+            let url = outcome.resultUrl;
+            if (!url) {
+              const saved = await getGenerationThread(angle.id);
+              url = saved?.kind === "single" ? saved.resultUrl : null;
+            }
+            return { ...angle, pending: false, succeeded: Boolean(url), resultUrl: url };
+          }
+          return { ...angle, pending: false, succeeded: false, resultUrl: null };
+        }),
+      );
+      setLiveProgress(null);
+    }
+
+    const anyAngleSucceeded = angles.some((a) => a.succeeded);
     notifyIfHidden(
       anyAngleSucceeded ? g.notifyReadyTitle : g.notifyFailedTitle,
       anyAngleSucceeded
-        ? formatMsg(g.passedOnAttempt, { n: result.angles[0]?.attempts.length ?? 1 })
-        : (summarizeFailure(result.angles[0]?.attempts ?? [], g.stoppedByUser) ?? g.noPassingResultOne),
+        ? formatMsg(g.passedOnAttempt, { n: angles[0]?.attempts.length ?? 1 })
+        : (summarizeFailure(angles[0]?.attempts ?? [], g.stoppedByUser) ?? g.noPassingResultOne),
     );
 
     setItems((prev) => [
@@ -1747,7 +1876,7 @@ function GenerateFormInner({
         prompt: mPrompt,
         attachments,
         createdAt: new Date().toISOString(),
-        angles: result.angles,
+        angles,
       },
     ]);
     setLiveMultiAngle(null);
@@ -2087,6 +2216,43 @@ function GenerateFormInner({
       return;
     }
 
+    // Queued rather than finished: the render is sitting with fal.ai and this
+    // drives it to completion in short polls instead of one long request.
+    // See awaitQueuedGeneration for why that matters.
+    let succeeded = result.succeeded;
+    let resultUrl = result.resultUrl;
+    let queuedFailure: string | null = null;
+
+    if (result.pending) {
+      setLiveProgress(result.progress ?? null);
+      const outcome = await awaitQueuedGeneration(
+        result.id,
+        setLiveProgress,
+        () => userStoppedRef.current,
+      );
+      setLiveProgress(null);
+
+      if (outcome.state === "succeeded") {
+        succeeded = true;
+        resultUrl = outcome.resultUrl;
+        if (!resultUrl) {
+          // It finished on a poll that wasn't this one (another tab, or an
+          // overlapping request), so no URL came back here. Read the saved row
+          // rather than rendering an empty result.
+          const saved = await getGenerationThread(result.id);
+          resultUrl = saved?.kind === "single" ? saved.resultUrl : null;
+          succeeded = Boolean(resultUrl);
+        }
+      } else if (outcome.state === "failed") {
+        succeeded = false;
+        queuedFailure = outcome.error;
+      } else if (outcome.state === "cancelled") {
+        // The server saw the stop request and cancelled the job on fal.ai.
+        // Fall through to the shared stop handling immediately below.
+        userStoppedRef.current = true;
+      }
+    }
+
     // Stopped while this was in flight. The provider call couldn't be
     // aborted (see discardStoppedGeneration for why), so a real result may
     // well have come back — throw it away rather than rendering it, which
@@ -2114,19 +2280,24 @@ function GenerateFormInner({
       setRevealedCount(i);
     }
 
-    const failureReason = result.succeeded ? null : summarizeFailure(result.attempts, g.stoppedByUser);
+    // queuedFailure carries the real reason a queued render failed (fal.ai's
+    // own error), which summarizeFailure can't know about — the attempt log
+    // was written before the job was even submitted.
+    const failureReason = succeeded
+      ? null
+      : (queuedFailure ?? summarizeFailure(result.attempts, g.stoppedByUser));
     setLiveResult({
       id: result.id,
-      succeeded: result.succeeded,
-      resultUrl: result.resultUrl,
+      succeeded,
+      resultUrl,
       attempts: result.attempts.length,
       reason: failureReason,
       finalPrompt: result.finalPrompt,
     });
 
     notifyIfHidden(
-      result.succeeded ? g.notifyReadyTitle : g.notifyFailedTitle,
-      result.succeeded
+      succeeded ? g.notifyReadyTitle : g.notifyFailedTitle,
+      succeeded
         ? formatMsg(g.passedOnAttempt, { n: result.attempts.length })
         : (failureReason ??
             (result.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: result.attempts.length }))),
@@ -2134,7 +2305,7 @@ function GenerateFormInner({
 
     if (shouldSpeak) {
       speak(
-        result.succeeded
+        succeeded
           ? formatMsg(g.speakDone, { n: result.attempts.length })
           : result.attempts.length === 1
             ? g.speakFailedOne
@@ -2150,9 +2321,9 @@ function GenerateFormInner({
         prompt: submittedPrompt,
         contentType: effectiveContentType,
         attempts: result.attempts,
-        succeeded: result.succeeded,
+        succeeded,
         finalPrompt: result.finalPrompt,
-        resultUrl: result.resultUrl,
+        resultUrl,
         createdAt: new Date().toISOString(),
         attachments: submittedAttachments,
       },
@@ -2839,7 +3010,13 @@ function GenerateFormInner({
                       // frozen the whole time.
                       <div className="flex items-center gap-2 text-sm text-neutral-500">
                         <LoaderIcon className="h-4 w-4" />
-                        {g.runningPipeline}
+                        {/* Once the render is queued, say what it's actually
+                            doing. A video can take ten minutes, and a single
+                            unchanging "Running pipeline" for that long is
+                            indistinguishable from a hang — which is exactly
+                            what long generations used to look like before the
+                            job survived longer than the request did. */}
+                        {liveProgress ?? g.runningPipeline}
                       </div>
                     )}
                     <PipelineTrace
