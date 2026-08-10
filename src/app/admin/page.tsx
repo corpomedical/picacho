@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
+import { TrafficChart, type TrafficDay } from "@/components/admin/traffic-chart";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
@@ -305,9 +306,25 @@ export default async function AdminDashboard() {
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
     .slice(0, 8);
 
+  // Aggregated in Postgres (see the admin_traffic_daily migration) rather
+  // than grouping the raw page_views rows already fetched above — that set is
+  // capped for the other cards and would undercount once traffic grows.
+  const { data: trafficRows } = await supabase.rpc("admin_traffic_daily", { days: 30 });
+  const traffic: TrafficDay[] = (trafficRows ?? []).map(
+    (r: { day: string; views: number; visitors: number }) => ({
+      day: String(r.day),
+      views: Number(r.views),
+      visitors: Number(r.visitors),
+    }),
+  );
+
   return (
     <div>
       <h1 className="text-lg font-semibold text-neutral-900">Dashboard</h1>
+
+      <div className="mt-6">
+        <TrafficChart data={traffic} />
+      </div>
 
       {/* Overview */}
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -278,7 +278,18 @@ Verified by running the real matcher against sample rules: "guaranteed results a
 - [x] **Live Stripe prices created and wired** (2026-08-10). Six prices, USD + EUR for each of the three packs, created by running `setup-credit-packs.js` against the live key and pasted into `credit-packs.ts`. Webhook endpoint confirmed subscribed to `checkout.session.completed`.
 - [x] **Refund handling.** Without it a top-up is free money: buy, spend, refund, repeat. `charge.refunded` now finds the purchase via the charge's payment intent → Checkout Session → `credit_purchases.stripe_session_id`, and takes the credits back. New `refunded_at` column doubles as the idempotency guard, since Stripe re-sends the event for every partial refund on the same charge. The balance is floored at zero — credits may already have been spent, and a negative balance would read as "owes us credits" wherever it's displayed; we absorb the cost of what was generated rather than leaving the account unusable. **Requires `charge.refunded` to be ticked on the webhook endpoint.**
 
-Still to do: Phase 3 (vertical rule packs) and the dashboard traffic graph.
+## Admin traffic chart — 2026-08-10
+
+The data layer already existed (`page_views` + `/api/track`, admin-only SELECT) — this is the missing view of it.
+
+- [x] **`admin_traffic_daily(days)` Postgres function.** Aggregates in the database rather than pulling rows into the app: `page_views` grows with every visit (978 rows in the first week alone), and fetching a month of them just to count them would get slow fast. `generate_series` fills gaps so a quiet day charts as a real zero instead of vanishing and distorting the line.
+- [x] **`SECURITY INVOKER`, stated explicitly.** The caller's own RLS still applies, so a non-admin calling this RPC gets an empty result. A `SECURITY DEFINER` function here would have handed every signed-in user the entire traffic table — the same trap the advisors already flag on `is_admin()`.
+- [x] **Hand-built SVG chart**, no charting dependency. Recharts or Chart.js would add hundreds of KB for one chart on one page and still need overrides to match the app's flat hairline styling; this is ~100 lines, themes for free, and inherits dark mode. Filled area + line, four gridlines, dates thinned to ~6 labels so 30 days stays readable, and a full-height invisible hit area per day so the hover tooltip works across the whole column rather than only on a 2.5px dot.
+- [x] Empty state for an account with no traffic yet.
+
+Verified against real data: 978 views / 12 unique visitors across 2026-08-04 to 08-10.
+
+Still to do: Phase 3 (vertical rule packs), and optionally renaming "Usage limits" to match "Usage & plan".
 
 ## After launch (polish, not blocking)
 
