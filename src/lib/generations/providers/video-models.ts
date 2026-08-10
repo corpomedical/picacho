@@ -206,3 +206,26 @@ const DIALOGUE_SECONDS_PER_CREDIT = 5;
 export function getDialogueCreditWeight(seconds: number): number {
   return Math.max(1, Math.ceil(seconds / DIALOGUE_SECONDS_PER_CREDIT));
 }
+
+// Average credits per second across a model's duration options.
+//
+// The honest "how expensive is this one" number. Comparing models by their
+// default duration alone misleads — Veo's default is 8s and Kling's is 5s, so
+// the raw weights aren't like for like — and comparing only the cheapest
+// option hides that two models tied at 5s can diverge at 10s.
+export function creditsPerSecond(model: VideoModel): number {
+  const rates = model.durations.map((d) => d.creditWeight / d.seconds);
+  return rates.reduce((sum, r) => sum + r, 0) / rates.length;
+}
+
+// Every video model, cheapest first.
+//
+// Used for the composer's model picker and for the circuit breaker's failover
+// order. Price order is the right default for both: someone scanning the list
+// should meet the affordable options first rather than having to work out
+// which of five names costs eight times more, and a failover should step DOWN
+// in price, never up — silently moving someone from Kling to Seedance would
+// cost nearly seven times as much per second.
+export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].sort(
+  (a, b) => creditsPerSecond(a) - creditsPerSecond(b),
+);

@@ -2,7 +2,7 @@ import { getMonthlyUsage } from "@/lib/generations/actions";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
-  VIDEO_MODELS,
+  VIDEO_MODELS_BY_PRICE,
   getDefaultDurationSeconds,
   type VideoDurationOption,
 } from "@/lib/generations/providers/video-models";
@@ -98,7 +98,8 @@ export async function getGenerateWorkspaceData(
     .eq("key", "video_model")
     .single();
   const defaultVideoModelId = videoModelSetting?.value ?? "kling";
-  const videoModels: VideoModelOption[] = VIDEO_MODELS.map((m) => ({
+  // Cheapest first — see VIDEO_MODELS_BY_PRICE.
+  const videoModels: VideoModelOption[] = VIDEO_MODELS_BY_PRICE.map((m) => ({
     id: m.id,
     name: m.name,
     description: m.description,

@@ -54,6 +54,7 @@ import {
   getDialogueCreditWeight,
   isValidDuration,
   VIDEO_MODELS,
+  VIDEO_MODELS_BY_PRICE,
 } from "@/lib/generations/providers/video-models";
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
@@ -708,9 +709,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // over to Veo would turn a EUR0 trial into several euros of spend.
   const modelCandidates =
     contentType === "video"
-      ? [...VIDEO_MODELS]
-          .sort((a, b) => (a.durations[0]?.creditWeight ?? 99) - (b.durations[0]?.creditWeight ?? 99))
-          .map((m) => ({ id: m.id, name: m.name }))
+      ? VIDEO_MODELS_BY_PRICE.map((m) => ({ id: m.id, name: m.name }))
       : IMAGE_MODELS.map((m) => ({ id: m.id, name: m.name }));
 
   const resolved = await resolveModel(
@@ -1397,9 +1396,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // Same circuit breaker as single generation — a model out of service must
   // not be reachable through multi-angle either, which would otherwise submit
   // several paid renders to a provider already known to be failing.
-  const angleCandidates = [...VIDEO_MODELS]
-    .sort((a, b) => (a.durations[0]?.creditWeight ?? 99) - (b.durations[0]?.creditWeight ?? 99))
-    .map((m) => ({ id: m.id, name: m.name }));
+  const angleCandidates = VIDEO_MODELS_BY_PRICE.map((m) => ({ id: m.id, name: m.name }));
   const angleResolved = await resolveModel(videoModelId, angleCandidates);
   if (!angleResolved.ok) return { error: angleResolved.message };
   videoModelId = angleResolved.modelId;
