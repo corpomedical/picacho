@@ -194,3 +194,53 @@ export async function resolveModel(
     message: `${requestedName} is temporarily unavailable while we look into a problem with it, and no alternative is free right now. Nothing has been charged — please try again shortly.`,
   };
 }
+
+export type ModelHealthState = "healthy" | "trial" | "out";
+
+export type ModelHealthRow = {
+  state: ModelHealthState;
+  trippedAt: string | null;
+  retryAfter: string | null;
+  tripCount: number;
+  lastError: string | null;
+  lastSuccessAt: string | null;
+};
+
+// Full health picture for the admin area, with the state already resolved.
+//
+// Resolved HERE rather than in the page, because working out whether a model
+// is merely awaiting its trial retry depends on the current time, and reading
+// the clock during a React render isn't pure — the same render could produce
+// different output on a retry. Data layer is the right place for it anyway.
+export async function getAllModelHealth(): Promise<Map<string, ModelHealthRow>> {
+  const admin = createAdminClient();
+  const { data } = await admin
+    .from("model_health")
+    .select("model_id, tripped_at, retry_after, trip_count, last_error, last_success_at");
+
+  const now = Date.now();
+  const out = new Map<string, ModelHealthRow>();
+
+  for (const row of data ?? []) {
+    const retryAfter = row.retry_after as string | null;
+    const trippedAt = row.tripped_at as string | null;
+    const state: ModelHealthState = !trippedAt
+      ? "healthy"
+      : // Past its cooldown means the next request goes through as a trial,
+        // so it isn't blocking anyone — worth showing differently.
+        retryAfter && new Date(retryAfter).getTime() <= now
+        ? "trial"
+        : "out";
+
+    out.set(row.model_id as string, {
+      state,
+      trippedAt,
+      retryAfter,
+      tripCount: Number(row.trip_count ?? 0),
+      lastError: row.last_error as string | null,
+      lastSuccessAt: row.last_success_at as string | null,
+    });
+  }
+
+  return out;
+}

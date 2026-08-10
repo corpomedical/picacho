@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { computeAdminBadgeCounts, type AdminBadgeCounts } from "@/lib/admin/badges";
 
@@ -302,4 +302,63 @@ export async function setBonusCredits(formData: FormData) {
   }
 
   revalidatePath(`/admin/users/${userId}`);
+}
+
+// Manual controls for the provider circuit breaker (see
+// lib/generations/model-health.ts).
+//
+// The breaker recovers on its own — cooldown, then one trial request, and a
+// success clears it. But automatic-only recovery leaves no way to act on a
+// false trip: if a model is taken out by three failures that turn out to be a
+// bad batch of inputs, the only options were to wait out a backoff that
+// doubles to six hours, or edit the database by hand. Neither is acceptable
+// when the model in question might be the one every free trial depends on.
+//
+// The reverse control matters too: taking a model out deliberately, before it
+// has failed three times, when you already know it's broken or expensive.
+export async function restoreModel(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const modelId = (formData.get("model_id") as string) ?? "";
+  if (!modelId) redirect("/admin/providers?error=Missing+model");
+
+  const admin = createAdminClient();
+  await admin
+    .from("model_health")
+    .update({
+      tripped_at: null,
+      retry_after: null,
+      consecutive_failures: 0,
+      failing_user_ids: [],
+      // trip_count is deliberately NOT reset. It drives the backoff ladder, so
+      // clearing it would let a genuinely dead model be retried every ten
+      // minutes forever by anyone who keeps pressing this button.
+      updated_at: new Date().toISOString(),
+    })
+    .eq("model_id", modelId);
+
+  revalidatePath("/admin/providers");
+  redirect("/admin/providers");
+}
+
+export async function suspendModel(formData: FormData): Promise<void> {
+  await requireAdmin();
+  const modelId = (formData.get("model_id") as string) ?? "";
+  const kind = ((formData.get("kind") as string) || "video") as "video" | "image";
+  if (!modelId) redirect("/admin/providers?error=Missing+model");
+
+  const admin = createAdminClient();
+  await admin.from("model_health").upsert({
+    model_id: modelId,
+    kind,
+    tripped_at: new Date().toISOString(),
+    // No retry_after: a deliberate suspension stays until it's lifted by hand,
+    // rather than quietly letting itself back in after a cooldown.
+    retry_after: null,
+    consecutive_failures: 0,
+    last_error: "Suspended manually from the admin area.",
+    updated_at: new Date().toISOString(),
+  });
+
+  revalidatePath("/admin/providers");
+  redirect("/admin/providers");
 }

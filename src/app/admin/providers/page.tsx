@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
-import { toggleFeatureFlag, setVideoModel, setImageModel } from "@/lib/admin/actions";
+import { toggleFeatureFlag, setVideoModel, setImageModel, restoreModel, suspendModel } from "@/lib/admin/actions";
+import { getAllModelHealth } from "@/lib/generations/model-health";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { Card } from "@/components/ui/card";
@@ -21,6 +22,12 @@ export default async function AdminProvidersPage({
     supabase.from("app_settings").select("value").eq("key", "video_model").single(),
     supabase.from("app_settings").select("value").eq("key", "image_model").single(),
   ]);
+
+  // Circuit breaker state for every model — see lib/generations/model-health.ts.
+  // Resolved in the data layer, not here: deciding whether a tripped model is
+  // still blocking or merely awaiting its trial retry depends on the current
+  // time, and reading the clock during render isn't pure.
+  const healthById = await getAllModelHealth();
 
   const activeModel = modelSetting?.value ?? "kling";
   const activeImageModel = imageModelSetting?.value ?? "gpt-image";
@@ -169,6 +176,72 @@ export default async function AdminProvidersPage({
               </p>
             </div>
           ))}
+        </div>
+      </Card>
+
+      {/* Circuit breaker.
+
+          A model that fails three times in a row, across at least two
+          accounts, takes itself out of service so a broken provider stops
+          costing money. It heals on its own: after a cooldown one request goes
+          through as a trial, and a success clears it.
+
+          These controls exist for the cases automation gets wrong. Restore is
+          for a false trip — three failures that turned out to be bad inputs,
+          where waiting out a backoff that doubles to six hours isn't
+          acceptable, especially if it's the model every free trial depends on.
+          Suspend is the opposite: take a model out deliberately, before it has
+          failed three times, when you already know it's broken. */}
+      <Card className="mt-6">
+        <h2 className="text-sm font-semibold text-neutral-900">Model health</h2>
+        <p className="mt-1 text-sm text-neutral-500">
+          Models take themselves out of service after 3 consecutive failures from 2 or more
+          accounts, and recover automatically. Override here when that gets it wrong.
+        </p>
+
+        <div className="mt-4 space-y-2">
+          {[
+            ...VIDEO_MODELS.map((m) => ({ id: m.id, name: m.name, kind: "video" as const })),
+            ...IMAGE_MODELS.map((m) => ({ id: m.id, name: m.name, kind: "image" as const })),
+          ].map((model) => {
+            const health = healthById.get(model.id);
+            const state = health?.state ?? "healthy";
+            return (
+              <div
+                key={model.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-neutral-200 px-3.5 py-3"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium text-neutral-900">{model.name}</p>
+                    <Badge tone={state === "healthy" ? "success" : state === "trial" ? "neutral" : "danger"}>
+                      {state === "healthy" ? "In service" : state === "trial" ? "Trial retry" : "Out of service"}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-400">
+                    {state === "healthy"
+                      ? health?.lastSuccessAt
+                        ? `Last success ${new Date(health.lastSuccessAt).toLocaleString()}`
+                        : "No failures recorded"
+                      : (health?.lastError ?? "Taken out of service")}
+                  </p>
+                  {state !== "healthy" && (health?.tripCount ?? 0) > 1 && (
+                    <p className="mt-0.5 text-xs text-neutral-400">
+                      Tripped {health?.tripCount} times in a row — backoff is lengthening.
+                    </p>
+                  )}
+                </div>
+
+                <form action={state === "healthy" ? suspendModel : restoreModel}>
+                  <input type="hidden" name="model_id" value={model.id} />
+                  <input type="hidden" name="kind" value={model.kind} />
+                  <Button variant="secondary" type="submit">
+                    {state === "healthy" ? "Suspend" : "Restore now"}
+                  </Button>
+                </form>
+              </div>
+            );
+          })}
         </div>
       </Card>
     </div>
