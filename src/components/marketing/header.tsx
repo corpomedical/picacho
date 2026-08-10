@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { Logo } from "@/components/logo";
+import { EarlyAccessBadge } from "@/components/early-access-badge";
 
 // Async Server Component — checks the session so someone who's already
 // logged in sees a way back into the app instead of "Log in"/"Sign up",
@@ -19,6 +20,7 @@ export async function MarketingHeader() {
       <div className="mx-auto flex max-w-5xl items-center justify-between px-8 py-5">
         <Link href="/" className="flex items-center gap-2">
           <Logo className="h-6" />
+          <EarlyAccessBadge />
         </Link>
         <nav className="flex items-center gap-6 text-sm text-neutral-500">
           <Link href="/pricing" className="transition-colors hover:text-neutral-900">

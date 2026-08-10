@@ -333,6 +333,19 @@ The last unmetered path from the pricing analysis. Adding spoken dialogue runs t
 That closes every leak identified in `Picacho pricing analysis.xlsx`:
 unlimited character photos (capped), failed generations billing 3× (fixed at the source), unmetered TTS (voice mode flagged off), unmetered dialogue (surcharged), stopped generations (unavoidable, documented).
 
+## "Early access" badge — 2026-08-10
+
+Asked whether to put BETA beside the logo. Argued against, and Wigly chose "Early access" instead.
+
+**Why not BETA:** Picacho's entire pitch is reliability — consistent on the first try, validated before you see it. A BETA badge beside that claim argues against it. It's worse for the named audience: clinics are risk-averse, the wedge with them is a *compliance* feature, and "beta" next to regulated-advertising tooling is a reason to wait rather than buy. It also sits badly against a €499 tier. "Early access" sets the same expectation — things are still moving, be forgiving — with the opposite emotional register, and doesn't undercut the price.
+
+- [x] One `EarlyAccessBadge` component, one string, used beside the wordmark in the marketing header and the app sidebar (both the mobile top bar and the expanded desktop rail).
+- [x] **Not shown in /admin** — internal, and nobody needs reassuring about the maturity of a product they built.
+- [x] **Not shown on the collapsed sidebar**, where the wordmark becomes a 24px "P" avatar in a narrow rail and the pill wouldn't fit.
+- [x] Deliberately one file with one string, so removing it later is a two-minute job. Badges like this become permanent mostly because nobody can find every place they were pasted.
+
+Separately agreed: multi-angle and storyboard should carry their own "Beta" marker when they go live, since those genuinely have never run. Not built yet.
+
 ## Multi-angle & storyboard review — 2026-08-10
 
 Asked whether both "work perfectly". **They have never run.** Zero rows in `generations` with an `angle_group_id` — not one multi-angle batch has ever been started, successfully or otherwise — and zero pipeline logs mentioning storyboard. So neither can be called working; what follows is a code audit, not a verification. Only real end-to-end runs will settle it.

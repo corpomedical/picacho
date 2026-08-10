@@ -17,6 +17,7 @@ import { useTheme, type ThemeMode } from "@/lib/theme/theme-provider";
 import { useLocale } from "@/lib/i18n/provider";
 import type { Messages } from "@/lib/i18n/messages";
 import { Logo } from "@/components/logo";
+import { EarlyAccessBadge } from "@/components/early-access-badge";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
 
 const COLLAPSED_STORAGE_KEY = "picacho_sidebar_collapsed";
@@ -531,6 +532,7 @@ export function AppSidebar({
         </button>
         <Link href="/app/generate" className="flex items-center gap-2">
           <Logo className="h-6" />
+          <EarlyAccessBadge />
         </Link>
         <span className="h-9 w-9" aria-hidden="true" />
       </div>
@@ -565,7 +567,10 @@ export function AppSidebar({
               P
             </span>
           ) : (
-            <Logo className="h-6" />
+            <>
+              <Logo className="h-6" />
+              <EarlyAccessBadge />
+            </>
           )}
         </Link>
         <button
