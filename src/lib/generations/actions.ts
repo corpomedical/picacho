@@ -21,6 +21,7 @@ import {
 } from "@/lib/generations/providers/video-models";
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
+import { isTrivialUtterance } from "@/lib/voice/agent";
 
 type RunResult =
   | {
@@ -280,6 +281,22 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (!userInput) return { error: "Describe what you want first." };
   if (userInput.length > MAX_PROMPT_LENGTH) {
     return { error: `Keep prompts under ${MAX_PROMPT_LENGTH} characters.` };
+  }
+  // Real incident, 2026-08-10: saying "Hey" into voice mode produced a
+  // fully rendered room. Nothing downstream was broken — the pipeline's AI
+  // refinement step (draft/review, see pipeline.ts) is designed to turn a
+  // sparse prompt into a complete scene description, so given a greeting it
+  // invents an entire scene from nothing. Guarding at the entry point
+  // instead of trying to make the refiner refuse: this is cheap,
+  // deterministic, and covers typed input too, whereas asking a model to
+  // reliably decline is neither. Only fires when the input is ENTIRELY
+  // greeting/filler, so short-but-real prompts still go through.
+  if (isTrivialUtterance(userInput)) {
+    return {
+      error:
+        "That didn't include anything to generate — describe what you want to see, like " +
+        "\"a woman walking through a neon-lit street at night\".",
+    };
   }
   // A character is no longer required — a person may just want to generate
   // a one-off image/video from an uploaded photo, or from the prompt alone,
@@ -851,6 +868,39 @@ export async function requestGenerationCancel(generationId: string): Promise<{ e
   return { error: null };
 }
 
+// Cancellation is cooperative — it flips a flag the running job checks
+// between steps (see requestGenerationCancel above), so a request whose
+// provider call is already in flight finishes anyway and returns a real
+// result. Reported as "the stop button is not working", 2026-08-10: from
+// the outside that's exactly what it looked like, because the finished
+// result was then rendered into the chat and saved to history as though
+// nothing had been cancelled.
+//
+// This marks such a row failed and clears its result so it can't show up as
+// a usable generation afterwards. Deliberately does NOT clear credits_used
+// or delete the row: the provider call really was made and really was
+// billed, so the credit genuinely was spent — quietly zeroing it here would
+// just move the inaccuracy somewhere harder to notice.
+export async function discardStoppedGeneration(generationId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const { error } = await supabase
+    .from("generations")
+    .update({ status: "failed", result_url: null })
+    .eq("id", generationId)
+    .eq("user_id", userData.user.id);
+
+  if (error) {
+    console.error("discardStoppedGeneration failed:", error.message);
+    return { error: "Couldn't discard the stopped generation." };
+  }
+
+  revalidatePath("/app/history");
+  return { error: null };
+}
+
 // Thumbs up/down on a result, shown in the hover action bar under both the
 // live Generate composer and the History detail page. A single nullable
 // column (not two booleans) — like and dislike are mutually exclusive, and
@@ -920,6 +970,22 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   if (!userInput) return { error: "Describe what you want first." };
   if (userInput.length > MAX_PROMPT_LENGTH) {
     return { error: `Keep prompts under ${MAX_PROMPT_LENGTH} characters.` };
+  }
+  // Real incident, 2026-08-10: saying "Hey" into voice mode produced a
+  // fully rendered room. Nothing downstream was broken — the pipeline's AI
+  // refinement step (draft/review, see pipeline.ts) is designed to turn a
+  // sparse prompt into a complete scene description, so given a greeting it
+  // invents an entire scene from nothing. Guarding at the entry point
+  // instead of trying to make the refiner refuse: this is cheap,
+  // deterministic, and covers typed input too, whereas asking a model to
+  // reliably decline is neither. Only fires when the input is ENTIRELY
+  // greeting/filler, so short-but-real prompts still go through.
+  if (isTrivialUtterance(userInput)) {
+    return {
+      error:
+        "That didn't include anything to generate — describe what you want to see, like " +
+        "\"a woman walking through a neon-lit street at night\".",
+    };
   }
   if (!characterId) return { error: "Pick a character to generate with." };
   if (angleIds.length === 0) return { error: "Pick at least one angle." };

@@ -126,6 +126,23 @@ Rebuilt as a real hands-free session instead of a preference toggle:
 
 `tsc` clean; `eslint` shows only the same pre-existing warnings from earlier sweeps, none in the new code.
 
+## Voice agent + the "Hey generated a room" bug — 2026-08-10
+
+Wigly, after the first voice-mode pass: the chat should expand like it does for Create image, the agent should speak first with varied wording, ask image-or-video / which character, and **confirm before generating** — plus "I tried 'Hey' and it generated a room", and Stop didn't stop it.
+
+**Why "Hey" produced a room** — not a voice bug at all. The pipeline's draft/review step (see `pipeline.ts`) exists to expand a sparse prompt into a full scene description, so handed a greeting it invents an entire scene from nothing. Fixed at the entry point: `isTrivialUtterance` (in the new `lib/voice/agent.ts`) rejects input that is *entirely* greeting/filler, checked server-side in `runGeneration`/`runMultiAngleGeneration` so typed input is covered too. Deliberately conservative — it only fires when every word is filler, so short-but-real prompts ("sunset") still go through. Trying to make the refiner itself decline would have been neither cheap nor reliable.
+
+**Why Stop looked broken** — cancellation is cooperative: it flips `cancel_requested`, which the running job checks between steps. A single fast image has already been sent to the provider by the time you press it, so there's nothing to abort, and the finished result was then rendered into the chat and saved to history as if nothing had happened. Now `userStoppedRef` (a ref — `submitPrompt`'s async body captured `stopping` as false and could never see the update) makes the result get discarded on return, and `discardStoppedGeneration` marks the row failed and clears its result URL. Credits are **not** refunded: the provider call really was billed, and quietly zeroing it would move the inaccuracy somewhere harder to notice.
+
+**The agent** (`lib/voice/agent.ts` + the state machine in `generate-form.tsx`) — scripted, not an LLM per turn. Chosen with Wigly for latency (a spoken exchange falls apart at 1-3s per reply) and because a scripted flow can't wander off-task or invent a detail, which is the exact failure being fixed. Flow: opening question spoken before the person says anything → prompt → image-or-video → character (only when they have characters and none is picked; "skip" is a valid answer) → reads the whole request back and waits for a clear yes. `parseYesNo` returns null on anything ambiguous and re-asks rather than guessing — guessing "yes" wrong is what burns a generation. Question wording lives in i18n as **arrays**; `pickPhrasing` picks one at random and avoids repeating the previous one, so it isn't the same sentence every time. Model choice stays on the account default (asking a fourth question every time was the tedious option).
+
+Also in this pass:
+- [x] Voice start now sets `creationModeActive`, which is what un-heroes the composer — same expand as picking Create image, rather than a second differently-shaped expanded state.
+- [x] Waveform card lost its border/background — it was reading as a white box parked in the chat instead of as the app listening.
+- [x] `submitPrompt` gained `contentTypeOverride`/`characterIdOverride`: the agent decides both during the conversation, and `setContentType`/`setCharacterId` don't apply until the next render, so without these it would have generated with whatever was selected *before* the conversation.
+
+`tsc` clean; `eslint` 0 errors (only the long-standing `set-state-in-effect`/`exhaustive-deps` warnings).
+
 ## After launch (polish, not blocking)
 
 - [x] Highlight the active tab in the admin nav bar (2026-08-07) — new `AdminNav` client component compares the current path and bolds/underlines the matching tab.

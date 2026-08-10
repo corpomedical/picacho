@@ -10,12 +10,22 @@ import {
   runMultiAngleGeneration,
   requestGenerationCancel,
   requestMultiAngleGenerationCancel,
+  discardStoppedGeneration,
   getGenerationThread,
   type HistoryTurn,
   type ChatHistoryItem,
 } from "@/lib/generations/actions";
 import { synthesizeVoice } from "@/lib/voice/actions";
 import { parseVoiceCommand } from "@/lib/voice/commands";
+import {
+  pickPhrasing,
+  isTrivialUtterance,
+  parseYesNo,
+  parseContentType,
+  matchCharacterName,
+  isSkipAnswer,
+  type AgentStep,
+} from "@/lib/voice/agent";
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
@@ -640,19 +650,25 @@ const WAVEFORM_BARS = [
 // closing the session — only an actual generation prompt or the stop button
 // ends it.
 function VoiceSessionCard({
+  agentMessage,
   interimText,
   statusMessage,
   onStop,
   g,
 }: {
+  agentMessage: string | null;
   interimText: string;
   statusMessage: string | null;
   onStop: () => void;
   g: Messages["generate"];
 }) {
   return (
-    <div className="flex justify-start">
-      <div className="w-full max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-5">
+    <div className="flex justify-center">
+      {/* No card/border/background on purpose — the waves sit directly on
+          whatever's behind them. An earlier pass had this in the same
+          bordered bubble the pipeline trace uses, which read as a white box
+          stuck in the middle of the chat rather than as the app listening. */}
+      <div className="w-full max-w-[90%] px-4.5 py-6">
         <div className="flex h-10 items-end justify-center gap-1.5" aria-hidden="true">
           {WAVEFORM_BARS.map((bar, i) => (
             <span
@@ -662,11 +678,17 @@ function VoiceSessionCard({
             />
           ))}
         </div>
-        <p className="mt-3 min-h-[20px] text-center text-sm font-medium text-neutral-900">
-          {statusMessage || interimText || g.voiceListeningLabel}
+        {/* What the agent just asked, above what it's currently hearing —
+            the question stays put while the answer is being spoken, so
+            there's always something on screen explaining what's expected. */}
+        {agentMessage && (
+          <p className="mt-4 text-center text-sm font-medium text-neutral-900">{agentMessage}</p>
+        )}
+        <p className="mt-2 min-h-[20px] text-center text-sm text-neutral-500">
+          {statusMessage || interimText || (agentMessage ? "" : g.voiceListeningLabel)}
         </p>
         <p className="mt-1 min-h-[16px] text-center text-xs text-neutral-400">
-          {statusMessage ? g.voiceListeningLabel : interimText ? "" : g.voiceListeningHint}
+          {statusMessage || interimText ? "" : g.voiceListeningHint}
         </p>
         <div className="mt-4 flex justify-center">
           <button
@@ -1001,6 +1023,9 @@ function GenerateFormInner({
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
+  // Set by handleStop, read by submitPrompt/confirmMultiAngle once their
+  // server call returns — see handleStop for why this can't be state.
+  const userStoppedRef = useRef(false);
   // Which request is currently live and what to cancel it by — a client-
   // generated id/groupId, set the instant a request goes out (see
   // submitPrompt/confirmMultiAngle), not whatever the server eventually
@@ -1040,6 +1065,20 @@ function GenerateFormInner({
   // onFinal comment in beginListening for why the recognizer can't just
   // close over it directly.
   const handleVoiceFinalRef = useRef<(text: string) => void>(() => {});
+  // The agent's current question, shown in the session card and spoken.
+  const [voiceAgentMessage, setVoiceAgentMessage] = useState<string | null>(null);
+  // Conversation position and the details gathered so far. Refs, not state:
+  // handleVoiceFinal runs straight off the recognizer and can fire again
+  // before React has re-rendered, so reading these from state would act on
+  // a stale copy of the conversation partway through it.
+  const voiceStepRef = useRef<AgentStep>("await-prompt");
+  const voiceDraftRef = useRef<{ prompt: string; type: ContentType | null; characterId: string | null }>({
+    prompt: "",
+    type: null,
+    characterId: null,
+  });
+  // Last thing the agent said, so pickPhrasing can avoid repeating it.
+  const lastAgentPhrasingRef = useRef<string | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
 
   const [items, setItems] = useState<ChatItem[]>([]);
@@ -1351,8 +1390,21 @@ function GenerateFormInner({
     setVoiceInterimCaption("");
     setVoiceStatusMessage(null);
     setVoiceSessionActive(true);
+    // Docks the composer out of hero mode so the full chat card is on
+    // screen for the session — the same expand that picking "Create image"
+    // from the + menu triggers (isHero is false whenever creationModeActive
+    // is), rather than a second, different-looking expanded state.
+    setCreationModeActive(true);
     voiceWantsListeningRef.current = true;
+    // Fresh conversation every session — no leftover half-answered
+    // questions from a session that was stopped partway through.
+    voiceStepRef.current = "await-prompt";
+    voiceDraftRef.current = { prompt: "", type: null, characterId: null };
+    lastAgentPhrasingRef.current = null;
     beginListening();
+    // The agent speaks first, before the person has said anything, so the
+    // session opens as a conversation rather than a silent open mic.
+    agentSay(pickPhrasing(g.voiceAskOpening, null));
   }
 
   function stopVoiceSession() {
@@ -1363,61 +1415,8 @@ function GenerateFormInner({
     setVoiceSessionActive(false);
     setVoiceInterimCaption("");
     setVoiceStatusMessage(null);
+    setVoiceAgentMessage(null);
   }
-
-  // Runs every time the recognizer finishes a sentence. Checked against
-  // parseVoiceCommand first (with this account's own character names, so
-  // "switch to Mia" only fires when Mia is actually one of theirs) —
-  // recognized commands execute immediately and the session stays open for
-  // the next thing said; anything that isn't a command is treated as an
-  // ordinary generation prompt, which closes the session and hands off to
-  // submitPrompt exactly like typing it and hitting send would.
-  function handleVoiceFinal(text: string) {
-    if (!text) return;
-    setVoiceInterimCaption("");
-    const command = parseVoiceCommand(
-      text,
-      characters.map((c) => c.name),
-    );
-
-    if (command.type === "new-chat") {
-      resetChat();
-      setVoiceStatusMessage(g.voiceNewChatStarted);
-      clearVoiceStatusSoon();
-      return;
-    }
-
-    if (command.type === "navigate") {
-      stopVoiceSession();
-      router.push(command.href);
-      return;
-    }
-
-    if (command.type === "switch-character") {
-      const match = characters.find((c) => c.name.toLowerCase() === command.name.toLowerCase());
-      if (match) {
-        setCharacterId(match.id);
-        setCompanionCharacterIds([]);
-        clearAdvancedVideo();
-        setMultiAngleMode(false);
-        setVoiceStatusMessage(formatMsg(g.voiceSwitchedCharacter, { name: match.name }));
-        clearVoiceStatusSoon();
-        return;
-      }
-      // parseVoiceCommand only returns this type when it already found a
-      // matching name, so this shouldn't happen — falls through to the
-      // plain-prompt handling below as a safe default if it ever does.
-    }
-
-    stopVoiceSession();
-    submitPrompt(text, { speak: true });
-  }
-
-  // No dep array on purpose — this has to re-point at the newest closure on
-  // every single render, not just when some listed value changes.
-  useEffect(() => {
-    handleVoiceFinalRef.current = handleVoiceFinal;
-  });
 
   async function speak(text: string) {
     try {
@@ -1591,6 +1590,7 @@ function GenerateFormInner({
 
     const groupId = crypto.randomUUID();
     activeGenerationRef.current = { kind: "multi", groupId };
+    userStoppedRef.current = false;
 
     const formData = new FormData();
     formData.set("prompt", mPrompt);
@@ -1842,6 +1842,11 @@ function GenerateFormInner({
     const active = activeGenerationRef.current;
     if (!active || stopping) return;
     setStopping(true);
+    // A ref, not the `stopping` state: submitPrompt's own async body
+    // captured `stopping` as false when it started and would never see the
+    // updated value, so it had no way to know the person had asked to stop
+    // by the time its result came back.
+    userStoppedRef.current = true;
     if (active.kind === "single") {
       await requestGenerationCancel(active.id);
     } else {
@@ -1851,10 +1856,21 @@ function GenerateFormInner({
 
   async function submitPrompt(
     rawPrompt: string,
-    opts?: { speak?: boolean; attachments?: ChatAttachment[] },
+    opts?: {
+      speak?: boolean;
+      attachments?: ChatAttachment[];
+      // The voice agent decides both of these during its conversation and
+      // calls straight through — but setContentType/setCharacterId don't
+      // apply until the next render, so this function's own closure would
+      // otherwise still be holding whatever was selected beforehand.
+      contentTypeOverride?: ContentType;
+      characterIdOverride?: string;
+    },
   ) {
     const submittedPrompt = rawPrompt.trim();
     const submittedAttachments = opts?.attachments ?? [];
+    const effectiveContentType = opts?.contentTypeOverride ?? contentType;
+    const effectiveCharacterId = opts?.characterIdOverride ?? characterId;
     if (!submittedPrompt) {
       setError(g.describeFirst);
       return;
@@ -1897,6 +1913,7 @@ function GenerateFormInner({
 
     const generationId = crypto.randomUUID();
     activeGenerationRef.current = { kind: "single", id: generationId };
+    userStoppedRef.current = false;
 
     const formData = new FormData();
     formData.set("generation_id", generationId);
@@ -1923,16 +1940,16 @@ function GenerateFormInner({
         formData.set("anchor_photo_path", anchorPhotoPath);
       }
     }
-    const submittedDialogue = contentType === "video" ? dialogueText.trim() : "";
+    const submittedDialogue = effectiveContentType === "video" ? dialogueText.trim() : "";
     if (submittedDialogue) {
       formData.set("dialogue", submittedDialogue);
     }
-    formData.set("character_id", characterId);
+    formData.set("character_id", effectiveCharacterId);
     if (companionCharacterIds.length > 0) {
       formData.set("companion_character_ids", JSON.stringify(companionCharacterIds));
     }
-    formData.set("content_type", contentType);
-    if (contentType === "video") {
+    formData.set("content_type", effectiveContentType);
+    if (effectiveContentType === "video") {
       formData.set("video_model_id", videoModelId);
       formData.set("video_duration_seconds", String(videoDurationSeconds));
       if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
@@ -1991,6 +2008,24 @@ function GenerateFormInner({
       return;
     }
 
+    // Stopped while this was in flight. The provider call couldn't be
+    // aborted (see discardStoppedGeneration for why), so a real result may
+    // well have come back — throw it away rather than rendering it, which
+    // is what made Stop look like it did nothing at all.
+    if (userStoppedRef.current) {
+      void discardStoppedGeneration(result.id);
+      activeGenerationRef.current = null;
+      setLivePrompt(null);
+      setLiveAttachments([]);
+      setLiveTimeline([]);
+      setLiveResult(null);
+      setRevealedCount(0);
+      setSubmitting(false);
+      setStopping(false);
+      setError(g.stoppedByUser);
+      return;
+    }
+
     const items = buildTimeline(result.attempts);
     setLiveTimeline(items);
     setLiveIsLive(isLiveTurn(result.attempts));
@@ -2034,7 +2069,7 @@ function GenerateFormInner({
         kind: "single",
         id: result.id,
         prompt: submittedPrompt,
-        contentType,
+        contentType: effectiveContentType,
         attempts: result.attempts,
         succeeded: result.succeeded,
         finalPrompt: result.finalPrompt,
@@ -2050,6 +2085,174 @@ function GenerateFormInner({
     setRevealedCount(0);
     setSubmitting(false);
   }
+
+  // Says something and shows it in the session card at the same time. TTS
+  // is best-effort: if voice replies aren't configured the text is still on
+  // screen, so the conversation never silently stalls.
+  function agentSay(message: string) {
+    lastAgentPhrasingRef.current = message;
+    setVoiceAgentMessage(message);
+    void speak(message);
+  }
+
+  // Asks whichever detail is still missing, then confirms. Called with the
+  // draft explicitly rather than reading the ref, so the value just
+  // captured in this same turn is definitely the one being acted on.
+  function askNextVoiceStep(draft: { prompt: string; type: ContentType | null; characterId: string | null }) {
+    if (!draft.type) {
+      voiceStepRef.current = "await-type";
+      agentSay(pickPhrasing(g.voiceAskType, lastAgentPhrasingRef.current));
+      return;
+    }
+    // Only worth asking when they actually have characters to choose from
+    // and haven't already got one selected — otherwise it's a dead question.
+    if (!draft.characterId && characters.length > 0) {
+      voiceStepRef.current = "await-character";
+      agentSay(pickPhrasing(g.voiceAskCharacter, lastAgentPhrasingRef.current));
+      return;
+    }
+
+    voiceStepRef.current = "await-confirm";
+    const characterName = characters.find((c) => c.id === draft.characterId)?.name ?? null;
+    const typeLabel = draft.type === "video" ? g.video.toLowerCase() : g.image.toLowerCase();
+    const summary = characterName
+      ? formatMsg(g.voiceConfirmWithCharacter, { type: typeLabel, prompt: draft.prompt, name: characterName })
+      : formatMsg(g.voiceConfirmPlain, { type: typeLabel, prompt: draft.prompt });
+    agentSay(`${summary} ${pickPhrasing(g.voiceAskConfirm, null)}`);
+  }
+
+  // Runs every time the recognizer finishes a sentence. Which question is
+  // outstanding decides how the sentence is read — the whole point of the
+  // flow is that nothing reaches submitPrompt until the person has heard
+  // the request read back and said yes (real incident, 2026-08-10: "Hey"
+  // generated a room, because a single utterance went straight to the
+  // generator with no confirmation step in between).
+  function handleVoiceFinal(text: string) {
+    if (!text) return;
+    setVoiceInterimCaption("");
+    const step = voiceStepRef.current;
+
+    // Navigation / new chat / character switching stay available at any
+    // point in the conversation, not just at the start.
+    const command = parseVoiceCommand(
+      text,
+      characters.map((c) => c.name),
+    );
+
+    if (command.type === "new-chat") {
+      resetChat();
+      voiceDraftRef.current = { prompt: "", type: null, characterId: null };
+      voiceStepRef.current = "await-prompt";
+      setVoiceStatusMessage(g.voiceNewChatStarted);
+      clearVoiceStatusSoon();
+      agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
+      return;
+    }
+
+    if (command.type === "navigate") {
+      stopVoiceSession();
+      router.push(command.href);
+      return;
+    }
+
+    if (command.type === "switch-character") {
+      const match = characters.find((c) => c.name.toLowerCase() === command.name.toLowerCase());
+      if (match) {
+        setCharacterId(match.id);
+        setCompanionCharacterIds([]);
+        clearAdvancedVideo();
+        setMultiAngleMode(false);
+        voiceDraftRef.current = { ...voiceDraftRef.current, characterId: match.id };
+        setVoiceStatusMessage(formatMsg(g.voiceSwitchedCharacter, { name: match.name }));
+        clearVoiceStatusSoon();
+        // Mid-conversation this answers the outstanding question, so carry
+        // on rather than leaving them waiting on a question already met.
+        if (step !== "await-prompt") askNextVoiceStep(voiceDraftRef.current);
+        return;
+      }
+    }
+
+    if (step === "await-prompt") {
+      if (isTrivialUtterance(text)) {
+        // "Hey" / "hello" / "testing" — no content to build from. Ask
+        // again instead of handing it to the generator.
+        agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
+        return;
+      }
+      const draft = { ...voiceDraftRef.current, prompt: text, characterId: characterId || null };
+      voiceDraftRef.current = draft;
+      askNextVoiceStep(draft);
+      return;
+    }
+
+    if (step === "await-type") {
+      const type = parseContentType(text);
+      if (!type) {
+        agentSay(pickPhrasing(g.voiceAskType, lastAgentPhrasingRef.current));
+        return;
+      }
+      setContentType(type);
+      const draft = { ...voiceDraftRef.current, type };
+      voiceDraftRef.current = draft;
+      askNextVoiceStep(draft);
+      return;
+    }
+
+    if (step === "await-character") {
+      if (isSkipAnswer(text)) {
+        const draft = { ...voiceDraftRef.current, characterId: null };
+        voiceDraftRef.current = draft;
+        voiceStepRef.current = "await-confirm";
+        askNextVoiceStep({ ...draft, characterId: null });
+        return;
+      }
+      const name = matchCharacterName(
+        text,
+        characters.map((c) => c.name),
+      );
+      const match = name ? characters.find((c) => c.name === name) : undefined;
+      if (!match) {
+        agentSay(pickPhrasing(g.voiceAskCharacter, lastAgentPhrasingRef.current));
+        return;
+      }
+      setCharacterId(match.id);
+      setCompanionCharacterIds([]);
+      const draft = { ...voiceDraftRef.current, characterId: match.id };
+      voiceDraftRef.current = draft;
+      askNextVoiceStep(draft);
+      return;
+    }
+
+    // await-confirm
+    const answer = parseYesNo(text);
+    if (answer === "yes") {
+      const draft = voiceDraftRef.current;
+      stopVoiceSession();
+      // Both passed explicitly: setContentType/setCharacterId above only
+      // take effect on the next render, so submitPrompt's own closure would
+      // still be holding the values from before this conversation.
+      submitPrompt(draft.prompt, {
+        speak: true,
+        contentTypeOverride: draft.type ?? undefined,
+        characterIdOverride: draft.characterId ?? "",
+      });
+      return;
+    }
+    if (answer === "no") {
+      voiceDraftRef.current = { prompt: "", type: null, characterId: null };
+      voiceStepRef.current = "await-prompt";
+      agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
+      return;
+    }
+    // Neither a clear yes nor no — re-read the request rather than guess.
+    askNextVoiceStep(voiceDraftRef.current);
+  }
+
+  // No dep array on purpose — this has to re-point at the newest closure on
+  // every single render, not just when some listed value changes.
+  useEffect(() => {
+    handleVoiceFinalRef.current = handleVoiceFinal;
+  });
 
   // A request forwarded here from the sidebar's global voice command arrives
   // as ?voice=<text> (or the special "new chat" marker) — pick it up once,
@@ -2366,6 +2569,7 @@ function GenerateFormInner({
   // for it, which is exactly what "it doesn't work" looked like.
   const voiceSessionCard = voiceSessionActive ? (
     <VoiceSessionCard
+      agentMessage={voiceAgentMessage}
       interimText={voiceInterimCaption}
       statusMessage={voiceStatusMessage}
       onStop={stopVoiceSession}

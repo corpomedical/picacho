@@ -254,6 +254,35 @@ const en = {
     voiceSwitchedCharacter: "Switched to {name}.",
     voiceNewChatStarted: "Starting a new chat.",
     voiceStopSession: "Stop voice mode",
+    // Arrays, not single strings: the agent picks one at random each time
+    // (see pickPhrasing in lib/voice/agent.ts) so it doesn't repeat the
+    // exact same sentence on every session. Keep them interchangeable —
+    // any one of these has to work in the same spot in the conversation.
+    voiceAskOpening: [
+      "What can I help you create?",
+      "What are we making today?",
+      "Tell me what you'd like to see.",
+      "What should I create for you?",
+      "Describe what you have in mind.",
+    ],
+    voiceAskType: [
+      "Should that be an image or a video?",
+      "Image or video?",
+      "Do you want a still image, or a video?",
+    ],
+    voiceAskCharacter: [
+      "Which character should I use? You can also say skip.",
+      "Who's in it? Say a character's name, or skip.",
+      "Should this use one of your characters? Say a name, or skip.",
+    ],
+    voiceAskConfirm: [
+      "Should I go ahead?",
+      "Ready to generate?",
+      "Want me to make it?",
+      "Shall I start?",
+    ],
+    voiceConfirmWithCharacter: "So: a {type} of “{prompt}”, with {name}.",
+    voiceConfirmPlain: "So: a {type} of “{prompt}”.",
     send: "Send",
     stop: "Stop generating",
     stopping: "Stopping…",
