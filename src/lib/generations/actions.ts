@@ -1291,6 +1291,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // what happens to its siblings. Previously a shared Promise.all meant a
   // single failure could leave other angles' results uninserted-but-still-
   // running, invisible to the UI, and never cleaned up.
+  // Read once, not once per angle — this is the same query with the same
+  // result for every angle in the batch.
+  const angleBrandRules = await loadBrandRules(supabase, userData.user.id);
+
   const settled = await Promise.allSettled(
     angleIds.map(async (angleId) => {
       const preset = getAnglePreset(angleId);
@@ -1313,7 +1317,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             videoDurationSeconds,
             videoAspectRatio,
             skipRefinement,
-            brandRules: await loadBrandRules(supabase, userData.user!.id),
+            brandRules: angleBrandRules,
           },
           maxAttempts,
           // Every angle shares one cancel_requested flag via angle_group_id

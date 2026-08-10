@@ -777,6 +777,7 @@ export function GenerateForm(props: {
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
   elitePlanActive: boolean;
+  multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
   // Raw numbers behind approachingLimit, plus the real reset timestamp when
@@ -955,6 +956,7 @@ function GenerateFormInner({
   videoModels,
   defaultVideoModelId,
   elitePlanActive,
+  multiAngleAvailable,
   approachingLimit,
   voiceModeEnabled,
   creditsUsed,
@@ -968,6 +970,7 @@ function GenerateFormInner({
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
   elitePlanActive: boolean;
+  multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
   creditsUsed: number;
@@ -3354,6 +3357,7 @@ function GenerateFormInner({
                         )}
                       >
                         <div className="flex items-center gap-1.5 pr-1">
+                          {multiAngleAvailable && (
                           <button
                             type="button"
                             onClick={toggleMultiAngleMode}
@@ -3370,6 +3374,7 @@ function GenerateFormInner({
                           >
                             <AnglesIcon className="h-4 w-4" />
                           </button>
+                          )}
 
                           {advancedVideoEligible && (
                             <button

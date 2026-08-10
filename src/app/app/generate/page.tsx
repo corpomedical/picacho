@@ -38,6 +38,7 @@ export default async function GeneratePage() {
     videoModels,
     defaultVideoModelId,
     elitePlanActive,
+    multiAngleAvailable,
     approachingLimit,
     voiceModeEnabled,
     creditsUsed,
@@ -93,6 +94,7 @@ export default async function GeneratePage() {
         videoModels={videoModels}
         defaultVideoModelId={defaultVideoModelId}
         elitePlanActive={elitePlanActive}
+        multiAngleAvailable={multiAngleAvailable}
         approachingLimit={approachingLimit}
         voiceModeEnabled={voiceModeEnabled}
         creditsUsed={creditsUsed}

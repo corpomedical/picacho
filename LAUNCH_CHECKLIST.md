@@ -333,6 +333,20 @@ The last unmetered path from the pricing analysis. Adding spoken dialogue runs t
 That closes every leak identified in `Picacho pricing analysis.xlsx`:
 unlimited character photos (capped), failed generations billing 3× (fixed at the source), unmetered TTS (voice mode flagged off), unmetered dialogue (surcharged), stopped generations (unavoidable, documented).
 
+## Multi-angle & storyboard review — 2026-08-10
+
+Asked whether both "work perfectly". **They have never run.** Zero rows in `generations` with an `angle_group_id` — not one multi-angle batch has ever been started, successfully or otherwise — and zero pipeline logs mentioning storyboard. So neither can be called working; what follows is a code audit, not a verification. Only real end-to-end runs will settle it.
+
+Fixed:
+- [x] **Free-tier dead end (introduced hours earlier by the free tier itself).** `runMultiAngleGeneration` rejects free accounts, but the multi-angle button had no plan gate in the UI. A trial user could turn it on, write a prompt, pick angles, hit confirm, and only then be told it needs a plan — the worst possible moment to find out. New `multiAngleAvailable` from `workspace-data` now hides the button, mirroring how `advancedVideoEligible` already hides storyboard.
+- [x] **N+1 query**, also mine: `loadBrandRules` was being called inside the per-angle map, so a 5-angle batch ran the same query five times. Hoisted.
+
+**Unresolved risk, and it's the big one — the 300-second ceiling.** `maxDuration = 300` (Vercel Hobby's hard cap), while `MAX_WAIT_MS` in `fal.ts` allows a single video up to 10 minutes. A single video with dialogue can already exceed 300s; multi-angle runs several pipelines in parallel, each able to retry up to 3 times. The angles run concurrently rather than in series, so the batch takes as long as its slowest angle — but that alone can breach the limit, and the function is killed mid-flight while fal.ai keeps rendering and billing.
+
+This is not a code defect that can be fixed in code. The realistic options are: upgrade to Vercel Pro with Fluid Compute (raises the ceiling to 800s), or restructure multi-angle to fire-and-poll rather than hold a request open. Worth deciding before multi-angle is put in front of anyone, because the failure mode is silent and expensive.
+
+Structurally sound on review: `Promise.allSettled` so one angle failing can't strand its siblings, a placeholder row per angle written up front, per-angle cancel checks against each row, angle hints appended before the normal draft/review/validate pipeline so every angle gets the same reliability treatment. Storyboard correctly requires a start frame client-side and is Elite-gated in both UI and server.
+
 ## Free tier — 2026-08-10
 
 Phase 0, step 1 of `Picacho distribution plan.pdf`. Until now a stranger could not see the product work without paying €19, which quietly undermined every acquisition channel.

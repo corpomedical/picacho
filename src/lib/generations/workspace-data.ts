@@ -31,6 +31,7 @@ export type GenerateWorkspaceData = {
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
   elitePlanActive: boolean;
+  multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
   // Raw numbers + the real reset timestamp (when known — see
@@ -115,6 +116,14 @@ export async function getGenerateWorkspaceData(
         .single()
     : { data: null };
   const elitePlanActive = profile?.plan === "elite" || profile?.role === "admin";
+  // Multi-angle is several generations in one click, so it isn't part of the
+  // free trial (enforced in runMultiAngleGeneration). Mirrored here so the
+  // button is hidden rather than letting someone pick angles, confirm, and
+  // only then be told no — the worst possible moment to find out.
+  const multiAngleAvailable =
+    (profile?.plan ?? "none") !== "none" ||
+    (profile?.bonus_credits ?? 0) > 0 ||
+    profile?.role === "admin";
 
   // Same "approaching your limit" nudge Claude/ChatGPT show near the
   // composer once you're close to a usage cap — admins are exempt since
@@ -140,6 +149,7 @@ export async function getGenerateWorkspaceData(
     videoModels,
     defaultVideoModelId,
     elitePlanActive,
+    multiAngleAvailable,
     approachingLimit,
     voiceModeEnabled,
     creditsUsed: usedThisMonth,
