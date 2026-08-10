@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   runPipeline,
@@ -1074,6 +1074,46 @@ export async function pollGeneration(generationId: string): Promise<
   }
 
   return { error: null, ...result };
+}
+
+// Every generation of this user's that is still queued at the provider.
+//
+// The composer calls this on load and re-attaches its poller to whatever it
+// finds, so a render survives the page being reloaded, the tab being closed
+// and reopened, or — as actually happened on 2026-08-10 — the original
+// request erroring out and abandoning three jobs that were already paid for.
+//
+// Reads generation_jobs (server-only, service role) rather than looking for
+// status='generating', because that status alone can't distinguish "queued at
+// fal and collectable" from "died before it ever reached the provider".
+export async function listInFlightGenerations(): Promise<
+  { id: string; prompt: string; contentType: ContentType }[]
+> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return [];
+
+  const admin = createAdminClient();
+  const { data: jobs } = await admin
+    .from("generation_jobs")
+    .select("generation_id")
+    .eq("user_id", userData.user.id)
+    .limit(12);
+
+  const ids = (jobs ?? []).map((j) => j.generation_id as string);
+  if (ids.length === 0) return [];
+
+  const { data: rows } = await supabase
+    .from("generations")
+    .select("id, prompt_input, content_type")
+    .in("id", ids)
+    .eq("status", "generating");
+
+  return (rows ?? []).map((r) => ({
+    id: r.id as string,
+    prompt: (r.prompt_input as string) ?? "",
+    contentType: ((r.content_type as string) ?? "video") as ContentType,
+  }));
 }
 
 // Cleans up generations that were abandoned mid-render — the tab was closed,

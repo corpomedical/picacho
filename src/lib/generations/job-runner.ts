@@ -399,6 +399,40 @@ export async function reapStaleJobs(userId: string): Promise<void> {
     .returns<JobRow[]>();
 
   for (const row of stale ?? []) {
+    // Ask once whether it actually finished before writing it off.
+    //
+    // "Nobody polled this for half an hour" and "this failed" are different
+    // things, and the first does not imply the second — a render that
+    // completed while the browser was gone is sitting there, paid for, ready
+    // to collect. Binning it would throw away real money and a real result.
+    // Real incident, 2026-08-10: three multi-angle renders were orphaned by a
+    // client-side error and were minutes from being deleted despite running
+    // to completion.
+    try {
+      const state = await checkQueuedJob(jobHandle(row));
+      if (state.state === "completed" && row.stage === "video") {
+        const videoUrl = await fetchQueuedVideoUrl(jobHandle(row));
+        await finish(row.generation_id, row.user_id, {
+          status: "succeeded",
+          resultUrl: videoUrl,
+          attempts: row.resume?.attempts ?? [],
+        });
+        continue;
+      }
+      if (state.state === "pending") {
+        // Still genuinely rendering. Leave it be and give it another window
+        // rather than cancelling work that's in progress.
+        await admin
+          .from("generation_jobs")
+          .update({ last_polled_at: new Date().toISOString() })
+          .eq("generation_id", row.generation_id);
+        continue;
+      }
+    } catch {
+      // Couldn't reach fal — fall through and clean up as before rather than
+      // leaving the row stuck at "generating" indefinitely.
+    }
+
     // Tell fal.ai to stop too. Without this we'd keep paying for renders whose
     // output nobody will ever collect — exactly the leak the queue API was
     // adopted to close.

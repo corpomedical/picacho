@@ -9,6 +9,7 @@ import {
   runGeneration,
   runMultiAngleGeneration,
   pollGeneration,
+  listInFlightGenerations,
   requestGenerationCancel,
   requestMultiAngleGenerationCancel,
   discardStoppedGeneration,
@@ -1991,6 +1992,63 @@ function GenerateFormInner({
     () => startOnboarding === true || searchParams.get("tour") === "1",
   );
   const [tourStepIndex, setTourStepIndex] = useState(0);
+
+  // Re-attach to any render that's still queued at the provider.
+  //
+  // Real incident, 2026-08-10: a multi-angle request queued three Kling jobs
+  // successfully and then the browser call that was meant to drive them to
+  // completion threw. The renders kept going — and kept being billed — with
+  // nothing left watching them, and would have been binned by the stale-job
+  // reaper half an hour later despite having finished.
+  //
+  // The generation itself never depended on this page staying open; only the
+  // COLLECTING of it did. This closes that: on load, ask what's still in
+  // flight and start polling it again. Also covers the ordinary cases — a
+  // reload mid-render, or coming back to a tab that was closed.
+  //
+  // Deliberately quiet. It refreshes the route when something lands so the
+  // result appears in the workspace and History, rather than trying to
+  // reconstruct a live bubble for a request this page never made.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      let inFlight: Awaited<ReturnType<typeof listInFlightGenerations>> = [];
+      try {
+        inFlight = await listInFlightGenerations();
+      } catch {
+        // Never block the composer over this — it's recovery, not the
+        // main path.
+        return;
+      }
+      if (cancelled || inFlight.length === 0) return;
+
+      setLiveProgress(
+        inFlight.length === 1 ? "Picking up where you left off" : `Finishing ${inFlight.length} renders`,
+      );
+
+      await Promise.all(
+        inFlight.map((gen) =>
+          awaitQueuedGeneration(
+            gen.id,
+            () => {},
+            () => cancelled,
+          ),
+        ),
+      );
+
+      if (cancelled) return;
+      setLiveProgress(null);
+      router.refresh();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // Once per mount. Re-running on every render would start duplicate
+    // pollers for the same jobs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Watches for ?tour=1 arriving, rather than only reading it once at mount.
   //
