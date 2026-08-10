@@ -26,6 +26,8 @@ export type VideoDurationOption = {
 export const VIDEO_MODELS = [
   {
     id: "kling",
+    // fal.ai's real per-second price, for pricingAudit() below.
+    costPerSecondUsd: 0.056,
     // This used to point at "v2.1/standard/text-to-video", which doesn't
     // exist — fal.ai's Kling 2.1 "standard" tier is image-to-video only
     // (confirmed against fal.ai's own docs, 2026-08-07). Every plain
@@ -48,6 +50,8 @@ export const VIDEO_MODELS = [
   },
   {
     id: "kling-o3",
+    // fal.ai's real per-second price, for pricingAudit() below.
+    costPerSecondUsd: 0.08,
     // Kling's newest generation (2026-08-07: confirmed via fal.ai's model
     // catalog that v1.6 was no longer their latest — this is). Standard
     // tier (not Pro): same "start frame + prompt" shape we already send for
@@ -84,6 +88,8 @@ export const VIDEO_MODELS = [
   },
   {
     id: "veo",
+    // fal.ai's real per-second price, for pricingAudit() below.
+    costPerSecondUsd: 0.40,
     name: "Veo 3.1",
     falEndpoint: "fal-ai/veo3.1",
     recommended: false,
@@ -105,6 +111,11 @@ export const VIDEO_MODELS = [
     // $0.28/credit rate has been applied here too rather than leaving Veo as
     // the one model where a longer video is still free against the plan —
     // worth double-checking these land where you want them.
+    // Briefly raised to 12 on 2026-08-11 on the false premise that 11 sold
+    // below cost. It never did: $0.28 is the COST basis used to keep weights
+    // proportional to provider spend, not the price of a credit. A credit
+    // actually sells for about $1.80-2.15 depending on plan, so 8s of Veo
+    // earns roughly $20 against $3.20 of cost. Reverted.
     durations: [
       { seconds: 4, creditWeight: 6 },
       { seconds: 6, creditWeight: 9 },
@@ -113,6 +124,8 @@ export const VIDEO_MODELS = [
   },
   {
     id: "kling-2.5",
+    // fal.ai's real per-second price, for pricingAudit() below.
+    costPerSecondUsd: 0.07,
     name: "Kling 2.5 Turbo Pro",
     falEndpoint: "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
     recommended: false,
@@ -132,6 +145,8 @@ export const VIDEO_MODELS = [
   },
   {
     id: "seedance",
+    // fal.ai's real per-second price, for pricingAudit() below.
+    costPerSecondUsd: 0.4730,
     name: "Seedance 2.5",
     falEndpoint: "bytedance/seedance-2.5/reference-to-video",
     recommended: false,
@@ -229,3 +244,56 @@ export function creditsPerSecond(model: VideoModel): number {
 export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].sort(
   (a, b) => creditsPerSecond(a) - creditsPerSecond(b),
 );
+
+// The COST basis, not the price.
+//
+// This is the provider spend one credit is meant to represent, and its only
+// job is keeping weights proportional across models so a minute of Veo costs
+// the user proportionally more allowance than a minute of Kling.
+//
+// It is emphatically NOT what a credit sells for. Plans work out at roughly
+// $1.80-2.15 per credit (see lib/pricing.ts), so gross margin is around 85%.
+// Confusing the two led to a real mistake on 2026-08-11 — Veo was declared
+// "sold at a loss" and repriced on that basis, when it was earning about 85%.
+// If you find yourself comparing a credit weight against this number and
+// calling the difference margin, that is the same error.
+export const COST_BASIS_USD_PER_CREDIT = 0.28;
+
+// Options whose credit weight is out of step with what they actually cost.
+//
+// NOT a profitability check — every model here is comfortably profitable at
+// current plan prices. This catches weights that have drifted relative to
+// provider cost, which shows up as one model quietly consuming less of
+// someone's allowance per dollar of spend than another. That matters when a
+// provider changes its prices and a weight isn't updated to match.
+//
+// Surfaced on Admin > AI providers so drift is visible rather than assumed
+// away.
+export function pricingAudit(): {
+  modelId: string;
+  name: string;
+  seconds: number;
+  credits: number;
+  allowanceValueUsd: number;
+  costUsd: number;
+}[] {
+  const losses = [];
+  for (const model of VIDEO_MODELS) {
+    for (const d of model.durations) {
+      const allowanceValueUsd = d.creditWeight * COST_BASIS_USD_PER_CREDIT;
+      const costUsd = model.costPerSecondUsd * d.seconds;
+      // Half a cent of tolerance for floating point, not for genuine losses.
+      if (allowanceValueUsd + 0.005 < costUsd) {
+        losses.push({
+          modelId: model.id,
+          name: model.name,
+          seconds: d.seconds,
+          credits: d.creditWeight,
+          allowanceValueUsd,
+          costUsd,
+        });
+      }
+    }
+  }
+  return losses;
+}

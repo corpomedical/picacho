@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { toggleFeatureFlag, setVideoModel, setImageModel, restoreModel, suspendModel } from "@/lib/admin/actions";
 import { getAllModelHealth } from "@/lib/generations/model-health";
-import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
+import { VIDEO_MODELS, pricingAudit, COST_BASIS_USD_PER_CREDIT } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -178,6 +178,32 @@ export default async function AdminProvidersPage({
           ))}
         </div>
       </Card>
+
+      {/* Any model priced below what it costs to run.
+
+          Veo shipped underpriced and stayed that way through two pricing
+          reviews because the weights looked reasonable and nobody multiplied
+          them out. This makes that arithmetic visible instead of trusting
+          that someone remembers to do it. */}
+      {pricingAudit().length > 0 && (
+        <Card className="mt-6 border-amber-200">
+          <h2 className="text-sm font-semibold text-amber-700">Credit weights out of step with cost</h2>
+          <p className="mt-1 text-sm text-neutral-500">
+            Not a profitability problem — every model is well above cost at current plan
+            prices. These weights have drifted relative to what the provider charges, so
+            they consume less allowance per dollar than the others.
+          </p>
+          <div className="mt-3 space-y-1.5">
+            {pricingAudit().map((row) => (
+              <p key={`${row.modelId}-${row.seconds}`} className="text-sm text-neutral-700">
+                <span className="font-medium">{row.name}</span> at {row.seconds}s — {row.credits}{" "}
+                credits represents ${row.allowanceValueUsd.toFixed(2)} of spend but costs ${row.costUsd.toFixed(2)}. Suggest{" "}
+                {Math.ceil(row.costUsd / COST_BASIS_USD_PER_CREDIT)} credits.
+              </p>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Circuit breaker.
 
