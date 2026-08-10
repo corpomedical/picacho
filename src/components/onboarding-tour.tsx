@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 
 // A single stop in the tour. targetId, when set, must match a
 // data-tour-id="..." attribute on some element already in the DOM (see
 // generate-form.tsx and app-sidebar.tsx) — the tour measures that element's
-// live position every render, it never hardcodes coordinates. targetId null
+// live position every frame, it never hardcodes coordinates. targetId null
 // means a centered, un-anchored stop (welcome/closing messages).
 export type TourStep = {
   targetId: string | null;
@@ -16,24 +16,37 @@ export type TourStep = {
 
 type Rect = { top: number; left: number; width: number; height: number };
 
-const PAD = 22; // breathing room between the target's real edge and the spotlight — generous, so it's obvious what's highlighted
+const PAD = 22; // breathing room between the target's real edge and the spotlight
 const GAP = 20; // balloon distance from the target
 const BALLOON_MAX_WIDTH = 320;
 const CORNER_RADIUS = 26; // spotlight + ring corner radius
-const BLUR_SOFTNESS = 46; // feGaussianBlur stdDeviation — a wide, gradual falloff instead of a tight one
-const TWEEN_MS = 420;
+const SCRIM = "rgba(0,0,0,0.5)";
+const SCRIM_FEATHER = 40; // soft falloff at the spotlight's edge, in px
 // Apple's system blue (light-mode value) — used for the primary action, the
 // one spot of color against an otherwise grayscale UI, same as iOS/macOS
 // coach marks and alerts.
 const SYSTEM_BLUE = "#0A84FF";
 const SYSTEM_BLUE_HOVER = "#0870dc";
 
+const ENTER_MS = 260;
+const EXIT_MS = 190;
+const TEXT_FADE_MS = 150;
+
+// Exponential smoothing constant for the spotlight. Higher is snappier; 14
+// settles in about a third of a second and reads as deliberate rather than
+// floaty. Chosen over a duration-based tween because the target can move
+// WHILE we're animating toward it (a smooth scroll is in flight, the composer
+// is reflowing behind the overlay) and a tween would have to be restarted
+// from scratch each time, which is what made the old spotlight lurch.
+// Exponential smoothing just re-aims at the new target on the next frame.
+const SMOOTHING = 14;
+
 function clamp(v: number, min: number, max: number) {
   return Math.min(Math.max(v, min), max);
 }
 
-function easeOutCubic(t: number) {
-  return 1 - Math.pow(1 - t, 3);
+function prefersReducedMotion() {
+  return typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
 export function OnboardingTour({
@@ -60,9 +73,6 @@ export function OnboardingTour({
   const index = stepIndex;
   const step = steps[index];
   const isLast = index === steps.length - 1;
-  const maskUid = useId().replace(/[:]/g, "");
-  const maskId = `tour-mask-${maskUid}`;
-  const blurId = `tour-blur-${maskUid}`;
 
   // Rendered via a portal to <body> — the composer's own root element uses
   // transform-gpu/isolate (see generate-form.tsx, a Safari corner-radius
@@ -74,205 +84,355 @@ export function OnboardingTour({
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
-  // The target's real, current position — only ever set to an ACTUAL
-  // measurement or explicitly to null for a step that intentionally has no
-  // target (welcome/closing). Never bounced to null "in between" while
-  // waiting to find the next step's target — that transient null was what
-  // made the spotlight and the balloon's tail flicker out and back in on
-  // every step change instead of gliding.
-  const [rect, setRect] = useState<Rect | null>(null);
+  // Drives the enter and exit fades. Exiting is deliberately a real state:
+  // the tour has to finish fading before the caller unmounts it, otherwise
+  // it vanishes on the frame the button is clicked, which is the single
+  // cheapest-looking thing an overlay can do.
+  const [phase, setPhase] = useState<"entering" | "open" | "leaving">("entering");
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setPhase("open"));
+    return () => cancelAnimationFrame(id);
+  }, []);
 
-  useLayoutEffect(() => {
-    if (!step.targetId) {
-      setRect(null);
+  // Which step's text is actually painted. Trails stepIndex by one fade so
+  // the words cross-dissolve instead of snapping mid-move.
+  const [renderIndex, setRenderIndex] = useState(index);
+  const [textVisible, setTextVisible] = useState(true);
+  useEffect(() => {
+    if (index === renderIndex) return;
+    if (prefersReducedMotion()) {
+      setRenderIndex(index);
       return;
     }
-    let cancelled = false;
-    function measure() {
-      if (cancelled) return;
-      const el = document.querySelector(`[data-tour-id="${step.targetId}"]`);
-      if (!el) return; // keep showing the previous target until this one exists
-      const r = el.getBoundingClientRect();
-      setRect({ top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 });
-      el.scrollIntoView({ block: "center", behavior: "smooth" });
+    setTextVisible(false);
+    const id = setTimeout(() => {
+      setRenderIndex(index);
+      setTextVisible(true);
+    }, TEXT_FADE_MS);
+    return () => clearTimeout(id);
+  }, [index, renderIndex]);
+
+  const holeRef = useRef<HTMLDivElement | null>(null);
+  const scrimRef = useRef<HTMLDivElement | null>(null);
+  const ringRef = useRef<HTMLDivElement | null>(null);
+  const balloonRef = useRef<HTMLDivElement | null>(null);
+  const notchRef = useRef<HTMLSpanElement | null>(null);
+  const nextButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  // The animated position, held in a ref rather than state. Nothing about the
+  // spotlight's motion goes through React: the loop below writes styles
+  // straight to the DOM.
+  //
+  // This is the single biggest change from the previous version, which called
+  // setState on every animation frame and so re-rendered this whole component
+  // — SVG mask, balloon, buttons and all — sixty times a second. That is what
+  // made the tour feel like it was chugging.
+  const currentRef = useRef<Rect | null>(null);
+  // Whether the balloon hangs below the target or above it. Decided once when
+  // the step changes, not per frame: recomputing it continuously meant that a
+  // target drifting past the halfway line during a scroll would flip the
+  // balloon back and forth across the screen.
+  const placeBelowRef = useRef(true);
+  // Only the target id is needed inside the animation loop, and mirroring it
+  // into a ref is what lets that loop be set up once and never torn down —
+  // depending on `step` directly would restart the loop on every render,
+  // since the caller rebuilds its steps array each time it renders.
+  const targetIdRef = useRef(step.targetId);
+  useEffect(() => {
+    targetIdRef.current = step.targetId;
+  }, [step.targetId]);
+
+  // Bring the target into view once per step. Measurement doesn't depend on
+  // this having finished — the loop re-measures every frame, so the spotlight
+  // simply rides the scroll. The old code instead guessed with three fixed
+  // timers (60ms, 160ms, 380ms) and so kept sampling positions mid-scroll,
+  // which is why it appeared to lunge at its target and overshoot.
+  useEffect(() => {
+    if (!step.targetId) return;
+    const el = document.querySelector(`[data-tour-id="${step.targetId}"]`);
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const fullyVisible = r.top >= 80 && r.bottom <= window.innerHeight - 80;
+    if (!fullyVisible) {
+      el.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     }
-    measure();
-    const timers = [setTimeout(measure, 60), setTimeout(measure, 160), setTimeout(measure, 380)];
-    window.addEventListener("resize", measure);
-    return () => {
-      cancelled = true;
-      timers.forEach(clearTimeout);
-      window.removeEventListener("resize", measure);
-    };
+    placeBelowRef.current = true; // recomputed on the next frame from the fresh rect
   }, [step.targetId, index]);
 
-  // displayRect is what's actually drawn — smoothly tweened toward `rect`
-  // every time it changes, on a single requestAnimationFrame loop, so the
-  // spotlight, its ring, and the balloon all glide together as one motion
-  // instead of a CSS transition (which can't animate the SVG mask below)
-  // or an instant jump.
-  const [displayRect, setDisplayRect] = useState<Rect | null>(null);
-  const displayRectRef = useRef<Rect | null>(null);
-  const rafRef = useRef<number | null>(null);
-
+  // One animation loop for the lifetime of the overlay. Every frame it
+  // re-measures the live target, eases the drawn rect toward it, and writes
+  // the result to the spotlight, ring, balloon and notch together — so they
+  // move as one object instead of drifting out of sync with each other.
+  //
+  // Measuring every frame (rather than on a scroll listener or a
+  // ResizeObserver) is what makes this robust: it tracks smooth scrolling,
+  // window resizes, and the composer reflowing behind the overlay, with no
+  // special case for any of them. It's one getBoundingClientRect per frame.
   useEffect(() => {
-    if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    if (!rect) {
-      displayRectRef.current = null;
-      setDisplayRect(null);
+    if (!mounted) return;
+    let raf = 0;
+    let last = performance.now();
+    let firstFrame = true;
+    const reduce = prefersReducedMotion();
+
+    function frame(now: number) {
+      // Clamped so returning to a backgrounded tab doesn't integrate one
+      // enormous step and teleport everything.
+      const dt = Math.min((now - last) / 1000, 1 / 30);
+      last = now;
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const targetId = targetIdRef.current;
+
+      let goal: Rect | null = null;
+      if (targetId) {
+        const el = document.querySelector(`[data-tour-id="${targetId}"]`);
+        if (el) {
+          const r = el.getBoundingClientRect();
+          goal = { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 };
+        } else if (currentRef.current) {
+          // Target not in the DOM yet (the caller is still revealing it) —
+          // hold the last known position rather than collapsing to nothing,
+          // which is what used to make the spotlight blink out between steps.
+          goal = currentRef.current;
+        }
+      }
+
+      const hasTarget = goal !== null;
+
+      if (goal) {
+        if (!currentRef.current || firstFrame || reduce) {
+          currentRef.current = goal;
+        } else {
+          // Frame-rate independent easing: the same visual speed at 60Hz and
+          // 120Hz, which a naive `current += (target - current) * 0.2` is not.
+          const k = 1 - Math.exp(-SMOOTHING * dt);
+          const c = currentRef.current;
+          currentRef.current = {
+            top: c.top + (goal.top - c.top) * k,
+            left: c.left + (goal.left - c.left) * k,
+            width: c.width + (goal.width - c.width) * k,
+            height: c.height + (goal.height - c.height) * k,
+          };
+        }
+      }
+
+      const c = currentRef.current;
+
+      // Spotlight and scrim cross-fade rather than one being torn down: a
+      // step with no target (welcome, closing) dims the whole screen, a step
+      // with one punches a hole in it.
+      if (holeRef.current) {
+        holeRef.current.style.opacity = hasTarget ? "1" : "0";
+        if (c) {
+          holeRef.current.style.transform = `translate3d(${c.left}px, ${c.top}px, 0)`;
+          holeRef.current.style.width = `${Math.max(0, c.width)}px`;
+          holeRef.current.style.height = `${Math.max(0, c.height)}px`;
+        }
+      }
+      if (scrimRef.current) scrimRef.current.style.opacity = hasTarget ? "0" : "1";
+
+      if (ringRef.current) {
+        ringRef.current.style.opacity = hasTarget ? "1" : "0";
+        if (c) {
+          ringRef.current.style.transform = `translate3d(${c.left}px, ${c.top}px, 0)`;
+          ringRef.current.style.width = `${Math.max(0, c.width)}px`;
+          ringRef.current.style.height = `${Math.max(0, c.height)}px`;
+        }
+      }
+
+      // Balloon — positioned with a transform rather than top/left so it
+      // composites on the GPU, and so that flipping from below a target to
+      // above one is a continuous move instead of the instant jump the old
+      // version made when it swapped its CSS `transform` for a different one.
+      if (balloonRef.current) {
+        const bw = balloonRef.current.offsetWidth || Math.min(BALLOON_MAX_WIDTH, vw - 32);
+        const bh = balloonRef.current.offsetHeight || 160;
+        let x: number;
+        let y: number;
+
+        if (c && hasTarget) {
+          const spaceBelow = vh - (c.top + c.height);
+          if (firstFrame || dt === 0) placeBelowRef.current = spaceBelow > bh + GAP + 16 || c.top < bh + GAP + 16;
+          const below = placeBelowRef.current;
+          x = clamp(c.left, 16, Math.max(16, vw - bw - 16));
+          y = below ? c.top + c.height + GAP : Math.max(16, c.top - GAP - bh);
+        } else {
+          x = (vw - bw) / 2;
+          y = (vh - bh) / 2;
+        }
+
+        balloonRef.current.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
+
+        if (notchRef.current) {
+          notchRef.current.style.opacity = hasTarget ? "1" : "0";
+          if (c && hasTarget) {
+            const nx = clamp(c.left + c.width / 2 - x, 28, bw - 28);
+            notchRef.current.style.left = `${nx - 8}px`;
+            const below = placeBelowRef.current;
+            notchRef.current.style.top = below ? "-7px" : `${bh - 9}px`;
+          }
+        }
+      }
+
+      firstFrame = false;
+      raf = requestAnimationFrame(frame);
+    }
+
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [mounted]);
+
+  function close() {
+    if (phase === "leaving") return;
+    if (prefersReducedMotion()) {
+      onFinish();
       return;
     }
-    const from = displayRectRef.current ?? rect;
-    const to = rect;
-    const start = performance.now();
-    function tick(now: number) {
-      const t = clamp((now - start) / TWEEN_MS, 0, 1);
-      const eased = easeOutCubic(t);
-      const next: Rect = {
-        top: from.top + (to.top - from.top) * eased,
-        left: from.left + (to.left - from.left) * eased,
-        width: from.width + (to.width - from.width) * eased,
-        height: from.height + (to.height - from.height) * eased,
-      };
-      displayRectRef.current = next;
-      setDisplayRect(next);
-      if (t < 1) rafRef.current = requestAnimationFrame(tick);
-    }
-    rafRef.current = requestAnimationFrame(tick);
-    return () => {
-      if (rafRef.current) cancelAnimationFrame(rafRef.current);
-    };
-  }, [rect]);
+    setPhase("leaving");
+    setTimeout(onFinish, EXIT_MS);
+  }
 
   function goNext() {
-    if (isLast) {
-      onFinish();
-    } else {
-      onNext();
+    if (isLast) close();
+    else onNext();
+  }
+
+  // Keyboard control. The overlay claims aria-modal, so it has to actually
+  // behave like a modal: Escape leaves, Enter and the right arrow advance,
+  // and Tab is kept inside the two buttons rather than wandering off into the
+  // page behind the scrim.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      } else if (e.key === "ArrowRight" || (e.key === "Enter" && e.target === document.body)) {
+        e.preventDefault();
+        goNext();
+      }
     }
-  }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 
-  const vw = typeof window !== "undefined" ? window.innerWidth : 375;
-  const vh = typeof window !== "undefined" ? window.innerHeight : 800;
-  const balloonWidth = Math.min(BALLOON_MAX_WIDTH, vw - 32);
-  const r = displayRect && displayRect.width > 0 && displayRect.height > 0 ? displayRect : null;
-
-  // Balloon placement — below the target when there's room, otherwise
-  // above; clamped so it never runs off-screen sideways. placeBelow also
-  // decides which edge of the balloon the notch sits on.
-  let placeBelow = true;
-  let balloonLeft = (vw - balloonWidth) / 2;
-  let balloonStyle: CSSProperties = { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
-  if (r) {
-    const spaceBelow = vh - (r.top + r.height);
-    placeBelow = spaceBelow > 200 || r.top < 220;
-    balloonLeft = clamp(r.left, 16, Math.max(16, vw - balloonWidth - 16));
-    balloonStyle = placeBelow
-      ? { top: r.top + r.height + GAP, left: balloonLeft }
-      : { top: Math.max(16, r.top - GAP), left: balloonLeft, transform: "translateY(-100%)" };
-  }
-
-  // Notch anchor — lined up with the target's own horizontal center,
-  // clamped to stay over the balloon. Nested inside the balloon itself (not
-  // positioned separately in page coordinates), so it can never drift out
-  // of sync with it or disappear on its own.
-  const notchX = r ? clamp(r.left + r.width / 2 - balloonLeft, 28, balloonWidth - 28) : balloonWidth / 2;
+  // Move focus to the primary action on open and on every step, so the tour
+  // is operable by keyboard alone and a screen reader announces each stop.
+  useEffect(() => {
+    nextButtonRef.current?.focus({ preventScroll: true });
+  }, [index]);
 
   if (!mounted) return null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-[100]" role="dialog" aria-modal="true" aria-label={step.title}>
-      {/* Hidden SVG defs — a full-viewport mask with a soft rounded-rect
-          hole cut over the target (or no hole at all for a centered step).
-          A blurred SVG mask, not a CSS gradient, is what gives the hole's
-          edge a genuinely smooth falloff that closely fits a rounded-rect
-          control instead of an approximate ellipse. */}
-      <svg width="0" height="0" className="absolute" aria-hidden focusable="false">
-        <defs>
-          <filter id={blurId} x="-150%" y="-150%" width="400%" height="400%">
-            <feGaussianBlur stdDeviation={BLUR_SOFTNESS} />
-          </filter>
-          <mask id={maskId} maskUnits="userSpaceOnUse" x="0" y="0" width={vw} height={vh}>
-            <rect x="0" y="0" width={vw} height={vh} fill="#fff" />
-            {r && (
-              <rect
-                x={r.left}
-                y={r.top}
-                width={r.width}
-                height={r.height}
-                rx={CORNER_RADIUS}
-                ry={CORNER_RADIUS}
-                fill="#000"
-                filter={`url(#${blurId})`}
-              />
-            )}
-          </mask>
-        </defs>
-      </svg>
+  const shown = phase === "open";
+  const painted = steps[renderIndex] ?? step;
 
+  const surface: CSSProperties = {
+    transition: `opacity ${shown ? ENTER_MS : EXIT_MS}ms cubic-bezier(0.22,1,0.36,1), transform ${
+      shown ? ENTER_MS : EXIT_MS
+    }ms cubic-bezier(0.22,1,0.36,1)`,
+  };
+
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100]"
+      role="dialog"
+      aria-modal="true"
+      aria-label={painted.title}
+      style={{ opacity: shown ? 1 : 0, transition: `opacity ${shown ? ENTER_MS : EXIT_MS}ms ease-out` }}
+    >
+      {/* Full-screen dim, shown only on steps that highlight nothing. */}
       <div
-        className="absolute inset-0 bg-black/45 backdrop-blur-md"
-        style={{ WebkitMaskImage: `url(#${maskId})`, maskImage: `url(#${maskId})` }}
+        ref={scrimRef}
+        className="absolute inset-0"
+        style={{ backgroundColor: SCRIM, opacity: 0, transition: "opacity 260ms ease-out" }}
       />
 
-      {r && (
-        <div
-          className="pointer-events-none absolute ring-[1.5px] ring-white/90"
-          style={{
-            top: r.top,
-            left: r.left,
-            width: r.width,
-            height: r.height,
-            borderRadius: CORNER_RADIUS,
-            // A soft ambient halo around the crisp ring, the same kind of
-            // gentle focus glow tvOS/macOS use to draw the eye to whatever's
-            // highlighted — it's what makes the spotlight read clearly as
-            // "this, specifically" rather than just a faint outline.
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.15), 0 0 32px 6px rgba(255,255,255,0.35)",
-          }}
-        />
-      )}
+      {/* The spotlight.
+
+          A box-shadow with an enormous spread, NOT an SVG mask. The previous
+          version applied `mask-image: url(#svg-mask)` to a plain <div>, which
+          Safari does not support at all on non-SVG elements (and Chrome only
+          gained in 120). On those browsers no hole was ever cut: the whole
+          screen just dimmed and blurred with a white rectangle floating on
+          top of it, highlighting nothing. This technique is plain CSS, works
+          everywhere, animates on the compositor, and gets the soft edge from
+          the shadow's own blur radius rather than an SVG filter. */}
+      <div
+        ref={holeRef}
+        className="absolute left-0 top-0"
+        style={{
+          borderRadius: CORNER_RADIUS,
+          boxShadow: `0 0 ${SCRIM_FEATHER}px 100vmax ${SCRIM}`,
+          opacity: 0,
+          transition: "opacity 260ms ease-out",
+          willChange: "transform, width, height",
+        }}
+      />
+
+      <div
+        ref={ringRef}
+        className="pointer-events-none absolute left-0 top-0"
+        style={{
+          borderRadius: CORNER_RADIUS,
+          // A soft ambient halo around a hairline ring — the same gentle
+          // focus glow tvOS and macOS use, which is what makes the spotlight
+          // read as "this, specifically" rather than a faint outline.
+          boxShadow:
+            "inset 0 0 0 1.5px rgba(255,255,255,0.9), 0 0 0 1px rgba(255,255,255,0.15), 0 0 32px 6px rgba(255,255,255,0.28)",
+          opacity: 0,
+          transition: "opacity 260ms ease-out",
+          willChange: "transform, width, height",
+        }}
+      />
 
       {/* Speech balloon — a frosted-glass card (Apple's "material" look:
-          translucent white + backdrop blur, a hairline edge instead of a
+          translucent surface + backdrop blur, a hairline edge instead of a
           hard border) with a small fused notch on whichever edge faces the
-          target. The notch is a child of the balloon, not a separately-
-          positioned element, so it always moves and appears with it as one
-          piece. */}
+          target. The notch is a child of the balloon, so it always moves and
+          appears with it as one piece. */}
       <div
-        className="absolute w-80 max-w-[calc(100vw-32px)] rounded-[24px] bg-white/90 p-4 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.4)] ring-1 ring-black/[0.04] backdrop-blur-2xl"
-        style={balloonStyle}
+        ref={balloonRef}
+        className="absolute left-0 top-0 w-80 max-w-[calc(100vw-32px)] rounded-[24px] bg-white/90 p-4 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.4)] ring-1 ring-black/[0.04] backdrop-blur-2xl dark:bg-neutral-900/90 dark:ring-white/10"
+        style={{ ...surface, opacity: shown ? 1 : 0, willChange: "transform" }}
       >
-        {r && (
-          <span
-            aria-hidden
-            className="absolute rounded-[4px] bg-white/90"
-            style={{
-              width: 16,
-              height: 16,
-              left: notchX - 8,
-              ...(placeBelow ? { top: -7 } : { bottom: -7 }),
-              transform: "rotate(45deg)",
-            }}
-          />
-        )}
+        <span
+          ref={notchRef}
+          aria-hidden
+          className="absolute h-4 w-4 rotate-45 rounded-[4px] bg-white/90 dark:bg-neutral-900/90"
+          style={{ opacity: 0, transition: "opacity 200ms ease-out" }}
+        />
 
-        <p className="font-[system-ui] text-[15px] font-semibold tracking-[-0.01em] text-neutral-900">
-          {step.title}
-        </p>
-        <p className="mt-1.5 font-[system-ui] text-[13.5px] leading-relaxed tracking-[-0.005em] text-neutral-500">
-          {step.body}
-        </p>
+        <div
+          style={{
+            opacity: textVisible ? 1 : 0,
+            transform: textVisible ? "translateY(0)" : "translateY(3px)",
+            transition: `opacity ${TEXT_FADE_MS}ms ease-out, transform ${TEXT_FADE_MS}ms ease-out`,
+          }}
+          aria-live="polite"
+        >
+          <p className="font-[system-ui] text-[15px] font-semibold tracking-[-0.01em] text-neutral-900 dark:text-neutral-50">
+            {painted.title}
+          </p>
+          <p className="mt-1.5 font-[system-ui] text-[13.5px] leading-relaxed tracking-[-0.005em] text-neutral-500 dark:text-neutral-400">
+            {painted.body}
+          </p>
+        </div>
+
         <div className="mt-4 flex items-center justify-between">
           <div className="flex gap-1.5" aria-hidden="true">
             {steps.map((_, i) => (
               <span
                 key={i}
-                className={
-                  i === index
-                    ? "h-1.5 w-1.5 rounded-full bg-neutral-900 transition-colors"
-                    : "h-1.5 w-1.5 rounded-full bg-neutral-300/70 transition-colors"
-                }
+                className="h-1.5 rounded-full transition-all duration-300 ease-out"
+                style={{
+                  // The current stop stretches into a short capsule rather
+                  // than only changing colour — motion the eye can follow
+                  // between steps, so progress is legible at a glance.
+                  width: i === index ? 14 : 6,
+                  backgroundColor: i === index ? "rgb(23,23,23)" : "rgba(163,163,163,0.5)",
+                }}
               />
             ))}
           </div>
@@ -280,16 +440,17 @@ export function OnboardingTour({
             {!isLast && (
               <button
                 type="button"
-                onClick={onFinish}
-                className="font-[system-ui] text-[13px] text-neutral-400 transition-colors hover:text-neutral-600"
+                onClick={close}
+                className="font-[system-ui] text-[13px] text-neutral-400 transition-colors hover:text-neutral-600 dark:hover:text-neutral-200"
               >
                 {skip}
               </button>
             )}
             <button
+              ref={nextButtonRef}
               type="button"
               onClick={goNext}
-              className="rounded-full px-4 py-[7px] font-[system-ui] text-[13px] font-medium text-white transition-colors"
+              className="rounded-full px-4 py-[7px] font-[system-ui] text-[13px] font-medium text-white transition-[background-color,transform] duration-150 active:scale-[0.97]"
               style={{ backgroundColor: SYSTEM_BLUE }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = SYSTEM_BLUE_HOVER)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = SYSTEM_BLUE)}
