@@ -14,6 +14,7 @@ import { generateImage } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { BrandRule } from "@/lib/brand-rules/types";
+import { classifyProhibitions } from "@/lib/brand-rules/classify";
 
 export type ContentType = "video" | "image";
 
@@ -736,8 +737,21 @@ export async function runRealPipeline(
     // is the whole reason this feature exists — it must not be bypassable by
     // flipping a setting.
     if (brandProhibitions.length > 0) {
-      const violated = brandProhibitions.filter((r) => isElementPresent(reviewedPrompt, r.value));
+      // Semantic check first (Phase 2). Word matching is kept as the
+      // fallback for when the classifier can't be reached — weaker, but
+      // compliance must never fail open on a network blip.
+      const verdict = await classifyProhibitions(reviewedPrompt, brandProhibitions);
+      const violated = verdict.checked
+        ? brandProhibitions.filter((r) => verdict.violatedIds.includes(r.id))
+        : brandProhibitions.filter((r) => isElementPresent(reviewedPrompt, r.value));
       const blocking = violated.filter((r) => r.severity === "block");
+
+      if (!verdict.checked) {
+        steps.push({
+          step: "validate",
+          detail: "Compliance checker unavailable — fell back to keyword matching for brand rules.",
+        });
+      }
 
       if (violated.length > 0) {
         steps.push({
@@ -745,6 +759,14 @@ export async function runRealPipeline(
           detail: blocking.length
             ? `Blocked by brand rules: ${blocking.map((r) => r.label).join(", ")}.`
             : `Brand rule warnings: ${violated.map((r) => r.label).join(", ")}.`,
+        });
+      } else if (verdict.checked) {
+        // Recorded on the clean path too — "we checked N rules and found
+        // nothing" is the line that makes the pipeline log an audit trail
+        // rather than just an error log.
+        steps.push({
+          step: "validate",
+          detail: `Checked against ${brandProhibitions.length} brand rule${brandProhibitions.length === 1 ? "" : "s"} — no violations.`,
         });
       }
 

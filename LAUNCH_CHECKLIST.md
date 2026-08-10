@@ -251,7 +251,16 @@ Verified by running the real matcher against sample rules: "guaranteed results a
 
 **Known limit, stated deliberately:** Phase 1 matches on words, so a paraphrase ("results you can count on") slips through — confirmed in that same test. That's exactly what Phase 2 fixes by swapping prohibition checking to a single LLM classifier call. Do not describe this as compliance-grade until Phase 2 lands.
 
-Still to do: Phase 2 (LLM classifier + audit log), Phase 3 (vertical rule packs), the buy-extra-credits flow, and the dashboard traffic graph.
+### Phase 2 — semantic checking, same day
+
+- [x] **`lib/brand-rules/classify.ts`.** One classifier call per generation judges the prompt against the account's prohibitions on *meaning* rather than wording, closing the paraphrase hole Phase 1 knowingly left open ("results you can count on" vs "guaranteed results"). Rules are passed numbered rather than by uuid — short indices survive a generated response far better — and mapped back here.
+- [x] **Never fails open.** If the classifier can't be reached, it returns `checked: false`, which is explicitly *not* the same as "clean". The pipeline then falls back to Phase 1's word matching — weaker, but enforcement continues — and records in the pipeline log that it did so, since a silent downgrade of a compliance check would be worse than the original bug.
+- [x] **Audit trail.** The clean path now logs "Checked against N brand rules — no violations" as well as the failures. "Show me we never published that claim" is the actual buying reason for a regulated customer, and that line is what makes `pipeline_log` an audit record instead of an error log. It already renders in the History detail view with no extra work.
+- [x] Response parsing unit-tested against 10 shapes a model realistically returns (`none`, `None.`, `1, 3`, prose like "Rules 2 and 3 are violated.", duplicates, out-of-range, empty, and the 1-indexing guard). 10/10.
+
+`tsc` clean, `eslint` 0 errors. The classifier itself couldn't be exercised from the build sandbox — `OPENAI_API_KEY` lives in Vercel, not `.env.local` — so its live behaviour is unverified until it runs in production. Worth one deliberate test after deploy: add a rule forbidding "guaranteed results", then prompt for exactly that in different words.
+
+Still to do: Phase 3 (vertical rule packs), the buy-extra-credits flow, and the dashboard traffic graph.
 
 ## After launch (polish, not blocking)
 
