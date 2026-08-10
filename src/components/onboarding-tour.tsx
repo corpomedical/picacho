@@ -132,7 +132,7 @@ export function OnboardingTour({
   // the step changes, not per frame: recomputing it continuously meant that a
   // target drifting past the halfway line during a scroll would flip the
   // balloon back and forth across the screen.
-  const placeBelowRef = useRef(true);
+  const placeSideRef = useRef<"below" | "above" | "right" | "left">("below");
   // Set whenever the placement decision needs redoing — on a step change or a
   // resize. The frame loop consumes it and clears it.
   //
@@ -275,29 +275,60 @@ export function OnboardingTour({
         let y: number;
 
         if (c && hasTarget) {
-          const spaceBelow = vh - (c.top + c.height) - GAP;
-          const spaceAbove = c.top - GAP;
+          const M = 16; // keep this far clear of every viewport edge
+
+          // Placement is chosen by testing candidates, not by rule.
+          //
+          // Picking a side and then clamping into the viewport isn't enough:
+          // on a short window neither side has room, and the clamp then drops
+          // the balloon straight onto the spotlight — hiding the exact thing
+          // the step is pointing at. So try four positions, score each on how
+          // much of the spotlight it would cover, and take the first that
+          // covers none of it and didn't need moving to stay on screen.
+          const wants = (side: "below" | "above" | "right" | "left") => ({
+            x: side === "right" ? c.left + c.width + GAP : side === "left" ? c.left - GAP - bw : c.left,
+            y: side === "below" ? c.top + c.height + GAP : side === "above" ? c.top - GAP - bh : c.top,
+          });
 
           if (placeDirtyRef.current && bh > 0) {
-            // Below if it genuinely fits, else above if THAT fits, else
-            // whichever side has more room. The old version asked only
-            // whether there was space below and defaulted to below when
-            // there wasn't, which is how the balloon ended up off-screen.
-            placeBelowRef.current =
-              spaceBelow >= bh + 16 ? true : spaceAbove >= bh + 16 ? false : spaceBelow >= spaceAbove;
+            const order = ["below", "above", "right", "left"] as const;
+            let best: { side: (typeof order)[number]; overlap: number } | null = null;
+
+            for (const side of order) {
+              const want = wants(side);
+              const cx = clamp(want.x, M, Math.max(M, vw - bw - M));
+              const cy = clamp(want.y, M, Math.max(M, vh - bh - M));
+              // Area shared between the balloon and the spotlight.
+              const ox = Math.max(0, Math.min(cx + bw, c.left + c.width) - Math.max(cx, c.left));
+              const oy = Math.max(0, Math.min(cy + bh, c.top + c.height) - Math.max(cy, c.top));
+              const overlap = ox * oy;
+              const undisturbed = Math.abs(cx - want.x) < 1 && Math.abs(cy - want.y) < 1;
+
+              if (overlap === 0 && undisturbed) {
+                best = { side, overlap: 0 };
+                break;
+              }
+              if (!best || overlap < best.overlap) best = { side, overlap };
+            }
+
+            placeSideRef.current = best?.side ?? "below";
             placeDirtyRef.current = false;
           }
 
-          const below = placeBelowRef.current;
-          x = clamp(c.left, 16, Math.max(16, vw - bw - 16));
-          const idealY = below ? c.top + c.height + GAP : c.top - GAP - bh;
+          const want = wants(placeSideRef.current);
           // Last line of defence: whatever the placement decision, the
           // balloon must stay fully on screen, because its buttons are the
           // only way out of the tour.
-          y = clamp(idealY, 16, Math.max(16, vh - bh - 16));
-          // Within a pixel of where it wanted to be means it's still against
-          // its target and the notch points at something real.
-          notchValidRef.current = Math.abs(y - idealY) < 1;
+          x = clamp(want.x, M, Math.max(M, vw - bw - M));
+          y = clamp(want.y, M, Math.max(M, vh - bh - M));
+
+          // The notch only tells the truth when the balloon sits directly
+          // above or below its target and hasn't been nudged off that spot.
+          const side = placeSideRef.current;
+          notchValidRef.current =
+            (side === "above" || side === "below") &&
+            Math.abs(y - want.y) < 1 &&
+            Math.abs(x - want.x) < 1;
         } else {
           x = (vw - bw) / 2;
           y = (vh - bh) / 2;
@@ -311,7 +342,7 @@ export function OnboardingTour({
           if (c && hasTarget) {
             const nx = clamp(c.left + c.width / 2 - x, 28, bw - 28);
             notchRef.current.style.left = `${nx - 8}px`;
-            const below = placeBelowRef.current;
+            const below = placeSideRef.current === "below";
             notchRef.current.style.top = below ? "-7px" : `${bh - 9}px`;
           }
         }
