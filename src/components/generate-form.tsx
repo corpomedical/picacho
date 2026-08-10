@@ -684,10 +684,14 @@ function InsufficientCreditsBanner({
         {/* An inline underlined action, matching the usage strip's link. A
             filled button here reads as an interruption; this reads as the
             next thing you might do. */}
+        {/* cursor-pointer is required, not decorative: browsers give <button>
+            the default arrow, and only <a> gets the hand automatically. This
+            is styled as a link, so without it the one thing that looks
+            clickable doesn't feel clickable. */}
         <button
           type="submit"
           form="buy-credits-shortfall"
-          className="font-medium text-neutral-700 underline underline-offset-2"
+          className="cursor-pointer font-medium text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
         >
           Add {pack.credits} credits
         </button>
