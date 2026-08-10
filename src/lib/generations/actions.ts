@@ -32,7 +32,14 @@ import { resolveModel } from "@/lib/generations/model-health";
 const SHARED_SCENE_INSTRUCTION =
   "Describe the setting, wardrobe, props, lighting and background precisely and concretely, " +
   "since several shots will be filmed from this same scene. Do not mention the camera angle, " +
-  "camera position, or shot type — those are specified separately per shot.";
+  "camera position, or shot type — those are specified separately per shot. " +
+  // The reference photo is handed to Kling as the opening frame (see the
+  // negative_prompt note in providers/fal.ts), so without this every clip
+  // began with the character held in their photographed pose before the
+  // action started. Describing the scene as already underway gives the model
+  // a reason to move off that frame immediately.
+  "Write the scene as already in motion at the very first moment — the action is underway, " +
+  "not about to begin, and the character is never standing still in a posed portrait.";
 import {
   PLAN_LIMITS,
   PLAN_LABELS,

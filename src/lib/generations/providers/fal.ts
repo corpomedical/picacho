@@ -301,6 +301,26 @@ async function buildVideoRequest(
       input_image_urls: anchorImages,
       aspect_ratio: resolvedAspectRatio,
       duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      // Pushes back on the clip opening as a frozen copy of the reference
+      // photo before anything happens.
+      //
+      // This endpoint is Elements IMAGE-TO-VIDEO: fal's own description says
+      // the input images are supplied "in the order they should appear in the
+      // video". With a single photo that photo is literally frame one, so
+      // every clip began with the character held in exactly the pose they were
+      // photographed in, and only then started moving. In multi-angle it was
+      // worse — three angles sharing one first frame all opened identically,
+      // because a camera instruction can't apply to a frame that's already
+      // decided.
+      //
+      // The endpoint's default is "blur, distort, and low quality"; those are
+      // kept and the static-opening terms added. This softens the effect
+      // rather than removing it — the only complete fix is to stop handing
+      // the raw photo in as frame one (see MOBILE_APP-style notes in the
+      // pipeline, and the per-angle start frame idea).
+      negative_prompt:
+        "blur, distort, and low quality, static posed portrait, frozen first frame, " +
+        "motionless opening shot, subject standing still facing camera",
     };
     label = anchorImages.length > 1 ? "Kling (multi-image reference)" : "Kling (character reference)";
   } else {
