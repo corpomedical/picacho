@@ -22,6 +22,33 @@ import {
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
 import { isTrivialUtterance } from "@/lib/voice/agent";
+import type { BrandRule } from "@/lib/brand-rules/types";
+
+// Account-level brand/compliance rules, read straight from the table rather
+// than via the brand-rules server action — a "use server" export is a
+// callable endpoint, and this is an internal read on a path that already has
+// the user's supabase client to hand. Only active rules are fetched; the
+// pipeline narrows them further by content type.
+async function loadBrandRules(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<BrandRule[]> {
+  const { data } = await supabase
+    .from("brand_rules")
+    .select("id, kind, label, value, applies_to, severity, active")
+    .eq("user_id", userId)
+    .eq("active", true);
+
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    kind: r.kind as BrandRule["kind"],
+    label: r.label as string,
+    value: r.value as string,
+    appliesTo: r.applies_to as BrandRule["appliesTo"],
+    severity: r.severity as BrandRule["severity"],
+    active: r.active as boolean,
+  }));
+}
 
 type RunResult =
   | {
@@ -759,6 +786,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoDurationSeconds: contentType === "video" ? videoDurationSeconds : undefined,
           videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
           skipRefinement,
+          brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),
         },
         maxAttempts,
@@ -1145,6 +1173,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             videoDurationSeconds,
             videoAspectRatio,
             skipRefinement,
+            brandRules: await loadBrandRules(supabase, userData.user!.id),
           },
           maxAttempts,
           // Every angle shares one cancel_requested flag via angle_group_id

@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
+import { getBrandRules } from "@/lib/brand-rules/actions";
+import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { Card } from "@/components/ui/card";
 import { ProfileForm } from "@/components/profile-form";
 import { UsernameForm } from "@/components/settings/username-form";
@@ -51,6 +53,16 @@ function SecurityIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+// Shield — brand and compliance rules.
+function BrandIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
 function UsageIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -71,8 +83,8 @@ function SupportIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-type TabId = "account" | "appearance" | "security" | "usage" | "support";
-const VALID_TABS: TabId[] = ["account", "appearance", "security", "usage", "support"];
+type TabId = "account" | "appearance" | "security" | "usage" | "brand" | "support";
+const VALID_TABS: TabId[] = ["account", "appearance", "security", "usage", "brand", "support"];
 
 export default async function SettingsPage({
   searchParams,
@@ -83,6 +95,7 @@ export default async function SettingsPage({
   const s = t.settings;
   const { saved, error, tab } = await searchParams;
   const activeTab: TabId = VALID_TABS.includes(tab as TabId) ? (tab as TabId) : "account";
+  const brandRules = await getBrandRules();
 
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -123,6 +136,7 @@ export default async function SettingsPage({
     { id: "appearance", label: s.appearance, icon: AppearanceIcon },
     { id: "security", label: s.security, icon: SecurityIcon },
     { id: "usage", label: s.usageAndPlan, icon: UsageIcon },
+    { id: "brand", label: t.brandRules.tab, icon: BrandIcon },
     { id: "support", label: s.support, icon: SupportIcon },
   ];
 
@@ -298,6 +312,8 @@ export default async function SettingsPage({
               )}
             </Card>
           )}
+
+          {activeTab === "brand" && <BrandRulesPanel rules={brandRules} />}
 
           {activeTab === "support" && (
             <Card>

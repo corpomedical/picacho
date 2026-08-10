@@ -235,7 +235,23 @@ The same trap existed on the character and project detail pages, which have thei
 
 Full project: `tsc` clean, `eslint` **0 errors**, 21 warnings (all pre-existing `set-state-in-effect` plus two intentionally-unused OAuth icons).
 
-Still to do: the buy-extra-credits flow and the dashboard traffic graph.
+## Brand & compliance rulebook — Phase 1 shipped, 2026-08-10
+
+Design and reasoning in `BRAND_RULEBOOK_DESIGN.md`. The strategic case: this is the one feature on the shortlist that a base model can't absorb, because it needs to know *your* rules, and it gets harder to leave the more rules an account accumulates.
+
+- [x] **Migration `create_brand_rules`** — owner-scoped table, `kind` (`require`/`forbid`), `label`, `value`, `applies_to`, `severity`, `active`. RLS written as `(select auth.uid()) = user_id` rather than the bare call, so this table doesn't inherit the "Auth RLS Initialization Plan" per-row cost the advisors flag on the older ones.
+- [x] **`lib/brand-rules/`** — `types.ts` (split out so `pipeline.ts` can use the types without importing a `"use server"` module, and to avoid a cycle) and `actions.ts` with auth-checked CRUD, capped at 40 rules since the whole rulebook goes into every draft prompt.
+- [x] **Pipeline enforcement.** `require` rules join the character's own traits and go through the existing present-or-repair path unchanged. `forbid` rules get their own check in the pre-generation gate — so a block costs a draft/review and **never a generation**. Prohibitions are also written into the rulebook as a "Never include" section, so the draft and review models avoid them in the first place; the check is the backstop, not the first line.
+- [x] **Prohibitions are genuinely non-overridable.** `splitOverrides` lets a request waive a character trait ("in a suit today"), which is correct. Brand rule labels are excluded from the overridable list shown to the model *and* hard-filtered out of the returned set afterwards, so a model that invents the label anyway still can't waive the rule. Without that second step the feature would be decorative.
+- [x] **Checked even when `skipRefinement` is on.** Turning off the AI rewrite is a speed preference; a compliance rule must not be bypassable by flipping a setting.
+- [x] **Settings → Brand rules tab** with add / enable / disable / delete, and copy stating plainly that rules are enforced on the prompt, not the finished image.
+- [x] i18n across en/es/pt/it.
+
+Verified by running the real matcher against sample rules: "guaranteed results after one session" and "before and after comparison" both blocked; an ordinary portrait prompt passed. `tsc` clean, `eslint` 0 errors.
+
+**Known limit, stated deliberately:** Phase 1 matches on words, so a paraphrase ("results you can count on") slips through — confirmed in that same test. That's exactly what Phase 2 fixes by swapping prohibition checking to a single LLM classifier call. Do not describe this as compliance-grade until Phase 2 lands.
+
+Still to do: Phase 2 (LLM classifier + audit log), Phase 3 (vertical rule packs), the buy-extra-credits flow, and the dashboard traffic graph.
 
 ## After launch (polish, not blocking)
 

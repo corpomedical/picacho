@@ -13,6 +13,7 @@ import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { generateImage } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
+import type { BrandRule } from "@/lib/brand-rules/types";
 
 export type ContentType = "video" | "image";
 
@@ -405,6 +406,10 @@ export type RealPipelineOptions = {
   // for this; fal.ts works around that by reframing the reference photo
   // itself before the request goes out.
   videoAspectRatio?: VideoAspectRatio | null;
+  // Account-level brand/compliance rules (see lib/brand-rules). Resolved by
+  // the caller so this stays a pure function of its inputs. Absent or empty
+  // means the pipeline behaves exactly as it did before the feature existed.
+  brandRules?: BrandRule[];
   // Per-user preference (profiles.skip_ai_refinement, toggled from the
   // sidebar settings menu / Settings page) — when true, skips the paid
   // Claude draft + OpenAI review calls entirely and sends the user's typed
@@ -443,7 +448,24 @@ export async function runRealPipeline(
   // (see the placeholder object it builds in that case) — everything below
   // that would otherwise reference the character by name skips doing so.
   const hasCharacter = Boolean(character.name?.trim());
-  const primaryElements = requiredElements(character, options.contentType);
+
+  // Account-level brand/compliance rules, narrowed to this generation's
+  // medium. "require" rules join the character's own traits and go through
+  // exactly the same present-or-repair path; "forbid" rules are checked
+  // separately below, because a prohibition can't be satisfied by appending
+  // text to the prompt. See BRAND_RULEBOOK_DESIGN.md.
+  const activeBrandRules = (options.brandRules ?? []).filter(
+    (r) => r.active && (r.appliesTo === "all" || r.appliesTo === options.contentType),
+  );
+  const brandRequirements = activeBrandRules
+    .filter((r) => r.kind === "require")
+    .map((r) => ({ label: r.label, value: r.value }));
+  const brandProhibitions = activeBrandRules.filter((r) => r.kind === "forbid");
+
+  const primaryElements = [
+    ...requiredElements(character, options.contentType),
+    ...brandRequirements,
+  ];
   const companionElementSets = (options.companions ?? []).map((c) => ({
     name: c.name,
     elements: requiredElements(c, options.contentType),
@@ -474,7 +496,17 @@ export async function runRealPipeline(
     ].join("\n\n");
   }
 
-  const fullRulebook = buildRulebook(primaryElements, companionElementSets);
+  // Prohibitions are appended to the rulebook as their own section so the
+  // draft and review models simply avoid the content in the first place.
+  // That's prevention; the deterministic check further down is enforcement.
+  // Most rules should never reach the check at all.
+  const prohibitionBlock = brandProhibitions.length
+    ? "\n\nNever include any of the following, under any circumstances — these are hard rules " +
+      "and a request asking for them does NOT override them:\n" +
+      brandProhibitions.map((r) => `- ${r.label}: ${r.value}`).join("\n")
+    : "";
+
+  const fullRulebook = buildRulebook(primaryElements, companionElementSets) + prohibitionBlock;
 
   // Extra instruction only needed once multiple distinct characters are in
   // play — without it, a draft model tends to average several characters'
@@ -488,7 +520,14 @@ export async function runRealPipeline(
   // The exact rulebook labels the draft step is allowed to report as
   // overridden — kept in sync with requiredElements' label strings so a
   // typo here can't silently break override detection.
+  // Deliberately lists only the CHARACTER's own traits. Brand rules are
+  // absent on purpose: "in a suit today" is a legitimate one-off change to a
+  // saved outfit, but "ignore the disclaimer this once" must not be
+  // expressible. The draft model is never told these labels are overridable,
+  // and excludeOverridden below is additionally hard-filtered so a model that
+  // invents the label anyway still can't waive the rule.
   const overridableLabels = "hair, outfit, personality, distinguishing features, motion style, tone";
+  const brandRuleLabels = new Set(activeBrandRules.map((r) => r.label.toLowerCase()));
 
   const mediumLabel = options.contentType === "video" ? "video" : "image";
 
@@ -579,7 +618,13 @@ export async function runRealPipeline(
         );
         const split = splitOverrides(rawDraftResponse);
         draftedPrompt = split.promptText;
-        overriddenLabels = split.overrides;
+        // Hard-strip any brand rule the model claimed as overridden. A
+        // character trait can legitimately be changed for one generation; a
+        // brand or compliance rule cannot, and this is the backstop for a
+        // model that names one anyway.
+        overriddenLabels = new Set(
+          [...split.overrides].filter((label) => !brandRuleLabels.has(label.toLowerCase())),
+        );
         steps.push({ step: "draft", detail: draftedPrompt });
 
         // Enforces only what this request DIDN'T just ask to change — the
@@ -683,6 +728,42 @@ export async function runRealPipeline(
         }
       } else {
         steps.push({ step: "validate", detail: "All rulebook elements present in the compiled prompt." });
+      }
+    }
+
+    // Prohibitions. Checked even when skipRefinement is on: turning off the
+    // AI rewrite is a personal speed preference, whereas a compliance rule
+    // is the whole reason this feature exists — it must not be bypassable by
+    // flipping a setting.
+    if (brandProhibitions.length > 0) {
+      const violated = brandProhibitions.filter((r) => isElementPresent(reviewedPrompt, r.value));
+      const blocking = violated.filter((r) => r.severity === "block");
+
+      if (violated.length > 0) {
+        steps.push({
+          step: "validate",
+          detail: blocking.length
+            ? `Blocked by brand rules: ${blocking.map((r) => r.label).join(", ")}.`
+            : `Brand rule warnings: ${violated.map((r) => r.label).join(", ")}.`,
+        });
+      }
+
+      if (blocking.length > 0) {
+        // No provider call has happened yet, so this costs a draft/review
+        // and nothing else. Looping rather than returning gives the next
+        // attempt a chance to rewrite around it — the draft step is told
+        // what was hit via previousIssues, and the rulebook already lists
+        // the prohibition. If every attempt trips it, the generation ends
+        // failed, which is the correct outcome for a hard rule.
+        attempts.push({
+          attempt: attemptNumber,
+          steps,
+          passed: false,
+          issues: blocking.map((r) => r.label),
+          compiledPrompt: reviewedPrompt,
+        });
+        finalPrompt = reviewedPrompt;
+        continue;
       }
     }
 
