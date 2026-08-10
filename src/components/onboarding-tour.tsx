@@ -133,6 +133,10 @@ export function OnboardingTour({
   // target drifting past the halfway line during a scroll would flip the
   // balloon back and forth across the screen.
   const placeSideRef = useRef<"below" | "above" | "right" | "left">("below");
+  // Whether the current target was actually found in the DOM on the last
+  // frame. Going from absent to present is what tells us a late-revealed
+  // target has finally landed and its placement needs deciding for real.
+  const measuredRef = useRef(false);
   // Set whenever the placement decision needs redoing — on a step change or a
   // resize. The frame loop consumes it and clears it.
   //
@@ -160,6 +164,15 @@ export function OnboardingTour({
   // timers (60ms, 160ms, 380ms) and so kept sampling positions mid-scroll,
   // which is why it appeared to lunge at its target and overshoot.
   useEffect(() => {
+    // FIRST, before any early return. This used to sit at the bottom of the
+    // effect, below the `if (!el) return`, and that was a real bug: the
+    // multi-angle step's target doesn't exist in the DOM yet when this runs
+    // (generate-form only flips the composer into creation mode a render
+    // later), so the early return fired, placement was never re-decided, and
+    // the balloon kept the PREVIOUS step's side — which is how it ended up
+    // sitting on top of the spotlight.
+    placeDirtyRef.current = true;
+
     if (!step.targetId) return;
     const el = document.querySelector(`[data-tour-id="${step.targetId}"]`);
     if (!el) return;
@@ -168,7 +181,6 @@ export function OnboardingTour({
     if (!fullyVisible) {
       el.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     }
-    placeDirtyRef.current = true;
   }, [step.targetId, index]);
 
   // Re-decide above-versus-below when the window changes size, since a
@@ -208,11 +220,13 @@ export function OnboardingTour({
       const targetId = targetIdRef.current;
 
       let goal: Rect | null = null;
+      let measured = false;
       if (targetId) {
         const el = document.querySelector(`[data-tour-id="${targetId}"]`);
         if (el) {
           const r = el.getBoundingClientRect();
           goal = { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 };
+          measured = true;
         } else if (currentRef.current) {
           // Target not in the DOM yet (the caller is still revealing it) —
           // hold the last known position rather than collapsing to nothing,
@@ -220,6 +234,13 @@ export function OnboardingTour({
           goal = currentRef.current;
         }
       }
+
+      // A target that only just appeared needs its placement decided against
+      // its REAL rect, not the stand-in above. Without this, steps whose
+      // target is revealed a render late keep a placement computed from the
+      // previous step's geometry.
+      if (measured && !measuredRef.current) placeDirtyRef.current = true;
+      measuredRef.current = measured;
 
       const hasTarget = goal !== null;
 
@@ -276,6 +297,12 @@ export function OnboardingTour({
 
         if (c && hasTarget) {
           const M = 16; // keep this far clear of every viewport edge
+          // Decide against where the spotlight is GOING, not where it is
+          // mid-glide. On the first frame of a step `c` is still easing away
+          // from the previous target, so scoring against it produced a
+          // placement chosen for the wrong geometry entirely. Drawing still
+          // follows `c`, so the balloon travels with the spotlight.
+          const decide = goal ?? c;
 
           // Placement is chosen by testing candidates, not by rule.
           //
@@ -285,22 +312,23 @@ export function OnboardingTour({
           // the step is pointing at. So try four positions, score each on how
           // much of the spotlight it would cover, and take the first that
           // covers none of it and didn't need moving to stay on screen.
-          const wants = (side: "below" | "above" | "right" | "left") => ({
-            x: side === "right" ? c.left + c.width + GAP : side === "left" ? c.left - GAP - bw : c.left,
-            y: side === "below" ? c.top + c.height + GAP : side === "above" ? c.top - GAP - bh : c.top,
+          const wantsFrom = (r: Rect, side: "below" | "above" | "right" | "left") => ({
+            x: side === "right" ? r.left + r.width + GAP : side === "left" ? r.left - GAP - bw : r.left,
+            y: side === "below" ? r.top + r.height + GAP : side === "above" ? r.top - GAP - bh : r.top,
           });
+          const wants = (side: "below" | "above" | "right" | "left") => wantsFrom(c, side);
 
           if (placeDirtyRef.current && bh > 0) {
             const order = ["below", "above", "right", "left"] as const;
             let best: { side: (typeof order)[number]; overlap: number } | null = null;
 
             for (const side of order) {
-              const want = wants(side);
+              const want = wantsFrom(decide, side);
               const cx = clamp(want.x, M, Math.max(M, vw - bw - M));
               const cy = clamp(want.y, M, Math.max(M, vh - bh - M));
               // Area shared between the balloon and the spotlight.
-              const ox = Math.max(0, Math.min(cx + bw, c.left + c.width) - Math.max(cx, c.left));
-              const oy = Math.max(0, Math.min(cy + bh, c.top + c.height) - Math.max(cy, c.top));
+              const ox = Math.max(0, Math.min(cx + bw, decide.left + decide.width) - Math.max(cx, decide.left));
+              const oy = Math.max(0, Math.min(cy + bh, decide.top + decide.height) - Math.max(cy, decide.top));
               const overlap = ox * oy;
               const undisturbed = Math.abs(cx - want.x) < 1 && Math.abs(cy - want.y) < 1;
 
