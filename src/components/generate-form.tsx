@@ -3286,10 +3286,16 @@ function GenerateFormInner({
       )}
 
       {isHero && voiceSessionCard && (
-        <div className="mx-auto w-full max-w-2xl">{voiceSessionCard}</div>
+        <div className="mx-auto w-full max-w-5xl">{voiceSessionCard}</div>
       )}
 
-      <div className={cn("relative z-10", isHero ? "mx-auto w-full max-w-2xl" : "sticky bottom-4")}>
+      {/* max-w-5xl, matching the app layout's own container.
+
+          These used to be max-w-2xl, which meant the composer jumped from
+          672px to 1024px the moment it docked — the hero wrapper fell away and
+          the layout's width took over. Submitting a prompt is the worst moment
+          for the thing you just typed into to change size. */}
+      <div className={cn("relative z-10", isHero ? "mx-auto w-full max-w-5xl" : "sticky bottom-4")}>
         {/* Sits directly on top of the form with no gap, sharing its
             rounded-[22px] outer frame (see UsageBanner's own comment) —
             not a floating card of its own, which is what made two earlier

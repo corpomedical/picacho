@@ -79,7 +79,12 @@ export default async function GeneratePage() {
     : { firstTryRate: null, avgAttempts: null, total: 0 };
 
   return (
-    <div className="mx-auto max-w-2xl">
+    // max-w-5xl matches both the app layout's container and the width the
+    // composer settles at after docking from /app. It used to be max-w-2xl,
+    // which meant this page was 672px when visited directly but 1024px when
+    // reached by submitting from the home page — the same screen at two
+    // different widths depending on how you got there.
+    <div className="mx-auto max-w-5xl">
       {!elitePlanActive && (
         <div className="mb-3 flex justify-end">
           <Link href="/app/settings?tab=usage">
