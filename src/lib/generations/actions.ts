@@ -18,6 +18,8 @@ import {
 } from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
 import { submitVideoJob } from "@/lib/generations/providers/fal";
+import { getImageModel } from "@/lib/generations/providers/image-models";
+import { blockedReason } from "@/lib/generations/model-health";
 
 // Appended to the user's prompt when compiling the one scene that every angle
 // in a multi-angle batch will share.
@@ -687,6 +689,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
+  // Circuit breaker. A model that has failed three times in a row is out of
+  // service, and this is checked BEFORE any credit is spent or any provider
+  // call is made — the whole point is that a broken model stops costing money
+  // instead of continuing to sell an error. See lib/generations/model-health.ts.
+  const activeModelId = contentType === "video" ? videoModelId : imageModelId;
+  const activeModelName =
+    contentType === "video" ? getVideoModel(videoModelId).name : getImageModel(imageModelId).name;
+  const maintenanceMessage = await blockedReason(activeModelId, activeModelName);
+  if (maintenanceMessage) return { error: maintenanceMessage };
+
   const {
     error: allowanceError,
     plan: userPlan,
@@ -1347,6 +1359,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     requestedAspectRatio === "16:9" || requestedAspectRatio === "9:16" ? requestedAspectRatio : null;
   const promptAspectRatio = detectAspectRatioFromPrompt(userInput);
   const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
+
+  // Same circuit breaker as single generation — a model out of service must
+  // not be reachable through multi-angle either, which would otherwise submit
+  // several paid renders to a provider already known to be failing.
+  const angleMaintenance = await blockedReason(videoModelId, getVideoModel(videoModelId).name);
+  if (angleMaintenance) return { error: angleMaintenance };
 
   if (videoModelId === "kling-o3" && !character.reference_image_urls?.[0]) {
     return {

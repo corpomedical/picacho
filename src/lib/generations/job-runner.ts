@@ -10,6 +10,7 @@ import {
 } from "@/lib/generations/providers/fal";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
+import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
 
 // Fire-and-poll orchestrator.
 //
@@ -195,6 +196,32 @@ async function finish(
     .eq("user_id", userId);
 
   await admin.from("generation_jobs").delete().eq("generation_id", generationId);
+
+  // Feed the circuit breaker. A model that fails three times in a row takes
+  // itself out of service, so a broken provider stops costing money the
+  // moment it breaks rather than when somebody notices. Reading the model id
+  // from the generation row keeps this correct for every path that lands
+  // here — poll, webhook or reaper.
+  const { data: gen } = await admin
+    .from("generations")
+    .select("video_model_id, content_type")
+    .eq("id", generationId)
+    .maybeSingle<{ video_model_id: string | null; content_type: string | null }>();
+
+  const modelId = gen?.video_model_id ?? "";
+  const kind = (gen?.content_type === "image" ? "image" : "video") as "video" | "image";
+
+  if (modelId) {
+    if (outcome.status === "succeeded") {
+      await recordModelSuccess(modelId, kind);
+    } else if (outcome.fault === "provider_failed") {
+      // Only provider faults count. A user cancelling or walking away says
+      // nothing about whether the model works.
+      const lastDetail =
+        outcome.attempts[outcome.attempts.length - 1]?.steps.slice(-1)[0]?.detail ?? "Generation failed.";
+      await recordModelFailure(modelId, kind, lastDetail);
+    }
+  }
 
   // Failures used to auto-file a report from runGeneration. Now that a queued
   // render finishes here instead of there, this has to happen here too —
