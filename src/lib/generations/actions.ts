@@ -11,7 +11,13 @@ import {
   type ContentType,
 } from "@/lib/generations/pipeline";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
-import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
+import {
+  PLAN_LIMITS,
+  PLAN_LABELS,
+  FREE_GENERATION_LIMIT,
+  FREE_TIER_VIDEO_MODEL_ID,
+  type PlanId,
+} from "@/lib/plans";
 import {
   getVideoModel,
   getDefaultDurationSeconds,
@@ -75,6 +81,23 @@ async function consumePurchasedCredits(
   await supabase
     .from("profiles")
     .update({ purchased_credits: Math.max(0, current - amount) })
+    .eq("id", userId);
+}
+
+// Free-tier equivalent of consumePurchasedCredits — a lifetime counter, so
+// it is never reset by a billing period rolling over.
+async function consumeFreeGeneration(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<void> {
+  const { data } = await supabase
+    .from("profiles")
+    .select("free_generations_used")
+    .eq("id", userId)
+    .single();
+  await supabase
+    .from("profiles")
+    .update({ free_generations_used: ((data?.free_generations_used ?? 0) as number) + 1 })
     .eq("id", userId);
 }
 
@@ -205,11 +228,11 @@ async function checkGenerationAllowance(
   supabase: SupabaseClient,
   userId: string,
   requestedCredits: number,
-): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean; consumePurchased?: number }> {
+): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean; consumePurchased?: number; consumeFree?: boolean }> {
   const [{ data: profile }, { data: recent }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("plan, role, bonus_credits, purchased_credits, current_period_start")
+      .select("plan, role, bonus_credits, purchased_credits, free_generations_used, current_period_start")
       .eq("id", userId)
       .single(),
     supabase
@@ -232,6 +255,28 @@ async function checkGenerationAllowance(
       plan,
       isAdmin,
     };
+  }
+
+  // Free tier: a lifetime trial counted in generations, checked before the
+  // monthly-allowance logic below because it works on a different axis
+  // entirely (never resets, isn't affected by billing periods). Accounts
+  // that have been granted bonus credits fall through to the normal path
+  // instead — those are a deliberate gift and shouldn't be capped at five.
+  if (plan === "none" && (profile?.bonus_credits ?? 0) === 0) {
+    const freeUsed = (profile?.free_generations_used ?? 0) as number;
+    if (freeUsed >= FREE_GENERATION_LIMIT) {
+      return {
+        error:
+          `You've used all ${FREE_GENERATION_LIMIT} free generations. Pick a plan to keep going — ` +
+          `your characters and history stay exactly as they are.`,
+        plan,
+        isAdmin,
+      };
+    }
+    // Counted per generation, not per credit: the free tier is pinned to the
+    // cheapest model (enforced in runGeneration), so one generation is one
+    // credit's worth of cost and the two can't drift apart.
+    return { error: null, plan, isAdmin, consumeFree: true };
   }
 
   // Bonus credits (admin-granted, see setBonusCredits) stack on top of the
@@ -498,7 +543,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
     supabase.from("app_settings").select("value").eq("key", "video_model").single(),
     supabase.from("app_settings").select("value").eq("key", "image_model").single(),
-    supabase.from("profiles").select("skip_ai_refinement").eq("id", userData.user.id).single(),
+    supabase
+      .from("profiles")
+      .select("skip_ai_refinement, plan, bonus_credits, role")
+      .eq("id", userData.user.id)
+      .single(),
   ]);
   const maxAttempts = Number(retrySetting?.value) || undefined;
   const useRealProviders = flag?.enabled === true;
@@ -530,8 +579,20 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // multi-angle requests that didn't send one, and anything invalid.
   const requestedVideoModelId = (formData.get("video_model_id") as string) || "";
   const adminDefaultVideoModelId = videoModelSetting?.value ?? "kling";
-  const videoModelId =
-    contentType === "video" && VIDEO_MODELS.some((m) => m.id === requestedVideoModelId)
+  // Free-tier accounts are pinned to the cheapest model regardless of what
+  // was requested. Without this, one free signup choosing Veo would cost
+  // ~EUR3 of an allowance meant to cost ~EUR1.50 in total — and the free
+  // limit is counted in generations, which only equals cost if every free
+  // generation is the same price. Silently downgrading rather than erroring:
+  // a trial user hitting "that model needs a plan" before they've seen a
+  // single result learns nothing about the product.
+  const isFreeTierAccount =
+    (userProfile?.plan ?? "none") === "none" &&
+    (userProfile?.bonus_credits ?? 0) === 0 &&
+    userProfile?.role !== "admin";
+  const videoModelId = isFreeTierAccount
+    ? FREE_TIER_VIDEO_MODEL_ID
+    : contentType === "video" && VIDEO_MODELS.some((m) => m.id === requestedVideoModelId)
       ? requestedVideoModelId
       : adminDefaultVideoModelId;
   const activeVideoModel = getVideoModel(videoModelId);
@@ -600,6 +661,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     plan: userPlan,
     isAdmin,
     consumePurchased,
+    consumeFree,
   } = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
   if (allowanceError) return { error: allowanceError };
 
@@ -704,6 +766,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   }
 
   await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
+  if (consumeFree) await consumeFreeGeneration(supabase, userData.user.id);
 
   let attempts: AttemptLog[] = [];
   let succeeded = false;
@@ -1121,6 +1184,26 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     return {
       error:
         "Kling O3 needs this character to have a reference photo — add one in Character settings, or switch to Kling 1.6.",
+    };
+  }
+
+  // Multi-angle is not available on the free trial. The free allowance is
+  // counted in generations rather than credits, and one multi-angle request
+  // is several generations at once — it would consume the whole trial in a
+  // single click and, worse, the per-generation counter would undercount
+  // what it actually cost.
+  const { data: multiAngleProfile } = await supabase
+    .from("profiles")
+    .select("plan, bonus_credits, role")
+    .eq("id", userData.user.id)
+    .single();
+  if (
+    (multiAngleProfile?.plan ?? "none") === "none" &&
+    (multiAngleProfile?.bonus_credits ?? 0) === 0 &&
+    multiAngleProfile?.role !== "admin"
+  ) {
+    return {
+      error: "Multi-angle needs a plan. Your free generations work for single images and videos.",
     };
   }
 

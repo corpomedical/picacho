@@ -16,6 +16,29 @@ export const PLAN_LABELS = {
 
 export type PlanId = keyof typeof PLAN_LIMITS;
 
+// Free tier: a one-time trial, not a monthly allowance.
+//
+// Five rather than three because the product's whole claim is CONSISTENCY
+// ACROSS generations — that can't be seen in one image. Someone needs the
+// same character three or four times to believe it, and the first attempt is
+// often not what they pictured while they're still learning to describe what
+// they want. Three only works if every attempt lands; five leaves room for
+// one miss and still demonstrates the thing being sold.
+//
+// Costs roughly EUR1.50 per signup at ~EUR0.30/credit. At a 5% conversion to
+// Starter that pays back in about two months and compounds after that.
+//
+// Note this is a count of GENERATIONS, not credits, and the free tier is
+// restricted to the cheapest model (see FREE_TIER_VIDEO_MODEL_ID) — Veo costs
+// 11 credits for 8 seconds, so a free allowance denominated in credits with
+// free model choice would let a single signup cost EUR3+.
+export const FREE_GENERATION_LIMIT = 5;
+
+// The only video model a free-tier account may use. Also the fastest, so a
+// trial user sees a result sooner — which matters more at trial than quality
+// does.
+export const FREE_TIER_VIDEO_MODEL_ID = "kling";
+
 // Monthly cap on AI-generated character reference photos.
 //
 // These cost real money (~$0.17 each on GPT Image) but consumed nothing

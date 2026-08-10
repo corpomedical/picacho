@@ -333,6 +333,20 @@ The last unmetered path from the pricing analysis. Adding spoken dialogue runs t
 That closes every leak identified in `Picacho pricing analysis.xlsx`:
 unlimited character photos (capped), failed generations billing 3× (fixed at the source), unmetered TTS (voice mode flagged off), unmetered dialogue (surcharged), stopped generations (unavoidable, documented).
 
+## Free tier — 2026-08-10
+
+Phase 0, step 1 of `Picacho distribution plan.pdf`. Until now a stranger could not see the product work without paying €19, which quietly undermined every acquisition channel.
+
+**5 generations, lifetime, no card.** Five rather than three because the product's claim is consistency *across* generations — nobody can judge that from one image, and the first attempt is often not what someone pictured while still learning to describe it. Three works only if every attempt lands. Costs ~€1.50 per signup at ~€0.30/credit; pays back in about two months at a 5% conversion.
+
+- [x] `profiles.free_generations_used` — a **lifetime** counter, deliberately not done by raising `PLAN_LIMITS.none`. That limit is monthly, so a free account would receive a fresh batch every billing period forever; an abandoned signup would keep costing money for the life of the account.
+- [x] Checked **before** the monthly-allowance logic, because it works on a different axis entirely — never resets, unaffected by billing periods.
+- [x] **Pinned to the cheapest model.** Veo is 11 credits for 8 seconds, so a free allowance counted in generations only equals a predictable cost if every free generation costs the same. Without this one signup choosing Veo would cost ~€3 of an allowance meant to total ~€1.50. Downgrades silently rather than erroring — a trial user hitting "that model needs a plan" before seeing a single result learns nothing.
+- [x] **Multi-angle blocked on the free tier.** It's several generations per click, which would drain the trial instantly *and* make the per-generation counter undercount real cost.
+- [x] **Accounts with bonus credits fall through to the normal path**, so the three existing users keep their granted allowances instead of being capped at five. Verified against all three live accounts.
+
+**Still needed from Wigly:** confirm email confirmation is enabled in Supabase Auth. Without it free credits are farmable with throwaway addresses and the cost maths above stops holding.
+
 ## Naming consistency pass — 2026-08-10
 
 Reported: "Usage & plan" couldn't be found because the sidebar calls the same destination something else. It turned out to be two cases, not one — the sidebar's gear menu named both of its settings links differently from the tabs they open:
