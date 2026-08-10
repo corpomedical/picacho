@@ -23,8 +23,13 @@ export function EarlyAccessBadge({ className }: { className?: string }) {
       // No border, padding or pill — those made it read as a button people
       // might try to click. It's a label on the wordmark, so it should look
       // like part of the wordmark's lockup rather than a control.
+      //
+      // self-end + the small translate sits it on the wordmark's baseline
+      // instead of centring it against the full image height. The logo has
+      // an accent rule beneath the letterforms, so vertical centring left
+      // the label floating slightly low against the text it labels.
       className={cn(
-        "select-none text-[10px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500",
+        "-translate-y-px select-none self-end pb-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500",
         className,
       )}
     >
