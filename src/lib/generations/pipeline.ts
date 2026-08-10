@@ -739,12 +739,17 @@ export async function runRealPipeline(
           if (!options.persistImage) throw new Error("Image persistence handler missing.");
           const imageModelId = options.imageModelId ?? "gpt-image";
           const usingMultiCharacterImages = (options.referenceImageUrls?.length ?? 0) >= 2;
+          let fallbackNote: string | null = null;
           resultUrl = await generateImage(
             imageModelId,
             reviewedPrompt,
             usingMultiCharacterImages ? options.referenceImageUrls! : options.referenceImageUrl,
             options.persistImage,
+            (note) => {
+              fallbackNote = note;
+            },
           );
+          if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           steps.push({
             step: "generate",
             detail: `Generated via ${getImageModel(imageModelId).name}${

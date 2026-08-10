@@ -164,7 +164,35 @@ Fixes:
 
 Expected effect: image reliability should track the provider's own success rate rather than the paraphrasing luck of the review step, and a failed attempt costs a draft/review (~$0.02) instead of a full generation.
 
-Worth watching next: the OpenAI safety filter rejected one attempt outright (recovered on retry), and two video generations died on 180s timeouts. Both are separate from this fix.
+**Full failure taxonomy** (all 8 failed generations, from `pipeline_log`):
+
+| Cause | Count | Status |
+|---|---|---|
+| Paid image discarded by post-hoc validation | 2 (6 renders) | Fixed above |
+| OpenAI safety filter rejected the prompt | 3 | Fixed — falls back to Flux |
+| Claude empty response / draft failure | 2 | Fixed — falls back to the rulebook |
+| Kling 2.1 404 (wrong endpoint) | 1 | Already fixed 2026-08-07 |
+| Video timeout at 180s | 1 | Predates the fal.ai queue rewrite |
+
+- [x] **Safety-filter fallback.** OpenAI's classifier is aggressive about photorealistic people — exactly what this product makes — and was the most common named cause. `generateImageWithOpenAI` now throws a typed `ImageSafetyRejection`, and `generateImage` catches only that case and retries on Flux, which has a far less restrictive filter and is already wired up and paid for. Auth errors, outages and rate limits deliberately do NOT fall back — they say nothing about whether another model would fare better, and double-spending on them would be wrong. Multi-character images can't fall back (Flux's image-to-image takes one source), so they still surface the error. The pipeline log records when a fallback happened rather than crediting a model that didn't produce the result.
+
+## Full-project audit — 2026-08-10 (partial)
+
+Automated passes:
+- [x] `tsc --noEmit` — clean.
+- [x] `eslint src` — **0 errors**, 21 warnings: 18 long-standing `react-hooks/set-state-in-effect`, 2 unused icon components in `oauth-buttons.tsx` (Apple/Microsoft, deliberately kept for when those providers are enabled), 1 unused-directive.
+- [ ] `next build` — **could not run here.** The SWC binary is compiled for macOS arm64 and this Linux sandbox has no matching build. Vercel compiles on push, so a broken build would surface there; `tsc` covers type errors in the meantime.
+
+Supabase security advisors — 2 warnings, both known:
+- `public.is_admin()` is a SECURITY DEFINER function callable by signed-in users. It only reports whether *the caller* is an admin, so it leaks nothing about other accounts, but it stays on the list.
+- **Leaked-password protection is still disabled.** One toggle in the Supabase dashboard, still outstanding from an earlier pass.
+
+Supabase performance advisors — no errors, all scale-related rather than functional:
+- 11× "Auth RLS Initialization Plan" — policies call `auth.uid()` per row instead of `(select auth.uid())`. Harmless at 3 users, becomes a real cost at scale. Best cheap win on the list.
+- ~40× "Multiple Permissive Policies" on the same table/role/action — each one is evaluated separately per query.
+- 6 unindexed foreign keys, 5 unused indexes.
+
+Still to do: manual walkthrough of every route and the admin area, the buy-extra-credits flow, and the dashboard traffic graph.
 
 ## After launch (polish, not blocking)
 

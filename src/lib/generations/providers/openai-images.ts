@@ -4,6 +4,20 @@
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 
+// Thrown specifically when OpenAI's safety classifier rejects the prompt, so
+// callers can tell it apart from an outage, a bad key, or a rate limit and
+// react differently. Measured 2026-08-10: this was the single most common
+// named cause of failed generations (3 of 8), and it is close to unavoidable
+// for this product — the classifier is aggressive about photorealistic
+// people, which is exactly what Picacho exists to make. image.ts catches
+// this and retries on Flux rather than failing the generation.
+export class ImageSafetyRejection extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImageSafetyRejection";
+  }
+}
+
 async function fetchAsBlob(url: string): Promise<Blob> {
   const res = await fetchWithTimeout(url, {}, 20_000);
   if (!res.ok) throw new Error(`Couldn't fetch the reference image (${res.status}).`);
@@ -84,7 +98,7 @@ export async function generateImageWithOpenAI(
     // billing, rate limit, etc.) still surfaces the real API response, since
     // that detail is what's actually useful for debugging those.
     if (text.includes("safety system") || text.includes("safety_violations")) {
-      throw new Error(
+      throw new ImageSafetyRejection(
         "That description was flagged by OpenAI's safety filter and couldn't be generated. " +
           "Try simpler, unambiguous wording (for example, describing age and appearance " +
           "plainly rather than combining conflicting details), or upload a photo instead.",
