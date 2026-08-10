@@ -20,8 +20,11 @@ import { cn } from "@/lib/cn";
 export function EarlyAccessBadge({ className }: { className?: string }) {
   return (
     <span
+      // No border, padding or pill — those made it read as a button people
+      // might try to click. It's a label on the wordmark, so it should look
+      // like part of the wordmark's lockup rather than a control.
       className={cn(
-        "select-none rounded-full border border-neutral-200 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-neutral-500 dark:border-neutral-700 dark:text-neutral-400",
+        "select-none text-[10px] font-medium uppercase tracking-wide text-neutral-400 dark:text-neutral-500",
         className,
       )}
     >

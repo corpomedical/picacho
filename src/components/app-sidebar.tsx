@@ -530,7 +530,7 @@ export function AppSidebar({
         >
           <MenuIcon className="h-5 w-5" />
         </button>
-        <Link href="/app/generate" className="flex items-center gap-2">
+        <Link href="/app/generate" className="flex items-center gap-1.5">
           <Logo className="h-6" />
           <EarlyAccessBadge />
         </Link>
@@ -558,7 +558,7 @@ export function AppSidebar({
         <Link
           href="/app/generate"
           title="Picacho"
-          className={cn("flex items-center gap-2", iconOnly && "justify-center")}
+          className={cn("flex items-center gap-1.5", iconOnly && "justify-center")}
         >
           {iconOnly ? (
             // The wordmark is too wide to read as a small square icon, so

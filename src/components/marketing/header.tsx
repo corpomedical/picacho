@@ -18,7 +18,7 @@ export async function MarketingHeader() {
   return (
     <header className="border-b border-neutral-200/70">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-8 py-5">
-        <Link href="/" className="flex items-center gap-2">
+        <Link href="/" className="flex items-center gap-1.5">
           <Logo className="h-6" />
           <EarlyAccessBadge />
         </Link>
