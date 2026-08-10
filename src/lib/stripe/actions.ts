@@ -88,6 +88,18 @@ export async function createCreditCheckoutSession(formData: FormData) {
   const packId = formData.get("pack") as string | null;
   const pack = packId ? getCreditPack(packId) : undefined;
 
+  // Where to land after paying. Someone who tops up from the composer because
+  // they were short for a generation should come back to that composer, not
+  // be dumped in Settings to find their way home.
+  //
+  // Allowlisted to in-app paths, not just "starts with /": a caller-supplied
+  // redirect target that isn't constrained is an open-redirect, and this one
+  // is reachable from a form anybody can submit.
+  const requestedReturn = (formData.get("return_to") as string | null) ?? "";
+  const returnTo = /^\/app\/[a-z0-9/-]*$/i.test(requestedReturn)
+    ? requestedReturn
+    : "/app/settings?tab=usage";
+
   if (!pack) {
     redirect(`/app/settings?tab=usage&error=${encodeURIComponent("That credit pack isn't available.")}`);
   }
@@ -122,8 +134,8 @@ export async function createCreditCheckoutSession(formData: FormData) {
       client_reference_id: userData.user.id,
       line_items: [{ price: priceId, quantity: 1 }],
       automatic_tax: { enabled: true },
-      success_url: `${origin}/app/settings?tab=usage&credits=1`,
-      cancel_url: `${origin}/app/settings?tab=usage`,
+      success_url: `${origin}${returnTo}${returnTo.includes("?") ? "&" : "?"}credits=1`,
+      cancel_url: `${origin}${returnTo}`,
       // The webhook credits the account off this, so it has to be present.
       // client_reference_id is also set above as a belt-and-braces second
       // copy — a payment that can't be attributed to an account is money

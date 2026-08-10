@@ -20,6 +20,7 @@ import {
 import { synthesizeVoice } from "@/lib/voice/actions";
 import { parseVoiceCommand } from "@/lib/voice/commands";
 import { recommendCreditPack } from "@/lib/stripe/credit-packs";
+import { createCreditCheckoutSession } from "@/lib/stripe/actions";
 import {
   pickPhrasing,
   isTrivialUtterance,
@@ -682,12 +683,20 @@ function InsufficientCreditsBanner({
         {modelName} at {seconds}s needs <strong>{needed} credits</strong> — you have {available}.
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-3">
-        <Link
-          href="/app/settings?tab=usage"
-          className="rounded-full bg-neutral-900 px-3.5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:bg-white dark:text-neutral-900"
-        >
-          Add {pack.credits} credits
-        </Link>
+        {/* Straight to Stripe with the right pack already chosen. Sending
+            someone to Settings to pick a pack themselves adds two steps at
+            exactly the moment they've decided to spend, which is where that
+            decision gets reconsidered. */}
+        <form action={createCreditCheckoutSession}>
+          <input type="hidden" name="pack" value={pack.id} />
+          <input type="hidden" name="return_to" value="/app/generate" />
+          <button
+            type="submit"
+            className="rounded-full bg-neutral-900 px-3.5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:bg-white dark:text-neutral-900"
+          >
+            Add {pack.credits} credits — {pack.price}
+          </button>
+        </form>
         <span className="text-xs text-amber-800/80 dark:text-amber-200/70">
           Covers this and {Math.floor((available + pack.credits) / Math.max(1, needed)) - 1} more
         </span>
