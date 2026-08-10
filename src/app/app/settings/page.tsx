@@ -8,6 +8,7 @@ import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
 import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { BuyCreditsPanel } from "@/components/buy-credits-panel";
+import { FeedbackForm } from "@/components/settings/feedback-form";
 import { Card } from "@/components/ui/card";
 import { ProfileForm } from "@/components/profile-form";
 import { UsernameForm } from "@/components/settings/username-form";
@@ -324,16 +325,18 @@ export default async function SettingsPage({
           {activeTab === "support" && (
             <Card>
               <h2 className="text-sm font-semibold text-neutral-900">{s.support}</h2>
-              <div className="mt-3 space-y-2 text-sm">
-                <a
-                  href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho feedback")}`}
-                  className="block text-neutral-700 underline hover:text-neutral-900"
-                >
-                  {s.sendFeedback}
-                </a>
+              {/* Feedback is a form, not a mailto — it lands in the
+                  /admin/feedback queue instead of an inbox, and doesn't
+                  depend on the person having a mail client set up. Help
+                  stays an email: that's a conversation needing a reply,
+                  which a write-only form can't give them. */}
+              <div className="mt-4">
+                <FeedbackForm />
+              </div>
+              <div className="mt-4 border-t border-neutral-100 pt-4 text-sm">
                 <a
                   href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho help")}`}
-                  className="block text-neutral-700 underline hover:text-neutral-900"
+                  className="text-neutral-700 underline hover:text-neutral-900"
                 >
                   {s.getHelp}
                 </a>

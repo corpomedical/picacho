@@ -613,6 +613,16 @@ const it = {
     history: "Cronologia",
     close: "Chiudi",
   },
+  rating: {
+    title: "Come va con Picacho?",
+    starLabel: "{n} stelle",
+    placeholderPositive: "Cosa funziona bene? (facoltativo)",
+    placeholderCritical: "Cosa lo migliorerebbe? (facoltativo)",
+    send: "Invia",
+    sending: "Invio…",
+    notNow: "Non ora",
+    thanks: "Grazie — ci aiuta molto.",
+  },
   credits: {
     title: "Acquista crediti extra",
     subtitle: "Ricariche una tantum che non scadono. Usate automaticamente quando finisce la quota mensile.",

@@ -613,6 +613,16 @@ const pt = {
     history: "Histórico",
     close: "Fechar",
   },
+  rating: {
+    title: "Como está sendo o Picacho?",
+    starLabel: "{n} estrelas",
+    placeholderPositive: "O que está funcionando bem? (opcional)",
+    placeholderCritical: "O que deixaria melhor? (opcional)",
+    send: "Enviar",
+    sending: "Enviando…",
+    notNow: "Agora não",
+    thanks: "Obrigado — ajuda muito.",
+  },
   credits: {
     title: "Comprar créditos extras",
     subtitle: "Recargas únicas que não expiram. Usadas automaticamente quando sua franquia mensal acabar.",

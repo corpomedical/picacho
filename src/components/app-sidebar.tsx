@@ -977,13 +977,14 @@ export function AppSidebar({
                 <CompassIcon className="h-4 w-4 flex-shrink-0" />
                 {s.replayWalkthrough}
               </Link>
-              <a
-                href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho feedback")}`}
+              <Link
+                href="/app/settings?tab=support"
+                onClick={() => setSettingsOpen(false)}
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >
                 <MailIcon className="h-4 w-4 flex-shrink-0" />
                 {s.sendFeedback}
-              </a>
+              </Link>
               <a
                 href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho help")}`}
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"

@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
+import { RatePrompt } from "@/components/rate-prompt";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
@@ -23,7 +24,7 @@ export default async function AppLayout({
     { data: projects },
     { data: supportEmailSetting },
   ] = await Promise.all([
-    supabase.from("profiles").select("role, username, skip_ai_refinement").eq("id", data.user.id).single(),
+    supabase.from("profiles").select("role, username, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
     // Explicit user_id filters below, not just RLS — an admin's SELECT
     // policy on these tables intentionally allows reading every user's rows
     // (that's what powers /admin), so without this an admin browsing their
@@ -57,6 +58,19 @@ export default async function AppLayout({
 
   const voiceModeEnabled = await isVoiceModeEnabled(supabase);
 
+  // Ask for a rating only once someone has had enough successful results to
+  // hold an opinion, and only once ever (rating_prompted_at is stamped by
+  // both answering and dismissing). head+count so this is a cheap COUNT
+  // rather than pulling rows on every page load.
+  const { count: successfulGenerations } = await supabase
+    .from("generations")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", data.user.id)
+    .eq("status", "succeeded");
+
+  const showRatePrompt =
+    (successfulGenerations ?? 0) >= 3 && !profile?.rating_prompted_at;
+
   return (
     <div className="flex h-screen overflow-hidden">
       <AppErrorReporter />
@@ -70,6 +84,7 @@ export default async function AppLayout({
         skipAiRefinement={profile?.skip_ai_refinement === true}
         voiceModeEnabled={voiceModeEnabled}
       />
+      {showRatePrompt && <RatePrompt />}
       <div className="min-w-0 flex-1 overflow-y-auto">
         {/* pt-14 clears the fixed mobile top bar (see AppSidebar); not needed
             at md+ where that bar is hidden and the sidebar sits in-flow. */}

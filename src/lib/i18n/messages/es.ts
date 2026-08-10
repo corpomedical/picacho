@@ -613,6 +613,16 @@ const es = {
     history: "Historial",
     close: "Cerrar",
   },
+  rating: {
+    title: "¿Qué tal te va con Picacho?",
+    starLabel: "{n} estrellas",
+    placeholderPositive: "¿Qué funciona bien? (opcional)",
+    placeholderCritical: "¿Qué lo mejoraría? (opcional)",
+    send: "Enviar",
+    sending: "Enviando…",
+    notNow: "Ahora no",
+    thanks: "Gracias — nos ayuda mucho.",
+  },
   credits: {
     title: "Comprar créditos extra",
     subtitle: "Recargas únicas que no caducan. Se usan automáticamente cuando se agota tu asignación mensual.",

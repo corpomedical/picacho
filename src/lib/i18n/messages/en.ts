@@ -629,6 +629,16 @@ const en = {
     history: "History",
     close: "Close",
   },
+  rating: {
+    title: "How's Picacho working out?",
+    starLabel: "{n} stars",
+    placeholderPositive: "What's working well? (optional)",
+    placeholderCritical: "What would make it better? (optional)",
+    send: "Send",
+    sending: "Sending…",
+    notNow: "Not now",
+    thanks: "Thanks — that helps a lot.",
+  },
   credits: {
     title: "Buy extra credits",
     subtitle: "One-time top-ups that never expire. Used automatically once your monthly allowance runs out.",
