@@ -349,6 +349,8 @@ const pt = {
     downloadUnavailable: "Baixar (disponível quando houver um provedor real conectado)",
     noResult: "Sem resultado — o processo não conseguiu uma tentativa válida.",
     noResultAngle: "Sem resultado — o processo não conseguiu uma tentativa válida para este ângulo.",
+    stillRendering: "Gerando —",
+    stillRenderingBody: "O vídeo costuma levar alguns minutos. Pode fechar esta página com segurança: ele continua sendo gerado e aparecerá aqui e no histórico quando estiver pronto. Se nada chegar em cerca de {minutes} minutos, vamos interromper e devolver seus créditos automaticamente.",
     stepDrafted: "Rascunho pronto",
     stepReviewed: "Revisado",
     stepGenerating: "Gerando",

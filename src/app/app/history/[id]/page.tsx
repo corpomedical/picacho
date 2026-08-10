@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
 import { angleSortIndex } from "@/lib/generations/angles";
 import { AngleResultViewer } from "@/components/angle-result-viewer";
+import { StillRendering } from "@/components/still-rendering";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { DownloadButton } from "@/components/download-button";
 import { ResultActions } from "@/components/result-actions";
@@ -72,7 +73,7 @@ export default async function HistoryDetailPage({
   const { data: angleSiblings } = generation.angle_group_id
     ? await supabase
         .from("generations")
-        .select("id, angle, status, result_url, pipeline_log, feedback")
+        .select("id, angle, status, result_url, pipeline_log, feedback, created_at")
         .eq("angle_group_id", generation.angle_group_id)
         .order("created_at", { ascending: true })
     : { data: null };
@@ -227,6 +228,10 @@ export default async function HistoryDetailPage({
                   />
                 )}
               </>
+            ) : generation.status === "generating" ? (
+              // Same rule as the multi-angle viewer: a render still in flight
+              // is not a failed one, and must not be described as one.
+              <StillRendering startedAt={generation.created_at as string} />
             ) : (
               <p className="mt-2 text-sm text-neutral-500">
                 {h.noResult}

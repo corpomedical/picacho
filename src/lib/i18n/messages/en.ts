@@ -364,6 +364,8 @@ const en = {
     downloadUnavailable: "Download (available once a real provider is connected)",
     noResult: "No result — the pipeline couldn't produce a passing attempt.",
     noResultAngle: "No result — the pipeline couldn't produce a passing attempt for this angle.",
+    stillRendering: "Still rendering —",
+    stillRenderingBody: "Video usually takes a few minutes. You can safely close this page — it keeps rendering and will appear here and in History when it's ready. If nothing arrives after about {minutes} minutes, we'll stop it and return your credits automatically.",
     stepDrafted: "Drafted",
     stepReviewed: "Reviewed",
     stepGenerating: "Generating",

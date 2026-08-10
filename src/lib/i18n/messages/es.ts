@@ -349,6 +349,8 @@ const es = {
     downloadUnavailable: "Descargar (disponible cuando haya un proveedor real conectado)",
     noResult: "Sin resultado — el proceso no logró un intento válido.",
     noResultAngle: "Sin resultado — el proceso no logró un intento válido para este ángulo.",
+    stillRendering: "Generando —",
+    stillRenderingBody: "El vídeo suele tardar unos minutos. Puedes cerrar esta página sin problema: seguirá generándose y aparecerá aquí y en el historial cuando esté lista. Si no llega nada en unos {minutes} minutos, lo detendremos y te devolveremos los créditos automáticamente.",
     stepDrafted: "Borrador listo",
     stepReviewed: "Revisado",
     stepGenerating: "Generando",

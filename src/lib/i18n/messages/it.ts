@@ -349,6 +349,8 @@ const it = {
     downloadUnavailable: "Scarica (disponibile quando sarà collegato un provider reale)",
     noResult: "Nessun risultato — la pipeline non ha prodotto un tentativo valido.",
     noResultAngle: "Nessun risultato — la pipeline non ha prodotto un tentativo valido per questa angolazione.",
+    stillRendering: "In elaborazione —",
+    stillRenderingBody: "Il video richiede di solito qualche minuto. Puoi chiudere questa pagina senza problemi: continuerà a essere generato e comparirà qui e nella cronologia quando sarà pronto. Se non arriva nulla dopo circa {minutes} minuti, lo interromperemo e ti restituiremo i crediti automaticamente.",
     stepDrafted: "Bozza pronta",
     stepReviewed: "Rivisto",
     stepGenerating: "Generazione in corso",

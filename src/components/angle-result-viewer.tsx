@@ -10,6 +10,7 @@ import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipelin
 import { getAnglePreset } from "@/lib/generations/angles";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
+import { StillRendering } from "@/components/still-rendering";
 import { cn } from "@/lib/cn";
 
 export type AngleRow = {
@@ -20,6 +21,7 @@ export type AngleRow = {
   pipeline_log: unknown;
   feedback: string | null;
   reported: boolean;
+  created_at: string;
 };
 
 // Replaces the single "Pipeline log" + "Result" cards on the history detail
@@ -126,6 +128,11 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
               />
             )}
           </>
+        ) : active.status === "generating" ? (
+          // Still in flight, NOT failed. Telling someone their generation
+          // produced nothing while it's actively rendering is the difference
+          // between "be patient" and "this product is broken".
+          <StillRendering startedAt={active.created_at} />
         ) : (
           <p className="mt-2 text-sm text-neutral-500">
             {h.noResultAngle}
