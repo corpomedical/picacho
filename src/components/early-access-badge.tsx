@@ -24,24 +24,15 @@ export function EarlyAccessBadge({ className }: { className?: string }) {
       // might try to click. It's a label on the wordmark, so it should look
       // like part of the wordmark's lockup rather than a control.
       //
-      // The nudge is doing real work, so don't "clean it up". logo.png is
-      // 1942x595 with the letterforms occupying only y=20..400; below them
-      // sits ~150px of empty space and then the orange accent rule at
-      // y=548..575. So a third of the image height is below the type. Plain
-      // `items-center` centres this label against the whole image box, which
-      // parks it noticeably below the letters it's labelling, and aligning to
-      // the bottom is worse — that lines it up with the accent rule.
-      //
-      // Measured at the h-6 (24px) the three call sites use: letterforms run
-      // 0.81px..16.13px, optical centre 8.47px, box centre 12px. Hence 3.5px
-      // up, which puts this label's optical centre on the wordmark's. Both
-      // are uppercase with no descenders, so centre-matching lines the
-      // baselines up without depending on the font's ascent/descent metrics.
-      //
-      // Fixed px because every call site renders the logo at h-6. If one ever
-      // renders it larger, scale this with it (offset = 0.147 x logo height).
+      // No vertical offset — this deliberately just rides the flex parent's
+      // `items-center`. Two attempts at "correcting" that were both rejected
+      // on sight, so leave it alone. logo.png is 1942x595 with the
+      // letterforms only occupying y=20..400 and the orange accent rule down
+      // at y=548..575, so geometric alignment to the type reads as too high,
+      // and alignment to the bottom lines the label up with the rule instead
+      // of the word. Centring on the whole image box is what looks right.
       className={cn(
-        "-translate-y-[3.5px] select-none text-[10px] font-medium uppercase leading-none tracking-wide text-neutral-400 dark:text-neutral-500",
+        "select-none text-[10px] font-medium uppercase leading-none tracking-wide text-neutral-400 dark:text-neutral-500",
         className,
       )}
     >
