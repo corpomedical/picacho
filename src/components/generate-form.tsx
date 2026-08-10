@@ -674,12 +674,48 @@ function InsufficientCreditsBanner({
 }) {
   const pack = recommendCreditPack(Math.max(0, needed - available));
 
+  // Dismissed for THIS selection only. The call site keys this component on
+  // the model and duration, so picking a different combination mounts a fresh
+  // one and the strip returns — "suspend" rather than "never show again",
+  // since the next selection is a different piece of information.
+  const [dismissed, setDismissed] = useState(false);
+
+  // Starts collapsed and opens on the next frame, so the strip animates in
+  // rather than appearing fully formed. Kept mounted while dismissed instead
+  // of unmounting, which is what lets it animate OUT — an unmounted element
+  // can't transition.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+
+  const visible = open && !dismissed;
+
   return (
+    // The grid 0fr/1fr pair is what makes the height animate without anyone
+    // having to know how tall the content is. A max-height guess would either
+    // clip long copy (the translated strings run longer) or ease against a
+    // number far larger than the real height, which reads as a stall before
+    // anything moves. The inner overflow-hidden is what actually clips during
+    // the transition.
     <div
-      role="status"
-      className="flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500"
+      className={cn(
+        "grid transition-all duration-300 ease-out",
+        visible ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
     >
-      <p className="flex-1">
+      <div className="overflow-hidden">
+        <div
+          role="status"
+          className={cn(
+            "flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500 transition-transform duration-300 ease-out",
+            // Slides up behind the composer on the way out, down into place on
+            // the way in.
+            visible ? "translate-y-0" : "-translate-y-2",
+          )}
+        >
+          <p className="flex-1">
         {modelName} at {seconds}s needs {needed} credits — you have {available}.{" "}
         {/* An inline underlined action, matching the usage strip's link. A
             filled button here reads as an interruption; this reads as the
@@ -696,6 +732,16 @@ function InsufficientCreditsBanner({
           Add {pack.credits} credits
         </button>
       </p>
+      {/* Same dismiss affordance as the usage strip — same size, same
+          placement on the far right, same hover. */}
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        aria-label="Dismiss"
+        className="flex-shrink-0 cursor-pointer rounded-full p-1 text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-600"
+      >
+        <XIcon className="h-3.5 w-3.5" />
+      </button>
       {/* The form lives outside the paragraph so the composer's own form
           isn't nested inside it — nested forms are invalid HTML and the
           inner one silently stops submitting. */}
@@ -703,6 +749,8 @@ function InsufficientCreditsBanner({
         <input type="hidden" name="pack" value={pack.id} />
         <input type="hidden" name="return_to" value="/app/generate" />
       </form>
+        </div>
+      </div>
     </div>
   );
 }
@@ -3253,6 +3301,10 @@ function GenerateFormInner({
             allowance can still be short for a 51-credit 30s clip. */}
         {!isHero && cannotAfford && selectedVideoModel ? (
           <InsufficientCreditsBanner
+            // Remounts when the model or duration changes, so dismissing the
+            // strip suspends it for THAT selection rather than silencing a
+            // different, larger shortfall the person hasn't seen yet.
+            key={`${selectedVideoModel.id}-${videoDurationSeconds}`}
             needed={selectedCreditCost}
             available={creditsAvailable}
             modelName={selectedVideoModel.name}
