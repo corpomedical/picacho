@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import type { BrandRule, BrandRuleKind, BrandRuleSeverity } from "@/lib/brand-rules/types";
+import { getBrandRulePack } from "@/lib/brand-rules/packs";
 
 // Account-level rules layered on top of a character's own traits. Two kinds,
 // and the difference between them is the whole point of the feature:
@@ -109,6 +110,53 @@ export async function addBrandRule(formData: FormData): Promise<{ error: string 
 
   revalidatePath("/app/settings");
   return { error: null };
+}
+
+// Applies a preset pack (see packs.ts) as ordinary rules the person can then
+// edit or delete. Skips any rule whose label they already have, so applying
+// a pack twice — or applying two packs that share a rule, which several
+// deliberately do — tops up rather than duplicating.
+export async function applyBrandRulePack(formData: FormData): Promise<{ error: string | null; added?: number }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const packId = formData.get("pack") as string;
+  const pack = packId ? getBrandRulePack(packId) : undefined;
+  if (!pack) return { error: "That rule pack doesn't exist." };
+
+  const { data: existing } = await supabase
+    .from("brand_rules")
+    .select("label")
+    .eq("user_id", userData.user.id);
+
+  const have = new Set((existing ?? []).map((r) => (r.label as string).toLowerCase()));
+  const toAdd = pack.rules.filter((r) => !have.has(r.label.toLowerCase()));
+
+  if (toAdd.length === 0) return { error: null, added: 0 };
+
+  if ((existing?.length ?? 0) + toAdd.length > MAX_RULES) {
+    return { error: `That would exceed the ${MAX_RULES}-rule limit. Delete some rules first.` };
+  }
+
+  const { error } = await supabase.from("brand_rules").insert(
+    toAdd.map((r) => ({
+      user_id: userData.user!.id,
+      kind: "forbid",
+      label: r.label,
+      value: r.value,
+      applies_to: "all",
+      severity: r.severity,
+    })),
+  );
+
+  if (error) {
+    console.error("applyBrandRulePack failed:", error.message);
+    return { error: "Couldn't add those rules — try again." };
+  }
+
+  revalidatePath("/app/settings");
+  return { error: null, added: toAdd.length };
 }
 
 export async function toggleBrandRule(formData: FormData): Promise<{ error: string | null }> {

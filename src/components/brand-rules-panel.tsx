@@ -1,13 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { addBrandRule, deleteBrandRule, toggleBrandRule } from "@/lib/brand-rules/actions";
+import { addBrandRule, applyBrandRulePack, deleteBrandRule, toggleBrandRule } from "@/lib/brand-rules/actions";
+import { BRAND_RULE_PACKS } from "@/lib/brand-rules/packs";
 import type { BrandRule } from "@/lib/brand-rules/types";
 import { Card } from "@/components/ui/card";
 import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useLocale } from "@/lib/i18n/provider";
+import { formatMsg } from "@/lib/i18n/format";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/cn";
 
@@ -52,8 +54,58 @@ export function BrandRulesPanel({ rules }: { rules: BrandRule[] }) {
     router.refresh();
   }
 
+  async function handleApplyPack(packId: string) {
+    setPending(true);
+    setError(null);
+    const fd = new FormData();
+    fd.set("pack", packId);
+    const result = await applyBrandRulePack(fd);
+    setPending(false);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
   return (
     <div className="space-y-4">
+      <Card>
+        <h2 className="text-sm font-semibold text-neutral-900">{b.packsTitle}</h2>
+        <p className="mt-1 text-sm text-neutral-500">{b.packsSubtitle}</p>
+
+        <div className="mt-4 space-y-2">
+          {BRAND_RULE_PACKS.map((pack) => (
+            <div
+              key={pack.id}
+              className="flex flex-col gap-3 rounded-[12px] border border-neutral-100 p-3.5 sm:flex-row sm:items-center"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-neutral-900">{pack.name}</p>
+                <p className="mt-0.5 text-xs text-neutral-500">{pack.description}</p>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={pending}
+                onClick={() => handleApplyPack(pack.id)}
+                className="flex-shrink-0"
+              >
+                {formatMsg(b.addPackRules, { n: pack.rules.length })}
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        {/* Deliberately prominent rather than a footnote. These rules touch
+            advertising law, and someone in a regulated trade should not
+            infer from a tidy UI that they've been legally cleared. */}
+        <p className="mt-4 rounded-[10px] bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+          {b.packsDisclaimer}
+        </p>
+      </Card>
+
       <Card>
         <h2 className="text-sm font-semibold text-neutral-900">{b.title}</h2>
         <p className="mt-1 text-sm text-neutral-500">{b.subtitle}</p>

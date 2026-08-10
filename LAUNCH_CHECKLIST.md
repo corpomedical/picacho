@@ -347,7 +347,27 @@ Reported: "Usage & plan" couldn't be found because the sidebar calls the same de
 
 **Swept the rest of the copy for the same problem and found none.** A script compared all 470 single-line English strings for repeated text: 28 pairs share wording, but every one is the same word in a *different context* (`nav.characters` vs `characters.listTitle`, `nav.settings` vs `settings.title`). Those are correct as they are — a nav label and a page heading should stay independently translatable even when English happens to use the same word. Merging them would be churn that makes translation worse, so nothing else was touched.
 
-Still to do: Phase 3 (vertical rule packs), whenever the audience is known.
+## Brand rulebook Phase 3 — preset packs, 2026-08-10
+
+Unblocked once Wigly named the audience: social media creators, brands, marketing agencies, med spas, beauty salons and similar.
+
+That list spans **three different compliance profiles**, not one, so it shipped as three packs rather than a single "med spa" pack:
+
+| Pack | For | Shape of the rules |
+|---|---|---|
+| Aesthetics & wellness clinics | med spas, salons, cosmetic dentistry, skin/hair clinics, fitness, nutrition | Outcome and health claims — the genuinely regulated ones |
+| Creators & sponsored content | creators, influencers, talent agencies, coaches | Disclosure, likeness, other people's brands |
+| Brands & agencies | agencies, e-commerce, fashion, skincare, cosmetics | Brand safety and comparative claims |
+
+- [x] `lib/brand-rules/packs.ts` — 22 rules across the three packs. Applied as **ordinary rules** in the same table, so they can be edited, disabled, or deleted like anything hand-written; nothing about them is special-cased.
+- [x] `applyBrandRulePack` skips rules whose label the account already has, so applying a pack twice, or applying two packs that deliberately share rules (several do — "No real public figures" appears in two), tops up instead of duplicating.
+- [x] Respects the 40-rule cap and says so rather than silently truncating.
+
+**The disclaimer is prominent, not a footnote.** These rules touch advertising law, and the packs are drafting aids based on widely-shared advertising-standards principles — not legal advice, and not jurisdiction-specific. Rules for health and appearance claims differ materially between the US (FTC/FDA), UK (ASA/CAP) and EU states. A customer in a regulated trade must not infer from a tidy UI that their copy has been legally cleared, so the warning sits in an amber panel directly under the packs, and the same caveat is written at the top of `packs.ts`.
+
+This is the part of the rulebook that's actually sold. Phases 1 and 2 built a mechanism; nobody buys a mechanism, and an empty rules box asks the customer to author compliance policy themselves — precisely the work they'd be paying to avoid. A competitor can copy the feature from a screenshot; they can't copy the rules.
+
+Nothing outstanding. Optional next: verify Phase 2's classifier live (needs the OpenAI key, so only testable in production), and have the packs reviewed by a qualified adviser before leaning on them in marketing.
 
 ## After launch (polish, not blocking)
 
