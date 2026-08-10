@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "check:hooks": "node scripts/check-hook-order.mjs",
+    "verify": "tsc --noEmit && next lint && node scripts/check-hook-order.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
