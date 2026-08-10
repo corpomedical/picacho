@@ -1079,15 +1079,19 @@ export async function pollGeneration(generationId: string): Promise<
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
-  const result = await advanceGeneration(generationId, userData.user.id);
-
-  // Terminal states change what History and the workspace should show.
-  if (result.state !== "pending") {
-    revalidatePath("/app/generate");
-    revalidatePath("/app/history");
-  }
-
-  return { error: null, ...result };
+  // Deliberately NO revalidatePath here.
+  //
+  // It used to revalidate on every terminal state, and that broke multi-angle
+  // (real incident, 2026-08-10). A revalidate inside a Server Action ships a
+  // fresh RSC payload back and the router applies it immediately — so the
+  // moment the first of three angles finished, the route refetched underneath
+  // the two polls still in flight and aborted them. The client counted those
+  // aborts as failures, gave up after fifteen, and reported two perfectly
+  // healthy renders as failed while they carried on rendering at fal.
+  //
+  // Refreshing is the caller's job now: it does it once, after everything has
+  // settled, instead of once per angle mid-flight.
+  return { error: null, ...(await advanceGeneration(generationId, userData.user.id)) };
 }
 
 // Every generation of this user's that is still queued at the provider.

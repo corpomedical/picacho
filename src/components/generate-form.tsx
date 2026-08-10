@@ -167,13 +167,21 @@ async function awaitQueuedGeneration(
       consecutiveErrors = 0;
     } catch {
       consecutiveErrors += 1;
-      // ~2 minutes of failed polls at the capped interval. The job itself is
-      // unaffected and still recorded server-side, so this only gives up on
-      // WATCHING it — the result still lands in History.
-      if (consecutiveErrors >= 15) {
+      // Give up on WATCHING only after a long while, and never conclude the
+      // render itself failed — it's still queued at fal and still recorded
+      // server-side, so it lands in History regardless.
+      //
+      // The old threshold was 15, roughly two minutes, and multi-angle blew
+      // straight through it: a sibling angle finishing used to trigger a route
+      // revalidation that aborted the other in-flight polls, and those aborts
+      // counted as failures. Two healthy renders got reported as failed.
+      // The revalidation is gone (see pollGeneration), but this stays
+      // generous — a transient network blip must never be mistaken for a
+      // failed generation.
+      if (consecutiveErrors >= 60) {
         return {
           state: "failed",
-          error: "Lost contact with the server while this was rendering. Check History in a moment.",
+          error: "Lost track of this render, but it's still going — it'll appear in History when it lands.",
         };
       }
       continue;
@@ -1859,6 +1867,9 @@ function GenerateFormInner({
         }),
       );
       setLiveProgress(null);
+      // One refresh, now that every angle has settled. Doing this per angle
+      // from inside the server action is what aborted the sibling polls.
+      router.refresh();
     }
 
     const anyAngleSucceeded = angles.some((a) => a.succeeded);
