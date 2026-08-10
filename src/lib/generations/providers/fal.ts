@@ -351,14 +351,34 @@ export type QueuedJobState =
   | { state: "completed" }
   | { state: "failed"; error: string };
 
+// Where fal should POST when a job finishes, if we can work out a public URL.
+//
+// This is what makes completion independent of anyone's browser. Polling still
+// runs while someone is watching (it updates the UI faster than a webhook
+// round trip), but the webhook is the thing that guarantees a finished render
+// is actually collected — including at 3am with every tab closed.
+//
+// Returns null in local development, where fal can't reach localhost. Polling
+// covers that case, which is why this is best-effort rather than required.
+function webhookUrl(): string | null {
+  const base = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!base || base.includes("localhost") || base.includes("127.0.0.1")) return null;
+  return `${base.replace(/\/$/, "")}/api/webhooks/fal`;
+}
+
 async function submitToQueue(
   endpoint: string,
   body: Record<string, unknown>,
   label: string,
   apiKey: string,
 ): Promise<QueuedJob> {
+  const hook = webhookUrl();
+  const submitUrl = hook
+    ? `https://queue.fal.run/${endpoint}?fal_webhook=${encodeURIComponent(hook)}`
+    : `https://queue.fal.run/${endpoint}`;
+
   const submitRes = await fetchWithTimeout(
-    `https://queue.fal.run/${endpoint}`,
+    submitUrl,
     {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Key ${apiKey}` },

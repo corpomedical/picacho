@@ -93,6 +93,36 @@ const STAGE_PROGRESS: Record<JobStage, string> = {
 // indefinitely.
 const STALE_AFTER_MS = 30 * 60_000;
 
+// Who absorbs the cost when a generation doesn't produce anything.
+//
+// The asymmetry to keep in mind: fal bills for a render that actually ran,
+// whether or not anyone collected it. So refunding a user's credit for work
+// that genuinely rendered means paying twice — once to fal, and once in
+// unearned allowance. A refund is only fair where the fault is ours or the
+// provider's.
+//
+//   provider_failed  fal errored or lost the job. Failed work generally isn't
+//                    billed, so refunding costs nothing and is plainly right.
+//   our_error        a bug on our side. We caused it, we absorb it.
+//   user_cancelled   they pressed Stop. We cancel at fal immediately, so
+//                    little or nothing is billed, and refunding keeps Stop
+//                    honest rather than a penalty.
+//   abandoned        nobody came back for it. The render ran and was billed.
+//                    Since the webhook landed this is rare and genuinely means
+//                    the person walked away, so the credit stands.
+//
+// Set deliberately, per Wigly, 2026-08-10. Worth revisiting if support
+// requests pile up — an unrefunded abandoned render tends to cost more in
+// goodwill than the credit is worth.
+export type FailureFault = "provider_failed" | "our_error" | "user_cancelled" | "abandoned";
+
+const REFUNDS: Record<FailureFault, boolean> = {
+  provider_failed: true,
+  our_error: true,
+  user_cancelled: true,
+  abandoned: false,
+};
+
 function jobHandle(row: JobRow): QueuedJob {
   return {
     requestId: row.provider_request_id ?? "",
@@ -144,7 +174,7 @@ async function finish(
   userId: string,
   outcome:
     | { status: "succeeded"; resultUrl: string; attempts: AttemptLog[] }
-    | { status: "failed"; attempts: AttemptLog[]; refundCredits?: boolean },
+    | { status: "failed"; attempts: AttemptLog[]; fault?: FailureFault },
 ): Promise<void> {
   const admin = createAdminClient();
 
@@ -156,11 +186,10 @@ async function finish(
       result_url: outcome.status === "succeeded" ? outcome.resultUrl : null,
       pipeline_log: outcome.attempts,
       progress_stage: null,
-      // Only ever set for jobs we abandoned ourselves (see reapStaleJobs).
-      // A genuine provider failure keeps its credit charge, matching how
-      // failures behaved before this rewrite — the change here is narrowly
-      // about not charging for work WE dropped on the floor.
-      ...(outcome.status === "failed" && outcome.refundCredits ? { credits_used: 0 } : {}),
+      // Refund decided by fault, not by circumstance — see REFUNDS above.
+      ...(outcome.status === "failed" && outcome.fault && REFUNDS[outcome.fault]
+        ? { credits_used: 0 }
+        : {}),
     })
     .eq("id", generationId)
     .eq("user_id", userId);
@@ -174,7 +203,7 @@ async function finish(
   //
   // Reaped jobs are excluded: those are abandoned-and-refunded housekeeping,
   // not a product fault, and filing reports for them would bury the real ones.
-  if (outcome.status === "failed" && !outcome.refundCredits) {
+  if (outcome.status === "failed" && outcome.fault !== "abandoned" && outcome.fault !== "user_cancelled") {
     await autoReportFailedGeneration(generationId, userId, outcome.attempts);
   }
 }
@@ -231,9 +260,7 @@ export async function advanceGeneration(
     await finish(generationId, userId, {
       status: "failed",
       attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
-      // The person stopped this themselves before it produced anything, so
-      // charging for it would be indefensible.
-      refundCredits: true,
+      fault: "user_cancelled",
     });
     return { state: "cancelled" };
   }
@@ -272,6 +299,7 @@ export async function advanceGeneration(
     await finish(generationId, userId, {
       status: "failed",
       attempts: appendStep(row.resume.attempts ?? [], status.error, "generate"),
+      fault: "provider_failed",
     });
     return { state: "failed", message: status.error };
   }
@@ -371,6 +399,7 @@ export async function advanceGeneration(
     await finish(generationId, userId, {
       status: "failed",
       attempts: appendStep(row.resume.attempts ?? [], message, "generate"),
+      fault: "provider_failed",
     });
     return { state: "failed", message };
   }
@@ -441,10 +470,10 @@ export async function reapStaleJobs(userId: string): Promise<void> {
       status: "failed",
       attempts: appendStep(
         row.resume?.attempts ?? [],
-        "This generation was abandoned before it finished, so it was cancelled and your credits were returned.",
+        "Nobody was here to collect this when it finished, so it was stopped.",
         "generate",
       ),
-      refundCredits: true,
+      fault: "abandoned",
     });
   }
 }
