@@ -11,6 +11,7 @@ import {
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
+import { notifyUser } from "@/lib/push/send";
 
 // Fire-and-poll orchestrator.
 //
@@ -196,6 +197,23 @@ async function finish(
     .eq("user_id", userId);
 
   await admin.from("generation_jobs").delete().eq("generation_id", generationId);
+
+  // Tell the phone. This is the pay-off from the webhook work: a render now
+  // completes server-side whether or not anyone is watching, so the person
+  // can be told rather than having to keep checking. Deep-linked to the
+  // generation itself, so tapping it opens the result.
+  //
+  // Not awaited, and it swallows its own errors: the row above is already
+  // saved, and a notification failure must never be able to affect a
+  // generation someone paid for.
+  void notifyUser(userId, {
+    title: outcome.status === "succeeded" ? "Your video is ready" : "That generation didn't finish",
+    body:
+      outcome.status === "succeeded"
+        ? "Tap to watch it."
+        : "Tap to see what happened — your credits weren't charged if it was our fault.",
+    path: `/app/history/${generationId}`,
+  });
 
   // Feed the circuit breaker. A model that fails three times in a row takes
   // itself out of service, so a broken provider stops costing money the
