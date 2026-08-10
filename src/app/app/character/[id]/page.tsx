@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -29,7 +29,10 @@ export default async function EditCharacterPage({
     .eq("user_id", userData.user.id)
     .single();
 
-  if (!profile) notFound();
+  // Same reasoning as the History detail page: deleting the character you're
+  // looking at re-renders this route before the redirect lands, so a 404
+  // would be the last thing you saw. Send people back to the list instead.
+  if (!profile) redirect("/app/character");
 
   const [existingImages, { data: projects }, { data: voices }] = await Promise.all([
     Promise.all(

@@ -219,6 +219,14 @@ Added on top, to reduce how often the fallback is needed at all (Flux holds a ch
 
 Also visible in the same window: two "hey"/"hello" prompts that generated full scenes (a room, a meadow). Both predate the trivial-prompt guard going live — that path is now blocked at the entry point.
 
+### 404 after deleting from History — fixed, 2026-08-10
+
+Reported: pressing the bin on a generation showed a 404 page.
+
+Not the delete itself — `deleteGeneration` works and returns cleanly. The cause is the combination of two reasonable-looking things: the action calls `revalidatePath("/app", "layout")` (needed to refresh the sidebar's Recent list), which makes Next re-render the route the action fired from. If that route is the detail page for the row just deleted, the re-render runs `notFound()` before `router.push("/app/history")` can land — so the last thing painted is a 404.
+
+The same trap existed on the character and project detail pages, which have their own delete buttons and the same `notFound()` on a missing row. All three now `redirect()` back to their list instead. That's the better outcome regardless of the race — a stale bookmark or a mistyped id also lands somewhere useful rather than a dead end. `/admin/users/[id]` deliberately keeps `notFound()`: accounts aren't deleted, so a missing one there is a genuine error worth surfacing.
+
 Still to do: error/empty-state review of the app pages, the buy-extra-credits flow, and the dashboard traffic graph.
 
 ## After launch (polish, not blocking)

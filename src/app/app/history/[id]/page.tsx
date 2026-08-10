@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +52,14 @@ export default async function HistoryDetailPage({
     : generationQuery.eq("user_id", userData.user.id)
   ).single();
 
-  if (!generation) notFound();
+  // Back to the list rather than a 404. Reported 2026-08-10: deleting a
+  // generation while viewing it showed a 404 page. deleteGeneration calls
+  // revalidatePath("/app", "layout"), which makes Next re-render the route
+  // the action was fired from — this one — and by then the row is gone, so
+  // notFound() rendered before the button's router.push could land. A
+  // deleted item should return you to the list, and that's also the more
+  // useful outcome for a stale bookmark or a mistyped id.
+  if (!generation) redirect("/app/history");
 
   const { data: character } = generation.character_profile_id
     ? await supabase

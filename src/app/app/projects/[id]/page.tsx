@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { saveProject, assignCharacterToProject, removeCharacterFromProject } from "@/lib/projects/actions";
 import { Card } from "@/components/ui/card";
@@ -34,7 +34,10 @@ export default async function ProjectDetailPage({
     .eq("user_id", userData.user.id)
     .single();
 
-  if (!project) notFound();
+  // Same reasoning as the History detail page: deleting the project you're
+  // viewing re-renders this route before the redirect lands, so a 404 would
+  // be the last thing you saw. Send people back to the list instead.
+  if (!project) redirect("/app/projects");
 
   const { data: characters } = await supabase
     .from("character_profiles")
