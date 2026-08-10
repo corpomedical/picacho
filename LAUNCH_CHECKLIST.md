@@ -275,7 +275,8 @@ Verified by running the real matcher against sample rules: "guaranteed results a
 
 **Also confirmed while in there:** `automatic_tax: { enabled: true }` is already set on checkout, so VAT is added on top at checkout rather than coming out of the listed price. The VAT-inclusive worst case in `Picacho pricing analysis.xlsx` therefore does not apply — set that switch to 0 in the model.
 
-**Needs Wigly:** run `node setup-credit-packs.js` locally, then paste the printed price ids into `src/lib/stripe/credit-packs.ts`. Until then the packs are hidden and nothing is purchasable.
+- [x] **Live Stripe prices created and wired** (2026-08-10). Six prices, USD + EUR for each of the three packs, created by running `setup-credit-packs.js` against the live key and pasted into `credit-packs.ts`. Webhook endpoint confirmed subscribed to `checkout.session.completed`.
+- [x] **Refund handling.** Without it a top-up is free money: buy, spend, refund, repeat. `charge.refunded` now finds the purchase via the charge's payment intent → Checkout Session → `credit_purchases.stripe_session_id`, and takes the credits back. New `refunded_at` column doubles as the idempotency guard, since Stripe re-sends the event for every partial refund on the same charge. The balance is floored at zero — credits may already have been spent, and a negative balance would read as "owes us credits" wherever it's displayed; we absorb the cost of what was generated rather than leaving the account unusable. **Requires `charge.refunded` to be ticked on the webhook endpoint.**
 
 Still to do: Phase 3 (vertical rule packs) and the dashboard traffic graph.
 

@@ -201,6 +201,64 @@ export async function POST(request: Request) {
         break;
       }
 
+      // Refunding a credit purchase has to take the credits back, or the
+      // top-up is free money: buy a pack, spend the credits, refund the
+      // charge, repeat. Fine while the only buyer is Wigly; not fine the
+      // moment strangers can do it.
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        // A charge doesn't name the Checkout Session, so the purchase is
+        // found via the payment intent recorded against it.
+        const paymentIntentId =
+          typeof charge.payment_intent === "string"
+            ? charge.payment_intent
+            : (charge.payment_intent?.id ?? null);
+        if (!paymentIntentId) break;
+
+        const sessions = await stripe.checkout.sessions.list({
+          payment_intent: paymentIntentId,
+          limit: 1,
+        });
+        const sessionId = sessions.data[0]?.id;
+        if (!sessionId) break;
+
+        const { data: purchase } = await supabase
+          .from("credit_purchases")
+          .select("id, user_id, credits, refunded_at")
+          .eq("stripe_session_id", sessionId)
+          .single();
+
+        // Not a credit purchase (an ordinary subscription refund), or one
+        // already reversed — Stripe re-sends charge.refunded for each
+        // partial refund on the same charge, so this has to be idempotent.
+        if (!purchase || purchase.refunded_at) break;
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("purchased_credits")
+          .eq("id", purchase.user_id)
+          .single();
+
+        // Floored at zero: the credits may already have been spent, and a
+        // negative balance would read as "owes us credits" everywhere it's
+        // displayed. The refund is honoured either way — we eat the cost of
+        // whatever was already generated, which is the correct outcome
+        // rather than leaving the account unusable.
+        await supabase
+          .from("profiles")
+          .update({
+            purchased_credits: Math.max(0, (profile?.purchased_credits ?? 0) - purchase.credits),
+          })
+          .eq("id", purchase.user_id);
+
+        await supabase
+          .from("credit_purchases")
+          .update({ refunded_at: new Date().toISOString() })
+          .eq("id", purchase.id);
+
+        break;
+      }
+
       default:
         break;
     }
