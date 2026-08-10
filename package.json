@@ -9,22 +9,31 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/camera": "^8.2.2",
+    "@capacitor/core": "^8.5.0",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/ios": "^8.5.0",
+    "@capacitor/push-notifications": "^8.1.2",
+    "@capacitor/share": "^8.0.1",
+    "@capacitor/splash-screen": "^8.0.2",
+    "@capacitor/status-bar": "^8.0.3",
+    "@supabase/ssr": "latest",
+    "@supabase/supabase-js": "latest",
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "@supabase/supabase-js": "latest",
-    "@supabase/ssr": "latest",
     "stripe": "latest"
   },
   "devDependencies": {
-    "typescript": "latest",
+    "@eslint/eslintrc": "latest",
+    "@tailwindcss/postcss": "latest",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@tailwindcss/postcss": "latest",
-    "tailwindcss": "latest",
     "eslint": "latest",
     "eslint-config-next": "latest",
-    "@eslint/eslintrc": "latest"
+    "tailwindcss": "latest",
+    "typescript": "latest"
   }
 }

@@ -1,8 +1,9 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
 import { PageViewTracker } from "@/components/page-view-tracker";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
+import { NativeChrome } from "@/components/native-chrome";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
 
@@ -24,6 +25,23 @@ const TITLE = "Picacho — Consistent AI Character Content, On the First Try";
 // that sets its own `title` (pricing, privacy, terms, content-policy) gets
 // "<page> | Picacho" automatically instead of repeating "| Picacho" by hand
 // on each one.
+// viewport-fit=cover is required for env(safe-area-inset-*) to report real
+// values on iPhone — without it the notch and home-indicator padding in
+// globals.css silently resolves to 0 and content slides under the hardware.
+// maximumScale/userScalable stop the double-tap zoom that makes a webview
+// feel like a webview; the app's own text controls remain unaffected.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+};
+
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: TITLE, template: "%s | Picacho" },
@@ -89,6 +107,7 @@ export default async function RootLayout({
       <body className="antialiased">
         <ThemeProvider>
           <LocaleProvider initialLocale={locale}>
+            <NativeChrome />
             <PageViewTracker />
             {children}
             <CookieConsentBanner />

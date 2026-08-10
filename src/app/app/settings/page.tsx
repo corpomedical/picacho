@@ -8,6 +8,7 @@ import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
 import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { BuyCreditsPanel } from "@/components/buy-credits-panel";
+import { isNativeApp } from "@/lib/native/server";
 import { FeedbackForm } from "@/components/settings/feedback-form";
 import { Card } from "@/components/ui/card";
 import { ProfileForm } from "@/components/profile-form";
@@ -98,6 +99,8 @@ export default async function SettingsPage({
   const { saved, error, tab } = await searchParams;
   const activeTab: TabId = VALID_TABS.includes(tab as TabId) ? (tab as TabId) : "account";
   const brandRules = await getBrandRules();
+  // Drives the reader-app gating below — see lib/native/platform.ts.
+  const nativeApp = await isNativeApp();
 
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -266,7 +269,30 @@ export default async function SettingsPage({
                 {limit > 0 && ` ${formatMsg(s.ofLimitThisMonth, { limit })}`}
               </p>
 
-              {hasLiveSubscription ? (
+              {/* Everything below is omitted inside the iOS/Android app.
+
+                  Apple's reader rules let an app sign existing subscribers in
+                  and let them use what they've paid for, but it must sell
+                  nothing and must not point anywhere that does — no upgrade
+                  button, no checkout, no "manage your plan on our website",
+                  not even a link to a page that eventually reaches pricing.
+                  Breaking that means either a rejection or handing 15-30% of
+                  every subscription to the store. Stripe's billing portal
+                  counts: it can change plans and take payment.
+
+                  Rendered on the server rather than hidden with CSS, so the
+                  purchase UI never exists in the app's DOM at all. */}
+              {nativeApp ? (
+                <div className="mt-4 rounded-[14px] bg-neutral-100 p-4">
+                  <p className="text-sm font-semibold text-neutral-900">
+                    {profile?.plan_status === "past_due"
+                      ? s.paymentFailed
+                      : plan === "none"
+                        ? PLAN_LABELS.none
+                        : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
+                  </p>
+                </div>
+              ) : hasLiveSubscription ? (
                 <div className="mt-4 flex items-center justify-between gap-4 rounded-[14px] bg-neutral-900 p-4 text-white">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold">
@@ -316,7 +342,9 @@ export default async function SettingsPage({
             </Card>
           )}
 
-          {activeTab === "usage" && (
+          {/* Buying credits is a purchase, so it can't exist in the app at
+              all — same reader-app reasoning as the plan card above. */}
+          {activeTab === "usage" && !nativeApp && (
             <BuyCreditsPanel purchasedCredits={purchasedCredits} currencySymbol={currencySymbol} />
           )}
 
