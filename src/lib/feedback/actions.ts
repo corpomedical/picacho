@@ -1,6 +1,37 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+
+// Stamps profiles.rating_prompted_at and drops the cached layout that decides
+// whether to show the star prompt.
+//
+// The revalidate is the important half. RatePrompt is rendered from
+// src/app/app/layout.tsx, and Next does NOT re-render a layout when you
+// navigate between its children — so without this, the card kept rendering
+// from an RSC payload computed before the rating was given. Real incident,
+// 2026-08-10: rated once at 16:59, asked twice more afterwards, and only
+// stopped after being dismissed outright at 19:20. Being re-asked after
+// answering is worse than never being asked.
+//
+// The write is verified rather than fire-and-forget: if it silently fails,
+// the prompt returns forever, and a silent failure here is indistinguishable
+// from the bug above.
+async function closeRatingPrompt(userId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("profiles")
+    .update({ rating_prompted_at: new Date().toISOString() })
+    .eq("id", userId);
+
+  if (error) {
+    console.error("closeRatingPrompt failed:", error.message);
+    return false;
+  }
+
+  revalidatePath("/app", "layout");
+  return true;
+}
 
 // General "give us your feedback" — reachable from the small link next to
 // the AI disclaimer under the composer. Deliberately separate from
@@ -40,10 +71,7 @@ export async function submitFeedback(
 
   // Answering the star prompt also closes it, so it isn't shown again.
   if (hasRating) {
-    await supabase
-      .from("profiles")
-      .update({ rating_prompted_at: new Date().toISOString() })
-      .eq("id", userData.user.id);
+    await closeRatingPrompt(userData.user.id);
   }
 
   if (error) {
@@ -62,10 +90,7 @@ export async function dismissRatingPrompt(): Promise<{ error: string | null }> {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
-  await supabase
-    .from("profiles")
-    .update({ rating_prompted_at: new Date().toISOString() })
-    .eq("id", userData.user.id);
+  await closeRatingPrompt(userData.user.id);
 
   return { error: null };
 }
