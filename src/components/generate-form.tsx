@@ -1290,19 +1290,6 @@ function GenerateFormInner({
   const [selectedAngles, setSelectedAngles] = useState<AngleId[]>(DEFAULT_ANGLE_IDS);
   const [liveMultiAngle, setLiveMultiAngle] = useState<{ prompt: string; attachments: ChatAttachment[]; angleIds: AngleId[] } | null>(null);
 
-  // What the current selection actually costs, and whether it's affordable.
-  //
-  // Worked out here rather than left for the server to reject after the fact:
-  // finding out you can't afford something AFTER pressing generate is the
-  // worst moment to learn it, and it's the moment people give up rather than
-  // top up.
-  const selectedVideoModel = videoModels.find((m) => m.id === videoModelId);
-  const selectedCreditCost =
-    contentType === "video" && selectedVideoModel
-      ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
-      : 1;
-  const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
-  const cannotAfford = selectedCreditCost > creditsAvailable;
 
   // New composer toolbar state (the + menu / creation-mode chip / slide-out
   // advanced options) — see the render return below.
@@ -1365,6 +1352,27 @@ function GenerateFormInner({
   const [videoDurationSeconds, setVideoDurationSeconds] = useState(
     () => videoModels.find((m) => m.id === defaultVideoModelId)?.defaultDurationSeconds ?? 5,
   );
+
+  // Placed here, AFTER videoModelId and videoDurationSeconds exist.
+  //
+  // It was originally hoisted to the top of the component, which threw on
+  // every render — reading a useState binding before its declaration is a
+  // temporal dead zone error, and it took out /app entirely. TypeScript
+  // doesn't flag it because these are destructured from useState rather
+  // than declared directly.
+  // What the current selection actually costs, and whether it's affordable.
+  //
+  // Worked out here rather than left for the server to reject after the fact:
+  // finding out you can't afford something AFTER pressing generate is the
+  // worst moment to learn it, and it's the moment people give up rather than
+  // top up.
+  const selectedVideoModel = videoModels.find((m) => m.id === videoModelId);
+  const selectedCreditCost =
+    contentType === "video" && selectedVideoModel
+      ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
+      : 1;
+  const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
+  const cannotAfford = selectedCreditCost > creditsAvailable;
   useEffect(() => {
     const model = videoModels.find((m) => m.id === videoModelId);
     if (!model) return;
