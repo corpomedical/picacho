@@ -120,6 +120,10 @@ Rebuilt as a real hands-free session instead of a preference toggle:
 - [x] The plain mic button (`VoiceRecorderButton`, next to the voice-session icon) is unchanged — still record → Whisper → append to the text box for review before sending. That's a real, distinct capability (dictate without full hands-free mode) and stays as-is.
 - [x] i18n: updated `voiceOnTitle`/`voiceOffTitle` copy for the new meaning, added `voiceListeningLabel`/`voiceListeningHint`/`voiceSwitchedCharacter`/`voiceNewChatStarted`/`voiceStopSession` (generate namespace) and `notSupported`/`lostMic` (voice namespace) across en/es/pt/it.
 
+**Two bugs found immediately after the first push** (reported as "it doesn't work" — mic permission prompt appeared, but no card or waveform):
+- [x] **Hero mode rendered nothing.** `VoiceSessionCard` was placed inside the message list, and the entire message list sits behind `{!isHero && ...}`. On the dashboard home (`/app`, hero mode) the session started and took the microphone with zero UI to show for it. Fixed by extracting the card to a `voiceSessionCard` variable rendered in both layouts — inside the message list when docked, directly above the composer in hero mode.
+- [x] **Fatal errors restarted forever.** `onEnd` restarted the recognizer unconditionally so sessions survive the browser's own silence timeout — but browsers fire `onEnd` right after a fatal `onError` too, so a denied mic would re-trigger the same error in a tight loop. Added `voiceWantsListeningRef` to tell an intentional stop / fatal error apart from a timeout. Same pass also routed `onFinal` through a `handleVoiceFinalRef` so a long-running session doesn't keep calling the first render's closure (which would submit with a stale character after switching by voice).
+
 `tsc` clean; `eslint` shows only the same pre-existing warnings from earlier sweeps, none in the new code.
 
 ## After launch (polish, not blocking)

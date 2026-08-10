@@ -1028,6 +1028,18 @@ function GenerateFormInner({
   const [voiceStatusMessage, setVoiceStatusMessage] = useState<string | null>(null);
   const voiceSessionRef = useRef<{ stop: () => void } | null>(null);
   const voiceStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Whether we still WANT to be listening, independent of whether the
+  // browser's recognizer happens to be running right now. Browsers end a
+  // recognition pass on their own after a few seconds of silence even with
+  // continuous=true, so onEnd restarts it — but onEnd also fires right
+  // after a fatal onError (denied mic, unsupported), and restarting there
+  // just re-triggers the same error forever. This flag is what tells those
+  // two cases apart.
+  const voiceWantsListeningRef = useRef(false);
+  // Always points at the current render's handleVoiceFinal — see the
+  // onFinal comment in beginListening for why the recognizer can't just
+  // close over it directly.
+  const handleVoiceFinalRef = useRef<(text: string) => void>(() => {});
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
 
   const [items, setItems] = useState<ChatItem[]>([]);
@@ -1310,14 +1322,25 @@ function GenerateFormInner({
   function beginListening() {
     const session = startListening({
       onInterim: (text) => setVoiceInterimCaption(text),
-      onFinal: (text) => handleVoiceFinal(text),
+      // Always goes through the ref, never the closed-over function: the
+      // recognizer instance keeps whichever callbacks it was built with,
+      // so a session that's been running across a few restarts would
+      // otherwise still be calling the very first render's handler — and
+      // submitting with, say, the character that was selected back then
+      // rather than the one just switched to by voice.
+      onFinal: (text) => handleVoiceFinalRef.current(text),
       onError: (kind) => {
+        voiceWantsListeningRef.current = false;
         voiceSessionRef.current = null;
         setVoiceSessionActive(false);
         setVoiceInterimCaption("");
         setError(kind === "not-supported" ? v.notSupported : kind === "not-allowed" ? v.micBlocked : v.lostMic);
       },
-      onEnd: beginListening,
+      onEnd: () => {
+        // Only a browser-side timeout should restart us — see
+        // voiceWantsListeningRef.
+        if (voiceWantsListeningRef.current) beginListening();
+      },
     });
     voiceSessionRef.current = session;
   }
@@ -1328,10 +1351,12 @@ function GenerateFormInner({
     setVoiceInterimCaption("");
     setVoiceStatusMessage(null);
     setVoiceSessionActive(true);
+    voiceWantsListeningRef.current = true;
     beginListening();
   }
 
   function stopVoiceSession() {
+    voiceWantsListeningRef.current = false;
     voiceSessionRef.current?.stop();
     voiceSessionRef.current = null;
     if (voiceStatusTimeoutRef.current) clearTimeout(voiceStatusTimeoutRef.current);
@@ -1387,6 +1412,12 @@ function GenerateFormInner({
     stopVoiceSession();
     submitPrompt(text, { speak: true });
   }
+
+  // No dep array on purpose — this has to re-point at the newest closure on
+  // every single render, not just when some listed value changes.
+  useEffect(() => {
+    handleVoiceFinalRef.current = handleVoiceFinal;
+  });
 
   async function speak(text: string) {
     try {
@@ -2327,6 +2358,21 @@ function GenerateFormInner({
     void setHasCompletedOnboarding();
   }
 
+  // Rendered in BOTH layouts. The docked layout drops it into the message
+  // list alongside the generating bubble; hero mode has no message list at
+  // all (the whole list is behind !isHero), so it goes directly above the
+  // composer there instead — otherwise starting a voice session on the
+  // dashboard home turned the mic on with nothing at all on screen to show
+  // for it, which is exactly what "it doesn't work" looked like.
+  const voiceSessionCard = voiceSessionActive ? (
+    <VoiceSessionCard
+      interimText={voiceInterimCaption}
+      statusMessage={voiceStatusMessage}
+      onStop={stopVoiceSession}
+      g={g}
+    />
+  ) : null;
+
   return (
     <>
       {tourActive && (
@@ -2533,17 +2579,14 @@ function GenerateFormInner({
             )}
           </>
         )}
-        {voiceSessionActive && (
-          <VoiceSessionCard
-            interimText={voiceInterimCaption}
-            statusMessage={voiceStatusMessage}
-            onStop={stopVoiceSession}
-            g={g}
-          />
-        )}
+        {voiceSessionCard}
         <div ref={bottomRef} />
       </div>
       </>
+      )}
+
+      {isHero && voiceSessionCard && (
+        <div className="mx-auto w-full max-w-2xl">{voiceSessionCard}</div>
       )}
 
       <div className={cn("relative z-10", isHero ? "mx-auto w-full max-w-2xl" : "sticky bottom-4")}>
