@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { stripe } from "@/lib/stripe/client";
 import { planIdForPriceId } from "@/lib/stripe/plans";
+import { creditsForPriceId } from "@/lib/stripe/credit-packs";
 import { createAdminClient } from "@/lib/supabase/server";
 
 // Stripe → us. No user session here (Stripe calls this directly), so the
@@ -76,6 +77,56 @@ export async function POST(request: Request) {
           typeof session.customer === "string" ? session.customer : (session.customer?.id ?? null);
         if (userId && customerId) {
           await supabase.from("profiles").update({ stripe_customer_id: customerId }).eq("id", userId);
+        }
+
+        // A one-time credit top-up rather than a subscription (see
+        // createCreditCheckoutSession). Subscriptions are handled by the
+        // customer.subscription.* cases below and must not fall through to
+        // here, hence the explicit mode check.
+        if (session.mode === "payment" && userId) {
+          // stripe_session_id is UNIQUE on credit_purchases, so a webhook
+          // Stripe retries — which it does, routinely, on any non-2xx or
+          // timeout — can't grant the same credits twice. Insert first and
+          // let the constraint decide; checking-then-inserting would leave a
+          // race between two concurrent deliveries.
+          const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
+          const priceId = lineItems.data[0]?.price?.id ?? null;
+          const credits = priceId ? creditsForPriceId(priceId) : null;
+
+          if (!credits) {
+            console.error("Stripe webhook: paid session has no matching credit pack", session.id, priceId);
+            break;
+          }
+
+          const { error: purchaseError } = await supabase.from("credit_purchases").insert({
+            user_id: userId,
+            credits,
+            amount_cents: session.amount_total ?? 0,
+            currency: session.currency ?? "eur",
+            stripe_session_id: session.id,
+          });
+
+          if (purchaseError) {
+            // Unique violation means this delivery is a duplicate and the
+            // credits were already granted — not an error worth retrying.
+            if (purchaseError.code === "23505") {
+              console.log("Stripe webhook: duplicate credit purchase ignored", session.id);
+              break;
+            }
+            console.error("Stripe webhook: couldn't record credit purchase", purchaseError.message);
+            break;
+          }
+
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("purchased_credits")
+            .eq("id", userId)
+            .single();
+
+          await supabase
+            .from("profiles")
+            .update({ purchased_credits: (profile?.purchased_credits ?? 0) + credits })
+            .eq("id", userId);
         }
         break;
       }

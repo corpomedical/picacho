@@ -614,6 +614,16 @@ const it = {
     history: "Cronologia",
     close: "Chiudi",
   },
+  credits: {
+    title: "Acquista crediti extra",
+    subtitle: "Ricariche una tantum che non scadono. Usate automaticamente quando finisce la quota mensile.",
+    currentBalance: "Hai {n} crediti extra disponibili.",
+    packCredits: "{n} crediti",
+    perCredit: "per credito",
+    buy: "Acquista",
+    starting: "Avvio…",
+    note: "I crediti extra vengono usati solo dopo aver esaurito la quota mensile del tuo piano. Si accumulano di mese in mese.",
+  },
   brandRules: {
     tab: "Regole di brand",
     title: "Regole di brand e conformità",

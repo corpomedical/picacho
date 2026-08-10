@@ -50,6 +50,33 @@ async function loadBrandRules(
   }));
 }
 
+// Draws down the one-time credit balance by the amount the monthly allowance
+// couldn't cover (see checkGenerationAllowance). Called right after the
+// placeholder row is written, because that row is what getMonthlyUsage
+// counts — the credit is spent at insert time, whether or not the
+// generation goes on to succeed.
+//
+// Floored at zero rather than trusted blindly: the balance is re-read here
+// instead of reusing the value the allowance check saw, so two requests
+// racing each other can't drive it negative.
+async function consumePurchasedCredits(
+  supabase: SupabaseClient,
+  userId: string,
+  amount: number,
+): Promise<void> {
+  if (!amount || amount <= 0) return;
+  const { data } = await supabase
+    .from("profiles")
+    .select("purchased_credits")
+    .eq("id", userId)
+    .single();
+  const current = (data?.purchased_credits ?? 0) as number;
+  await supabase
+    .from("profiles")
+    .update({ purchased_credits: Math.max(0, current - amount) })
+    .eq("id", userId);
+}
+
 type RunResult =
   | {
       error: string;
@@ -177,11 +204,11 @@ async function checkGenerationAllowance(
   supabase: SupabaseClient,
   userId: string,
   requestedCredits: number,
-): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean }> {
+): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean; consumePurchased?: number }> {
   const [{ data: profile }, { data: recent }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("plan, role, bonus_credits, current_period_start")
+      .select("plan, role, bonus_credits, purchased_credits, current_period_start")
       .eq("id", userId)
       .single(),
     supabase
@@ -210,6 +237,22 @@ async function checkGenerationAllowance(
   // plan's normal allowance rather than replacing it.
   const limit = (PLAN_LIMITS[plan] ?? 0) + (profile?.bonus_credits ?? 0);
   const used = await getMonthlyUsage(userId, profile?.current_period_start as string | null | undefined);
+  const purchased = (profile?.purchased_credits ?? 0) as number;
+
+  // How much of THIS request the monthly allowance can't cover. Written as
+  // the difference between how far over the line we'd end up and how far
+  // over we already are — not simply (used + requested - limit), which
+  // would re-charge the overspend from every previous generation this
+  // period on every subsequent one.
+  const alreadyOver = Math.max(0, used - limit);
+  const wouldBeOver = Math.max(0, used + requestedCredits - limit);
+  const overflow = wouldBeOver - alreadyOver;
+
+  // Purchased credits (see credit_purchases) cover anything the monthly
+  // allowance can't. They deplete, unlike bonus_credits.
+  if (overflow > 0 && purchased >= overflow) {
+    return { error: null, plan, isAdmin, consumePurchased: overflow };
+  }
 
   if (used + requestedCredits > limit) {
     // Only the true zero-allowance case (no plan, and no bonus credits
@@ -547,6 +590,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     error: allowanceError,
     plan: userPlan,
     isAdmin,
+    consumePurchased,
   } = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
   if (allowanceError) return { error: allowanceError };
 
@@ -649,6 +693,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (placeholderError || !placeholder) {
     return { error: "Couldn't start this generation — try again." };
   }
+
+  await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
 
   let attempts: AttemptLog[] = [];
   let succeeded = false;
@@ -1069,7 +1115,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     };
   }
 
-  const { error: allowanceError } = await checkGenerationAllowance(
+  const { error: allowanceError, consumePurchased } = await checkGenerationAllowance(
     supabase,
     userData.user.id,
     angleIds.length * creditWeight,
@@ -1142,6 +1188,8 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   if (placeholderError || !placeholders) {
     return { error: "Couldn't start these generations — try again." };
   }
+
+  await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
 
   const placeholderByAngle = new Map(placeholders.map((p) => [p.angle as string, p.id as string]));
 

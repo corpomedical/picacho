@@ -614,6 +614,16 @@ const es = {
     history: "Historial",
     close: "Cerrar",
   },
+  credits: {
+    title: "Comprar créditos extra",
+    subtitle: "Recargas únicas que no caducan. Se usan automáticamente cuando se agota tu asignación mensual.",
+    currentBalance: "Tienes {n} créditos extra disponibles.",
+    packCredits: "{n} créditos",
+    perCredit: "por crédito",
+    buy: "Comprar",
+    starting: "Iniciando…",
+    note: "Los créditos extra se usan solo después de agotar la asignación mensual de tu plan. Se acumulan de mes a mes.",
+  },
   brandRules: {
     tab: "Reglas de marca",
     title: "Reglas de marca y cumplimiento",

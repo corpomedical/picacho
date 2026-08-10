@@ -4,6 +4,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stripe } from "@/lib/stripe/client";
 import { PLAN_PRICE_IDS, PLAN_PRICE_IDS_EUR } from "@/lib/stripe/plans";
+import {
+  getCreditPack,
+  CREDIT_PACK_PRICE_IDS,
+  CREDIT_PACK_PRICE_IDS_EUR,
+} from "@/lib/stripe/credit-packs";
 import type { PlanId } from "@/lib/plans";
 import { getOrigin } from "@/lib/origin";
 import { isEUVisitor } from "@/lib/geo";
@@ -65,6 +70,69 @@ export async function createCheckoutSession(formData: FormData) {
     checkoutUrl = session.url;
   } catch (err) {
     console.error("Stripe checkout session creation failed:", err);
+  }
+
+  if (!checkoutUrl) {
+    redirect(`/app/settings?tab=usage&error=${encodeURIComponent("Couldn't start checkout — try again.")}`);
+  }
+
+  redirect(checkoutUrl);
+}
+
+// One-time credit top-up. mode: "payment", not "subscription" — the credits
+// are granted once by the webhook and then deplete as they're used (see
+// profiles.purchased_credits). Kept as a separate action rather than a flag
+// on the one above, because almost every field differs and conflating them
+// risks accidentally starting a recurring charge for a one-off purchase.
+export async function createCreditCheckoutSession(formData: FormData) {
+  const packId = formData.get("pack") as string | null;
+  const pack = packId ? getCreditPack(packId) : undefined;
+
+  if (!pack) {
+    redirect(`/app/settings?tab=usage&error=${encodeURIComponent("That credit pack isn't available.")}`);
+  }
+
+  const wantsEUR = await isEUVisitor();
+  const priceId =
+    (wantsEUR ? CREDIT_PACK_PRICE_IDS_EUR[pack.id] : null) ?? CREDIT_PACK_PRICE_IDS[pack.id];
+  if (!priceId) {
+    redirect(
+      `/app/settings?tab=usage&error=${encodeURIComponent("Credit packs aren't set up for checkout yet.")}`,
+    );
+  }
+
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) redirect("/login");
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("stripe_customer_id")
+    .eq("id", userData.user.id)
+    .single();
+
+  const origin = await getOrigin();
+  let checkoutUrl: string | null = null;
+
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      customer: profile?.stripe_customer_id ?? undefined,
+      customer_email: profile?.stripe_customer_id ? undefined : (userData.user.email ?? undefined),
+      client_reference_id: userData.user.id,
+      line_items: [{ price: priceId, quantity: 1 }],
+      automatic_tax: { enabled: true },
+      success_url: `${origin}/app/settings?tab=usage&credits=1`,
+      cancel_url: `${origin}/app/settings?tab=usage`,
+      // The webhook credits the account off this, so it has to be present.
+      // client_reference_id is also set above as a belt-and-braces second
+      // copy — a payment that can't be attributed to an account is money
+      // taken for nothing, which is the one outcome worth being paranoid about.
+      metadata: { supabase_user_id: userData.user.id, credit_pack: pack.id },
+    });
+    checkoutUrl = session.url;
+  } catch (err) {
+    console.error("Stripe credit checkout session creation failed:", err);
   }
 
   if (!checkoutUrl) {

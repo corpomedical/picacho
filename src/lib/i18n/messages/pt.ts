@@ -614,6 +614,16 @@ const pt = {
     history: "Histórico",
     close: "Fechar",
   },
+  credits: {
+    title: "Comprar créditos extras",
+    subtitle: "Recargas únicas que não expiram. Usadas automaticamente quando sua franquia mensal acabar.",
+    currentBalance: "Você tem {n} créditos extras disponíveis.",
+    packCredits: "{n} créditos",
+    perCredit: "por crédito",
+    buy: "Comprar",
+    starting: "Iniciando…",
+    note: "Os créditos extras são usados apenas depois que a franquia mensal do seu plano acabar. Eles acumulam de mês para mês.",
+  },
   brandRules: {
     tab: "Regras de marca",
     title: "Regras de marca e conformidade",

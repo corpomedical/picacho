@@ -7,6 +7,7 @@ import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
 import { BrandRulesPanel } from "@/components/brand-rules-panel";
+import { BuyCreditsPanel } from "@/components/buy-credits-panel";
 import { Card } from "@/components/ui/card";
 import { ProfileForm } from "@/components/profile-form";
 import { UsernameForm } from "@/components/settings/username-form";
@@ -105,7 +106,7 @@ export default async function SettingsPage({
     supabase
       .from("profiles")
       .select(
-        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, bonus_credits",
+        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, bonus_credits, purchased_credits",
       )
       .eq("id", data.user.id)
       .single(),
@@ -124,6 +125,7 @@ export default async function SettingsPage({
   // Same-number swap (€19 not a $->€ conversion) — matches the price this
   // person would actually be charged at checkout, see stripe/actions.ts.
   const currencySymbol = (await isEUVisitor()) ? "€" : "$";
+  const purchasedCredits = (profile?.purchased_credits ?? 0) as number;
   const supportEmail = supportEmailSetting?.value ?? "support@picacho.app";
   // A "live" Stripe subscription (active or behind on payment) means all
   // plan changes should go through the Customer Portal, which handles
@@ -311,6 +313,10 @@ export default async function SettingsPage({
                 )
               )}
             </Card>
+          )}
+
+          {activeTab === "usage" && (
+            <BuyCreditsPanel purchasedCredits={purchasedCredits} currencySymbol={currencySymbol} />
           )}
 
           {activeTab === "brand" && <BrandRulesPanel rules={brandRules} />}

@@ -630,6 +630,16 @@ const en = {
     history: "History",
     close: "Close",
   },
+  credits: {
+    title: "Buy extra credits",
+    subtitle: "One-time top-ups that never expire. Used automatically once your monthly allowance runs out.",
+    currentBalance: "You have {n} extra credits available.",
+    packCredits: "{n} credits",
+    perCredit: "per credit",
+    buy: "Buy",
+    starting: "Starting…",
+    note: "Extra credits are used only after your monthly plan allowance is spent. They carry over month to month.",
+  },
   brandRules: {
     tab: "Brand rules",
     title: "Brand & compliance rules",

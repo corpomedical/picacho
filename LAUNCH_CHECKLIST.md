@@ -260,7 +260,24 @@ Verified by running the real matcher against sample rules: "guaranteed results a
 
 `tsc` clean, `eslint` 0 errors. The classifier itself couldn't be exercised from the build sandbox — `OPENAI_API_KEY` lives in Vercel, not `.env.local` — so its live behaviour is unverified until it runs in production. Worth one deliberate test after deploy: add a rule forbidding "guaranteed results", then prompt for exactly that in different words.
 
-Still to do: Phase 3 (vertical rule packs), the buy-extra-credits flow, and the dashboard traffic graph.
+## Buy extra credits — 2026-08-10
+
+- [x] **Migration `add_purchased_credits`.** `profiles.purchased_credits` plus a `credit_purchases` audit table. Deliberately **not** reusing `bonus_credits`: that column is added to the allowance on *every* billing period and never depletes, so a one-time purchase parked there would have handed out the same credits again every month, forever. Caught before writing any code against it.
+- [x] **`credit_purchases` has no insert policy on purpose.** The webhook writes it with the service-role key, which bypasses RLS. A client must never be able to grant itself credits, so there is no path for one to try.
+- [x] **Allowance.** Purchased credits cover only what the monthly allowance can't. The overflow is `max(0, used + requested - limit) - max(0, used - limit)`, not the obvious `used + requested - limit` — the naive form re-charges every previous overspend in the period on each subsequent generation. Verified: over 5 credits of overspend the correct form charges 5 and the naive one charges 15.
+- [x] **Consumed at placeholder-insert time**, because that row is what `getMonthlyUsage` counts — the credit is spent then, whether or not the generation succeeds. The balance is re-read inside `consumePurchasedCredits` rather than trusting the value the allowance check saw, and floored at zero, so concurrent requests can't drive it negative.
+- [x] **Webhook grants credits** on `checkout.session.completed` with `mode: "payment"` (explicitly checked, so subscriptions can't fall through). Idempotent via a UNIQUE `stripe_session_id` — Stripe retries deliveries routinely, and insert-then-check-constraint avoids the race that check-then-insert would leave open.
+- [x] **`setup-credit-packs.js`** for creating the Stripe products/prices locally (the sandbox can't reach api.stripe.com). Re-runnable: it searches by `picacho_credit_pack` metadata and reuses what exists rather than duplicating.
+- [x] Settings → Usage shows the packs and the current balance; packs with no Stripe Price yet are hidden rather than offering a button that can't work. The usage banner's existing "Get more usage" link already lands on this tab.
+- [x] i18n across en/es/pt/it.
+
+**Pricing note:** packs are €45/20, €119/60, €279/150 — all at or above the best per-credit rate any plan offers. That's intentional: if topping up were cheaper per credit than subscribing, the rational move would be to sit on the smallest plan forever. Numbers are a starting point, not researched positioning.
+
+**Also confirmed while in there:** `automatic_tax: { enabled: true }` is already set on checkout, so VAT is added on top at checkout rather than coming out of the listed price. The VAT-inclusive worst case in `Picacho pricing analysis.xlsx` therefore does not apply — set that switch to 0 in the model.
+
+**Needs Wigly:** run `node setup-credit-packs.js` locally, then paste the printed price ids into `src/lib/stripe/credit-packs.ts`. Until then the packs are hidden and nothing is purchasable.
+
+Still to do: Phase 3 (vertical rule packs) and the dashboard traffic graph.
 
 ## After launch (polish, not blocking)
 
