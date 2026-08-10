@@ -19,6 +19,7 @@ import {
 } from "@/lib/generations/actions";
 import { synthesizeVoice } from "@/lib/voice/actions";
 import { parseVoiceCommand } from "@/lib/voice/commands";
+import { recommendCreditPack } from "@/lib/stripe/credit-packs";
 import {
   pickPhrasing,
   isTrivialUtterance,
@@ -644,6 +645,57 @@ function ComposerToast({ message, onDone }: { message: string; onDone: () => voi
   );
 }
 
+
+// Shown when the selected model and duration cost more credits than the
+// account has left.
+//
+// Sits in the same slot as UsageBanner, attached to the top of the composer,
+// so it reads as part of the input rather than a floating alert. Persistent,
+// not a toast: this isn't a notification, it's a condition that stays true
+// until they change the selection or top up.
+//
+// The point is to say the number out loud. "Not enough credits" leaves
+// someone to work out how short they are, which pack covers it, and whether
+// it's worth it. This does that arithmetic for them and offers the cheapest
+// pack that actually unblocks the generation — not the biggest one we could
+// sell.
+function InsufficientCreditsBanner({
+  needed,
+  available,
+  modelName,
+  seconds,
+}: {
+  needed: number;
+  available: number;
+  modelName: string;
+  seconds: number;
+}) {
+  const shortfall = Math.max(0, needed - available);
+  const pack = recommendCreditPack(shortfall);
+
+  return (
+    <div
+      role="status"
+      className="rounded-t-[22px] border border-b-0 border-amber-200 bg-amber-50 px-4.5 py-3 dark:border-amber-900/50 dark:bg-amber-950/30"
+    >
+      <p className="text-sm text-amber-900 dark:text-amber-100">
+        {modelName} at {seconds}s needs <strong>{needed} credits</strong> — you have {available}.
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <Link
+          href="/app/settings?tab=usage"
+          className="rounded-full bg-neutral-900 px-3.5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:bg-white dark:text-neutral-900"
+        >
+          Add {pack.credits} credits
+        </Link>
+        <span className="text-xs text-amber-800/80 dark:text-amber-200/70">
+          Covers this and {Math.floor((available + pack.credits) / Math.max(1, needed)) - 1} more
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // Usage-status strip shown once an account is close to its monthly limit.
 // Matches Claude's own "Now using credits" banner: a plain, light, flat
 // card attached with zero gap directly on top of the composer — not a
@@ -879,6 +931,7 @@ export function GenerateForm(props: {
   // specifics ("12 of 15 used") instead of just a plain warning.
   creditsUsed: number;
   creditsLimit: number;
+  purchasedCredits: number;
   // ISO string, or null for a "none"-plan/bonus-only account, or an
   // existing subscriber whose profile hasn't been backfilled with real
   // Stripe billing dates yet (see LAUNCH_CHECKLIST.md) — the banner falls
@@ -1054,6 +1107,7 @@ function GenerateFormInner({
   voiceModeEnabled,
   creditsUsed,
   creditsLimit,
+  purchasedCredits,
   currentPeriodEnd,
   heroMode = false,
   greeting,
@@ -1068,6 +1122,7 @@ function GenerateFormInner({
   voiceModeEnabled: boolean;
   creditsUsed: number;
   creditsLimit: number;
+  purchasedCredits: number;
   currentPeriodEnd: string | null;
   heroMode?: boolean;
   greeting?: string;
@@ -1225,6 +1280,20 @@ function GenerateFormInner({
   const [pendingMultiAngle, setPendingMultiAngle] = useState<{ prompt: string; attachments: ChatAttachment[] } | null>(null);
   const [selectedAngles, setSelectedAngles] = useState<AngleId[]>(DEFAULT_ANGLE_IDS);
   const [liveMultiAngle, setLiveMultiAngle] = useState<{ prompt: string; attachments: ChatAttachment[]; angleIds: AngleId[] } | null>(null);
+
+  // What the current selection actually costs, and whether it's affordable.
+  //
+  // Worked out here rather than left for the server to reject after the fact:
+  // finding out you can't afford something AFTER pressing generate is the
+  // worst moment to learn it, and it's the moment people give up rather than
+  // top up.
+  const selectedVideoModel = videoModels.find((m) => m.id === videoModelId);
+  const selectedCreditCost =
+    contentType === "video" && selectedVideoModel
+      ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
+      : 1;
+  const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
+  const cannotAfford = selectedCreditCost > creditsAvailable;
 
   // New composer toolbar state (the + menu / creation-mode chip / slide-out
   // advanced options) — see the render return below.
@@ -3158,9 +3227,21 @@ function GenerateFormInner({
             rounded-[22px] outer frame (see UsageBanner's own comment) —
             not a floating card of its own, which is what made two earlier
             passes at this look wrong. */}
-        {approachingLimit && !isHero && (
+        {/* The affordability warning takes precedence over the usage strip:
+            "you can't run this" is more urgent than "you're getting low", and
+            two stacked banners on top of the composer is one too many.
+            Deliberately NOT gated on approachingLimit — someone with plenty of
+            allowance can still be short for a 51-credit 30s clip. */}
+        {!isHero && cannotAfford && selectedVideoModel ? (
+          <InsufficientCreditsBanner
+            needed={selectedCreditCost}
+            available={creditsAvailable}
+            modelName={selectedVideoModel.name}
+            seconds={videoDurationSeconds}
+          />
+        ) : approachingLimit && !isHero ? (
           <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />
-        )}
+        ) : null}
 
       <form
         onSubmit={handleSubmit}

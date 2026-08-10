@@ -40,6 +40,10 @@ export type GenerateWorkspaceData = {
   // warning with no specifics.
   creditsUsed: number;
   creditsLimit: number;
+  // Top-up credits bought outright. Separate from the monthly allowance
+  // because they don't reset — and because the composer needs the real total
+  // to work out whether the selected model is actually affordable.
+  purchasedCredits: number;
   // ISO string from the caller's actual Stripe billing cycle
   // (profiles.current_period_end), or null for a "none"-plan/bonus-only
   // profile, or an existing subscriber not yet backfilled with real Stripe
@@ -112,7 +116,7 @@ export async function getGenerateWorkspaceData(
   const { data: profile } = userId
     ? await supabase
         .from("profiles")
-        .select("plan, role, bonus_credits, current_period_start, current_period_end")
+        .select("plan, role, bonus_credits, purchased_credits, current_period_start, current_period_end")
         .eq("id", userId)
         .single()
     : { data: null };
@@ -155,6 +159,7 @@ export async function getGenerateWorkspaceData(
     voiceModeEnabled,
     creditsUsed: usedThisMonth,
     creditsLimit: planLimit,
+    purchasedCredits: (profile?.purchased_credits ?? 0) as number,
     currentPeriodEnd: (profile?.current_period_end as string | null | undefined) ?? null,
   };
 }

@@ -56,6 +56,7 @@ export default async function GeneratePage() {
     voiceModeEnabled,
     creditsUsed,
     creditsLimit,
+    purchasedCredits,
     currentPeriodEnd,
   } = await getGenerateWorkspaceData(supabase, userData.user?.id);
 
@@ -112,6 +113,7 @@ export default async function GeneratePage() {
         voiceModeEnabled={voiceModeEnabled}
         creditsUsed={creditsUsed}
         creditsLimit={creditsLimit}
+        purchasedCredits={purchasedCredits}
         currentPeriodEnd={currentPeriodEnd}
       />
     </div>

@@ -166,10 +166,21 @@ export const VIDEO_MODELS = [
     // softer result undercuts the reliability-and-quality positioning, and a
     // second resolution would mean pricing every model by a duration x
     // resolution matrix rather than duration alone.
-    description: "Locks the character's likeness without copying the photo's pose. Premium (~$0.47/sec).",
+    description: "Holds a character across clips up to 30s without copying the photo's pose. Premium (~$0.47/sec).",
+    // fal's schema allows 4-30 seconds (or "auto"). This originally shipped
+    // capped at 5 and 10 because it was copied from Kling's enum rather than
+    // read off Seedance's own — which threw away the single thing that most
+    // distinguishes this model: it holds a character across a full 30-second
+    // take, where everything else here tops out at 8-15.
+    //
+    // A ladder rather than all 27 values: a picker with 27 options is not a
+    // choice, it's a chore. Weights are cost / $0.28, rounded up.
     durations: [
       { seconds: 5, creditWeight: 9, default: true },
       { seconds: 10, creditWeight: 17 },
+      { seconds: 15, creditWeight: 26 },
+      { seconds: 20, creditWeight: 34 },
+      { seconds: 30, creditWeight: 51 },
     ] satisfies VideoDurationOption[],
   },
 ] as const;
@@ -222,27 +233,28 @@ export function getDialogueCreditWeight(seconds: number): number {
   return Math.max(1, Math.ceil(seconds / DIALOGUE_SECONDS_PER_CREDIT));
 }
 
-// Average credits per second across a model's duration options.
+// What one generation of this model costs at its default length.
 //
-// The honest "how expensive is this one" number. Comparing models by their
-// default duration alone misleads — Veo's default is 8s and Kling's is 5s, so
-// the raw weights aren't like for like — and comparing only the cheapest
-// option hides that two models tied at 5s can diverge at 10s.
+// This is the number the picker sorts and labels by, because it's the one a
+// person is actually deciding between: "this generation will cost me N of my
+// credits". Sorting by cost-per-second looked defensible but ranked Veo above
+// Seedance, when a default Veo clip (8s, 11 credits) costs more than a default
+// Seedance one (5s, 9) — which is not what anyone reading the menu expects.
+export function defaultCreditCost(model: VideoModel): number {
+  const seconds = getDefaultDurationSeconds(model);
+  return model.durations.find((d) => d.seconds === seconds)?.creditWeight ?? model.durations[0].creditWeight;
+}
+
+// Average credits per second, used only to break ties between models that
+// cost the same at their default length.
 export function creditsPerSecond(model: VideoModel): number {
   const rates = model.durations.map((d) => d.creditWeight / d.seconds);
   return rates.reduce((sum, r) => sum + r, 0) / rates.length;
 }
 
-// Every video model, cheapest first.
-//
-// Used for the composer's model picker and for the circuit breaker's failover
-// order. Price order is the right default for both: someone scanning the list
-// should meet the affordable options first rather than having to work out
-// which of five names costs eight times more, and a failover should step DOWN
-// in price, never up — silently moving someone from Kling to Seedance would
-// cost nearly seven times as much per second.
 export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].sort(
-  (a, b) => creditsPerSecond(a) - creditsPerSecond(b),
+  (a, b) =>
+    defaultCreditCost(a) - defaultCreditCost(b) || creditsPerSecond(a) - creditsPerSecond(b),
 );
 
 // The COST basis, not the price.

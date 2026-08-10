@@ -59,3 +59,22 @@ export function creditsForPriceId(priceId: string): number | null {
   }
   return null;
 }
+
+// Which pack to suggest when someone is short of credits for the generation
+// they just set up.
+//
+// Picks the smallest pack that actually covers the shortfall, so the
+// suggestion is the cheapest thing that unblocks them rather than the most
+// profitable thing we could sell. If the shortfall is larger than the biggest
+// pack (a 51-credit 30s Seedance clip on an empty balance clears every pack),
+// fall back to the largest and let them buy again — better than recommending
+// something that still leaves them stuck.
+//
+// Deliberately no plan gating anywhere near this: anyone can top up. Hiding
+// expensive models from cheaper tiers was the alternative, and refusing to
+// sell to someone reaching for their wallet is a strange way to run a
+// business.
+export function recommendCreditPack(shortfall: number): CreditPack {
+  if (shortfall <= 0) return CREDIT_PACKS[0];
+  return CREDIT_PACKS.find((p) => p.credits >= shortfall) ?? CREDIT_PACKS[CREDIT_PACKS.length - 1];
+}

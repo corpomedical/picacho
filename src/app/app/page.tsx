@@ -39,6 +39,7 @@ export default async function AppHome() {
     voiceModeEnabled,
     creditsUsed,
     creditsLimit,
+    purchasedCredits,
     currentPeriodEnd,
   } = workspace;
   const name = profile?.username ?? (data.user?.email ?? "").split("@")[0];
@@ -79,6 +80,7 @@ export default async function AppHome() {
         voiceModeEnabled={voiceModeEnabled}
         creditsUsed={creditsUsed}
         creditsLimit={creditsLimit}
+        purchasedCredits={purchasedCredits}
         currentPeriodEnd={currentPeriodEnd}
         heroMode
         greeting={formatMsg(d.greetingWithPrompt, { name })}
