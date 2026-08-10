@@ -301,7 +301,25 @@ Wigly's call: the conversational agent needs more work and isn't needed now — 
 
 Side effect worth noting: this closes the unmetered TTS cost from the pricing analysis. Whisper still runs for the plain mic, but only for signed-in paid accounts.
 
-Still to do: Phase 3 (vertical rule packs), the unlimited AI character photo leak (still the largest open one), and optionally renaming "Usage limits" to match "Usage & plan".
+## Closed the unlimited AI character photo leak — 2026-08-10
+
+The largest open item from the pricing analysis. `generateReferenceImage` metered only free accounts; every **paid** plan got unlimited AI character photos at ~$0.17 each, consuming zero credits. A Starter subscriber on €19 generating 200 of them cost more than they paid.
+
+**Why a monthly cap and not a credit charge**, decided with Wigly:
+- A credit is worth ~€1.90 of revenue against a ~€0.15 cost. Charging one would be an 11× markup on a *setup* action — the moment you most want someone to succeed, not to feel metered. Pricing it honestly would need fractional credits, which the integer ledger doesn't handle cleanly.
+- **Daily** caps fight the real usage pattern. Character setup happens in bursts — someone builds five characters in one sitting — so a daily cap blocks exactly that session while doing nothing about a steady drip of 10/day (still 300/month).
+- **Monthly** reuses the billing period already tracked, resets in step with credits, and bounds total exposure per plan.
+
+- [x] `PLAN_REFERENCE_IMAGE_LIMITS`: starter 30, growth 75, studio 200, elite 400. Deliberately generous — a normal account generates a handful of these ever, so nobody legitimate will see the number. Worst case if maxed: ~€4.60 of €19, ~€11.60 of €79, ~€31 of €299, ~€62 of €499. Every plan stays comfortably profitable.
+- [x] **`reference_image_generations` table**, one row per photo, rather than a counter column on `profiles`. A counter would need a reset job, and "reset" has no single meaning when every subscriber has a different billing anchor. Counting rows since `current_period_start` is correct for everyone with no scheduled job, and doubles as an audit trail.
+- [x] Falls back to the calendar month when an account has no Stripe anchor yet, matching `getMonthlyUsage`.
+- [x] **Only counted on success.** A safety-filter rejection or provider error throws before the log line, so a failed attempt never burns a slot — same rule the free-tier counter already followed.
+- [x] Free tier keeps its 2-lifetime allowance; admins remain exempt and aren't logged at all.
+- [x] Uploading your own photo stays free and unlimited, and the error message says so.
+
+Verified the exact count query against the live paying account: counting from 2026-08-01, 0 of 30 used.
+
+Still to do: Phase 3 (vertical rule packs), and optionally renaming "Usage limits" to match "Usage & plan".
 
 ## After launch (polish, not blocking)
 

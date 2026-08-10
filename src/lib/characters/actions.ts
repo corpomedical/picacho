@@ -7,6 +7,7 @@ import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-imag
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
+import { PLAN_LABELS, PLAN_REFERENCE_IMAGE_LIMITS, type PlanId } from "@/lib/plans";
 
 // Real incident, 2026-08-09: a plan=none account generated an AI reference
 // photo for free — this function had no plan/credit check at all, unlike
@@ -108,17 +109,18 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role, free_reference_generations_used")
+    .select("plan, role, free_reference_generations_used, current_period_start")
     .eq("id", data.user.id)
     .single();
 
-  // Only plan=none, non-admin accounts are metered here — anyone on a paid
-  // plan is already a customer, so this stays a free perk for them rather
-  // than drawing from their monthly credit pool, and admins are exempt for
-  // the same reason checkGenerationAllowance exempts them (generations.ts):
-  // testing and support work should never trip a consumer-facing free-tier
-  // cap. See the constant's comment above for why this check exists at all.
-  const isFreeTier = (profile?.plan ?? "none") === "none" && profile?.role !== "admin";
+  const plan = (profile?.plan ?? "none") as PlanId;
+  const isAdmin = profile?.role === "admin";
+
+  // Free tier: a lifetime allowance, not a monthly one — two photos to see
+  // whether the product does what they want, then a plan. Admins are exempt
+  // for the same reason checkGenerationAllowance exempts them: testing and
+  // support work should never trip a consumer-facing cap.
+  const isFreeTier = plan === "none" && !isAdmin;
   const freeUsed = profile?.free_reference_generations_used ?? 0;
   if (isFreeTier && freeUsed >= FREE_REFERENCE_GENERATIONS_LIMIT) {
     return {
@@ -126,6 +128,39 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
         `You've used your ${FREE_REFERENCE_GENERATIONS_LIMIT} free AI-generated character photos. ` +
         "Subscribe to a plan to keep generating, or upload your own photo instead — that's always free.",
     };
+  }
+
+  // Paid plans: a monthly cap, counted against this account's real billing
+  // period so it resets in step with credits. Until 2026-08-10 these were
+  // unlimited and free on every paid plan — the largest money leak in the
+  // pricing analysis. See PLAN_REFERENCE_IMAGE_LIMITS for why this is a cap
+  // rather than a credit charge, and why the numbers are set where they are.
+  if (!isFreeTier && !isAdmin) {
+    const periodStart = profile?.current_period_start
+      ? new Date(profile.current_period_start as string)
+      : (() => {
+          // No Stripe billing anchor yet (see backfill-billing-period.js) —
+          // fall back to the calendar month, matching getMonthlyUsage.
+          const d = new Date();
+          d.setDate(1);
+          d.setHours(0, 0, 0, 0);
+          return d;
+        })();
+
+    const { count } = await supabase
+      .from("reference_image_generations")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", data.user.id)
+      .gte("created_at", periodStart.toISOString());
+
+    const cap = PLAN_REFERENCE_IMAGE_LIMITS[plan];
+    if ((count ?? 0) >= cap) {
+      return {
+        error:
+          `You've generated ${cap} AI character photos this billing period, which is the limit on ` +
+          `the ${PLAN_LABELS[plan]} plan. Uploading your own photo is always free and unlimited.`,
+      };
+    }
   }
 
   const { data: flag } = await supabase
@@ -181,14 +216,20 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
       throw new Error("Generated the image but couldn't create a preview link.");
     }
 
-    // Only counted against the free quota once a photo actually came back —
-    // a safety-filter rejection or provider error above throws before this
-    // line, so it never burns one of the user's free tries.
+    // Only counted once a photo actually came back — a safety-filter
+    // rejection or provider error above throws before this line, so a failed
+    // attempt never burns a free try or a slot in the monthly cap.
     if (isFreeTier) {
       await supabase
         .from("profiles")
         .update({ free_reference_generations_used: freeUsed + 1 })
         .eq("id", data.user.id);
+    } else if (!isAdmin) {
+      // Admins are exempt from the cap, so logging their generations would
+      // only add noise to a table whose sole purpose is counting against it.
+      await supabase
+        .from("reference_image_generations")
+        .insert({ user_id: data.user.id });
     }
 
     return { error: null, path, url: signed.signedUrl };
