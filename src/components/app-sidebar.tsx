@@ -498,8 +498,15 @@ export function AppSidebar({
       router.push(command.href);
     } else if (command.type === "new-chat") {
       router.push("/app/generate?voice=__new_chat__");
-    } else {
+    } else if (command.type === "prompt") {
       router.push(`/app/generate?voice=${encodeURIComponent(command.text)}`);
+    } else {
+      // "switch-character" can't actually happen from this call site —
+      // parseVoiceCommand only returns it when given a list of the
+      // account's character names, and the sidebar's global command isn't
+      // scoped to any particular page/character. Forward the raw text as a
+      // prompt as a safe fallback instead of leaving this non-exhaustive.
+      router.push(`/app/generate?voice=${encodeURIComponent(text)}`);
     }
   }
 

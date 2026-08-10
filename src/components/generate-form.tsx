@@ -15,6 +15,8 @@ import {
   type ChatHistoryItem,
 } from "@/lib/generations/actions";
 import { synthesizeVoice } from "@/lib/voice/actions";
+import { parseVoiceCommand } from "@/lib/voice/commands";
+import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
@@ -34,8 +36,6 @@ import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages";
 import { cn } from "@/lib/cn";
-
-const VOICE_MODE_STORAGE_KEY = "picacho_voice_mode";
 
 type VisibleItem =
   | { kind: "step"; attempt: number; step: PipelineStepLog }
@@ -607,6 +607,83 @@ function UsageBanner({
   );
 }
 
+// Bar heights (in Tailwind h- steps) for the waveform's resting/peak shape —
+// short-tall-short reads as a center-weighted wave at a glance, same visual
+// idea as ChatGPT's voice-mode indicator. Real mic amplitude would need a
+// second, separate getUserMedia + AnalyserNode stream running alongside
+// SpeechRecognition (which manages its own mic access internally and
+// exposes no volume data) — deliberately not done here to avoid a second
+// permission prompt and a second live audio stream just for decoration; a
+// staggered CSS pulse reads as "listening" just as clearly and can't ever
+// glitch if the analyser and the recognizer's internal capture drift out of
+// sync with each other.
+const WAVEFORM_BARS = [
+  { height: "h-3", delay: 0 },
+  { height: "h-5", delay: 90 },
+  { height: "h-8", delay: 180 },
+  { height: "h-10", delay: 270 },
+  { height: "h-8", delay: 180 },
+  { height: "h-5", delay: 90 },
+  { height: "h-3", delay: 0 },
+];
+
+// The "as if in generating mode" card voice sessions render in the message
+// list (see the call site, right next to the livePrompt pipeline-trace
+// bubble) — same rounded-card visual language as that bubble, so starting a
+// voice session reads as an equally weighted, equally "live" state, not a
+// smaller/lesser affordance tucked into the composer. Shows live interim
+// captions while the person is still mid-sentence (voiceInterimCaption in
+// generate-form.tsx, fed by the Web Speech API's interim results — see
+// lib/voice/speech-recognition.ts) and a brief command confirmation
+// (voiceStatusMessage) after a recognized command like "switch to Mia" or
+// "new chat", which then clears itself and returns to listening rather than
+// closing the session — only an actual generation prompt or the stop button
+// ends it.
+function VoiceSessionCard({
+  interimText,
+  statusMessage,
+  onStop,
+  g,
+}: {
+  interimText: string;
+  statusMessage: string | null;
+  onStop: () => void;
+  g: Messages["generate"];
+}) {
+  return (
+    <div className="flex justify-start">
+      <div className="w-full max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-5">
+        <div className="flex h-10 items-end justify-center gap-1.5" aria-hidden="true">
+          {WAVEFORM_BARS.map((bar, i) => (
+            <span
+              key={i}
+              className={cn("animate-voice-waveform w-1 origin-bottom rounded-full bg-neutral-900", bar.height)}
+              style={{ animationDelay: `${bar.delay}ms` }}
+            />
+          ))}
+        </div>
+        <p className="mt-3 min-h-[20px] text-center text-sm font-medium text-neutral-900">
+          {statusMessage || interimText || g.voiceListeningLabel}
+        </p>
+        <p className="mt-1 min-h-[16px] text-center text-xs text-neutral-400">
+          {statusMessage ? g.voiceListeningLabel : interimText ? "" : g.voiceListeningHint}
+        </p>
+        <div className="mt-4 flex justify-center">
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label={g.voiceStopSession}
+            title={g.voiceStopSession}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900 text-white transition-colors hover:bg-neutral-800"
+          >
+            <StopIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PendingAttachmentChip({ attachment, onRemove }: { attachment: PendingAttachment; onRemove: () => void }) {
   const { t } = useLocale();
   const isImage = attachment.type.startsWith("image/");
@@ -879,6 +956,7 @@ function GenerateFormInner({
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const g = t.generate;
+  const v = t.voice;
 
   // Arriving with ?prompt= means the Home composer just handed off to us —
   // settle the whole card in with a short fade/slide so that handoff reads
@@ -932,7 +1010,24 @@ function GenerateFormInner({
     { kind: "single"; id: string } | { kind: "multi"; groupId: string } | null
   >(null);
   const [error, setError] = useState("");
-  const [voiceMode, setVoiceMode] = useState(false);
+  // Voice mode — a full hands-free session, not the old silent
+  // "auto-send-and-speak" preference toggle this replaced (see
+  // LAUNCH_CHECKLIST.md). While active: the browser's own live speech
+  // recognition (lib/voice/speech-recognition.ts, no server round-trip)
+  // captions what's being said in real time; a finished utterance is either
+  // a recognized command (switch character, new chat, navigate — see
+  // handleVoiceFinal below) or, if nothing matches, an ordinary generation
+  // prompt that closes the session and hands off to submitPrompt exactly
+  // like a typed-and-sent message would.
+  const [voiceSessionActive, setVoiceSessionActive] = useState(false);
+  const [voiceInterimCaption, setVoiceInterimCaption] = useState("");
+  // A brief confirmation ("Switched to Mia.") shown in place of the
+  // interim caption after a recognized command — clears itself on a timer
+  // (see clearVoiceStatusSoon) rather than staying up forever, since the
+  // session keeps listening right through it.
+  const [voiceStatusMessage, setVoiceStatusMessage] = useState<string | null>(null);
+  const voiceSessionRef = useRef<{ stop: () => void } | null>(null);
+  const voiceStatusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
 
   const [items, setItems] = useState<ChatItem[]>([]);
@@ -1135,9 +1230,14 @@ function GenerateFormInner({
   // above and the upload tile in each grid below).
   const advancedVideoEligible = contentType === "video" && videoModelId === "kling" && elitePlanActive;
 
+  // Voice sessions don't survive a navigation/unmount (the browser's
+  // recognizer instance goes with the component) — stop it cleanly rather
+  // than leaving the mic listening after the person's left the page.
   useEffect(() => {
-    const saved = window.localStorage.getItem(VOICE_MODE_STORAGE_KEY);
-    if (saved === "1") setVoiceMode(true);
+    return () => {
+      voiceSessionRef.current?.stop();
+      if (voiceStatusTimeoutRef.current) clearTimeout(voiceStatusTimeoutRef.current);
+    };
   }, []);
 
   // Outside click closes the character switcher — it's a plain absolutely-
@@ -1194,18 +1294,112 @@ function GenerateFormInner({
     setContentType("video");
   }
 
-  function toggleVoiceMode() {
-    setVoiceMode((prev) => {
-      const next = !prev;
-      window.localStorage.setItem(VOICE_MODE_STORAGE_KEY, next ? "1" : "0");
-      return next;
+  // Clears the brief post-command confirmation (e.g. "Switched to Mia.")
+  // after a few seconds so the card returns to showing live captions —
+  // doesn't touch voiceSessionActive itself, the session keeps listening
+  // right through this.
+  function clearVoiceStatusSoon() {
+    if (voiceStatusTimeoutRef.current) clearTimeout(voiceStatusTimeoutRef.current);
+    voiceStatusTimeoutRef.current = setTimeout(() => setVoiceStatusMessage(null), 2600);
+  }
+
+  // Starts (or restarts, after the browser's own silence timeout — see
+  // onEnd) one listening pass. Kept separate from startVoiceSession so
+  // onEnd can call back into just this part without re-resetting the
+  // caption/status state on every natural pause.
+  function beginListening() {
+    const session = startListening({
+      onInterim: (text) => setVoiceInterimCaption(text),
+      onFinal: (text) => handleVoiceFinal(text),
+      onError: (kind) => {
+        voiceSessionRef.current = null;
+        setVoiceSessionActive(false);
+        setVoiceInterimCaption("");
+        setError(kind === "not-supported" ? v.notSupported : kind === "not-allowed" ? v.micBlocked : v.lostMic);
+      },
+      onEnd: beginListening,
     });
+    voiceSessionRef.current = session;
+  }
+
+  function startVoiceSession() {
+    if (submitting || voiceSessionActive) return;
+    setError("");
+    setVoiceInterimCaption("");
+    setVoiceStatusMessage(null);
+    setVoiceSessionActive(true);
+    beginListening();
+  }
+
+  function stopVoiceSession() {
+    voiceSessionRef.current?.stop();
+    voiceSessionRef.current = null;
+    if (voiceStatusTimeoutRef.current) clearTimeout(voiceStatusTimeoutRef.current);
+    setVoiceSessionActive(false);
+    setVoiceInterimCaption("");
+    setVoiceStatusMessage(null);
+  }
+
+  // Runs every time the recognizer finishes a sentence. Checked against
+  // parseVoiceCommand first (with this account's own character names, so
+  // "switch to Mia" only fires when Mia is actually one of theirs) —
+  // recognized commands execute immediately and the session stays open for
+  // the next thing said; anything that isn't a command is treated as an
+  // ordinary generation prompt, which closes the session and hands off to
+  // submitPrompt exactly like typing it and hitting send would.
+  function handleVoiceFinal(text: string) {
+    if (!text) return;
+    setVoiceInterimCaption("");
+    const command = parseVoiceCommand(
+      text,
+      characters.map((c) => c.name),
+    );
+
+    if (command.type === "new-chat") {
+      resetChat();
+      setVoiceStatusMessage(g.voiceNewChatStarted);
+      clearVoiceStatusSoon();
+      return;
+    }
+
+    if (command.type === "navigate") {
+      stopVoiceSession();
+      router.push(command.href);
+      return;
+    }
+
+    if (command.type === "switch-character") {
+      const match = characters.find((c) => c.name.toLowerCase() === command.name.toLowerCase());
+      if (match) {
+        setCharacterId(match.id);
+        setCompanionCharacterIds([]);
+        clearAdvancedVideo();
+        setMultiAngleMode(false);
+        setVoiceStatusMessage(formatMsg(g.voiceSwitchedCharacter, { name: match.name }));
+        clearVoiceStatusSoon();
+        return;
+      }
+      // parseVoiceCommand only returns this type when it already found a
+      // matching name, so this shouldn't happen — falls through to the
+      // plain-prompt handling below as a safe default if it ever does.
+    }
+
+    stopVoiceSession();
+    submitPrompt(text, { speak: true });
   }
 
   async function speak(text: string) {
     try {
       const result = await synthesizeVoice(text);
-      if (result.error !== null) return; // voice is a nice-to-have — fail quietly
+      if (result.error !== null) {
+        // Unlike the autoplay case below, this means voice replies are
+        // actually misconfigured (missing OPENAI_API_KEY, feature flag off,
+        // etc.) — worth a real error instead of silently doing nothing,
+        // which used to look indistinguishable from the AI just not
+        // responding at all.
+        setError(result.error);
+        return;
+      }
       const audio = new Audio(`data:audio/mpeg;base64,${result.audioBase64}`);
       await audio.play();
     } catch {
@@ -1653,7 +1847,7 @@ function GenerateFormInner({
       return;
     }
 
-    const shouldSpeak = Boolean(opts?.speak || voiceMode);
+    const shouldSpeak = Boolean(opts?.speak);
 
     requestNotificationPermission();
 
@@ -1874,12 +2068,13 @@ function GenerateFormInner({
     await submitPrompt(prompt, { attachments: readyAttachments });
   }
 
+  // The plain mic button (VoiceRecorderButton, next to the voice-session
+  // icon) is a separate, simpler capability: record → transcribe →
+  // append to the text box for review before sending, no auto-submit, no
+  // command parsing. The voice-session icon is for hands-free use; this one
+  // is for dictating without taking your hands off the keyboard entirely.
   function handleVoiceTranscript(text: string) {
-    if (voiceMode) {
-      submitPrompt(text, { speak: true });
-    } else {
-      setPrompt((prev) => (prev ? `${prev} ${text}` : text));
-    }
+    setPrompt((prev) => (prev ? `${prev} ${text}` : text));
   }
 
   // Shared between the docked header and the hero composer (see isHero
@@ -2337,6 +2532,14 @@ function GenerateFormInner({
               </div>
             )}
           </>
+        )}
+        {voiceSessionActive && (
+          <VoiceSessionCard
+            interimText={voiceInterimCaption}
+            statusMessage={voiceStatusMessage}
+            onStop={stopVoiceSession}
+            g={g}
+          />
         )}
         <div ref={bottomRef} />
       </div>
@@ -2892,14 +3095,14 @@ function GenerateFormInner({
 
                   <button
                     type="button"
-                    onClick={toggleVoiceMode}
+                    onClick={voiceSessionActive ? stopVoiceSession : startVoiceSession}
                     disabled={submitting}
-                    title={voiceMode ? g.voiceOnTitle : g.voiceOffTitle}
-                    aria-label={voiceMode ? g.voiceOnTitle : g.voiceOffTitle}
-                    aria-pressed={voiceMode}
+                    title={voiceSessionActive ? g.voiceOnTitle : g.voiceOffTitle}
+                    aria-label={voiceSessionActive ? g.voiceOnTitle : g.voiceOffTitle}
+                    aria-pressed={voiceSessionActive}
                     className={cn(
                       "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                      voiceMode
+                      voiceSessionActive
                         ? "bg-neutral-900 text-white"
                         : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
                     )}

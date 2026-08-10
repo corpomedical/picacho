@@ -87,3 +87,29 @@ html.dark {
    query later if that trade-off ever needs revisiting — this is decorative
    background chrome, not an essential interaction, so leaving it always-on
    is a reasonable call for now. */
+
+/* Voice mode's "listening" waveform (see VoiceSessionCard in
+   generate-form.tsx) — a row of bars pulsing at staggered offsets, same
+   idea as ChatGPT's voice-mode indicator. Each bar gets its own
+   animation-delay inline (see the component) so nth-child isn't needed
+   here; this just defines the one shared pulse shape every bar uses. Scale
+   only (no opacity change) — the bars already sit on a light card, fading
+   them too made the resting state look broken/half-rendered rather than
+   calm. Reduce-motion IS respected here, unlike the hero wallpaper above:
+   this plays continuously right next to text someone may be trying to read
+   while they talk, not decorative background chrome. */
+@keyframes voice-waveform-pulse {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+
+.animate-voice-waveform {
+  animation: voice-waveform-pulse 1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-voice-waveform {
+    animation: none;
+    transform: scaleY(0.7);
+  }
+}
