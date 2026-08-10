@@ -192,7 +192,34 @@ Supabase performance advisors — no errors, all scale-related rather than funct
 - ~40× "Multiple Permissive Policies" on the same table/role/action — each one is evaluated separately per query.
 - 6 unindexed foreign keys, 5 unused indexes.
 
-Still to do: manual walkthrough of every route and the admin area, the buy-extra-credits flow, and the dashboard traffic graph.
+### Route + authorization sweep
+
+- [x] **Routes mapped** — 38 pages plus 4 API/auth routes. **No broken internal links**: every route-like string in the source resolves to a real route. The only two non-matches are `Disallow: /api/` and `/auth/` in `robots.ts`, which are meant to be patterns.
+- [x] **No dead pages.** `/app/profile` and `/app/usage` are referenced nowhere, but both are deliberate one-line redirects into the consolidated `/app/settings` tabs, documented as such.
+- [x] **Admin pages** are guarded in `src/app/admin/layout.tsx` — signed-out redirects to `/login`, non-admin redirects to `/app`, checked server-side against `profiles.role`.
+- [x] **All 13 admin server actions** call `requireAdmin()`. Verified by parsing each exported action's body rather than by eye, since the layout guard protects *pages* and does nothing for a server action POSTed directly.
+
+- [x] **SECURITY FIX — voice actions were unauthenticated.** Swept all 62 exported server actions for an auth check. 17 had none; 15 are fine (`login`/`signup`/`logout` are meant to be open, `setLocaleCookie` only sets a cookie, and the projects/notes/generations actions are covered by row-level security — confirmed every policy is `auth.uid() = user_id`, with a separate admin-read policy).
+
+  The exception was `src/lib/voice/actions.ts`. `transcribeVoice` and `synthesizeVoice` checked only the feature flag and the presence of `OPENAI_API_KEY` — never *who was calling*. They touch no table, so RLS could not help. A Next.js server action is a POST endpoint whose id is discoverable in the client bundle, which made Whisper transcription and OpenAI TTS a free, internet-facing API billed to this account. Now requires a signed-in user **and** a paid plan (admins exempt), matching how generations are already gated. No evidence of abuse — the exposure window was small and traffic is negligible — but it would not have survived launch.
+
+- [x] **RLS is on for all 11 public tables**, every policy owner-scoped.
+
+Noted for later: a `page_views` table and an `/api/track` route already exist, with an admin-only read policy — the traffic graph has its data source ready.
+
+### Safety-filter rejection reported after the reliability fix
+
+Reported as "there was an error generating a picture, I thought you fixed it — tone the rules down". Checked against the log rather than assumed, and the attribution turned out to be the other way round:
+
+- **Our rulebook was not the cause and worked correctly** — the failed generation records `validate: Added missing rulebook items before generating: hair.`, i.e. the new pre-generation check ran, repaired the prompt for free, and passed it on. That fix was live (deployed 02:53 UTC).
+- **The rejection came from OpenAI's own classifier**, which isn't tunable from here. Prompt: "Eva in a beautiful black satin dress" — an entirely ordinary request, bounced 6 times (2 generate-retries × 3 attempts).
+- **The Flux fallback simply wasn't deployed yet.** The generation failed at 02:57:43 UTC; the fallback commit landed at 03:05:22 UTC, 8 minutes later. Once live, the first rejection routes straight to Flux instead of retrying a prompt that will deterministically be refused again.
+
+Added on top, to reduce how often the fallback is needed at all (Flux holds a character's likeness less reliably than GPT Image, so leaning on it has a real quality cost): the draft instruction now tells the model to describe people plainly and avoid stacking photoreal intensifiers ("hyper-realistic", "ultra-detailed", "close-up selfie") around a person. Those phrasings read very differently to a safety classifier while meaning the same thing, and the model renders photorealistically regardless.
+
+Also visible in the same window: two "hey"/"hello" prompts that generated full scenes (a room, a meadow). Both predate the trivial-prompt guard going live — that path is now blocked at the entry point.
+
+Still to do: error/empty-state review of the app pages, the buy-extra-credits flow, and the dashboard traffic graph.
 
 ## After launch (polish, not blocking)
 

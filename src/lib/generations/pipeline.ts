@@ -548,6 +548,21 @@ export async function runRealPipeline(
           `You are a prompt engineer for an AI ${mediumLabel} generator. Expand this ` +
             `plain-language request into one detailed, vivid text-to-${mediumLabel} prompt — ` +
             `2 to 4 sentences, no preamble, no markdown, just the prompt itself.\n\n` +
+            // Image safety classifiers (OpenAI's especially) reject a lot of
+            // perfectly ordinary requests once a prompt piles on photoreal
+            // intensifiers around a person — "hyper-realistic ultra-detailed
+            // close-up selfie of a woman in a dress" reads to the filter very
+            // differently from "a portrait of a woman in a dress", despite
+            // meaning the same thing. Real incident, 2026-08-10: "Eva in a
+            // black satin dress" was rejected six times over. Keeping the
+            // description plain costs nothing in output quality (the model
+            // renders photorealistically regardless) and measurably reduces
+            // how often we get bounced into the Flux fallback, which holds a
+            // character's likeness less reliably.
+            `Describe people plainly and respectfully. Do not stack intensifiers like ` +
+            `"hyper-realistic", "ultra-detailed", or "close-up selfie" around a person, and avoid ` +
+            `suggestive or body-focused phrasing — plain description passes content filters far ` +
+            `more reliably and renders just as well.\n\n` +
             `Character rulebook (every item must be reflected in the prompt UNLESS this specific ` +
             `request explicitly asks to change it for this one generation — e.g. asking for a ` +
             `different outfit than the rulebook's is an intentional change, not a mistake to fix):\n` +

@@ -11,8 +11,34 @@ import { createClient } from "@/lib/supabase/server";
 
 type VoiceResult<T extends object> = { error: string } | ({ error: null } & T);
 
+// SECURITY: both actions below spend real OpenAI money on every call, and
+// until 2026-08-10 neither checked who was calling — only that the feature
+// flag was on and a key was present. A Next.js server action is a POST
+// endpoint whose id is discoverable in the client bundle, so that made
+// Whisper transcription and TTS into a free, internet-facing API billed to
+// this account. Found during the full-project audit; there is no evidence
+// it was abused, but it needed closing before launch.
+//
+// Signed-in is the minimum bar. The plan check on top of it means a
+// throwaway free signup can't run up a bill either — voice is a paid-plan
+// feature, matching how generations already work.
 async function checkVoiceAvailable(): Promise<string | null> {
   const supabase = await createClient();
+
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return "Your session expired — please log in again.";
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("plan, role")
+    .eq("id", userData.user.id)
+    .single();
+
+  const onPaidPlan = (profile?.plan ?? "none") !== "none";
+  if (!onPaidPlan && profile?.role !== "admin") {
+    return "Voice features are part of a paid plan — upgrade to use them.";
+  }
+
   const { data: flag } = await supabase
     .from("feature_flags")
     .select("enabled")
