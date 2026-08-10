@@ -151,7 +151,11 @@ async function checkGenerationAllowance(
   requestedCredits: number,
 ): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean }> {
   const [{ data: profile }, { data: recent }] = await Promise.all([
-    supabase.from("profiles").select("plan, role, bonus_credits").eq("id", userId).single(),
+    supabase
+      .from("profiles")
+      .select("plan, role, bonus_credits, current_period_start")
+      .eq("id", userId)
+      .single(),
     supabase
       .from("generations")
       .select("created_at")
@@ -177,7 +181,7 @@ async function checkGenerationAllowance(
   // Bonus credits (admin-granted, see setBonusCredits) stack on top of the
   // plan's normal allowance rather than replacing it.
   const limit = (PLAN_LIMITS[plan] ?? 0) + (profile?.bonus_credits ?? 0);
-  const used = await getMonthlyUsage(userId);
+  const used = await getMonthlyUsage(userId, profile?.current_period_start as string | null | undefined);
 
   if (used + requestedCredits > limit) {
     // Only the true zero-allowance case (no plan, and no bonus credits
@@ -1413,18 +1417,31 @@ export async function getReliabilityStats(userId: string) {
 // 2". credits_used is stored on each row at generation time (not looked up
 // live from the current catalog), so this stays accurate even if a model's
 // weight changes later — past usage doesn't retroactively shift.
-export async function getMonthlyUsage(userId: string) {
+//
+// periodStart anchors the window to the caller's real Stripe billing cycle
+// (profiles.current_period_start) when they have one — both call sites fetch
+// it alongside plan/bonus_credits and pass it straight through. Falls back
+// to calendar-month start (the original, only behavior before billing-cycle
+// tracking existed) whenever it's null: a "none"-plan/bonus-only user with
+// no subscription, or an existing subscriber whose profile hasn't been
+// backfilled with real Stripe dates yet. That fallback is deliberate, not
+// just a placeholder — it's what keeps allowance enforcement working
+// exactly as it always has for every profile this doesn't apply to yet.
+export async function getMonthlyUsage(userId: string, periodStart?: string | null) {
   const supabase = await createClient();
 
-  const startOfMonth = new Date();
-  startOfMonth.setDate(1);
-  startOfMonth.setHours(0, 0, 0, 0);
+  const start = periodStart ? new Date(periodStart) : (() => {
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    return startOfMonth;
+  })();
 
   const { data } = await supabase
     .from("generations")
     .select("credits_used")
     .eq("user_id", userId)
-    .gte("created_at", startOfMonth.toISOString());
+    .gte("created_at", start.toISOString());
 
   return (data ?? []).reduce((sum, row) => sum + (Number(row.credits_used) || 1), 0);
 }

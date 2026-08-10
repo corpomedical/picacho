@@ -100,6 +100,18 @@ export async function POST(request: Request) {
           console.error("Stripe webhook: price has no matching plan in PLAN_PRICE_IDS", priceId);
         }
 
+        // Recent API versions moved current_period_start/end off the
+        // Subscription object itself and onto each line item (Stripe now
+        // lets different items in the same subscription bill on different
+        // cycles) — read it from the same item priceId came from, not
+        // subscription.current_period_end, which no longer exists here.
+        // This is what anchors "resets on <date>" to the customer's real
+        // billing date instead of the calendar-month approximation
+        // getMonthlyUsage() falls back to when these are null.
+        const item = subscription.items.data[0];
+        const currentPeriodStart = item ? new Date(item.current_period_start * 1000).toISOString() : null;
+        const currentPeriodEnd = item ? new Date(item.current_period_end * 1000).toISOString() : null;
+
         await supabase
           .from("profiles")
           .update({
@@ -107,6 +119,8 @@ export async function POST(request: Request) {
             stripe_subscription_id: subscription.id,
             stripe_price_id: priceId ?? null,
             plan_status: statusToPlanStatus(subscription.status),
+            current_period_start: currentPeriodStart,
+            current_period_end: currentPeriodEnd,
             ...(planId ? { plan: planId } : {}),
           })
           .eq("id", userId);
@@ -129,6 +143,8 @@ export async function POST(request: Request) {
             plan_status: "canceled",
             stripe_subscription_id: null,
             stripe_price_id: null,
+            current_period_start: null,
+            current_period_end: null,
           })
           .eq("id", userId);
         break;

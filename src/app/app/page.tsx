@@ -28,8 +28,17 @@ export default async function AppHome() {
     getGenerateWorkspaceData(supabase, data.user?.id),
   ]);
 
-  const { hasCharacter, charactersForForm, videoModels, defaultVideoModelId, elitePlanActive, approachingLimit } =
-    workspace;
+  const {
+    hasCharacter,
+    charactersForForm,
+    videoModels,
+    defaultVideoModelId,
+    elitePlanActive,
+    approachingLimit,
+    creditsUsed,
+    creditsLimit,
+    currentPeriodEnd,
+  } = workspace;
   const name = profile?.username ?? (data.user?.email ?? "").split("@")[0];
 
   if (!hasCharacter) {
@@ -64,6 +73,9 @@ export default async function AppHome() {
         defaultVideoModelId={defaultVideoModelId}
         elitePlanActive={elitePlanActive}
         approachingLimit={approachingLimit}
+        creditsUsed={creditsUsed}
+        creditsLimit={creditsLimit}
+        currentPeriodEnd={currentPeriodEnd}
         heroMode
         greeting={formatMsg(d.greetingWithPrompt, { name })}
         startOnboarding={profile?.has_completed_onboarding !== true}

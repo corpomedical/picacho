@@ -541,6 +541,72 @@ function ComposerToast({ message, onDone }: { message: string; onDone: () => voi
   );
 }
 
+// Usage-status strip shown once an account is close to its monthly limit.
+// Matches Claude's own "Now using credits" banner: a plain, light, flat
+// card attached with zero gap directly on top of the composer — not a
+// floating toast or pill. It's a normal-flow sibling rendered right before
+// <form> (see the call site), so it and the form below read as one
+// continuous rounded shape: this piece gets the outer card's own top
+// radius + a matching border, the form keeps its existing rounded-b-[22px]
+// + border-t as the seam between the two, so there's no double border and
+// no independent shadow on the banner itself. currentPeriodEnd comes from
+// the account's actual Stripe billing cycle when known
+// (profiles.current_period_end); for a "none"-plan/bonus-only account, or
+// an existing subscriber not yet backfilled with real Stripe dates, it's
+// null and the fallback copy ("resets on the 1st") is shown instead — see
+// LAUNCH_CHECKLIST.md. Dismissal is local component state, not persisted
+// anywhere: reappears on the next fresh page load if the account is still
+// in the approaching-limit band, since this is a live readout, not a
+// one-time announcement.
+function UsageBanner({
+  used,
+  limit,
+  currentPeriodEnd,
+  g,
+}: {
+  used: number;
+  limit: number;
+  currentPeriodEnd: string | null;
+  g: Messages["generate"];
+}) {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (dismissed) return null;
+
+  const resetLabel = currentPeriodEnd
+    ? formatMsg(g.usageResetsOn, {
+        date: new Date(currentPeriodEnd).toLocaleString(undefined, {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        }),
+      })
+    : g.usageResetsFallback;
+
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500"
+    >
+      <p className="flex-1">
+        {formatMsg(g.approachingLimitUsage, { used, limit })} · {resetLabel} ·{" "}
+        <Link href="/app/settings?tab=usage" className="font-medium text-neutral-700 underline underline-offset-2">
+          {g.getMoreUsage}
+        </Link>
+      </p>
+      <button
+        type="button"
+        onClick={() => setDismissed(true)}
+        aria-label={g.dismissUsageBanner}
+        className="flex-shrink-0 rounded-full p-1 text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-600"
+      >
+        <XIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 function PendingAttachmentChip({ attachment, onRemove }: { attachment: PendingAttachment; onRemove: () => void }) {
   const { t } = useLocale();
   const isImage = attachment.type.startsWith("image/");
@@ -613,6 +679,17 @@ export function GenerateForm(props: {
   defaultVideoModelId: string;
   elitePlanActive: boolean;
   approachingLimit: boolean;
+  // Raw numbers behind approachingLimit, plus the real reset timestamp when
+  // the account has one (see currentPeriodEnd below) — passed straight
+  // through from getGenerateWorkspaceData so the usage banner can show
+  // specifics ("12 of 15 used") instead of just a plain warning.
+  creditsUsed: number;
+  creditsLimit: number;
+  // ISO string, or null for a "none"-plan/bonus-only account, or an
+  // existing subscriber whose profile hasn't been backfilled with real
+  // Stripe billing dates yet (see LAUNCH_CHECKLIST.md) — the banner falls
+  // back to "resets on the 1st" in that case rather than showing nothing.
+  currentPeriodEnd: string | null;
   // Set when this instance is embedded on the dashboard home page instead
   // of /app/generate — see the isHero logic inside GenerateFormInner for
   // what this actually changes.
@@ -779,6 +856,9 @@ function GenerateFormInner({
   defaultVideoModelId,
   elitePlanActive,
   approachingLimit,
+  creditsUsed,
+  creditsLimit,
+  currentPeriodEnd,
   heroMode = false,
   greeting,
   startOnboarding = false,
@@ -788,6 +868,9 @@ function GenerateFormInner({
   defaultVideoModelId: string;
   elitePlanActive: boolean;
   approachingLimit: boolean;
+  creditsUsed: number;
+  creditsLimit: number;
+  currentPeriodEnd: string | null;
   heroMode?: boolean;
   greeting?: string;
   startOnboarding?: boolean;
@@ -2261,16 +2344,13 @@ function GenerateFormInner({
       )}
 
       <div className={cn("relative z-10", isHero ? "mx-auto w-full max-w-2xl" : "sticky bottom-4")}>
+        {/* Sits directly on top of the form with no gap, sharing its
+            rounded-[22px] outer frame (see UsageBanner's own comment) —
+            not a floating card of its own, which is what made two earlier
+            passes at this look wrong. */}
         {approachingLimit && !isHero && (
-          <div className="mx-4 mb-2 rounded-[14px] bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-            {g.approachingLimitMessage}{" "}
-            <Link href="/app/settings?tab=usage" className="font-medium underline">
-              {g.getMoreUsage}
-            </Link>
-          </div>
+          <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />
         )}
-
-        {error && <ComposerToast key={error} message={error} onDone={() => setError("")} />}
 
       <form
         onSubmit={handleSubmit}
@@ -2281,6 +2361,11 @@ function GenerateFormInner({
             : "rounded-b-[22px] border-t border-neutral-100",
         )}
       >
+        {/* Lives inside the form (not the outer wrapper) specifically so its
+            absolute "rise from behind" positioning is always anchored to
+            the form's own top edge, regardless of whether UsageBanner is
+            also rendered above it pushing the form down. */}
+        {error && <ComposerToast key={error} message={error} onDone={() => setError("")} />}
         {isHero && (
           // Decorative shadow layer, separate from the form itself: the
           // Safari shadow-corner mask fix (see the docked container above)

@@ -32,8 +32,17 @@ export default async function GeneratePage() {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
 
-  const { hasCharacter, charactersForForm, videoModels, defaultVideoModelId, elitePlanActive, approachingLimit } =
-    await getGenerateWorkspaceData(supabase, userData.user?.id);
+  const {
+    hasCharacter,
+    charactersForForm,
+    videoModels,
+    defaultVideoModelId,
+    elitePlanActive,
+    approachingLimit,
+    creditsUsed,
+    creditsLimit,
+    currentPeriodEnd,
+  } = await getGenerateWorkspaceData(supabase, userData.user?.id);
 
   if (!hasCharacter) {
     return (
@@ -84,6 +93,9 @@ export default async function GeneratePage() {
         defaultVideoModelId={defaultVideoModelId}
         elitePlanActive={elitePlanActive}
         approachingLimit={approachingLimit}
+        creditsUsed={creditsUsed}
+        creditsLimit={creditsLimit}
+        currentPeriodEnd={currentPeriodEnd}
       />
     </div>
   );

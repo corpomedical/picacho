@@ -31,6 +31,17 @@ export type GenerateWorkspaceData = {
   defaultVideoModelId: string;
   elitePlanActive: boolean;
   approachingLimit: boolean;
+  // Raw numbers + the real reset timestamp (when known — see
+  // current_period_end below), so the usage banner in generate-form.tsx can
+  // show "12 of 15 used, resets Aug 12 at 2:00 PM" instead of just a plain
+  // warning with no specifics.
+  creditsUsed: number;
+  creditsLimit: number;
+  // ISO string from the caller's actual Stripe billing cycle
+  // (profiles.current_period_end), or null for a "none"-plan/bonus-only
+  // profile, or an existing subscriber not yet backfilled with real Stripe
+  // dates — the banner falls back to "resets on the 1st" in that case.
+  currentPeriodEnd: string | null;
 };
 
 // Shared by /app/page.tsx (the dashboard home, which now embeds the same
@@ -95,7 +106,11 @@ export async function getGenerateWorkspaceData(
   // Storyboard and multi-image reference are Elite-exclusive (admins get a
   // free pass, same as the generation-cap exemption below).
   const { data: profile } = userId
-    ? await supabase.from("profiles").select("plan, role, bonus_credits").eq("id", userId).single()
+    ? await supabase
+        .from("profiles")
+        .select("plan, role, bonus_credits, current_period_start, current_period_end")
+        .eq("id", userId)
+        .single()
     : { data: null };
   const elitePlanActive = profile?.plan === "elite" || profile?.role === "admin";
 
@@ -109,7 +124,9 @@ export async function getGenerateWorkspaceData(
   const isAdminUser = profile?.role === "admin";
   const planLimit =
     PLAN_LIMITS[(profile?.plan ?? "none") as PlanId] + (profile?.bonus_credits ?? 0);
-  const usedThisMonth = userId ? await getMonthlyUsage(userId) : 0;
+  const usedThisMonth = userId
+    ? await getMonthlyUsage(userId, profile?.current_period_start as string | null | undefined)
+    : 0;
   const approachingLimit =
     !isAdminUser && planLimit > 0 && usedThisMonth < planLimit && usedThisMonth / planLimit >= 0.8;
 
@@ -120,5 +137,8 @@ export async function getGenerateWorkspaceData(
     defaultVideoModelId,
     elitePlanActive,
     approachingLimit,
+    creditsUsed: usedThisMonth,
+    creditsLimit: planLimit,
+    currentPeriodEnd: (profile?.current_period_end as string | null | undefined) ?? null,
   };
 }
