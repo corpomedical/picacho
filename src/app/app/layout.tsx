@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
@@ -54,6 +55,8 @@ export default async function AppLayout({
 
   const isAdmin = profile?.role === "admin";
 
+  const voiceModeEnabled = await isVoiceModeEnabled(supabase);
+
   return (
     <div className="flex h-screen overflow-hidden">
       <AppErrorReporter />
@@ -65,6 +68,7 @@ export default async function AppLayout({
         projects={projects ?? []}
         supportEmail={supportEmailSetting?.value ?? "support@picacho.app"}
         skipAiRefinement={profile?.skip_ai_refinement === true}
+        voiceModeEnabled={voiceModeEnabled}
       />
       <div className="min-w-0 flex-1 overflow-y-auto">
         {/* pt-14 clears the fixed mobile top bar (see AppSidebar); not needed

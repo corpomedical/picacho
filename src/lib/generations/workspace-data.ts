@@ -1,4 +1,5 @@
 import { getMonthlyUsage } from "@/lib/generations/actions";
+import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
   VIDEO_MODELS,
@@ -31,6 +32,7 @@ export type GenerateWorkspaceData = {
   defaultVideoModelId: string;
   elitePlanActive: boolean;
   approachingLimit: boolean;
+  voiceModeEnabled: boolean;
   // Raw numbers + the real reset timestamp (when known — see
   // current_period_end below), so the usage banner in generate-form.tsx can
   // show "12 of 15 used, resets Aug 12 at 2:00 PM" instead of just a plain
@@ -130,6 +132,8 @@ export async function getGenerateWorkspaceData(
   const approachingLimit =
     !isAdminUser && planLimit > 0 && usedThisMonth < planLimit && usedThisMonth / planLimit >= 0.8;
 
+  const voiceModeEnabled = await isVoiceModeEnabled(supabase);
+
   return {
     hasCharacter,
     charactersForForm,
@@ -137,6 +141,7 @@ export async function getGenerateWorkspaceData(
     defaultVideoModelId,
     elitePlanActive,
     approachingLimit,
+    voiceModeEnabled,
     creditsUsed: usedThisMonth,
     creditsLimit: planLimit,
     currentPeriodEnd: (profile?.current_period_end as string | null | undefined) ?? null,

@@ -289,7 +289,19 @@ The data layer already existed (`page_views` + `/api/track`, admin-only SELECT) 
 
 Verified against real data: 978 views / 12 unique visitors across 2026-08-04 to 08-10.
 
-Still to do: Phase 3 (vertical rule packs), and optionally renaming "Usage limits" to match "Usage & plan".
+## Voice mode disabled behind a flag — 2026-08-10
+
+Wigly's call: the conversational agent needs more work and isn't needed now — disable it, but keep the code so it can be re-enabled and built on later.
+
+- [x] New `voice_mode` feature flag, **off**. Re-enabling is one toggle in Admin > Feature flags, no deploy. Nothing was deleted.
+- [x] **Defaults to off when the row is missing**, not on (`isVoiceModeEnabled` in `lib/voice/enabled.ts`). A feature that spends money on every use should never switch itself on because a lookup failed.
+- [x] Hidden: the composer's voice-session button and the sidebar's global voice command.
+- [x] **Enforced server-side too.** `synthesizeVoice` checks the flag and refuses, rather than relying on a hidden button — a server action stays callable and billable whether or not the UI shows it. Same reasoning as the auth hole found in the audit earlier today.
+- [x] **The plain microphone button beside the composer stays.** That's a separate, finished feature: record, transcribe, drop the text in the box for you to review before sending. It uses `transcribeVoice`, which is deliberately left on the existing auth + paid-plan + `real_ai_providers` checks rather than the voice-mode flag.
+
+Side effect worth noting: this closes the unmetered TTS cost from the pricing analysis. Whisper still runs for the plain mic, but only for signed-in paid accounts.
+
+Still to do: Phase 3 (vertical rule packs), the unlimited AI character photo leak (still the largest open one), and optionally renaming "Usage limits" to match "Usage & plan".
 
 ## After launch (polish, not blocking)
 

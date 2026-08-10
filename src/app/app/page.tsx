@@ -35,6 +35,7 @@ export default async function AppHome() {
     defaultVideoModelId,
     elitePlanActive,
     approachingLimit,
+    voiceModeEnabled,
     creditsUsed,
     creditsLimit,
     currentPeriodEnd,
@@ -73,6 +74,7 @@ export default async function AppHome() {
         defaultVideoModelId={defaultVideoModelId}
         elitePlanActive={elitePlanActive}
         approachingLimit={approachingLimit}
+        voiceModeEnabled={voiceModeEnabled}
         creditsUsed={creditsUsed}
         creditsLimit={creditsLimit}
         currentPeriodEnd={currentPeriodEnd}

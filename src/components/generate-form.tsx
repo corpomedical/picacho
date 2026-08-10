@@ -778,6 +778,7 @@ export function GenerateForm(props: {
   defaultVideoModelId: string;
   elitePlanActive: boolean;
   approachingLimit: boolean;
+  voiceModeEnabled: boolean;
   // Raw numbers behind approachingLimit, plus the real reset timestamp when
   // the account has one (see currentPeriodEnd below) — passed straight
   // through from getGenerateWorkspaceData so the usage banner can show
@@ -955,6 +956,7 @@ function GenerateFormInner({
   defaultVideoModelId,
   elitePlanActive,
   approachingLimit,
+  voiceModeEnabled,
   creditsUsed,
   creditsLimit,
   currentPeriodEnd,
@@ -967,6 +969,7 @@ function GenerateFormInner({
   defaultVideoModelId: string;
   elitePlanActive: boolean;
   approachingLimit: boolean;
+  voiceModeEnabled: boolean;
   creditsUsed: number;
   creditsLimit: number;
   currentPeriodEnd: string | null;
@@ -3436,6 +3439,10 @@ function GenerateFormInner({
                     </div>
                   )}
 
+                  {/* Voice mode sits behind its own feature flag (see
+                      lib/voice/enabled.ts) — off while the conversational
+                      agent is unfinished. The plain mic below stays. */}
+                  {voiceModeEnabled && (
                   <button
                     type="button"
                     onClick={voiceSessionActive ? stopVoiceSession : startVoiceSession}
@@ -3452,6 +3459,7 @@ function GenerateFormInner({
                   >
                     <VoiceIcon className="h-4 w-4" />
                   </button>
+                  )}
 
                   <VoiceRecorderButton onTranscript={handleVoiceTranscript} disabled={submitting} size="md" />
                   </div>

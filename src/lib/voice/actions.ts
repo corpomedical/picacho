@@ -8,6 +8,7 @@
 // get a clear message instead of a silent failure or a surprise charge.
 
 import { createClient } from "@/lib/supabase/server";
+import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 
 type VoiceResult<T extends object> = { error: string } | ({ error: null } & T);
 
@@ -87,6 +88,14 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
 export async function synthesizeVoice(text: string): Promise<VoiceResult<{ audioBase64: string }>> {
   const unavailable = await checkVoiceAvailable();
   if (unavailable) return { error: unavailable };
+
+  // Spoken replies belong to the conversational agent, which is flagged off
+  // (see lib/voice/enabled.ts). Enforced server-side, not just by hiding the
+  // button — otherwise the action stays callable and billable.
+  const supabase = await createClient();
+  if (!(await isVoiceModeEnabled(supabase))) {
+    return { error: "Voice mode is currently turned off." };
+  }
 
   const trimmed = text.trim();
   if (!trimmed) return { error: "Nothing to say." };

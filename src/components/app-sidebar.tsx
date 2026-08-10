@@ -313,6 +313,7 @@ export function AppSidebar({
   projects,
   supportEmail,
   skipAiRefinement,
+  voiceModeEnabled,
 }: {
   isAdmin: boolean;
   username: string;
@@ -320,6 +321,7 @@ export function AppSidebar({
   characters: RecentCharacter[];
   projects: RecentProject[];
   supportEmail: string;
+  voiceModeEnabled: boolean;
   skipAiRefinement: boolean;
 }) {
   const pathname = usePathname();
@@ -601,11 +603,15 @@ export function AppSidebar({
           {!iconOnly && <span className="ml-auto flex-shrink-0 text-xs text-neutral-300">⌘K</span>}
         </button>
 
-        <VoiceRecorderButton
-          onTranscript={handleVoiceCommand}
-          size={iconOnly ? "md" : "sm"}
-          className={iconOnly ? undefined : "flex-shrink-0"}
-        />
+        {/* Global voice command — part of voice mode, so it follows the
+            same feature flag (see lib/voice/enabled.ts). */}
+        {voiceModeEnabled && (
+          <VoiceRecorderButton
+            onTranscript={handleVoiceCommand}
+            size={iconOnly ? "md" : "sm"}
+            className={iconOnly ? undefined : "flex-shrink-0"}
+          />
+        )}
       </div>
 
       <nav className={cn("mt-2 space-y-0.5", iconOnly && "flex flex-col items-center")}>
