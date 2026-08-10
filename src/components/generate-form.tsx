@@ -1079,6 +1079,21 @@ function GenerateFormInner({
   });
   // Last thing the agent said, so pickPhrasing can avoid repeating it.
   const lastAgentPhrasingRef = useRef<string | null>(null);
+  // True while the agent's own TTS is playing. Reported 2026-08-10 as "the
+  // agent speaks and repeats itself over and over": the microphone was
+  // picking up the agent's replies out of the speakers, transcribing them,
+  // and treating them as the user's answer — "What can I help you create?"
+  // came back as a prompt, its own follow-up came back as the answer to
+  // itself, and round it went. Recognition is now stopped for the duration
+  // of every spoken line and restarted only once the audio has finished.
+  const agentSpeakingRef = useRef(false);
+  // The playing audio element and a resolver for whatever is awaiting it,
+  // so stopVoiceSession can cut a reply off mid-sentence — without these,
+  // pressing the button left the agent talking to the end of its queue,
+  // which is what "it doesn't cancel, it keeps going" was.
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const speakResolveRef = useRef<(() => void) | null>(null);
+  const restartListeningTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
 
   const [items, setItems] = useState<ChatItem[]>([]);
@@ -1286,8 +1301,14 @@ function GenerateFormInner({
   // than leaving the mic listening after the person's left the page.
   useEffect(() => {
     return () => {
+      voiceWantsListeningRef.current = false;
       voiceSessionRef.current?.stop();
+      // Navigating away mid-sentence shouldn't leave the agent talking to
+      // an empty room, or a queued restart reopening the mic afterwards.
+      currentAudioRef.current?.pause();
+      speakResolveRef.current?.();
       if (voiceStatusTimeoutRef.current) clearTimeout(voiceStatusTimeoutRef.current);
+      if (restartListeningTimeoutRef.current) clearTimeout(restartListeningTimeoutRef.current);
     };
   }, []);
 
@@ -1367,7 +1388,13 @@ function GenerateFormInner({
       // otherwise still be calling the very first render's handler — and
       // submitting with, say, the character that was selected back then
       // rather than the one just switched to by voice.
-      onFinal: (text) => handleVoiceFinalRef.current(text),
+      onFinal: (text) => {
+        // Belt-and-braces against the self-hearing loop: recognition is
+        // already stopped while the agent talks, but a result captured just
+        // before that stop can still land here a moment later.
+        if (agentSpeakingRef.current) return;
+        handleVoiceFinalRef.current(text);
+      },
       onError: (kind) => {
         voiceWantsListeningRef.current = false;
         voiceSessionRef.current = null;
@@ -1376,9 +1403,17 @@ function GenerateFormInner({
         setError(kind === "not-supported" ? v.notSupported : kind === "not-allowed" ? v.micBlocked : v.lostMic);
       },
       onEnd: () => {
-        // Only a browser-side timeout should restart us — see
-        // voiceWantsListeningRef.
-        if (voiceWantsListeningRef.current) beginListening();
+        // Only a browser-side silence timeout should restart us — not an
+        // intentional stop, and not the pause taken while the agent is
+        // speaking (agentSay restarts it itself once the audio finishes).
+        if (!voiceWantsListeningRef.current || agentSpeakingRef.current) return;
+        // Small delay rather than restarting inline: some browsers end and
+        // re-end immediately if the mic isn't ready yet, and a tight
+        // start/end loop pegs the CPU and throws from start().
+        if (restartListeningTimeoutRef.current) clearTimeout(restartListeningTimeoutRef.current);
+        restartListeningTimeoutRef.current = setTimeout(() => {
+          if (voiceWantsListeningRef.current && !agentSpeakingRef.current) beginListening();
+        }, 250);
       },
     });
     voiceSessionRef.current = session;
@@ -1401,24 +1436,32 @@ function GenerateFormInner({
     voiceStepRef.current = "await-prompt";
     voiceDraftRef.current = { prompt: "", type: null, characterId: null };
     lastAgentPhrasingRef.current = null;
-    beginListening();
     // The agent speaks first, before the person has said anything, so the
     // session opens as a conversation rather than a silent open mic.
-    agentSay(pickPhrasing(g.voiceAskOpening, null));
+    // agentSay opens the microphone itself once it's finished talking —
+    // starting to listen here as well would just capture the opening line.
+    void agentSay(pickPhrasing(g.voiceAskOpening, null));
   }
 
   function stopVoiceSession() {
     voiceWantsListeningRef.current = false;
+    stopSpeaking();
     voiceSessionRef.current?.stop();
     voiceSessionRef.current = null;
     if (voiceStatusTimeoutRef.current) clearTimeout(voiceStatusTimeoutRef.current);
+    if (restartListeningTimeoutRef.current) clearTimeout(restartListeningTimeoutRef.current);
     setVoiceSessionActive(false);
     setVoiceInterimCaption("");
     setVoiceStatusMessage(null);
     setVoiceAgentMessage(null);
   }
 
-  async function speak(text: string) {
+  // Resolves when the line has finished playing (not merely when playback
+  // started) — the voice agent needs that to know when it's safe to listen
+  // again. Resolves rather than rejects on every failure path, since a
+  // caller waiting to reopen the microphone must never be left hanging by
+  // a missing key, a blocked autoplay, or a decode error.
+  async function speak(text: string): Promise<void> {
     try {
       const result = await synthesizeVoice(text);
       if (result.error !== null) {
@@ -1431,11 +1474,41 @@ function GenerateFormInner({
         return;
       }
       const audio = new Audio(`data:audio/mpeg;base64,${result.audioBase64}`);
-      await audio.play();
+      currentAudioRef.current = audio;
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          resolve();
+        };
+        speakResolveRef.current = finish;
+        audio.addEventListener("ended", finish);
+        audio.addEventListener("error", finish);
+        // A rejected play() (autoplay policy, no audio device) means "ended"
+        // will never fire, so resolve off the rejection instead.
+        audio.play().catch(finish);
+      });
     } catch {
-      // Autoplay can be blocked before the user has interacted with the
-      // page at all — not worth surfacing an error for that.
+      // Network/synthesis blew up — the text is still on screen, so the
+      // conversation can continue without the audio.
+    } finally {
+      currentAudioRef.current = null;
+      speakResolveRef.current = null;
     }
+  }
+
+  function stopSpeaking() {
+    const audio = currentAudioRef.current;
+    if (audio) {
+      audio.pause();
+      currentAudioRef.current = null;
+    }
+    // Pausing doesn't fire "ended", so anything awaiting the line has to be
+    // released explicitly or it would wait forever.
+    speakResolveRef.current?.();
+    speakResolveRef.current = null;
+    agentSpeakingRef.current = false;
   }
 
   function resetChat() {
@@ -2089,10 +2162,33 @@ function GenerateFormInner({
   // Says something and shows it in the session card at the same time. TTS
   // is best-effort: if voice replies aren't configured the text is still on
   // screen, so the conversation never silently stalls.
-  function agentSay(message: string) {
+  async function agentSay(message: string) {
     lastAgentPhrasingRef.current = message;
     setVoiceAgentMessage(message);
-    void speak(message);
+    setVoiceInterimCaption("");
+
+    // Close the microphone for the whole spoken line. Without this the
+    // agent hears itself and answers its own questions — see
+    // agentSpeakingRef. stop() also clears the recognizer's onEnd, so this
+    // pause can't be mistaken for a silence timeout and auto-restarted.
+    agentSpeakingRef.current = true;
+    if (restartListeningTimeoutRef.current) clearTimeout(restartListeningTimeoutRef.current);
+    voiceSessionRef.current?.stop();
+    voiceSessionRef.current = null;
+
+    await speak(message);
+
+    agentSpeakingRef.current = false;
+    // The session may have been stopped (or handed off to a generation)
+    // while this line was playing — only reopen the mic if it's still
+    // wanted. Short delay first: on laptop speakers the tail of the line
+    // (and the room's reverb of it) is still audible for a moment after
+    // "ended" fires, and reopening instantly can catch it and start the
+    // self-answering loop all over again.
+    if (restartListeningTimeoutRef.current) clearTimeout(restartListeningTimeoutRef.current);
+    restartListeningTimeoutRef.current = setTimeout(() => {
+      if (voiceWantsListeningRef.current && !agentSpeakingRef.current) beginListening();
+    }, 350);
   }
 
   // Asks whichever detail is still missing, then confirms. Called with the
@@ -2101,14 +2197,14 @@ function GenerateFormInner({
   function askNextVoiceStep(draft: { prompt: string; type: ContentType | null; characterId: string | null }) {
     if (!draft.type) {
       voiceStepRef.current = "await-type";
-      agentSay(pickPhrasing(g.voiceAskType, lastAgentPhrasingRef.current));
+      void agentSay(pickPhrasing(g.voiceAskType, lastAgentPhrasingRef.current));
       return;
     }
     // Only worth asking when they actually have characters to choose from
     // and haven't already got one selected — otherwise it's a dead question.
     if (!draft.characterId && characters.length > 0) {
       voiceStepRef.current = "await-character";
-      agentSay(pickPhrasing(g.voiceAskCharacter, lastAgentPhrasingRef.current));
+      void agentSay(pickPhrasing(g.voiceAskCharacter, lastAgentPhrasingRef.current));
       return;
     }
 
@@ -2118,7 +2214,7 @@ function GenerateFormInner({
     const summary = characterName
       ? formatMsg(g.voiceConfirmWithCharacter, { type: typeLabel, prompt: draft.prompt, name: characterName })
       : formatMsg(g.voiceConfirmPlain, { type: typeLabel, prompt: draft.prompt });
-    agentSay(`${summary} ${pickPhrasing(g.voiceAskConfirm, null)}`);
+    void agentSay(`${summary} ${pickPhrasing(g.voiceAskConfirm, null)}`);
   }
 
   // Runs every time the recognizer finishes a sentence. Which question is
@@ -2145,7 +2241,7 @@ function GenerateFormInner({
       voiceStepRef.current = "await-prompt";
       setVoiceStatusMessage(g.voiceNewChatStarted);
       clearVoiceStatusSoon();
-      agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
+      void agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
       return;
     }
 
@@ -2176,7 +2272,7 @@ function GenerateFormInner({
       if (isTrivialUtterance(text)) {
         // "Hey" / "hello" / "testing" — no content to build from. Ask
         // again instead of handing it to the generator.
-        agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
+        void agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
         return;
       }
       const draft = { ...voiceDraftRef.current, prompt: text, characterId: characterId || null };
@@ -2188,7 +2284,7 @@ function GenerateFormInner({
     if (step === "await-type") {
       const type = parseContentType(text);
       if (!type) {
-        agentSay(pickPhrasing(g.voiceAskType, lastAgentPhrasingRef.current));
+        void agentSay(pickPhrasing(g.voiceAskType, lastAgentPhrasingRef.current));
         return;
       }
       setContentType(type);
@@ -2212,7 +2308,7 @@ function GenerateFormInner({
       );
       const match = name ? characters.find((c) => c.name === name) : undefined;
       if (!match) {
-        agentSay(pickPhrasing(g.voiceAskCharacter, lastAgentPhrasingRef.current));
+        void agentSay(pickPhrasing(g.voiceAskCharacter, lastAgentPhrasingRef.current));
         return;
       }
       setCharacterId(match.id);
@@ -2241,7 +2337,7 @@ function GenerateFormInner({
     if (answer === "no") {
       voiceDraftRef.current = { prompt: "", type: null, characterId: null };
       voiceStepRef.current = "await-prompt";
-      agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
+      void agentSay(pickPhrasing(g.voiceAskOpening, lastAgentPhrasingRef.current));
       return;
     }
     // Neither a clear yes nor no — re-read the request rather than guess.

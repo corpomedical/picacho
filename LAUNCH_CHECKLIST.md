@@ -143,6 +143,11 @@ Also in this pass:
 
 `tsc` clean; `eslint` 0 errors (only the long-standing `set-state-in-effect`/`exhaustive-deps` warnings).
 
+**Follow-up fixes, same day** — reported as "the agent speaks and repeats itself over and over, it doesn't listen, and the button doesn't cancel". All three came from two omissions in the pass above:
+- [x] **The agent was hearing itself.** The microphone stayed open while its own TTS played out of the speakers, so it transcribed its own questions and answered them: the opening line came back as a prompt, the follow-up came back as the answer to itself, and it looped — which also meant it never got a chance to hear the actual person. Recognition is now closed for the whole duration of every spoken line (`agentSpeakingRef`) and reopened 350ms after the audio ends, since on laptop speakers the tail of the line is still audible for a moment past the `ended` event. `onFinal` also drops anything that lands while speaking, for results captured just before the stop took effect.
+- [x] **Nothing tracked the audio, so Stop couldn't silence it.** `speak()` fired an `Audio` element and forgot it, and only awaited `play()` (which resolves when playback *starts*). It now resolves on `ended` and keeps the element plus its resolver in refs, so `stopSpeaking()` can cut a line off mid-sentence and release whatever was awaiting it. Stop now genuinely stops.
+- [x] Restarts after a browser silence timeout are debounced by 250ms — some browsers end and immediately re-end when the mic isn't ready, and restarting inline pegged the CPU and threw from `start()`.
+
 ## After launch (polish, not blocking)
 
 - [x] Highlight the active tab in the admin nav bar (2026-08-07) — new `AdminNav` client component compares the current path and bolds/underlines the matching tab.
