@@ -227,7 +227,15 @@ Not the delete itself — `deleteGeneration` works and returns cleanly. The caus
 
 The same trap existed on the character and project detail pages, which have their own delete buttons and the same `notFound()` on a missing row. All three now `redirect()` back to their list instead. That's the better outcome regardless of the race — a stale bookmark or a mistyped id also lands somewhere useful rather than a dead end. `/admin/users/[id]` deliberately keeps `notFound()`: accounts aren't deleted, so a missing one there is a genuine error worth surfacing.
 
-Still to do: error/empty-state review of the app pages, the buy-extra-credits flow, and the dashboard traffic graph.
+### Error / empty-state sweep — 2026-08-10
+
+- [x] **No unguarded `.single()` results.** Scanned every page for a `.single()` result whose properties are read without a null check first — the classic source of "cannot read property of null" crashes on a deleted or missing row. None found.
+- [x] **List rendering checked.** Seven pages render `.map()` with no empty state; all seven are false positives — they iterate static config (`NAV`, `VIDEO_MODELS`, `IMAGE_MODELS`, pricing tiers, legal copy), never user data that could come back empty.
+- [x] **Added `src/app/global-error.tsx`.** `error.tsx` only catches errors thrown inside the root layout's *children*; if the root layout itself fails, React never mounts it and Next falls back to its own unstyled default page — which reads as a broken site rather than a handled problem. The new boundary renders its own `<html>`/`<body>` and deliberately imports nothing: no providers, no i18n, no shared components, since any of those could be the reason the layout failed in the first place. That's why its copy is plain English rather than translated. The "Go home" link is a plain `<a>` on purpose (lint rule suppressed with a note) — a client-side transition would re-enter the same broken shell, so a full document load is the point.
+
+Full project: `tsc` clean, `eslint` **0 errors**, 21 warnings (all pre-existing `set-state-in-effect` plus two intentionally-unused OAuth icons).
+
+Still to do: the buy-extra-credits flow and the dashboard traffic graph.
 
 ## After launch (polish, not blocking)
 
