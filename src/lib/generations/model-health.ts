@@ -21,6 +21,14 @@ import { createAdminClient } from "@/lib/supabase/server";
 // serious problem."
 const FAILURE_THRESHOLD = 3;
 
+// A trip also needs failures from at least this many DIFFERENT accounts.
+//
+// At current volume three consecutive failures can be three requests in total,
+// so one person with a corrupt reference photo could take a healthy model
+// offline for everyone. Corroboration from a second account is what separates
+// "this model is broken" from "this user's input is bad".
+const MIN_DISTINCT_USERS = 2;
+
 // How long a tripped model stays out before one trial request is allowed
 // through. Doubles per consecutive trip, so a genuinely dead model isn't
 // retried every few minutes forever, while a brief outage recovers quickly
@@ -60,18 +68,23 @@ export async function recordModelFailure(
   modelId: string,
   kind: "video" | "image",
   error: string,
+  userId?: string,
 ): Promise<void> {
   if (!modelId || !isProviderFault(error)) return;
 
   const admin = createAdminClient();
   const { data: existing } = await admin
     .from("model_health")
-    .select("consecutive_failures, trip_count")
+    .select("consecutive_failures, trip_count, failing_user_ids")
     .eq("model_id", modelId)
-    .maybeSingle<{ consecutive_failures: number; trip_count: number }>();
+    .maybeSingle<{ consecutive_failures: number; trip_count: number; failing_user_ids: string[] }>();
 
   const failures = (existing?.consecutive_failures ?? 0) + 1;
-  const shouldTrip = failures >= FAILURE_THRESHOLD;
+  const failingUsers = Array.from(
+    new Set([...(existing?.failing_user_ids ?? []), ...(userId ? [userId] : [])]),
+  );
+  const shouldTrip =
+    failures >= FAILURE_THRESHOLD && failingUsers.length >= MIN_DISTINCT_USERS;
   const tripCount = shouldTrip ? (existing?.trip_count ?? 0) + 1 : (existing?.trip_count ?? 0);
   const cooldown = Math.min(BASE_COOLDOWN_MS * 2 ** Math.max(0, tripCount - 1), MAX_COOLDOWN_MS);
 
@@ -79,6 +92,7 @@ export async function recordModelFailure(
     model_id: modelId,
     kind,
     consecutive_failures: failures,
+    failing_user_ids: failingUsers,
     last_error: error.slice(0, 500),
     last_failure_at: new Date().toISOString(),
     ...(shouldTrip
@@ -102,6 +116,7 @@ export async function recordModelSuccess(modelId: string, kind: "video" | "image
     model_id: modelId,
     kind,
     consecutive_failures: 0,
+    failing_user_ids: [],
     tripped_at: null,
     retry_after: null,
     trip_count: 0,
@@ -141,10 +156,41 @@ export async function getUnavailableModels(): Promise<Map<string, ModelHealth>> 
   return out;
 }
 
-// Gate checked before spending anything. Returns a user-facing message when
-// the model is out of service, or null when it's fine to proceed.
-export async function blockedReason(modelId: string, modelName: string): Promise<string | null> {
+// Resolves which model should actually be used, given that the requested one
+// may be out of service.
+//
+// Failover rather than refusal, deliberately. Blocking sounds safer but kills
+// the free trial outright — free accounts are pinned to a single model (see
+// FREE_TIER_VIDEO_MODEL_ID), so if that one trips, every new signup's first
+// experience of the product is "under maintenance". Routing to a working model
+// means the person still gets their video and the broken model still stops
+// being called, which is the actual goal.
+//
+// `candidates` must be supplied cheapest-first by the caller. Cost order
+// matters: falling a free-tier user over to Veo would turn a EUR0 trial
+// generation into several euros of spend, which is a worse leak than the one
+// this whole system exists to close.
+export async function resolveModel(
+  requestedId: string,
+  candidates: { id: string; name: string }[],
+): Promise<
+  | { ok: true; modelId: string; substitutedFrom: string | null }
+  | { ok: false; message: string }
+> {
   const unavailable = await getUnavailableModels();
-  if (!unavailable.has(modelId)) return null;
-  return `${modelName} is temporarily unavailable while we look into a problem with it. Try another model, or check back shortly — nothing has been charged.`;
+  if (!unavailable.has(requestedId)) {
+    return { ok: true, modelId: requestedId, substitutedFrom: null };
+  }
+
+  const healthy = candidates.find((c) => c.id !== requestedId && !unavailable.has(c.id));
+  if (healthy) {
+    return { ok: true, modelId: healthy.id, substitutedFrom: requestedId };
+  }
+
+  // Nothing left to fall back to — only now does anyone get turned away.
+  const requestedName = candidates.find((c) => c.id === requestedId)?.name ?? requestedId;
+  return {
+    ok: false,
+    message: `${requestedName} is temporarily unavailable while we look into a problem with it, and no alternative is free right now. Nothing has been charged — please try again shortly.`,
+  };
 }

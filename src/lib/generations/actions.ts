@@ -18,8 +18,8 @@ import {
 } from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
 import { submitVideoJob } from "@/lib/generations/providers/fal";
-import { getImageModel } from "@/lib/generations/providers/image-models";
-import { blockedReason } from "@/lib/generations/model-health";
+import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
+import { resolveModel } from "@/lib/generations/model-health";
 
 // Appended to the user's prompt when compiling the one scene that every angle
 // in a multi-angle batch will share.
@@ -584,7 +584,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   ]);
   const maxAttempts = Number(retrySetting?.value) || undefined;
   const useRealProviders = flag?.enabled === true;
-  const imageModelId = imageModelSetting?.value ?? "gpt-image";
+  let imageModelId = imageModelSetting?.value ?? "gpt-image";
   // Per-user preference (see setSkipAiRefinement in profile/actions.ts) —
   // skips the paid Claude draft + OpenAI review steps for THIS account's
   // generations only, not everyone's. See pipeline.ts's skipRefinement
@@ -623,7 +623,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     (userProfile?.plan ?? "none") === "none" &&
     (userProfile?.bonus_credits ?? 0) === 0 &&
     userProfile?.role !== "admin";
-  const videoModelId = isFreeTierAccount
+  let videoModelId = isFreeTierAccount
     ? FREE_TIER_VIDEO_MODEL_ID
     : contentType === "video" && VIDEO_MODELS.some((m) => m.id === requestedVideoModelId)
       ? requestedVideoModelId
@@ -689,15 +689,32 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
-  // Circuit breaker. A model that has failed three times in a row is out of
-  // service, and this is checked BEFORE any credit is spent or any provider
-  // call is made — the whole point is that a broken model stops costing money
-  // instead of continuing to sell an error. See lib/generations/model-health.ts.
-  const activeModelId = contentType === "video" ? videoModelId : imageModelId;
-  const activeModelName =
-    contentType === "video" ? getVideoModel(videoModelId).name : getImageModel(imageModelId).name;
-  const maintenanceMessage = await blockedReason(activeModelId, activeModelName);
-  if (maintenanceMessage) return { error: maintenanceMessage };
+  // Circuit breaker, checked BEFORE any credit is spent or any provider call
+  // is made. A model that has failed three times in a row (across at least two
+  // accounts) is out of service, and rather than turning the person away we
+  // route them to a healthy model of the same kind. See model-health.ts for
+  // why failover beats blocking — chiefly that free accounts are pinned to one
+  // model, so blocking would make "under maintenance" the first thing every
+  // new signup sees.
+  //
+  // Candidates are ordered cheapest-first on purpose: falling a free-tier user
+  // over to Veo would turn a EUR0 trial into several euros of spend.
+  const modelCandidates =
+    contentType === "video"
+      ? [...VIDEO_MODELS]
+          .sort((a, b) => (a.durations[0]?.creditWeight ?? 99) - (b.durations[0]?.creditWeight ?? 99))
+          .map((m) => ({ id: m.id, name: m.name }))
+      : IMAGE_MODELS.map((m) => ({ id: m.id, name: m.name }));
+
+  const resolved = await resolveModel(
+    contentType === "video" ? videoModelId : imageModelId,
+    modelCandidates,
+  );
+  if (!resolved.ok) return { error: resolved.message };
+
+  if (contentType === "video") videoModelId = resolved.modelId;
+  else imageModelId = resolved.modelId;
+  const substitutedFrom = resolved.substitutedFrom;
 
   const {
     error: allowanceError,
@@ -974,6 +991,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // failed" update below, because neither is true yet: the row stays at
       // "generating" and job-runner writes the real outcome when it lands.
       if (result.pendingVideoJob) {
+        // Say so when a substitution happened. Quietly rendering with a
+        // different model than the one someone picked is the kind of thing
+        // that reads as a bug when they notice — and they will notice.
+        if (substitutedFrom) {
+          result.attempts[result.attempts.length - 1]?.steps.push({
+            step: "generate",
+            detail: `${getVideoModel(substitutedFrom).name} was unavailable, so this was rendered with ${getVideoModel(videoModelId).name}.`,
+          });
+        }
+
         await saveVideoJob({
           generationId: placeholder.id,
           userId: userData.user.id,
@@ -1341,7 +1368,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // Same per-generation model choice as runGeneration (see the comment
   // there) — one choice applies to every angle in this batch.
   const requestedVideoModelId = (formData.get("video_model_id") as string) || "";
-  const videoModelId = VIDEO_MODELS.some((m) => m.id === requestedVideoModelId)
+  let videoModelId = VIDEO_MODELS.some((m) => m.id === requestedVideoModelId)
     ? requestedVideoModelId
     : (videoModelSetting?.value ?? "kling");
   const activeVideoModel = getVideoModel(videoModelId);
@@ -1363,8 +1390,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // Same circuit breaker as single generation — a model out of service must
   // not be reachable through multi-angle either, which would otherwise submit
   // several paid renders to a provider already known to be failing.
-  const angleMaintenance = await blockedReason(videoModelId, getVideoModel(videoModelId).name);
-  if (angleMaintenance) return { error: angleMaintenance };
+  const angleCandidates = [...VIDEO_MODELS]
+    .sort((a, b) => (a.durations[0]?.creditWeight ?? 99) - (b.durations[0]?.creditWeight ?? 99))
+    .map((m) => ({ id: m.id, name: m.name }));
+  const angleResolved = await resolveModel(videoModelId, angleCandidates);
+  if (!angleResolved.ok) return { error: angleResolved.message };
+  videoModelId = angleResolved.modelId;
 
   if (videoModelId === "kling-o3" && !character.reference_image_urls?.[0]) {
     return {

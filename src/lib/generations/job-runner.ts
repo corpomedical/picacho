@@ -219,7 +219,7 @@ async function finish(
       // nothing about whether the model works.
       const lastDetail =
         outcome.attempts[outcome.attempts.length - 1]?.steps.slice(-1)[0]?.detail ?? "Generation failed.";
-      await recordModelFailure(modelId, kind, lastDetail);
+      await recordModelFailure(modelId, kind, lastDetail, userId);
     }
   }
 
