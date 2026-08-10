@@ -457,6 +457,17 @@ export type RealPipelineOptions = {
   // Ignored for image generation, which is a single bounded call that
   // comfortably fits in one request and gains nothing from being staged.
   submitVideoOnly?: boolean;
+  // Run drafting, review and validation, then stop and hand back the compiled
+  // prompt without generating anything.
+  //
+  // Exists for multi-angle: every angle must render from the SAME scene
+  // description, with only the camera line differing, or the angles come back
+  // as three unrelated shots that merely share a face. Consistency is the
+  // product, so this matters more here than almost anywhere else.
+  //
+  // Also removes two thirds of the AI spend on a three-angle request, since
+  // drafting and review now happen once instead of once per angle.
+  compileOnly?: boolean;
 };
 
 export async function runRealPipeline(
@@ -867,6 +878,27 @@ export async function runRealPipeline(
           const durationNote = options.videoDurationSeconds ? `, ${options.videoDurationSeconds}s` : "";
           const aspectNote = options.videoAspectRatio ? `, ${options.videoAspectRatio}` : "";
           const modelName = getVideoModel(options.videoModelId ?? "kling").name;
+
+          // Compile-only: the caller wants the finished prompt, not a render.
+          //
+          // Used by multi-angle, which needs ONE canonical scene description
+          // that every angle then shares. Running the full pipeline per angle
+          // (what it used to do) meant each angle got its own independent
+          // draft and review, and two separate creative expansions of "a
+          // woman in a Paris coffee shop" furnish the room differently every
+          // time — different table, different cup, different background. The
+          // camera angle was meant to be the only variable; in practice the
+          // entire scene was.
+          if (options.compileOnly) {
+            attempts.push({
+              attempt: attemptNumber,
+              steps,
+              passed: true,
+              issues: [],
+              compiledPrompt: reviewedPrompt,
+            });
+            return { attempts, succeeded: false, finalPrompt: reviewedPrompt, resultUrl: null };
+          }
 
           // Fire-and-poll: hand the job to fal.ai's queue and stop here rather
           // than waiting for it.

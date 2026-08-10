@@ -17,6 +17,20 @@ import {
   type AdvanceResult,
 } from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
+import { submitVideoJob } from "@/lib/generations/providers/fal";
+
+// Appended to the user's prompt when compiling the one scene that every angle
+// in a multi-angle batch will share.
+//
+// The camera instruction is deliberately withheld here and added per angle
+// afterwards. Without this, the draft invents its own camera position and
+// then each angle carries two conflicting camera directions — the one the
+// draft imagined and the one the angle preset appends — and Kling picks
+// whichever it likes.
+const SHARED_SCENE_INSTRUCTION =
+  "Describe the setting, wardrobe, props, lighting and background precisely and concretely, " +
+  "since several shots will be filmed from this same scene. Do not mention the camera angle, " +
+  "camera position, or shot type — those are specified separately per shot.";
 import {
   PLAN_LIMITS,
   PLAN_LABELS,
@@ -1445,6 +1459,63 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // result for every angle in the batch.
   const angleBrandRules = await loadBrandRules(supabase, userData.user.id);
 
+  // ONE scene, compiled once, shared by every angle.
+  //
+  // This used to run the whole draft/review pipeline per angle, with the
+  // angle hint appended to the user's raw prompt. That produced three
+  // INDEPENDENT creative expansions of the same request, and two separate
+  // drafts of "a woman in a Paris coffee shop" never furnish the room the
+  // same way — confirmed on the first real multi-angle run, 2026-08-10, where
+  // one angle got a round table and a white ceramic cup, another got a plain
+  // table and a different background, and a third described the shirt
+  // differently again. Same face, three unrelated shots.
+  //
+  // Consistency is the entire product promise, so the scene is now settled
+  // before any angle is rendered, and each angle differs by its camera line
+  // and nothing else. It's also cheaper: one Claude + OpenAI pass instead of
+  // one per angle.
+  const sharedScene = useRealProviders
+    ? await runRealPipeline(
+        `${userInput}\n\n${SHARED_SCENE_INSTRUCTION}`,
+        characterForPipeline,
+        {
+          contentType: "video",
+          videoModelId,
+          videoCharacterAnchorUrl,
+          videoDurationSeconds,
+          videoAspectRatio,
+          skipRefinement,
+          brandRules: angleBrandRules,
+          compileOnly: true,
+        },
+        maxAttempts,
+      )
+    : null;
+
+  // If the shared scene didn't compile, every angle would submit an empty or
+  // half-formed prompt — three paid Kling renders of nothing. Fail the batch
+  // here instead, refund the credits, and say so.
+  if (useRealProviders && !sharedScene?.finalPrompt?.trim()) {
+    const failureLog: AttemptLog[] = sharedScene?.attempts?.length
+      ? sharedScene.attempts
+      : [
+          {
+            attempt: 1,
+            steps: [{ step: "generate", detail: "Couldn't build a scene description for these angles." }],
+            passed: false,
+            issues: ["provider_error"],
+            compiledPrompt: "",
+          },
+        ];
+
+    await supabase
+      .from("generations")
+      .update({ status: "failed", pipeline_log: failureLog, credits_used: 0, progress_stage: null })
+      .eq("angle_group_id", groupId);
+
+    return { error: "Couldn't build a scene for these angles — try rewording the prompt." };
+  }
+
   const settled = await Promise.allSettled(
     angleIds.map(async (angleId) => {
       const preset = getAnglePreset(angleId);
@@ -1457,35 +1528,34 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       let resultUrl: string | null;
 
       if (useRealProviders) {
-        const result = await runRealPipeline(
-          angledInput,
-          characterForPipeline,
-          {
-            contentType: "video",
-            videoModelId,
-            videoCharacterAnchorUrl,
-            videoDurationSeconds,
-            videoAspectRatio,
-            skipRefinement,
-            brandRules: angleBrandRules,
-            submitVideoOnly: true,
-          },
-          maxAttempts,
-          // Every angle shares one cancel_requested flag via angle_group_id
-          // (set in bulk by requestMultiAngleGenerationCancel), but each
-          // angle checks its own row so one angle finishing/failing first
-          // doesn't affect how the others notice the stop request.
-          rowId
-            ? async () => {
-                const { data } = await supabase
-                  .from("generations")
-                  .select("cancel_requested")
-                  .eq("id", rowId)
-                  .single();
-                return data?.cancel_requested === true;
-              }
-            : undefined,
-        );
+        // The shared scene plus this angle's camera line — the only thing
+        // that differs between the angles in a batch.
+        const anglePrompt = preset
+          ? `${sharedScene!.finalPrompt}\n\n${preset.promptHint}`
+          : sharedScene!.finalPrompt;
+
+        const angleAttempts: AttemptLog[] = JSON.parse(JSON.stringify(sharedScene!.attempts));
+        const lastAttempt = angleAttempts[angleAttempts.length - 1];
+        if (lastAttempt) {
+          lastAttempt.compiledPrompt = anglePrompt;
+          lastAttempt.steps.push({
+            step: "generate",
+            detail: `Shared scene, ${preset?.label ?? angleId} camera angle.`,
+          });
+        }
+
+        const result = {
+          attempts: angleAttempts,
+          succeeded: false,
+          finalPrompt: anglePrompt,
+          resultUrl: null as string | null,
+          pendingVideoJob: await submitVideoJob(anglePrompt, videoModelId, {
+            characterAnchorImageUrl: videoCharacterAnchorUrl,
+            durationSeconds: videoDurationSeconds,
+            aspectRatio: videoAspectRatio ?? undefined,
+            generateNativeAudio: true,
+          }),
+        };
         // Queued, not finished. Record the handle and leave this angle's row
         // at "generating" — the client polls it from here. Returning early
         // skips the status update below, which would otherwise write "failed"
