@@ -543,8 +543,6 @@ const pt = {
     typeToConfirm: "Digite {username} para confirmar",
     deleteMyAccount: "Excluir minha conta",
     editUsername: "Editar nome de usuário",
-    profileDetails: "Detalhes do perfil",
-    usageLimits: "Limites de uso",
     help: "Ajuda",
     showSidebar: "Mostrar barra lateral",
     hideSidebar: "Ocultar barra lateral",

@@ -543,8 +543,6 @@ const it = {
     typeToConfirm: "Digita {username} per confermare",
     deleteMyAccount: "Elimina il mio account",
     editUsername: "Modifica nome utente",
-    profileDetails: "Dettagli del profilo",
-    usageLimits: "Limiti di utilizzo",
     help: "Aiuto",
     showSidebar: "Mostra barra laterale",
     hideSidebar: "Nascondi barra laterale",

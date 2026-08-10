@@ -559,8 +559,6 @@ const en = {
     typeToConfirm: "Type {username} to confirm",
     deleteMyAccount: "Delete my account",
     editUsername: "Edit username",
-    profileDetails: "Profile details",
-    usageLimits: "Usage limits",
     help: "Help",
     showSidebar: "Show sidebar",
     hideSidebar: "Hide sidebar",

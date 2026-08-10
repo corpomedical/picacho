@@ -333,7 +333,21 @@ The last unmetered path from the pricing analysis. Adding spoken dialogue runs t
 That closes every leak identified in `Picacho pricing analysis.xlsx`:
 unlimited character photos (capped), failed generations billing 3× (fixed at the source), unmetered TTS (voice mode flagged off), unmetered dialogue (surcharged), stopped generations (unavoidable, documented).
 
-Still to do: Phase 3 (vertical rule packs), and optionally renaming "Usage limits" to match "Usage & plan".
+## Naming consistency pass — 2026-08-10
+
+Reported: "Usage & plan" couldn't be found because the sidebar calls the same destination something else. It turned out to be two cases, not one — the sidebar's gear menu named both of its settings links differently from the tabs they open:
+
+| Sidebar said | Tab it opens | Now says |
+|---|---|---|
+| Profile details | Account | Account |
+| Usage limits | Usage & plan | Usage & plan |
+
+- [x] Sidebar entries now use `s.account` / `s.usageAndPlan` — the same keys the tabs use, so they can't drift apart again.
+- [x] Deleted the orphaned `profileDetails` and `usageLimits` keys from all four locales rather than leaving duplicates with matching text.
+
+**Swept the rest of the copy for the same problem and found none.** A script compared all 470 single-line English strings for repeated text: 28 pairs share wording, but every one is the same word in a *different context* (`nav.characters` vs `characters.listTitle`, `nav.settings` vs `settings.title`). Those are correct as they are — a nav label and a page heading should stay independently translatable even when English happens to use the same word. Merging them would be churn that makes translation worse, so nothing else was touched.
+
+Still to do: Phase 3 (vertical rule packs), whenever the audience is known.
 
 ## After launch (polish, not blocking)
 

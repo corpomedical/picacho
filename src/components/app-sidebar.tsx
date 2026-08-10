@@ -956,7 +956,7 @@ export function AppSidebar({
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >
                 <IdCardIcon className="h-4 w-4 flex-shrink-0" />
-                {s.profileDetails}
+                {s.account}
               </Link>
               <Link
                 href="/app/settings?tab=usage"
@@ -964,7 +964,7 @@ export function AppSidebar({
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >
                 <GaugeIcon className="h-4 w-4 flex-shrink-0" />
-                {s.usageLimits}
+                {s.usageAndPlan}
               </Link>
             </div>
 

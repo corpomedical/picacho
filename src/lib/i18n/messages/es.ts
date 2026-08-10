@@ -543,8 +543,6 @@ const es = {
     typeToConfirm: "Escribe {username} para confirmar",
     deleteMyAccount: "Eliminar mi cuenta",
     editUsername: "Editar nombre de usuario",
-    profileDetails: "Detalles del perfil",
-    usageLimits: "Límites de uso",
     help: "Ayuda",
     showSidebar: "Mostrar barra lateral",
     hideSidebar: "Ocultar barra lateral",
