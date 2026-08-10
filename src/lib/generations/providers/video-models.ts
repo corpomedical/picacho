@@ -111,6 +111,52 @@ export const VIDEO_MODELS = [
       { seconds: 8, creditWeight: 11, default: true },
     ] satisfies VideoDurationOption[],
   },
+  {
+    id: "kling-2.5",
+    name: "Kling 2.5 Turbo Pro",
+    falEndpoint: "fal-ai/kling-video/v2.5-turbo/pro/image-to-video",
+    recommended: false,
+    // Confirmed against fal.ai's own docs, 2026-08-11 (llms.txt for
+    // fal-ai/kling-video/v2.5-turbo/pro/image-to-video), not guessed:
+    // $0.35 for 5s, +$0.07 for each additional second. `image_url` is
+    // REQUIRED — this is a first-frame endpoint, so it inherits the same
+    // "clip opens in the reference photo's exact pose" behaviour as 1.6's
+    // elements endpoint, and it has no aspect_ratio parameter (the input
+    // image's shape wins, same as Kling O3 — fal.ts reframes the photo first
+    // to work around it). It does accept negative_prompt and cfg_scale.
+    description: "Sharper motion and prompt accuracy than 1.6 (~$0.07/sec). Needs a reference photo.",
+    durations: [
+      { seconds: 5, creditWeight: 2, default: true },
+      { seconds: 10, creditWeight: 3 },
+    ] satisfies VideoDurationOption[],
+  },
+  {
+    id: "seedance",
+    name: "Seedance 2.5",
+    falEndpoint: "bytedance/seedance-2.5/reference-to-video",
+    recommended: false,
+    // The one model here whose reference images are IDENTITY references
+    // rather than the opening frame. fal's schema: "Reference images to guide
+    // video generation. Refer to them in the prompt as @Image1, @Image2."
+    // That is what stops every clip beginning frozen in the photographed
+    // pose, and what lets several camera angles genuinely differ from frame
+    // one while still being the same person.
+    //
+    // Pricing confirmed 2026-08-11: $0.4730 per second at 720p. At the
+    // established $0.28/credit that's 8.45 credits for 5s and 16.9 for 10s,
+    // rounded UP — rounding down would sell the most expensive model in the
+    // catalogue at a loss on every generation.
+    //
+    // 480p exists at $0.2205/sec but is deliberately not offered: a visibly
+    // softer result undercuts the reliability-and-quality positioning, and a
+    // second resolution would mean pricing every model by a duration x
+    // resolution matrix rather than duration alone.
+    description: "Locks the character's likeness without copying the photo's pose. Premium (~$0.47/sec).",
+    durations: [
+      { seconds: 5, creditWeight: 9, default: true },
+      { seconds: 10, creditWeight: 17 },
+    ] satisfies VideoDurationOption[],
+  },
 ] as const;
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]["id"];

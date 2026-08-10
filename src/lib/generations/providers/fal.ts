@@ -239,7 +239,62 @@ async function buildVideoRequest(
         ? [options.characterAnchorImageUrl]
         : [];
 
-  if (modelId === "kling-o3") {
+  if (modelId === "seedance") {
+    // Seedance 2.5 reference-to-video. The important difference from every
+    // other endpoint here: image_urls are IDENTITY references, cited in the
+    // prompt as @Image1, not the opening frame. That's what stops the clip
+    // starting frozen in the pose the photo was taken in — and what lets
+    // several camera angles actually differ from frame one.
+    //
+    // Schema confirmed against fal's own docs, 2026-08-11.
+    const references = anchorImages.length > 0 ? anchorImages : [];
+    endpoint = "bytedance/seedance-2.5/reference-to-video";
+    body = {
+      // The @Image1 reference has to appear in the PROMPT for the model to
+      // bind to it — passing image_urls alone does nothing.
+      prompt: references.length
+        ? `${prompt}\n\nThe person in this video is @Image1 — match their face, hair, and features exactly, but do not copy the pose or framing of that photo.`
+        : prompt,
+      ...(references.length ? { image_urls: references } : {}),
+      // 480p is deliberately not offered — see video-models.ts.
+      resolution: "720p",
+      duration: String(options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      aspect_ratio: resolvedAspectRatio,
+      generate_audio: options.generateNativeAudio ?? true,
+    };
+    label = "Seedance 2.5";
+  } else if (modelId === "kling-2.5") {
+    // Kling 2.5 Turbo Pro. First-frame image-to-video, so image_url is
+    // required and the clip does open on that photo — this model is the
+    // quality/price upgrade over 1.6, not the fix for the pose problem
+    // (that's Seedance above).
+    if (!options.characterAnchorImageUrl && anchorImages.length === 0) {
+      throw new Error(
+        "Kling 2.5 needs a reference photo — add one to this character, attach a photo, or switch to Kling 1.6.",
+      );
+    }
+    // No aspect_ratio parameter on this endpoint (same gap as O3), so the
+    // only lever is the shape of the input image. Best-effort: a failed
+    // reframe falls back to the original photo rather than failing the whole
+    // generation over framing.
+    let startImage = options.characterAnchorImageUrl ?? anchorImages[0];
+    try {
+      startImage = await reframeImage(startImage, resolvedAspectRatio, apiKey);
+    } catch {
+      // Original photo it is.
+    }
+    endpoint = "fal-ai/kling-video/v2.5-turbo/pro/image-to-video";
+    body = {
+      prompt,
+      image_url: startImage,
+      duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      negative_prompt:
+        "blur, distort, and low quality, static posed portrait, frozen first frame, " +
+        "motionless opening shot, subject standing still facing camera",
+      ...(options.endImageUrl ? { tail_image_url: options.endImageUrl } : {}),
+    };
+    label = "Kling 2.5 Turbo Pro";
+  } else if (modelId === "kling-o3") {
     // O3 Standard's image-to-video endpoint has no text-to-video sibling
     // wired up here — image_url is required by fal.ai, no fallback. A
     // character with zero reference photos can't use this model; actions.ts
