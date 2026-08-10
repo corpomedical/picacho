@@ -1992,12 +1992,24 @@ function GenerateFormInner({
   );
   const [tourStepIndex, setTourStepIndex] = useState(0);
 
+  // Watches for ?tour=1 arriving, rather than only reading it once at mount.
+  //
+  // "Replay walkthrough" in the sidebar is a <Link href="/app?tour=1">, so
+  // Next.js handles it as a client-side navigation: this component never
+  // unmounts, so the useState initialiser above never runs again and
+  // tourActive stayed false. The only way to replay the tour was a hard
+  // refresh, which forces a fresh mount. Reacting to searchParams here makes
+  // the link work on the first click.
+  //
+  // Resetting the step index matters too — without it, replaying after
+  // finishing would reopen the tour on its last step.
   useEffect(() => {
-    if (searchParams.get("tour") === "1") {
-      router.replace("/app", { scroll: false });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (searchParams.get("tour") !== "1") return;
+    setTourActive(true);
+    setTourStepIndex(0);
+    // Strip the param so a later refresh doesn't silently restart the tour.
+    router.replace("/app", { scroll: false });
+  }, [searchParams, router]);
 
   // The "AI providers" and "multi-angle/storyboard" stops point at composer
   // elements that only exist once the composer is out of hero mode with

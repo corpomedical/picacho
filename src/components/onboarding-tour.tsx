@@ -133,6 +133,18 @@ export function OnboardingTour({
   // target drifting past the halfway line during a scroll would flip the
   // balloon back and forth across the screen.
   const placeBelowRef = useRef(true);
+  // Set whenever the placement decision needs redoing — on a step change or a
+  // resize. The frame loop consumes it and clears it.
+  //
+  // Without this the decision was made once, on the very first frame of the
+  // entire tour, and every later step silently inherited it. A step whose
+  // target sits low on the screen therefore still got its balloon placed
+  // BELOW that target, which pushed the buttons off the bottom of the
+  // viewport and left the tour with no reachable way to advance.
+  const placeDirtyRef = useRef(true);
+  // Whether the balloon ended up genuinely touching its target, or had to be
+  // pushed away to stay on screen. The notch is only honest in the first case.
+  const notchValidRef = useRef(true);
   // Only the target id is needed inside the animation loop, and mirroring it
   // into a ref is what lets that loop be set up once and never torn down —
   // depending on `step` directly would restart the loop on every render,
@@ -156,8 +168,18 @@ export function OnboardingTour({
     if (!fullyVisible) {
       el.scrollIntoView({ block: "center", behavior: prefersReducedMotion() ? "auto" : "smooth" });
     }
-    placeBelowRef.current = true; // recomputed on the next frame from the fresh rect
+    placeDirtyRef.current = true;
   }, [step.targetId, index]);
+
+  // Re-decide above-versus-below when the window changes size, since a
+  // shorter viewport can turn a placement that fitted into one that doesn't.
+  useEffect(() => {
+    function onResize() {
+      placeDirtyRef.current = true;
+    }
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // One animation loop for the lifetime of the overlay. Every frame it
   // re-measures the live target, eases the drawn rect toward it, and writes
@@ -253,20 +275,39 @@ export function OnboardingTour({
         let y: number;
 
         if (c && hasTarget) {
-          const spaceBelow = vh - (c.top + c.height);
-          if (firstFrame || dt === 0) placeBelowRef.current = spaceBelow > bh + GAP + 16 || c.top < bh + GAP + 16;
+          const spaceBelow = vh - (c.top + c.height) - GAP;
+          const spaceAbove = c.top - GAP;
+
+          if (placeDirtyRef.current && bh > 0) {
+            // Below if it genuinely fits, else above if THAT fits, else
+            // whichever side has more room. The old version asked only
+            // whether there was space below and defaulted to below when
+            // there wasn't, which is how the balloon ended up off-screen.
+            placeBelowRef.current =
+              spaceBelow >= bh + 16 ? true : spaceAbove >= bh + 16 ? false : spaceBelow >= spaceAbove;
+            placeDirtyRef.current = false;
+          }
+
           const below = placeBelowRef.current;
           x = clamp(c.left, 16, Math.max(16, vw - bw - 16));
-          y = below ? c.top + c.height + GAP : Math.max(16, c.top - GAP - bh);
+          const idealY = below ? c.top + c.height + GAP : c.top - GAP - bh;
+          // Last line of defence: whatever the placement decision, the
+          // balloon must stay fully on screen, because its buttons are the
+          // only way out of the tour.
+          y = clamp(idealY, 16, Math.max(16, vh - bh - 16));
+          // Within a pixel of where it wanted to be means it's still against
+          // its target and the notch points at something real.
+          notchValidRef.current = Math.abs(y - idealY) < 1;
         } else {
           x = (vw - bw) / 2;
           y = (vh - bh) / 2;
+          notchValidRef.current = false;
         }
 
         balloonRef.current.style.transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`;
 
         if (notchRef.current) {
-          notchRef.current.style.opacity = hasTarget ? "1" : "0";
+          notchRef.current.style.opacity = hasTarget && notchValidRef.current ? "1" : "0";
           if (c && hasTarget) {
             const nx = clamp(c.left + c.width / 2 - x, 28, bw - 28);
             notchRef.current.style.left = `${nx - 8}px`;
@@ -395,7 +436,18 @@ export function OnboardingTour({
       <div
         ref={balloonRef}
         className="absolute left-0 top-0 w-80 max-w-[calc(100vw-32px)] rounded-[24px] bg-white/90 p-4 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.4)] ring-1 ring-black/[0.04] backdrop-blur-2xl dark:bg-neutral-900/90 dark:ring-white/10"
-        style={{ ...surface, opacity: shown ? 1 : 0, willChange: "transform" }}
+        style={{
+          ...surface,
+          opacity: shown ? 1 : 0,
+          willChange: "transform",
+          // On a short viewport (or with long translated copy) the balloon can
+          // still be taller than the screen even when placed optimally. Cap it
+          // and let it scroll rather than letting the buttons fall off the
+          // bottom — being unable to reach "Next" traps the person in a modal
+          // overlay with no way forward.
+          maxHeight: "calc(100vh - 32px)",
+          overflowY: "auto",
+        }}
       >
         <span
           ref={notchRef}
