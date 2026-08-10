@@ -650,16 +650,17 @@ function ComposerToast({ message, onDone }: { message: string; onDone: () => voi
 // Shown when the selected model and duration cost more credits than the
 // account has left.
 //
-// Sits in the same slot as UsageBanner, attached to the top of the composer,
-// so it reads as part of the input rather than a floating alert. Persistent,
-// not a toast: this isn't a notification, it's a condition that stays true
-// until they change the selection or top up.
+// Styled to match UsageBanner exactly, and for the same reasons its own
+// comment gives: one flat, light strip attached to the composer with no gap,
+// sharing the outer card's top radius, no shadow of its own. Two earlier
+// passes at that banner were rejected for looking like a floating alert, and
+// this one was written as an amber warning box with a black pill button —
+// which reintroduced precisely the look that was rejected.
 //
-// The point is to say the number out loud. "Not enough credits" leaves
-// someone to work out how short they are, which pack covers it, and whether
-// it's worth it. This does that arithmetic for them and offers the cheapest
-// pack that actually unblocks the generation — not the biggest one we could
-// sell.
+// Nothing here shouts. The numbers do the work: the strip says what the
+// selection costs, what's left, and offers the smallest pack that covers the
+// gap. Same neutral palette, same 12px text, same inline underlined action as
+// the usage strip's "buy credits" link.
 function InsufficientCreditsBanner({
   needed,
   available,
@@ -671,36 +672,33 @@ function InsufficientCreditsBanner({
   modelName: string;
   seconds: number;
 }) {
-  const shortfall = Math.max(0, needed - available);
-  const pack = recommendCreditPack(shortfall);
+  const pack = recommendCreditPack(Math.max(0, needed - available));
 
   return (
     <div
       role="status"
-      className="rounded-t-[22px] border border-b-0 border-amber-200 bg-amber-50 px-4.5 py-3 dark:border-amber-900/50 dark:bg-amber-950/30"
+      className="flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500"
     >
-      <p className="text-sm text-amber-900 dark:text-amber-100">
-        {modelName} at {seconds}s needs <strong>{needed} credits</strong> — you have {available}.
+      <p className="flex-1">
+        {modelName} at {seconds}s needs {needed} credits — you have {available}.{" "}
+        {/* An inline underlined action, matching the usage strip's link. A
+            filled button here reads as an interruption; this reads as the
+            next thing you might do. */}
+        <button
+          type="submit"
+          form="buy-credits-shortfall"
+          className="font-medium text-neutral-700 underline underline-offset-2"
+        >
+          Add {pack.credits} credits
+        </button>
       </p>
-      <div className="mt-2 flex flex-wrap items-center gap-3">
-        {/* Straight to Stripe with the right pack already chosen. Sending
-            someone to Settings to pick a pack themselves adds two steps at
-            exactly the moment they've decided to spend, which is where that
-            decision gets reconsidered. */}
-        <form action={createCreditCheckoutSession}>
-          <input type="hidden" name="pack" value={pack.id} />
-          <input type="hidden" name="return_to" value="/app/generate" />
-          <button
-            type="submit"
-            className="rounded-full bg-neutral-900 px-3.5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 dark:bg-white dark:text-neutral-900"
-          >
-            Add {pack.credits} credits — {pack.price}
-          </button>
-        </form>
-        <span className="text-xs text-amber-800/80 dark:text-amber-200/70">
-          Covers this and {Math.floor((available + pack.credits) / Math.max(1, needed)) - 1} more
-        </span>
-      </div>
+      {/* The form lives outside the paragraph so the composer's own form
+          isn't nested inside it — nested forms are invalid HTML and the
+          inner one silently stops submitting. */}
+      <form id="buy-credits-shortfall" action={createCreditCheckoutSession} className="hidden">
+        <input type="hidden" name="pack" value={pack.id} />
+        <input type="hidden" name="return_to" value="/app/generate" />
+      </form>
     </div>
   );
 }
