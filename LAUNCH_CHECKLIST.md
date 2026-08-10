@@ -148,6 +148,24 @@ Also in this pass:
 - [x] **Nothing tracked the audio, so Stop couldn't silence it.** `speak()` fired an `Audio` element and forgot it, and only awaited `play()` (which resolves when playback *starts*). It now resolves on `ended` and keeps the element plus its resolver in refs, so `stopSpeaking()` can cut a line off mid-sentence and release whatever was awaiting it. Stop now genuinely stops.
 - [x] Restarts after a browser silence timeout are debounced by 250ms — some browsers end and immediately re-end when the mic isn't ready, and restarting inline pegged the CPU and threw from `start()`.
 
+## Image generation reliability — 2026-08-10
+
+Measured 50% failure rate on image generations (6 of 12) and 26.7% overall. Diagnosed from `pipeline_log` in the database rather than guessed — the logs name the cause exactly.
+
+**Root cause: the rulebook check ran AFTER the paid generation call.** `validate()` only ever inspects the prompt *text*, which is fully known before generating — but it was being called after, and `passed` required both a result URL and a clean check, with the failure path returning `resultUrl: null`. So generation `22e5e970` produced three separate GPT Image renders across its three attempts and returned none of them. The person saw "couldn't validate"; the account was charged a credit; we paid for three images.
+
+The specific miss is worth recording: the character's `distinguishing_features` is the single word "freckles". The draft included it; the **review step dropped it while rewriting** — the step whose entire job is enforcing the rulebook. So the check was correct. The cost of discovering it was the bug.
+
+Fixes:
+- [x] **Validate before generating.** Moved the rulebook check to immediately after review, before any provider call.
+- [x] **Repair instead of discard.** A failing prompt now goes through `review()`, which appends the missing traits verbatim — the same helper the mock pipeline already used. That makes the check pass by construction, with no extra model call and no provider spend. Verified against the real failing prompt and trait: `distinguishing features` missing before, none missing after repair.
+- [x] **Never bin a produced result.** `passed` is now just `Boolean(resultUrl)`. Anything that generated is returned.
+- [x] **A draft/review hiccup no longer wastes an attempt.** "Claude returned an empty response" failed one generation on all three attempts while the character's saved traits sat unused. A retryable draft failure now falls back to `draft()`, which builds a complete prompt from the rulebook with no model call at all; a review failure continues with the drafted prompt.
+
+Expected effect: image reliability should track the provider's own success rate rather than the paraphrasing luck of the review step, and a failed attempt costs a draft/review (~$0.02) instead of a full generation.
+
+Worth watching next: the OpenAI safety filter rejected one attempt outright (recovered on retry), and two video generations died on 180s timeouts. Both are separate from this fix.
+
 ## After launch (polish, not blocking)
 
 - [x] Highlight the active tab in the admin nav bar (2026-08-07) — new `AdminNav` client component compares the current path and bolds/underlines the matching tab.

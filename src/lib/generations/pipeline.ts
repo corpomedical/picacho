@@ -528,17 +528,21 @@ export async function runRealPipeline(
     // record it as a failed attempt and move on to the next one instead of
     // throwing and taking down the whole request with no trace of what
     // happened.
-    let reviewedPrompt: string;
+    let reviewedPrompt = "";
     if (options.skipRefinement) {
       // Opted out — send the prompt exactly as typed, no Claude/OpenAI calls.
       reviewedPrompt = userInput;
       steps.push({ step: "draft", detail: "Skipped — using your prompt as typed (draft/review turned off)." });
     } else {
-      let draftedPrompt: string;
-      // Drafting/reviewing can fail too (provider hiccup, rate limit, timeout) —
-      // record it as a failed attempt and move on to the next one instead of
-      // throwing and taking down the whole request with no trace of what
-      // happened.
+      let draftedPrompt = "";
+      // Drafting/reviewing can fail too (provider hiccup, rate limit, timeout).
+      // A failure here no longer wastes the attempt: the rulebook alone is
+      // enough to build a serviceable prompt without any model call at all
+      // (see draft() and the catch below). Real incident, 2026-08-10: a
+      // generation failed all three attempts with nothing but "Claude
+      // returned an empty response" — three wasted attempts producing
+      // nothing, when the character's own saved traits were sitting right
+      // there the whole time.
       try {
         const rawDraftResponse = await draftWithClaude(
           `You are a prompt engineer for an AI ${mediumLabel} generator. Expand this ` +
@@ -584,18 +588,86 @@ export async function runRealPipeline(
       } catch (err) {
         const message = err instanceof Error ? err.message : "Prompt preparation failed.";
         steps.push({ step: steps.length === 0 ? "draft" : "review", detail: message });
-        attempts.push({
-          attempt: attemptNumber,
-          steps,
-          passed: false,
-          issues: ["provider_error"],
-          compiledPrompt: finalPrompt,
+
+        // A 404/401/403 here means a bad API key or wrong model id, not a
+        // fluke. Retrying with a new draft changes nothing about whether the
+        // key or endpoint works, so give up rather than burning the rest of
+        // maxAttempts on a foregone conclusion.
+        if (isNonRetryableProviderError(message)) {
+          attempts.push({
+            attempt: attemptNumber,
+            steps,
+            passed: false,
+            issues: ["provider_error"],
+            compiledPrompt: finalPrompt,
+          });
+          break;
+        }
+
+        // Anything else (empty response, rate limit, timeout): carry on with
+        // whatever we've got rather than throwing the attempt away. A review
+        // failure still leaves a usable draft; a draft failure still leaves
+        // the rulebook, which draft() turns into a plain, complete prompt
+        // with no model call at all. Both beat returning nothing.
+        reviewedPrompt =
+          draftedPrompt || draft(userInput, character, options.contentType !== "video");
+        steps.push({
+          step: "review",
+          detail: draftedPrompt
+            ? "Review unavailable — continuing with the drafted prompt."
+            : "Draft unavailable — continuing with a prompt built directly from the character's rulebook.",
         });
-        // Same reasoning as the generate step below — a 404/401/403 here means
-        // a bad API key or wrong model id, not a fluke. Retrying with a new
-        // draft changes nothing about whether the key or endpoint works.
-        if (isNonRetryableProviderError(message)) break;
-        continue;
+      }
+    }
+
+    // ---- Rulebook check, BEFORE the paid generation call ----
+    //
+    // This used to run after generating. That was pure waste: the check only
+    // ever looks at the prompt text, which is fully known at this point, so
+    // a prompt missing a trait was detected only after the image or video
+    // had already been generated and paid for — and then the result was
+    // thrown away (passed required both a URL *and* a clean check, and the
+    // failure path returned resultUrl: null).
+    //
+    // Real incident, 2026-08-10, and the direct cause of a measured 50%
+    // image failure rate: one generation produced three separate GPT Image
+    // renders across its three attempts and returned none of them, because
+    // the word "freckles" hadn't survived paraphrasing into the final
+    // prompt. Three paid images, binned, and the person saw only "couldn't
+    // validate".
+    //
+    // Checking first also means a failing prompt is repairable for free.
+    // review() appends the missing traits to the prompt verbatim — the same
+    // helper the mock pipeline uses — which by construction makes the check
+    // pass, with no extra model call and no provider spend. Only a prompt
+    // that still fails after that repair costs an attempt, and even then it
+    // costs a draft/review, never a generation.
+    if (!options.skipRefinement) {
+      const preCheck = validate(reviewedPrompt, character, options.contentType, overriddenLabels);
+      if (!preCheck.passed) {
+        reviewedPrompt = review(reviewedPrompt, preCheck.missing);
+        const repaired = validate(reviewedPrompt, character, options.contentType, overriddenLabels);
+        steps.push({
+          step: "validate",
+          detail: repaired.passed
+            ? `Added missing rulebook items before generating: ${preCheck.missing.map((m) => m.label).join(", ")}.`
+            : `Still missing after repair: ${repaired.missing.map((m) => m.label).join(", ")}.`,
+        });
+        if (!repaired.passed) {
+          // Nothing was generated, so nothing was spent on a provider —
+          // redraft instead.
+          attempts.push({
+            attempt: attemptNumber,
+            steps,
+            passed: false,
+            issues: repaired.missing.map((m) => m.label),
+            compiledPrompt: reviewedPrompt,
+          });
+          finalPrompt = reviewedPrompt;
+          continue;
+        }
+      } else {
+        steps.push({ step: "validate", detail: "All rulebook elements present in the compiled prompt." });
       }
     }
 
@@ -723,28 +795,18 @@ export async function runRealPipeline(
     // check — gating success on it would just fail an unchanging raw
     // prompt identically on every attempt, burning real paid generate
     // calls for a check that isn't testing anything real anymore.
-    const finalCheck = options.skipRefinement
-      ? { passed: true, missing: [] as { label: string; value: string }[] }
-      : validate(reviewedPrompt, character, options.contentType, overriddenLabels);
-    steps.push({
-      step: "validate",
-      detail: options.skipRefinement
-        ? "Skipped — no rulebook check when draft/review is off."
-        : finalCheck.passed
-          ? "All rulebook elements present in the compiled prompt."
-          : `Missing: ${finalCheck.missing.map((m) => m.label).join(", ")}.`,
-    });
-
-    const passed = finalCheck.passed && Boolean(resultUrl);
+    // The rulebook check already ran (and repaired the prompt if needed)
+    // before the generation call above, so by this point the only thing that
+    // decides success is whether the provider actually returned something.
+    // Anything that generated is kept — never discarded over a text check
+    // that was settled before a cent was spent.
+    const passed = Boolean(resultUrl);
 
     attempts.push({
       attempt: attemptNumber,
       steps,
       passed,
-      issues: [
-        ...finalCheck.missing.map((m) => m.label),
-        ...(generateFailed && !resultUrl ? ["provider_error"] : []),
-      ],
+      issues: generateFailed && !resultUrl ? ["provider_error"] : [],
       compiledPrompt: reviewedPrompt,
     });
 
