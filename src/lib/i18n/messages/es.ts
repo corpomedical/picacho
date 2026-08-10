@@ -236,6 +236,7 @@ const es = {
     multiRefNeedsTwo: "Elige al menos 2 fotos de referencia, o desactiva la referencia múltiple.",
     done: "Listo",
     dialoguePlaceholder: "¿Qué dice {name}? (opcional)",
+    dialogueCreditNote: "El diálogo hablado añade {n} crédito(s) — genera una voz y vuelve a renderizar el vídeo para que coincida.",
     voiceOnTitle: "El modo de voz está escuchando — toca para detener",
     voiceOffTitle: "Iniciar modo de voz — habla instrucciones y comandos sin usar las manos",
     voiceListeningLabel: "Escuchando…",

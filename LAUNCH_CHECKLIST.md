@@ -319,6 +319,20 @@ The largest open item from the pricing analysis. `generateReferenceImage` metere
 
 Verified the exact count query against the live paying account: counting from 2026-08-01, 0 of 30 used.
 
+## Dialogue surcharge — 2026-08-10
+
+The last unmetered path from the pricing analysis. Adding spoken dialogue runs two paid steps a silent video never touches — ElevenLabs speech, then a Sync Labs lipsync pass that re-renders the whole clip — and `creditWeight` was identical either way.
+
+- [x] `getDialogueCreditWeight(seconds)` in `video-models.ts`: one credit per 5 seconds, so 5s→1, 8s→2, 10s→2, 15s→3.
+- [x] **Scaled by duration, not by the model's credit weight.** Lipsync cost tracks how many seconds it has to re-render; it doesn't care whether those seconds came from Kling or Veo. A multiple of the model weight would have charged 11 extra credits for dialogue on Veo versus 1 on Kling, for identical lipsync work.
+- [x] Surfaced in the composer before it's charged — a small note under the dialogue field, shown only once there's text in it. Charging more without saying so would be the kind of thing that makes people distrust a usage meter.
+- [x] i18n across en/es/pt/it. Multi-angle is unaffected: that path has no dialogue field.
+
+**Estimate, flagged as such:** unlike the video prices in this file (confirmed against fal.ai's own pricing page), the TTS and lipsync per-second costs are estimated. One credit per 5s is roughly cost-parity at the $0.28/credit peg — worth checking against a real invoice once there's one to check.
+
+That closes every leak identified in `Picacho pricing analysis.xlsx`:
+unlimited character photos (capped), failed generations billing 3× (fixed at the source), unmetered TTS (voice mode flagged off), unmetered dialogue (surcharged), stopped generations (unavoidable, documented).
+
 Still to do: Phase 3 (vertical rule packs), and optionally renaming "Usage limits" to match "Usage & plan".
 
 ## After launch (polish, not blocking)

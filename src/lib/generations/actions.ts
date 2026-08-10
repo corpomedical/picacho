@@ -16,6 +16,7 @@ import {
   getVideoModel,
   getDefaultDurationSeconds,
   getDurationCreditWeight,
+  getDialogueCreditWeight,
   isValidDuration,
   VIDEO_MODELS,
 } from "@/lib/generations/providers/video-models";
@@ -550,8 +551,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // user's monthly plan allowance than the 5s baseline. Resolved once here
   // so both the allowance check below and the row we save afterward agree
   // on the same number.
+  //
+  // Dialogue adds a surcharge on top: it runs ElevenLabs speech plus a Sync
+  // Labs lipsync re-render, neither of which a silent video touches. See
+  // getDialogueCreditWeight for why that's scaled by duration rather than by
+  // the model's own weight.
   const creditWeight =
-    contentType === "video" ? getDurationCreditWeight(activeVideoModel, videoDurationSeconds) : 1;
+    contentType === "video"
+      ? getDurationCreditWeight(activeVideoModel, videoDurationSeconds) +
+        (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0)
+      : 1;
 
   // Aspect ratio — resolution order (real incident, 2026-08-07: a user typed
   // "16:9, no side bars" into their prompt and still got a pillarboxed video,

@@ -247,6 +247,7 @@ const en = {
     multiRefNeedsTwo: "Pick at least 2 reference photos, or turn multi-reference off.",
     done: "Done",
     dialoguePlaceholder: "What does {name} say? (optional)",
+    dialogueCreditNote: "Spoken dialogue adds {n} credit(s) — it generates a voice and re-renders the video to match.",
     voiceOnTitle: "Voice mode is listening — tap to stop",
     voiceOffTitle: "Start voice mode — speak prompts and commands hands-free",
     voiceListeningLabel: "Listening…",

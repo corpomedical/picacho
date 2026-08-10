@@ -236,6 +236,7 @@ const it = {
     multiRefNeedsTwo: "Scegli almeno 2 foto di riferimento, oppure disattiva il riferimento multiplo.",
     done: "Fatto",
     dialoguePlaceholder: "Cosa dice {name}? (opzionale)",
+    dialogueCreditNote: "Il dialogo parlato aggiunge {n} credito/i — genera una voce e ri-renderizza il video per farlo combaciare.",
     voiceOnTitle: "La modalità vocale sta ascoltando — tocca per fermare",
     voiceOffTitle: "Avvia modalità vocale — parla richieste e comandi a mani libere",
     voiceListeningLabel: "In ascolto…",

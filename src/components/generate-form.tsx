@@ -3037,6 +3037,16 @@ function GenerateFormInner({
                     placeholder={formatMsg(g.dialoguePlaceholder, { name: currentCharacter.name })}
                     className="w-full border-none bg-transparent text-sm text-neutral-700 outline-none placeholder:text-neutral-400 disabled:opacity-60"
                   />
+                  {/* Only once there's actually dialogue to charge for —
+                      showing a surcharge against an empty field would read
+                      as a warning about something they haven't done. */}
+                  {dialogueText.trim().length > 0 && (
+                    <p className="mt-1 text-[11px] text-neutral-400">
+                      {formatMsg(g.dialogueCreditNote, {
+                        n: Math.max(1, Math.ceil(videoDurationSeconds / 5)),
+                      })}
+                    </p>
+                  )}
                 </div>
               )}
 

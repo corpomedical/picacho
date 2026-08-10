@@ -137,3 +137,26 @@ export function getDurationCreditWeight(model: VideoModel, seconds: number): num
 export function isValidDuration(model: VideoModel, seconds: number): boolean {
   return model.durations.some((d) => d.seconds === seconds);
 }
+
+// Adding spoken dialogue to a video runs two extra paid steps that a silent
+// video never touches: ElevenLabs speech synthesis, then a Sync Labs lipsync
+// pass that re-renders the whole clip. Until 2026-08-10 both were free to
+// the user — creditWeight was identical with or without dialogue — which the
+// pricing analysis flagged as an unmetered cost path.
+//
+// Scaled by DURATION, not by the model's own credit weight. Lipsync cost
+// tracks how many seconds of video it has to re-render; it doesn't care
+// whether those seconds came from Kling or Veo. Charging a multiple of the
+// model weight would have made dialogue on Veo cost 11 extra credits for the
+// same lipsync work Kling pays 1 for.
+//
+// One credit per 5 seconds is roughly cost-parity at the $0.28/credit peg
+// this file already uses — dialogue about doubles the cost of a short clip.
+// The underlying TTS and lipsync per-second prices are ESTIMATES, unlike the
+// video prices above which were confirmed against fal.ai's own pricing page;
+// worth checking against a real invoice and adjusting.
+const DIALOGUE_SECONDS_PER_CREDIT = 5;
+
+export function getDialogueCreditWeight(seconds: number): number {
+  return Math.max(1, Math.ceil(seconds / DIALOGUE_SECONDS_PER_CREDIT));
+}
