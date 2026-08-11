@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
+import { NativeTabBar } from "@/components/native-tab-bar";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
@@ -88,11 +89,19 @@ export default async function AppLayout({
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}
       <NativePush />
+      <NativeTabBar />
       {showRatePrompt && <RatePrompt />}
       <div className="min-w-0 flex-1 overflow-y-auto">
         {/* pt-14 clears the fixed mobile top bar (see AppSidebar); not needed
             at md+ where that bar is hidden and the sidebar sits in-flow. */}
-        <div className="mx-auto max-w-5xl px-4 py-8 pt-20 sm:px-8 sm:py-12 md:pt-12">{children}</div>
+        {/* pb-24 in the app clears the fixed bottom tab bar — without it the
+            last item on every page sits underneath it and can't be reached.
+            The class is applied unconditionally rather than gated on the
+            native check because that check is client-only, and a server-
+            rendered page would otherwise briefly lay out at the wrong height. */}
+        <div className="mx-auto max-w-5xl px-4 py-8 pt-20 pb-24 sm:px-8 sm:py-12 sm:pb-24 md:pt-12">
+          {children}
+        </div>
       </div>
     </div>
   );

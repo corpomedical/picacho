@@ -521,7 +521,13 @@ export function AppSidebar({
       {/* Mobile top bar — only shown below md. Replaces the permanent
           sidebar with a slim bar plus a hamburger button that opens the
           same sidebar as an off-canvas drawer. */}
-      <div className="fixed inset-x-0 top-0 z-30 flex h-14 flex-shrink-0 items-center justify-between border-b border-neutral-200/70 bg-neutral-50 px-3 md:hidden">
+      {/* Tagged so the native app can hide it: its only job is opening the
+          sidebar, and the app navigates by bottom tabs instead. See the
+          html.native-app rules in globals.css. */}
+      <div
+        data-mobile-topbar
+        className="fixed inset-x-0 top-0 z-30 flex h-14 flex-shrink-0 items-center justify-between border-b border-neutral-200/70 bg-neutral-50 px-3 md:hidden"
+      >
         <button
           type="button"
           onClick={() => setMobileOpen(true)}

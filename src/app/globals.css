@@ -155,3 +155,25 @@ html.native-app [contenteditable="true"] {
   -webkit-touch-callout: default;
   user-select: text;
 }
+
+/* The sidebar is a desktop-web pattern and has no place in the app: on a
+ * phone the bottom tab bar is the navigation (see NativeTabBar). Hiding it in
+ * CSS rather than unmounting it keeps one layout tree for both, so nothing
+ * else has to know which context it's in. */
+html.native-app aside,
+html.native-app [data-app-sidebar] {
+  display: none !important;
+}
+
+/* The mobile top bar goes with it — its job was opening the sidebar. */
+html.native-app [data-mobile-topbar] {
+  display: none !important;
+}
+
+/* The pt-20 on the app container exists to clear the mobile top bar. With
+ * that bar hidden the padding is just a gap under the status bar, so it comes
+ * back down to the ordinary page inset. */
+html.native-app main > div,
+html.native-app .min-w-0 > div {
+  padding-top: 1.5rem;
+}
