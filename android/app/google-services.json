@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1072318386820",
+    "project_id": "picachoio",
+    "storage_bucket": "picachoio.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1072318386820:android:17068c07d2e897c46168d1",
+        "android_client_info": {
+          "package_name": "ai.picacho.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZYvawCQWJj9YfkDHVzKA7luRHyAZfcYQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
