@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { RatePrompt } from "@/components/rate-prompt";
+import { NativePush } from "@/components/native-push";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
@@ -84,6 +85,9 @@ export default async function AppLayout({
         skipAiRefinement={profile?.skip_ai_refinement === true}
         voiceModeEnabled={voiceModeEnabled}
       />
+      {/* Registers this device for push, once there's a session to
+          attach it to. No-ops entirely on the web. */}
+      <NativePush />
       {showRatePrompt && <RatePrompt />}
       <div className="min-w-0 flex-1 overflow-y-auto">
         {/* pt-14 clears the fixed mobile top bar (see AppSidebar); not needed
