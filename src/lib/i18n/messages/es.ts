@@ -595,6 +595,7 @@ const es = {
         "10 generaciones / mes",
         "Perfiles de personaje ilimitados",
         "Proceso completo de borrador → revisión → validación",
+        "Las generaciones fallidas nunca consumen tu cuota",
       ],
     },
     growth: {
@@ -604,6 +605,7 @@ const es = {
         "40 generaciones / mes",
         "Perfiles de personaje ilimitados",
         "Proceso completo de borrador → revisión → validación",
+        "Las generaciones fallidas nunca consumen tu cuota",
       ],
     },
     studio: {
@@ -611,8 +613,9 @@ const es = {
       badge: "",
       features: [
         "150 generaciones / mes",
-        "Perfiles de personaje ilimitados",
-        "Proceso completo de borrador → revisión → validación",
+        "Todo lo de Growth",
+        "Storyboard — define un fotograma inicial y final para una escena",
+        "Referencia múltiple — ancla un personaje a varias fotos de referencia a la vez",
       ],
     },
     elite: {
@@ -620,10 +623,10 @@ const es = {
       badge: "",
       features: [
         "300 generaciones / mes",
-        "Perfiles de personaje ilimitados",
-        "Proceso completo de borrador → revisión → validación",
-        "Storyboard — define un fotograma inicial y final para una escena",
-        "Referencia múltiple — ancla un personaje a varias fotos de referencia a la vez",
+        "Todo lo de Studio",
+        "Cola de renderizado prioritaria",
+        "Acceso anticipado a nuevos modelos y funciones",
+        "Acceso a la API — acceso anticipado por solicitud",
       ],
     },
   },

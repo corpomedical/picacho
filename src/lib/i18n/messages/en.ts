@@ -611,6 +611,7 @@ const en = {
         "10 generations / month",
         "Unlimited character profiles",
         "Full draft → review → validate pipeline",
+        "Failed generations never use your allowance",
       ],
     },
     growth: {
@@ -620,6 +621,7 @@ const en = {
         "40 generations / month",
         "Unlimited character profiles",
         "Full draft → review → validate pipeline",
+        "Failed generations never use your allowance",
       ],
     },
     studio: {
@@ -627,8 +629,9 @@ const en = {
       badge: "",
       features: [
         "150 generations / month",
-        "Unlimited character profiles",
-        "Full draft → review → validate pipeline",
+        "Everything in Growth",
+        "Storyboard — set a start and end frame for a shot",
+        "Multi-image reference — anchor a character to several reference photos at once",
       ],
     },
     elite: {
@@ -636,10 +639,10 @@ const en = {
       badge: "",
       features: [
         "300 generations / month",
-        "Unlimited character profiles",
-        "Full draft → review → validate pipeline",
-        "Storyboard — set a start and end frame for a shot",
-        "Multi-image reference — anchor a character to several reference photos at once",
+        "Everything in Studio",
+        "Priority rendering queue",
+        "Early access to new models and features",
+        "API access — early access by request",
       ],
     },
   },
