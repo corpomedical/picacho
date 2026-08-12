@@ -4,7 +4,7 @@ import type { LegalDoc } from "./types";
 // A real, drafted policy reflecting what Picacho actually does today — not
 // boilerplate. It is still a draft: see the "not legal advice" note shown
 // alongside it on the page, and have an attorney review before launch.
-const UPDATED = "August 5, 2026";
+const UPDATED = "August 12, 2026";
 
 const privacy: Record<Locale, LegalDoc> = {
   en: {
@@ -20,7 +20,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Character and content data: the character profiles you create (traits, reference images), the prompts you write, the images and videos generated for you, your notes, and your project organization.",
           "Usage data: pages you visit and when, plus (once the app is deployed to production) an approximate country derived from your IP address, used to understand product usage.",
           "Cookies: small identifiers used to remember your theme and language, and — for logged-out visitors — an anonymous visitor ID for basic traffic analytics.",
-          "Payment information (future): once billing is enabled, payment details will be collected and processed directly by our payment processor. We will not store your full card number.",
+          "Payment information: payment details are collected and processed directly by our payment processor, Stripe. We never see or store your full card number — we keep only a reference to your Stripe customer and subscription so we can manage your plan.",
         ],
       },
       {
@@ -60,7 +60,7 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "Your rights",
         paragraphs: [
-          "You can view and edit your account details, change your password, and permanently delete your account at any time from Settings. Depending on where you live, you may have additional rights — such as access, correction, portability, or objection — under laws like the GDPR or CCPA. Contact us to exercise them.",
+          "You can view and edit your account details, change your password, and permanently delete your account at any time from Settings. Picacho is operated from Spain, so the EU General Data Protection Regulation (GDPR) applies to how we process your personal data: you have the rights of access, rectification, erasure, restriction, portability, and objection. To exercise any of them, contact us at the support email shown in Settings and we'll respond within the timeframes the GDPR requires. You also have the right to lodge a complaint with the Spanish data protection authority (AEPD) or the supervisory authority where you live.",
         ],
       },
       {
@@ -100,7 +100,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Datos de personajes y contenido: los perfiles de personaje que creas (rasgos, imágenes de referencia), las instrucciones que escribes, las imágenes y videos generados para ti, tus notas y la organización de tus proyectos.",
           "Datos de uso: las páginas que visitas y cuándo, además (una vez que la app esté desplegada en producción) de un país aproximado derivado de tu dirección IP, usado para entender el uso del producto.",
           "Cookies: identificadores pequeños que recuerdan tu tema e idioma y, para visitantes sin sesión iniciada, un ID de visitante anónimo para analítica básica de tráfico.",
-          "Información de pago (futuro): cuando se habilite la facturación, los datos de pago serán recopilados y procesados directamente por nuestro procesador de pagos. No almacenaremos tu número de tarjeta completo.",
+          "Información de pago: los datos de pago los recopila y procesa directamente nuestro procesador de pagos, Stripe. Nunca vemos ni almacenamos tu número de tarjeta completo; solo guardamos una referencia a tu cliente y suscripción de Stripe para gestionar tu plan.",
         ],
       },
       {
@@ -140,7 +140,7 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "Tus derechos",
         paragraphs: [
-          "Puedes ver y editar los datos de tu cuenta, cambiar tu contraseña y eliminar tu cuenta permanentemente en cualquier momento desde Ajustes. Según donde vivas, puedes tener derechos adicionales —como acceso, corrección, portabilidad u objeción— conforme a leyes como el RGPD o la CCPA. Contáctanos para ejercerlos.",
+          "Puedes ver y editar los datos de tu cuenta, cambiar tu contraseña y eliminar tu cuenta permanentemente en cualquier momento desde Ajustes. Picacho opera desde España, por lo que el Reglamento General de Protección de Datos (RGPD) de la UE se aplica al tratamiento de tus datos personales: tienes derechos de acceso, rectificación, supresión, limitación, portabilidad y oposición. Para ejercerlos, contáctanos en el correo de soporte que aparece en Ajustes y responderemos dentro de los plazos que exige el RGPD. También tienes derecho a presentar una reclamación ante la Agencia Española de Protección de Datos (AEPD) o la autoridad de control de tu lugar de residencia.",
         ],
       },
       {
@@ -182,7 +182,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Dados de personagens e conteúdo: os perfis de personagem que você cria (características, imagens de referência), os prompts que você escreve, as imagens e vídeos gerados para você, suas notas e a organização dos seus projetos.",
           "Dados de uso: as páginas que você visita e quando, além (assim que o app estiver em produção) de um país aproximado derivado do seu endereço IP, usado para entender o uso do produto.",
           "Cookies: pequenos identificadores usados para lembrar seu tema e idioma e, para visitantes sem login, um ID de visitante anônimo para análises básicas de tráfego.",
-          "Informações de pagamento (futuro): quando a cobrança for habilitada, os dados de pagamento serão coletados e processados diretamente pelo nosso processador de pagamentos. Não armazenaremos o número completo do seu cartão.",
+          "Informações de pagamento: os dados de pagamento são coletados e processados diretamente pelo nosso processador de pagamentos, a Stripe. Nunca vemos nem armazenamos o número completo do seu cartão — mantemos apenas uma referência ao seu cliente e assinatura na Stripe para gerenciar seu plano.",
         ],
       },
       {
@@ -222,7 +222,7 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "Seus direitos",
         paragraphs: [
-          "Você pode visualizar e editar os dados da sua conta, alterar sua senha e excluir sua conta permanentemente a qualquer momento em Configurações. Dependendo de onde você mora, você pode ter direitos adicionais — como acesso, correção, portabilidade ou oposição — sob leis como o GDPR ou a CCPA. Entre em contato conosco para exercê-los.",
+          "Você pode visualizar e editar os dados da sua conta, alterar sua senha e excluir sua conta permanentemente a qualquer momento em Configurações. O Picacho opera a partir da Espanha, portanto o Regulamento Geral de Proteção de Dados (GDPR) da UE se aplica ao tratamento dos seus dados pessoais: você tem direitos de acesso, retificação, exclusão, limitação, portabilidade e oposição. Para exercê-los, entre em contato pelo e-mail de suporte exibido em Configurações e responderemos dentro dos prazos exigidos pelo GDPR. Você também tem o direito de apresentar uma reclamação à autoridade espanhola de proteção de dados (AEPD) ou à autoridade supervisora do seu local de residência.",
         ],
       },
       {
@@ -264,7 +264,7 @@ const privacy: Record<Locale, LegalDoc> = {
           "Dati sui personaggi e sui contenuti: i profili personaggio che crei (tratti, immagini di riferimento), i prompt che scrivi, le immagini e i video generati per te, le tue note e l'organizzazione dei tuoi progetti.",
           "Dati di utilizzo: le pagine che visiti e quando, oltre (una volta che l'app sarà in produzione) a un paese approssimativo derivato dal tuo indirizzo IP, usato per capire l'utilizzo del prodotto.",
           "Cookie: piccoli identificatori usati per ricordare il tuo tema e la tua lingua e, per i visitatori non registrati, un ID visitatore anonimo per analisi di base del traffico.",
-          "Informazioni di pagamento (futuro): quando la fatturazione sarà attivata, i dati di pagamento saranno raccolti ed elaborati direttamente dal nostro processore di pagamenti. Non memorizzeremo il numero completo della tua carta.",
+          "Informazioni di pagamento: i dati di pagamento sono raccolti ed elaborati direttamente dal nostro processore di pagamenti, Stripe. Non vediamo né memorizziamo mai il numero completo della tua carta — conserviamo solo un riferimento al tuo cliente e abbonamento Stripe per gestire il tuo piano.",
         ],
       },
       {
@@ -304,7 +304,7 @@ const privacy: Record<Locale, LegalDoc> = {
       {
         heading: "I tuoi diritti",
         paragraphs: [
-          "Puoi visualizzare e modificare i dati del tuo account, cambiare la password ed eliminare permanentemente il tuo account in qualsiasi momento dalle Impostazioni. A seconda di dove vivi, potresti avere diritti aggiuntivi — come accesso, rettifica, portabilità o opposizione — ai sensi di normative come il GDPR o il CCPA. Contattaci per esercitarli.",
+          "Puoi visualizzare e modificare i dati del tuo account, cambiare la password ed eliminare permanentemente il tuo account in qualsiasi momento dalle Impostazioni. Picacho opera dalla Spagna, quindi il Regolamento Generale sulla Protezione dei Dati (GDPR) dell'UE si applica al trattamento dei tuoi dati personali: hai diritti di accesso, rettifica, cancellazione, limitazione, portabilità e opposizione. Per esercitarli, contattaci all'indirizzo email di supporto indicato nelle Impostazioni e risponderemo entro i termini previsti dal GDPR. Hai anche il diritto di presentare un reclamo all'autorità spagnola per la protezione dei dati (AEPD) o all'autorità di controllo del tuo luogo di residenza.",
         ],
       },
       {

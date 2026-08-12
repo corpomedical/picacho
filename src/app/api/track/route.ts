@@ -24,6 +24,31 @@ export async function POST(request: NextRequest) {
     const supabase = await createClient();
     const { data: userData } = await supabase.auth.getUser();
 
+    // Keep the team's own activity out of the traffic analytics. Admin
+    // dashboard pages were the 4th most-viewed "page" on the site (104
+    // views of /admin/*), which made every traffic chart a mirror of the
+    // admins refreshing their own dashboard rather than real visitors.
+    // Admin *users* browsing the public site are skipped too — while the
+    // audience is this small, team browsing drowns out the signal.
+    if (path.startsWith("/admin")) {
+      return NextResponse.json({ ok: true });
+    }
+    if (userData.user) {
+      const { data: viewerProfile } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", userData.user.id)
+        .maybeSingle();
+      if (viewerProfile?.role === "admin") {
+        // Still stamp last_seen_at so "online now" keeps working for admins.
+        await supabase
+          .from("profiles")
+          .update({ last_seen_at: new Date().toISOString() })
+          .eq("id", userData.user.id);
+        return NextResponse.json({ ok: true });
+      }
+    }
+
     await supabase.from("page_views").insert({
       path,
       visitor_id: visitorId,

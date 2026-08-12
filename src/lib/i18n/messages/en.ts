@@ -91,6 +91,10 @@ const en = {
       diffFormatsTitle: "One character, every format",
       diffFormatsDetail:
         "Reuse the same character across images, multi-angle video, scenes with other characters, and spoken dialogue — all locked to the same look.",
+      diffRulesTitle: "Brand rules, enforced",
+      diffRulesDetail:
+        "Define what your character must always — or must never — appear with, and every output is checked against those rules before you see it. Your mascot stays on-brand everywhere it shows up.",
+      heroFreeTrialNote: "Start with 5 free generations — no credit card required.",
       showcaseEyebrow: "Real output",
       showcaseTitle: "This is an actual Picacho result",
       showcaseSubtitle: "Drafted, reviewed, generated, and validated automatically — no manual editing.",
@@ -103,12 +107,35 @@ const en = {
     pricing: {
       title: "Simple, per-generation pricing",
       subtitle:
-        "Every plan includes the full pipeline — draft, review, generate, validate, and automatic retries. You only pay for how much you generate.",
+        "Every plan includes the full pipeline — draft, review, generate, validate, and automatic retries. Start with 5 free generations, no credit card required.",
       overageNote:
         "Generations reset every billing period. Need more room? Upgrade to a higher plan anytime.",
       getStarted: "Get started",
       perMonth: "/mo",
       currentPlan: "Current plan",
+      faqTitle: "Frequently asked questions",
+      faq: [
+        {
+          q: "What counts as a generation?",
+          a: "One finished image or video clip that passes validation and reaches you. Behind the scenes we may draft, review, and retry several times — that's included. Longer clips and premium video models can use more than one generation credit; the exact cost is always shown before you confirm.",
+        },
+        {
+          q: "Do failed generations use up my allowance?",
+          a: "No. If the pipeline can't produce a passing result, that attempt doesn't count against your monthly generations.",
+        },
+        {
+          q: "Is there a free trial?",
+          a: "Yes — every new account gets 5 free generations on our fastest model, no credit card required. That's enough to create a character and see it stay consistent across several outputs.",
+        },
+        {
+          q: "Can I get a refund?",
+          a: "If it's your first subscription and you've used fewer than 5 generations, you can request a full refund within 7 days of purchase — email support and we'll process it, no questions asked.",
+        },
+        {
+          q: "Can I cancel anytime?",
+          a: "Yes. Cancelling stops the next renewal; you keep full access and your remaining generations until the end of the period you've paid for.",
+        },
+      ],
     },
   },
   auth: {

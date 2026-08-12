@@ -29,7 +29,7 @@ export async function signup(formData: FormData) {
     .from("feature_flags")
     .select("enabled")
     .eq("key", "signups_enabled")
-    .single();
+    .maybeSingle();
   if (flag?.enabled === false) {
     redirect(`/signup?error=${encodeURIComponent("New signups are currently closed.")}`);
   }

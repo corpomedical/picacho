@@ -79,6 +79,10 @@ const it = {
       diffFormatsTitle: "Un personaggio, ogni formato",
       diffFormatsDetail:
         "Riusa lo stesso personaggio in immagini, video multi-angolazione, scene con altri personaggi e dialoghi parlati — tutto fedele allo stesso aspetto.",
+      diffRulesTitle: "Regole di brand, applicate",
+      diffRulesDetail:
+        "Definisci con cosa il tuo personaggio deve — o non deve — apparire, e ogni risultato viene verificato rispetto a quelle regole prima che tu lo veda. La tua mascotte resta fedele al brand ovunque compaia.",
+      heroFreeTrialNote: "Inizia con 5 generazioni gratuite — senza carta di credito.",
       showcaseEyebrow: "Risultato reale",
       showcaseTitle: "Questo è un risultato reale di Picacho",
       showcaseSubtitle: "Redatto, revisionato, generato e validato automaticamente — senza modifiche manuali.",
@@ -91,12 +95,35 @@ const it = {
     pricing: {
       title: "Prezzi semplici, per generazione",
       subtitle:
-        "Ogni piano include la pipeline completa — bozza, revisione, generazione, validazione e nuovi tentativi automatici. Paghi solo per ciò che generi.",
+        "Ogni piano include la pipeline completa — bozza, revisione, generazione, validazione e nuovi tentativi automatici. Inizia con 5 generazioni gratuite, senza carta di credito.",
       overageNote:
         "Le generazioni si rinnovano a ogni ciclo di fatturazione. Serve di più? Passa a un piano superiore quando vuoi.",
       getStarted: "Inizia",
       perMonth: "/mese",
       currentPlan: "Piano attuale",
+      faqTitle: "Domande frequenti",
+      faq: [
+        {
+          q: "Cosa conta come una generazione?",
+          a: "Un'immagine o un clip video finito che supera la validazione e arriva a te. Dietro le quinte possiamo redigere, revisionare e riprovare più volte: è incluso. I clip più lunghi e i modelli video premium possono consumare più di un credito; il costo esatto è sempre mostrato prima della conferma.",
+        },
+        {
+          q: "Le generazioni fallite consumano la mia quota?",
+          a: "No. Se la pipeline non riesce a produrre un risultato valido, quel tentativo non conta sulle tue generazioni mensili.",
+        },
+        {
+          q: "C'è una prova gratuita?",
+          a: "Sì: ogni nuovo account riceve 5 generazioni gratuite sul nostro modello più veloce, senza carta di credito. Abbastanza per creare un personaggio e vederlo restare coerente in più risultati.",
+        },
+        {
+          q: "Posso ottenere un rimborso?",
+          a: "Se è il tuo primo abbonamento e hai usato meno di 5 generazioni, puoi richiedere il rimborso completo entro 7 giorni dall'acquisto: scrivi al supporto e lo elaboriamo senza domande.",
+        },
+        {
+          q: "Posso disdire in qualsiasi momento?",
+          a: "Sì. La disdetta interrompe il rinnovo successivo; mantieni l'accesso completo e le generazioni rimanenti fino alla fine del periodo pagato.",
+        },
+      ],
     },
   },
   auth: {

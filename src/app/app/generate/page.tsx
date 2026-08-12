@@ -50,7 +50,7 @@ export default async function GeneratePage() {
     charactersForForm,
     videoModels,
     defaultVideoModelId,
-    elitePlanActive,
+    advancedPlanActive,
     multiAngleAvailable,
     approachingLimit,
     voiceModeEnabled,
@@ -85,7 +85,7 @@ export default async function GeneratePage() {
     // reached by submitting from the home page — the same screen at two
     // different widths depending on how you got there.
     <div className="mx-auto max-w-5xl">
-      {!elitePlanActive && (
+      {!advancedPlanActive && (
         <div className="mb-3 flex justify-end">
           <Link href="/app/settings?tab=usage">
             <Button size="sm">{t.settings.upgrade}</Button>
@@ -112,7 +112,7 @@ export default async function GeneratePage() {
         characters={charactersForForm}
         videoModels={videoModels}
         defaultVideoModelId={defaultVideoModelId}
-        elitePlanActive={elitePlanActive}
+        advancedPlanActive={advancedPlanActive}
         multiAngleAvailable={multiAngleAvailable}
         approachingLimit={approachingLimit}
         voiceModeEnabled={voiceModeEnabled}

@@ -33,7 +33,7 @@ export default async function AppHome() {
     charactersForForm,
     videoModels,
     defaultVideoModelId,
-    elitePlanActive,
+    advancedPlanActive,
     multiAngleAvailable,
     approachingLimit,
     voiceModeEnabled,
@@ -58,7 +58,7 @@ export default async function AppHome() {
 
   return (
     <div>
-      {!elitePlanActive && (
+      {!advancedPlanActive && (
         <div className="flex justify-end">
           <Link href="/app/settings?tab=usage">
             <Button size="sm">{t.settings.upgrade}</Button>
@@ -74,7 +74,7 @@ export default async function AppHome() {
         characters={charactersForForm}
         videoModels={videoModels}
         defaultVideoModelId={defaultVideoModelId}
-        elitePlanActive={elitePlanActive}
+        advancedPlanActive={advancedPlanActive}
         multiAngleAvailable={multiAngleAvailable}
         approachingLimit={approachingLimit}
         voiceModeEnabled={voiceModeEnabled}

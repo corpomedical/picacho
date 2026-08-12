@@ -1,7 +1,7 @@
 import type { Locale } from "@/lib/i18n/locales";
 import type { LegalDoc } from "./types";
 
-const UPDATED = "August 5, 2026";
+const UPDATED = "August 12, 2026";
 
 const terms: Record<Locale, LegalDoc> = {
   en: {
@@ -38,7 +38,8 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Subscription & billing",
         paragraphs: [
-          "Paid plans and billing are not yet active. Once available, plan pricing, generation limits, and billing terms will be described on our Pricing page and processed through our payment provider. You'll be able to cancel at any time from Settings.",
+          "Subscriptions are billed monthly and processed by our payment provider, Stripe. Plan pricing and monthly generation allowances are described on the Pricing page. Your allowance resets at the start of each billing period; unused generations do not roll over. You can cancel at any time from Settings — cancelling stops the next renewal, and you keep full access and any remaining generations until the end of the period you've paid for.",
+          "Failed generations never consume your allowance: only results that pass validation and are delivered to you count. If this is your first subscription and you have used fewer than 5 generations, you may request a full refund within 7 days of purchase by contacting support. Beyond that, payments are non-refundable except where a refund is required by applicable law.",
         ],
       },
       {
@@ -56,7 +57,7 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Governing law",
         paragraphs: [
-          "This section is a placeholder — the governing jurisdiction will be added once finalized.",
+          "These Terms are governed by the laws of Spain. Any dispute arising out of these Terms or your use of Picacho will be submitted to the courts of the city of Madrid, Spain — except where mandatory consumer-protection rules entitle you to bring proceedings in your own country of residence. If you are a consumer in the European Union, you may also use the European Commission's online dispute resolution platform.",
         ],
       },
       {
@@ -105,7 +106,8 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Suscripción y facturación",
         paragraphs: [
-          "Los planes de pago y la facturación aún no están activos. Cuando estén disponibles, los precios de los planes, los límites de generación y los términos de facturación se describirán en nuestra página de Precios y se procesarán a través de nuestro proveedor de pagos. Podrás cancelar en cualquier momento desde Ajustes.",
+          "Las suscripciones se facturan mensualmente y las procesa nuestro proveedor de pagos, Stripe. Los precios de los planes y las cuotas mensuales de generación se describen en la página de Precios. Tu cuota se restablece al inicio de cada período de facturación; las generaciones no utilizadas no se acumulan. Puedes cancelar en cualquier momento desde Ajustes: la cancelación detiene la próxima renovación y conservas el acceso completo y las generaciones restantes hasta el final del período pagado.",
+          "Las generaciones fallidas nunca consumen tu cuota: solo cuentan los resultados que superan la validación y te son entregados. Si es tu primera suscripción y has usado menos de 5 generaciones, puedes solicitar el reembolso completo dentro de los 7 días posteriores a la compra contactando con soporte. Más allá de eso, los pagos no son reembolsables salvo que la ley aplicable exija un reembolso.",
         ],
       },
       {
@@ -123,7 +125,7 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Ley aplicable",
         paragraphs: [
-          "Esta sección es un marcador de posición: la jurisdicción aplicable se añadirá una vez definida.",
+          "Estos Términos se rigen por la legislación de España. Cualquier disputa derivada de estos Términos o de tu uso de Picacho se someterá a los tribunales de la ciudad de Madrid, España, salvo que las normas imperativas de protección al consumidor te permitan litigar en tu país de residencia. Si eres consumidor en la Unión Europea, también puedes utilizar la plataforma de resolución de litigios en línea de la Comisión Europea.",
         ],
       },
       {
@@ -173,7 +175,8 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Assinatura e cobrança",
         paragraphs: [
-          "Planos pagos e cobrança ainda não estão ativos. Quando disponíveis, os preços dos planos, limites de geração e termos de cobrança serão descritos em nossa página de Preços e processados pelo nosso provedor de pagamentos. Você poderá cancelar a qualquer momento em Configurações.",
+          "As assinaturas são cobradas mensalmente e processadas pelo nosso provedor de pagamentos, a Stripe. Os preços dos planos e as cotas mensais de geração estão descritos na página de Preços. Sua cota é renovada no início de cada período de cobrança; gerações não utilizadas não são acumuladas. Você pode cancelar a qualquer momento em Configurações — o cancelamento interrompe a próxima renovação e você mantém o acesso completo e as gerações restantes até o fim do período pago.",
+          "Gerações com falha nunca consomem sua cota: apenas resultados que passam na validação e são entregues a você contam. Se for sua primeira assinatura e você tiver usado menos de 5 gerações, pode solicitar o reembolso integral em até 7 dias após a compra entrando em contato com o suporte. Além disso, os pagamentos não são reembolsáveis, exceto quando a lei aplicável exigir.",
         ],
       },
       {
@@ -191,7 +194,7 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Lei aplicável",
         paragraphs: [
-          "Esta seção é um espaço reservado — a jurisdição aplicável será adicionada assim que definida.",
+          "Estes Termos são regidos pelas leis da Espanha. Qualquer disputa decorrente destes Termos ou do seu uso do Picacho será submetida aos tribunais da cidade de Madri, Espanha — exceto quando normas obrigatórias de proteção ao consumidor permitirem que você litigue em seu país de residência. Se você for consumidor na União Europeia, também pode usar a plataforma de resolução de litígios online da Comissão Europeia.",
         ],
       },
       {
@@ -242,7 +245,8 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Abbonamento e fatturazione",
         paragraphs: [
-          "I piani a pagamento e la fatturazione non sono ancora attivi. Una volta disponibili, i prezzi dei piani, i limiti di generazione e i termini di fatturazione saranno descritti nella nostra pagina Prezzi ed elaborati tramite il nostro fornitore di pagamenti. Potrai annullare in qualsiasi momento dalle Impostazioni.",
+          "Gli abbonamenti sono fatturati mensilmente ed elaborati dal nostro fornitore di pagamenti, Stripe. I prezzi dei piani e le quote mensili di generazione sono descritti nella pagina Prezzi. La tua quota si azzera all'inizio di ogni ciclo di fatturazione; le generazioni non utilizzate non si accumulano. Puoi disdire in qualsiasi momento dalle Impostazioni: la disdetta interrompe il rinnovo successivo e mantieni l'accesso completo e le generazioni rimanenti fino alla fine del periodo pagato.",
+          "Le generazioni fallite non consumano mai la tua quota: contano solo i risultati che superano la validazione e ti vengono consegnati. Se è il tuo primo abbonamento e hai usato meno di 5 generazioni, puoi richiedere il rimborso completo entro 7 giorni dall'acquisto contattando il supporto. Oltre a ciò, i pagamenti non sono rimborsabili salvo quando un rimborso sia richiesto dalla legge applicabile.",
         ],
       },
       {
@@ -260,7 +264,7 @@ const terms: Record<Locale, LegalDoc> = {
       {
         heading: "Legge applicabile",
         paragraphs: [
-          "Questa sezione è un segnaposto — la giurisdizione applicabile sarà aggiunta una volta definita.",
+          "Questi Termini sono regolati dalla legge spagnola. Qualsiasi controversia derivante da questi Termini o dal tuo utilizzo di Picacho sarà sottoposta ai tribunali della città di Madrid, Spagna — salvo che norme imperative a tutela dei consumatori ti consentano di agire nel tuo paese di residenza. Se sei un consumatore nell'Unione Europea, puoi anche utilizzare la piattaforma di risoluzione delle controversie online della Commissione Europea.",
         ],
       },
       {

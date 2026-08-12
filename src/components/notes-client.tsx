@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type SVGProps } from "react";
 import { cn } from "@/lib/cn";
 import { createNote, saveNote, deleteNote } from "@/lib/notes/actions";
 import { useLocale } from "@/lib/i18n/provider";
+import { LocalDate } from "@/components/local-date";
 import { formatMsg } from "@/lib/i18n/format";
 
 type Note = {
@@ -140,7 +141,7 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
                   <p className="truncate text-sm text-neutral-900">{note.title}</p>
                   <p className="mt-0.5 truncate text-xs text-neutral-400">
                     {note.body ? note.body.slice(0, 40) : nt.emptyNote} ·{" "}
-                    {new Date(note.updated_at).toLocaleDateString()}
+                    <LocalDate date={note.updated_at} />
                   </p>
                 </button>
               </li>

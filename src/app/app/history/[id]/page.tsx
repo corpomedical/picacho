@@ -11,6 +11,7 @@ import { StillRendering } from "@/components/still-rendering";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { DownloadButton } from "@/components/download-button";
 import { ResultActions } from "@/components/result-actions";
+import { LocalDate } from "@/components/local-date";
 import type { GenerationFeedback } from "@/lib/generations/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
@@ -136,7 +137,7 @@ export default async function HistoryDetailPage({
             <p className="text-sm font-medium text-neutral-900">{generation.prompt_input}</p>
             <p className="mt-1 text-xs text-neutral-500">
               {generation.character_profile_id ? (character?.name ?? h.unknownCharacter) : h.noCharacter} ·{" "}
-              {new Date(generation.created_at).toLocaleString()}
+              <LocalDate date={generation.created_at} mode="datetime" />
               {sortedAngleRows.length > 1 && ` · ${formatMsg(h.angleCountOther, { n: sortedAngleRows.length })}`}
             </p>
           </div>

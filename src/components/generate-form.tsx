@@ -803,7 +803,10 @@ function UsageBanner({
       role="status"
       className="flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500"
     >
-      <p className="flex-1">
+      {/* suppressHydrationWarning: resetLabel formats a date with the
+          browser's locale/timezone, which legitimately differs from the SSR
+          output — let React patch the text instead of throwing #418. */}
+      <p className="flex-1" suppressHydrationWarning>
         {formatMsg(g.approachingLimitUsage, { used, limit })} · {resetLabel} ·{" "}
         <Link href="/app/settings?tab=usage" className="font-medium text-neutral-700 underline underline-offset-2">
           {g.getMoreUsage}
@@ -980,7 +983,7 @@ export function GenerateForm(props: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
-  elitePlanActive: boolean;
+  advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
@@ -1160,7 +1163,7 @@ function GenerateFormInner({
   characters,
   videoModels,
   defaultVideoModelId,
-  elitePlanActive,
+  advancedPlanActive,
   multiAngleAvailable,
   approachingLimit,
   voiceModeEnabled,
@@ -1175,7 +1178,7 @@ function GenerateFormInner({
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
-  elitePlanActive: boolean;
+  advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
@@ -1534,7 +1537,7 @@ function GenerateFormInner({
   // depend on a character being picked, or having any saved photos, since
   // the panel now also accepts freshly uploaded photos (see panelUploads
   // above and the upload tile in each grid below).
-  const advancedVideoEligible = contentType === "video" && videoModelId === "kling" && elitePlanActive;
+  const advancedVideoEligible = contentType === "video" && videoModelId === "kling" && advancedPlanActive;
 
   // Voice sessions don't survive a navigation/unmount (the browser's
   // recognizer instance goes with the component) — stop it cleanly rather

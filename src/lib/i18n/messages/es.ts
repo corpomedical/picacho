@@ -79,6 +79,10 @@ const es = {
       diffFormatsTitle: "Un personaje, todos los formatos",
       diffFormatsDetail:
         "Reutiliza el mismo personaje en imágenes, video multiángulo, escenas con otros personajes y diálogo hablado — todo fiel al mismo aspecto.",
+      diffRulesTitle: "Reglas de marca, aplicadas",
+      diffRulesDetail:
+        "Define con qué debe —o no debe— aparecer tu personaje, y cada resultado se comprueba contra esas reglas antes de que lo veas. Tu mascota se mantiene fiel a la marca allí donde aparezca.",
+      heroFreeTrialNote: "Empieza con 5 generaciones gratis — sin tarjeta de crédito.",
       showcaseEyebrow: "Resultado real",
       showcaseTitle: "Este es un resultado real de Picacho",
       showcaseSubtitle: "Redactado, revisado, generado y validado automáticamente — sin edición manual.",
@@ -91,12 +95,35 @@ const es = {
     pricing: {
       title: "Precios simples, por generación",
       subtitle:
-        "Todos los planes incluyen el pipeline completo: redacción, revisión, generación, validación y reintentos automáticos. Solo pagas por lo que generas.",
+        "Todos los planes incluyen el pipeline completo: redacción, revisión, generación, validación y reintentos automáticos. Empieza con 5 generaciones gratis, sin tarjeta de crédito.",
       overageNote:
         "Las generaciones se renuevan cada período de facturación. ¿Necesitas más? Mejora tu plan cuando quieras.",
       getStarted: "Empezar",
       perMonth: "/mes",
       currentPlan: "Plan actual",
+      faqTitle: "Preguntas frecuentes",
+      faq: [
+        {
+          q: "¿Qué cuenta como una generación?",
+          a: "Una imagen o un clip de vídeo terminado que supera la validación y llega a ti. Entre bastidores podemos redactar, revisar y reintentar varias veces: eso está incluido. Los clips más largos y los modelos de vídeo premium pueden consumir más de un crédito; el coste exacto se muestra siempre antes de confirmar.",
+        },
+        {
+          q: "¿Las generaciones fallidas consumen mi cuota?",
+          a: "No. Si el pipeline no consigue un resultado válido, ese intento no cuenta contra tus generaciones mensuales.",
+        },
+        {
+          q: "¿Hay prueba gratuita?",
+          a: "Sí: cada cuenta nueva recibe 5 generaciones gratis en nuestro modelo más rápido, sin tarjeta de crédito. Suficiente para crear un personaje y verlo mantenerse consistente en varios resultados.",
+        },
+        {
+          q: "¿Puedo pedir un reembolso?",
+          a: "Si es tu primera suscripción y has usado menos de 5 generaciones, puedes solicitar el reembolso completo dentro de los 7 días posteriores a la compra: escribe a soporte y lo procesamos sin preguntas.",
+        },
+        {
+          q: "¿Puedo cancelar en cualquier momento?",
+          a: "Sí. Cancelar detiene la próxima renovación; mantienes el acceso completo y tus generaciones restantes hasta el final del período pagado.",
+        },
+      ],
     },
   },
   auth: {

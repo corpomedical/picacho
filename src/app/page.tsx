@@ -69,6 +69,15 @@ function TwoModelsIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+function ShieldCheckIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 3 4.5 6v5c0 4.5 3 8.3 7.5 10 4.5-1.7 7.5-5.5 7.5-10V6L12 3Z" />
+      <path d="m9 12 2 2 4-4" />
+    </svg>
+  );
+}
+
 function LayersIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -237,6 +246,11 @@ export default async function Home() {
               {m.seePricing}
             </Link>
           </div>
+          {/* The trial exists in the product (5 free generations, no card)
+              but was invisible on the marketing site — the single cheapest
+              conversion lever there is. One quiet line, right where the
+              decision happens. */}
+          <p className="mt-4 text-sm text-slate-500">{m.heroFreeTrialNote}</p>
         </div>
       </section>
 
@@ -248,7 +262,7 @@ export default async function Home() {
           hero since these are the two things most worth a visitor knowing
           before they scroll further. */}
       <section className="mx-auto max-w-5xl px-8 pt-16">
-        <div className="grid gap-6 sm:grid-cols-2">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
             <TwoModelsIcon className="h-6 w-6 text-blue-600" />
             <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffModelsTitle}</h3>
@@ -258,6 +272,15 @@ export default async function Home() {
             <LayersIcon className="h-6 w-6 text-blue-600" />
             <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffFormatsTitle}</h3>
             <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffFormatsDetail}</p>
+          </div>
+          {/* Brand rules are the most defensible thing in the product —
+              require/forbid rules with block/warn severity, enforced by the
+              validation gate — and until now they weren't mentioned anywhere
+              on the marketing site. */}
+          <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)] sm:col-span-2 lg:col-span-1">
+            <ShieldCheckIcon className="h-6 w-6 text-blue-600" />
+            <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffRulesTitle}</h3>
+            <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffRulesDetail}</p>
           </div>
         </div>
       </section>

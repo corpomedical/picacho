@@ -1,5 +1,11 @@
 // Shared display data for the pricing page and (later) Stripe product setup.
 // Keep this the single source of truth so the two never drift apart.
+//
+// Tier structure (changed 2026-08-12): storyboard + multi-image reference
+// moved down from Elite to Studio so the $299 tier has a capability reason
+// to exist, not just a bigger quota. Elite is now volume + priority + early
+// access. The server-side gating in generations/actions.ts and
+// workspace-data.ts mirrors this — change both together.
 
 export const PRICING_TIERS = [
   {
@@ -12,6 +18,7 @@ export const PRICING_TIERS = [
       "10 generations / month",
       "Unlimited character profiles",
       "Full draft → review → validate pipeline",
+      "Failed generations never use your allowance",
     ],
   },
   {
@@ -25,6 +32,7 @@ export const PRICING_TIERS = [
       "40 generations / month",
       "Unlimited character profiles",
       "Full draft → review → validate pipeline",
+      "Failed generations never use your allowance",
     ],
   },
   {
@@ -35,8 +43,9 @@ export const PRICING_TIERS = [
     highlight: false,
     features: [
       "150 generations / month",
-      "Unlimited character profiles",
-      "Full draft → review → validate pipeline",
+      "Everything in Growth",
+      "Storyboard — set a start and end frame for a shot",
+      "Multi-image reference — anchor a character to several reference photos at once",
     ],
   },
   {
@@ -47,10 +56,10 @@ export const PRICING_TIERS = [
     highlight: false,
     features: [
       "300 generations / month",
-      "Unlimited character profiles",
-      "Full draft → review → validate pipeline",
-      "Storyboard — set a start and end frame for a shot",
-      "Multi-image reference — anchor a character to several reference photos at once",
+      "Everything in Studio",
+      "Priority rendering queue",
+      "Early access to new models and features",
+      "API access — early access by request",
     ],
   },
 ] as const;

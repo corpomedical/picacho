@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { SVGProps } from "react";
 import { Badge } from "@/components/ui/badge";
+import { LocalDate } from "@/components/local-date";
 import { formatMsg } from "@/lib/i18n/format";
 
 export type GalleryItem = {
@@ -114,7 +115,7 @@ export function MediaGallery({
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-neutral-950/80 to-transparent p-2.5 opacity-0 transition-opacity group-hover:opacity-100">
               <p className="truncate text-[11px] font-medium text-white">{item.prompt_input}</p>
               <p className="truncate text-[10px] text-neutral-300">
-                {item.characterName} · {new Date(item.created_at).toLocaleDateString()}
+                {item.characterName} · <LocalDate date={item.created_at} />
               </p>
             </div>
           </Link>

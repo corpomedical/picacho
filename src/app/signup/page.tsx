@@ -24,11 +24,17 @@ export default async function SignupPage({
   // Real kill switch — Admin > Feature flags. Missing/errored row fails
   // open (signups stay on) so a database hiccup can't silently lock
   // everyone out; only an explicit `enabled: false` closes signups.
+  //
+  // maybeSingle, not single: anonymous visitors read this flag through a
+  // dedicated anon RLS policy, and .single() turns "no visible row" into a
+  // 406 error. Before that policy existed, anon could never see the row at
+  // all — which meant the kill switch silently didn't work for the exact
+  // audience it targets. Fixed 2026-08-12 (policy + this).
   const { data: flag } = await supabase
     .from("feature_flags")
     .select("enabled")
     .eq("key", "signups_enabled")
-    .single();
+    .maybeSingle();
   const signupsEnabled = flag?.enabled !== false;
 
   const { t } = await getServerMessages();

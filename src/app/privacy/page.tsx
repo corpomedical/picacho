@@ -24,10 +24,7 @@ export default async function PrivacyPage() {
         <p className="mt-2 text-xs text-neutral-400">
           {t.legal.lastUpdatedLabel}: {doc.updated}
         </p>
-        <p className="mt-4 rounded-[10px] bg-amber-50 px-3.5 py-2.5 text-xs text-amber-800 dark:bg-amber-500/15 dark:text-amber-300">
-          {t.legal.notLegalAdviceNote}
-        </p>
-        <p className="mt-2 text-xs text-neutral-500">
+        <p className="mt-4 text-xs text-neutral-500">
           {t.legal.seeContentPolicyNote}{" "}
           <Link href="/content-policy" className="font-medium text-neutral-900 underline">
             {t.marketing.footer.contentPolicy}

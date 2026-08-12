@@ -30,7 +30,7 @@ export type GenerateWorkspaceData = {
   charactersForForm: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
-  elitePlanActive: boolean;
+  advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
@@ -111,8 +111,11 @@ export async function getGenerateWorkspaceData(
     defaultDurationSeconds: getDefaultDurationSeconds(m),
   }));
 
-  // Storyboard and multi-image reference are Elite-exclusive (admins get a
-  // free pass, same as the generation-cap exemption below).
+  // Storyboard and multi-image reference are Studio-and-up (admins get a
+  // free pass, same as the generation-cap exemption below). Moved down from
+  // Elite-only on 2026-08-12 so the Studio tier has a capability difference,
+  // not just a bigger quota — keep in sync with the server-side check in
+  // generations/actions.ts and the pricing copy in lib/pricing.ts.
   const { data: profile } = userId
     ? await supabase
         .from("profiles")
@@ -120,7 +123,8 @@ export async function getGenerateWorkspaceData(
         .eq("id", userId)
         .single()
     : { data: null };
-  const elitePlanActive = profile?.plan === "elite" || profile?.role === "admin";
+  const advancedPlanActive =
+    profile?.plan === "studio" || profile?.plan === "elite" || profile?.role === "admin";
   // Multi-angle is several generations in one click, so it isn't part of the
   // free trial (enforced in runMultiAngleGeneration). Mirrored here so the
   // button is hidden rather than letting someone pick angles, confirm, and
@@ -153,7 +157,7 @@ export async function getGenerateWorkspaceData(
     charactersForForm,
     videoModels,
     defaultVideoModelId,
-    elitePlanActive,
+    advancedPlanActive,
     multiAngleAvailable,
     approachingLimit,
     voiceModeEnabled,

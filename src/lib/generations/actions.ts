@@ -731,13 +731,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   } = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
   if (allowanceError) return { error: allowanceError };
 
-  // Multi-image reference and storyboard are Elite-exclusive. Checked here,
+  // Multi-image reference and storyboard are Studio-and-up. Checked here,
   // server-side, so this can't be bypassed by a direct call even though the
-  // UI already hides the toggle for non-Elite accounts.
-  if (wantsAdvancedVideoOptions && userPlan !== "elite" && !isAdmin) {
+  // UI already hides the toggle for lower plans. (Moved down from Elite-only
+  // on 2026-08-12 — keep in sync with workspace-data.ts and lib/pricing.ts.)
+  if (wantsAdvancedVideoOptions && userPlan !== "studio" && userPlan !== "elite" && !isAdmin) {
     return {
       error:
-        "Multi-image reference and storyboard are exclusive to the Elite plan. Upgrade to use them, or turn these options off.",
+        "Multi-image reference and storyboard are available on the Studio and Elite plans. Upgrade to use them, or turn these options off.",
     };
   }
 

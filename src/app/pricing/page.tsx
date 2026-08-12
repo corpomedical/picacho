@@ -40,6 +40,23 @@ export default async function PricingPage() {
         <p className="mt-8 text-center text-xs text-neutral-400">{p.overageNote}</p>
       </section>
 
+      {/* FAQ — answers the questions that previously made buying blind:
+          what a "generation" actually is, whether failures cost money,
+          the free trial, refunds, and cancellation. */}
+      <section className="mx-auto max-w-2xl px-8 pb-20">
+        <h2 className="text-center text-xl font-semibold tracking-tight text-neutral-900">
+          {p.faqTitle}
+        </h2>
+        <dl className="mt-8 space-y-6">
+          {p.faq.map((item) => (
+            <div key={item.q} className="rounded-[18px] border border-neutral-100 bg-white p-5">
+              <dt className="text-sm font-medium text-neutral-900">{item.q}</dt>
+              <dd className="mt-2 text-sm leading-relaxed text-neutral-500">{item.a}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
       <MarketingFooter />
     </div>
   );

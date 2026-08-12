@@ -8,6 +8,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { ContinueChatButton } from "@/components/continue-chat-button";
+import { LocalDate } from "@/components/local-date";
 
 export default async function HistoryPage() {
   const { t } = await getServerMessages();
@@ -119,7 +120,7 @@ export default async function HistoryPage() {
                   </p>
                   <p className="mt-0.5 truncate text-xs text-neutral-500">
                     {g.character_profile_id ? (nameById.get(g.character_profile_id) ?? h.unknownCharacter) : h.noCharacter} ·{" "}
-                    {new Date(g.created_at).toLocaleDateString()} ·{" "}
+                    <LocalDate date={g.created_at} /> ·{" "}
                     {g.angleCount
                       ? formatMsg(h.angleCountOther, { n: g.angleCount })
                       : g.attempts === 1

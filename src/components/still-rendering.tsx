@@ -22,10 +22,19 @@ export function StillRendering({ startedAt }: { startedAt: string | Date }) {
   const { t } = useLocale();
   const h = t.history;
   const start = typeof startedAt === "string" ? new Date(startedAt) : startedAt;
-  const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - start.getTime()));
+  // Server-rendered as 0 and computed for real only after mount. The old
+  // version seeded this with Date.now() during render, which made the SSR
+  // HTML and the client's first hydration render disagree by however long
+  // streaming + hydration took — the recurring "Minified React error #418"
+  // crash auto-reported from /app/history/[id] on 2026-08-10. A hydration
+  // mismatch here is structural (time moves between server and client), so
+  // the counter must not read the clock until it's client-only.
+  const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    const id = setInterval(() => setElapsed(Math.max(0, Date.now() - start.getTime())), 1000);
+    const tick = () => setElapsed(Math.max(0, Date.now() - start.getTime()));
+    tick();
+    const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, [start]);
 

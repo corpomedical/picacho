@@ -28,6 +28,22 @@ const nextConfig: NextConfig = {
     },
   },
 
+  // Canonical host: www.picacho.ai permanently redirects to picacho.ai.
+  // Both hosts were serving the full site (both appear in production error
+  // stack traces), which splits SEO authority between two URLs for every
+  // page and can cause cookie/session weirdness across the two origins.
+  // One 308 here makes the apex the single canonical origin.
+  async redirects() {
+    return [
+      {
+        source: "/:path*",
+        has: [{ type: "host", value: "www.picacho.ai" }],
+        destination: "https://picacho.ai/:path*",
+        permanent: true,
+      },
+    ];
+  },
+
   // Baseline security headers — none were set before. These are standard,
   // low-risk practice for any app handling logins and user data; they don't
   // change behavior, just tell browsers to be stricter about what this site
