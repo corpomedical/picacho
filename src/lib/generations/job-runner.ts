@@ -125,6 +125,74 @@ const REFUNDS: Record<FailureFault, boolean> = {
   abandoned: false,
 };
 
+// Gives back everything a failed generation consumed, across all three
+// credit sources. The monthly allowance refunds itself the moment
+// credits_used hits 0 (getMonthlyUsage sums that column), but purchased
+// top-up credits and free-trial generations are decremented on the
+// *profile* at insert time, so they need an explicit refund — without this,
+// a free-trial user whose generation failed permanently lost one of their 5
+// trial generations, which is the exact opposite of the published
+// "failed generations never consume your allowance" promise.
+//
+// Idempotent under overlapping polls: each profile-side refund is gated on
+// an optimistic conditional update that zeroes the generation row's
+// consumption record first — whichever caller wins the update does the
+// refund; the loser matches zero rows and does nothing.
+export async function refundGenerationCosts(generationId: string): Promise<void> {
+  const admin = createAdminClient();
+
+  const { data: row } = await admin
+    .from("generations")
+    .select("user_id, purchased_credits_used, free_generation_used")
+    .eq("id", generationId)
+    .maybeSingle<{ user_id: string; purchased_credits_used: number; free_generation_used: boolean }>();
+  if (!row) return;
+
+  // Always release the monthly allowance, even when there's nothing else to
+  // refund — some callers reach here without having zeroed credits_used.
+  await admin.from("generations").update({ credits_used: 0 }).eq("id", generationId);
+
+  if ((row.purchased_credits_used ?? 0) > 0) {
+    const { data: claimed } = await admin
+      .from("generations")
+      .update({ purchased_credits_used: 0 })
+      .eq("id", generationId)
+      .eq("purchased_credits_used", row.purchased_credits_used)
+      .select("id");
+    if (claimed?.length) {
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("purchased_credits")
+        .eq("id", row.user_id)
+        .maybeSingle<{ purchased_credits: number }>();
+      await admin
+        .from("profiles")
+        .update({ purchased_credits: (profile?.purchased_credits ?? 0) + row.purchased_credits_used })
+        .eq("id", row.user_id);
+    }
+  }
+
+  if (row.free_generation_used) {
+    const { data: claimed } = await admin
+      .from("generations")
+      .update({ free_generation_used: false })
+      .eq("id", generationId)
+      .eq("free_generation_used", true)
+      .select("id");
+    if (claimed?.length) {
+      const { data: profile } = await admin
+        .from("profiles")
+        .select("free_generations_used")
+        .eq("id", row.user_id)
+        .maybeSingle<{ free_generations_used: number }>();
+      await admin
+        .from("profiles")
+        .update({ free_generations_used: Math.max(0, (profile?.free_generations_used ?? 0) - 1) })
+        .eq("id", row.user_id);
+    }
+  }
+}
+
 function jobHandle(row: JobRow): QueuedJob {
   return {
     requestId: row.provider_request_id ?? "",
@@ -197,6 +265,13 @@ async function finish(
     .eq("user_id", userId);
 
   await admin.from("generation_jobs").delete().eq("generation_id", generationId);
+
+  // Refund the other two credit sources (purchased top-ups, free-trial
+  // generations) for refundable faults — the update above only released the
+  // monthly allowance via credits_used.
+  if (outcome.status === "failed" && outcome.fault && REFUNDS[outcome.fault]) {
+    await refundGenerationCosts(generationId);
+  }
 
   // Tell the phone. This is the pay-off from the webhook work: a render now
   // completes server-side whether or not anyone is watching, so the person

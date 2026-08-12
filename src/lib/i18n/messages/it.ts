@@ -371,6 +371,8 @@ const it = {
     pipelineLog: "Registro della pipeline",
     attemptLabel: "Tentativo {n}",
     didntPassSuffix: "— non superato",
+    validatedFirstTry: "Convalidato rispetto alle regole del tuo personaggio — superato al primo tentativo.",
+    validatedAfterRetries: "Convalidato rispetto alle regole del tuo personaggio — superato al tentativo {n}. I tentativi falliti non hanno consumato la tua quota.",
     result: "Risultato",
     download: "Scarica",
     downloadUnavailable: "Scarica (disponibile quando sarà collegato un provider reale)",

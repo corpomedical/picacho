@@ -371,6 +371,8 @@ const pt = {
     pipelineLog: "Registro do processo",
     attemptLabel: "Tentativa {n}",
     didntPassSuffix: "— não passou",
+    validatedFirstTry: "Validado contra as regras do seu personagem — aprovado na primeira tentativa.",
+    validatedAfterRetries: "Validado contra as regras do seu personagem — aprovado na tentativa {n}. Tentativas malsucedidas não consumiram sua cota.",
     result: "Resultado",
     download: "Baixar",
     downloadUnavailable: "Baixar (disponível quando houver um provedor real conectado)",

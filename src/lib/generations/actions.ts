@@ -14,6 +14,7 @@ import {
   saveVideoJob,
   advanceGeneration,
   reapStaleJobs,
+  refundGenerationCosts,
   type AdvanceResult,
 } from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
@@ -824,6 +825,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       video_duration_seconds: contentType === "video" ? videoDurationSeconds : null,
       video_aspect_ratio: contentType === "video" ? videoAspectRatio : null,
       credits_used: creditWeight,
+      // Recorded so a failure can refund exactly what this row consumed
+      // from the two profile-side credit sources (see refundGenerationCosts).
+      purchased_credits_used: consumePurchased ?? 0,
+      free_generation_used: !!consumeFree,
     })
     .select("id")
     .single();
@@ -1061,6 +1066,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       .from("generations")
       .update({ status: "failed", pipeline_log: crashLog })
       .eq("id", placeholder.id);
+    // Our fault — give back everything this row consumed (monthly
+    // allowance, purchased credits, free-trial generation).
+    await refundGenerationCosts(placeholder.id);
     await autoReportFailedGeneration(placeholder.id, userData.user.id, crashLog);
     return { error: message };
   }
@@ -1080,6 +1088,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   }
 
   if (!succeeded) {
+    // The pipeline couldn't produce a passing result after its retries —
+    // exactly the case the published promise covers. Give everything back.
+    await refundGenerationCosts(placeholder.id);
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }
 
@@ -1228,20 +1239,33 @@ export async function requestGenerationCancel(generationId: string): Promise<{ e
 // nothing had been cancelled.
 //
 // This marks such a row failed and clears its result so it can't show up as
-// a usable generation afterwards. Deliberately does NOT clear credits_used
-// or delete the row: the provider call really was made and really was
-// billed, so the credit genuinely was spent — quietly zeroing it here would
-// just move the inaccuracy somewhere harder to notice.
+// a usable generation afterwards.
+//
+// Credits ARE refunded here (changed 2026-08-12). This used to deliberately
+// keep the charge on the grounds that the provider call was genuinely
+// billed — but the async cancel path (REFUNDS.user_cancelled in
+// job-runner.ts) already refunds the identical situation, and the published
+// Terms/FAQ now promise that only delivered, validated results consume the
+// allowance. Charging one cancel path and refunding the other was the worse
+// inconsistency; the provider cost of a rare cancel is the price of keeping
+// the promise simple.
 export async function discardStoppedGeneration(generationId: string): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
-  const { error } = await supabase
+  // .select("id") so we know the update actually matched a row THIS user
+  // owns — the refund below runs with the admin client, so gating it on
+  // "no error" alone would let any signed-in user zero out someone else's
+  // credits_used by guessing generation ids.
+  const { data: updated, error } = await supabase
     .from("generations")
     .update({ status: "failed", result_url: null })
     .eq("id", generationId)
-    .eq("user_id", userData.user.id);
+    .eq("user_id", userData.user.id)
+    .select("id");
+
+  if (!error && updated?.length) await refundGenerationCosts(generationId);
 
   if (error) {
     console.error("discardStoppedGeneration failed:", error.message);
@@ -1480,7 +1504,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const { data: placeholders, error: placeholderError } = await supabase
     .from("generations")
     .insert(
-      angleIds.map((angleId) => ({
+      angleIds.map((angleId, angleIndex) => ({
         user_id: userData.user!.id,
         character_profile_id: characterId,
         prompt_input: userInput,
@@ -1495,6 +1519,14 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
         video_duration_seconds: videoDurationSeconds,
         video_aspect_ratio: videoAspectRatio,
         credits_used: creditWeight,
+        // The purchased-credit overflow is a single group-level number;
+        // spread it across the rows (base share everywhere, remainder on
+        // the first rows) so a partial failure refunds a fair slice rather
+        // than all-or-nothing (see refundGenerationCosts).
+        purchased_credits_used:
+          Math.floor((consumePurchased ?? 0) / angleIds.length) +
+          (angleIndex < (consumePurchased ?? 0) % angleIds.length ? 1 : 0),
+        free_generation_used: false,
       })),
     )
     .select("id, angle");
@@ -1570,6 +1602,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       .from("generations")
       .update({ status: "failed", pipeline_log: failureLog, credits_used: 0, progress_stage: null })
       .eq("angle_group_id", groupId);
+
+    // Whole group failed before any provider call — also give back the
+    // purchased-credit slices recorded on each row.
+    for (const p of placeholders) {
+      await refundGenerationCosts(p.id as string);
+    }
 
     return { error: "Couldn't build a scene for these angles — try rewording the prompt." };
   }
@@ -1658,6 +1696,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           })
           .eq("id", rowId);
         if (!succeeded) {
+          await refundGenerationCosts(rowId);
           await autoReportFailedGeneration(rowId, userData.user!.id, attempts);
         }
       }
@@ -1688,6 +1727,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           .from("generations")
           .update({ status: "failed", pipeline_log: crashLog })
           .eq("id", rowId);
+        // Refund this angle's slice of the credits (see the placeholder
+        // insert above for how the purchased overflow was distributed).
+        await refundGenerationCosts(rowId);
         await autoReportFailedGeneration(rowId, userData.user!.id, crashLog);
       }
       return { angleId, id: rowId ?? "", succeeded: false, attempts: [], finalPrompt: "", resultUrl: null };

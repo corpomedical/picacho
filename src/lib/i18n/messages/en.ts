@@ -386,6 +386,8 @@ const en = {
     pipelineLog: "Pipeline log",
     attemptLabel: "Attempt {n}",
     didntPassSuffix: "— didn't pass",
+    validatedFirstTry: "Validated against your character rules — passed on the first try.",
+    validatedAfterRetries: "Validated against your character rules — passed on attempt {n}. Failed attempts didn't use your allowance.",
     result: "Result",
     download: "Download",
     downloadUnavailable: "Download (available once a real provider is connected)",

@@ -140,6 +140,16 @@ export default async function HistoryDetailPage({
               <LocalDate date={generation.created_at} mode="datetime" />
               {sortedAngleRows.length > 1 && ` · ${formatMsg(h.angleCountOther, { n: sortedAngleRows.length })}`}
             </p>
+            {/* The validation pipeline is the product's whole pitch, but it
+                used to be invisible unless someone expanded the attempt log.
+                One line of proof on every successful result. */}
+            {generation.status === "succeeded" && attempts.length > 0 && (
+              <p className="mt-1.5 text-xs font-medium text-emerald-600">
+                {attempts.length === 1
+                  ? h.validatedFirstTry
+                  : formatMsg(h.validatedAfterRetries, { n: attempts.length })}
+              </p>
+            )}
           </div>
           <div className="flex flex-shrink-0 items-center gap-2">
             <Badge tone="neutral">{typeLabel}</Badge>

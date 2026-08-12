@@ -1,6 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
+
+// Subscribe-to-nothing store: getSnapshot returns true on the client,
+// getServerSnapshot returns false — so `mounted` is false during SSR and
+// the hydration render, true immediately after. The idiomatic React 19 way
+// to detect "am I past hydration" without a setState-in-effect.
+const emptySubscribe = () => () => {};
+function useMounted(): boolean {
+  return useSyncExternalStore(
+    emptySubscribe,
+    () => true,
+    () => false,
+  );
+}
 
 // Renders a timestamp in the *viewer's* locale and timezone without ever
 // causing a hydration mismatch.
@@ -25,8 +38,7 @@ export function LocalDate({
   mode?: "date" | "datetime";
 }) {
   const d = typeof date === "string" ? new Date(date) : date;
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
 
   const iso = d.toISOString();
   const stable = mode === "date" ? iso.slice(0, 10) : iso.slice(0, 16).replace("T", " ") + " UTC";

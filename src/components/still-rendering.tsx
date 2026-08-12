@@ -21,7 +21,11 @@ import { formatMsg } from "@/lib/i18n/format";
 export function StillRendering({ startedAt }: { startedAt: string | Date }) {
   const { t } = useLocale();
   const h = t.history;
-  const start = typeof startedAt === "string" ? new Date(startedAt) : startedAt;
+  // Milliseconds, not a Date object, so the useEffect dependency below is a
+  // stable primitive — a Date constructed during render is a new identity
+  // every render, which react-hooks/exhaustive-deps rightly flags.
+  const startMs =
+    typeof startedAt === "string" ? new Date(startedAt).getTime() : startedAt.getTime();
   // Server-rendered as 0 and computed for real only after mount. The old
   // version seeded this with Date.now() during render, which made the SSR
   // HTML and the client's first hydration render disagree by however long
@@ -32,11 +36,11 @@ export function StillRendering({ startedAt }: { startedAt: string | Date }) {
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
-    const tick = () => setElapsed(Math.max(0, Date.now() - start.getTime()));
+    const tick = () => setElapsed(Math.max(0, Date.now() - startMs));
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [start]);
+  }, [startMs]);
 
   const totalSeconds = Math.floor(elapsed / 1000);
   const mins = Math.floor(totalSeconds / 60);
