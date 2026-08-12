@@ -11,6 +11,14 @@ export const metadata: Metadata = {
   alternates: { canonical: "/terms" },
 };
 
+// Always render fresh, never serve a CDN-cached copy. These marketing/legal
+// pages were getting stuck: after a deploy, one hostname (picacho.ai) kept
+// serving a weeks-old prerendered copy while others served the new build,
+// because the pages were statically cacheable and a stale per-host edge copy
+// never got evicted. force-dynamic makes every request render on the server,
+// so a stale copy can't be served and the content always matches the deploy.
+export const dynamic = "force-dynamic";
+
 export default async function TermsPage() {
   const { locale, t } = await getServerMessages();
   const doc = termsDoc[locale];
