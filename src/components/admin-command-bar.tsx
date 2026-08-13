@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type SVGProps } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SVGProps } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
@@ -135,6 +135,53 @@ export function AdminCommandBar({
   const [notice, setNotice] = useState<{ id: number; message: string } | null>(null);
   const noticeIdRef = useRef(0);
 
+  // Horizontal scroll affordances for the icon nav (Material/Google-tabs
+  // style): chevrons that appear only when there's more to scroll in that
+  // direction, fade with the scroll position, and scroll smoothly on click.
+  const navRef = useRef<HTMLElement | null>(null);
+  const [canLeft, setCanLeft] = useState(false);
+  const [canRight, setCanRight] = useState(false);
+
+  const updateArrows = useCallback(() => {
+    const el = navRef.current;
+    if (!el) return;
+    // 1px slack so sub-pixel rounding at the ends doesn't leave an arrow
+    // stuck visible when you're already fully scrolled that way.
+    setCanLeft(el.scrollLeft > 1);
+    setCanRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el) return;
+    // Center the active tab on load so the current page is always visible
+    // even when it lives off the right edge. Adjusts only the nav's own
+    // scrollLeft (via rects) — never scrollIntoView, which can nudge the
+    // whole page.
+    const activeEl = el.querySelector<HTMLElement>('[aria-current="page"]');
+    if (activeEl) {
+      const elRect = el.getBoundingClientRect();
+      const aRect = activeEl.getBoundingClientRect();
+      el.scrollLeft += aRect.left + aRect.width / 2 - (elRect.left + elRect.width / 2);
+    }
+    updateArrows();
+    const ro = new ResizeObserver(updateArrows);
+    ro.observe(el);
+    window.addEventListener("resize", updateArrows);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", updateArrows);
+    };
+  }, [updateArrows, pathname]);
+
+  const scrollNav = useCallback((direction: 1 | -1) => {
+    const el = navRef.current;
+    if (!el) return;
+    // Scroll by most of a viewport so a click makes real progress, but keep a
+    // sliver of overlap so you never lose your place between clicks.
+    el.scrollBy({ left: direction * Math.max(180, el.clientWidth * 0.75), behavior: "smooth" });
+  }, []);
+
   // Polls getAdminBadgeCounts on a timer so the red dots (and this drop-down
   // banner) update while the page just sits open, instead of only refreshing
   // on the next navigation. A plain interval rather than Supabase Realtime —
@@ -246,12 +293,40 @@ export function AdminCommandBar({
       )}
 
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-8 py-2.5">
-        {/* py-2 here isn't decorative — nav has overflow-x-auto for the
-            mobile scroll fix, which per the CSS overflow spec forces
-            overflow-y to auto too, clipping anything that pokes outside the
-            nav's own box. The badge sits partly above each icon's edge, so
-            without this padding the top of every badge would get cut off. */}
-        <nav className="flex items-center gap-1 overflow-x-auto overscroll-x-contain py-2">
+        {/* Scroll region with fade-edged chevron controls. The wrapper is
+            relative so the arrows can overlay the nav's edges; min-w-0 lets
+            this flex child actually shrink (default min-width:auto would
+            keep it at content width and the nav would never need to scroll). */}
+        <div className="relative min-w-0 flex-1">
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center bg-gradient-to-r from-white via-white to-transparent pr-8 transition-opacity duration-200",
+              canLeft ? "opacity-100" : "opacity-0",
+            )}
+          >
+            <button
+              type="button"
+              aria-label="Scroll left"
+              tabIndex={canLeft ? 0 : -1}
+              onClick={() => scrollNav(-1)}
+              className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-500 shadow-[0_1px_3px_rgba(0,0,0,0.08)] transition-colors hover:border-neutral-300 hover:text-neutral-900"
+            >
+              <ChevronLeftIcon className="h-4 w-4" />
+            </button>
+          </div>
+
+          {/* py-2 here isn't decorative — nav has overflow-x-auto for the
+              mobile scroll fix, which per the CSS overflow spec forces
+              overflow-y to auto too, clipping anything that pokes outside the
+              nav's own box. The badge sits partly above each icon's edge, so
+              without this padding the top of every badge would get cut off.
+              The scrollbar-hiding utilities keep the raw bar out of sight —
+              the chevrons are the scroll affordance now. */}
+          <nav
+            ref={navRef}
+            onScroll={updateArrows}
+            className="flex items-center gap-1 overflow-x-auto overscroll-x-contain py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          >
           {NAV_ITEMS.map((item) => {
             const active = isActive(pathname, item.href);
             const Icon = item.icon;
@@ -283,7 +358,25 @@ export function AdminCommandBar({
               </Link>
             );
           })}
-        </nav>
+          </nav>
+
+          <div
+            className={cn(
+              "pointer-events-none absolute inset-y-0 right-0 z-20 flex items-center justify-end bg-gradient-to-l from-white via-white to-transparent pl-8 transition-opacity duration-200",
+              canRight ? "opacity-100" : "opacity-0",
+            )}
+          >
+            <button
+              type="button"
+              aria-label="Scroll right"
+              tabIndex={canRight ? 0 : -1}
+              onClick={() => scrollNav(1)}
+              className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full border border-neutral-200 bg-white text-neutral-500 shadow-[0_1px_3px_rgba(0,0,0,0.08)] transition-colors hover:border-neutral-300 hover:text-neutral-900"
+            >
+              <ChevronRightIcon className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
 
         <button
           type="button"
@@ -494,6 +587,22 @@ function GearIcon(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 13a8 8 0 0 0 0-2l2-1.5-2-3.4-2.4.6a8 8 0 0 0-1.7-1L14.8 3h-4l-.5 2.7a8 8 0 0 0-1.7 1l-2.4-.6-2 3.4L6 11a8 8 0 0 0 0 2l-2 1.5 2 3.4 2.4-.6a8 8 0 0 0 1.7 1l.5 2.7h4l.5-2.7a8 8 0 0 0 1.7-1l2.4.6 2-3.4Z" />
+    </svg>
+  );
+}
+
+function ChevronLeftIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m15 5-7 7 7 7" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m9 5 7 7-7 7" />
     </svg>
   );
 }
