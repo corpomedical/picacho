@@ -243,6 +243,18 @@ async function addGeneratedImageAsReference(
       .single();
     const existing: string[] = current?.reference_image_urls ?? [];
 
+    // Respect the 5-photo gallery cap the character form enforces. This
+    // used to append unbounded — every successful image generation grew the
+    // gallery (real data: characters at 7 and 8 photos) — which silently
+    // DISABLED the character page's describe-and-generate box forever,
+    // since that box is gated on totalImages >= 5 ("the chat box is off,
+    // I can't click or write in it"). The generated image is still saved in
+    // History/Images either way; skipping the gallery append loses nothing.
+    if (existing.length >= 5) {
+      await supabase.storage.from("character-references").remove([path]);
+      return;
+    }
+
     await supabase
       .from("character_profiles")
       .update({

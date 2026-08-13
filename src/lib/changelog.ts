@@ -41,6 +41,7 @@ export const RELEASES: Release[] = [
       "Added this Updates section to the admin area.",
       "Character consistency fix: AI-generated reference photos now anchor to the character's existing photo (same person, identity-locked) and include the typed visual traits — previously every generated photo invented a brand-new face, which made the character's own gallery inconsistent and poisoned downstream generations.",
       "Character photo generation is also far less strict: prompts OpenAI's safety filter wrongly flags (e.g. ordinary descriptions of people) now automatically retry on Flux instead of failing.",
+      "Fixed the character page's describe-and-generate box appearing dead: successful generations were silently auto-added to the character's gallery without limit, and once past 5 photos the box disabled itself with no explanation. The auto-add now respects the 5-photo cap, and the box explains itself when a gallery is full.",
     ],
   },
 ];

@@ -345,6 +345,13 @@ export function CharacterForm({
               {generating ? c.generating : c.generate}
             </button>
           </div>
+            {totalImages >= 5 && (
+              /* The input and button above are disabled at the 5-photo cap,
+                 which used to happen with no explanation at all — the box
+                 just looked broken. Reuses the same message the button
+                 would have shown if it were clickable. */
+              <p className="mt-1.5 text-xs text-neutral-400">{c.maxImages}</p>
+            )}
           {genError && <p className="mt-2 text-sm text-red-600">{genError}</p>}
         </div>
       </section>
