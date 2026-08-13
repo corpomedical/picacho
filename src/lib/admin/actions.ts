@@ -65,8 +65,53 @@ export async function setUserStatus(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
 
+  // Also ban/unban at the auth layer, not just flip the profile flag. The
+  // profiles.status check (middleware + generation gate) blocks access on
+  // every request using an existing session, but a suspended user could
+  // otherwise still sign in again to get a fresh session. Banning makes
+  // Supabase reject their login and token refresh outright, so suspension
+  // actually keeps them out. ban_duration "none" lifts it on reinstate.
+  const admin = createAdminClient();
+  const { error: banError } = await admin.auth.admin.updateUserById(userId, {
+    ban_duration: status === "suspended" ? "876000h" : "none",
+  });
+  if (banError) {
+    redirect(`${redirectTo}?error=${encodeURIComponent(banError.message)}`);
+  }
+
   revalidatePath("/admin/users");
   revalidatePath(`/admin/users/${userId}`);
+}
+
+// Permanently deletes a user and everything they own. Uses the admin
+// (service-role) client's auth.admin.deleteUser, which removes the auth.users
+// row; every table that references it — profiles and, through profiles,
+// character_profiles / generations / projects / feedback / generation_reports,
+// plus brand_rules / notes / credit_purchases / generation_jobs / push_tokens /
+// reference_image_generations — is ON DELETE CASCADE, so the whole account is
+// cleaned up in one call. page_views keeps its rows with user_id nulled, so
+// traffic analytics aren't retroactively dented by a deletion.
+//
+// Irreversible, so it's guarded: admins can't delete themselves, and the UI
+// (DeleteUserButton) requires a confirm before this ever runs.
+export async function deleteUser(formData: FormData) {
+  const { userId: actingUserId } = await requireAdmin();
+  const userId = formData.get("user_id") as string;
+
+  if (userId === actingUserId) {
+    redirect(
+      `/admin/users/${userId}?error=${encodeURIComponent("You can't delete your own account.")}`,
+    );
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.auth.admin.deleteUser(userId);
+  if (error) {
+    redirect(`/admin/users/${userId}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/admin/users");
+  redirect("/admin/users?message=" + encodeURIComponent("User deleted."));
 }
 
 export async function toggleFeatureFlag(formData: FormData) {

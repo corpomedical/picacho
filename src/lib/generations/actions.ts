@@ -274,7 +274,7 @@ async function checkGenerationAllowance(
   const [{ data: profile }, { data: recent }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("plan, role, bonus_credits, purchased_credits, free_generations_used, current_period_start")
+      .select("plan, role, status, bonus_credits, purchased_credits, free_generations_used, current_period_start")
       .eq("id", userId)
       .single(),
     supabase
@@ -287,6 +287,18 @@ async function checkGenerationAllowance(
 
   const plan = (profile?.plan ?? "none") as PlanId;
   const isAdmin = profile?.role === "admin";
+
+  // Suspended accounts can't generate — enforced here as well as in
+  // middleware, so a direct call to this action (not just a page load) is
+  // still blocked. Checked before the admin bypass so a suspended admin is
+  // stopped too.
+  if (profile?.status === "suspended") {
+    return {
+      error: "Your account is suspended. Contact support if you think this is a mistake.",
+      plan,
+      isAdmin,
+    };
+  }
 
   if (isAdmin) return { error: null, plan, isAdmin };
 

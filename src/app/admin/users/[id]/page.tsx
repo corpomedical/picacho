@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
+import { DeleteUserButton } from "@/components/delete-user-button";
 
 function timeAgo(dateStr: string) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -235,6 +236,18 @@ export default async function AdminUserDetailPage({
             ) : (
               <p className="mt-2 text-xs text-neutral-400">No Stripe customer yet.</p>
             )}
+          </div>
+
+          <div className="mt-6 border-t border-red-100 pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-red-500">Danger zone</p>
+            <p className="mt-2 text-xs leading-relaxed text-neutral-400">
+              Suspending blocks sign-in and generation immediately and is fully reversible. Deleting
+              permanently removes the account and all its data — characters, generations, projects,
+              and billing records — and can&apos;t be undone. To just stop access, suspend instead.
+            </p>
+            <div className="mt-3">
+              <DeleteUserButton userId={user.id} email={user.email} />
+            </div>
           </div>
         </Card>
 
