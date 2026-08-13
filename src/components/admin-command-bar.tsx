@@ -26,6 +26,7 @@ const NAV_ITEMS = [
   { href: "/admin/voices", label: "Voices", icon: MicIcon },
   { href: "/admin/flags", label: "Feature flags", icon: ToggleIcon },
   { href: "/admin/settings", label: "Settings", icon: GearIcon },
+  { href: "/admin/updates", label: "Updates", icon: SparklesIcon },
 ] as const;
 
 function isActive(pathname: string, href: string): boolean {
@@ -587,6 +588,15 @@ function GearIcon(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 13a8 8 0 0 0 0-2l2-1.5-2-3.4-2.4.6a8 8 0 0 0-1.7-1L14.8 3h-4l-.5 2.7a8 8 0 0 0-1.7 1l-2.4-.6-2 3.4L6 11a8 8 0 0 0 0 2l-2 1.5 2 3.4 2.4-.6a8 8 0 0 0 1.7 1l.5 2.7h4l.5-2.7a8 8 0 0 0 1.7-1l2.4.6 2-3.4Z" />
+    </svg>
+  );
+}
+
+function SparklesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 3l1.8 4.7L18.5 9.5 13.8 11.3 12 16l-1.8-4.7L5.5 9.5l4.7-1.8L12 3Z" />
+      <path d="M19 14l.7 1.8 1.8.7-1.8.7L19 19l-.7-1.8-1.8-.7 1.8-.7L19 14Z" />
     </svg>
   );
 }
