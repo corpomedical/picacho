@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-images";
+import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
@@ -243,15 +243,33 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
         "\n\nThis is the same person as in the reference photo — keep the face, age, build, and identity exactly the same; only the pose, framing, and scene may change.";
     }
 
+    const downloadImage = async (url: string): Promise<Buffer> => {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Couldn't download the generated image.");
+      return Buffer.from(await res.arrayBuffer());
+    };
+
     let bytes: Buffer;
     if (model.provider === "fal") {
-      const hostedUrl = await generateImageWithFlux(fullPrompt, anchorUrl);
-      const res = await fetch(hostedUrl);
-      if (!res.ok) throw new Error("Couldn't download the generated image.");
-      bytes = Buffer.from(await res.arrayBuffer());
+      bytes = await downloadImage(await generateImageWithFlux(fullPrompt, anchorUrl));
     } else {
-      const base64 = await generateImageWithOpenAI(fullPrompt, anchorUrl);
-      bytes = Buffer.from(base64, "base64");
+      try {
+        const base64 = await generateImageWithOpenAI(fullPrompt, anchorUrl);
+        bytes = Buffer.from(base64, "base64");
+      } catch (err) {
+        // OpenAI's safety classifier is aggressive about photorealistic
+        // people — real report: "a beautiful blonde woman" was flagged.
+        // Scene generation already falls back to Flux on exactly this case
+        // (see providers/image.ts); this path was missing the same
+        // fallback, so an ordinary description just failed. Only the
+        // safety case falls back — an outage or bad key says nothing about
+        // whether Flux would do better.
+        if (err instanceof ImageSafetyRejection && process.env.FAL_KEY) {
+          bytes = await downloadImage(await generateImageWithFlux(fullPrompt, anchorUrl));
+        } else {
+          throw err;
+        }
+      }
     }
 
     const path = `${data.user.id}/${crypto.randomUUID()}.png`;

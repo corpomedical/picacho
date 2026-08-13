@@ -40,6 +40,7 @@ export const RELEASES: Release[] = [
       "Admin navigation: added smooth left/right scroll chevrons to the top tab bar.",
       "Added this Updates section to the admin area.",
       "Character consistency fix: AI-generated reference photos now anchor to the character's existing photo (same person, identity-locked) and include the typed visual traits — previously every generated photo invented a brand-new face, which made the character's own gallery inconsistent and poisoned downstream generations.",
+      "Character photo generation is also far less strict: prompts OpenAI's safety filter wrongly flags (e.g. ordinary descriptions of people) now automatically retry on Flux instead of failing.",
     ],
   },
 ];
