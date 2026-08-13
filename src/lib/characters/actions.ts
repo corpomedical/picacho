@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
+import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { PLAN_LABELS, PLAN_REFERENCE_IMAGE_LIMITS, type PlanId } from "@/lib/plans";
@@ -264,11 +265,24 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
         // fallback, so an ordinary description just failed. Only the
         // safety case falls back — an outage or bad key says nothing about
         // whether Flux would do better.
-        if (err instanceof ImageSafetyRejection && process.env.FAL_KEY) {
-          bytes = await downloadImage(await generateImageWithFlux(fullPrompt, anchorUrl));
-        } else {
-          throw err;
+        if (!(err instanceof ImageSafetyRejection)) throw err;
+        // Soften the wording and retry on GPT first — that keeps the
+        // identity anchor, which the Flux fallback loses (see
+        // providers/image.ts for the full reasoning). Flux is last resort.
+        let recovered: Buffer | null = null;
+        if (process.env.ANTHROPIC_API_KEY) {
+          try {
+            const softened = await softenPromptForSafety(fullPrompt);
+            recovered = Buffer.from(await generateImageWithOpenAI(softened, anchorUrl), "base64");
+          } catch {
+            recovered = null;
+          }
         }
+        if (!recovered) {
+          if (!process.env.FAL_KEY) throw err;
+          recovered = await downloadImage(await generateImageWithFlux(fullPrompt, anchorUrl));
+        }
+        bytes = recovered;
       }
     }
 

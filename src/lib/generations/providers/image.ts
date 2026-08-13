@@ -1,6 +1,7 @@
 import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
+import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 
 // Single entry point for image generation regardless of which model is
 // selected. OpenAI returns raw image bytes (persisted via the caller-supplied
@@ -20,7 +21,10 @@ export async function generateImage(
   // Called if the request had to be completed by a different model than the
   // one asked for, so the caller can record that in the pipeline log rather
   // than reporting a model that didn't actually produce the result.
-  onFallback?: (note: string) => void,
+  // finalModelName is set when a different model than the requested one
+  // actually produced the image, so the pipeline log can report the truth
+  // (it used to always print the requested model, even after a fallback).
+  onFallback?: (note: string, finalModelName?: string) => void,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -42,8 +46,31 @@ export async function generateImage(
     // says nothing about whether a different model would do better, and
     // silently double-spending on those would be wrong.
     const multiCharacter = Array.isArray(referenceImageUrl) && referenceImageUrl.length >= 2;
-    if (err instanceof ImageSafetyRejection && !multiCharacter) {
-      onFallback?.("OpenAI's safety filter rejected the prompt — generated with Flux instead.");
+    if (!(err instanceof ImageSafetyRejection)) throw err;
+
+    // First recovery: soften the wording and retry on GPT itself. This keeps
+    // the image-edit identity anchor, which is the whole product promise —
+    // the old behavior jumped straight to Flux, whose plain image-to-image
+    // repaints the person (real report: "0 match" to the character). Works
+    // for multi-character too, since the retry stays on the same endpoint.
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        const softened = await softenPromptForSafety(prompt);
+        const base64 = await generateImageWithOpenAI(softened, referenceImageUrl);
+        onFallback?.(
+          "OpenAI's safety filter rejected the wording — automatically softened it and retried on GPT Image 2, keeping the identity anchor.",
+        );
+        return persistBase64(base64);
+      } catch {
+        // Softening failed or the retry was rejected too — fall through.
+      }
+    }
+
+    if (!multiCharacter && process.env.FAL_KEY) {
+      onFallback?.(
+        "OpenAI's safety filter rejected the prompt — generated with Flux instead. Identity match is weaker than GPT Image 2's anchored mode.",
+        "Flux",
+      );
       return generateImageWithFlux(prompt, referenceImageUrl);
     }
     // Multi-character compositing has no Flux equivalent (its image-to-image

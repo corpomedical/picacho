@@ -61,3 +61,28 @@ export async function draftWithClaude(instructions: string): Promise<string> {
   }
   return textBlock.text.trim();
 }
+
+
+// Rewrites a prompt that an image model's safety classifier rejected, so it
+// can be retried on the SAME model instead of falling back to a different
+// one. The classifier's false positives are nearly always wording ("form-
+// fitting", "skin-tight", suggestive-sounding phrasing on a photorealistic
+// person), not actual content — real case, 2026-08-13: an ordinary superhero
+// pose was rejected, the Flux fallback repainted the character, and the user
+// reported the result had "0 match" to their character. Keeping the retry on
+// GPT Image 2 preserves its identity anchor; this rewrite is what makes that
+// retry usually pass.
+export async function softenPromptForSafety(prompt: string): Promise<string> {
+  const instructions =
+    "An image-generation safety filter rejected the prompt below, almost certainly because of " +
+    "wording rather than content — it describes a normal, safe-for-work character scene. Rewrite " +
+    "it so a strict classifier clearly reads it as wholesome: keep the scene, character " +
+    "description, pose, outfit, and mood identical in substance; replace phrasing that could be " +
+    "misread (e.g. \"form-fitting\", \"skin-tight\", anything that could sound suggestive); and " +
+    "where natural, make explicit that the person is an adult and fully clothed. Return ONLY the " +
+    "rewritten prompt, no preamble.\n\nPROMPT:\n" +
+    prompt;
+  const softened = (await draftWithClaude(instructions)).trim();
+  if (!softened) throw new Error("Safety rewrite came back empty.");
+  return softened;
+}

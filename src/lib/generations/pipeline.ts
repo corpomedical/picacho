@@ -962,25 +962,33 @@ export async function runRealPipeline(
           const imageModelId = options.imageModelId ?? "gpt-image";
           const usingMultiCharacterImages = (options.referenceImageUrls?.length ?? 0) >= 2;
           let fallbackNote: string | null = null;
+          let actualModelName: string | null = null;
           resultUrl = await generateImage(
             imageModelId,
             reviewedPrompt,
             usingMultiCharacterImages ? options.referenceImageUrls! : options.referenceImageUrl,
             options.persistImage,
-            (note) => {
+            (note, finalModelName) => {
               fallbackNote = note;
+              if (finalModelName) actualModelName = finalModelName;
             },
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
+          // Report the model that ACTUALLY produced the image. This used to
+          // always print the requested model, so after a Flux fallback the
+          // log claimed "Generated via GPT Image 2 (anchored to reference
+          // photo)" about an image GPT never made and no anchor applied to.
           steps.push({
             step: "generate",
-            detail: `Generated via ${getImageModel(imageModelId).name}${
-              usingMultiCharacterImages
-                ? " (multiple characters)"
-                : options.referenceImageUrl
-                  ? " (anchored to reference photo)"
-                  : ""
-            }${genTry > 1 ? " (recovered after a retry)" : ""}.`,
+            detail: actualModelName
+              ? `Generated via ${actualModelName} (fallback)${genTry > 1 ? " (recovered after a retry)" : ""}.`
+              : `Generated via ${getImageModel(imageModelId).name}${
+                  usingMultiCharacterImages
+                    ? " (multiple characters)"
+                    : options.referenceImageUrl
+                      ? " (anchored to reference photo)"
+                      : ""
+                }${genTry > 1 ? " (recovered after a retry)" : ""}.`,
           });
         }
         generateFailed = false;
