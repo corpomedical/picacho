@@ -106,7 +106,12 @@ function requiredElements(
   // a real end-to-end test run, 2026-08-07.
   if (contentType === "video" && character.motion_style)
     elements.push({ label: "motion style", value: character.motion_style });
-  if (character.voice_tone_tags?.length)
+  // Voice tone only means anything for video — same reasoning as motion
+  // style above. Requiring it in a still-image prompt produced nonsense like
+  // "a soft sexy voice implied in the mood and expression" inside image
+  // prompts (real incident, 2026-08-13), which also reads far worse to
+  // safety classifiers than the scene itself.
+  if (contentType === "video" && character.voice_tone_tags?.length)
     elements.push({ label: "tone", value: character.voice_tone_tags.join(", ") });
   return elements;
 }
@@ -188,7 +193,9 @@ function draft(userInput: string, character: CharacterForPipeline, omitMotion: b
     character.traits.distinguishing_features &&
       `Distinguishing features: ${character.traits.distinguishing_features}.`,
     !omitMotion && character.motion_style && `Motion style: ${character.motion_style}.`,
-    character.voice_tone_tags?.length && `Tone: ${character.voice_tone_tags.join(", ")}.`,
+    !omitMotion &&
+      character.voice_tone_tags?.length &&
+      `Tone: ${character.voice_tone_tags.join(", ")}.`,
     `Request: ${userInput}`,
   ].filter(Boolean);
   return parts.join(" ");
@@ -699,9 +706,20 @@ export async function runRealPipeline(
           })),
         );
 
+        // The user's request is passed as ground truth on purpose. Review used
+        // to see only the draft + rulebook — so when a draft arrived broken
+        // (cut short, or missing the scene), review "repaired" it from the
+        // rulebook alone and the user's actual scene disappeared entirely
+        // (real incident, 2026-08-13: "sitting in a cafe in Paris, having a
+        // meeting" became a generic swimsuit portrait).
         reviewedPrompt = await reviewWithOpenAI(
           `Tighten this AI ${mediumLabel} generation prompt so it definitely reflects every ` +
-            `item in the rulebook below. Return only the improved prompt text, nothing else.\n\n` +
+            `item in the rulebook below, WITHOUT losing the scene the user asked for. The ` +
+            `user's original request is the ground truth for setting, action, other people, ` +
+            `and composition — every part of it must survive into the improved prompt, and if ` +
+            `the prompt under review is missing any of it, restore it. Return only the ` +
+            `improved prompt text, nothing else.\n\n` +
+            `User request: ${userInput}\n\n` +
             `Rulebook:\n${enforcedRulebook}\n\nPrompt to review:\n${draftedPrompt}`,
         );
         steps.push({ step: "review", detail: reviewedPrompt });

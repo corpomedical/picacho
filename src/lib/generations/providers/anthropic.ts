@@ -59,6 +59,20 @@ export async function draftWithClaude(instructions: string): Promise<string> {
       `Claude returned an empty response.${stopReason} ${JSON.stringify(data).slice(0, 300)}`,
     );
   }
+  // A partial answer is worse than no answer here. stop_reason other than a
+  // normal end ("max_tokens", "refusal", ...) means the text cuts off
+  // mid-thought — real incident, 2026-08-13: a draft stopped after eight
+  // words, the review step "completed" it from the rulebook alone, and the
+  // user's requested scene (a Paris cafe meeting) vanished from the final
+  // image. Throwing routes the pipeline to its deterministic fallback,
+  // which keeps the user's request verbatim.
+  if (
+    data?.stop_reason &&
+    data.stop_reason !== "end_turn" &&
+    data.stop_reason !== "stop_sequence"
+  ) {
+    throw new Error(`Claude's draft was cut short (stop_reason=${data.stop_reason}).`);
+  }
   return textBlock.text.trim();
 }
 
