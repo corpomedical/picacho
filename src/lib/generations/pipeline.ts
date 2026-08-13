@@ -644,9 +644,33 @@ export async function runRealPipeline(
             `${fullRulebook}\n\n` +
             `User request: ${userInput}` +
             castInstruction +
-            (previousIssues.length
-              ? `\n\nA previous attempt was missing: ${previousIssues.join(", ")}. Make sure this one includes them.`
-              : "") +
+            ((): string => {
+              // Split retry feedback by what actually happened. A violated
+              // PROHIBITION used to be fed back as "was missing: No
+              // appearance shaming — make sure this one includes them",
+              // which the drafter obeyed by writing compliance meta-language
+              // INTO the visual prompt ("portrayed respectfully, with no
+              // implication that...") — polluting what the image model is
+              // told to draw. Violations and missing requirements need
+              // opposite instructions.
+              const meta = new Set(["provider_error", "cancelled"]);
+              const relevant = previousIssues.filter((i) => !meta.has(i));
+              if (relevant.length === 0) return "";
+              const violated = relevant.filter((i) => brandRuleLabels.has(i.toLowerCase()));
+              const missing = relevant.filter((i) => !brandRuleLabels.has(i.toLowerCase()));
+              let out = "";
+              if (missing.length) {
+                out += `\n\nA previous attempt was missing: ${missing.join(", ")}. Make sure this one includes them.`;
+              }
+              if (violated.length) {
+                out +=
+                  `\n\nA previous attempt was blocked for violating: ${violated.join(", ")}. ` +
+                  `Rewrite so the scene naturally avoids this. The prompt must stay a pure ` +
+                  `visual description of the scene — never mention rules, compliance, ` +
+                  `respectfulness, or what the image is NOT; just describe what IS shown.`;
+              }
+              return out;
+            })() +
             `\n\nAfter the prompt, on its own new line, write exactly "OVERRIDES:" followed by a ` +
             `comma-separated list of rulebook labels (only from: ${overridableLabels}) that THIS ` +
             `request explicitly changes for this one generation. Write "OVERRIDES: none" if it ` +

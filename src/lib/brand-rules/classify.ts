@@ -40,6 +40,17 @@ export async function classifyProhibitions(
     `"guaranteed results" is violated by "results you can count on" just as much as by the ` +
     `literal phrase. Do not flag a rule merely because the prompt is about a related topic; ` +
     `only flag an actual violation.\n\n` +
+    `Calibration — read carefully:\n` +
+    `- The prompt describes a scene featuring a FICTIONAL CHARACTER. Describing the ` +
+    `character's appearance, face, body, build, physique, clothing, or attractiveness is ` +
+    `normal scene description and is never, by itself, a violation of any rule.\n` +
+    `- Apply each rule exactly as written and scoped. A rule about "the viewer" or the ` +
+    `audience concerns messaging directed AT the audience (e.g. text implying the viewer ` +
+    `should change), not how a character in the scene is depicted or described.\n` +
+    `- Only flag a rule when the prompt clearly and unambiguously violates it — when any ` +
+    `reasonable compliance reviewer would agree. If it is debatable, borderline, or merely ` +
+    `adjacent, do NOT flag it. A wrongly blocked generation costs the customer a paid ` +
+    `attempt; uncertainty means "none".\n\n` +
     `Rules:\n${numbered}\n\n` +
     `Prompt:\n${prompt}\n\n` +
     `Reply with ONLY the numbers of the violated rules, comma-separated, and nothing else. ` +
