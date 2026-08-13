@@ -71,6 +71,17 @@ async function loadBrandRules(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<BrandRule[]> {
+  // Global kill switch (Admin → Feature flags → brand_rules_enforcement).
+  // With the flag off the pipeline sees zero rules: nothing is injected into
+  // drafting and validation has nothing to block — while the rules themselves
+  // stay visible and editable in Settings → Brand rules.
+  const { data: flag } = await supabase
+    .from("feature_flags")
+    .select("enabled")
+    .eq("key", "brand_rules_enforcement")
+    .single();
+  if (!flag?.enabled) return [];
+
   const { data } = await supabase
     .from("brand_rules")
     .select("id, kind, label, value, applies_to, severity, active")

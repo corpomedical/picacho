@@ -106,6 +106,14 @@ export default async function SettingsPage({
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
 
+  // Brand-rule enforcement kill switch — the panel shows a notice when off.
+  const { data: brandFlag } = await supabase
+    .from("feature_flags")
+    .select("enabled")
+    .eq("key", "brand_rules_enforcement")
+    .single();
+  const brandRulesPaused = !brandFlag?.enabled;
+
   const [{ data: profile }, usedThisMonth, { data: supportEmailSetting }] = await Promise.all([
     supabase
       .from("profiles")
@@ -348,7 +356,7 @@ export default async function SettingsPage({
             <BuyCreditsPanel purchasedCredits={purchasedCredits} currencySymbol={currencySymbol} />
           )}
 
-          {activeTab === "brand" && <BrandRulesPanel rules={brandRules} />}
+          {activeTab === "brand" && <BrandRulesPanel rules={brandRules} enforcementPaused={brandRulesPaused} />}
 
           {activeTab === "support" && (
             <Card>

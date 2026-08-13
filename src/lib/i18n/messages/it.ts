@@ -672,6 +672,7 @@ const it = {
     note: "I crediti extra vengono usati solo dopo aver esaurito la quota mensile del tuo piano. Si accumulano di mese in mese.",
   },
   brandRules: {
+    pausedNotice: "Le regole del brand sono attualmente in pausa su tutta la piattaforma. Puoi continuare a modificarle qui, ma al momento non vengono applicate alle generazioni.",
     tab: "Regole di brand",
     title: "Regole di brand e conformità",
     subtitle: "Regole applicate a ogni generazione di questo account, oltre ai tratti di ciascun personaggio.",

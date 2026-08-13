@@ -17,7 +17,13 @@ import { cn } from "@/lib/cn";
 // choice explicit rather than burying it: a "require" rule is repaired
 // automatically if the finished prompt lost it, while a "forbid" rule stops
 // the generation outright. See BRAND_RULEBOOK_DESIGN.md.
-export function BrandRulesPanel({ rules }: { rules: BrandRule[] }) {
+export function BrandRulesPanel({
+  rules,
+  enforcementPaused,
+}: {
+  rules: BrandRule[];
+  enforcementPaused?: boolean;
+}) {
   const { t } = useLocale();
   const b = t.brandRules;
   const router = useRouter();
@@ -70,6 +76,13 @@ export function BrandRulesPanel({ rules }: { rules: BrandRule[] }) {
 
   return (
     <div className="space-y-4">
+      {/* Honesty banner: rules stay editable while enforcement is globally
+          switched off, and nobody should discover that the hard way. */}
+      {enforcementPaused && (
+        <p className="rounded-[10px] bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+          {b.pausedNotice}
+        </p>
+      )}
       <Card>
         <h2 className="text-sm font-semibold text-neutral-900">{b.packsTitle}</h2>
         <p className="mt-1 text-sm text-neutral-500">{b.packsSubtitle}</p>

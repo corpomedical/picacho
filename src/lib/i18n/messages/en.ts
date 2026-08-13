@@ -688,6 +688,7 @@ const en = {
     note: "Extra credits are used only after your monthly plan allowance is spent. They carry over month to month.",
   },
   brandRules: {
+    pausedNotice: "Brand rules are currently paused platform-wide. You can keep editing them here, but they are not being applied to generations right now.",
     tab: "Brand rules",
     title: "Brand & compliance rules",
     subtitle: "Rules applied to every generation on this account, on top of each character's own traits.",

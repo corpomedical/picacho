@@ -672,6 +672,7 @@ const es = {
     note: "Los créditos extra se usan solo después de agotar la asignación mensual de tu plan. Se acumulan de mes a mes.",
   },
   brandRules: {
+    pausedNotice: "Las reglas de marca están pausadas en toda la plataforma. Puedes seguir editándolas aquí, pero ahora mismo no se aplican a las generaciones.",
     tab: "Reglas de marca",
     title: "Reglas de marca y cumplimiento",
     subtitle: "Reglas aplicadas a cada generación de esta cuenta, además de los rasgos de cada personaje.",

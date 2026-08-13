@@ -44,6 +44,7 @@ export const RELEASES: Release[] = [
       "Fixed the character page's describe-and-generate box appearing dead: successful generations were silently auto-added to the character's gallery without limit, and once past 5 photos the box disabled itself with no explanation. The auto-add now respects the 5-photo cap, and the box explains itself when a gallery is full.",
       "Fixed \"0 match\" results: when OpenAI's safety filter rejected a prompt, generation silently switched to Flux, which loses the character's identity — and the log still claimed GPT made the image. Now the wording is automatically softened and retried on GPT first (keeping the identity anchor); Flux is a clearly-labeled last resort, and the log reports the model that actually produced the image.",
       "Made brand-rule validation far less trigger-happy: the checker now knows that describing a fictional character's appearance is not a violation, applies each rule exactly as scoped (viewer-directed rules aren't about the character), and only blocks clear, unambiguous violations. Retries after a blocked attempt also no longer leak compliance language into the image prompt.",
+      "Brand-rule enforcement is now switched off platform-wide behind a feature flag (brand_rules_enforcement, off by default) — rules stay visible and editable in Settings with a clear “paused” notice, and one click in Admin → Feature flags brings enforcement back.",
     ],
   },
 ];
