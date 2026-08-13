@@ -105,6 +105,27 @@ export async function deleteUser(formData: FormData) {
   }
 
   const admin = createAdminClient();
+
+  // Purge the user's Storage files before deleting the account. Every file a
+  // user uploads or generates lives under a `${userId}/...` path in these
+  // buckets. The DB rows cascade automatically when the auth user is deleted,
+  // but Storage objects don't — without this they'd sit orphaned and billed
+  // with no record left to find them by. Mirrors the account self-deletion
+  // flow in profile/actions.ts. Best-effort: a storage hiccup must not block
+  // the actual account deletion below.
+  for (const bucket of ["character-references", "generated-images", "chat-attachments"]) {
+    try {
+      const { data: files } = await admin.storage.from(bucket).list(userId, { limit: 1000 });
+      if (files && files.length > 0) {
+        await admin.storage
+          .from(bucket)
+          .remove(files.map((f: { name: string }) => `${userId}/${f.name}`));
+      }
+    } catch {
+      // swallow — proceed to delete the account regardless
+    }
+  }
+
   const { error } = await admin.auth.admin.deleteUser(userId);
   if (error) {
     redirect(`/admin/users/${userId}?error=${encodeURIComponent(error.message)}`);
