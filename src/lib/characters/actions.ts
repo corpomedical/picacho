@@ -107,6 +107,26 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   const prompt = (formData.get("prompt") as string)?.trim();
   if (!prompt) return { error: "Describe what they look like first." };
 
+  // The character's existing reference photos (storage paths) and typed
+  // visual traits, sent by the form. Used below to keep every generated
+  // photo the SAME person: without an anchor, each generation is a fresh
+  // text-to-image that invents a brand-new face — generate two "reference"
+  // photos and the character's own gallery is two different people, which
+  // then poisons every downstream generation anchored to those photos
+  // (the root cause of "creating a character is not consistent").
+  const anchorPaths = (
+    JSON.parse((formData.get("anchor_paths") as string) || "[]") as string[]
+  ).filter(
+    // Only this user's own files — paths are keyed ${userId}/... in the
+    // bucket, so this also stops a crafted request from signing (and
+    // generating from) someone else's photo.
+    (path) => typeof path === "string" && path.startsWith(`${data.user!.id}/`),
+  );
+  const traitHair = (formData.get("trait_hair") as string)?.trim() || "";
+  const traitOutfit = (formData.get("trait_outfit") as string)?.trim() || "";
+  const traitFeatures =
+    (formData.get("trait_distinguishing_features") as string)?.trim() || "";
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("plan, role, free_reference_generations_used, current_period_start")
@@ -192,14 +212,45 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   }
 
   try {
+    // Identity anchor: if the character already has photos, sign the first
+    // one and generate the new photo FROM it (image edit / image-to-image),
+    // so it's the same person in a new shot rather than a new person. The
+    // very first photo of a brand-new character has nothing to anchor to —
+    // that one is legitimately text-only.
+    let anchorUrl: string | null = null;
+    if (anchorPaths.length > 0) {
+      const { data: signed } = await supabase.storage
+        .from("character-references")
+        .createSignedUrl(anchorPaths[0], 60 * 10);
+      anchorUrl = signed?.signedUrl ?? null;
+    }
+
+    // Fold the character sheet's visual traits into the prompt — the scene
+    // pipeline already does this (see buildScenePrompt in pipeline.ts), but
+    // this path used to send only the raw describe-box text, so the photo
+    // ignored the hair/outfit/features the user typed right above it.
+    const visualTraits = [
+      traitHair && `Hair: ${traitHair}.`,
+      traitOutfit && `Outfit: ${traitOutfit}.`,
+      traitFeatures && `Distinguishing features: ${traitFeatures}.`,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    let fullPrompt = prompt;
+    if (visualTraits) fullPrompt += `\n\n${visualTraits}`;
+    if (anchorUrl) {
+      fullPrompt +=
+        "\n\nThis is the same person as in the reference photo — keep the face, age, build, and identity exactly the same; only the pose, framing, and scene may change.";
+    }
+
     let bytes: Buffer;
     if (model.provider === "fal") {
-      const hostedUrl = await generateImageWithFlux(prompt, null);
+      const hostedUrl = await generateImageWithFlux(fullPrompt, anchorUrl);
       const res = await fetch(hostedUrl);
       if (!res.ok) throw new Error("Couldn't download the generated image.");
       bytes = Buffer.from(await res.arrayBuffer());
     } else {
-      const base64 = await generateImageWithOpenAI(prompt, null);
+      const base64 = await generateImageWithOpenAI(fullPrompt, anchorUrl);
       bytes = Buffer.from(base64, "base64");
     }
 

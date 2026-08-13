@@ -39,6 +39,7 @@ export const RELEASES: Release[] = [
       "Account safety: enforced account suspension (it was being set but ignored — suspended users could still log in and generate), and added the ability to permanently delete a user, which removes all their data and stored files with a confirmation step.",
       "Admin navigation: added smooth left/right scroll chevrons to the top tab bar.",
       "Added this Updates section to the admin area.",
+      "Character consistency fix: AI-generated reference photos now anchor to the character's existing photo (same person, identity-locked) and include the typed visual traits — previously every generated photo invented a brand-new face, which made the character's own gallery inconsistent and poisoned downstream generations.",
     ],
   },
 ];

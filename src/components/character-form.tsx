@@ -90,6 +90,14 @@ export function CharacterForm({
     setGenerating(true);
     const formData = new FormData();
     formData.set("prompt", genPrompt);
+    // Anchor to the character's existing photos + typed visual traits so a
+    // generated photo is the SAME person as the rest of the gallery — see
+    // generateReferenceImage for why. Only server-stored photos can anchor;
+    // newly picked local files haven't been uploaded yet at this point.
+    formData.set("anchor_paths", JSON.stringify(keptImages.map((i) => i.path)));
+    formData.set("trait_hair", hair);
+    formData.set("trait_outfit", outfit);
+    formData.set("trait_distinguishing_features", distinguishing);
 
     // This call itself (not just what it returns) can fail — on a weak
     // mobile connection the fetch Next.js makes to invoke the server action
