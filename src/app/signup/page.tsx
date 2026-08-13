@@ -12,9 +12,9 @@ import { Logo } from "@/components/logo";
 export default async function SignupPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; sent?: string }>;
 }) {
-  const { error } = await searchParams;
+  const { error, sent } = await searchParams;
 
   // Already signed in — skip the form and send them straight into the app.
   const supabase = await createClient();
@@ -39,6 +39,54 @@ export default async function SignupPage({
 
   const { t } = await getServerMessages();
   const a = t.auth.signup;
+
+  // Post-signup confirmation screen. Reached by the signup action's redirect
+  // to /signup?sent=1 — a clear "we emailed you, go click the link" state
+  // instead of silently landing on the login form.
+  if (sent) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-8">
+        <div className="w-full max-w-sm">
+          <div className="mb-6 flex justify-center">
+            <Logo className="h-8" />
+          </div>
+          <Card>
+            <div className="flex justify-center">
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-6 w-6"
+                  aria-hidden
+                >
+                  <path d="M4 6h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Z" />
+                  <path d="m3.5 7 8.5 6 8.5-6" />
+                </svg>
+              </span>
+            </div>
+            <h1 className="mt-5 text-center text-xl font-semibold text-neutral-900">
+              {a.checkEmailTitle}
+            </h1>
+            <p className="mt-2 text-center text-sm leading-relaxed text-neutral-500">
+              {a.checkEmailBody}
+            </p>
+            <p className="mt-4 text-center text-xs leading-relaxed text-neutral-400">
+              {a.checkEmailSpam}
+            </p>
+            <Link href="/login" className="mt-6 block">
+              <Button variant="secondary" className="w-full">
+                {a.backToLogin}
+              </Button>
+            </Link>
+          </Card>
+        </div>
+      </main>
+    );
+  }
 
   if (!signupsEnabled) {
     return (

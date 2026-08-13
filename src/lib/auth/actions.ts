@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getOrigin } from "@/lib/origin";
 
 export async function login(formData: FormData) {
   const supabase = await createClient();
@@ -51,7 +52,30 @@ export async function signup(formData: FormData) {
     );
   }
 
-  const { data, error } = await supabase.auth.signUp({ email, password });
+  // emailRedirectTo is what makes the confirmation link land back in THIS
+  // app instead of wherever the Supabase dashboard Site URL happens to point.
+  // It's built from the host the person actually signed up on (getOrigin),
+  // so someone on picacho.ai gets a picacho.ai link — critical, because the
+  // session cookie set on confirm only belongs to that exact domain. Points
+  // at /auth/confirm, the route that calls verifyOtp and establishes the
+  // session, so the user lands on /app already signed in rather than back on
+  // the homepage logged out.
+  //
+  // NOTE: this only takes effect if the Supabase "Confirm signup" email
+  // template is set to the token_hash form that /auth/confirm expects:
+  //   {{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=signup&next=/app
+  // With the default {{ .ConfirmationURL }} template, Supabase uses its own
+  // verify endpoint (implicit flow) which the SSR server can't read, and the
+  // user ends up logged out. Template + Redirect URL allowlist are dashboard
+  // settings, documented alongside this change.
+  const origin = await getOrigin();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      emailRedirectTo: `${origin}/auth/confirm?next=/app`,
+    },
+  });
 
   if (error) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}`);
@@ -66,7 +90,10 @@ export async function signup(formData: FormData) {
       .eq("id", data.user.id);
   }
 
-  redirect("/login?message=" + encodeURIComponent("Check your email to confirm your account"));
+  // Dedicated "check your email" screen rather than bouncing to /login with a
+  // faint one-line message — the old behavior read as "the page just
+  // reloaded" and nothing telling the user to go check their inbox.
+  redirect("/signup?sent=1");
 }
 
 export async function logout() {

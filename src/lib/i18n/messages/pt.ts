@@ -166,6 +166,10 @@ const pt = {
       loginLink: "Entrar",
       closedTitle: "Cadastros estão fechados",
       closedBody: "No momento não estamos aceitando novas contas. Volte em breve, ou entre se já tiver uma conta.",
+      checkEmailTitle: "Verifique seu e-mail",
+      checkEmailBody: "Enviamos um link de confirmação para o seu e-mail. Clique nele para ativar sua conta — você entrará automaticamente, sem precisar voltar aqui.",
+      checkEmailSpam: "Não recebeu em um minuto? Verifique sua caixa de spam, ou tente se cadastrar novamente.",
+      backToLogin: "Ir para o login",
     },
   },
   legal: {

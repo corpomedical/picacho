@@ -178,6 +178,10 @@ const en = {
       loginLink: "Log in",
       closedTitle: "Signups are closed",
       closedBody: "We're not accepting new accounts right now. Check back soon, or log in if you already have one.",
+      checkEmailTitle: "Check your email",
+      checkEmailBody: "We've sent a confirmation link to your email address. Click it to activate your account — you'll be signed in automatically, no need to come back here.",
+      checkEmailSpam: "Didn't get it within a minute? Check your spam folder, or try signing up again.",
+      backToLogin: "Go to log in",
     },
   },
   legal: {

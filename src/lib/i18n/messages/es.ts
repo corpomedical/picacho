@@ -166,6 +166,10 @@ const es = {
       loginLink: "Iniciar sesión",
       closedTitle: "Los registros están cerrados",
       closedBody: "En este momento no aceptamos cuentas nuevas. Vuelve pronto, o inicia sesión si ya tienes una cuenta.",
+      checkEmailTitle: "Revisa tu correo",
+      checkEmailBody: "Hemos enviado un enlace de confirmación a tu correo. Haz clic en él para activar tu cuenta: iniciarás sesión automáticamente, sin necesidad de volver aquí.",
+      checkEmailSpam: "¿No lo recibiste en un minuto? Revisa tu carpeta de spam, o intenta registrarte de nuevo.",
+      backToLogin: "Ir a iniciar sesión",
     },
   },
   legal: {

@@ -166,6 +166,10 @@ const it = {
       loginLink: "Accedi",
       closedTitle: "Le registrazioni sono chiuse",
       closedBody: "Al momento non accettiamo nuovi account. Torna presto, oppure accedi se ne hai già uno.",
+      checkEmailTitle: "Controlla la tua email",
+      checkEmailBody: "Abbiamo inviato un link di conferma alla tua email. Cliccalo per attivare il tuo account: accederai automaticamente, senza bisogno di tornare qui.",
+      checkEmailSpam: "Non l'hai ricevuto entro un minuto? Controlla la cartella spam, oppure prova a registrarti di nuovo.",
+      backToLogin: "Vai al login",
     },
   },
   legal: {
