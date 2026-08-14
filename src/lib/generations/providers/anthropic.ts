@@ -13,27 +13,51 @@ export async function draftWithClaude(instructions: string): Promise<string> {
     );
   }
 
-  const res = await fetchWithTimeout(
-    "https://api.anthropic.com/v1/messages",
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
+  const call = (withThinkingParam: boolean) =>
+    fetchWithTimeout(
+      "https://api.anthropic.com/v1/messages",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-5",
+          // 500 was far too small: claude-sonnet-5 spends output tokens on
+          // internal reasoning before the visible text, so on harder
+          // requests the draft came back cut off after a few words
+          // (stop_reason=max_tokens — real incidents, 2026-08-13/14,
+          // including the soften-for-safety retry dying the same way and
+          // dumping generations onto Flux). Thinking is disabled outright —
+          // these are short formatting tasks that don't need it — and the
+          // ceiling is high enough that a 2-4 sentence prompt can never
+          // hit it.
+          max_tokens: 3000,
+          ...(withThinkingParam ? { thinking: { type: "disabled" } } : {}),
+          messages: [{ role: "user", content: instructions }],
+        }),
       },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 500,
-        messages: [{ role: "user", content: instructions }],
-      }),
-    },
-    25_000,
-  );
+      25_000,
+    );
+
+  let res = await call(true);
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Claude API error (${res.status}): ${text.slice(0, 300)}`);
+    // Defensive: if this API/model version rejects the thinking parameter
+    // itself, retry once without it rather than failing the whole draft over
+    // an optional optimization.
+    if (res.status === 400 && text.includes("thinking")) {
+      res = await call(false);
+      if (!res.ok) {
+        const retryText = await res.text();
+        throw new Error(`Claude API error (${res.status}): ${retryText.slice(0, 300)}`);
+      }
+    } else {
+      throw new Error(`Claude API error (${res.status}): ${text.slice(0, 300)}`);
+    }
   }
 
   const data = await res.json();
