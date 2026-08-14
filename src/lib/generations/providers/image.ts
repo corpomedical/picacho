@@ -1,5 +1,6 @@
 import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
+import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 
@@ -28,8 +29,25 @@ export async function generateImage(
 ): Promise<string> {
   const model = getImageModel(modelId);
 
+  // Flux results come back as fal.media URLs — external hosting we don't
+  // control, which can expire and leave History cards dead. Persisting into
+  // our own storage (same as the GPT path) makes every result durable and
+  // uniformly served via our signed URLs. Best-effort: if the download
+  // hiccups, the fal URL still works today, so return it rather than
+  // failing a generation that actually succeeded.
+  async function persistRemoteImage(url: string): Promise<string> {
+    try {
+      const res = await fetchWithTimeout(url, {}, 20_000);
+      if (!res.ok) return url;
+      const base64 = Buffer.from(await res.arrayBuffer()).toString("base64");
+      return await persistBase64(base64);
+    } catch {
+      return url;
+    }
+  }
+
   if (model.provider === "fal") {
-    return generateImageWithFlux(prompt, referenceImageUrl);
+    return persistRemoteImage(await generateImageWithFlux(prompt, referenceImageUrl));
   }
 
   try {
@@ -53,16 +71,20 @@ export async function generateImage(
     // the old behavior jumped straight to Flux, whose plain image-to-image
     // repaints the person (real report: "0 match" to the character). Works
     // for multi-character too, since the retry stays on the same endpoint.
+    let softenedPrompt: string | null = null;
     if (process.env.ANTHROPIC_API_KEY) {
       try {
-        const softened = await softenPromptForSafety(prompt);
-        const base64 = await generateImageWithOpenAI(softened, referenceImageUrl);
+        softenedPrompt = await softenPromptForSafety(prompt);
+        const base64 = await generateImageWithOpenAI(softenedPrompt, referenceImageUrl);
         onFallback?.(
           "OpenAI's safety filter rejected the wording — automatically softened it and retried on GPT Image 2, keeping the identity anchor.",
         );
         return persistBase64(base64);
       } catch {
-        // Softening failed or the retry was rejected too — fall through.
+        // Softening failed or the retry was rejected too — fall through,
+        // keeping the softened wording (if any) for the Flux attempt below:
+        // Flux has its own trigger-happy checker, and the plain rewrite
+        // helps there exactly as much as it does on GPT.
       }
     }
 
@@ -71,7 +93,9 @@ export async function generateImage(
         "OpenAI's safety filter rejected the prompt — generated with Flux instead. Identity match is weaker than GPT Image 2's anchored mode.",
         "Flux",
       );
-      return generateImageWithFlux(prompt, referenceImageUrl);
+      return persistRemoteImage(
+        await generateImageWithFlux(softenedPrompt ?? prompt, referenceImageUrl),
+      );
     }
     // Multi-character compositing has no Flux equivalent (its image-to-image
     // endpoint takes a single source), so there's nothing to fall back to.

@@ -1,6 +1,20 @@
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 
+// Thrown when Flux's own safety checker flags the result. fal.ai does NOT
+// error in that case — it returns HTTP 200 with the image replaced by a
+// solid black frame and has_nsfw_concepts[i] = true. Real incident,
+// 2026-08-14: two "swimsuit selfie" generations sailed through as
+// "succeeded" with pure black pictures. Failing loudly here lets the
+// pipeline treat it like any other rejected generation (retry, refund,
+// honest log) instead of delivering a black rectangle as a success.
+export class FluxSafetyRejection extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "FluxSafetyRejection";
+  }
+}
+
 // Image generation via Flux on fal.ai — the faster/cheaper alternative.
 // Unlike OpenAI, fal.ai returns a hosted URL directly, so no re-upload is
 // needed (same as the video provider).
@@ -56,6 +70,15 @@ export async function generateImageWithFlux(
   }
 
   const data = await res.json();
+
+  const nsfwFlags: unknown = data?.has_nsfw_concepts;
+  if (Array.isArray(nsfwFlags) && nsfwFlags.some(Boolean)) {
+    throw new FluxSafetyRejection(
+      "Flux's safety checker flagged this image and blacked it out. " +
+        "Try plainer wording for the outfit and pose.",
+    );
+  }
+
   const url: string | undefined =
     data?.images?.[0]?.url ?? data?.image?.url ?? data?.output?.image?.url ?? data?.url;
 

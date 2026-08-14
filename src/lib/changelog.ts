@@ -52,6 +52,7 @@ export const RELEASES: Release[] = [
       "Characters v2 — identity photos are sacred: generated images are no longer auto-added to a character's reference gallery; instead there's an explicit \"Use as reference photo\" action under image results, and the first gallery photo is labeled as the character's identity photo.",
       "Characters v2 — identity match score: every character image is now compared against the identity photo by a vision model and gets a 0-100 match score, shown under the result and in History.",
       "Safety net for all of the above: code tagged pre-characters-v2 and a database snapshot of all character profiles taken before the change — fully reversible.",
+      "Fixed black pictures: when Flux's safety checker flags an image, fal.ai returns a solid black frame as if it succeeded — the pipeline now detects the flag and fails the generation honestly (with a refund) instead of delivering a black rectangle. The safety-softened wording is now reused for the Flux attempt too, and Flux results are saved into Picacho's own storage instead of living on fal.ai's servers, where they could expire.",
     ],
   },
 ];
