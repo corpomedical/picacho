@@ -1,13 +1,12 @@
 // The compiler pipeline. runPipeline() is the original all-mock version
 // (kept as-is — it's the safe default and needs no API keys). runRealPipeline()
-// does the same job using real providers: Claude drafts, OpenAI reviews, and
+// does the same job using real providers: a single Claude call drafts, and
 // either a video model (fal.ai — Kling by default) or an image model
 // (GPT Image 2 by default, Flux alternative) generates the result. Which one
 // runs is decided by the 'real_ai_providers' feature flag, checked by the
 // caller in src/lib/generations/actions.ts.
 
 import { draftWithClaude } from "@/lib/generations/providers/anthropic";
-import { reviewWithOpenAI } from "@/lib/generations/providers/openai";
 import {
   generateVideo,
   generateSpeech,
@@ -87,6 +86,17 @@ export type PipelineResult = {
 export type CheckCancelled = () => Promise<boolean>;
 
 const DEFAULT_MAX_ATTEMPTS = 3;
+
+// Characters v2 trait tiers. Identity traits are what make the character
+// the same person in every generation, and validate() always enforces them.
+// Everything else (outfit, personality) is a DEFAULT: the drafter is told to
+// use it only when the scene doesn't imply otherwise, and it is never
+// word-match-required — enforcing "outfit: swim suit" onto a Paris business
+// meeting (real incident, 2026-08-13) is exactly the failure this tiering
+// removes. Motion style and voice tone stay enforced for video, where they
+// are part of how the character reads on screen.
+const IDENTITY_LABELS = new Set(["hair", "distinguishing features", "motion style", "tone"]);
+const DEFAULT_TRAIT_LABELS = new Set(["outfit", "personality"]);
 
 function requiredElements(
   character: CharacterForPipeline,
@@ -188,8 +198,12 @@ function draft(userInput: string, character: CharacterForPipeline, omitMotion: b
     // prompt readable.
     character.name && `Character: ${character.name}.`,
     character.traits.hair && `Hair: ${character.traits.hair}.`,
-    character.traits.outfit && `Outfit: ${character.traits.outfit}.`,
-    character.traits.personality && `Personality: ${character.traits.personality}.`,
+    // Outfit is a soft default (characters v2) and personality is omitted:
+    // this fallback goes to the image model with no drafting layer to add
+    // nuance, and a raw personality word ("kincky") both reads poorly and
+    // bait's safety classifiers (real incident, 2026-08-14).
+    character.traits.outfit &&
+      `Usually wears ${character.traits.outfit}, unless the scene calls for something else.`,
     character.traits.distinguishing_features &&
       `Distinguishing features: ${character.traits.distinguishing_features}.`,
     !omitMotion && character.motion_style && `Motion style: ${character.motion_style}.`,
@@ -223,7 +237,7 @@ function validate(
   overriddenLabels: Set<string> = new Set(),
 ) {
   const required = requiredElements(character, contentType).filter(
-    (el) => !overriddenLabels.has(el.label.toLowerCase()),
+    (el) => IDENTITY_LABELS.has(el.label) && !overriddenLabels.has(el.label.toLowerCase()),
   );
   const missing = required.filter((el) => !isElementPresent(prompt, el.value));
   return { passed: missing.length === 0, missing };
@@ -238,25 +252,22 @@ function validate(
 // see everything to decide what's being intentionally overridden) or an
 // override-filtered list (for review/validate, which should only enforce
 // what the user didn't just ask to change).
+// One rulebook line. Default traits are visibly marked so the drafting
+// model knows they yield to the scene, while identity lines read as fixed.
+function ruleLine(el: { label: string; value: string }): string {
+  return DEFAULT_TRAIT_LABELS.has(el.label)
+    ? `- ${el.label} (default): ${el.value}`
+    : `- ${el.label}: ${el.value}`;
+}
+
 function characterRulebookBlock(
   characterName: string,
   elements: { label: string; value: string }[],
   role?: string,
 ): string {
-  const lines = elements.map((el) => `- ${el.label}: ${el.value}`);
+  const lines = elements.map(ruleLine);
   const header = role ? `${characterName} (${role}):` : `${characterName}:`;
   return [header, ...(lines.length ? lines : ["- (no fixed traits set yet)"])].join("\n");
-}
-
-// Drops any rulebook element whose label the user's request intentionally
-// overrides for this generation, so review/validate stop fighting to force
-// a trait back in that the person explicitly asked to change.
-function excludeOverridden(
-  elements: { label: string; value: string }[],
-  overriddenLabels: Set<string>,
-): { label: string; value: string }[] {
-  if (overriddenLabels.size === 0) return elements;
-  return elements.filter((el) => !overriddenLabels.has(el.label.toLowerCase()));
 }
 
 // The draft step is asked to end its response with a line naming any
@@ -530,7 +541,7 @@ export async function runRealPipeline(
         return "(no specific character for this generation — follow the request and any attached reference photo as-is.)";
       }
       return primary.length
-        ? primary.map((el) => `- ${el.label}: ${el.value}`).join("\n")
+        ? primary.map(ruleLine).join("\n")
         : "(no fixed traits set on this character yet)";
     }
     return [
@@ -567,8 +578,8 @@ export async function runRealPipeline(
   // absent on purpose: "in a suit today" is a legitimate one-off change to a
   // saved outfit, but "ignore the disclaimer this once" must not be
   // expressible. The draft model is never told these labels are overridable,
-  // and excludeOverridden below is additionally hard-filtered so a model that
-  // invents the label anyway still can't waive the rule.
+  // and the overrides parser below additionally hard-filters brand-rule
+  // labels, so a model that invents one anyway still can't waive the rule.
   const overridableLabels = "hair, outfit, personality, distinguishing features, motion style, tone";
   const brandRuleLabels = new Set(activeBrandRules.map((r) => r.label.toLowerCase()));
 
@@ -629,7 +640,9 @@ export async function runRealPipeline(
         const rawDraftResponse = await draftWithClaude(
           `You are a prompt engineer for an AI ${mediumLabel} generator. Expand this ` +
             `plain-language request into one detailed, vivid text-to-${mediumLabel} prompt — ` +
-            `2 to 4 sentences, no preamble, no markdown, just the prompt itself.\n\n` +
+            `2 to 4 sentences, no preamble, no markdown, just the prompt itself. The request ` +
+            `is ground truth: its setting, action, people, and composition must all survive ` +
+            `into the prompt.\n\n` +
             // Image safety classifiers (OpenAI's especially) reject a lot of
             // perfectly ordinary requests once a prompt piles on photoreal
             // intensifiers around a person — "hyper-realistic ultra-detailed
@@ -645,9 +658,12 @@ export async function runRealPipeline(
             `"hyper-realistic", "ultra-detailed", or "close-up selfie" around a person, and avoid ` +
             `suggestive or body-focused phrasing — plain description passes content filters far ` +
             `more reliably and renders just as well.\n\n` +
-            `Character rulebook (every item must be reflected in the prompt UNLESS this specific ` +
-            `request explicitly asks to change it for this one generation — e.g. asking for a ` +
-            `different outfit than the rulebook's is an intentional change, not a mistake to fix):\n` +
+            `Character rulebook. Items marked "(default)" are the character's usual look — use ` +
+            `them only when the request doesn't imply otherwise (a business meeting implies ` +
+            `business attire even if the default outfit is casual; a beach scene implies ` +
+            `swimwear). Every unmarked item is part of the character's identity and must be ` +
+            `reflected in the prompt, UNLESS this specific request explicitly asks to change ` +
+            `it for this one generation:\n` +
             `${fullRulebook}\n\n` +
             `User request: ${userInput}` +
             castInstruction +
@@ -694,35 +710,17 @@ export async function runRealPipeline(
         );
         steps.push({ step: "draft", detail: draftedPrompt });
 
-        // Enforces only what this request DIDN'T just ask to change — the
-        // fix for the incident described above: review's job is to restore
-        // traits the draft accidentally dropped, not to overrule a trait the
-        // person explicitly asked to swap out for this one generation.
-        const enforcedRulebook = buildRulebook(
-          excludeOverridden(primaryElements, overriddenLabels),
-          companionElementSets.map((c) => ({
-            name: c.name,
-            elements: excludeOverridden(c.elements, overriddenLabels),
-          })),
-        );
-
-        // The user's request is passed as ground truth on purpose. Review used
-        // to see only the draft + rulebook — so when a draft arrived broken
-        // (cut short, or missing the scene), review "repaired" it from the
-        // rulebook alone and the user's actual scene disappeared entirely
-        // (real incident, 2026-08-13: "sitting in a cafe in Paris, having a
-        // meeting" became a generic swimsuit portrait).
-        reviewedPrompt = await reviewWithOpenAI(
-          `Tighten this AI ${mediumLabel} generation prompt so it definitely reflects every ` +
-            `item in the rulebook below, WITHOUT losing the scene the user asked for. The ` +
-            `user's original request is the ground truth for setting, action, other people, ` +
-            `and composition — every part of it must survive into the improved prompt, and if ` +
-            `the prompt under review is missing any of it, restore it. Return only the ` +
-            `improved prompt text, nothing else.\n\n` +
-            `User request: ${userInput}\n\n` +
-            `Rulebook:\n${enforcedRulebook}\n\nPrompt to review:\n${draftedPrompt}`,
-        );
-        steps.push({ step: "review", detail: reviewedPrompt });
+        // The second-model "review" step is gone on purpose (characters v2).
+        // It sounded rigorous — an independent model double-checking the
+        // draft — but in practice it was the pipeline's most fragile part: a
+        // reviewer without ground truth "repaired" broken drafts into trait
+        // dumps and erased the user's scene (real incident, 2026-08-13),
+        // and it doubled cost and latency for every generation. The single
+        // drafting call above already receives the request, the tiered
+        // rulebook, and the override protocol; the deterministic
+        // validate/repair gate below catches dropped identity traits for
+        // free, with no model in the loop.
+        reviewedPrompt = draftedPrompt;
       } catch (err) {
         const message = err instanceof Error ? err.message : "Prompt preparation failed.";
         steps.push({ step: steps.length === 0 ? "draft" : "review", detail: message });
