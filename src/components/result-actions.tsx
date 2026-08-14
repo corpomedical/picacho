@@ -2,7 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
-import { setGenerationFeedback, type GenerationFeedback } from "@/lib/generations/actions";
+import {
+  promoteGenerationToReference,
+  setGenerationFeedback,
+  type GenerationFeedback,
+} from "@/lib/generations/actions";
 import { reportGenerationProblem } from "@/lib/generations/reports";
 import { REPORT_REASONS, type ReportReason } from "@/lib/generations/report-constants";
 import { cn } from "@/lib/cn";
@@ -50,6 +54,18 @@ function ThumbsDownIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+function ImagePlusIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
+      <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="M16 5h6" />
+      <path d="M19 2v6" />
+    </svg>
+  );
+}
+
 function FlagIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -64,6 +80,7 @@ export function ResultActions({
   copyText,
   initialFeedback = null,
   initialReported = false,
+  promotable = false,
   className,
 }: {
   generationId: string;
@@ -76,6 +93,10 @@ export function ResultActions({
   // The live Generate composer never passes this — a result that was just
   // generated this session can't have an existing report yet.
   initialReported?: boolean;
+  // Characters v2: shows the "use as reference photo" action. Passed true
+  // only for image results — the server action re-validates ownership,
+  // content type, and the 5-photo gallery cap regardless.
+  promotable?: boolean;
   className?: string;
 }) {
   const { t } = useLocale();
@@ -90,6 +111,9 @@ export function ResultActions({
   const [reportSending, setReportSending] = useState(false);
   const [reportError, setReportError] = useState("");
   const [reported, setReported] = useState(initialReported);
+  const [promoted, setPromoted] = useState(false);
+  const [promoting, setPromoting] = useState(false);
+  const [promoteError, setPromoteError] = useState("");
   const reportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -140,6 +164,18 @@ export function ResultActions({
     setReported(true);
     setReportOpen(false);
     setReportDetails("");
+  }
+
+  async function handlePromote() {
+    setPromoting(true);
+    setPromoteError("");
+    const { error } = await promoteGenerationToReference(generationId);
+    setPromoting(false);
+    if (error) {
+      setPromoteError(error);
+      return;
+    }
+    setPromoted(true);
   }
 
   const reasonLabels: Record<ReportReason, string> = {
@@ -194,6 +230,23 @@ export function ResultActions({
       >
         <ThumbsDownIcon className="h-3.5 w-3.5" fill={feedback === "dislike" ? "currentColor" : "none"} />
       </button>
+
+      {promotable && (
+        <button
+          type="button"
+          onClick={handlePromote}
+          disabled={promoting || promoted}
+          aria-label={promoted ? g.referenceAdded : g.useAsReference}
+          aria-pressed={promoted}
+          title={promoted ? g.referenceAdded : g.useAsReference}
+          className={cn(
+            "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-neutral-100",
+            promoted ? "text-emerald-600" : "text-neutral-400 hover:text-neutral-700",
+          )}
+        >
+          {promoted ? <CheckIcon className="h-3.5 w-3.5" /> : <ImagePlusIcon className="h-3.5 w-3.5" />}
+        </button>
+      )}
 
       <div ref={reportRef} className="relative">
         <button
@@ -254,6 +307,8 @@ export function ResultActions({
           </div>
         )}
       </div>
+
+      {promoteError && <span className="text-[11px] text-red-600">{promoteError}</span>}
     </div>
   );
 }

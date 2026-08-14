@@ -201,6 +201,8 @@ const pt = {
     tryAgain: "Tentar novamente",
   },
   generate: {
+    useAsReference: "Usar como foto de referência",
+    referenceAdded: "Adicionada às fotos de referência do personagem",
     noCharacterTitle: "Crie um personagem primeiro",
     noCharacterBody:
       "As gerações são construídas em torno de um perfil de personagem, para que haja algo consistente para ancorar o resultado.",
@@ -419,6 +421,7 @@ const pt = {
     generateOne: "Gerar uma",
   },
   character: {
+    identityPhoto: "Foto de identidade",
     listTitle: "Personagens",
     newCharacter: "Novo personagem",
     couldntLoad: "Não foi possível carregar seus personagens. Tente atualizar a página.",

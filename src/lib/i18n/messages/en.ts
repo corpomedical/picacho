@@ -212,6 +212,8 @@ const en = {
     tryAgain: "Try again",
   },
   generate: {
+    useAsReference: "Use as reference photo",
+    referenceAdded: "Added to the character's reference photos",
     noCharacterTitle: "Set up a character first",
     noCharacterBody:
       "Generations are built around a character profile, so there's something consistent to lock the output to.",
@@ -435,6 +437,7 @@ const en = {
     generateOne: "Generate one",
   },
   character: {
+    identityPhoto: "Identity photo",
     listTitle: "Characters",
     newCharacter: "New character",
     couldntLoad: "Couldn't load your characters — try refreshing the page.",

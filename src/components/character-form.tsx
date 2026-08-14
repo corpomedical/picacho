@@ -262,7 +262,7 @@ export function CharacterForm({
         </p>
 
         <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
-          {keptImages.map((img) => (
+          {keptImages.map((img, idx) => (
             <div key={img.path} className="group relative aspect-square overflow-hidden rounded-[10px] bg-neutral-100">
               <button
                 type="button"
@@ -273,6 +273,11 @@ export function CharacterForm({
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={img.url} alt="" className="h-full w-full object-cover" />
               </button>
+              {idx === 0 && (
+                <span className="pointer-events-none absolute bottom-1 left-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 shadow-sm">
+                  {c.identityPhoto}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setKeptImages(keptImages.filter((i) => i.path !== img.path))}

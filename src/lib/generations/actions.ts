@@ -235,17 +235,17 @@ async function addGeneratedImageAsReference(
   userId: string,
   characterId: string,
   imageUrl: string,
-): Promise<void> {
+): Promise<"added" | "full" | "failed"> {
   try {
     const res = await fetch(imageUrl);
-    if (!res.ok) return;
+    if (!res.ok) return "failed";
     const bytes = Buffer.from(await res.arrayBuffer());
     const path = `${userId}/${crypto.randomUUID()}-generated.png`;
 
     const { error: uploadError } = await supabase.storage
       .from("character-references")
       .upload(path, bytes, { contentType: "image/png" });
-    if (uploadError) return;
+    if (uploadError) return "failed";
 
     const { data: current } = await supabase
       .from("character_profiles")
@@ -263,7 +263,7 @@ async function addGeneratedImageAsReference(
     // History/Images either way; skipping the gallery append loses nothing.
     if (existing.length >= 5) {
       await supabase.storage.from("character-references").remove([path]);
-      return;
+      return "full";
     }
 
     await supabase
@@ -272,10 +272,72 @@ async function addGeneratedImageAsReference(
         reference_image_urls: existing.length === 0 ? [path] : [...existing, path],
       })
       .eq("id", characterId);
+    return "added";
   } catch {
-    // Best-effort enhancement — never let this take down an already-
-    // succeeded generation.
+    return "failed";
   }
+}
+
+// Characters v2: generated images are never auto-added to a character's
+// reference gallery anymore — an invented or drifted face becoming an
+// identity anchor poisons every later generation (real data: two characters
+// had silently grown to 7 and 8 gallery photos of subtly different faces).
+// Promotion is explicit and user-initiated, via the button under a finished
+// image result, and runs through the same cap + storage path as before.
+export async function promoteGenerationToReference(
+  generationId: string,
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData?.user) return { error: "You need to be signed in." };
+
+  const { data: gen } = await supabase
+    .from("generations")
+    .select("id, user_id, character_profile_id, content_type, result_url, status")
+    .eq("id", generationId)
+    .single();
+
+  if (!gen || gen.user_id !== userData.user.id) return { error: "Generation not found." };
+  if (gen.content_type !== "image" || gen.status !== "succeeded" || !gen.result_url) {
+    return { error: "Only finished images can become reference photos." };
+  }
+  if (!gen.character_profile_id) {
+    return { error: "This image isn't linked to a character." };
+  }
+
+  // The stored result_url is a signed URL whose token may have expired long
+  // before the user clicks promote — re-sign from the storage path rather
+  // than trusting it.
+  let freshUrl = gen.result_url as string;
+  const marker = "/generated-images/";
+  const markerIdx = freshUrl.indexOf(marker);
+  if (markerIdx !== -1) {
+    const storagePath = decodeURIComponent(freshUrl.slice(markerIdx + marker.length).split("?")[0]);
+    const { data: signed } = await supabase.storage
+      .from("generated-images")
+      .createSignedUrl(storagePath, 600);
+    if (signed?.signedUrl) freshUrl = signed.signedUrl;
+  }
+
+  const outcome = await addGeneratedImageAsReference(
+    supabase,
+    userData.user.id,
+    gen.character_profile_id as string,
+    freshUrl,
+  );
+  if (outcome === "full") {
+    return {
+      error:
+        "This character's reference gallery is full (5 photos). Remove one on the character page first.",
+    };
+  }
+  if (outcome === "failed") {
+    return { error: "Couldn't save that image as a reference — try again." };
+  }
+
+  revalidatePath("/app/character");
+  revalidatePath(`/app/character/${gen.character_profile_id}`);
+  return { error: null };
 }
 
 // Shared cost/abuse guardrail for both single and multi-angle generation.
@@ -1129,14 +1191,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }
 
-  // Nothing to add this to when the generation wasn't tied to any character
-  // in the first place — a plain upload/no-character image just isn't saved
-  // anywhere but History.
-  if (succeeded && contentType === "image" && characterId && resultUrl?.startsWith("http")) {
-    await addGeneratedImageAsReference(supabase, userData.user.id, characterId, resultUrl);
-    revalidatePath("/app/character");
-    revalidatePath(`/app/character/${characterId}`);
-  }
+  // Characters v2: successful images are NOT auto-added to the character's
+  // reference gallery anymore — see promoteGenerationToReference above. The
+  // image lives in History either way; making it an identity anchor is now
+  // the user's explicit call.
 
   revalidatePath("/app/generate");
   revalidatePath("/app/history");

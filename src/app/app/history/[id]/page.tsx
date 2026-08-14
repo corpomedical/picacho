@@ -234,6 +234,7 @@ export default async function HistoryDetailPage({
                   <ResultActions
                     generationId={generation.id}
                     copyText={finalPrompt}
+                    promotable={generation.content_type === "image"}
                     initialFeedback={(generation.feedback ?? null) as GenerationFeedback}
                     initialReported={reportedIds.has(generation.id)}
                   />

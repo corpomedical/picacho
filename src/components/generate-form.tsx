@@ -1071,7 +1071,7 @@ function SingleTurnBubble({ turn }: { turn: ChatTurn }) {
                 <Badge tone={live ? "success" : "neutral"}>{live ? g.live : g.simulated}</Badge>
                 <p className="text-xs text-neutral-500">{formatMsg(g.passedOnAttempt, { n: turn.attempts.length })}</p>
               </div>
-              <ResultActions generationId={turn.id} copyText={turn.finalPrompt || turn.prompt} />
+              <ResultActions generationId={turn.id} copyText={turn.finalPrompt || turn.prompt} promotable={turn.contentType === "image"} />
             </>
           ) : (
             <div className="mt-3 flex items-center gap-2">
@@ -3263,7 +3263,7 @@ function GenerateFormInner({
                                 {formatMsg(g.passedOnAttempt, { n: liveResult.attempts })}
                               </p>
                             </div>
-                            <ResultActions generationId={liveResult.id} copyText={liveResult.finalPrompt || livePrompt || ""} />
+                            <ResultActions generationId={liveResult.id} copyText={liveResult.finalPrompt || livePrompt || ""} promotable={contentType === "image"} />
                           </>
                         ) : (
                           <div className="mt-3 flex items-center gap-2">
