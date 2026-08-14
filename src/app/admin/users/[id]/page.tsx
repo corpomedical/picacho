@@ -9,6 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { DeleteUserButton } from "@/components/delete-user-button";
+import { LocalDate } from "@/components/local-date";
+import { getUserActivity, formatDuration } from "@/lib/admin/activity";
 
 function timeAgo(dateStr: string) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
@@ -78,6 +80,9 @@ export default async function AdminUserDetailPage({
     getMonthlyUsage(id),
   ]);
 
+  // Sign-in / session facts from auth.users + auth.sessions.
+  const activity = (await getUserActivity([user])).get(user.id) ?? null;
+
   const plan = (user.plan ?? "none") as PlanId;
   const bonusCredits = user.bonus_credits ?? 0;
   const monthlyLimit = PLAN_LIMITS[plan] + bonusCredits;
@@ -108,7 +113,13 @@ export default async function AdminUserDetailPage({
             </div>
             <div className="flex gap-1.5">
               <dt>Last active:</dt>
-              <dd>{user.last_seen_at ? timeAgo(user.last_seen_at) : "Never"}</dd>
+              <dd>
+                {activity?.online
+                  ? "Online now"
+                  : user.last_seen_at
+                    ? timeAgo(user.last_seen_at)
+                    : "Never"}
+              </dd>
             </div>
             <div className="flex gap-1.5">
               <dt>Terms accepted:</dt>
@@ -252,6 +263,70 @@ export default async function AdminUserDetailPage({
         </Card>
 
         <div className="space-y-6 lg:col-span-2">
+          {/* Sign-in activity. Its own card rather than more lines in the
+              identity block: these are the facts you actually come to this
+              page to check when someone reports a problem. */}
+          <Card>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900">Activity</h2>
+              {activity?.online ? (
+                <Badge tone="success">Online now</Badge>
+              ) : (
+                <Badge tone="neutral">Offline</Badge>
+              )}
+            </div>
+
+            <dl className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div>
+                <dt className="text-xs text-neutral-500">Last login</dt>
+                <dd className="mt-1 text-sm font-medium text-neutral-900">
+                  {activity?.lastSignInAt ? (
+                    <LocalDate date={activity.lastSignInAt} mode="datetime" />
+                  ) : (
+                    "Never"
+                  )}
+                </dd>
+                {activity?.lastSignInAt && (
+                  <p className="mt-0.5 text-xs text-neutral-400">
+                    {timeAgo(activity.lastSignInAt)}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <dt className="text-xs text-neutral-500">Last seen</dt>
+                <dd className="mt-1 text-sm font-medium text-neutral-900">
+                  {activity?.lastSeenAt ? (
+                    <LocalDate date={activity.lastSeenAt} mode="datetime" />
+                  ) : (
+                    "Never"
+                  )}
+                </dd>
+                {activity?.lastSeenAt && (
+                  <p className="mt-0.5 text-xs text-neutral-400">{timeAgo(activity.lastSeenAt)}</p>
+                )}
+              </div>
+
+              <div>
+                <dt className="text-xs text-neutral-500">Session length</dt>
+                <dd className="mt-1 text-sm font-medium text-neutral-900">
+                  {formatDuration(activity?.sessionSeconds ?? null)}
+                </dd>
+                <p className="mt-0.5 text-xs text-neutral-400">
+                  {activity?.online ? "Current session, so far" : "Sign-in to last activity"}
+                </p>
+              </div>
+
+              <div>
+                <dt className="text-xs text-neutral-500">Signed-in devices</dt>
+                <dd className="mt-1 text-sm font-medium text-neutral-900">
+                  {activity?.activeSessions ?? 0}
+                </dd>
+                <p className="mt-0.5 text-xs text-neutral-400">Sessions still valid</p>
+              </div>
+            </dl>
+          </Card>
+
           <Card>
             <h2 className="text-sm font-semibold text-neutral-900">Usage</h2>
             <div className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-4">

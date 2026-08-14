@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/field";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
+import { LocalDate } from "@/components/local-date";
+import { getUserActivity, formatDuration } from "@/lib/admin/activity";
 import { cn } from "@/lib/cn";
 
 const TABS = [
@@ -46,6 +48,11 @@ export default async function AdminUsersPage({
   if (activeTab === "admin") query = query.eq("role", "admin");
 
   const { data: users, error } = await query;
+
+  // Sign-in times, session length and live status, read from auth.users /
+  // auth.sessions in one round trip for the whole page (see lib/admin/
+  // activity.ts). Degrades to empty columns rather than failing the page.
+  const activity = await getUserActivity(users ?? []);
 
   // Mark everything as seen as of right now — this is what makes the badge
   // and the highlight below both clear once you've actually opened this
@@ -93,6 +100,7 @@ export default async function AdminUsersPage({
           <div className="divide-y divide-neutral-100">
             {users.map((user) => {
               const isNew = new Date(user.created_at) > lastViewedAt;
+              const act = activity.get(user.id);
               return (
                 <div
                   key={user.id}
@@ -105,17 +113,59 @@ export default async function AdminUsersPage({
                     isNew && "bg-neutral-50",
                   )}
                 >
-                  <Link href={`/admin/users/${user.id}`} className="min-w-0 hover:opacity-70">
-                    <p className="truncate text-sm font-medium text-neutral-900">{user.email}</p>
+                  <Link href={`/admin/users/${user.id}`} className="min-w-0 flex-1 hover:opacity-70">
+                    <p className="flex items-center gap-2 truncate text-sm font-medium text-neutral-900">
+                      {/* Live dot — seen within the last five minutes, the
+                          same window Admin > Stats counts as online. */}
+                      {act?.online && (
+                        <span
+                          className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-emerald-500"
+                          title="Online now"
+                        />
+                      )}
+                      <span className="truncate">{user.email}</span>
+                    </p>
                     <p className="mt-0.5 text-xs text-neutral-500">
                       {PLAN_LABELS[(user.plan ?? "none") as PlanId]}
                       {user.role === "admin" && " · admin"} · joined{" "}
-                      {new Date(user.created_at).toLocaleDateString()} ·{" "}
-                      {user.last_seen_at
-                        ? `active ${new Date(user.last_seen_at).toLocaleDateString()}`
-                        : "never active"}
+                      <LocalDate date={user.created_at} />
                     </p>
                   </Link>
+
+                  {/* Activity columns. Fixed widths so the three read as real
+                      columns down the list rather than ragged inline text;
+                      hidden below lg, where the row has no room for them. */}
+                  <dl className="hidden flex-shrink-0 gap-6 text-xs lg:flex">
+                    <div className="w-36">
+                      <dt className="text-neutral-400">Last login</dt>
+                      <dd className="mt-0.5 text-neutral-700">
+                        {act?.lastSignInAt ? (
+                          <LocalDate date={act.lastSignInAt} mode="datetime" />
+                        ) : (
+                          "—"
+                        )}
+                      </dd>
+                    </div>
+                    <div className="w-36">
+                      <dt className="text-neutral-400">Last seen</dt>
+                      <dd className="mt-0.5 text-neutral-700">
+                        {act?.online ? (
+                          <span className="text-emerald-600">Online now</span>
+                        ) : act?.lastSeenAt ? (
+                          <LocalDate date={act.lastSeenAt} mode="datetime" />
+                        ) : (
+                          "—"
+                        )}
+                      </dd>
+                    </div>
+                    <div className="w-24">
+                      <dt className="text-neutral-400">Session</dt>
+                      <dd className="mt-0.5 text-neutral-700">
+                        {formatDuration(act?.sessionSeconds ?? null)}
+                      </dd>
+                    </div>
+                  </dl>
+
                   <div className="flex flex-shrink-0 items-center gap-3">
                     <Badge tone={user.status === "active" ? "success" : "danger"}>
                       {user.status}
