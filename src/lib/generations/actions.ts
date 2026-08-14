@@ -1219,7 +1219,32 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           .filter(Boolean)
           .join("; ");
         const verdict = await scoreIdentityMatch(resultUrl, signedIdentity.signedUrl, traitSummary);
-        if (verdict) {
+        if (verdict && verdict.unusable) {
+          // The provider claimed success but delivered a black/blank frame
+          // (fal.ai's safety checker does exactly this — HTTP 200, image
+          // replaced with black). Nobody should pay for a black rectangle,
+          // and nobody should have to notice and report it either:
+          // automatically mark it failed, refund everything it consumed,
+          // and say so honestly in the pipeline log.
+          succeeded = false;
+          matchScore = null;
+          attempts[attempts.length - 1]?.steps.push({
+            step: "generate",
+            detail:
+              "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed and refunded.",
+          });
+          await supabase
+            .from("generations")
+            .update({
+              status: "failed",
+              match_score: verdict.score,
+              match_notes: verdict.notes || "Unusable result (blank/black frame).",
+              pipeline_log: attempts,
+            })
+            .eq("id", placeholder.id);
+          await refundGenerationCosts(placeholder.id);
+          await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
+        } else if (verdict) {
           matchScore = verdict.score;
           await supabase
             .from("generations")

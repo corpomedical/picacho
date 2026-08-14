@@ -16,7 +16,7 @@ export async function scoreIdentityMatch(
   resultImageUrl: string,
   identityImageUrl: string,
   traitSummary: string,
-): Promise<{ score: number; notes: string } | null> {
+): Promise<{ score: number; notes: string; unusable: boolean } | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   try {
@@ -44,8 +44,12 @@ export async function scoreIdentityMatch(
                     ". Score 0-100 how convincingly the generated image shows the same person — " +
                     "face, hair, and distinguishing features weigh most; clothing, pose, " +
                     "lighting, and setting are expected to differ and must not lower the score. " +
+                    "Also judge whether the second image is usable AT ALL: set unusable to true " +
+                    "only if it is essentially a solid black/blank frame, corrupted, or failed " +
+                    "to load — never merely because it looks different from the reference. " +
                     'Reply with ONLY minified JSON: {"score": <integer 0-100>, "notes": "<one ' +
-                    'short sentence about what differs, or an empty string>"}',
+                    'short sentence about what differs, or an empty string>", "unusable": ' +
+                    "<true|false>}",
                 },
                 { type: "image_url", image_url: { url: identityImageUrl } },
                 { type: "image_url", image_url: { url: resultImageUrl } },
@@ -66,10 +70,18 @@ export async function scoreIdentityMatch(
     const text = data?.choices?.[0]?.message?.content as string | undefined;
     const jsonMatch = text?.match(/\{[\s\S]*\}/);
     if (!jsonMatch) return null;
-    const parsed = JSON.parse(jsonMatch[0]) as { score?: unknown; notes?: unknown };
+    const parsed = JSON.parse(jsonMatch[0]) as {
+      score?: unknown;
+      notes?: unknown;
+      unusable?: unknown;
+    };
     const score = Math.round(Number(parsed.score));
     if (!Number.isFinite(score) || score < 0 || score > 100) return null;
-    return { score, notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 300) : "" };
+    return {
+      score,
+      notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 300) : "",
+      unusable: parsed.unusable === true,
+    };
   } catch {
     return null;
   }

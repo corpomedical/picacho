@@ -53,6 +53,7 @@ export const RELEASES: Release[] = [
       "Characters v2 — identity match score: every character image is now compared against the identity photo by a vision model and gets a 0-100 match score, shown under the result and in History.",
       "Safety net for all of the above: code tagged pre-characters-v2 and a database snapshot of all character profiles taken before the change — fully reversible.",
       "Fixed black pictures: when Flux's safety checker flags an image, fal.ai returns a solid black frame as if it succeeded — the pipeline now detects the flag and fails the generation honestly (with a refund) instead of delivering a black rectangle. The safety-softened wording is now reused for the Flux attempt too, and Flux results are saved into Picacho's own storage instead of living on fal.ai's servers, where they could expire.",
+      "Automatic quality gate: the post-generation vision check now also judges whether the finished image is usable at all — a black/blank frame that a provider returned as a \"success\" is automatically marked failed and fully refunded, with an honest note in the pipeline log. No user report needed.",
     ],
   },
 ];
