@@ -174,6 +174,14 @@ function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function BookIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
+    </svg>
+  );
+}
+
 function CompassIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -987,6 +995,14 @@ export function AppSidebar({
               >
                 <CompassIcon className="h-4 w-4 flex-shrink-0" />
                 {s.replayWalkthrough}
+              </Link>
+              <Link
+                href="/app/tutorial"
+                onClick={() => setSettingsOpen(false)}
+                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+              >
+                <BookIcon className="h-4 w-4 flex-shrink-0" />
+                {s.tutorial}
               </Link>
               <Link
                 href="/app/settings?tab=support"

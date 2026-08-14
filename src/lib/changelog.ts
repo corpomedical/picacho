@@ -54,6 +54,7 @@ export const RELEASES: Release[] = [
       "Safety net for all of the above: code tagged pre-characters-v2 and a database snapshot of all character profiles taken before the change — fully reversible.",
       "Fixed black pictures: when Flux's safety checker flags an image, fal.ai returns a solid black frame as if it succeeded — the pipeline now detects the flag and fails the generation honestly (with a refund) instead of delivering a black rectangle. The safety-softened wording is now reused for the Flux attempt too, and Flux results are saved into Picacho's own storage instead of living on fal.ai's servers, where they could expire.",
       "Automatic quality gate: the post-generation vision check now also judges whether the finished image is usable at all — a black/blank frame that a provider returned as a \"success\" is automatically marked failed and fully refunded, with an honest note in the pipeline log. No user report needed.",
+      "Added an in-app Tutorial (settings menu → Tutorial): a seven-part illustrated guide covering characters, identity photos, trait tiers, generating, reading results and the match score, videos, credits/refunds, and troubleshooting — in all four languages.",
     ],
   },
 ];
