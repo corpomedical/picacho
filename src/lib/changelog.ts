@@ -22,8 +22,8 @@ export const RELEASES: Release[] = [
   {
     version: "1.0.0",
     build: 1,
-    date: "2026-08-13",
-    title: "Launch readiness",
+    date: "2026-08-14",
+    title: "Launch readiness & character consistency",
     items: [
       "Fixed a recurring crash on history pages (a date/timezone rendering mismatch).",
       "Fixed a signup feature-flag error and hardened the signups kill switch.",
