@@ -2,6 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Button } from "@/components/ui/button";
 import { GenerateForm } from "@/components/generate-form";
+import { FirstRunTour } from "@/components/first-run-tour";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
@@ -44,12 +45,18 @@ export default async function AppHome() {
   } = workspace;
   const name = profile?.username ?? (data.user?.email ?? "").split("@")[0];
 
+  // An account with no characters yet never reaches GenerateForm below —
+  // which is where the walkthrough lives — so a brand-new user used to land
+  // here and get no onboarding whatsoever. FirstRunTour is the intro leg for
+  // exactly this state; the composer walkthrough still runs later, once
+  // there's a character and the composer actually renders.
   if (!hasCharacter) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+        {profile?.has_completed_onboarding !== true && <FirstRunTour />}
         <h1 className="text-2xl font-semibold text-neutral-900">{formatMsg(d.greeting, { name })}</h1>
         <p className="mt-2 max-w-sm text-sm text-neutral-500">{d.setupCharacterBody}</p>
-        <Link href="/app/character/new" className="mt-6">
+        <Link href="/app/character/new" className="mt-6" data-tour-id="tour-create-character">
           <Button>{d.setupCharacterCta}</Button>
         </Link>
       </div>

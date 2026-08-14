@@ -763,6 +763,12 @@ const it = {
     lostMic: "La modalità vocale ha perso il microfono — riprova.",
   },
   onboarding: {
+    firstRunWelcomeBody: "Un giro veloce prima di iniziare — circa un minuto.",
+    firstRunCreateTitle: "Crea il tuo primo personaggio",
+    firstRunCreateBody: "Tutto parte da qui. Aggiungi una foto e qualche tratto una volta sola, e ogni immagine e video che farai dopo manterrà la stessa persona.",
+    firstRunDoneTitle: "Fatto",
+    firstRunDoneBody: "Crea un personaggio e si aprirà il compositore, con un secondo breve tour degli strumenti di generazione. La guida completa è sempre nel menu impostazioni, sotto Tutorial.",
+    firstRunFinish: "Crea un personaggio",
     next: "Avanti",
     skip: "Salta",
     finish: "Inizia",

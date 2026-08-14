@@ -81,6 +81,31 @@ export async function signup(formData: FormData) {
     redirect(`/signup?error=${encodeURIComponent(error.message)}`);
   }
 
+  // Supabase does NOT return an error when the email already belongs to a
+  // confirmed account — that's its built-in email-enumeration protection: it
+  // returns a normal-looking user object and sends nothing. Left unhandled,
+  // signing up again with an existing address showed the cheerful "check
+  // your email" screen and then no email ever arrived, which is how someone
+  // ends up locked out of an account they already have, waiting on a message
+  // that was never sent.
+  //
+  // The documented signal for this case is an empty `identities` array.
+  // Telling the person plainly is the deliberate call here: it does reveal
+  // that an account exists, but a signup form that silently pretends to
+  // work is a worse failure than that disclosure — and the login page's own
+  // errors already reveal the same thing.
+  //
+  // Note the ordering: an existing but UNCONFIRMED account still has its
+  // identity attached, so it falls through to the "check your email" screen
+  // and Supabase resends the confirmation, which is exactly right.
+  if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    redirect(
+      `/signup?error=${encodeURIComponent(
+        "An account with this email already exists. Log in instead, or reset your password if you've forgotten it.",
+      )}`,
+    );
+  }
+
   // The profiles row is created by a database trigger on auth.users insert,
   // which runs synchronously within signUp() — safe to update it here.
   if (data.user) {

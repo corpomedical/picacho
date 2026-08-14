@@ -779,6 +779,12 @@ const en = {
     lostMic: "Voice mode lost the microphone — try again.",
   },
   onboarding: {
+    firstRunWelcomeBody: "A quick look around before you start — about a minute.",
+    firstRunCreateTitle: "Create your first character",
+    firstRunCreateBody: "Everything starts here. Add a photo and a few traits once, and every image and video you make afterwards keeps that same person.",
+    firstRunDoneTitle: "That's it",
+    firstRunDoneBody: "Create a character and the composer opens up, with a second short tour of the generation tools. The full guide is always in the settings menu under Tutorial.",
+    firstRunFinish: "Create a character",
     next: "Next",
     skip: "Skip",
     finish: "Get started",
