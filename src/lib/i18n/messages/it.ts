@@ -201,6 +201,7 @@ const it = {
     tryAgain: "Riprova",
   },
   generate: {
+    identityMatch: "Somiglianza d'identità: {n}%",
     useAsReference: "Usa come foto di riferimento",
     referenceAdded: "Aggiunta alle foto di riferimento del personaggio",
     noCharacterTitle: "Crea prima un personaggio",

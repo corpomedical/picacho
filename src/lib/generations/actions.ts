@@ -59,6 +59,7 @@ import {
 } from "@/lib/generations/providers/video-models";
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
+import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { isTrivialUtterance } from "@/lib/voice/agent";
 import type { BrandRule } from "@/lib/brand-rules/types";
 
@@ -154,6 +155,9 @@ type RunResult =
       attempts: AttemptLog[];
       finalPrompt: string;
       resultUrl: string | null;
+      // 0-100 identity-match score from the post-generation vision check
+      // (characters v2, images with a character only); null when unscored.
+      matchScore?: number | null;
       // True when the render has been queued with fal.ai and this call is
       // returning without waiting for it (video only — see submitVideoOnly in
       // pipeline.ts). `succeeded` is false and `resultUrl` null in that case
@@ -1196,6 +1200,36 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // image lives in History either way; making it an identity anchor is now
   // the user's explicit call.
 
+  // Characters v2: image-level identity verification. Best-effort — a
+  // scoring hiccup never affects the generation itself.
+  let matchScore: number | null = null;
+  if (succeeded && contentType === "image" && characterId && resultUrl?.startsWith("http")) {
+    const identityPath = character?.reference_image_urls?.[0];
+    if (identityPath) {
+      const { data: signedIdentity } = await supabase.storage
+        .from("character-references")
+        .createSignedUrl(identityPath, 600);
+      if (signedIdentity?.signedUrl) {
+        const traitSummary = [
+          character?.traits?.hair ? `hair: ${character.traits.hair}` : null,
+          character?.traits?.distinguishing_features
+            ? `distinguishing features: ${character.traits.distinguishing_features}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("; ");
+        const verdict = await scoreIdentityMatch(resultUrl, signedIdentity.signedUrl, traitSummary);
+        if (verdict) {
+          matchScore = verdict.score;
+          await supabase
+            .from("generations")
+            .update({ match_score: verdict.score, match_notes: verdict.notes || null })
+            .eq("id", placeholder.id);
+        }
+      }
+    }
+  }
+
   revalidatePath("/app/generate");
   revalidatePath("/app/history");
 
@@ -1206,6 +1240,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     attempts,
     finalPrompt,
     resultUrl,
+    matchScore,
   };
 }
 
@@ -1960,6 +1995,9 @@ export type HistoryTurn = {
   finalPrompt: string;
   resultUrl: string | null;
   createdAt: string;
+  // 0-100 identity-match score from the post-generation vision check
+  // (characters v2); null/absent when the generation wasn't scored.
+  matchScore?: number | null;
 };
 
 export type HistoryAngleClip = {
@@ -2004,7 +2042,8 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user || !generationId) return null;
 
-  const columns = "id, prompt_input, content_type, status, result_url, pipeline_log, created_at, angle_group_id, angle";
+  const columns =
+    "id, prompt_input, content_type, status, result_url, pipeline_log, created_at, angle_group_id, angle, match_score";
 
   const { data: row } = await supabase
     .from("generations")
@@ -2061,6 +2100,7 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
     finalPrompt: attempts[attempts.length - 1]?.compiledPrompt ?? "",
     resultUrl: row.result_url as string | null,
     createdAt: row.created_at as string,
+    matchScore: (row.match_score ?? null) as number | null,
   };
 }
 

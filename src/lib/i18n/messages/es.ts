@@ -201,6 +201,7 @@ const es = {
     tryAgain: "Intentar de nuevo",
   },
   generate: {
+    identityMatch: "Coincidencia de identidad: {n}%",
     useAsReference: "Usar como foto de referencia",
     referenceAdded: "Añadida a las fotos de referencia del personaje",
     noCharacterTitle: "Primero crea un personaje",

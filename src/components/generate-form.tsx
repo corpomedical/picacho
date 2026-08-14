@@ -1070,6 +1070,9 @@ function SingleTurnBubble({ turn }: { turn: ChatTurn }) {
               <div className="mt-3 flex items-center gap-2">
                 <Badge tone={live ? "success" : "neutral"}>{live ? g.live : g.simulated}</Badge>
                 <p className="text-xs text-neutral-500">{formatMsg(g.passedOnAttempt, { n: turn.attempts.length })}</p>
+                {typeof turn.matchScore === "number" && (
+                  <p className="text-xs text-neutral-500">{formatMsg(g.identityMatch, { n: turn.matchScore })}</p>
+                )}
               </div>
               <ResultActions generationId={turn.id} copyText={turn.finalPrompt || turn.prompt} promotable={turn.contentType === "image"} />
             </>

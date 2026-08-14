@@ -212,6 +212,7 @@ const en = {
     tryAgain: "Try again",
   },
   generate: {
+    identityMatch: "Identity match: {n}%",
     useAsReference: "Use as reference photo",
     referenceAdded: "Added to the character's reference photos",
     noCharacterTitle: "Set up a character first",

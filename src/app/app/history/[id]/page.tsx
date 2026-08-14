@@ -230,6 +230,11 @@ export default async function HistoryDetailPage({
                     </div>
                   </>
                 )}
+                {typeof generation.match_score === "number" && (
+                  <p className="mt-2 text-xs text-neutral-500">
+                    {formatMsg(t.generate.identityMatch, { n: generation.match_score })}
+                  </p>
+                )}
                 {isOwner && generation.result_url?.startsWith("http") && (
                   <ResultActions
                     generationId={generation.id}
