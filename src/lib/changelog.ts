@@ -57,6 +57,7 @@ export const RELEASES: Release[] = [
       "Added an in-app Tutorial (settings menu → Tutorial): a seven-part illustrated guide covering characters, identity photos, trait tiers, generating, reading results and the match score, videos, credits/refunds, and troubleshooting — in all four languages.",
       "Fixed brand-new users getting no walkthrough at all: the tour lived inside the generation composer, but an account with no characters yet sees the \"create your first character\" screen instead, so the composer — and the entire tour — never rendered. New accounts now get a short welcome tour on that screen pointing at what to do first, and still get the composer walkthrough once they have a character.",
       "Fixed signing up with an email that already has an account: Supabase deliberately returns success without sending anything (anti-enumeration), so the app showed \"check your email\" for a message that was never sent — a great way to get locked out of an account you already have. Signup now says the account exists and points to logging in or resetting the password. Unconfirmed signups still correctly get their confirmation email resent.",
+      "Hardened that duplicate-signup fix so it can't quietly stop working: instead of relying only on a hint in Supabase's response, signup now checks authoritatively (server-side, via a lookup that isn't reachable publicly) whether the email already has a confirmed account, before the signup call is even made.",
     ],
   },
 ];

@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getOrigin } from "@/lib/origin";
 
 export async function login(formData: FormData) {
@@ -50,6 +50,41 @@ export async function signup(formData: FormData) {
         "You must agree to the Terms of Service, Privacy Policy, and Content Policy to create an account.",
       )}`,
     );
+  }
+
+  // Authoritative already-registered check, BEFORE spending a signUp call.
+  //
+  // signUp() deliberately refuses to tell us this (Supabase's anti-
+  // enumeration behaviour: normal-looking response, no email sent, the only
+  // hint an empty `identities` array). Depending on that array alone means
+  // depending on an SDK response shape — and if it ever comes back undefined
+  // instead of [], the check silently stops working and we're back to
+  // telling people to check an inbox for mail that will never arrive.
+  //
+  // auth_email_status is SECURITY DEFINER and executable only by
+  // service_role, so it's reachable from here and from nowhere public.
+  //
+  // Fails OPEN on any error: a broken lookup must never block real signups,
+  // and the identities check below still backs it up.
+  //
+  // 'unconfirmed' deliberately falls through — that person never finished
+  // signing up, and letting signUp() resend their confirmation email is
+  // exactly the behaviour they need.
+  try {
+    const admin = createAdminClient();
+    const { data: status } = await admin.rpc("auth_email_status", { p_email: email });
+    if (status === "confirmed") {
+      redirect(
+        `/signup?error=${encodeURIComponent(
+          "An account with this email already exists. Log in instead, or reset your password if you've forgotten it.",
+        )}`,
+      );
+    }
+  } catch (err) {
+    // redirect() signals by throwing — never swallow it as a lookup failure.
+    if (err && typeof err === "object" && "digest" in err && typeof (err as { digest?: unknown }).digest === "string" && (err as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {
+      throw err;
+    }
   }
 
   // emailRedirectTo is what makes the confirmation link land back in THIS
