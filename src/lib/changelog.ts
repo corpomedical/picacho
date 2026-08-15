@@ -28,6 +28,9 @@ export const RELEASES: Release[] = [
       "Images across the app now load instantly on repeat visits: every picture used to be fetched through a freshly minted temporary link (new link every page view, so nothing could ever be cached) — they're now served through stable, permanently cacheable URLs. This also removed a storage round-trip from almost every page load.",
       "Fixed a serious latent bug the old links hid: every image in History silently broke 7 days after it was made, because the stored link expired even though the file was still there. New results use permanent links, and every OLD row — including ones already broken — is rescued automatically at display time.",
       "Chat attachment previews no longer expire mid-conversation (they used to die after 24 hours).",
+      "Picacho now installs as an app — from the browser straight onto your phone's home screen, full-screen with its own icon, on both Android and iPhone. No app store, no 30% platform cut. A small card in the app offers the install (with step-by-step instructions on iPhone) and remembers if you decline.",
+      "The app has a real home page now: credits and plan at a glance, your characters one tap from a new chat, your latest creations, and quick actions for images, video and the tutorial. The composer is one tap away and unchanged — and it's where the first-run walkthrough now lives, shown the first time you actually face those controls.",
+      "New app icon drawn from the real Picacho wordmark — the P with the brand's ochre full stop.",
     ],
   },
   {

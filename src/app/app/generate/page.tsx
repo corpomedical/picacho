@@ -60,6 +60,15 @@ export default async function GeneratePage() {
     currentPeriodEnd,
   } = await getGenerateWorkspaceData(supabase, userData.user?.id);
 
+  // The composer walkthrough used to auto-start on /app, when the composer
+  // lived there in hero mode. /app is a dashboard now, so the walkthrough's
+  // home is here — the first time someone actually faces these controls.
+  const { data: onboardingProfile } = await supabase
+    .from("profiles")
+    .select("has_completed_onboarding")
+    .eq("id", userData.user?.id ?? "")
+    .single();
+
   if (!hasCharacter) {
     return (
       <div className="mx-auto max-w-md text-center">
@@ -109,6 +118,7 @@ export default async function GeneratePage() {
       </div>
 
       <GenerateForm
+        startOnboarding={onboardingProfile?.has_completed_onboarding !== true}
         characters={charactersForForm}
         videoModels={videoModels}
         defaultVideoModelId={defaultVideoModelId}

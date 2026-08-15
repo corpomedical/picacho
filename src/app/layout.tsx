@@ -80,6 +80,18 @@ export const metadata: Metadata = {
     description: DESCRIPTION,
     images: ["/og-image.png"],
   },
+  // Installed-app behaviour (paired with app/manifest.ts). apple-touch-icon
+  // is what iOS puts on the home screen; appleWebApp makes an installed
+  // Picacho open full-screen instead of inside Safari chrome.
+  icons: {
+    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: "/apple-touch-icon.png",
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Picacho",
+  },
 };
 
 // Organization structured data — site-wide (every page, via the root
