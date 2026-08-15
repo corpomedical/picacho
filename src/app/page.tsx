@@ -285,7 +285,14 @@ export default async function Home() {
                     src={`/api/showcase/${i}`}
                     alt=""
                     loading={i < 3 ? "eager" : "lazy"}
-                    className="h-full w-full object-cover"
+                    className={cn(
+                      "h-full w-full object-cover",
+                      // Tile 3 is the full-length cooking-show shot; square-
+                      // cropping it from the centre would land on the plate.
+                      // Anchoring near the top keeps it chest-up, so her face
+                      // still reads at this size.
+                      i === 3 && "object-[50%_12%]",
+                    )}
                   />
                   {i === 0 && (
                     <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
