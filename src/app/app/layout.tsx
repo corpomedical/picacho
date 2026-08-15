@@ -6,6 +6,7 @@ import { NativeTabBar } from "@/components/native-tab-bar";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
+import { ActivityHeartbeat } from "@/components/activity-heartbeat";
 
 export default async function AppLayout({
   children,
@@ -76,6 +77,9 @@ export default async function AppLayout({
   return (
     <div className="flex h-screen overflow-hidden">
       <AppErrorReporter />
+      {/* Times how long this person actually uses the app — see the
+          component for why it only beats while the tab is visible. */}
+      <ActivityHeartbeat />
       <AppSidebar
         isAdmin={isAdmin}
         username={profile?.username ?? (data.user.email ?? "").split("@")[0]}

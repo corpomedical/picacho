@@ -308,21 +308,33 @@ export default async function AdminUserDetailPage({
               </div>
 
               <div>
-                <dt className="text-xs text-neutral-500">Session length</dt>
+                <dt className="text-xs text-neutral-500">Time on site</dt>
                 <dd className="mt-1 text-sm font-medium text-neutral-900">
-                  {formatDuration(activity?.sessionSeconds ?? null)}
+                  {activity?.sessionSeconds === null
+                    ? "Not measured yet"
+                    : formatDuration(activity?.sessionSeconds ?? null)}
                 </dd>
                 <p className="mt-0.5 text-xs text-neutral-400">
-                  {activity?.online ? "Current session, so far" : "Sign-in to last activity"}
+                  {activity?.sessionSeconds === null
+                    ? "Starts counting on their next visit"
+                    : activity?.online
+                      ? "This visit, so far"
+                      : "Their last visit"}
                 </p>
               </div>
 
               <div>
-                <dt className="text-xs text-neutral-500">Signed-in devices</dt>
+                <dt className="text-xs text-neutral-500">Total time on site</dt>
                 <dd className="mt-1 text-sm font-medium text-neutral-900">
-                  {activity?.activeSessions ?? 0}
+                  {activity?.totalActiveSeconds === null
+                    ? "—"
+                    : formatDuration(activity?.totalActiveSeconds ?? null)}
                 </dd>
-                <p className="mt-0.5 text-xs text-neutral-400">Sessions still valid</p>
+                <p className="mt-0.5 text-xs text-neutral-400">
+                  {(activity?.activeSessions ?? 0) === 1
+                    ? "1 signed-in device"
+                    : `${activity?.activeSessions ?? 0} signed-in devices`}
+                </p>
               </div>
             </dl>
           </Card>

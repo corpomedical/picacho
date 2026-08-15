@@ -18,9 +18,16 @@ export type UserActivity = {
   // Sessions still valid right now — effectively "signed-in devices".
   activeSessions: number;
   sessionStartedAt: string | null;
-  // Sign-in until last activity. Null when there's nothing to measure
-  // (never signed in, or no activity recorded since).
+  // Time actually spent on the site during the current (or most recent)
+  // visit — accumulated from heartbeats, so time signed in but away is not
+  // counted. Null when nothing has been measured yet.
   sessionSeconds: number | null;
+  // Lifetime time on site, accumulated the same way.
+  totalActiveSeconds: number | null;
+  // How long the session has been VALID (sign-in to last activity). Kept
+  // separate because it answers a different question to sessionSeconds and
+  // is what the sign-in/security view wants.
+  signedInForSeconds: number | null;
   online: boolean;
 };
 
@@ -33,7 +40,13 @@ type Row = {
 };
 
 export async function getUserActivity(
-  users: { id: string; last_seen_at?: string | null }[],
+  users: {
+    id: string;
+    last_seen_at?: string | null;
+    session_started_at?: string | null;
+    session_seconds?: number | null;
+    total_active_seconds?: number | null;
+  }[],
 ): Promise<Map<string, UserActivity>> {
   const result = new Map<string, UserActivity>();
   if (users.length === 0) return result;
@@ -69,17 +82,26 @@ export async function getUserActivity(
     const endMs = endCandidates.length ? Math.max(...endCandidates) : null;
     const startMs = lastSignInAt ? new Date(lastSignInAt).getTime() : null;
 
-    const sessionSeconds =
+    const signedInForSeconds =
       startMs !== null && endMs !== null && endMs > startMs
         ? Math.floor((endMs - startMs) / 1000)
         : null;
+
+    // Measured time on site. Explicitly null (not 0) when nothing has ever
+    // been recorded, so the UI can say "not measured yet" for accounts that
+    // predate heartbeat tracking instead of claiming a truthful-looking 0m.
+    const measured = user.session_seconds ?? 0;
+    const total = user.total_active_seconds ?? 0;
+    const everMeasured = measured > 0 || total > 0;
 
     result.set(user.id, {
       lastSignInAt,
       lastSeenAt,
       activeSessions: row?.active_sessions ?? 0,
-      sessionStartedAt: row?.last_session_started_at ?? null,
-      sessionSeconds,
+      sessionStartedAt: user.session_started_at ?? row?.last_session_started_at ?? null,
+      sessionSeconds: everMeasured ? measured : null,
+      totalActiveSeconds: everMeasured ? total : null,
+      signedInForSeconds,
       online: endMs !== null && now - endMs < ONLINE_WINDOW_MS,
     });
   }

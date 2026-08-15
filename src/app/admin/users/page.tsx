@@ -39,7 +39,9 @@ export default async function AdminUsersPage({
 
   let query = supabase
     .from("profiles")
-    .select("id, email, role, plan, status, created_at, last_seen_at")
+    .select(
+      "id, email, role, plan, status, created_at, last_seen_at, session_started_at, session_seconds, total_active_seconds",
+    )
     .order("created_at", { ascending: false });
 
   if (q) query = query.ilike("email", `%${q}%`);
@@ -159,7 +161,7 @@ export default async function AdminUsersPage({
                       </dd>
                     </div>
                     <div className="w-24">
-                      <dt className="text-neutral-400">Session</dt>
+                      <dt className="text-neutral-400">Time on site</dt>
                       <dd className="mt-0.5 text-neutral-700">
                         {formatDuration(act?.sessionSeconds ?? null)}
                       </dd>
