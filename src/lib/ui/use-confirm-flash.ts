@@ -28,9 +28,16 @@ export function useConfirmFlash(done: boolean, ms = 1100): boolean {
     if (!rose) return;
 
     setFlash(true);
+  }, [done]);
+
+  // Same self-re-arming auto-clear as SubmitButton: hanging the timer off
+  // `flash` means a cancelled timer is immediately replaced on the next
+  // render, so the confirmation can't be left showing indefinitely.
+  useEffect(() => {
+    if (!flash) return;
     const id = setTimeout(() => setFlash(false), ms);
     return () => clearTimeout(id);
-  }, [done, ms]);
+  }, [flash, ms]);
 
   return flash;
 }

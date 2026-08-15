@@ -54,6 +54,7 @@ export function SubmitButton({
   useEffect(() => {
     if (pending) {
       wasPending.current = true;
+      setConfirmed(false);
       return;
     }
     if (!wasPending.current) return;
@@ -61,18 +62,23 @@ export function SubmitButton({
     if (!confirmOnSuccess) return;
 
     setConfirmed(true);
-    const id = setTimeout(() => setConfirmed(false), CONFIRM_MS);
-    return () => clearTimeout(id);
   }, [pending, confirmOnSuccess]);
 
-  // Editing the form clears the confirmation immediately, so the button is
-  // ready for the next save the moment there's something new to save.
-  //
-  // This is also the safety net that keeps the button from ever getting
-  // stuck: the timer above can be cancelled by a re-render or a navigation
-  // that the server action triggers, and without this the button could sit
-  // on a green "Saved" that never returned to normal until a page refresh.
-  // Typing anything always brings it back.
+  // Self-re-arming auto-clear: while `confirmed` is true there is always a
+  // timer running to turn it off. If a re-render cancels this one, the effect
+  // runs again (the flag is still set) and starts another. The button can no
+  // longer be left sitting on a confirmation.
+  useEffect(() => {
+    if (!confirmed) return;
+    const id = setTimeout(() => setConfirmed(false), CONFIRM_MS);
+    return () => clearTimeout(id);
+  }, [confirmed]);
+
+  // Editing the form clears the confirmation immediately, rather than making
+  // the user wait out the timer before the button looks ready again. Only
+  // relevant to forms that have fields at all — a suspend/reinstate toggle
+  // has none, which is why correctness can't depend on this and the auto-
+  // clear above has to stand on its own.
   useEffect(() => {
     const form = ref.current?.form;
     if (!form) return;

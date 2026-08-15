@@ -63,9 +63,13 @@ function CheckIcon() {
  * identical to a dead button, which is how people end up clicking Save three
  * times and firing the action three times.
  *
- * `confirmed` is the brief green "Saved" that follows a successful one. It
- * deliberately overrides the disabled dimming: a confirmation that looks
- * greyed out reads as failure.
+ * `confirmed` is the brief green "Saved" that follows a successful one. It is
+ * purely cosmetic — it overrides the disabled dimming (a confirmation that
+ * looks greyed out reads as failure) and, deliberately, never disables the
+ * button. Only a genuinely in-flight action does that. A decorative state
+ * that can lock a control is a state that can strand the user, which is
+ * exactly what happened to the suspend/reinstate toggle: no field to edit,
+ * so nothing could clear it short of reloading the page.
  */
 export function Button({
   variant = "primary",
@@ -111,7 +115,7 @@ export function Button({
         className,
       )}
       {...props}
-      disabled={disabled || state !== "idle"}
+      disabled={disabled || state === "pending"}
       aria-busy={state === "pending" || undefined}
     >
       {state === "pending" && <Spinner />}
