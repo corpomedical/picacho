@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { setUserStatus } from "@/lib/admin/actions";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Input } from "@/components/ui/field";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { LocalDate } from "@/components/local-date";
@@ -185,9 +185,9 @@ export default async function AdminUsersPage({
                         name="status"
                         value={user.status === "active" ? "suspended" : "active"}
                       />
-                      <Button variant="secondary" size="sm" type="submit">
+                      <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…" confirmedLabel="Done">
                         {user.status === "active" ? "Suspend" : "Unsuspend"}
-                      </Button>
+                      </SubmitButton>
                     </form>
                   </div>
                 </div>

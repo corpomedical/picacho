@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { deleteAccount } from "@/lib/profile/actions";
 import { Label, Input } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { useLocale } from "@/lib/i18n/provider";
 
 export function DeleteAccountForm({ username }: { username: string }) {
@@ -29,9 +29,9 @@ export function DeleteAccountForm({ username }: { username: string }) {
           autoComplete="off"
         />
       </div>
-      <Button type="submit" variant="destructive" disabled={!canDelete}>
+      <SubmitButton variant="destructive" disabled={!canDelete} confirmOnSuccess={false}>
         {t.settings.deleteMyAccount}
-      </Button>
+      </SubmitButton>
     </form>
   );
 }

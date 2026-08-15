@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { toggleFeatureFlag } from "@/lib/admin/actions";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Badge } from "@/components/ui/badge";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 
@@ -42,9 +42,9 @@ export default async function AdminFlagsPage({
                   <form action={toggleFeatureFlag}>
                     <input type="hidden" name="key" value={flag.key} />
                     <input type="hidden" name="enabled" value={String(flag.enabled)} />
-                    <Button variant="secondary" size="sm" type="submit">
+                    <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…" confirmedLabel="Done">
                       Turn {flag.enabled ? "off" : "on"}
-                    </Button>
+                    </SubmitButton>
                   </form>
                 </div>
               </div>

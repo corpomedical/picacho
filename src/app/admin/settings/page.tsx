@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { updateAppSetting } from "@/lib/admin/actions";
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Label, Input } from "@/components/ui/field";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 
@@ -37,9 +37,7 @@ export default async function AdminSettingsPage({
                 )}
               </div>
               <input type="hidden" name="key" value={setting.key} />
-              <Button type="submit" variant="secondary">
-                Save
-              </Button>
+              <SubmitButton variant="secondary">Save</SubmitButton>
             </form>
           </Card>
         ))}

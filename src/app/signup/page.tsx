@@ -4,6 +4,7 @@ import { signup } from "@/lib/auth/actions";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { Label, Input } from "@/components/ui/field";
 import { OAuthButtons } from "@/components/oauth-buttons";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -168,9 +169,9 @@ export default async function SignupPage({
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <Button type="submit" className="w-full">
+            <SubmitButton className="w-full" confirmOnSuccess={false} pendingLabel={a.submit}>
               {a.submit}
-            </Button>
+            </SubmitButton>
           </form>
 
           <p className="mt-6 text-center text-sm text-neutral-500">

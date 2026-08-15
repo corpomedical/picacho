@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { cn } from "@/lib/cn";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -82,16 +83,26 @@ export async function PricingCard({ tier }: { tier: Tier }) {
         </Link>
       ) : hasLiveSubscription ? (
         <form action={createPortalSession} className="mt-6">
-          <Button type="submit" variant={tier.highlight ? "primary" : "secondary"} className="w-full">
+          <SubmitButton
+            variant={tier.highlight ? "primary" : "secondary"}
+            className="w-full"
+            confirmOnSuccess={false}
+            pendingLabel={t.common.loading}
+          >
             {t.settings.manageBilling}
-          </Button>
+          </SubmitButton>
         </form>
       ) : (
         <form action={createCheckoutSession} className="mt-6">
           <input type="hidden" name="plan" value={tier.id} />
-          <Button type="submit" variant={tier.highlight ? "primary" : "secondary"} className="w-full">
+          <SubmitButton
+            variant={tier.highlight ? "primary" : "secondary"}
+            className="w-full"
+            confirmOnSuccess={false}
+            pendingLabel={t.common.loading}
+          >
             {t.marketing.pricing.getStarted}
-          </Button>
+          </SubmitButton>
         </form>
       )}
     </Card>

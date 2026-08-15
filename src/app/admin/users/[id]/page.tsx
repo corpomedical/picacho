@@ -6,7 +6,7 @@ import { getMonthlyUsage } from "@/lib/generations/actions";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { DeleteUserButton } from "@/components/delete-user-button";
 import { LocalDate } from "@/components/local-date";
@@ -142,9 +142,9 @@ export default async function AdminUserDetailPage({
               name="status"
               value={user.status === "active" ? "suspended" : "active"}
             />
-            <Button variant="secondary" size="sm" type="submit" className="w-full">
+            <SubmitButton variant="secondary" size="sm" className="w-full" pendingLabel="Updating…" confirmedLabel="Done">
               {user.status === "active" ? "Suspend account" : "Reinstate account"}
-            </Button>
+            </SubmitButton>
           </form>
 
           <div className="mt-6 border-t border-neutral-100 pt-4">
@@ -159,9 +159,7 @@ export default async function AdminUserDetailPage({
                 <option value="user">user</option>
                 <option value="admin">admin</option>
               </select>
-              <Button type="submit" variant="secondary" size="sm">
-                Save
-              </Button>
+              <SubmitButton variant="secondary" size="sm">Save</SubmitButton>
             </form>
           </div>
 
@@ -180,9 +178,7 @@ export default async function AdminUserDetailPage({
                   </option>
                 ))}
               </select>
-              <Button type="submit" variant="secondary" size="sm">
-                Save
-              </Button>
+              <SubmitButton variant="secondary" size="sm">Save</SubmitButton>
             </form>
             <p className="mt-1.5 text-xs text-neutral-400">
               For comping accounts. If this user has a real Stripe subscription, the next billing
@@ -203,9 +199,7 @@ export default async function AdminUserDetailPage({
                 defaultValue={bonusCredits}
                 className="w-full flex-1 rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
               />
-              <Button type="submit" variant="secondary" size="sm">
-                Save
-              </Button>
+              <SubmitButton variant="secondary" size="sm">Save</SubmitButton>
             </form>
             <p className="mt-1.5 text-xs text-neutral-400">
               Extra generations on top of their plan — a goodwill grant, not a plan change. Stacks

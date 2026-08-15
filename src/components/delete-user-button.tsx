@@ -1,7 +1,7 @@
 "use client";
 
 import { deleteUser } from "@/lib/admin/actions";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 
 // Delete is irreversible and cascades across every table the user owns, so it
 // gets an explicit confirm before the server action runs — a mis-click here
@@ -21,13 +21,14 @@ export function DeleteUserButton({ userId, email }: { userId: string; email: str
       }}
     >
       <input type="hidden" name="user_id" value={userId} />
-      <Button
-        type="submit"
+      <SubmitButton
         size="sm"
         className="w-full bg-red-600 text-white hover:bg-red-700"
+        confirmOnSuccess={false}
+        pendingLabel="Deleting…"
       >
         Delete this user
-      </Button>
+      </SubmitButton>
     </form>
   );
 }

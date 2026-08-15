@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { updateProfileDetails } from "@/lib/profile/actions";
 import { Label, Input } from "@/components/ui/field";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { useLocale } from "@/lib/i18n/provider";
 
 const STANDARD_GENDERS = ["Woman", "Man", "Non-binary"];
@@ -67,7 +67,7 @@ export function ProfileForm({
         {s.profileNote}
       </p>
 
-      <Button type="submit">{t.common.save}</Button>
+      <SubmitButton>{t.common.save}</SubmitButton>
     </form>
   );
 }

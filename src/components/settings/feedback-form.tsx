@@ -57,8 +57,13 @@ export function FeedbackForm() {
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex justify-end">
-        <Button type="submit" disabled={pending || !message.trim()}>
-          {pending ? c.feedbackSending : c.feedbackSubmit}
+        <Button
+          type="submit"
+          disabled={!message.trim()}
+          pending={pending}
+          pendingLabel={c.feedbackSending}
+        >
+          {c.feedbackSubmit}
         </Button>
       </div>
     </form>

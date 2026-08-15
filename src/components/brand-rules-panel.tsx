@@ -192,8 +192,8 @@ export function BrandRulesPanel({
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex justify-end">
-            <Button type="submit" disabled={pending}>
-              {pending ? b.adding : b.addRule}
+            <Button type="submit" pending={pending} pendingLabel={b.adding}>
+              {b.addRule}
             </Button>
           </div>
         </form>

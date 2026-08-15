@@ -2,7 +2,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { setGenerationReportStatus } from "@/lib/admin/actions";
 
@@ -111,9 +111,9 @@ function ReportCard({
       <form action={setGenerationReportStatus} className="flex-shrink-0">
         <input type="hidden" name="report_id" value={report.id} />
         <input type="hidden" name="status" value={isNextStatus} />
-        <Button variant="secondary" size="sm" type="submit">
+        <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…" confirmedLabel="Done">
           {report.status === "open" ? "Mark resolved" : "Reopen"}
-        </Button>
+        </SubmitButton>
       </form>
     </Card>
   );

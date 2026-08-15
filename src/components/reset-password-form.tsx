@@ -76,8 +76,8 @@ export function ResetPasswordForm() {
         />
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button type="submit" className="w-full" disabled={status === "saving"}>
-        {status === "saving" ? "…" : r.submit}
+      <Button type="submit" className="w-full" pending={status === "saving"} pendingLabel={r.submit}>
+        {r.submit}
       </Button>
     </form>
   );

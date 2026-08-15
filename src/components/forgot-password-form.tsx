@@ -44,8 +44,8 @@ export function ForgotPasswordForm() {
           onChange={(e) => setEmail(e.target.value)}
         />
       </div>
-      <Button type="submit" className="w-full" disabled={status === "sending"}>
-        {status === "sending" ? "…" : f.submit}
+      <Button type="submit" className="w-full" pending={status === "sending"} pendingLabel={f.submit}>
+        {f.submit}
       </Button>
     </form>
   );

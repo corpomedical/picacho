@@ -4,12 +4,14 @@ import { useState } from "react";
 import { updateUsername } from "@/lib/profile/actions";
 import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
+import { useConfirmFlash } from "@/lib/ui/use-confirm-flash";
 import { useLocale } from "@/lib/i18n/provider";
 
 export function UsernameForm({ initialUsername }: { initialUsername: string }) {
   const { t } = useLocale();
   const [username, setUsername] = useState(initialUsername);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const justSaved = useConfirmFlash(status === "saved");
   const [error, setError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -44,8 +46,16 @@ export function UsernameForm({ initialUsername }: { initialUsername: string }) {
         />
         {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
       </div>
-      <Button type="submit" variant="secondary" disabled={status === "saving" || username === initialUsername}>
-        {status === "saving" ? t.common.saving : status === "saved" ? t.common.saved : t.common.save}
+      <Button
+        type="submit"
+        variant="secondary"
+        disabled={username === initialUsername}
+        pending={status === "saving"}
+        pendingLabel={t.common.saving}
+        confirmed={justSaved}
+        confirmedLabel={t.common.saved}
+      >
+        {t.common.save}
       </Button>
     </form>
   );

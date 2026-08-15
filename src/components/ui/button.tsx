@@ -19,13 +19,93 @@ const sizes: Record<Size, string> = {
   md: "px-5 py-2.5 text-sm",
 };
 
+// currentColor throughout, so one spinner works on every variant — white on
+// the primary button, near-black on secondary — without a per-variant class.
+function Spinner({ className }: { className?: string }) {
+  return (
+    <svg
+      className={cn("h-3.5 w-3.5 flex-shrink-0 animate-spin", className)}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+      <path
+        d="M12 2a10 10 0 0 1 10 10"
+        stroke="currentColor"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg
+      className="h-3.5 w-3.5 flex-shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+/**
+ * `pending` dims the button, locks it, and swaps in a spinner — the visible
+ * acknowledgement that a click was received. Without it a slow save looks
+ * identical to a dead button, which is how people end up clicking Save three
+ * times and firing the action three times.
+ *
+ * `confirmed` is the brief green "Saved" that follows a successful one. It
+ * deliberately overrides the disabled dimming: a confirmation that looks
+ * greyed out reads as failure.
+ */
 export function Button({
   variant = "primary",
   size = "md",
   className,
+  pending = false,
+  pendingLabel,
+  confirmed = false,
+  confirmedLabel,
+  children,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: Variant;
+  size?: Size;
+  pending?: boolean;
+  pendingLabel?: string;
+  confirmed?: boolean;
+  confirmedLabel?: string;
+}) {
+  // Confirmation wins over pending: if both are somehow set, the newer state
+  // is the one worth showing.
+  const state = confirmed ? "confirmed" : pending ? "pending" : "idle";
+
   return (
-    <button className={cn(base, variants[variant], sizes[size], className)} {...props} />
+    <button
+      className={cn(
+        base,
+        variants[variant],
+        sizes[size],
+        state === "confirmed" &&
+          "!border-emerald-600 !bg-emerald-600 !text-white !opacity-100 hover:!bg-emerald-600",
+        className,
+      )}
+      disabled={props.disabled || state !== "idle"}
+      aria-busy={state === "pending" || undefined}
+      {...props}
+    >
+      {state === "pending" && <Spinner />}
+      {state === "confirmed" && <CheckIcon />}
+      {state === "pending" ? (pendingLabel ?? children) : state === "confirmed" ? (confirmedLabel ?? children) : children}
+    </button>
   );
 }
