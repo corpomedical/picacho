@@ -79,6 +79,59 @@ export async function POST(request: Request) {
           await supabase.from("profiles").update({ stripe_customer_id: customerId }).eq("id", userId);
         }
 
+        // Promo attribution. The session's total_details say whether any
+        // discount applied; the discounts array says which promotion code.
+        // Recorded for subscriptions only — that's what reps sell and what
+        // commission is defined against. Best-effort by design: a logging
+        // failure must never 500 the webhook and make Stripe retry a
+        // checkout that actually succeeded.
+        if (session.mode === "subscription" && (session.total_details?.amount_discount ?? 0) > 0) {
+          try {
+            const discount = (session.discounts ?? [])[0];
+            const promotionCodeId =
+              typeof discount?.promotion_code === "string"
+                ? discount.promotion_code
+                : (discount?.promotion_code?.id ?? null);
+
+            if (promotionCodeId) {
+              const { data: promo } = await supabase
+                .from("promo_codes")
+                .select("id, code, rep_name")
+                .eq("stripe_promotion_code_id", promotionCodeId)
+                .single();
+
+              if (promo) {
+                // stripe_session_id is UNIQUE — same retry-safety pattern as
+                // credit_purchases above: a redelivered webhook can't count
+                // the same sale (and its commission) twice.
+                const { error: redemptionError } = await supabase.from("promo_redemptions").insert({
+                  promo_code_id: promo.id,
+                  code: promo.code,
+                  rep_name: promo.rep_name,
+                  user_id: userId,
+                  user_email: session.customer_details?.email ?? null,
+                  amount_subtotal: session.amount_subtotal ?? 0,
+                  amount_total: session.amount_total ?? 0,
+                  discount_amount: session.total_details?.amount_discount ?? 0,
+                  currency: session.currency ?? "eur",
+                  stripe_session_id: session.id,
+                });
+                if (redemptionError && redemptionError.code !== "23505") {
+                  console.error("Stripe webhook: couldn't record promo redemption", redemptionError);
+                }
+                if (userId && !redemptionError) {
+                  await supabase
+                    .from("profiles")
+                    .update({ promo_code: promo.code, referred_by: promo.rep_name })
+                    .eq("id", userId);
+                }
+              }
+            }
+          } catch (err) {
+            console.error("Stripe webhook: promo attribution failed", err);
+          }
+        }
+
         // A one-time credit top-up rather than a subscription (see
         // createCreditCheckoutSession). Subscriptions are handled by the
         // customer.subscription.* cases below and must not fall through to

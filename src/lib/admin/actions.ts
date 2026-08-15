@@ -5,21 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { computeAdminBadgeCounts, type AdminBadgeCounts } from "@/lib/admin/badges";
-
-async function requireAdmin() {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) throw new Error("Not signed in.");
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", data.user.id)
-    .single();
-
-  if (profile?.role !== "admin") throw new Error("Admin access required.");
-  return { supabase, userId: data.user.id };
-}
+import { requireAdmin } from "@/lib/admin/require-admin";
 
 // Called imperatively (not from a <form>) by AdminCommandBar, which polls
 // this on an interval to keep the nav's red-dot badges live without the

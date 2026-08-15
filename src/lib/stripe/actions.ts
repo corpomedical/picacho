@@ -62,6 +62,10 @@ export async function createCheckoutSession(formData: FormData) {
       // on the registrations configured there; nothing else on our end
       // depends on which jurisdictions those are.
       automatic_tax: { enabled: true },
+      // Shows Stripe's own "Add promotion code" field on the payment page —
+      // the promo system's entire client-facing UI. Codes are created and
+      // managed in Admin > Promo codes (see lib/admin/promo-actions.ts).
+      allow_promotion_codes: true,
       success_url: `${origin}/app/settings?tab=usage&saved=1`,
       cancel_url: `${origin}/app/settings?tab=usage`,
       subscription_data: { metadata: { supabase_user_id: userData.user.id } },

@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: "/admin/users", label: "Users", icon: UsersIcon },
   { href: "/admin/stats", label: "Stats", icon: ChartIcon },
   { href: "/admin/billing", label: "Billing", icon: CardIcon },
+  { href: "/admin/promo", label: "Promo codes", icon: TicketIcon },
   { href: "/admin/moderation", label: "Moderation", icon: ShieldIcon },
   { href: "/admin/reports", label: "Reports", icon: FlagIcon },
   { href: "/admin/feedback", label: "Feedback", icon: ChatIcon },
@@ -588,6 +589,17 @@ function GearIcon(props: SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 13a8 8 0 0 0 0-2l2-1.5-2-3.4-2.4.6a8 8 0 0 0-1.7-1L14.8 3h-4l-.5 2.7a8 8 0 0 0-1.7 1l-2.4-.6-2 3.4L6 11a8 8 0 0 0 0 2l-2 1.5 2 3.4 2.4-.6a8 8 0 0 0 1.7 1l.5 2.7h4l.5-2.7a8 8 0 0 0 1.7-1l2.4.6 2-3.4Z" />
+    </svg>
+  );
+}
+
+function TicketIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+      <path d="M13 5v2" />
+      <path d="M13 17v2" />
+      <path d="M13 11v2" />
     </svg>
   );
 }
