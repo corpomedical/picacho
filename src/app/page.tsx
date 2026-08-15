@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InstallBadges } from "@/components/install-badges";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
@@ -268,6 +269,7 @@ export default async function Home() {
                 conversion lever there is. One quiet line, right where the
                 decision happens. */}
             <p className="mt-4 text-sm text-slate-500">{m.heroFreeTrialNote}</p>
+            <InstallBadges />
           </div>
 
           {/* Same face, six real tiles: [0] is Eva's identity photo (badged),

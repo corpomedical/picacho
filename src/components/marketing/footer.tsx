@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { InstallBadges } from "@/components/install-badges";
 import { getServerMessages } from "@/lib/i18n/server";
 
 export async function MarketingFooter() {
@@ -6,7 +7,10 @@ export async function MarketingFooter() {
 
   return (
     <footer className="border-t border-neutral-200/70">
-      <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-8 py-10 text-sm text-neutral-500 sm:flex-row">
+      <div className="mx-auto flex max-w-5xl justify-center px-8 pt-8 sm:justify-start">
+        <InstallBadges variant="footer" />
+      </div>
+      <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-8 py-8 text-sm text-neutral-500 sm:flex-row">
         <p>
           © {new Date().getFullYear()} Picacho — {t.marketing.footer.rights}
         </p>

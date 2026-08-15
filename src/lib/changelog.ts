@@ -30,6 +30,7 @@ export const RELEASES: Release[] = [
       "Chat attachment previews no longer expire mid-conversation (they used to die after 24 hours).",
       "Picacho now installs as an app — from the browser straight onto your phone's home screen, full-screen with its own icon, on both Android and iPhone. No app store, no 30% platform cut. A small card in the app offers the install (with step-by-step instructions on iPhone) and remembers if you decline.",
       "The app has a real home page now: credits and plan at a glance, your characters one tap from a new chat, your latest creations, and quick actions for images, video and the tutorial. The composer is one tap away and unchanged — and it's where the first-run walkthrough now lives, shown the first time you actually face those controls.",
+      "Install badges on the homepage and in the footer of every marketing page \u2014 Picacho-branded \u201cInstall on iPhone & iPad / Android\u201d buttons (deliberately not fake app-store badges). On Android they open the browser\u2019s real install dialog; on iPhone a card teaches the two Safari taps; on desktop a \u201cgrab your phone\u201d card shows the address. All four languages.",
       "New app icon drawn from the real Picacho wordmark — the P with the brand's ochre full stop.",
     ],
   },

@@ -105,6 +105,21 @@ const es = {
       showcaseMute: "Silenciar",
       showcaseUnmute: "Activar sonido",
     },
+    install: {
+      installOn: "Instalar en",
+      iphone: "iPhone y iPad",
+      android: "Android",
+      note: "Sin tienda de aplicaciones — se instala directamente desde el navegador.",
+      iosTitle: "Instala Picacho en tu iPhone",
+      iosStep1: "Toca el botón Compartir en la barra de Safari.",
+      iosStep2: 'Elige "Añadir a pantalla de inicio" y luego Añadir.',
+      iosBody: "Picacho se abre a pantalla completa desde su propio icono — como cualquier app, sin App Store.",
+      androidTitle: "Instala Picacho",
+      androidBody: 'En el menú de tu navegador, elige "Añadir a pantalla de inicio" (o "Instalar aplicación").',
+      desktopTitle: "Coge tu móvil",
+      desktopBody: "Abre esta dirección en el navegador de tu móvil — el botón de instalar te estará esperando:",
+      close: "Toca en cualquier parte para cerrar",
+    },
     pricing: {
       title: "Precios simples, por generación",
       subtitle:

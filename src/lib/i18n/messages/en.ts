@@ -117,6 +117,21 @@ const en = {
       showcaseMute: "Mute",
       showcaseUnmute: "Unmute",
     },
+    install: {
+      installOn: "Install on",
+      iphone: "iPhone & iPad",
+      android: "Android",
+      note: "No app store needed — installs straight from the browser.",
+      iosTitle: "Install Picacho on your iPhone",
+      iosStep1: "Tap the Share button in Safari's toolbar.",
+      iosStep2: 'Choose "Add to Home Screen", then Add.',
+      iosBody: "Picacho opens full-screen from its own icon — like any app, no App Store involved.",
+      androidTitle: "Install Picacho",
+      androidBody: 'In your browser menu, choose "Add to Home Screen" (or "Install app").',
+      desktopTitle: "Grab your phone",
+      desktopBody: "Open this address in your phone's browser — the install button will be waiting:",
+      close: "Tap anywhere to close",
+    },
     pricing: {
       title: "Simple, per-generation pricing",
       subtitle:
