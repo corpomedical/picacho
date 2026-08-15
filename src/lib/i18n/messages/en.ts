@@ -212,6 +212,9 @@ const en = {
     tryAgain: "Try again",
   },
   generate: {
+    multiAngleLocked: "Multi-angle renders several camera angles at once — available on any paid plan. Upgrade in Settings → Usage & plan.",
+    advancedVideoLocked: "Storyboard and multi-image reference are part of the Studio and Elite plans. Upgrade in Settings → Usage & plan.",
+    advancedVideoNeedsKling: "Storyboard and multi-image reference only work with the Kling video model — switch model to use them.",
     identityMatch: "Identity match: {n}%",
     useAsReference: "Use as reference photo",
     referenceAdded: "Added to the character's reference photos",

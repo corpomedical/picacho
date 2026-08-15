@@ -201,6 +201,9 @@ const it = {
     tryAgain: "Riprova",
   },
   generate: {
+    multiAngleLocked: "Il multi-angolo genera più angolazioni insieme — disponibile con qualsiasi piano a pagamento. Passa a un piano superiore in Impostazioni → Utilizzo e piano.",
+    advancedVideoLocked: "Storyboard e riferimento multi-immagine fanno parte dei piani Studio ed Elite. Passa a un piano superiore in Impostazioni → Utilizzo e piano.",
+    advancedVideoNeedsKling: "Storyboard e riferimento multi-immagine funzionano solo con il modello video Kling — cambia modello per usarli.",
     identityMatch: "Somiglianza d'identità: {n}%",
     useAsReference: "Usa come foto di riferimento",
     referenceAdded: "Aggiunta alle foto di riferimento del personaggio",

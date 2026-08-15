@@ -201,6 +201,9 @@ const pt = {
     tryAgain: "Tentar novamente",
   },
   generate: {
+    multiAngleLocked: "O multiângulo gera vários ângulos de câmera de uma vez — disponível em qualquer plano pago. Faça upgrade em Configurações → Uso e plano.",
+    advancedVideoLocked: "Storyboard e referência com várias imagens fazem parte dos planos Studio e Elite. Faça upgrade em Configurações → Uso e plano.",
+    advancedVideoNeedsKling: "Storyboard e referência com várias imagens só funcionam com o modelo de vídeo Kling — troque de modelo para usá-los.",
     identityMatch: "Correspondência de identidade: {n}%",
     useAsReference: "Usar como foto de referência",
     referenceAdded: "Adicionada às fotos de referência do personagem",

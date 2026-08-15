@@ -1541,6 +1541,17 @@ function GenerateFormInner({
   // the panel now also accepts freshly uploaded photos (see panelUploads
   // above and the upload tile in each grid below).
   const advancedVideoEligible = contentType === "video" && videoModelId === "kling" && advancedPlanActive;
+  // Both advanced icons are now always rendered, just switched off when they
+  // aren't usable. Hiding them left the disclosure arrow opening onto an
+  // empty tray — which reads as a broken control rather than a locked
+  // feature, and tells nobody the capability exists. Locked buttons stay
+  // clickable on purpose: the click is what explains why they're off.
+  const multiAngleLocked = !multiAngleAvailable;
+  const advancedVideoLockedReason: "plan" | "model" | null = !advancedPlanActive
+    ? "plan"
+    : videoModelId !== "kling"
+      ? "model"
+      : null;
 
   // Voice sessions don't survive a navigation/unmount (the browser's
   // recognizer instance goes with the component) — stop it cleanly rather
@@ -3779,47 +3790,89 @@ function GenerateFormInner({
                         )}
                       >
                         <div className="flex items-center gap-1.5 pr-1">
-                          {multiAngleAvailable && (
                           <button
                             type="button"
-                            onClick={toggleMultiAngleMode}
+                            onClick={() =>
+                              multiAngleLocked ? setError(g.multiAngleLocked) : toggleMultiAngleMode()
+                            }
                             disabled={submitting}
-                            title={multiAngleMode ? g.multiAngleOnTitle : g.multiAngleOffTitle}
-                            aria-label={multiAngleMode ? g.multiAngleOnTitle : g.multiAngleOffTitle}
+                            title={
+                              multiAngleLocked
+                                ? g.multiAngleLocked
+                                : multiAngleMode
+                                  ? g.multiAngleOnTitle
+                                  : g.multiAngleOffTitle
+                            }
+                            aria-label={
+                              multiAngleLocked
+                                ? g.multiAngleLocked
+                                : multiAngleMode
+                                  ? g.multiAngleOnTitle
+                                  : g.multiAngleOffTitle
+                            }
                             aria-pressed={multiAngleMode}
+                            aria-disabled={multiAngleLocked || undefined}
                             className={cn(
                               "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                              multiAngleMode
-                                ? "bg-neutral-900 text-white"
-                                : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                              multiAngleLocked
+                                ? "text-neutral-300 hover:bg-neutral-100 hover:text-neutral-400"
+                                : multiAngleMode
+                                  ? "bg-neutral-900 text-white"
+                                  : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
                             )}
                           >
                             <AnglesIcon className="h-4 w-4" />
                           </button>
-                          )}
 
-                          {advancedVideoEligible && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                videoAdvancedMode === "none"
-                                  ? openAdvancedVideo("storyboard")
-                                  : setAdvancedPanelOpen((v) => !v)
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (advancedVideoLockedReason === "plan") {
+                                setError(g.advancedVideoLocked);
+                                return;
                               }
-                              disabled={submitting}
-                              title={videoAdvancedMode === "none" ? g.advancedVideoOffTitle : g.advancedVideoOnTitle}
-                              aria-label={videoAdvancedMode === "none" ? g.advancedVideoOffTitle : g.advancedVideoOnTitle}
-                              aria-pressed={videoAdvancedMode !== "none"}
-                              className={cn(
-                                "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                                videoAdvancedMode !== "none"
+                              if (advancedVideoLockedReason === "model") {
+                                setError(g.advancedVideoNeedsKling);
+                                return;
+                              }
+                              if (videoAdvancedMode === "none") {
+                                openAdvancedVideo("storyboard");
+                              } else {
+                                setAdvancedPanelOpen((v) => !v);
+                              }
+                            }}
+                            disabled={submitting}
+                            title={
+                              advancedVideoLockedReason === "plan"
+                                ? g.advancedVideoLocked
+                                : advancedVideoLockedReason === "model"
+                                  ? g.advancedVideoNeedsKling
+                                  : videoAdvancedMode === "none"
+                                    ? g.advancedVideoOffTitle
+                                    : g.advancedVideoOnTitle
+                            }
+                            aria-label={
+                              advancedVideoLockedReason === "plan"
+                                ? g.advancedVideoLocked
+                                : advancedVideoLockedReason === "model"
+                                  ? g.advancedVideoNeedsKling
+                                  : videoAdvancedMode === "none"
+                                    ? g.advancedVideoOffTitle
+                                    : g.advancedVideoOnTitle
+                            }
+                            aria-pressed={videoAdvancedMode !== "none"}
+                            aria-disabled={advancedVideoLockedReason !== null || undefined}
+                            className={cn(
+                              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                              advancedVideoLockedReason !== null
+                                ? "text-neutral-300 hover:bg-neutral-100 hover:text-neutral-400"
+                                : videoAdvancedMode !== "none"
                                   ? "bg-neutral-900 text-white"
                                   : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
-                              )}
-                            >
-                              <StackIcon className="h-4 w-4" />
-                            </button>
-                          )}
+                            )}
+                          >
+                            <StackIcon className="h-4 w-4" />
+                          </button>
                         </div>
                       </div>
 
