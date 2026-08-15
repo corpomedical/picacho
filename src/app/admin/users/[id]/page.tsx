@@ -308,7 +308,7 @@ export default async function AdminUserDetailPage({
               </div>
 
               <div>
-                <dt className="text-xs text-neutral-500">Time on site</dt>
+                <dt className="text-xs text-neutral-500">Session</dt>
                 <dd className="mt-1 text-sm font-medium text-neutral-900">
                   {activity?.sessionSeconds === null
                     ? "Not measured yet"
@@ -318,8 +318,8 @@ export default async function AdminUserDetailPage({
                   {activity?.sessionSeconds === null
                     ? "Starts counting on their next visit"
                     : activity?.online
-                      ? "This visit, so far"
-                      : "Their last visit"}
+                      ? "Time on site, this visit so far"
+                      : "Time on site, their last visit"}
                 </p>
               </div>
 

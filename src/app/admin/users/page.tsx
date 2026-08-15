@@ -161,7 +161,12 @@ export default async function AdminUsersPage({
                       </dd>
                     </div>
                     <div className="w-24">
-                      <dt className="text-neutral-400">Time on site</dt>
+                      <dt
+                        className="text-neutral-400"
+                        title="Time actually spent on the site during their latest visit — idle time excluded"
+                      >
+                        Session
+                      </dt>
                       <dd className="mt-0.5 text-neutral-700">
                         {formatDuration(act?.sessionSeconds ?? null)}
                       </dd>
