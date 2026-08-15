@@ -1,4 +1,4 @@
-import { ButtonHTMLAttributes } from "react";
+import { ButtonHTMLAttributes, type Ref } from "react";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "ghost" | "destructive";
@@ -75,9 +75,14 @@ export function Button({
   pendingLabel,
   confirmed = false,
   confirmedLabel,
+  disabled,
   children,
+  ref,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
+  // React 19 passes ref as an ordinary prop — no forwardRef needed. Declared
+  // explicitly because ButtonHTMLAttributes doesn't include it.
+  ref?: Ref<HTMLButtonElement>;
   variant?: Variant;
   size?: Size;
   pending?: boolean;
@@ -89,8 +94,14 @@ export function Button({
   // is the one worth showing.
   const state = confirmed ? "confirmed" : pending ? "pending" : "idle";
 
+  // `disabled` and `aria-busy` are applied AFTER the {...props} spread below,
+  // deliberately. They're computed from `pending`/`confirmed`, and a spread
+  // that lands after them would overwrite the computed value with whatever
+  // the caller passed — including `undefined`, which silently defeated the
+  // pending lock entirely.
   return (
     <button
+      ref={ref}
       className={cn(
         base,
         variants[variant],
@@ -99,9 +110,9 @@ export function Button({
           "!border-emerald-600 !bg-emerald-600 !text-white !opacity-100 hover:!bg-emerald-600",
         className,
       )}
-      disabled={props.disabled || state !== "idle"}
-      aria-busy={state === "pending" || undefined}
       {...props}
+      disabled={disabled || state !== "idle"}
+      aria-busy={state === "pending" || undefined}
     >
       {state === "pending" && <Spinner />}
       {state === "confirmed" && <CheckIcon />}

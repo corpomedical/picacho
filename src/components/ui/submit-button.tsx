@@ -49,6 +49,7 @@ export function SubmitButton({
   // Tracks whether THIS button's form was the one that just ran, so the
   // confirmation only fires after a real submission — not on first mount.
   const wasPending = useRef(false);
+  const ref = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (pending) {
@@ -64,8 +65,32 @@ export function SubmitButton({
     return () => clearTimeout(id);
   }, [pending, confirmOnSuccess]);
 
+  // Editing the form clears the confirmation immediately, so the button is
+  // ready for the next save the moment there's something new to save.
+  //
+  // This is also the safety net that keeps the button from ever getting
+  // stuck: the timer above can be cancelled by a re-render or a navigation
+  // that the server action triggers, and without this the button could sit
+  // on a green "Saved" that never returned to normal until a page refresh.
+  // Typing anything always brings it back.
+  useEffect(() => {
+    const form = ref.current?.form;
+    if (!form) return;
+    function reset() {
+      wasPending.current = false;
+      setConfirmed(false);
+    }
+    form.addEventListener("input", reset);
+    form.addEventListener("change", reset);
+    return () => {
+      form.removeEventListener("input", reset);
+      form.removeEventListener("change", reset);
+    };
+  }, []);
+
   return (
     <Button
+      ref={ref}
       type="submit"
       variant={variant}
       size={size}

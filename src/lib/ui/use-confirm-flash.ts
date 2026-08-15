@@ -17,6 +17,14 @@ export function useConfirmFlash(done: boolean, ms = 1100): boolean {
   useEffect(() => {
     const rose = done && !previous.current;
     previous.current = done;
+
+    // Editing the field clears the saved flag, and the confirmation should
+    // go with it immediately rather than lingering — the button has to be
+    // back to normal the moment there's something new to save.
+    if (!done) {
+      setFlash(false);
+      return;
+    }
     if (!rose) return;
 
     setFlash(true);
