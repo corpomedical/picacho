@@ -89,7 +89,7 @@ function LayersIcon(props: React.SVGProps<SVGSVGElement>) {
 
 // Animated color-blob background for the hero and closing-CTA sections —
 // see the wallpaper-drift-* keyframes in globals.css. Third pass used
-// sky-300/blue-400-strength colors at 70-80% opacity, which read as too
+// stronger tints at 70-80% opacity, which read as too
 // bold/saturated. This pass lightens every blob a step or two (200s instead
 // of 300-400s), drops opacity further, and blurs a bit more for a soft,
 // pastel wash rather than distinct colored circles — still animated, just
@@ -107,11 +107,11 @@ function LayersIcon(props: React.SVGProps<SVGSVGElement>) {
 function LiveWallpaper() {
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="animate-wallpaper-a absolute -left-[15%] -top-[25%] h-[600px] w-[600px] rounded-full bg-sky-200 opacity-50 mix-blend-multiply blur-[95px]" />
-      <div className="animate-wallpaper-b absolute -right-[12%] -top-[15%] h-[560px] w-[560px] rounded-full bg-blue-200 opacity-45 mix-blend-multiply blur-[95px] [animation-delay:-3s]" />
+      <div className="animate-wallpaper-a absolute -left-[15%] -top-[25%] h-[600px] w-[600px] rounded-full bg-orange-200 opacity-50 mix-blend-multiply blur-[95px]" />
+      <div className="animate-wallpaper-b absolute -right-[12%] -top-[15%] h-[560px] w-[560px] rounded-full bg-amber-200 opacity-45 mix-blend-multiply blur-[95px] [animation-delay:-3s]" />
       <div className="animate-wallpaper-c absolute left-[28%] top-[5%] h-[500px] w-[500px] rounded-full bg-cyan-100 opacity-50 mix-blend-multiply blur-[95px] [animation-delay:-6s]" />
-      <div className="animate-wallpaper-b absolute -bottom-[30%] right-[18%] h-[520px] w-[520px] rounded-full bg-indigo-100 opacity-45 mix-blend-multiply blur-[95px] [animation-delay:-9s]" />
-      <div className="animate-wallpaper-a absolute -bottom-[25%] left-[8%] h-[480px] w-[480px] rounded-full bg-sky-100 opacity-50 mix-blend-multiply blur-[95px] [animation-delay:-5s]" />
+      <div className="animate-wallpaper-b absolute -bottom-[30%] right-[18%] h-[520px] w-[520px] rounded-full bg-rose-100 opacity-45 mix-blend-multiply blur-[95px] [animation-delay:-9s]" />
+      <div className="animate-wallpaper-a absolute -bottom-[25%] left-[8%] h-[480px] w-[480px] rounded-full bg-amber-100 opacity-50 mix-blend-multiply blur-[95px] [animation-delay:-5s]" />
     </div>
   );
 }
@@ -227,7 +227,7 @@ export default async function Home() {
       />
       <MarketingHeader />
 
-      {/* Hero — bg-sky-50 (not bg-white/bg-neutral-50, both of which the
+      {/* Hero — bg-paper (not bg-white/bg-neutral-50, both of which the
           theme remaps to a dark shade under .dark) so this section stays
           genuinely light regardless of the site's own light/dark toggle,
           same anchoring idea as the earlier dark version just flipped. Text
@@ -397,8 +397,8 @@ export default async function Home() {
         <div className="mx-auto mt-10 flex w-full max-w-4xl flex-col items-center gap-6 sm:flex-row sm:justify-center">
           <div className="relative w-full max-w-sm">
             <div aria-hidden className="isolate pointer-events-none absolute inset-0 overflow-hidden rounded-[28px]">
-              <div className="animate-wallpaper-a absolute -left-[10%] -top-[10%] h-[260px] w-[260px] rounded-full bg-sky-200 opacity-60 mix-blend-multiply blur-[70px]" />
-              <div className="animate-wallpaper-b absolute -bottom-[10%] -right-[10%] h-[260px] w-[260px] rounded-full bg-blue-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-4s]" />
+              <div className="animate-wallpaper-a absolute -left-[10%] -top-[10%] h-[260px] w-[260px] rounded-full bg-orange-200 opacity-60 mix-blend-multiply blur-[70px]" />
+              <div className="animate-wallpaper-b absolute -bottom-[10%] -right-[10%] h-[260px] w-[260px] rounded-full bg-amber-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-4s]" />
             </div>
             <ShowcaseVideoPlayer
               badge={m.showcaseBadge}
@@ -410,8 +410,8 @@ export default async function Home() {
           </div>
           <div className="relative w-full max-w-sm">
             <div aria-hidden className="isolate pointer-events-none absolute inset-0 overflow-hidden rounded-[28px]">
-              <div className="animate-wallpaper-b absolute -left-[10%] -top-[10%] h-[260px] w-[260px] rounded-full bg-blue-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-2s]" />
-              <div className="animate-wallpaper-a absolute -bottom-[10%] -right-[10%] h-[260px] w-[260px] rounded-full bg-sky-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-6s]" />
+              <div className="animate-wallpaper-b absolute -left-[10%] -top-[10%] h-[260px] w-[260px] rounded-full bg-amber-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-2s]" />
+              <div className="animate-wallpaper-a absolute -bottom-[10%] -right-[10%] h-[260px] w-[260px] rounded-full bg-orange-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-6s]" />
             </div>
             {/* No mute control — this clip has no audio track (see
                 showcase-video-player.tsx: omitting muteLabel/unmuteLabel
@@ -464,8 +464,8 @@ export default async function Home() {
       </section>
 
       {/* Final CTA — the light bookend to the hero above, same fixed
-          bg-sky-50 treatment for the same reason. */}
-      <section className="isolate relative overflow-hidden bg-sky-50">
+          bg-paper treatment for the same reason. */}
+      <section className="isolate relative overflow-hidden bg-paper">
         <LiveWallpaper />
         <div className="relative mx-auto max-w-2xl px-8 py-24 text-center">
           <h2 className="font-display text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl">{m.ctaTitle}</h2>
