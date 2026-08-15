@@ -29,7 +29,7 @@ export function DeleteAccountForm({ username }: { username: string }) {
           autoComplete="off"
         />
       </div>
-      <SubmitButton variant="destructive" disabled={!canDelete} confirmOnSuccess={false}>
+      <SubmitButton variant="destructive" disabled={!canDelete}>
         {t.settings.deleteMyAccount}
       </SubmitButton>
     </form>

@@ -24,7 +24,6 @@ export function DeleteUserButton({ userId, email }: { userId: string; email: str
       <SubmitButton
         size="sm"
         className="w-full bg-red-600 text-white hover:bg-red-700"
-        confirmOnSuccess={false}
         pendingLabel="Deleting…"
       >
         Delete this user

@@ -142,7 +142,7 @@ export default async function AdminUserDetailPage({
               name="status"
               value={user.status === "active" ? "suspended" : "active"}
             />
-            <SubmitButton variant="secondary" size="sm" className="w-full" pendingLabel="Updating…" confirmedLabel="Done">
+            <SubmitButton variant="secondary" size="sm" className="w-full" pendingLabel="Updating…">
               {user.status === "active" ? "Suspend account" : "Reinstate account"}
             </SubmitButton>
           </form>

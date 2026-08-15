@@ -40,36 +40,17 @@ function Spinner({ className }: { className?: string }) {
   );
 }
 
-function CheckIcon() {
-  return (
-    <svg
-      className="h-3.5 w-3.5 flex-shrink-0"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
 /**
  * `pending` dims the button, locks it, and swaps in a spinner — the visible
  * acknowledgement that a click was received. Without it a slow save looks
  * identical to a dead button, which is how people end up clicking Save three
  * times and firing the action three times.
  *
- * `confirmed` is the brief green "Saved" that follows a successful one. It is
- * purely cosmetic — it overrides the disabled dimming (a confirmation that
- * looks greyed out reads as failure) and, deliberately, never disables the
- * button. Only a genuinely in-flight action does that. A decorative state
- * that can lock a control is a state that can strand the user, which is
- * exactly what happened to the suspend/reinstate toggle: no field to edit,
- * so nothing could clear it short of reloading the page.
+ * There is deliberately no success state here. A green "Saved" was tried and
+ * removed: it outlives the action it describes, so clearing it reliably means
+ * fighting re-renders and server-action navigations, and every miss left a
+ * button stuck mid-celebration. The real change on screen — the row updating,
+ * the value saving — is the confirmation.
  */
 export function Button({
   variant = "primary",
@@ -77,8 +58,6 @@ export function Button({
   className,
   pending = false,
   pendingLabel,
-  confirmed = false,
-  confirmedLabel,
   disabled,
   children,
   ref,
@@ -91,18 +70,11 @@ export function Button({
   size?: Size;
   pending?: boolean;
   pendingLabel?: string;
-  confirmed?: boolean;
-  confirmedLabel?: string;
 }) {
-  // Confirmation wins over pending: if both are somehow set, the newer state
-  // is the one worth showing.
-  const state = confirmed ? "confirmed" : pending ? "pending" : "idle";
-
   // `disabled` and `aria-busy` are applied AFTER the {...props} spread below,
-  // deliberately. They're computed from `pending`/`confirmed`, and a spread
-  // that lands after them would overwrite the computed value with whatever
-  // the caller passed — including `undefined`, which silently defeated the
-  // pending lock entirely.
+  // deliberately. They're computed from `pending`, and a spread that lands
+  // after them would overwrite the computed value with whatever the caller
+  // passed — including `undefined`, which silently defeated the lock entirely.
   return (
     <button
       ref={ref}
@@ -110,17 +82,14 @@ export function Button({
         base,
         variants[variant],
         sizes[size],
-        state === "confirmed" &&
-          "!border-emerald-600 !bg-emerald-600 !text-white !opacity-100 hover:!bg-emerald-600",
         className,
       )}
       {...props}
-      disabled={disabled || state === "pending"}
-      aria-busy={state === "pending" || undefined}
+      disabled={disabled || pending}
+      aria-busy={pending || undefined}
     >
-      {state === "pending" && <Spinner />}
-      {state === "confirmed" && <CheckIcon />}
-      {state === "pending" ? (pendingLabel ?? children) : state === "confirmed" ? (confirmedLabel ?? children) : children}
+      {pending && <Spinner />}
+      {pending ? (pendingLabel ?? children) : children}
     </button>
   );
 }

@@ -63,7 +63,7 @@ export default async function LoginPage({
             {message && <p className="text-sm text-neutral-600">{message}</p>}
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <SubmitButton className="w-full" confirmOnSuccess={false} pendingLabel={a.submit}>
+            <SubmitButton className="w-full" pendingLabel={a.submit}>
               {a.submit}
             </SubmitButton>
           </form>

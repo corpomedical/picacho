@@ -86,7 +86,6 @@ export async function PricingCard({ tier }: { tier: Tier }) {
           <SubmitButton
             variant={tier.highlight ? "primary" : "secondary"}
             className="w-full"
-            confirmOnSuccess={false}
             pendingLabel={t.common.loading}
           >
             {t.settings.manageBilling}
@@ -98,7 +97,6 @@ export async function PricingCard({ tier }: { tier: Tier }) {
           <SubmitButton
             variant={tier.highlight ? "primary" : "secondary"}
             className="w-full"
-            confirmOnSuccess={false}
             pendingLabel={t.common.loading}
           >
             {t.marketing.pricing.getStarted}

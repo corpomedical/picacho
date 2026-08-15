@@ -111,7 +111,7 @@ function ReportCard({
       <form action={setGenerationReportStatus} className="flex-shrink-0">
         <input type="hidden" name="report_id" value={report.id} />
         <input type="hidden" name="status" value={isNextStatus} />
-        <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…" confirmedLabel="Done">
+        <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…">
           {report.status === "open" ? "Mark resolved" : "Reopen"}
         </SubmitButton>
       </form>

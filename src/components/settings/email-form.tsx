@@ -4,16 +4,12 @@ import { useState } from "react";
 import { updateEmail } from "@/lib/profile/actions";
 import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
-import { useConfirmFlash } from "@/lib/ui/use-confirm-flash";
 import { useLocale } from "@/lib/i18n/provider";
 
 export function EmailForm({ initialEmail }: { initialEmail: string }) {
   const { t } = useLocale();
   const [email, setEmail] = useState(initialEmail);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  // The status stays "saved" so the note below persists; the button
-  // confirmation is only a flash. See use-confirm-flash.ts.
-  const justSaved = useConfirmFlash(status === "saved");
   const [error, setError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -59,8 +55,6 @@ export function EmailForm({ initialEmail }: { initialEmail: string }) {
         disabled={email === initialEmail}
         pending={status === "saving"}
         pendingLabel={t.common.saving}
-        confirmed={justSaved}
-        confirmedLabel={t.common.saved}
       >
         {t.common.save}
       </Button>

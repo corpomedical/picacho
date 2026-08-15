@@ -185,7 +185,7 @@ export default async function AdminUsersPage({
                         name="status"
                         value={user.status === "active" ? "suspended" : "active"}
                       />
-                      <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…" confirmedLabel="Done">
+                      <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…">
                         {user.status === "active" ? "Suspend" : "Unsuspend"}
                       </SubmitButton>
                     </form>

@@ -4,7 +4,6 @@ import { useState } from "react";
 import { updatePassword } from "@/lib/profile/actions";
 import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
-import { useConfirmFlash } from "@/lib/ui/use-confirm-flash";
 import { useLocale } from "@/lib/i18n/provider";
 
 export function PasswordForm() {
@@ -12,9 +11,6 @@ export function PasswordForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  // The status stays "saved" so the note below persists; the button
-  // confirmation is only a flash. See use-confirm-flash.ts.
-  const justSaved = useConfirmFlash(status === "saved");
   const [error, setError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,8 +70,6 @@ export function PasswordForm() {
         disabled={!password || !confirmPassword}
         pending={status === "saving"}
         pendingLabel={t.common.saving}
-        confirmed={justSaved}
-        confirmedLabel={t.common.saved}
       >
         {t.settings.updatePassword}
       </Button>

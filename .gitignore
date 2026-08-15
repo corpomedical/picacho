@@ -32,3 +32,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Scratch folder for files this environment can't unlink (see session notes).
+_to_delete/

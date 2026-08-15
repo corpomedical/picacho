@@ -43,7 +43,7 @@ function FeedbackCard({ item, email }: { item: FeedbackRow; email: string | unde
       <form action={setFeedbackStatus} className="flex-shrink-0">
         <input type="hidden" name="feedback_id" value={item.id} />
         <input type="hidden" name="status" value={isNextStatus} />
-        <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…" confirmedLabel="Done">
+        <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…">
           {item.status === "open" ? "Mark resolved" : "Reopen"}
         </SubmitButton>
       </form>

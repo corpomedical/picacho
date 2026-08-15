@@ -42,7 +42,7 @@ export default async function AdminFlagsPage({
                   <form action={toggleFeatureFlag}>
                     <input type="hidden" name="key" value={flag.key} />
                     <input type="hidden" name="enabled" value={String(flag.enabled)} />
-                    <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…" confirmedLabel="Done">
+                    <SubmitButton variant="secondary" size="sm" pendingLabel="Updating…">
                       Turn {flag.enabled ? "off" : "on"}
                     </SubmitButton>
                   </form>
