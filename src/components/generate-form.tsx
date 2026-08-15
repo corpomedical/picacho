@@ -393,19 +393,23 @@ function AttachmentThumb({ attachment, className }: { attachment: ChatAttachment
   );
 }
 
-// Timestamp under a sent prompt. Time alone for today's messages, short
-// date + time for older ones — the thread view can resume conversations
-// from days ago, where a bare "14:32" would mislead. Client-only component
-// tree (turns populate after mount), so locale formatting can't cause a
-// hydration mismatch here.
-function promptTimestamp(iso: string): string {
+// Relative timestamp under a sent prompt — "5 minutes ago", Claude-style.
+// Intl.RelativeTimeFormat gives us "hace 5 minutos" / "5 minuti fa" / "há 5
+// minutos" for free in the viewer's own language, so no i18n keys needed.
+// Beyond a week the relative form stops being useful ("3 months ago" hides
+// more than it tells in a work thread), so older prompts fall back to the
+// short absolute date.
+function promptTimestamp(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const sameDay = d.toDateString() === new Date().toDateString();
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  return sameDay
-    ? time
-    : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${time}`;
+  const seconds = Math.round((d.getTime() - Date.now()) / 1000);
+  const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+  const abs = Math.abs(seconds);
+  if (abs < 90) return rtf.format(-1, "minute");
+  if (abs < 3600) return rtf.format(Math.round(seconds / 60), "minute");
+  if (abs < 86400) return rtf.format(Math.round(seconds / 3600), "hour");
+  if (abs < 604800) return rtf.format(Math.round(seconds / 86400), "day");
+  return d.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function UserBubble({
@@ -417,9 +421,17 @@ function UserBubble({
   attachments?: ChatAttachment[];
   createdAt?: string;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const g = t.generate;
   const [copied, setCopied] = useState(false);
+  // Ticks once a minute purely to refresh the relative timestamp — without
+  // it, "1 minute ago" stays frozen for as long as the tab is open.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!createdAt) return;
+    const id = setInterval(() => setTick((n) => n + 1), 60_000);
+    return () => clearInterval(id);
+  }, [createdAt]);
 
   async function handleCopy() {
     try {
@@ -459,7 +471,7 @@ function UserBubble({
           <div className="flex items-center justify-end gap-1 pr-1 transition-opacity duration-150 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover/prompt:opacity-100">
             {createdAt && (
               <time dateTime={createdAt} className="text-[11px] text-neutral-400">
-                {promptTimestamp(createdAt)}
+                {promptTimestamp(createdAt, locale)}
               </time>
             )}
             <button
