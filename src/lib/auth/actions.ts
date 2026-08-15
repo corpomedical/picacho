@@ -38,6 +38,23 @@ export async function signup(formData: FormData) {
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
   const agreed = formData.get("agree_to_terms") === "on";
+  const fullName = ((formData.get("full_name") as string) ?? "").trim();
+  const username = ((formData.get("username") as string) ?? "").trim().toLowerCase();
+  const company = ((formData.get("company") as string) ?? "").trim();
+
+  if (!fullName || fullName.length > 80) {
+    redirect(`/signup?error=${encodeURIComponent("Please enter your name.")}`);
+  }
+  if (!/^[a-z0-9_]{3,24}$/.test(username)) {
+    redirect(
+      `/signup?error=${encodeURIComponent(
+        "Username must be 3-24 characters: lowercase letters, numbers, and underscores.",
+      )}`,
+    );
+  }
+  if (company.length > 120) {
+    redirect(`/signup?error=${encodeURIComponent("Company name is too long.")}`);
+  }
 
   // Required checkbox gates account creation — see the Content Policy's
   // strict rules on real-people likeness and its zero-tolerance policy for
@@ -142,18 +159,51 @@ export async function signup(formData: FormData) {
   }
 
   // The profiles row is created by a database trigger on auth.users insert,
-  // which runs synchronously within signUp() — safe to update it here.
+  // which runs synchronously within signUp() — safe to update it here. The
+  // trigger only sets a provisional username derived from the email; this
+  // writes the one the person actually chose, plus name and company.
   if (data.user) {
-    await supabase
+    const admin = createAdminClient();
+    const { error: profileError } = await admin
       .from("profiles")
-      .update({ terms_accepted_at: new Date().toISOString() })
+      .update({
+        terms_accepted_at: new Date().toISOString(),
+        full_name: fullName,
+        username,
+        company: company || null,
+      })
       .eq("id", data.user.id);
+
+    // A unique-violation here means someone claimed the username between
+    // the live check and now. Not worth failing an already-created account
+    // over: keep the trigger's provisional username, still record name,
+    // company and consent, and let them pick a new handle in Settings.
+    if (profileError) {
+      await admin
+        .from("profiles")
+        .update({
+          terms_accepted_at: new Date().toISOString(),
+          full_name: fullName,
+          company: company || null,
+        })
+        .eq("id", data.user.id);
+    }
   }
 
   // Dedicated "check your email" screen rather than bouncing to /login with a
   // faint one-line message — the old behavior read as "the page just
   // reloaded" and nothing telling the user to go check their inbox.
   redirect("/signup?sent=1");
+}
+
+// Live username check for the signup form. Boolean only, and rate-limited
+// by the debounce client-side; the database function re-validates the
+// format, so garbage input can't probe anything.
+export async function checkUsernameAvailability(username: string): Promise<boolean> {
+  if (typeof username !== "string" || !/^[a-z0-9_]{3,24}$/.test(username)) return false;
+  const supabase = await createClient();
+  const { data } = await supabase.rpc("username_available", { p_username: username });
+  return data === true;
 }
 
 export async function logout() {

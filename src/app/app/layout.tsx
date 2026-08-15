@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { PlanId } from "@/lib/plans";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
@@ -27,7 +28,7 @@ export default async function AppLayout({
     { data: projects },
     { data: supportEmailSetting },
   ] = await Promise.all([
-    supabase.from("profiles").select("role, username, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
+    supabase.from("profiles").select("role, username, plan, skip_ai_refinement, rating_prompted_at").eq("id", data.user.id).single(),
     // Explicit user_id filters below, not just RLS — an admin's SELECT
     // policy on these tables intentionally allows reading every user's rows
     // (that's what powers /admin), so without this an admin browsing their
@@ -83,6 +84,7 @@ export default async function AppLayout({
       <AppSidebar
         isAdmin={isAdmin}
         username={profile?.username ?? (data.user.email ?? "").split("@")[0]}
+        plan={(profile?.plan ?? "none") as PlanId}
         recentJobs={recentJobs ?? []}
         characters={characters ?? []}
         projects={projects ?? []}

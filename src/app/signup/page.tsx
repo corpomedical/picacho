@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SignupUsernameField } from "@/components/signup-username-field";
 import { redirect } from "next/navigation";
 import { signup } from "@/lib/auth/actions";
 import { createClient } from "@/lib/supabase/server";
@@ -132,12 +133,28 @@ export default async function SignupPage({
 
           <form action={signup} className="space-y-4">
             <div>
-              <Label htmlFor="email">{a.emailLabel}</Label>
-              <Input id="email" name="email" type="email" required />
+              <Label htmlFor="full_name">{a.nameLabel}</Label>
+              <Input id="full_name" name="full_name" required maxLength={80} autoComplete="name" />
             </div>
             <div>
+              <Label htmlFor="email">{a.emailLabel}</Label>
+              <Input id="email" name="email" type="email" required autoComplete="email" />
+            </div>
+            <SignupUsernameField />
+            <div>
               <Label htmlFor="password">{a.passwordLabel}</Label>
-              <Input id="password" name="password" type="password" required minLength={8} />
+              <Input
+                id="password"
+                name="password"
+                type="password"
+                required
+                minLength={8}
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <Label htmlFor="company">{a.companyLabel}</Label>
+              <Input id="company" name="company" maxLength={120} autoComplete="organization" />
             </div>
 
             <label className="flex items-start gap-2.5 text-xs text-neutral-500">

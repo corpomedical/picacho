@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState, type SVGProps } from "react";
+import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -317,6 +318,7 @@ function getMediaItems(t: Messages["nav"]) {
 export function AppSidebar({
   isAdmin,
   username,
+  plan,
   recentJobs,
   characters,
   projects,
@@ -326,6 +328,7 @@ export function AppSidebar({
 }: {
   isAdmin: boolean;
   username: string;
+  plan: PlanId;
   recentJobs: RecentJob[];
   characters: RecentCharacter[];
   projects: RecentProject[];
@@ -868,7 +871,14 @@ export function AppSidebar({
           iconOnly ? "flex flex-col items-center gap-2" : "flex items-center justify-between gap-2 px-0.5",
         )}
       >
-        {!iconOnly && <p className="min-w-0 flex-1 truncate px-2 text-xs text-neutral-400">{displayUsername}</p>}
+        {!iconOnly && (
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2">
+            <p className="min-w-0 truncate text-xs text-neutral-400">{displayUsername}</p>
+            <span className="flex-shrink-0 rounded-full border border-neutral-200 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-neutral-500">
+              {PLAN_LABELS[plan]}
+            </span>
+          </div>
+        )}
         <button
           type="button"
           onClick={() => setSettingsOpen((v) => !v)}
