@@ -393,10 +393,47 @@ function AttachmentThumb({ attachment, className }: { attachment: ChatAttachment
   );
 }
 
-function UserBubble({ prompt, attachments }: { prompt: string; attachments?: ChatAttachment[] }) {
+// Timestamp under a sent prompt. Time alone for today's messages, short
+// date + time for older ones — the thread view can resume conversations
+// from days ago, where a bare "14:32" would mislead. Client-only component
+// tree (turns populate after mount), so locale formatting can't cause a
+// hydration mismatch here.
+function promptTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const sameDay = d.toDateString() === new Date().toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  return sameDay
+    ? time
+    : `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${time}`;
+}
+
+function UserBubble({
+  prompt,
+  attachments,
+  createdAt,
+}: {
+  prompt: string;
+  attachments?: ChatAttachment[];
+  createdAt?: string;
+}) {
+  const { t } = useLocale();
+  const g = t.generate;
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // Clipboard unavailable — nothing useful to do beyond not confirming.
+    }
+  }
+
   return (
     <div className="flex justify-end">
-      <div className="max-w-[85%] space-y-2">
+      <div className="group/prompt max-w-[85%] space-y-2">
         {attachments && attachments.length > 0 && (
           <div className="flex flex-wrap justify-end gap-1.5">
             {attachments.map((att) => (
@@ -416,6 +453,28 @@ function UserBubble({ prompt, attachments }: { prompt: string; attachments?: Cha
         {prompt && (
           <div className="rounded-[18px] rounded-br-[6px] bg-neutral-900 px-4.5 py-3 text-sm leading-relaxed text-white">
             {prompt}
+          </div>
+        )}
+        {prompt && (
+          <div className="flex items-center justify-end gap-1 pr-1 transition-opacity duration-150 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover/prompt:opacity-100">
+            {createdAt && (
+              <time dateTime={createdAt} className="text-[11px] text-neutral-400">
+                {promptTimestamp(createdAt)}
+              </time>
+            )}
+            <button
+              type="button"
+              onClick={handleCopy}
+              aria-label={copied ? g.copied : g.copyPrompt}
+              title={copied ? g.copied : g.copyPrompt}
+              className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+            >
+              {copied ? (
+                <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
+              ) : (
+                <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
+              )}
+            </button>
           </div>
         )}
       </div>
@@ -1060,7 +1119,7 @@ function SingleTurnBubble({ turn }: { turn: ChatTurn }) {
   const timeline = buildTimeline(turn.attempts);
   return (
     <div className="space-y-3">
-      <UserBubble prompt={turn.prompt} attachments={turn.attachments} />
+      <UserBubble prompt={turn.prompt} attachments={turn.attachments} createdAt={turn.createdAt} />
       <div className="flex justify-start">
         <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-4">
           <PipelineTrace timeline={timeline} revealedCount={timeline.length} isAnimating={false} isLive={live} />
@@ -1152,7 +1211,7 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
 function MultiAngleTurnBubble({ item }: { item: MultiAngleChatItem }) {
   return (
     <div className="space-y-3">
-      <UserBubble prompt={item.prompt} attachments={item.attachments} />
+      <UserBubble prompt={item.prompt} attachments={item.attachments} createdAt={item.createdAt} />
       <div className="flex justify-start">
         <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-4">
           <MultiAngleResult angles={item.angles} prompt={item.prompt} />
