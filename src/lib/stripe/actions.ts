@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { stripe } from "@/lib/stripe/client";
 import { PLAN_PRICE_IDS, PLAN_PRICE_IDS_EUR } from "@/lib/stripe/plans";
+import { PRICING_TIERS } from "@/lib/pricing";
 import {
   getCreditPack,
   CREDIT_PACK_PRICE_IDS,
@@ -19,6 +20,9 @@ import { isEUVisitor } from "@/lib/geo";
 // already have one. Native <form> action, so it uses redirect() throughout.
 export async function createCheckoutSession(formData: FormData) {
   const planId = formData.get("plan") as PlanId | null;
+  // "annual" bills yearly at the tier's annualPrice x 12 (~25% off, a true
+  // three months free on every tier). Anything else is the monthly default.
+  const interval = formData.get("billing_interval") === "annual" ? "annual" : "month";
 
   if (!planId || planId === "none" || !(planId in PLAN_PRICE_IDS)) {
     redirect(`/app/settings?tab=usage&error=${encodeURIComponent("That plan isn't available.")}`);
@@ -50,12 +54,38 @@ export async function createCheckoutSession(formData: FormData) {
   let checkoutUrl: string | null = null;
 
   try {
+    // Annual has no pre-created Stripe Price: the line item is built inline
+    // (price_data) against the SAME Product as the monthly price, so Stripe
+    // reporting groups them and the currency follows the same USD/EUR
+    // geo-split as monthly. The webhook can't map an ad-hoc price id back to
+    // a plan, so the plan id rides on subscription metadata instead — see
+    // the metadata fallback in webhooks/stripe/route.ts.
+    let lineItem: Record<string, unknown> = { price: priceId, quantity: 1 };
+    if (interval === "annual") {
+      const tier = PRICING_TIERS.find((p) => p.id === paidPlanId);
+      if (!tier) throw new Error(`No pricing tier for ${paidPlanId}`);
+      const monthlyPrice = await stripe.prices.retrieve(priceId!);
+      lineItem = {
+        price_data: {
+          currency: monthlyPrice.currency,
+          product:
+            typeof monthlyPrice.product === "string"
+              ? monthlyPrice.product
+              : monthlyPrice.product.id,
+          unit_amount: tier.annualPrice * 12 * 100,
+          recurring: { interval: "year" },
+        },
+        quantity: 1,
+      };
+    }
+
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: profile?.stripe_customer_id ?? undefined,
       customer_email: profile?.stripe_customer_id ? undefined : (userData.user.email ?? undefined),
       client_reference_id: userData.user.id,
-      line_items: [{ price: priceId, quantity: 1 }],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      line_items: [lineItem as any],
       // Stripe Tax activated 2026-08-09 (Dashboard > Settings > Tax) — this
       // is what actually turns that on for real charges. Stripe collects
       // whatever address it needs and calculates VAT/sales tax itself based
@@ -68,8 +98,10 @@ export async function createCheckoutSession(formData: FormData) {
       allow_promotion_codes: true,
       success_url: `${origin}/app/settings?tab=usage&saved=1`,
       cancel_url: `${origin}/app/settings?tab=usage`,
-      subscription_data: { metadata: { supabase_user_id: userData.user.id } },
-      metadata: { supabase_user_id: userData.user.id },
+      subscription_data: {
+        metadata: { supabase_user_id: userData.user.id, plan: paidPlanId },
+      },
+      metadata: { supabase_user_id: userData.user.id, plan: paidPlanId },
     });
     checkoutUrl = session.url;
   } catch (err) {

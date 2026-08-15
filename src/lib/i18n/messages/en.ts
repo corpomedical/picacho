@@ -126,6 +126,12 @@ const en = {
       getStarted: "Get started",
       perMonth: "/mo",
       currentPlan: "Current plan",
+      billingAnnual: "Annual",
+      billingMonthly: "Monthly",
+      threeMonthsFree: "3 months free",
+      savePercent: "Save {n}%",
+      billedAnnually: "{sym}{total} billed once a year",
+      monthlyEquivalent: "or {sym}{price}/mo if billed annually",
       faqTitle: "Frequently asked questions",
       faq: [
         {

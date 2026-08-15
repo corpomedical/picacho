@@ -7,9 +7,14 @@
 // access. The server-side gating in generations/actions.ts and
 // workspace-data.ts mirrors this — change both together.
 
+// annualPrice is the per-month equivalent when billed yearly (total charged
+// = annualPrice * 12). Amounts are tuned per tier so the "3 months free"
+// badge is literally true everywhere (savings >= 3x the monthly price):
+// 19->14, 79->59, 299->224, 499->374 — all ~25-26% off.
 export const PRICING_TIERS = [
   {
     id: "starter",
+    annualPrice: 14,
     name: "Starter",
     price: 19,
     generations: 10,
@@ -23,6 +28,7 @@ export const PRICING_TIERS = [
   },
   {
     id: "growth",
+    annualPrice: 59,
     name: "Growth",
     price: 79,
     generations: 40,
@@ -37,6 +43,7 @@ export const PRICING_TIERS = [
   },
   {
     id: "studio",
+    annualPrice: 224,
     name: "Studio",
     price: 299,
     generations: 150,
@@ -50,6 +57,7 @@ export const PRICING_TIERS = [
   },
   {
     id: "elite",
+    annualPrice: 374,
     name: "Elite",
     price: 499,
     generations: 300,

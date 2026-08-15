@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Metadata } from "next";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
@@ -24,9 +25,18 @@ export const metadata: Metadata = {
 // so a stale copy can't be served and the content always matches the deploy.
 export const dynamic = "force-dynamic";
 
-export default async function PricingPage() {
+export default async function PricingPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ billing?: string }>;
+}) {
   const { t } = await getServerMessages();
   const p = t.marketing.pricing;
+  const { billing } = await searchParams;
+  // Annual is the default view — it's the offer we lead with. ?billing=monthly
+  // flips it; a URL param (not client state) so the server-rendered cards and
+  // their checkout forms stay in lockstep, and the choice is shareable.
+  const interval: "annual" | "month" = billing === "monthly" ? "month" : "annual";
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -40,9 +50,42 @@ export default async function PricingPage() {
       </section>
 
       <section className="mx-auto max-w-5xl px-8 py-16">
+        <div className="mb-10 flex justify-center">
+          <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white p-1">
+            <Link
+              href="/pricing"
+              className={
+                interval === "annual"
+                  ? "flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
+                  : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
+              }
+            >
+              {p.billingAnnual}
+              <span
+                className={
+                  interval === "annual"
+                    ? "rounded-full bg-ochre px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                    : "hidden"
+                }
+              >
+                -25%
+              </span>
+            </Link>
+            <Link
+              href="/pricing?billing=monthly"
+              className={
+                interval === "month"
+                  ? "rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
+                  : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
+              }
+            >
+              {p.billingMonthly}
+            </Link>
+          </div>
+        </div>
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           {PRICING_TIERS.map((tier) => (
-            <PricingCard key={tier.id} tier={tier} />
+            <PricingCard key={tier.id} tier={tier} interval={interval} />
           ))}
         </div>
         <p className="mt-8 text-center text-xs text-neutral-400">{p.overageNote}</p>

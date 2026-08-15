@@ -199,7 +199,17 @@ export async function POST(request: Request) {
         }
 
         const priceId = subscription.items.data[0]?.price.id;
-        const planId = priceId ? planIdForPriceId(priceId) : undefined;
+        // Annual subscriptions use an inline price (no entry in
+        // PLAN_PRICE_IDS) — their plan travels in subscription metadata,
+        // written by createCheckoutSession. Price mapping stays first so a
+        // tampered metadata value can never override a real known price.
+        const metadataPlan = ((): ReturnType<typeof planIdForPriceId> => {
+          const p = subscription.metadata?.plan;
+          return p === "starter" || p === "growth" || p === "studio" || p === "elite"
+            ? p
+            : undefined;
+        })();
+        const planId = (priceId ? planIdForPriceId(priceId) : undefined) ?? metadataPlan;
         if (priceId && !planId) {
           console.error("Stripe webhook: price has no matching plan in PLAN_PRICE_IDS", priceId);
         }

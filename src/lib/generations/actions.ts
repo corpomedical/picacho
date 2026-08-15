@@ -2172,10 +2172,29 @@ export async function getReliabilityStats(userId: string) {
 // backfilled with real Stripe dates yet. That fallback is deliberate, not
 // just a placeholder — it's what keeps allowance enforcement working
 // exactly as it always has for every profile this doesn't apply to yet.
+// Advances a billing-period start to the most recent MONTHLY anniversary at
+// or before now. Monthly subscriptions pass through unchanged (their period
+// start is already within the last month); annual subscriptions get their
+// quota window derived from the same anniversary day, one month at a time —
+// without this, an annual subscriber's "monthly" window spanned the whole
+// year, so the quota effectively reset once every twelve months.
+// (Anniversary days past a month's end roll forward per JS Date semantics —
+// a Jan 31 anchor gives Feb 28/29 → Mar 3 windows; imperfect, harmless.)
+function latestMonthlyAnniversary(periodStart: Date): Date {
+  const now = new Date();
+  let current = new Date(periodStart);
+  for (;;) {
+    const next = new Date(current);
+    next.setMonth(next.getMonth() + 1);
+    if (next > now) return current;
+    current = next;
+  }
+}
+
 export async function getMonthlyUsage(userId: string, periodStart?: string | null) {
   const supabase = await createClient();
 
-  const start = periodStart ? new Date(periodStart) : (() => {
+  const start = periodStart ? latestMonthlyAnniversary(new Date(periodStart)) : (() => {
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);

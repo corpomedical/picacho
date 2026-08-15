@@ -114,6 +114,12 @@ const it = {
       getStarted: "Inizia",
       perMonth: "/mese",
       currentPlan: "Piano attuale",
+      billingAnnual: "Annuale",
+      billingMonthly: "Mensile",
+      threeMonthsFree: "3 mesi gratis",
+      savePercent: "Risparmia il {n}%",
+      billedAnnually: "{sym}{total} fatturati una volta l'anno",
+      monthlyEquivalent: "oppure {sym}{price}/mese con pagamento annuale",
       faqTitle: "Domande frequenti",
       faq: [
         {
