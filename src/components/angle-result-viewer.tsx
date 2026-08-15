@@ -94,7 +94,7 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
         <h2 className="text-sm font-semibold text-neutral-900">{h.result}</h2>
         {active?.status === "succeeded" ? (
           <>
-            {active.result_url?.startsWith("http") ? (
+            {(active.result_url?.startsWith("http") || active.result_url?.startsWith("/api/media/")) ? (
               <div className="relative mt-3">
                 <video
                   src={active.result_url}
@@ -118,7 +118,7 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
                 </div>
               </>
             )}
-            {active.result_url?.startsWith("http") && (
+            {(active.result_url?.startsWith("http") || active.result_url?.startsWith("/api/media/")) && (
               <ResultActions
                 key={active.id}
                 generationId={active.id}

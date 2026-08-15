@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { mediaUrl } from "@/lib/media/url";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
@@ -292,12 +293,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
       .upload(path, bytes, { contentType: "image/png" });
     if (uploadError) throw new Error(uploadError.message);
 
-    const { data: signed, error: signError } = await supabase.storage
-      .from("character-references")
-      .createSignedUrl(path, 60 * 60);
-    if (signError || !signed?.signedUrl) {
-      throw new Error("Generated the image but couldn't create a preview link.");
-    }
+    const previewUrl = mediaUrl("character-references", path);
 
     // Only counted once a photo actually came back — a safety-filter
     // rejection or provider error above throws before this line, so a failed
@@ -315,7 +311,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
         .insert({ user_id: data.user.id });
     }
 
-    return { error: null, path, url: signed.signedUrl };
+    return { error: null, path, url: previewUrl };
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't generate that image.";
     // Full detail (including any raw provider JSON) goes to the server log

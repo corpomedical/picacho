@@ -61,7 +61,9 @@ export function MediaGallery({
   return (
     <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {items.map((item) => {
-        const hasRealMedia = item.status === "succeeded" && Boolean(item.result_url?.startsWith("http"));
+        const hasRealMedia =
+          item.status === "succeeded" &&
+          Boolean(item.result_url && (item.result_url.startsWith("http") || item.result_url.startsWith("/api/media/")));
 
         return (
           <Link

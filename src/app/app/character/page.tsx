@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { mediaUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,19 +37,17 @@ export default async function CharacterListPage() {
 
   const projectNameById = new Map((projects ?? []).map((p) => [p.id, p.name]));
 
-  const withThumbnails = await Promise.all(
-    (profiles ?? []).map(async (profile) => {
-      const firstPath = profile.reference_image_urls?.[0];
-      let thumbnailUrl: string | null = null;
-      if (firstPath) {
-        const { data } = await supabase.storage
-          .from("character-references")
-          .createSignedUrl(firstPath, 60 * 60);
-        thumbnailUrl = data?.signedUrl ?? null;
-      }
-      return { ...profile, thumbnailUrl };
-    }),
-  );
+  // Stable capability URLs (see lib/media/url.ts): no storage round-trip
+  // per character, and the browser caches each thumbnail forever instead of
+  // re-downloading a 2 MB PNG on every visit because the signed token — and
+  // with it the URL — changed.
+  const withThumbnails = (profiles ?? []).map((profile) => {
+    const firstPath = profile.reference_image_urls?.[0];
+    return {
+      ...profile,
+      thumbnailUrl: firstPath ? mediaUrl("character-references", firstPath) : null,
+    };
+  });
 
   return (
     <div className="mx-auto max-w-2xl">

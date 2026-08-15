@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -56,13 +57,16 @@ function ReportCard({
   email: string | undefined;
 }) {
   const isNextStatus = report.status === "open" ? "resolved" : "open";
+  // Stored result_urls may be long-expired signed URLs — normalize (see
+  // lib/media/url.ts) so the thumbnail still renders.
+  const displayUrl = toMediaUrl(generation?.result_url ?? null);
   return (
     <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex min-w-0 items-start gap-4">
-        {generation?.result_url?.startsWith("http") && generation.content_type === "image" ? (
+        {displayUrl && isRenderableUrl(displayUrl) && generation?.content_type === "image" ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={generation.result_url}
+            src={displayUrl}
             alt=""
             className="h-16 w-16 flex-shrink-0 rounded-[10px] bg-neutral-100 object-cover"
           />

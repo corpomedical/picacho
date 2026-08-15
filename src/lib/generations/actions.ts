@@ -1,6 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { getOrigin } from "@/lib/origin";
+import { mediaUrl, toMediaUrl, absolutizeMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -196,13 +198,10 @@ async function persistGeneratedImage(
     .upload(path, bytes, { contentType: "image/png" });
   if (error) throw new Error(`Couldn't save the generated image: ${error.message}`);
 
-  const { data, error: signError } = await supabase.storage
-    .from("generated-images")
-    .createSignedUrl(path, 60 * 60 * 24 * 7);
-  if (signError || !data?.signedUrl) {
-    throw new Error("Generated the image but couldn't create a link to it.");
-  }
-  return data.signedUrl;
+  // Stable capability URL (lib/media/url.ts). The previous 7-day signed URL
+  // was stored verbatim in generations.result_url — meaning every image in
+  // History silently broke a week after it was made. This one never expires.
+  return mediaUrl("generated-images", path);
 }
 
 // Storyboard/multi-reference slots (see runGeneration below) can now come
@@ -217,6 +216,11 @@ async function resolveMaybeSignedUrl(
   supabase: SupabaseClient,
   pathOrUrl: string,
 ): Promise<string | null> {
+  if (pathOrUrl.startsWith("/api/media/")) {
+    // A stable media URL from the composer (attachment or picker) — valid,
+    // but relative, and fal/OpenAI fetch these over the open internet.
+    return absolutizeMediaUrl(pathOrUrl, await getOrigin());
+  }
   if (pathOrUrl.startsWith("http")) return pathOrUrl;
   const { data: signed } = await supabase.storage
     .from("character-references")
@@ -322,6 +326,9 @@ export async function promoteGenerationToReference(
       .createSignedUrl(storagePath, 600);
     if (signed?.signedUrl) freshUrl = signed.signedUrl;
   }
+  // Stable media URLs are relative — the copy helper fetches server-side
+  // and needs something absolute.
+  freshUrl = absolutizeMediaUrl(freshUrl, await getOrigin());
 
   const outcome = await addGeneratedImageAsReference(
     supabase,
@@ -969,7 +976,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         if (attachmentReferenceUrl) {
           // The person attached a specific photo to this message — that
           // intent wins over the character's saved default for this request.
-          anchorUrl = attachmentReferenceUrl;
+          // Media URLs are relative; the providers fetch them over the open
+          // internet, so hand them out absolute.
+          anchorUrl = absolutizeMediaUrl(attachmentReferenceUrl, await getOrigin());
         } else {
           // Otherwise, an explicitly picked photo from the character's own
           // gallery beats just always grabbing the first one — but only if
@@ -1203,7 +1212,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // Characters v2: image-level identity verification. Best-effort — a
   // scoring hiccup never affects the generation itself.
   let matchScore: number | null = null;
-  if (succeeded && contentType === "image" && characterId && resultUrl?.startsWith("http")) {
+  if (succeeded && contentType === "image" && characterId && isRenderableUrl(resultUrl)) {
     const identityPath = character?.reference_image_urls?.[0];
     if (identityPath) {
       const { data: signedIdentity } = await supabase.storage
@@ -1218,7 +1227,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         ]
           .filter(Boolean)
           .join("; ");
-        const verdict = await scoreIdentityMatch(resultUrl, signedIdentity.signedUrl, traitSummary);
+        const verdict = await scoreIdentityMatch(
+          absolutizeMediaUrl(resultUrl!, await getOrigin()),
+          signedIdentity.signedUrl,
+          traitSummary,
+        );
         if (verdict && verdict.unusable) {
           // The provider claimed success but delivered a black/blank frame
           // (fal.ai's safety checker does exactly this — HTTP 200, image
@@ -2108,7 +2121,7 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
           succeeded: r.status === "succeeded",
           attempts,
           finalPrompt: attempts[attempts.length - 1]?.compiledPrompt ?? "",
-          resultUrl: r.result_url as string | null,
+          resultUrl: toMediaUrl(r.result_url as string | null),
         };
       }),
     };
@@ -2123,7 +2136,7 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
     attempts,
     succeeded: row.status === "succeeded",
     finalPrompt: attempts[attempts.length - 1]?.compiledPrompt ?? "",
-    resultUrl: row.result_url as string | null,
+    resultUrl: toMediaUrl(row.result_url as string | null),
     createdAt: row.created_at as string,
     matchScore: (row.match_score ?? null) as number | null,
   };

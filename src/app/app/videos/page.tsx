@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { toMediaUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
 
@@ -47,7 +48,7 @@ export default async function VideosPage() {
         id: representative.id,
         prompt_input: representative.prompt_input,
         status: representative.status,
-        result_url: representative.result_url,
+        result_url: toMediaUrl(representative.result_url),
         content_type: representative.content_type,
         created_at: representative.created_at,
         characterName: representative.character_profile_id

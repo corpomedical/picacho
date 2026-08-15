@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.2.0",
+    build: 3,
+    date: "2026-08-16",
+    title: "The app, perfected",
+    items: [
+      "Images across the app now load instantly on repeat visits: every picture used to be fetched through a freshly minted temporary link (new link every page view, so nothing could ever be cached) — they're now served through stable, permanently cacheable URLs. This also removed a storage round-trip from almost every page load.",
+      "Fixed a serious latent bug the old links hid: every image in History silently broke 7 days after it was made, because the stored link expired even though the file was still there. New results use permanent links, and every OLD row — including ones already broken — is rescued automatically at display time.",
+      "Chat attachment previews no longer expire mid-conversation (they used to die after 24 hours).",
+    ],
+  },
+  {
     version: "1.1.0",
     build: 2,
     date: "2026-08-15",

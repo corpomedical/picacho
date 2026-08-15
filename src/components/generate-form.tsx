@@ -341,7 +341,7 @@ function ResultMedia({
   const { t } = useLocale();
   if (!succeeded) return null;
 
-  if (resultUrl && resultUrl.startsWith("http")) {
+  if (resultUrl && (resultUrl.startsWith("http") || resultUrl.startsWith("/api/media/"))) {
     return contentType === "video" ? (
       <div className="relative mt-4">
         <video

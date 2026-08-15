@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { mediaUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -35,14 +36,11 @@ export default async function EditCharacterPage({
   if (!profile) redirect("/app/character");
 
   const [existingImages, { data: projects }, { data: voices }] = await Promise.all([
-    Promise.all(
-      (profile.reference_image_urls ?? []).map(async (path: string) => {
-        const { data } = await supabase.storage
-          .from("character-references")
-          .createSignedUrl(path, 60 * 60);
-        return { path, url: data?.signedUrl ?? "" };
-      }),
-    ),
+    // Stable capability URLs — cacheable, no per-photo storage round trip.
+    (profile.reference_image_urls ?? []).map((path: string) => ({
+      path,
+      url: mediaUrl("character-references", path),
+    })),
     supabase
       .from("projects")
       .select("id, name")

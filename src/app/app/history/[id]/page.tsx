@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
@@ -62,6 +63,10 @@ export default async function HistoryDetailPage({
   // deleted item should return you to the list, and that's also the more
   // useful outcome for a stale bookmark or a mistyped id.
   if (!generation) redirect("/app/history");
+  // Old rows store signed URLs whose tokens expired after 7 days — the
+  // files are all still in storage. Normalizing to the stable media form at
+  // read time rescues every one of them.
+  generation.result_url = toMediaUrl(generation.result_url as string | null);
 
   const { data: character } = generation.character_profile_id
     ? await supabase
@@ -81,7 +86,8 @@ export default async function HistoryDetailPage({
 
   const sortedAngleRows = (angleSiblings ?? [])
     .slice()
-    .sort((a, b) => angleSortIndex(a.angle) - angleSortIndex(b.angle));
+    .sort((a, b) => angleSortIndex(a.angle) - angleSortIndex(b.angle))
+    .map((row) => ({ ...row, result_url: toMediaUrl(row.result_url) }));
 
   // Which of these generation(s) already have a "report a problem" on file —
   // just enough to show the flag button in its already-reported state, not
@@ -194,7 +200,7 @@ export default async function HistoryDetailPage({
             <h2 className="text-sm font-semibold text-neutral-900">{h.result}</h2>
             {generation.status === "succeeded" ? (
               <>
-                {generation.result_url?.startsWith("http") ? (
+                {isRenderableUrl(generation.result_url) ? (
                   generation.content_type === "image" ? (
                     <div className="relative mt-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -235,7 +241,7 @@ export default async function HistoryDetailPage({
                     {formatMsg(t.generate.identityMatch, { n: generation.match_score })}
                   </p>
                 )}
-                {isOwner && generation.result_url?.startsWith("http") && (
+                {isOwner && isRenderableUrl(generation.result_url) && (
                   <ResultActions
                     generationId={generation.id}
                     copyText={finalPrompt}

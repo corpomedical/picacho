@@ -1,4 +1,5 @@
 import { getMonthlyUsage } from "@/lib/generations/actions";
+import { mediaUrl } from "@/lib/media/url";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
@@ -77,22 +78,16 @@ export async function getGenerateWorkspaceData(
   // pickers in the composer (Kling advanced options) have something to show
   // without a round trip when a character is selected. One batched sign
   // call across every character's photos, rather than one call per photo.
-  const allPaths = (characters ?? []).flatMap((c) => (c.reference_image_urls as string[] | null) ?? []);
-  const signedByPath = new Map<string, string>();
-  if (allPaths.length > 0) {
-    const { data: signedList } = await supabase.storage
-      .from("character-references")
-      .createSignedUrls(allPaths, 60 * 60);
-    for (const s of signedList ?? []) {
-      if (s.path && s.signedUrl) signedByPath.set(s.path, s.signedUrl);
-    }
-  }
+  // Stable capability URLs (lib/media/url.ts) — pure computation, so the
+  // batched storage signing round-trip this used to make on every app-shell
+  // load is simply gone, and the browser caches each picker thumbnail.
   const charactersForForm: CharacterOption[] = (characters ?? []).map((c) => ({
     id: c.id as string,
     name: c.name as string,
-    referencePhotos: ((c.reference_image_urls as string[] | null) ?? [])
-      .map((path) => ({ path, url: signedByPath.get(path) }))
-      .filter((p): p is { path: string; url: string } => Boolean(p.url)),
+    referencePhotos: ((c.reference_image_urls as string[] | null) ?? []).map((path) => ({
+      path,
+      url: mediaUrl("character-references", path),
+    })),
     voiceId: (c.voice_id as string | null) ?? null,
   }));
 

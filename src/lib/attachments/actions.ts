@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { mediaUrl } from "@/lib/media/url";
 
 export type ChatAttachment = {
   path: string;
@@ -37,16 +38,18 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
     .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
   if (uploadError) return { error: uploadError.message };
 
-  const { data: signed, error: signError } = await supabase.storage
-    .from("chat-attachments")
-    .createSignedUrl(path, 60 * 60 * 24);
-  if (signError || !signed?.signedUrl) {
-    return { error: "Uploaded, but couldn't create a preview link." };
-  }
-
   return {
     error: null,
-    attachment: { path, url: signed.signedUrl, name: file.name, type: file.type, size: file.size },
+    attachment: {
+      path,
+      // Stable capability URL — cacheable, never expires mid-thread. When
+      // this attachment becomes a provider anchor, the server absolutizes
+      // it first (see runGeneration).
+      url: mediaUrl("chat-attachments", path),
+      name: file.name,
+      type: file.type,
+      size: file.size,
+    },
   };
 }
 
