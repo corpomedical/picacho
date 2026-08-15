@@ -77,7 +77,7 @@ export async function PricingCard({ tier }: { tier: Tier }) {
         </span>
       ) : !userData.user ? (
         <Link href="/signup" className="mt-6 block">
-          <Button variant={tier.highlight ? "primary" : "secondary"} className={tier.highlight ? "w-full !bg-ochre hover:!bg-ochre-deep" : "w-full"}>
+          <Button variant={tier.highlight ? "primary" : "secondary"} className="w-full">
             {t.marketing.pricing.getStarted}
           </Button>
         </Link>
@@ -85,7 +85,7 @@ export async function PricingCard({ tier }: { tier: Tier }) {
         <form action={createPortalSession} className="mt-6">
           <SubmitButton
             variant={tier.highlight ? "primary" : "secondary"}
-            className={tier.highlight ? "w-full !bg-ochre hover:!bg-ochre-deep" : "w-full"}
+            className="w-full"
             pendingLabel={t.common.loading}
           >
             {t.settings.manageBilling}
@@ -96,7 +96,7 @@ export async function PricingCard({ tier }: { tier: Tier }) {
           <input type="hidden" name="plan" value={tier.id} />
           <SubmitButton
             variant={tier.highlight ? "primary" : "secondary"}
-            className={tier.highlight ? "w-full !bg-ochre hover:!bg-ochre-deep" : "w-full"}
+            className="w-full"
             pendingLabel={t.common.loading}
           >
             {t.marketing.pricing.getStarted}

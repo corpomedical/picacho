@@ -33,7 +33,7 @@ export default async function PricingPage() {
       <MarketingHeader />
 
       <section className="mx-auto max-w-3xl px-8 pt-20 pb-4 text-center">
-        <h1 className="text-3xl font-semibold tracking-tight text-neutral-900 sm:text-4xl">
+        <h1 className="font-display text-3xl font-bold tracking-[-0.03em] text-neutral-900 sm:text-4xl">
           {p.title}
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-sm text-neutral-500">{p.subtitle}</p>

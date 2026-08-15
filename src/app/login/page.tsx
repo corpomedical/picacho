@@ -32,7 +32,7 @@ export default async function LoginPage({
           <Logo className="h-8" />
         </div>
         <Card>
-          <h1 className="text-xl font-semibold text-neutral-900">{a.title}</h1>
+          <h1 className="font-display text-xl font-bold tracking-[-0.02em] text-neutral-900">{a.title}</h1>
           <p className="mt-1 text-sm text-neutral-500">{a.subtitle}</p>
 
           <div className="mt-6">

@@ -25,8 +25,11 @@ const SCRIM_FEATHER = 40; // soft falloff at the spotlight's edge, in px
 // Apple's system blue (light-mode value) — used for the primary action, the
 // one spot of color against an otherwise grayscale UI, same as iOS/macOS
 // coach marks and alerts.
-const SYSTEM_BLUE = "#0A84FF";
-const SYSTEM_BLUE_HOVER = "#0870dc";
+// Brand ochre (see --color-ochre in globals.css) — the tour is often the
+// first thing a new user sees, so it should speak in the brand accent,
+// not in Apple's.
+const SYSTEM_BLUE = "#a84e24";
+const SYSTEM_BLUE_HOVER = "#8a3d18";
 
 const ENTER_MS = 260;
 const EXIT_MS = 190;

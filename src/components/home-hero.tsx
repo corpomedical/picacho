@@ -41,7 +41,7 @@ export function HomeHero({ greeting }: { greeting: string }) {
         leaving && "translate-y-1 scale-[0.98] opacity-0",
       )}
     >
-      <h1 className="text-2xl font-semibold text-neutral-900">{greeting}</h1>
+      <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-neutral-900">{greeting}</h1>
       <div className="mt-6 w-full">
         <HomeComposer disabled={leaving} onSubmitPrompt={handleSubmit} />
       </div>

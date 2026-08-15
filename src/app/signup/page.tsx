@@ -69,7 +69,7 @@ export default async function SignupPage({
                 </svg>
               </span>
             </div>
-            <h1 className="mt-5 text-center text-xl font-semibold text-neutral-900">
+            <h1 className="mt-5 text-center font-display text-xl font-bold tracking-[-0.02em] text-neutral-900">
               {a.checkEmailTitle}
             </h1>
             <p className="mt-2 text-center text-sm leading-relaxed text-neutral-500">
@@ -97,7 +97,7 @@ export default async function SignupPage({
             <Logo className="h-8" />
           </div>
           <Card>
-            <h1 className="text-xl font-semibold text-neutral-900">{a.closedTitle}</h1>
+            <h1 className="font-display text-xl font-bold tracking-[-0.02em] text-neutral-900">{a.closedTitle}</h1>
             <p className="mt-2 text-sm text-neutral-500">{a.closedBody}</p>
             <Link href="/login" className="mt-6 block">
               <Button variant="secondary" className="w-full">
@@ -117,7 +117,7 @@ export default async function SignupPage({
           <Logo className="h-8" />
         </div>
         <Card>
-          <h1 className="text-xl font-semibold text-neutral-900">{a.title}</h1>
+          <h1 className="font-display text-xl font-bold tracking-[-0.02em] text-neutral-900">{a.title}</h1>
           <p className="mt-1 text-sm text-neutral-500">{a.subtitle}</p>
 
           <div className="mt-6">

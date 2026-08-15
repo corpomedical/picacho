@@ -54,7 +54,7 @@ export default async function AppHome() {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
         {profile?.has_completed_onboarding !== true && <FirstRunTour />}
-        <h1 className="text-2xl font-semibold text-neutral-900">{formatMsg(d.greeting, { name })}</h1>
+        <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-neutral-900">{formatMsg(d.greeting, { name })}</h1>
         <p className="mt-2 max-w-sm text-sm text-neutral-500">{d.setupCharacterBody}</p>
         <Link href="/app/character/new" className="mt-6" data-tour-id="tour-create-character">
           <Button>{d.setupCharacterCta}</Button>
