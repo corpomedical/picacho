@@ -31,7 +31,12 @@ export default async function AdminSettingsPage({
             <form action={updateAppSetting} className="flex items-end gap-4">
               <div className="flex-1">
                 <Label htmlFor={setting.key}>{setting.key}</Label>
-                <Input id={setting.key} name="value" defaultValue={setting.value} />
+                <Input
+                  id={setting.key}
+                  name="value"
+                  key={setting.value}
+                  defaultValue={setting.value}
+                />
                 {setting.description && (
                   <p className="mt-1.5 text-xs text-neutral-500">{setting.description}</p>
                 )}

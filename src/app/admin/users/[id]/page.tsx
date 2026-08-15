@@ -153,6 +153,7 @@ export default async function AdminUserDetailPage({
               <input type="hidden" name="user_id" value={user.id} />
               <select
                 name="role"
+                key={user.role}
                 defaultValue={user.role}
                 className="flex-1 rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
               >
@@ -169,6 +170,7 @@ export default async function AdminUserDetailPage({
               <input type="hidden" name="user_id" value={user.id} />
               <select
                 name="plan"
+                key={user.plan}
                 defaultValue={user.plan}
                 className="flex-1 rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
               >
@@ -196,6 +198,7 @@ export default async function AdminUserDetailPage({
                 type="number"
                 name="bonus_credits"
                 min={0}
+                key={bonusCredits}
                 defaultValue={bonusCredits}
                 className="w-full flex-1 rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
               />
