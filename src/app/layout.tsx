@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Archivo } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
 import { PageViewTracker } from "@/components/page-view-tracker";
@@ -6,6 +7,17 @@ import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { NativeChrome } from "@/components/native-chrome";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
+
+
+// Marketing display face (see --font-display in globals.css). Downloaded at
+// build time by next/font and self-hosted from our own domain — no runtime
+// request to Google, no layout shift.
+const archivo = Archivo({
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+  variable: "--font-archivo",
+  display: "swap",
+});
 
 const SITE_URL = "https://picacho.ai";
 const DESCRIPTION = "The reliability layer for AI-generated character content.";
@@ -94,7 +106,7 @@ export default async function RootLayout({
   const locale = await getLocale();
 
   return (
-    <html lang={locale}>
+    <html lang={locale} className={archivo.variable}>
       <head>
         {/* Runs before hydration so the right theme applies on first paint
             instead of flashing light and then switching to dark. */}

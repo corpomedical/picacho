@@ -36,7 +36,9 @@ export async function MarketingHeader() {
                 {t.marketing.nav.login}
               </Link>
               <Link href="/signup">
-                <Button size="sm">{t.marketing.nav.signup}</Button>
+                <Button size="sm" className="!bg-ochre hover:!bg-ochre-deep">
+                  {t.marketing.nav.signup}
+                </Button>
               </Link>
             </>
           )}

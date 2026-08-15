@@ -6,11 +6,20 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  /* one quiet, dark-neutral accent — no bright colors per design direction */
+  /* Ink-and-paper neutrals, plus ONE brand accent: Picacho ochre — a
+     mountain color, used with discipline (primary CTAs, small marks,
+     nothing else). Chosen over the blue/purple default precisely because
+     every AI-built site reaches for those. */
   --color-ink: #1c1c1e;
   --color-paper: #f7f6f4;
+  --color-ochre: #a84e24;
+  --color-ochre-deep: #8a3d18;
+  --color-ochre-soft: #f4e7de;
   --radius-card: 18px;
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  /* Display face for marketing headlines — loaded via next/font in
+     layout.tsx (build-time download, self-hosted at runtime, no FOUT). */
+  --font-display: var(--font-archivo), var(--font-sans);
 }
 
 /* Dark theme — re-declares the neutral scale (and white, used throughout as

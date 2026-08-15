@@ -233,32 +233,118 @@ export default async function Home() {
           same anchoring idea as the earlier dark version just flipped. Text
           uses slate (never remapped by dark mode) rather than neutral/ink
           for the same reason. */}
-      <section className="isolate relative overflow-hidden bg-sky-50">
-        <LiveWallpaper />
-        <div className="relative mx-auto max-w-3xl px-8 pb-24 pt-28 text-center sm:pt-36">
-          <h1 className="text-4xl font-semibold tracking-tight text-slate-900 sm:text-6xl">
-            {m.heroTitle}
-          </h1>
-          <p className="mx-auto mt-6 max-w-xl text-base text-slate-600 sm:text-lg">{m.heroSubtitle}</p>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
-            <Link
-              href="/signup"
-              className="inline-flex items-center justify-center rounded-[10px] bg-blue-600 px-6 py-3 text-sm font-medium text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-blue-700"
-            >
-              {m.getStarted}
-            </Link>
-            <Link
-              href="/pricing"
-              className="inline-flex items-center justify-center rounded-[10px] border border-slate-300 bg-white/70 px-6 py-3 text-sm font-medium text-slate-700 backdrop-blur transition-colors hover:border-slate-400 hover:bg-white"
-            >
-              {m.seePricing}
-            </Link>
+      {/* Hero — "Ochre & Grotesk" theme (see the pre-theme-ochre git tag
+          for the previous centered version). Asymmetric on purpose:
+          headline left, PROOF right — a real character's identity photo
+          plus genuinely generated scenes of her, served from her gallery
+          via /api/showcase/[i]. Slate/sky/explicit colors here, never the
+          neutral scale, so the dark-mode remap can't touch the marketing
+          hero. */}
+      <section className="isolate relative overflow-hidden bg-paper">
+        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-8 pb-20 pt-24 lg:grid-cols-[1.05fr_.95fr] sm:pt-28">
+          <div>
+            <h1 className="font-display text-4xl font-bold leading-[1.02] tracking-[-0.035em] text-slate-900 sm:text-6xl">
+              {m.heroTitle} <em className="not-italic text-ochre">{m.heroAccent}</em>
+            </h1>
+            <p className="mt-6 max-w-md text-base leading-relaxed text-slate-600 sm:text-lg">
+              {m.heroSubtitle}
+            </p>
+            <div className="mt-9 flex flex-wrap items-center gap-4">
+              <Link
+                href="/signup"
+                className="inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-semibold text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
+              >
+                {m.getStarted}
+              </Link>
+              <Link
+                href="/pricing"
+                className="text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:decoration-slate-500"
+              >
+                {m.seePricing}
+              </Link>
+            </div>
+            {/* The trial exists in the product (5 free generations, no card)
+                but was invisible on the marketing site — the single cheapest
+                conversion lever there is. One quiet line, right where the
+                decision happens. */}
+            <p className="mt-4 text-sm text-slate-500">{m.heroFreeTrialNote}</p>
           </div>
-          {/* The trial exists in the product (5 free generations, no card)
-              but was invisible on the marketing site — the single cheapest
-              conversion lever there is. One quiet line, right where the
-              decision happens. */}
-          <p className="mt-4 text-sm text-slate-500">{m.heroFreeTrialNote}</p>
+
+          {/* Same face, six real tiles: [0] is Eva's identity photo (badged),
+              the rest are images Picacho actually generated of her. No stock,
+              no mockups — the product's own output is the pitch. */}
+          <div>
+            <div className="grid grid-cols-3 gap-2.5">
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="relative aspect-square overflow-hidden rounded-[12px] bg-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/showcase/${i}`}
+                    alt=""
+                    loading={i < 3 ? "eager" : "lazy"}
+                    className="h-full w-full object-cover"
+                  />
+                  {i === 0 && (
+                    <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
+                      {m.heroIdentityPhoto}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <p className="mt-3 text-center text-xs text-slate-400">{m.heroRealNote}</p>
+          </div>
+        </div>
+
+        {/* Proof band — three verifiable numbers, ruled like a spec sheet. */}
+        <div className="border-y border-slate-200">
+          <div className="mx-auto grid max-w-6xl sm:grid-cols-3">
+            {[
+              [m.stat1, m.stat1Caption],
+              [m.stat2, m.stat2Caption],
+              [m.stat3, m.stat3Caption],
+            ].map(([num, caption], i) => (
+              <div
+                key={i}
+                className={
+                  "px-8 py-7" + (i > 0 ? " border-t border-slate-200 sm:border-l sm:border-t-0" : "")
+                }
+              >
+                <div className="font-display text-3xl font-bold tracking-[-0.03em] text-slate-900">
+                  {num}
+                </div>
+                <p className="mt-1.5 max-w-[240px] text-xs leading-relaxed text-slate-500">{caption}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Dark score band — the product's honesty, restated as design. */}
+        <div className="bg-ink">
+          <div className="mx-auto grid max-w-6xl items-center gap-10 px-8 py-14 lg:grid-cols-2">
+            <div>
+              <h2 className="font-display text-2xl font-bold tracking-[-0.03em] text-paper sm:text-3xl">
+                {m.scoreBandTitle}
+              </h2>
+              <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-400">{m.scoreBandBody}</p>
+            </div>
+            <div className="rounded-[14px] bg-white/[0.06] p-5">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span>{m.scoreBandMatch}</span>
+                <span className="font-semibold text-paper">92%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full w-[92%] rounded-full bg-ochre" />
+              </div>
+              <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+                <span>{m.scoreBandPassed}</span>
+                <span className="font-semibold text-paper">1 / 3</span>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -272,12 +358,12 @@ export default async function Home() {
       <section className="mx-auto max-w-5xl px-8 pt-16">
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-            <TwoModelsIcon className="h-6 w-6 text-blue-600" />
+            <TwoModelsIcon className="h-6 w-6 text-ochre" />
             <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffModelsTitle}</h3>
             <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffModelsDetail}</p>
           </div>
           <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-            <LayersIcon className="h-6 w-6 text-blue-600" />
+            <LayersIcon className="h-6 w-6 text-ochre" />
             <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffFormatsTitle}</h3>
             <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffFormatsDetail}</p>
           </div>
@@ -286,7 +372,7 @@ export default async function Home() {
               validation gate — and until now they weren't mentioned anywhere
               on the marketing site. */}
           <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)] sm:col-span-2 lg:col-span-1">
-            <ShieldCheckIcon className="h-6 w-6 text-blue-600" />
+            <ShieldCheckIcon className="h-6 w-6 text-ochre" />
             <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffRulesTitle}</h3>
             <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffRulesDetail}</p>
           </div>
@@ -382,11 +468,11 @@ export default async function Home() {
       <section className="isolate relative overflow-hidden bg-sky-50">
         <LiveWallpaper />
         <div className="relative mx-auto max-w-2xl px-8 py-24 text-center">
-          <h2 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">{m.ctaTitle}</h2>
+          <h2 className="font-display text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl">{m.ctaTitle}</h2>
           <p className="mx-auto mt-3 max-w-md text-sm text-slate-600">{m.ctaSubtitle}</p>
           <Link
             href="/signup"
-            className="mt-8 inline-flex items-center justify-center rounded-[10px] bg-blue-600 px-6 py-3 text-sm font-medium text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-blue-700"
+            className="mt-8 inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-medium text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
           >
             {m.getStarted}
           </Link>
