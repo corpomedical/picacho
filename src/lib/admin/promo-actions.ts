@@ -128,3 +128,118 @@ export async function setPromoCodeActive(formData: FormData) {
   await supabase.from("promo_codes").update({ active }).eq("id", id);
   revalidatePath("/admin/promo");
 }
+
+// Editing a live code: only the fields WE own.
+//
+// Stripe deliberately makes a coupon's percent_off and duration immutable,
+// and a promotion code's code string too — a discount someone is already
+// subscribed under can't be quietly rewritten underneath them. So this edits
+// the rep's name, the commission rate and the notes; changing the actual
+// discount means turning this code off and issuing a new one, which is also
+// the honest thing to hand a salesperson ("your old code still honours what
+// you promised").
+//
+// Commission edits apply to FUTURE sales only. Past redemptions carry the
+// rate they were closed at (promo_redemptions.commission_percent), so a rate
+// change can't retroactively alter what a rep is owed.
+export async function updatePromoCode(formData: FormData) {
+  const { supabase } = await requireAdmin();
+
+  const id = (formData.get("id") as string) ?? "";
+  const repName = ((formData.get("rep_name") as string) ?? "").trim();
+  const commissionPercent = Number(formData.get("commission_percent"));
+  const notes = ((formData.get("notes") as string) ?? "").trim() || null;
+
+  const fail = (msg: string) => redirect(`/admin/promo?error=${encodeURIComponent(msg)}`);
+
+  if (!repName) fail("Salesperson name is required.");
+  if (!Number.isInteger(commissionPercent) || commissionPercent < 0 || commissionPercent > 100) {
+    fail("Commission must be 0-100%.");
+  }
+
+  const { data: promo } = await supabase
+    .from("promo_codes")
+    .select("id, code, stripe_coupon_id, stripe_promotion_code_id")
+    .eq("id", id)
+    .single();
+  if (!promo) fail("Code not found.");
+
+  const { error } = await supabase
+    .from("promo_codes")
+    .update({ rep_name: repName, commission_percent: commissionPercent, notes })
+    .eq("id", id);
+  if (error) fail(error.message);
+
+  // Keep Stripe's own labelling in step, so the dashboard doesn't show a name
+  // that stopped being true here. Best-effort: the rename is cosmetic, and
+  // failing the whole edit over it would be worse than a stale label.
+  try {
+    if (promo!.stripe_coupon_id) {
+      await stripe.coupons.update(promo!.stripe_coupon_id, {
+        name: `${promo!.code} — ${repName}`,
+        metadata: { promo_code: promo!.code, rep_name: repName },
+      });
+    }
+    if (promo!.stripe_promotion_code_id) {
+      await stripe.promotionCodes.update(promo!.stripe_promotion_code_id, {
+        metadata: { rep_name: repName },
+      });
+    }
+  } catch (err) {
+    console.error("Promo code Stripe rename failed", err);
+  }
+
+  revalidatePath("/admin/promo");
+  redirect("/admin/promo");
+}
+
+// Deleting a code.
+//
+// Stripe's two objects behave differently and both matter here:
+//   • the coupon CAN be deleted, and deleting it is what actually stops the
+//     discount being applied to anything new. Subscriptions already carrying
+//     it keep it — Stripe honours a discount someone already bought, which is
+//     the correct behaviour and not something to fight.
+//   • the promotion code CANNOT be deleted, only deactivated. So it's
+//     deactivated first: a live promotion code pointing at a deleted coupon
+//     is the one state that would 500 a customer at checkout.
+//
+// Sales history survives on purpose. promo_redemptions stores the code, the
+// rep's name and the rate the sale closed at as plain columns (the foreign
+// key is ON DELETE SET NULL), so deleting a code never destroys the record of
+// commission owed on business it already brought in.
+export async function deletePromoCode(formData: FormData) {
+  const { supabase } = await requireAdmin();
+  const id = (formData.get("id") as string) ?? "";
+
+  const { data: promo } = await supabase
+    .from("promo_codes")
+    .select("id, code, stripe_coupon_id, stripe_promotion_code_id")
+    .eq("id", id)
+    .single();
+  if (!promo) redirect(`/admin/promo?error=${encodeURIComponent("Code not found.")}`);
+
+  // Stripe first — if it fails, our row stays and the page keeps telling the
+  // truth about a code that is still redeemable.
+  try {
+    if (promo!.stripe_promotion_code_id) {
+      await stripe.promotionCodes.update(promo!.stripe_promotion_code_id, { active: false });
+    }
+    if (promo!.stripe_coupon_id) {
+      await stripe.coupons.del(promo!.stripe_coupon_id);
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Stripe delete failed.";
+    redirect(
+      `/admin/promo?error=${encodeURIComponent(
+        `Couldn't remove the code from Stripe, so nothing was deleted: ${message.slice(0, 160)}`,
+      )}`,
+    );
+  }
+
+  const { error } = await supabase.from("promo_codes").delete().eq("id", id);
+  if (error) redirect(`/admin/promo?error=${encodeURIComponent(error.message)}`);
+
+  revalidatePath("/admin/promo");
+  redirect("/admin/promo");
+}

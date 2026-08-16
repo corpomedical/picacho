@@ -96,7 +96,7 @@ export async function POST(request: Request) {
             if (promotionCodeId) {
               const { data: promo } = await supabase
                 .from("promo_codes")
-                .select("id, code, rep_name")
+                .select("id, code, rep_name, commission_percent")
                 .eq("stripe_promotion_code_id", promotionCodeId)
                 .single();
 
@@ -108,6 +108,10 @@ export async function POST(request: Request) {
                   promo_code_id: promo.id,
                   code: promo.code,
                   rep_name: promo.rep_name,
+                  // Snapshot, not a live lookup: commission is a fact about
+                  // this sale. Editing a rep's rate later must not rewrite
+                  // what they were owed on business already closed.
+                  commission_percent: promo.commission_percent,
                   user_id: userId,
                   user_email: session.customer_details?.email ?? null,
                   amount_subtotal: session.amount_subtotal ?? 0,
