@@ -33,7 +33,7 @@ import {
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
-import { compilePrompt } from "@/lib/prompts/actions";
+import { compilePrompt, promptFromImage } from "@/lib/prompts/actions";
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { DownloadButton } from "@/components/download-button";
@@ -1332,6 +1332,11 @@ function GenerateFormInner({
   const [enhanceError, setEnhanceError] = useState<string | null>(null);
   const [assistsLeft, setAssistsLeft] = useState<number | null | undefined>(undefined);
   const [approvedPrompt, setApprovedPrompt] = useState<string | null>(null);
+  // Which kind of assist produced what's in the panel — the image result
+  // gets an extra control (describe the person too / scene only) that makes
+  // no sense for text.
+  const [enhanceKind, setEnhanceKind] = useState<"text" | "image">("text");
+  const [describedMode, setDescribedMode] = useState<"scene" | "standalone">("scene");
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   // Set by handleStop, read by submitPrompt/confirmMultiAngle once their
@@ -1599,6 +1604,10 @@ function GenerateFormInner({
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const isAnimating = revealedCount > 0 && revealedCount < liveTimeline.length;
   const isUploading = pendingAttachments.some((a) => a.status === "uploading");
+  // Prompt Studio's image mode needs a finished upload to read.
+  const hasReadyImageAttachment = pendingAttachments.some(
+    (a) => a.status === "ready" && a.type.startsWith("image/") && Boolean(a.url),
+  );
   const locked = submitting || pendingMultiAngle !== null;
 
   const currentCharacter = characters.find((c) => c.id === characterId);
@@ -2404,6 +2413,7 @@ function GenerateFormInner({
       // success member out of an `if (result.error)` else-branch.
       if (result.error === null) {
         setEnhanced(result.prompt);
+        setEnhanceKind("text");
         setAssistsLeft(result.assistsLeft);
       } else {
         setEnhanceError(result.error);
@@ -2412,6 +2422,34 @@ function GenerateFormInner({
     } catch {
       // A rejected promise means the request never reached the action at
       // all — same handling as the composer's own submit path.
+      setEnhanceError(g.submitFailed);
+    } finally {
+      setEnhancing(false);
+    }
+  }
+
+  async function runDescribe(mode: "scene" | "standalone") {
+    const image = pendingAttachments.find(
+      (a) => a.status === "ready" && a.type.startsWith("image/") && a.url,
+    );
+    if (!image?.url || enhancing) return;
+    setEnhancing(true);
+    setEnhanceError(null);
+    try {
+      const formData = new FormData();
+      formData.set("image_url", image.url);
+      formData.set("mode", mode);
+      const result = await promptFromImage(formData);
+      if (result.error === null) {
+        setEnhanced(result.prompt);
+        setEnhanceKind("image");
+        setDescribedMode(mode);
+        setAssistsLeft(result.assistsLeft);
+      } else {
+        setEnhanceError(result.error);
+        setEnhanced(null);
+      }
+    } catch {
       setEnhanceError(g.submitFailed);
     } finally {
       setEnhancing(false);
@@ -3813,7 +3851,9 @@ function GenerateFormInner({
                         </button>
                         <button
                           type="button"
-                          onClick={runEnhance}
+                          onClick={() =>
+                            enhanceKind === "image" ? runDescribe(describedMode) : runEnhance()
+                          }
                           disabled={enhancing}
                           className="rounded-[10px] border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 disabled:opacity-50"
                         >
@@ -3834,6 +3874,26 @@ function GenerateFormInner({
                           </span>
                         )}
                       </div>
+                      {enhanceKind === "image" && (
+                        <div className="mt-2.5 border-t border-ochre/15 pt-2.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              runDescribe(describedMode === "scene" ? "standalone" : "scene")
+                            }
+                            disabled={enhancing}
+                            className="text-[11px] font-medium text-ochre underline underline-offset-2 transition-opacity hover:opacity-80 disabled:opacity-50"
+                          >
+                            {describedMode === "scene" ? g.describeIncludePerson : g.describeSceneOnly}
+                          </button>
+                          {/* Shown only on the mode that actually describes a
+                              person: that's the one where whose photo it is
+                              starts to matter. */}
+                          {describedMode === "standalone" && (
+                            <p className="mt-1.5 text-[11px] text-neutral-400">{g.describeRights}</p>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
                 </div>
@@ -3958,16 +4018,24 @@ function GenerateFormInner({
                   {/* Prompt Studio. Only appears once there's something to
                       enhance — an empty composer has nothing to improve, and
                       a control that can't do anything yet is just noise. */}
-                  {prompt.trim().length > 0 && (
+                  {(prompt.trim().length > 0 || hasReadyImageAttachment) && (
                     <button
                       type="button"
-                      onClick={runEnhance}
+                      onClick={() =>
+                        prompt.trim().length > 0
+                          ? runEnhance()
+                          : runDescribe(characterId ? "scene" : "standalone")
+                      }
                       disabled={enhancing || submitting}
-                      title={g.enhance}
+                      title={prompt.trim().length > 0 ? g.enhance : g.describeImage}
                       className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-ochre/40 bg-ochre-soft/60 px-3 py-1.5 text-xs font-semibold text-ochre transition-colors hover:bg-ochre-soft disabled:opacity-50"
                     >
                       <SparkIcon className={cn("h-3.5 w-3.5", enhancing && "animate-pulse")} />
-                      {enhancing ? g.enhanceWorking : g.enhance}
+                      {enhancing
+                        ? g.enhanceWorking
+                        : prompt.trim().length > 0
+                          ? g.enhance
+                          : g.describeImage}
                     </button>
                   )}
                   {contentType === "video" && (

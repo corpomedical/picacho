@@ -2,6 +2,9 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { runRealPipeline } from "@/lib/generations/pipeline";
+import { describeImageAsPrompt, type DescribeMode } from "@/lib/generations/providers/describe-image";
+import { absolutizeMediaUrl } from "@/lib/media/url";
+import { getOrigin } from "@/lib/origin";
 import type { BrandRule } from "@/lib/brand-rules/types";
 import {
   FREE_PROMPT_ASSIST_LIMIT,
@@ -231,6 +234,60 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
   return {
     error: null,
     prompt: compiled,
+    assistsLeft: allowance.remaining === null ? null : Math.max(0, allowance.remaining - 1),
+  };
+}
+
+// Prompt Studio, image mode: an uploaded picture in, a usable prompt out.
+//
+// The upload plumbing already exists — the composer's "+" button puts the
+// file in the chat-attachments bucket and hands back a stable /api/media
+// capability URL — so this only has to absolutize that URL (the vision
+// provider fetches it over the open internet) and meter the call.
+//
+// Mode is decided by whether a character is selected, not by the user: with a
+// character locked, describing the uploaded person's face would fight the
+// identity photo the generator anchors on. See describe-image.ts.
+export async function promptFromImage(formData: FormData): Promise<CompilePromptResult> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const rawUrl = String(formData.get("image_url") ?? "").trim();
+  const mode: DescribeMode = String(formData.get("mode") ?? "") === "standalone" ? "standalone" : "scene";
+
+  if (!rawUrl) return { error: "Attach an image first." };
+  // Only our own media URLs. Without this the action would happily fetch and
+  // describe any URL on the internet on the caller's behalf.
+  if (!rawUrl.startsWith("/api/media/")) {
+    return { error: "That image can't be read — upload it again." };
+  }
+
+  const [{ data: studioFlag }, { data: providersFlag }] = await Promise.all([
+    supabase.from("feature_flags").select("enabled").eq("key", "prompt_studio").single(),
+    supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
+  ]);
+  if (studioFlag?.enabled !== true) return { error: "Prompt Studio is switched off right now." };
+  if (providersFlag?.enabled !== true) {
+    return { error: "Real AI providers are off, so there's no model to read the image with yet." };
+  }
+
+  const allowance = await assistAllowance(supabase, userData.user.id);
+  if (allowance.error) return { error: allowance.error };
+
+  const described = await describeImageAsPrompt(absolutizeMediaUrl(rawUrl, await getOrigin()), mode);
+  if (!described) {
+    return { error: "Couldn't read that image — try another one, or write the prompt yourself." };
+  }
+
+  const { error: ledgerError } = await supabase
+    .from("prompt_assists")
+    .insert({ user_id: userData.user.id, kind: "from_image" });
+  if (ledgerError) console.error("prompt_assists insert failed", ledgerError);
+
+  return {
+    error: null,
+    prompt: described,
     assistsLeft: allowance.remaining === null ? null : Math.max(0, allowance.remaining - 1),
   };
 }
