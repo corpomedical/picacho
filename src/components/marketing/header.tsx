@@ -5,6 +5,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { Logo } from "@/components/logo";
 import { EarlyAccessBadge } from "@/components/early-access-badge";
+import { GetAppButton } from "@/components/install-badges";
 
 // Async Server Component — checks the session so someone who's already
 // logged in sees a way back into the app instead of "Log in"/"Sign up",
@@ -26,6 +27,9 @@ export async function MarketingHeader() {
           <Link href="/pricing" className="transition-colors hover:text-neutral-900">
             {t.marketing.nav.pricing}
           </Link>
+          {/* One quiet install entry point on every marketing page — it
+              costs no vertical space, which the hero placement did. */}
+          <GetAppButton />
           {isLoggedIn ? (
             <Link href="/app">
               <Button size="sm">{t.marketing.nav.goToApp}</Button>

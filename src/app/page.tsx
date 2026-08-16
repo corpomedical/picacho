@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { InstallBadges } from "@/components/install-badges";
+import { EngineRail } from "@/components/marketing/engine-rail";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
@@ -269,7 +269,6 @@ export default async function Home() {
                 conversion lever there is. One quiet line, right where the
                 decision happens. */}
             <p className="mt-4 text-sm text-slate-500">{m.heroFreeTrialNote}</p>
-            <InstallBadges />
           </div>
 
           {/* Same face, six real tiles: [0] is Eva's identity photo (badged),
@@ -307,6 +306,12 @@ export default async function Home() {
             <p className="mt-3 text-center text-xs text-slate-400">{m.heroRealNote}</p>
           </div>
         </div>
+
+        {/* Engine rail — the models Picacho actually runs, named for the
+            first time on the marketing site. Sits between the hero's proof
+            and the numbers because it answers the question the photos
+            provoke: "generated with what?" */}
+        <EngineRail />
 
         {/* Proof band — three verifiable numbers, ruled like a spec sheet. */}
         <div className="border-y border-slate-200">

@@ -107,6 +107,25 @@ html.dark {
    calm. Reduce-motion IS respected here, unlike the hero wallpaper above:
    this plays continuously right next to text someone may be trying to read
    while they talk, not decorative background chrome. */
+/* Engine rail marquee (see EngineRail). Only used below lg, where seven
+   engine names can't sit on one line: the track is rendered twice and slid
+   exactly half its width, so the loop is seamless. Reduce-motion stops it
+   dead — it's continuous movement next to readable text. */
+@keyframes engine-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.animate-engine-marquee {
+  animation: engine-marquee 26s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-engine-marquee {
+    animation: none;
+  }
+}
+
 @keyframes voice-waveform-pulse {
   0%, 100% { transform: scaleY(0.35); }
   50% { transform: scaleY(1); }

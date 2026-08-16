@@ -4,10 +4,9 @@ import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/cn";
 
-// The homepage/footer "download app" badges. Deliberately Picacho-branded
-// rather than App Store / Google Play artwork: Picacho isn't in the stores
-// (that's the pitch — no 30% cut), and wearing their badges would be both
-// false and against both companies' brand rules.
+// Everything that offers the PWA install: the marketing-footer badge row and
+// the header's "Get the app" button both drive the same flow, so the
+// platform logic and the explainer cards live here once.
 //
 // Click behaviour by platform:
 //  - Android/Chromium with the install event available: the browser's REAL
@@ -17,6 +16,11 @@ import { cn } from "@/lib/cn";
 //  - Desktop without an install event, or any browser we can't prompt:
 //    a "grab your phone" card with the address, or generic menu
 //    instructions on Android browsers that hid the event.
+//
+// The badges are deliberately Picacho-branded rather than App Store /
+// Google Play artwork: Picacho isn't in the stores (that's the pitch — no
+// 30% cut), and wearing their badges would be both false and against both
+// companies' brand rules.
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
@@ -24,9 +28,7 @@ type BeforeInstallPromptEvent = Event & {
 
 type ModalKind = "ios" | "android" | "desktop" | null;
 
-export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer" }) {
-  const { t } = useLocale();
-  const m = t.marketing.install;
+function useInstallFlow() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [modal, setModal] = useState<ModalKind>(null);
   const [standalone, setStandalone] = useState(false);
@@ -44,34 +46,45 @@ export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer
     return () => window.removeEventListener("beforeinstallprompt", onPrompt);
   }, []);
 
-  // Already running as the installed app — advertising the install would be
-  // noise.
-  if (standalone) return null;
-
   const isIos = typeof navigator !== "undefined" && /iphone|ipad|ipod/i.test(navigator.userAgent);
   const isAndroid = typeof navigator !== "undefined" && /android/i.test(navigator.userAgent);
 
-  async function onApple() {
-    if (isIos) {
-      setModal("ios");
-    } else if (installEvent) {
-      // Safari-on-Mac can't prompt, but a Chromium desktop can — if the
-      // event exists, the real dialog beats any card.
-      await installEvent.prompt();
-    } else {
-      setModal("desktop");
-    }
-  }
+  return {
+    modal,
+    setModal,
+    standalone,
+    // Apple badge: iPhone gets the taught two taps; a Chromium desktop can
+    // still show the real dialog if the event exists.
+    async openApple() {
+      if (isIos) setModal("ios");
+      else if (installEvent) await installEvent.prompt();
+      else setModal("desktop");
+    },
+    async openAndroid() {
+      if (installEvent) await installEvent.prompt();
+      else if (isAndroid) setModal("android");
+      else setModal("desktop");
+    },
+    // Platform-agnostic entry point (the header button, which isn't
+    // per-platform): real dialog if we have one, otherwise the card that
+    // matches the device.
+    async openAny() {
+      if (installEvent) await installEvent.prompt();
+      else if (isIos) setModal("ios");
+      else if (isAndroid) setModal("android");
+      else setModal("desktop");
+    },
+  };
+}
 
-  async function onAndroid() {
-    if (installEvent) {
-      await installEvent.prompt();
-    } else if (isAndroid) {
-      setModal("android");
-    } else {
-      setModal("desktop");
-    }
-  }
+export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer" }) {
+  const { t } = useLocale();
+  const m = t.marketing.install;
+  const flow = useInstallFlow();
+
+  // Already running as the installed app — advertising the install would be
+  // noise.
+  if (flow.standalone) return null;
 
   const badgeClass = cn(
     "flex items-center gap-2.5 rounded-[12px] border border-neutral-900 bg-neutral-900 text-left text-white transition-transform hover:-translate-y-px",
@@ -81,7 +94,7 @@ export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer
   return (
     <>
       <div className={cn("flex flex-wrap gap-2.5", variant === "hero" && "mt-7")}>
-        <button type="button" onClick={onApple} className={badgeClass}>
+        <button type="button" onClick={flow.openApple} className={badgeClass}>
           <AppleIcon className={variant === "hero" ? "h-[22px] w-[22px]" : "h-4 w-4"} />
           <span className="leading-tight">
             <span className="block text-[9px] uppercase tracking-wider opacity-70">{m.installOn}</span>
@@ -90,7 +103,7 @@ export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer
             </span>
           </span>
         </button>
-        <button type="button" onClick={onAndroid} className={badgeClass}>
+        <button type="button" onClick={flow.openAndroid} className={badgeClass}>
           <AndroidIcon className={variant === "hero" ? "h-[22px] w-[22px]" : "h-4 w-4"} />
           <span className="leading-tight">
             <span className="block text-[9px] uppercase tracking-wider opacity-70">{m.installOn}</span>
@@ -102,54 +115,110 @@ export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer
       </div>
       {variant === "hero" && <p className="mt-2.5 text-[11px] text-slate-400">{m.note}</p>}
 
-      {modal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
-          onClick={() => setModal(null)}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div
-            className="w-full max-w-xs rounded-[20px] border border-neutral-100 bg-white p-6 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.35)]"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[11px] border border-neutral-200 bg-paper text-xl font-extrabold text-neutral-900">
-              P<span className="text-ochre">.</span>
-            </div>
-            {modal === "ios" && (
-              <>
-                <h3 className="text-[15px] font-bold tracking-[-0.01em] text-neutral-900">{m.iosTitle}</h3>
-                {[m.iosStep1, m.iosStep2].map((step, i) => (
-                  <div key={i} className="mt-3 flex items-start gap-2.5">
-                    <span className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-ochre text-xs font-bold text-white">
-                      {i + 1}
-                    </span>
-                    <p className="pt-0.5 text-xs leading-relaxed text-neutral-700">{step}</p>
-                  </div>
-                ))}
-                <p className="mt-3 text-xs leading-relaxed text-neutral-500">{m.iosBody}</p>
-              </>
-            )}
-            {modal === "android" && (
-              <>
-                <h3 className="text-[15px] font-bold tracking-[-0.01em] text-neutral-900">{m.androidTitle}</h3>
-                <p className="mt-2 text-xs leading-relaxed text-neutral-500">{m.androidBody}</p>
-              </>
-            )}
-            {modal === "desktop" && (
-              <>
-                <h3 className="text-[15px] font-bold tracking-[-0.01em] text-neutral-900">{m.desktopTitle}</h3>
-                <p className="mt-2 text-xs leading-relaxed text-neutral-500">{m.desktopBody}</p>
-                <p className="mt-3 rounded-[10px] border border-neutral-200 bg-paper p-3 text-center text-base font-bold tracking-[-0.01em] text-neutral-900">
-                  picacho<span className="text-ochre">.ai</span>
-                </p>
-              </>
-            )}
-            <p className="mt-4 text-center text-xs text-neutral-400">{m.close}</p>
-          </div>
-        </div>
-      )}
+      <InstallModal kind={flow.modal} onClose={() => flow.setModal(null)} />
     </>
+  );
+}
+
+// The header entry point. One quiet control, on every marketing page,
+// costing no vertical space — which is why the homepage hero doesn't carry
+// the badges any more (they pushed the headline out of line with the photo
+// grid beside it).
+export function GetAppButton() {
+  const { t } = useLocale();
+  const m = t.marketing.install;
+  const flow = useInstallFlow();
+
+  if (flow.standalone) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={flow.openAny}
+        className="inline-flex items-center gap-1.5 rounded-[8px] border border-neutral-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-neutral-900 transition-colors hover:border-neutral-300 hover:text-ochre sm:px-3"
+      >
+        <DownloadIcon className="h-3.5 w-3.5" />
+        {/* Label hides on the narrowest screens so the nav never wraps. */}
+        <span className="hidden sm:inline">{m.getApp}</span>
+        <span className="sr-only sm:hidden">{m.getApp}</span>
+      </button>
+
+      <InstallModal kind={flow.modal} onClose={() => flow.setModal(null)} />
+    </>
+  );
+}
+
+function InstallModal({ kind, onClose }: { kind: ModalKind; onClose: () => void }) {
+  const { t } = useLocale();
+  const m = t.marketing.install;
+
+  if (!kind) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-6"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="w-full max-w-xs rounded-[20px] border border-neutral-100 bg-white p-6 shadow-[0_24px_60px_-18px_rgba(0,0,0,0.35)]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-[11px] border border-neutral-200 bg-paper text-xl font-extrabold text-neutral-900">
+          P<span className="text-ochre">.</span>
+        </div>
+        {kind === "ios" && (
+          <>
+            <h3 className="text-[15px] font-bold tracking-[-0.01em] text-neutral-900">{m.iosTitle}</h3>
+            {[m.iosStep1, m.iosStep2].map((step, i) => (
+              <div key={i} className="mt-3 flex items-start gap-2.5">
+                <span className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-ochre text-xs font-bold text-white">
+                  {i + 1}
+                </span>
+                <p className="pt-0.5 text-xs leading-relaxed text-neutral-700">{step}</p>
+              </div>
+            ))}
+            <p className="mt-3 text-xs leading-relaxed text-neutral-500">{m.iosBody}</p>
+          </>
+        )}
+        {kind === "android" && (
+          <>
+            <h3 className="text-[15px] font-bold tracking-[-0.01em] text-neutral-900">{m.androidTitle}</h3>
+            <p className="mt-2 text-xs leading-relaxed text-neutral-500">{m.androidBody}</p>
+          </>
+        )}
+        {kind === "desktop" && (
+          <>
+            <h3 className="text-[15px] font-bold tracking-[-0.01em] text-neutral-900">{m.desktopTitle}</h3>
+            <p className="mt-2 text-xs leading-relaxed text-neutral-500">{m.desktopBody}</p>
+            <p className="mt-3 rounded-[10px] border border-neutral-200 bg-paper p-3 text-center text-base font-bold tracking-[-0.01em] text-neutral-900">
+              picacho<span className="text-ochre">.ai</span>
+            </p>
+          </>
+        )}
+        <p className="mt-4 text-center text-xs text-neutral-400">{m.close}</p>
+      </div>
+    </div>
+  );
+}
+
+function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </svg>
   );
 }
 
