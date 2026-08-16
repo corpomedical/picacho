@@ -879,6 +879,35 @@ export async function runRealPipeline(
       return { attempts, succeeded: false, finalPrompt: reviewedPrompt, resultUrl: null, cancelled: true };
     }
 
+    // Compile-only: the caller wants the finished prompt, not a render.
+    //
+    // Two callers. Multi-angle needs ONE canonical scene description that
+    // every angle then shares — running the full pipeline per angle (what it
+    // used to do) meant each angle got its own independent draft, and two
+    // separate creative expansions of "a woman in a Paris coffee shop"
+    // furnish the room differently every time: different table, different
+    // cup, different background. The camera angle was meant to be the only
+    // variable; in practice the entire scene was. Prompt Studio then needs
+    // exactly the same thing for a different reason — to show someone the
+    // real prompt before they spend a credit on it.
+    //
+    // This sits ABOVE the content-type branch and outside the generate retry
+    // loop, where it belongs: nothing below it runs, so there is nothing to
+    // retry, and until 2026-08-16 it was nested inside the video branch —
+    // which silently made compileOnly a no-op for images, quietly generating
+    // (and charging for) a picture any caller that asked for prompt-only on
+    // an image would not have expected.
+    if (options.compileOnly) {
+      attempts.push({
+        attempt: attemptNumber,
+        steps,
+        passed: true,
+        issues: [],
+        compiledPrompt: reviewedPrompt,
+      });
+      return { attempts, succeeded: false, finalPrompt: reviewedPrompt, resultUrl: null };
+    }
+
     let resultUrl: string | null = null;
     let generateFailed = false;
     let nonRetryableFailure = false;
@@ -918,27 +947,6 @@ export async function runRealPipeline(
           const durationNote = options.videoDurationSeconds ? `, ${options.videoDurationSeconds}s` : "";
           const aspectNote = options.videoAspectRatio ? `, ${options.videoAspectRatio}` : "";
           const modelName = getVideoModel(options.videoModelId ?? "kling").name;
-
-          // Compile-only: the caller wants the finished prompt, not a render.
-          //
-          // Used by multi-angle, which needs ONE canonical scene description
-          // that every angle then shares. Running the full pipeline per angle
-          // (what it used to do) meant each angle got its own independent
-          // draft and review, and two separate creative expansions of "a
-          // woman in a Paris coffee shop" furnish the room differently every
-          // time — different table, different cup, different background. The
-          // camera angle was meant to be the only variable; in practice the
-          // entire scene was.
-          if (options.compileOnly) {
-            attempts.push({
-              attempt: attemptNumber,
-              steps,
-              passed: true,
-              issues: [],
-              compiledPrompt: reviewedPrompt,
-            });
-            return { attempts, succeeded: false, finalPrompt: reviewedPrompt, resultUrl: null };
-          }
 
           // Fire-and-poll: hand the job to fal.ai's queue and stop here rather
           // than waiting for it.

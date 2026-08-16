@@ -62,6 +62,39 @@ export const FREE_TIER_VIDEO_MODEL_ID = "kling";
 // Worst-case cost if an account maxes its cap, against plan revenue:
 //   starter ~EUR4.60 of EUR19 · growth ~EUR11.60 of EUR79
 //   studio  ~EUR31 of EUR299  · elite  ~EUR62 of EUR499
+// Monthly cap on Prompt Studio assists (Enhance, and the image-to-prompt
+// read).
+//
+// Same reasoning as PLAN_REFERENCE_IMAGE_LIMITS above, and deliberately NOT
+// priced in credits: an assist costs a fraction of a cent (one Claude call,
+// or one vision call), while a credit is worth ~EUR1.90 of revenue. Charging
+// credits for it would make people hesitate before using the one feature that
+// makes their PAID generations land first time — the exact opposite of what
+// it's for. A cap costs nothing to normal use and bounds the tail.
+//
+// The tail is the real reason this exists at all: an assist writes no
+// generations row, so it bypasses both the credit meter and the 3-second
+// cooldown. Without a cap the endpoint is a free Claude proxy for anyone with
+// an account and a script.
+//
+// Elite is uncapped on purpose — at EUR499 the assist cost is rounding error,
+// and "unlimited" is a real thing to sell.
+export const PLAN_PROMPT_ASSIST_LIMITS = {
+  none: 0,
+  starter: 40,
+  growth: 150,
+  studio: 600,
+  elite: Number.POSITIVE_INFINITY,
+} as const satisfies Record<PlanId, number>;
+
+// What a trial account gets, in total rather than per period (a free account
+// has no billing anchor to reset against).
+//
+// Ten, because the free tier's whole job is to produce five generations good
+// enough to convert — and a weak first prompt is the most common way that
+// fails. Two assists per free generation is enough to learn the habit.
+export const FREE_PROMPT_ASSIST_LIMIT = 10;
+
 export const PLAN_REFERENCE_IMAGE_LIMITS = {
   none: 0,
   starter: 30,

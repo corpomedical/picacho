@@ -706,7 +706,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // skips the paid Claude draft + OpenAI review steps for THIS account's
   // generations only, not everyone's. See pipeline.ts's skipRefinement
   // option for what actually changes.
-  const skipRefinement = userProfile?.skip_ai_refinement === true;
+  // Also skipped for a single request when the composer says this prompt was
+  // already compiled and approved in Prompt Studio (see prompts/actions.ts).
+  // Redrafting it would mean the user approved one prompt and a different one
+  // ran — which would make the whole feature a lie. The composer only sets
+  // this when the text is still byte-for-byte what it showed.
+  const promptIsFinal = formData.get("prompt_is_final") === "1";
+  const skipRefinement = userProfile?.skip_ai_refinement === true || promptIsFinal;
 
   // Multi-character images need OpenAI's real multi-image edit endpoint —
   // Flux's fal.ai endpoint only ever accepts one reference image, with no

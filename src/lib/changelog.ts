@@ -25,6 +25,8 @@ export const RELEASES: Release[] = [
     date: "2026-08-16",
     title: "The app, perfected",
     items: [
+      "Prompt Studio, phase one: an Enhance button in the composer turns a plain sentence into the full engineered prompt \u2014 lighting, wardrobe, lens, composition \u2014 and shows it to you before you spend anything. Crucially it is not a second prompt writer: it runs the generator\u2019s own drafting step in compile-only mode, so the prompt on screen is the prompt that runs, and approving one submits it with redrafting switched off. Assists have their own generous monthly allowance per plan (10 free on trial) and never touch generation credits.",
+      "Fixed a bug that had been sitting in the pipeline: the compile-only switch was nested inside the video branch, so asking for a prompt without a render silently generated (and charged for) an image anyway. It now applies to both media types.",
       "Images across the app now load instantly on repeat visits: every picture used to be fetched through a freshly minted temporary link (new link every page view, so nothing could ever be cached) — they're now served through stable, permanently cacheable URLs. This also removed a storage round-trip from almost every page load.",
       "Fixed a serious latent bug the old links hid: every image in History silently broke 7 days after it was made, because the stored link expired even though the file was still there. New results use permanent links, and every OLD row — including ones already broken — is rescued automatically at display time.",
       "Chat attachment previews no longer expire mid-conversation (they used to die after 24 hours).",

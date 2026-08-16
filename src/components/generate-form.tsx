@@ -33,6 +33,7 @@ import {
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
+import { compilePrompt } from "@/lib/prompts/actions";
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { DownloadButton } from "@/components/download-button";
@@ -500,6 +501,14 @@ function VoiceIcon(props: React.SVGProps<SVGSVGElement>) {
       <path d="M11 5 6 9H2v6h4l5 4V5Z" />
       <path d="M16.5 8.5a5 5 0 0 1 0 7" />
       <path d="M19 6a9 9 0 0 1 0 12" />
+    </svg>
+  );
+}
+
+function SparkIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M12 2l1.9 5.6L19.5 9l-4.4 3.4 1.5 5.7L12 15l-4.6 3.1 1.5-5.7L4.5 9l5.6-1.4L12 2z" />
     </svg>
   );
 }
@@ -1311,6 +1320,18 @@ function GenerateFormInner({
     searchParams.get("type") === "image" ? "image" : "video",
   );
   const [prompt, setPrompt] = useState("");
+  // Prompt Studio (Enhance). `approvedPrompt` holds the exact text the user
+  // accepted from the panel: at submit time, a prompt still identical to it
+  // is sent with refinement skipped, so the pipeline doesn't redraft the
+  // thing the user just approved. Edit it and it goes back through drafting
+  // like any other typed prompt — which is the safe direction to fail, since
+  // a hand-edited prompt is the one case where the draft step still adds
+  // something.
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhanced, setEnhanced] = useState<string | null>(null);
+  const [enhanceError, setEnhanceError] = useState<string | null>(null);
+  const [assistsLeft, setAssistsLeft] = useState<number | null | undefined>(undefined);
+  const [approvedPrompt, setApprovedPrompt] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   // Set by handleStop, read by submitPrompt/confirmMultiAngle once their
@@ -2367,6 +2388,44 @@ function GenerateFormInner({
     }
   }
 
+  async function runEnhance() {
+    const text = prompt.trim();
+    if (!text || enhancing) return;
+    setEnhancing(true);
+    setEnhanceError(null);
+    try {
+      const formData = new FormData();
+      formData.set("prompt", text);
+      formData.set("character_id", characterId);
+      formData.set("content_type", contentType);
+      const result = await compilePrompt(formData);
+      // `=== null` rather than a truthiness check: the failure member's
+      // `error` is typed `string`, which includes "", so TS can't narrow the
+      // success member out of an `if (result.error)` else-branch.
+      if (result.error === null) {
+        setEnhanced(result.prompt);
+        setAssistsLeft(result.assistsLeft);
+      } else {
+        setEnhanceError(result.error);
+        setEnhanced(null);
+      }
+    } catch {
+      // A rejected promise means the request never reached the action at
+      // all — same handling as the composer's own submit path.
+      setEnhanceError(g.submitFailed);
+    } finally {
+      setEnhancing(false);
+    }
+  }
+
+  function useEnhancedPrompt() {
+    if (!enhanced) return;
+    setPrompt(enhanced);
+    setApprovedPrompt(enhanced);
+    setEnhanced(null);
+    setEnhanceError(null);
+  }
+
   async function submitPrompt(
     rawPrompt: string,
     opts?: {
@@ -2431,6 +2490,11 @@ function GenerateFormInner({
     const formData = new FormData();
     formData.set("generation_id", generationId);
     formData.set("prompt", submittedPrompt);
+    // Approved in Prompt Studio and unedited since: skip the draft step so
+    // what the user saw is byte-for-byte what generates.
+    if (approvedPrompt && submittedPrompt.trim() === approvedPrompt.trim()) {
+      formData.set("prompt_is_final", "1");
+    }
     if (videoAdvancedMode === "multiref" && multiRefPaths.length >= 2) {
       formData.set("reference_photo_paths", JSON.stringify(multiRefPaths));
     } else if (videoAdvancedMode === "storyboard" && storyboardStartPath) {
@@ -3724,6 +3788,57 @@ function GenerateFormInner({
                 </div>
               )}
 
+              {(enhanced || enhanceError) && (
+                <div className="mx-2.5 mb-2.5 rounded-[16px] border border-ochre/30 bg-gradient-to-b from-ochre-soft/40 to-white p-3.5">
+                  {enhanceError ? (
+                    <p className="text-xs leading-relaxed text-red-600">{enhanceError}</p>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline justify-between gap-3">
+                        <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-ochre">
+                          {g.enhanceTitle}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">{g.enhanceSubtitle}</p>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-neutral-800">
+                        {enhanced}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={useEnhancedPrompt}
+                          className="rounded-[10px] bg-ochre px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-ochre-deep"
+                        >
+                          {g.enhanceUse}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={runEnhance}
+                          disabled={enhancing}
+                          className="rounded-[10px] border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 disabled:opacity-50"
+                        >
+                          {enhancing ? g.enhanceWorking : g.enhanceRetry}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEnhanced(null)}
+                          className="rounded-[10px] px-2 py-1.5 text-xs text-neutral-500 transition-colors hover:text-neutral-800"
+                        >
+                          {g.enhanceDismiss}
+                        </button>
+                        {assistsLeft !== undefined && (
+                          <span className="ml-auto text-[11px] text-neutral-400">
+                            {assistsLeft === null
+                              ? g.enhanceUnlimited
+                              : g.enhanceLeft.replace("{n}", String(assistsLeft))}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
               <div className="flex min-w-0 items-center justify-between gap-2 px-2.5 pb-3">
                 <div ref={plusMenuRef} className="relative flex flex-shrink-0 items-center gap-2">
                   <button
@@ -3840,6 +3955,21 @@ function GenerateFormInner({
                       scrolls internally instead of pushing Send off-screen —
                       Send/Stop stays outside it, always visible. */}
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
+                  {/* Prompt Studio. Only appears once there's something to
+                      enhance — an empty composer has nothing to improve, and
+                      a control that can't do anything yet is just noise. */}
+                  {prompt.trim().length > 0 && (
+                    <button
+                      type="button"
+                      onClick={runEnhance}
+                      disabled={enhancing || submitting}
+                      title={g.enhance}
+                      className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-ochre/40 bg-ochre-soft/60 px-3 py-1.5 text-xs font-semibold text-ochre transition-colors hover:bg-ochre-soft disabled:opacity-50"
+                    >
+                      <SparkIcon className={cn("h-3.5 w-3.5", enhancing && "animate-pulse")} />
+                      {enhancing ? g.enhanceWorking : g.enhance}
+                    </button>
+                  )}
                   {contentType === "video" && (
                     <>
                       <div
