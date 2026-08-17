@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.3.0",
+    build: 4,
+    date: "2026-08-17",
+    title: "The Picacho API",
+    items: [
+      "Picacho has a public API. Four endpoints \u2014 list your characters, generate an image against one, fetch a generation, check your remaining credits \u2014 authenticated with a key you create in Settings. It runs the same pipeline the app does: same identity locking, same match score, same automatic refund when a generation fails, and it draws on the credits already included in your plan rather than a separate meter. Included with Elite; grantable per account from admin for a pilot or a partner.",
+      "API keys are shown once, at creation, and only a hash is stored \u2014 so a lost key genuinely cannot be recovered, only replaced. Keys are revoked rather than deleted, so \u201cwhich key did that?\u201d stays answerable.",
+      "A real developer reference at /docs/api, with copy-pasteable examples for every endpoint, the full error list, and an honest note that video isn\u2019t in this version.",
+      "The Elite plan\u2019s API line now describes something that exists: it read \u201cearly access by request\u201d while there was nothing behind it.",
+    ],
+  },
+  {
     version: "1.2.0",
     build: 3,
     date: "2026-08-16",

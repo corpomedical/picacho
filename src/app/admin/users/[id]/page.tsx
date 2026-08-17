@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { setUserStatus, setUserRole, setUserPlan, setBonusCredits } from "@/lib/admin/actions";
+import {
+  setApiAccess,
+  setBonusCredits,
+  setUserPlan,
+  setUserRole,
+  setUserStatus,
+} from "@/lib/admin/actions";
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { Card } from "@/components/ui/card";
@@ -217,6 +223,30 @@ export default async function AdminUserDetailPage({
               Extra generations on top of their plan — a goodwill grant, not a plan change. Stacks
               with whatever tier they&apos;re on; doesn&apos;t reset on its own, so set it back to 0
               when it shouldn&apos;t carry into next month.
+            </p>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+              API access
+            </p>
+            <form action={setApiAccess} className="mt-2 flex items-center gap-2">
+              <input type="hidden" name="user_id" value={user.id} />
+              <input type="hidden" name="api_access" value={String(!user.api_access)} />
+              <Badge tone={user.plan === "elite" || user.api_access ? "success" : "neutral"}>
+                {user.plan === "elite"
+                  ? "included with Elite"
+                  : user.api_access
+                    ? "granted"
+                    : "off"}
+              </Badge>
+              <SubmitButton variant="secondary" size="sm">
+                {user.api_access ? "Revoke grant" : "Grant access"}
+              </SubmitButton>
+            </form>
+            <p className="mt-1.5 text-xs text-neutral-400">
+              Elite includes the API already — this grant is for everyone else: a pilot, a partner, a
+              migration. Their existing keys stop working the moment it&apos;s revoked.
             </p>
           </div>
 

@@ -772,7 +772,7 @@ const en = {
         "Everything in Studio",
         "Priority rendering queue",
         "Early access to new models and features",
-        "API access — early access by request",
+        "API access — generate from your own software",
       ],
     },
   },

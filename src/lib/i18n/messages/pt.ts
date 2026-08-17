@@ -756,7 +756,7 @@ const pt = {
         "Tudo do Studio",
         "Fila de renderização prioritária",
         "Acesso antecipado a novos modelos e recursos",
-        "Acesso à API — acesso antecipado sob solicitação",
+        "Acesso à API — gere a partir do seu próprio software",
       ],
     },
   },

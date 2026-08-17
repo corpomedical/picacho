@@ -30,6 +30,9 @@ export const config = {
      * Run on every route except static files and images, so the session
      * cookie stays fresh everywhere without wasting work on assets.
      */
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    // api/v1 is excluded: it authenticates with an API key, has no
+    // session cookie to refresh, and every request through it would
+    // otherwise pay for a pointless Supabase auth round-trip.
+    "/((?!_next/static|_next/image|api/v1|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

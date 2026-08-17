@@ -756,7 +756,7 @@ const es = {
         "Todo lo de Studio",
         "Cola de renderizado prioritaria",
         "Acceso anticipado a nuevos modelos y funciones",
-        "Acceso a la API — acceso anticipado por solicitud",
+        "Acceso a la API — genera desde tu propio software",
       ],
     },
   },

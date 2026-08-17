@@ -18,6 +18,7 @@ import { PasswordForm } from "@/components/settings/password-form";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { DeleteAccountForm } from "@/components/settings/delete-account-form";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
+import { ApiKeysCard } from "@/components/settings/api-keys-card";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { logout } from "@/lib/auth/actions";
 import { createCheckoutSession, createPortalSession } from "@/lib/stripe/actions";
@@ -118,7 +119,7 @@ export default async function SettingsPage({
     supabase
       .from("profiles")
       .select(
-        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, bonus_credits, purchased_credits",
+        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, bonus_credits, purchased_credits, role, api_access",
       )
       .eq("id", data.user.id)
       .single(),
@@ -128,6 +129,25 @@ export default async function SettingsPage({
 
   const username = profile?.username ?? (data.user.email ?? "").split("@")[0];
   const plan = (profile?.plan ?? "none") as PlanId;
+
+  // API access: Elite includes it, an admin grant covers the exceptions.
+  const apiEnabled =
+    profile?.plan === "elite" || profile?.api_access === true || profile?.role === "admin";
+  const { data: apiKeyRows } = apiEnabled
+    ? await supabase
+        .from("api_keys")
+        .select("id, name, prefix, created_at, last_used_at")
+        .eq("user_id", data.user.id)
+        .is("revoked_at", null)
+        .order("created_at", { ascending: false })
+    : { data: [] };
+  const apiKeys = (apiKeyRows ?? []) as {
+    id: string;
+    name: string;
+    prefix: string;
+    created_at: string;
+    last_used_at: string | null;
+  }[];
   // Bonus credits (admin-granted) stack on top of the plan limit — same rule
   // as the actual enforcement in checkGenerationAllowance.
   const limit = PLAN_LIMITS[plan] + (profile?.bonus_credits ?? 0);
@@ -209,6 +229,10 @@ export default async function SettingsPage({
                   <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
                 </div>
               </Card>
+
+              {/* Only shown where it's actually usable — an API-keys card on a
+                  Starter account is an advert dressed as a setting. */}
+              {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
 
               <Card>
                 <form action={logout}>

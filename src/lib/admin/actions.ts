@@ -356,6 +356,28 @@ export async function setBonusCredits(formData: FormData) {
   revalidatePath(`/admin/users/${userId}`);
 }
 
+// Grants API access to an account that isn't on Elite.
+//
+// Elite includes the API by plan, so this is only ever the exception: a pilot
+// customer, a partner, someone mid-migration. Kept as a separate flag rather
+// than a plan bump so it can be given and taken back without touching what
+// they pay or what else they can do.
+export async function setApiAccess(formData: FormData) {
+  const { supabase } = await requireAdmin();
+  const userId = formData.get("user_id") as string;
+  const enabled = formData.get("api_access") === "true";
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ api_access: enabled })
+    .eq("id", userId);
+  if (error) {
+    redirect(`/admin/users/${userId}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/admin/users/${userId}`);
+}
+
 // Manual controls for the provider circuit breaker (see
 // lib/generations/model-health.ts).
 //

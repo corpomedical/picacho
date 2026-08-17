@@ -756,7 +756,7 @@ const it = {
         "Tutto ciò che include Studio",
         "Coda di rendering prioritaria",
         "Accesso anticipato a nuovi modelli e funzioni",
-        "Accesso API — accesso anticipato su richiesta",
+        "Accesso API — genera dal tuo software",
       ],
     },
   },
