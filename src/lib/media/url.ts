@@ -70,3 +70,41 @@ export function absolutizeMediaUrl(url: string, origin: string): string {
 export function isRenderableUrl(url: string | null | undefined): boolean {
   return Boolean(url && (url.startsWith("http") || url.startsWith("/api/media/")));
 }
+
+// ---------------------------------------------------------------------------
+// Thumbnails
+// ---------------------------------------------------------------------------
+//
+// Galleries used to load the full generated PNG for every tile — often ~2MB
+// each, a dozen at a time, on a phone. The media route can now resize on the
+// way out (see api/media/[...key]/route.ts), so grids ask for a small WebP and
+// only the opened image, the download and anything sent to an AI provider use
+// the original bytes.
+//
+// The widths are a closed set on purpose: `w` isn't part of the URL signature,
+// so an open range would let one file be requested at ten thousand sizes and
+// evict everything else from the CDN cache. Two sizes cover every grid we
+// have (a phone-width tile and a retina/desktop one).
+export const THUMB_WIDTHS = [320, 640] as const;
+export type ThumbWidth = (typeof THUMB_WIDTHS)[number];
+
+export function isThumbWidth(value: number): value is ThumbWidth {
+  return (THUMB_WIDTHS as readonly number[]).includes(value);
+}
+
+/**
+ * Small version of one of OUR media URLs, for grid and list tiles.
+ *
+ * Anything else — an external provider URL, a null, an already-absolute link —
+ * passes straight through untouched, so this is always safe to wrap around a
+ * URL of unknown origin. Never use it for downloads, full-size viewing, or
+ * anything handed to a model: those need the real file.
+ */
+export function thumbUrl(
+  url: string | null | undefined,
+  width: ThumbWidth = 640,
+): string | null {
+  if (!url) return null;
+  if (!url.startsWith("/api/media/")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}w=${width}`;
+}

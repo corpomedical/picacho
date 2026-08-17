@@ -23,6 +23,7 @@
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "next": "latest",
+    "sharp": "^0.35.3",
     "react": "latest",
     "react-dom": "latest",
     "stripe": "latest"

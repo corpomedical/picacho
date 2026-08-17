@@ -6,7 +6,7 @@ import { InstallAppHint } from "@/components/install-app-hint";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
-import { mediaUrl, toMediaUrl, isRenderableUrl } from "@/lib/media/url";
+import { mediaUrl, toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 
 export const maxDuration = 300;
@@ -67,7 +67,8 @@ export default async function AppHome() {
   }
 
   const recentTiles = (recent ?? [])
-    .map((g) => ({ ...g, displayUrl: toMediaUrl(g.result_url) }))
+    // Small tiles — the full image is one tap away on the history page.
+    .map((g) => ({ ...g, displayUrl: thumbUrl(toMediaUrl(g.result_url), 320) }))
     .filter((g) => isRenderableUrl(g.displayUrl));
 
   return (
@@ -125,7 +126,7 @@ export default async function AppHome() {
         <div className="flex gap-3 overflow-x-auto pb-1">
           {(characters ?? []).map((c) => {
             const thumb = c.reference_image_urls?.[0]
-              ? mediaUrl("character-references", c.reference_image_urls[0])
+              ? thumbUrl(mediaUrl("character-references", c.reference_image_urls[0]), 320)
               : null;
             return (
               <Link

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { mediaUrl } from "@/lib/media/url";
+import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -40,6 +40,9 @@ export default async function EditCharacterPage({
     (profile.reference_image_urls ?? []).map((path: string) => ({
       path,
       url: mediaUrl("character-references", path),
+      // Grid tiles only — the lightbox and everything the pipeline touches
+      // keep using `url` above.
+      thumbUrl: thumbUrl(mediaUrl("character-references", path), 320) ?? undefined,
     })),
     supabase
       .from("projects")

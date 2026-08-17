@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { mediaUrl } from "@/lib/media/url";
+import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,7 +45,9 @@ export default async function CharacterListPage() {
     const firstPath = profile.reference_image_urls?.[0];
     return {
       ...profile,
-      thumbnailUrl: firstPath ? mediaUrl("character-references", firstPath) : null,
+      thumbnailUrl: firstPath
+        ? thumbUrl(mediaUrl("character-references", firstPath), 320)
+        : null,
     };
   });
 

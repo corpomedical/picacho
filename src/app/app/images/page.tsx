@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { toMediaUrl } from "@/lib/media/url";
+import { toMediaUrl, thumbUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
 
@@ -31,7 +31,9 @@ export default async function ImagesPage() {
     id: g.id,
     prompt_input: g.prompt_input,
     status: g.status,
-    result_url: toMediaUrl(g.result_url),
+    // Grid thumbnails. Clicking through to /app/history/<id> loads the
+    // real file, and the download there is the untouched original.
+    result_url: thumbUrl(toMediaUrl(g.result_url), 640),
     content_type: g.content_type,
     created_at: g.created_at,
     characterName: g.character_profile_id

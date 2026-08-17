@@ -14,7 +14,12 @@ import { formatMsg } from "@/lib/i18n/format";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { VoicePreviewButton } from "@/components/voice-preview-button";
 
-type ExistingImage = { path: string; url: string };
+// `url` is the real file (lightbox, and the anchor a generation uses);
+// `thumbUrl` is the small version for the grid tile. Kept as two fields
+// rather than one so a resized image can never be mistaken for the
+// original — this grid sits right next to the identity photo, which is the
+// one image in the product that must never be a downscale.
+type ExistingImage = { path: string; url: string; thumbUrl?: string };
 
 type Initial = {
   id?: string;
@@ -272,7 +277,13 @@ export function CharacterForm({
                 className="block h-full w-full cursor-zoom-in"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.url} alt="" className="h-full w-full object-cover" />
+                <img
+                  src={img.thumbUrl ?? img.url}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-cover"
+                />
               </button>
               {idx === 0 && (
                 <span className="pointer-events-none absolute bottom-1 left-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 shadow-sm">

@@ -1,5 +1,5 @@
 import { getMonthlyUsage } from "@/lib/generations/actions";
-import { mediaUrl } from "@/lib/media/url";
+import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
@@ -86,7 +86,9 @@ export async function getGenerateWorkspaceData(
     name: c.name as string,
     referencePhotos: ((c.reference_image_urls as string[] | null) ?? []).map((path) => ({
       path,
-      url: mediaUrl("character-references", path),
+      // Picker thumbnails only. What actually anchors a generation is `path`,
+      // resolved server-side against the real file — never this URL.
+      url: thumbUrl(mediaUrl("character-references", path), 320) ?? "",
     })),
     voiceId: (c.voice_id as string | null) ?? null,
   }));
