@@ -116,7 +116,7 @@ export async function runApiImageGeneration(params: {
       user_id: userId,
       character_profile_id: characterId,
       prompt_input: prompt,
-      status: "running",
+      status: "generating",
       content_type: "image",
       attempts: 0,
       credits_used: 1,
@@ -127,6 +127,11 @@ export async function runApiImageGeneration(params: {
     .single();
 
   if (insertError || !row) {
+    // Logged, because the caller only ever sees a polite sentence: this
+    // exact path swallowed a CHECK-constraint violation once (status
+    // "running", which the table does not allow) and the message alone gave
+    // no way to tell a constraint failure from a database outage.
+    console.error("API generation insert failed", insertError);
     return { error: "Couldn't start that generation.", status: 500 };
   }
 
