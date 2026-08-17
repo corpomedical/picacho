@@ -79,6 +79,27 @@ export const FREE_TIER_VIDEO_MODEL_ID = "kling";
 //
 // Elite is uncapped on purpose — at EUR499 the assist cost is rounding error,
 // and "unlimited" is a real thing to sell.
+// How many FAILED generations an account may have refunded in a rolling 24
+// hours before failures start costing a credit like any other generation.
+//
+// Refunding our own failures is right — it is what stops chargebacks and it
+// is what an honest product does. But an unlimited refund is an unlimited
+// budget: nothing else in the system caps failures, so one account could
+// fail continuously and spend real provider money at zero cost to itself.
+// This is the backstop for that, not a punishment: the numbers are far above
+// anything a real user hits, because a genuine provider outage should never
+// leave a paying customer out of pocket.
+//
+// Deliberately a rolling window rather than a calendar day, so it can't be
+// reset by waiting for midnight, and deliberately one function so the whole
+// policy is tunable in one place while we study the real numbers.
+export function refundedFailureDailyCap(plan: PlanId): number {
+  // Free accounts get a flat allowance — their plan limit is 0, so a
+  // multiple of it would be 0 and every trial failure would cost them.
+  if (plan === "none") return 10;
+  return Math.max(10, Math.min(PLAN_LIMITS[plan] ?? 0, 60));
+}
+
 export const PLAN_PROMPT_ASSIST_LIMITS = {
   none: 0,
   starter: 40,

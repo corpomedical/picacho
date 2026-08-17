@@ -86,6 +86,12 @@ export async function checkGenerationAllowance(
   supabase: SupabaseClient,
   userId: string,
   requestedCredits: number,
+  // The 3-second cooldown imitates a human clicking; a script calling the
+  // public API is EXPECTED to be faster than that, and the API has its own
+  // per-minute limit. Leaving this on made the API's real ceiling 20/min
+  // while its documentation promised 30, and reported the refusal as a
+  // billing error rather than a rate limit.
+  options?: { skipCooldown?: boolean },
 ): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean; consumePurchased?: number; consumeFree?: boolean }> {
   const [{ data: profile }, { data: recent }] = await Promise.all([
     supabase
@@ -119,7 +125,11 @@ export async function checkGenerationAllowance(
   if (isAdmin) return { error: null, plan, isAdmin };
 
   const lastCreatedAt = recent?.[0]?.created_at as string | undefined;
-  if (lastCreatedAt && Date.now() - new Date(lastCreatedAt).getTime() < COOLDOWN_MS) {
+  if (
+    !options?.skipCooldown &&
+    lastCreatedAt &&
+    Date.now() - new Date(lastCreatedAt).getTime() < COOLDOWN_MS
+  ) {
     return {
       error: "You're generating a bit fast — wait a few seconds and try again.",
       plan,

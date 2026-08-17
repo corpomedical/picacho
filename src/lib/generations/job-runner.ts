@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import {
   cancelQueuedJob,
   checkQueuedJob,
@@ -147,6 +148,43 @@ export async function refundGenerationCosts(generationId: string): Promise<void>
     .eq("id", generationId)
     .maybeSingle<{ user_id: string; purchased_credits_used: number; free_generation_used: boolean }>();
   if (!row) return;
+
+  // The daily ceiling is enforced HERE rather than at each of the eleven
+  // call sites: this is the single function every refund in the product
+  // passes through, so one check cannot be forgotten by a future caller.
+  //
+  // A refunded failure is a row that already ran, already failed, and had
+  // its credits zeroed — so counting those in the last 24 hours is exactly
+  // "how much has this account already been forgiven today".
+  const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [{ data: profile }, { count: forgivenToday }] = await Promise.all([
+    admin.from("profiles").select("plan, role").eq("id", row.user_id).maybeSingle<{
+      plan: PlanId;
+      role: string | null;
+    }>(),
+    admin
+      .from("generations")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", row.user_id)
+      .eq("status", "failed")
+      .eq("credits_used", 0)
+      .gte("created_at", dayAgo),
+  ]);
+
+  // Admins are exempt, same as everywhere else — support and testing must
+  // never be blocked by a customer-facing limit.
+  if (profile?.role !== "admin") {
+    const cap = refundedFailureDailyCap((profile?.plan ?? "none") as PlanId);
+    if ((forgivenToday ?? 0) >= cap) {
+      console.warn("Refund withheld: daily refunded-failure cap reached", {
+        userId: row.user_id,
+        cap,
+        forgivenToday,
+        generationId,
+      });
+      return;
+    }
+  }
 
   // Always release the monthly allowance, even when there's nothing else to
   // refund — some callers reach here without having zeroed credits_used.
@@ -375,13 +413,34 @@ export async function advanceGeneration(
     .maybeSingle<{ cancel_requested: boolean }>();
 
   if (gen?.cancel_requested) {
-    await cancelQueuedJob(jobHandle(row));
-    await finish(generationId, userId, {
-      status: "failed",
-      attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
-      fault: "user_cancelled",
-    });
-    return { state: "cancelled" };
+    // Ask fal what actually happened BEFORE honouring the stop.
+    //
+    // This check used to come first, which meant a stop pressed at minute
+    // nine of a ten-minute render refunded a video that had already
+    // COMPLETED and been billed in full — we simply never looked. A cancel
+    // is a request to stop work that is still running; once the work is
+    // done, there is nothing left to cancel and the render has been paid
+    // for either way, so the honest outcome is to deliver it.
+    let finished = false;
+    try {
+      const late = await checkQueuedJob(jobHandle(row));
+      finished = late.state === "completed";
+    } catch {
+      // Couldn't reach fal — fall through and treat it as a normal stop
+      // rather than holding the user's credit on a guess.
+    }
+
+    if (!finished) {
+      await cancelQueuedJob(jobHandle(row));
+      await finish(generationId, userId, {
+        status: "failed",
+        attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
+        fault: "user_cancelled",
+      });
+      return { state: "cancelled" };
+    }
+    // Completed before the stop landed: fall through to the normal
+    // collection path below, which delivers the video and keeps the charge.
   }
 
   let status;

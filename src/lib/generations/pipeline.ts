@@ -15,7 +15,11 @@ import {
   type QueuedJob,
 } from "@/lib/generations/providers/fal";
 import { getVideoModel } from "@/lib/generations/providers/video-models";
-import { generateImage } from "@/lib/generations/providers/image";
+import {
+  generateImage,
+  newProviderBudget,
+  ProviderBudgetExhausted,
+} from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { BrandRule } from "@/lib/brand-rules/types";
@@ -374,6 +378,17 @@ export function missingRealProviderKeys(contentType: ContentType, imageModelId?:
 // retry, so blocking all 400s would throw that real recovery away.
 const NON_RETRYABLE_STATUS_CODES = new Set([401, 403, 404]);
 
+// Paid image calls allowed per generation, across all attempts.
+const MAX_PAID_IMAGE_CALLS = 4;
+
+// Phrases a provider uses when it has decided the CONTENT is the problem.
+// Retrying these is pure waste: the same prompt fails the same classifier
+// every time, and each rejection can still cost a render (Flux returns a
+// blacked-out image with HTTP 200 and bills for it). Deliberately distinct
+// from a bare 400, which really can be transient — see the comment on
+// NON_RETRYABLE_STATUS_CODES above.
+const SAFETY_REJECTION = /safety|nsfw|content policy|moderation|blocked by the provider/i;
+
 function isNonRetryableProviderError(message: string): boolean {
   const match = message.match(/\((\d{3})\)/);
   if (match && NON_RETRYABLE_STATUS_CODES.has(Number(match[1]))) return true;
@@ -590,6 +605,13 @@ export async function runRealPipeline(
   // instead of paying for a brand-new draft+review pass. Keeps worst-case
   // cost down when e.g. fal.ai has a transient hiccup.
   const GENERATE_RETRIES = 2;
+
+  // Money ceiling for this ONE generation, shared by every attempt below.
+  // Four is deliberately just above the honest recovery path (a rejected
+  // prompt, a softened retry, a fallback to the other model) and far below
+  // what the two nested retry loops could otherwise multiply to. See
+  // ProviderBudget in providers/image.ts.
+  const imageBudget = newProviderBudget(MAX_PAID_IMAGE_CALLS);
 
   for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++) {
     // Checked before starting a brand-new attempt — including the very
@@ -1020,6 +1042,7 @@ export async function runRealPipeline(
               fallbackNote = note;
               if (finalModelName) actualModelName = finalModelName;
             },
+            imageBudget,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Report the model that ACTUALLY produced the image. This used to
@@ -1060,7 +1083,12 @@ export async function runRealPipeline(
         }
 
         generateFailed = true;
-        nonRetryableFailure = isNonRetryableProviderError(message);
+        // A spent budget and a content rejection both mean "stop", not "try
+        // again": one is the ceiling, the other fails identically forever.
+        nonRetryableFailure =
+          isNonRetryableProviderError(message) ||
+          err instanceof ProviderBudgetExhausted ||
+          SAFETY_REJECTION.test(message);
         steps.push({
           step: "generate",
           detail:

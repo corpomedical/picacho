@@ -4,6 +4,42 @@ import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 
+// A hard ceiling on PAID calls for one generation, counted across every
+// retry, fallback and soften-and-try-again inside it.
+//
+// The old shape multiplied: 3 attempts x 2 generate-retries, and each of
+// those could chain GPT Image -> safety rejection -> softened retry -> Flux.
+// Twelve GPT Image calls plus six Flux renders for a single credit, and if
+// the generation ultimately failed that credit was refunded — so the worst
+// case was roughly two euros of spend against zero revenue, from one click.
+//
+// The budget is threaded through instead of lowering the retry counts,
+// because the retries themselves are worth keeping: a transient 500 really
+// does succeed on the second try. What must not happen is many EXPENSIVE
+// recoveries stacking up inside them.
+export type ProviderBudget = { spent: number; limit: number };
+
+export function newProviderBudget(limit: number): ProviderBudget {
+  return { spent: 0, limit };
+}
+
+export class ProviderBudgetExhausted extends Error {
+  constructor(limit: number) {
+    super(
+      `This request already used its ${limit} generation attempts without producing a usable image.`,
+    );
+    this.name = "ProviderBudgetExhausted";
+  }
+}
+
+// Call immediately BEFORE anything that costs money. Throws rather than
+// returning false so no call site can forget to check.
+function chargeBudget(budget: ProviderBudget | undefined): void {
+  if (!budget) return;
+  if (budget.spent >= budget.limit) throw new ProviderBudgetExhausted(budget.limit);
+  budget.spent += 1;
+}
+
 // Single entry point for image generation regardless of which model is
 // selected. OpenAI returns raw image bytes (persisted via the caller-supplied
 // persistBase64 handler); fal.ai/Flux returns a hosted URL directly.
@@ -26,6 +62,8 @@ export async function generateImage(
   // actually produced the image, so the pipeline log can report the truth
   // (it used to always print the requested model, even after a fallback).
   onFallback?: (note: string, finalModelName?: string) => void,
+  // Shared across every attempt of one generation — see ProviderBudget.
+  budget?: ProviderBudget,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -47,10 +85,12 @@ export async function generateImage(
   }
 
   if (model.provider === "fal") {
+    chargeBudget(budget);
     return persistRemoteImage(await generateImageWithFlux(prompt, referenceImageUrl));
   }
 
   try {
+    chargeBudget(budget);
     const base64 = await generateImageWithOpenAI(prompt, referenceImageUrl);
     return persistBase64(base64);
   } catch (err) {
@@ -75,12 +115,16 @@ export async function generateImage(
     if (process.env.ANTHROPIC_API_KEY) {
       try {
         softenedPrompt = await softenPromptForSafety(prompt);
+        chargeBudget(budget);
         const base64 = await generateImageWithOpenAI(softenedPrompt, referenceImageUrl);
         onFallback?.(
           "OpenAI's safety filter rejected the wording — automatically softened it and retried on GPT Image 2, keeping the identity anchor.",
         );
         return persistBase64(base64);
-      } catch {
+      } catch (softenErr) {
+        // An exhausted budget is not a recoverable rejection — it is the
+        // stop sign. Everything else falls through to the Flux attempt.
+        if (softenErr instanceof ProviderBudgetExhausted) throw softenErr;
         // Softening failed or the retry was rejected too — fall through,
         // keeping the softened wording (if any) for the Flux attempt below:
         // Flux has its own trigger-happy checker, and the plain rewrite
@@ -93,6 +137,7 @@ export async function generateImage(
         "OpenAI's safety filter rejected the prompt — generated with Flux instead. Identity match is weaker than GPT Image 2's anchored mode.",
         "Flux",
       );
+      chargeBudget(budget);
       return persistRemoteImage(
         await generateImageWithFlux(softenedPrompt ?? prompt, referenceImageUrl),
       );

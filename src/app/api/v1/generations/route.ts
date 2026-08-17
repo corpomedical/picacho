@@ -72,6 +72,10 @@ export async function POST(request: Request) {
   // last minute. No new table: generations are already written per request,
   // so the ledger IS the counter. Credits remain the real limit; this only
   // bounds a runaway loop.
+  // Counted from the generations ledger itself — no extra state to keep.
+  // Deleted rows still count: a soft-deleted row is still a request that
+  // was made, and letting delete reset the window would hand back exactly
+  // the rate limit it is supposed to enforce.
   const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
   const { count } = await supabase
     .from("generations")
@@ -100,14 +104,16 @@ export async function POST(request: Request) {
   });
 
   if (result.error !== null) {
+    const code =
+      result.status === 402
+        ? "insufficient_credits"
+        : result.status === 404
+          ? "not_found"
+          : result.status === 503
+            ? "unavailable"
+            : "generation_failed";
     return NextResponse.json(
-      {
-        error: {
-          // 402 is the credit gate; everything else is an ordinary failure.
-          code: result.status === 402 ? "insufficient_credits" : "generation_failed",
-          message: result.error,
-        },
-      },
+      { error: { code, message: result.error } },
       { status: result.status },
     );
   }

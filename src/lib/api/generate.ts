@@ -105,7 +105,9 @@ export async function runApiImageGeneration(params: {
 
   // Exactly the gate the composer uses: same plan limits, same bonus and
   // purchased credit handling, same suspension check.
-  const allowance = await checkGenerationAllowance(supabase, userId, 1);
+  // Same credit gate as the composer, minus the human cooldown: the API's
+  // own per-minute limit is the right shape for a script (see route.ts).
+  const allowance = await checkGenerationAllowance(supabase, userId, 1, { skipCooldown: true });
   if (allowance.error) {
     return { error: allowance.error, status: 402 };
   }
