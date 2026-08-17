@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { mediaUrl } from "@/lib/media/url";
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
@@ -299,7 +299,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
     // rejection or provider error above throws before this line, so a failed
     // attempt never burns a free try or a slot in the monthly cap.
     if (isFreeTier) {
-      await supabase
+      await createAdminClient()
         .from("profiles")
         .update({ free_reference_generations_used: freeUsed + 1 })
         .eq("id", data.user.id);

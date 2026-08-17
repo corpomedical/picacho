@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
 import { FREE_GENERATION_LIMIT, PLAN_LABELS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 
@@ -228,13 +229,17 @@ export async function consumePurchasedCredits(
   amount: number,
 ): Promise<void> {
   if (!amount || amount <= 0) return;
-  const { data } = await supabase
+  // Service role, not the caller's client: `authenticated` no longer has
+  // UPDATE on the credit columns, precisely so a customer can't write their
+  // own balance. Spending them is server business.
+  const admin = createAdminClient();
+  const { data } = await admin
     .from("profiles")
     .select("purchased_credits")
     .eq("id", userId)
     .single();
   const current = (data?.purchased_credits ?? 0) as number;
-  await supabase
+  await admin
     .from("profiles")
     .update({ purchased_credits: Math.max(0, current - amount) })
     .eq("id", userId);
@@ -246,12 +251,14 @@ export async function consumeFreeGeneration(
   supabase: SupabaseClient,
   userId: string,
 ): Promise<void> {
-  const { data } = await supabase
+  // Service role — see consumePurchasedCredits above.
+  const admin = createAdminClient();
+  const { data } = await admin
     .from("profiles")
     .select("free_generations_used")
     .eq("id", userId)
     .single();
-  await supabase
+  await admin
     .from("profiles")
     .update({ free_generations_used: ((data?.free_generations_used ?? 0) as number) + 1 })
     .eq("id", userId);

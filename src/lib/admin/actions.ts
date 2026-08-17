@@ -30,7 +30,7 @@ export async function getAdminBadgeCounts(): Promise<AdminBadgeCounts> {
 // target is just hardcoded.
 
 export async function setUserStatus(formData: FormData) {
-  const { supabase, userId: actingUserId } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const status = formData.get("status") as string;
   const redirectTo = (formData.get("redirect_to") as string) || "/admin/users";
@@ -46,7 +46,7 @@ export async function setUserStatus(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("You can't suspend your own account.")}`);
   }
 
-  const { error } = await supabase.from("profiles").update({ status }).eq("id", userId);
+  const { error } = await admin.from("profiles").update({ status }).eq("id", userId);
   if (error) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
@@ -57,7 +57,6 @@ export async function setUserStatus(formData: FormData) {
   // otherwise still sign in again to get a fresh session. Banning makes
   // Supabase reject their login and token refresh outright, so suspension
   // actually keeps them out. ban_duration "none" lifts it on reinstate.
-  const admin = createAdminClient();
   const { error: banError } = await admin.auth.admin.updateUserById(userId, {
     ban_duration: status === "suspended" ? "876000h" : "none",
   });
@@ -160,7 +159,7 @@ export async function updateAppSetting(formData: FormData) {
 }
 
 export async function setUserRole(formData: FormData) {
-  const { supabase, userId: actingUserId } = await requireAdmin();
+  const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const role = formData.get("role") as string;
   const redirectTo = `/admin/users/${userId}`;
@@ -176,7 +175,7 @@ export async function setUserRole(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("You can't remove your own admin role.")}`);
   }
 
-  const { error } = await supabase.from("profiles").update({ role }).eq("id", userId);
+  const { error } = await admin.from("profiles").update({ role }).eq("id", userId);
   if (error) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
@@ -310,7 +309,7 @@ export async function setFeedbackStatus(formData: FormData) {
 }
 
 export async function setUserPlan(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const plan = formData.get("plan") as string;
   const redirectTo = `/admin/users/${userId}`;
@@ -319,7 +318,7 @@ export async function setUserPlan(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("Invalid plan.")}`);
   }
 
-  const { error } = await supabase.from("profiles").update({ plan }).eq("id", userId);
+  const { error } = await admin.from("profiles").update({ plan }).eq("id", userId);
   if (error) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
@@ -335,7 +334,7 @@ export async function setUserPlan(formData: FormData) {
 // field always shows the true current amount so there's no mental math to
 // "add 3 more" on top of a number you'd otherwise have to look up first.
 export async function setBonusCredits(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const redirectTo = `/admin/users/${userId}`;
   const raw = formData.get("bonus_credits") as string;
@@ -345,7 +344,7 @@ export async function setBonusCredits(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("Bonus credits must be 0 or more.")}`);
   }
 
-  const { error } = await supabase
+  const { error } = await admin
     .from("profiles")
     .update({ bonus_credits: bonusCredits })
     .eq("id", userId);
@@ -363,11 +362,11 @@ export async function setBonusCredits(formData: FormData) {
 // than a plan bump so it can be given and taken back without touching what
 // they pay or what else they can do.
 export async function setApiAccess(formData: FormData) {
-  const { supabase } = await requireAdmin();
+  const { supabase, admin } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const enabled = formData.get("api_access") === "true";
 
-  const { error } = await supabase
+  const { error } = await admin
     .from("profiles")
     .update({ api_access: enabled })
     .eq("id", userId);

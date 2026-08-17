@@ -951,7 +951,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           attempts: result.attempts,
         });
 
-        await supabase
+        await createAdminClient()
           .from("generations")
           .update({ attempts: result.attempts.length, pipeline_log: result.attempts })
           .eq("id", placeholder.id);
@@ -991,7 +991,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         compiledPrompt: "",
       },
     ];
-    await supabase
+    await createAdminClient()
       .from("generations")
       .update({ status: "failed", pipeline_log: crashLog })
       .eq("id", placeholder.id);
@@ -1002,7 +1002,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     return { error: message };
   }
 
-  const { error: updateError } = await supabase
+  const { error: updateError } = await createAdminClient()
     .from("generations")
     .update({
       status: succeeded ? "succeeded" : "failed",
@@ -1065,7 +1065,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             detail:
               "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed and refunded.",
           });
-          await supabase
+          await createAdminClient()
             .from("generations")
             .update({
               status: "failed",
@@ -1078,7 +1078,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
         } else if (verdict) {
           matchScore = verdict.score;
-          await supabase
+          await createAdminClient()
             .from("generations")
             .update({ match_score: verdict.score, match_notes: verdict.notes || null })
             .eq("id", placeholder.id);
@@ -1258,7 +1258,7 @@ export async function discardStoppedGeneration(generationId: string): Promise<{ 
   //   started within the hour — a stop is a live gesture, not a claim made
   //                             days later about a row nobody is watching
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { data: updated, error } = await supabase
+  const { data: updated, error } = await createAdminClient()
     .from("generations")
     .update({ status: "failed", result_url: null })
     .eq("id", generationId)
@@ -1601,7 +1601,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           },
         ];
 
-    await supabase
+    await createAdminClient()
       .from("generations")
       .update({ status: "failed", pipeline_log: failureLog, credits_used: 0, progress_stage: null })
       .eq("angle_group_id", groupId);
@@ -1666,7 +1666,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             job: result.pendingVideoJob,
             attempts: result.attempts,
           });
-          await supabase
+          await createAdminClient()
             .from("generations")
             .update({ attempts: result.attempts.length, pipeline_log: result.attempts })
             .eq("id", rowId);
@@ -1689,7 +1689,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       }
 
       if (rowId) {
-        await supabase
+        await createAdminClient()
           .from("generations")
           .update({
             status: succeeded ? "succeeded" : "failed",
@@ -1726,7 +1726,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
         },
       ];
       if (rowId) {
-        await supabase
+        await createAdminClient()
           .from("generations")
           .update({ status: "failed", pipeline_log: crashLog })
           .eq("id", rowId);

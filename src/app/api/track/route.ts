@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 
 // Fires on every page load (marketing + app, logged in or not) from
 // PageViewTracker. Logs one row per view, and — if the visitor is signed
@@ -41,7 +41,9 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
       if (viewerProfile?.role === "admin") {
         // Still stamp last_seen_at so "online now" keeps working for admins.
-        await supabase
+        // Service role: last_seen_at is an observability column the admin
+        // dashboard reports on, so it is not writable by the account itself.
+        await createAdminClient()
           .from("profiles")
           .update({ last_seen_at: new Date().toISOString() })
           .eq("id", userData.user.id);
@@ -58,7 +60,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (userData.user) {
-      await supabase
+      await createAdminClient()
         .from("profiles")
         .update({ last_seen_at: new Date().toISOString() })
         .eq("id", userData.user.id);

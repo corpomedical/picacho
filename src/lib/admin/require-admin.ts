@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 
 // Shared session-and-role gate for admin server actions. Lives in its own
 // (non-"use server") module so importing it doesn't expose it as a callable
@@ -16,5 +16,12 @@ export async function requireAdmin() {
     .single();
 
   if (profile?.role !== "admin") throw new Error("Admin access required.");
-  return { supabase, userId: data.user.id };
+
+  // `supabase` is the caller's own session — right for reads, which RLS
+  // already widens for admins. `admin` is the service role, needed for the
+  // columns no `authenticated` role may write any more: role, plan, status,
+  // api_access and every credit counter. Verify the privilege first, then
+  // act with it — rather than leaving those columns writable by everyone so
+  // that admin tooling happens to work.
+  return { supabase, admin: createAdminClient(), userId: data.user.id };
 }
