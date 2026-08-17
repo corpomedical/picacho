@@ -172,24 +172,23 @@ export async function refundGenerationCosts(generationId: string): Promise<void>
     }
   }
 
+  // The lifetime trial counter is deliberately NOT given back.
+  //
+  // It used to be, and that quietly turned "5 free generations" into
+  // "unlimited free attempts": every failure returned the trial credit, so a
+  // free account could sit at free_generations_used = 0 forever while
+  // burning real provider spend on our side. A trial is a budget for
+  // ATTEMPTS, not a guarantee of five good pictures — that is what makes it
+  // bounded, and bounded is the whole point of a trial.
+  //
+  // The row flag is still cleared so the row tells the truth about what it
+  // consumed; only the profile counter stays where it is.
   if (row.free_generation_used) {
-    const { data: claimed } = await admin
+    await admin
       .from("generations")
       .update({ free_generation_used: false })
       .eq("id", generationId)
-      .eq("free_generation_used", true)
-      .select("id");
-    if (claimed?.length) {
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("free_generations_used")
-        .eq("id", row.user_id)
-        .maybeSingle<{ free_generations_used: number }>();
-      await admin
-        .from("profiles")
-        .update({ free_generations_used: Math.max(0, (profile?.free_generations_used ?? 0) - 1) })
-        .eq("id", row.user_id);
-    }
+      .eq("free_generation_used", true);
   }
 }
 

@@ -39,6 +39,7 @@ export async function GET(
     .select("id, status, prompt_input, result_url, match_score, credits_used, content_type, created_at")
     .eq("id", id)
     .eq("user_id", caller.userId)
+    .is("deleted_at", null)
     .maybeSingle();
 
   if (!row) {

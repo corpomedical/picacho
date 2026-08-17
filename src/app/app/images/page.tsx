@@ -14,6 +14,7 @@ export default async function ImagesPage() {
     .select("id, prompt_input, status, result_url, content_type, created_at, character_profile_id")
     .eq("user_id", userData.user.id)
     .eq("content_type", "image")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(60);
 

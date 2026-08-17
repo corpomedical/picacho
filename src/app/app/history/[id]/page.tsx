@@ -49,7 +49,11 @@ export default async function HistoryDetailPage({
     .single();
   const isAdmin = profile?.role === "admin";
 
-  const generationQuery = supabase.from("generations").select("*").eq("id", id);
+  const generationQuery = supabase
+    .from("generations")
+    .select("*")
+    .eq("id", id)
+    .is("deleted_at", null);
   const { data: generation } = await (isAdmin
     ? generationQuery
     : generationQuery.eq("user_id", userData.user.id)

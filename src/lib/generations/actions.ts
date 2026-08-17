@@ -1243,11 +1243,29 @@ export async function discardStoppedGeneration(generationId: string): Promise<{ 
   // owns — the refund below runs with the admin client, so gating it on
   // "no error" alone would let any signed-in user zero out someone else's
   // credits_used by guessing generation ids.
+  //
+  // The three filters after ownership are what make this a discard rather
+  // than an undo button. Until 2026-08-17 there were none, and because a
+  // "use server" export is a wire-callable endpoint, any signed-in user
+  // could POST their own id for ANY generation — including one that had
+  // succeeded weeks ago — and be refunded for it. They kept the picture
+  // too: an image URL is a signed capability over the storage path and
+  // never consults this row, so nulling result_url revokes nothing. That
+  // made every plan, and the free trial, effectively unmetered.
+  //
+  //   status "generating"     — a finished generation is not discardable
+  //   cancel_requested true   — the user must actually have pressed Stop
+  //   started within the hour — a stop is a live gesture, not a claim made
+  //                             days later about a row nobody is watching
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
   const { data: updated, error } = await supabase
     .from("generations")
     .update({ status: "failed", result_url: null })
     .eq("id", generationId)
     .eq("user_id", userData.user.id)
+    .eq("status", "generating")
+    .eq("cancel_requested", true)
+    .gte("created_at", oneHourAgo)
     .select("id");
 
   if (!error && updated?.length) await refundGenerationCosts(generationId);
@@ -1812,10 +1830,23 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
 
   const rows = group && group.length > 0 ? group : [row];
 
+  // Soft delete, not DELETE.
+  //
+  // The monthly meter is SUM(credits_used) over the rows that exist, so
+  // removing a row refunded the generation in full — a succeeded, downloaded
+  // one included — with no refund code involved at all. It also reset the
+  // 3-second cooldown (which reads the newest row) and the API's
+  // requests-per-minute counter (which counts rows in the last minute). One
+  // "delete" button quietly undid the charge and both rate limits.
+  //
+  // The row now stays and keeps counting; every user-facing query filters on
+  // deleted_at. The files still go, below — this is about the ledger, not
+  // about keeping pictures the user asked to be rid of.
   const { error } = await supabase
     .from("generations")
-    .delete()
+    .update({ deleted_at: new Date().toISOString() })
     .eq("user_id", userData.user.id)
+    .is("deleted_at", null)
     .in(
       "id",
       rows.map((r) => r.id),

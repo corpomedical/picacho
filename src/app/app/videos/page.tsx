@@ -16,6 +16,7 @@ export default async function VideosPage() {
     )
     .eq("user_id", userData.user.id)
     .eq("content_type", "video")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
     .limit(60);
 

@@ -43,6 +43,7 @@ export default async function AppHome() {
       .eq("user_id", data.user?.id ?? "")
       .eq("status", "succeeded")
       .eq("content_type", "image")
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(6),
   ]);

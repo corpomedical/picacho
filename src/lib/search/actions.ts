@@ -30,6 +30,7 @@ export async function searchAll(query: string): Promise<SearchResults> {
       .from("generations")
       .select("id, prompt_input, content_type")
       .ilike("prompt_input", like)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(5),
   ]);

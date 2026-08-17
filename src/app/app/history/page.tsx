@@ -24,6 +24,7 @@ export default async function HistoryPage() {
         "id, prompt_input, status, attempts, character_profile_id, content_type, created_at, angle_group_id, angle",
       )
       .eq("user_id", userData.user.id)
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(50),
     supabase.from("profiles").select("plan, bonus_credits").eq("id", userData.user.id).single(),
