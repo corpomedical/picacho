@@ -291,3 +291,144 @@ export async function promptFromImage(formData: FormData): Promise<CompilePrompt
     assistsLeft: allowance.remaining === null ? null : Math.max(0, allowance.remaining - 1),
   };
 }
+
+// ---------------------------------------------------------------------------
+// Saved prompts — the library.
+// ---------------------------------------------------------------------------
+
+export type SavedPrompt = {
+  id: string;
+  prompt: string;
+  sourceInput: string | null;
+  characterId: string | null;
+  contentType: "image" | "video";
+  source: "enhance" | "from_image" | "manual";
+  createdAt: string;
+};
+
+// Generous, but not unbounded: this is a personal library, not storage. At
+// 4000 characters a row it also keeps one account from turning the table into
+// a dumping ground.
+const SAVED_PROMPT_LIMIT = 200;
+
+export async function savePrompt(
+  formData: FormData,
+): Promise<{ error: string | null; saved?: SavedPrompt }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const prompt = String(formData.get("prompt") ?? "").trim();
+  const sourceInput = String(formData.get("source_input") ?? "").trim() || null;
+  const characterId = String(formData.get("character_id") ?? "").trim() || null;
+  const contentType = String(formData.get("content_type") ?? "image") === "video" ? "video" : "image";
+  const rawSource = String(formData.get("source") ?? "enhance");
+  const source =
+    rawSource === "from_image" || rawSource === "manual" ? rawSource : ("enhance" as const);
+
+  if (!prompt) return { error: "Nothing to save." };
+  if (prompt.length > 4000) return { error: "That prompt is too long to save." };
+
+  const { count } = await supabase
+    .from("saved_prompts")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userData.user.id);
+
+  if ((count ?? 0) >= SAVED_PROMPT_LIMIT) {
+    return {
+      error: `You've saved ${SAVED_PROMPT_LIMIT} prompts, which is the limit — delete one to make room.`,
+    };
+  }
+
+  const { data, error } = await supabase
+    .from("saved_prompts")
+    .insert({
+      user_id: userData.user.id,
+      prompt,
+      source_input: sourceInput,
+      character_profile_id: characterId,
+      content_type: contentType,
+      source,
+    })
+    .select("id, prompt, source_input, character_profile_id, content_type, source, created_at")
+    .single();
+
+  if (error || !data) return { error: "Couldn't save that prompt — try again." };
+
+  return {
+    error: null,
+    saved: {
+      id: data.id as string,
+      prompt: data.prompt as string,
+      sourceInput: data.source_input as string | null,
+      characterId: data.character_profile_id as string | null,
+      contentType: data.content_type as "image" | "video",
+      source: data.source as SavedPrompt["source"],
+      createdAt: data.created_at as string,
+    },
+  };
+}
+
+export async function listSavedPrompts(): Promise<{ error: string | null; prompts: SavedPrompt[] }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again.", prompts: [] };
+
+  const { data, error } = await supabase
+    .from("saved_prompts")
+    .select("id, prompt, source_input, character_profile_id, content_type, source, created_at")
+    .eq("user_id", userData.user.id)
+    .order("created_at", { ascending: false })
+    .limit(SAVED_PROMPT_LIMIT);
+
+  if (error) return { error: "Couldn't load your saved prompts.", prompts: [] };
+
+  return {
+    error: null,
+    prompts: (data ?? []).map((row) => ({
+      id: row.id as string,
+      prompt: row.prompt as string,
+      sourceInput: row.source_input as string | null,
+      characterId: row.character_profile_id as string | null,
+      contentType: row.content_type as "image" | "video",
+      source: row.source as SavedPrompt["source"],
+      createdAt: row.created_at as string,
+    })),
+  };
+}
+
+export async function deleteSavedPrompt(formData: FormData): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const id = String(formData.get("id") ?? "");
+  if (!id) return { error: "Nothing to delete." };
+
+  // RLS already scopes deletes to the owner; the explicit user_id match is
+  // belt-and-braces on a destructive call.
+  const { error } = await supabase
+    .from("saved_prompts")
+    .delete()
+    .eq("id", id)
+    .eq("user_id", userData.user.id);
+
+  if (error) return { error: "Couldn't delete that prompt — try again." };
+  return { error: null };
+}
+
+// Records that a prompt was used, so the library can eventually sort by what
+// someone actually reaches for. Fire-and-forget: failing to stamp a timestamp
+// must never block using the prompt.
+export async function touchSavedPrompt(formData: FormData): Promise<void> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return;
+  const id = String(formData.get("id") ?? "");
+  if (!id) return;
+  await supabase
+    .from("saved_prompts")
+    .update({ last_used_at: new Date().toISOString() })
+    .eq("id", id)
+    .eq("user_id", userData.user.id);
+}

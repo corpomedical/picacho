@@ -33,7 +33,15 @@ import {
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
-import { compilePrompt, promptFromImage } from "@/lib/prompts/actions";
+import {
+  compilePrompt,
+  deleteSavedPrompt,
+  listSavedPrompts,
+  promptFromImage,
+  savePrompt,
+  touchSavedPrompt,
+  type SavedPrompt,
+} from "@/lib/prompts/actions";
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { DownloadButton } from "@/components/download-button";
@@ -501,6 +509,22 @@ function VoiceIcon(props: React.SVGProps<SVGSVGElement>) {
       <path d="M11 5 6 9H2v6h4l5 4V5Z" />
       <path d="M16.5 8.5a5 5 0 0 1 0 7" />
       <path d="M19 6a9 9 0 0 1 0 12" />
+    </svg>
+  );
+}
+
+function BookmarkIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
+      <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
     </svg>
   );
 }
@@ -1343,6 +1367,14 @@ function GenerateFormInner({
   // anchor instead — which reproduces the uploaded picture almost exactly
   // and overrides the character's own face. Real report, 2026-08-16.
   const [describedAttachmentId, setDescribedAttachmentId] = useState<string | null>(null);
+  // The saved-prompt library.
+  const [savedOpen, setSavedOpen] = useState(false);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const [savedItems, setSavedItems] = useState<SavedPrompt[]>([]);
+  const [savedJustSaved, setSavedJustSaved] = useState(false);
+  // Set when a saved prompt was compiled for a DIFFERENT character than the
+  // one selected now — see openSavedPrompt for why that matters.
+  const [savedRecompiledFrom, setSavedRecompiledFrom] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   // Set by handleStop, read by submitPrompt/confirmMultiAngle once their
@@ -2416,11 +2448,94 @@ function GenerateFormInner({
     }
   }
 
+  async function openSavedPrompts() {
+    setSavedOpen(true);
+    setPlusMenuOpen(false);
+    setSavedLoading(true);
+    try {
+      const result = await listSavedPrompts();
+      setSavedItems(result.prompts);
+      if (result.error) setEnhanceError(result.error);
+    } catch {
+      setEnhanceError(g.submitFailed);
+    } finally {
+      setSavedLoading(false);
+    }
+  }
+
+  async function saveCurrentPrompt() {
+    if (!enhanced) return;
+    try {
+      const formData = new FormData();
+      formData.set("prompt", enhanced);
+      // The sentence this was compiled FROM, so the library can offer it back
+      // when the prompt is reused under a different character (see below).
+      // Image-written prompts have no source sentence.
+      if (enhanceKind === "text") formData.set("source_input", prompt);
+      formData.set("character_id", characterId);
+      formData.set("content_type", contentType);
+      formData.set("source", enhanceKind === "image" ? "from_image" : "enhance");
+      const result = await savePrompt(formData);
+      if (result.error) {
+        setEnhanceError(result.error);
+      } else {
+        setSavedJustSaved(true);
+        if (result.saved) setSavedItems((prev) => [result.saved!, ...prev]);
+      }
+    } catch {
+      setEnhanceError(g.submitFailed);
+    }
+  }
+
+  // Reusing a saved prompt.
+  //
+  // A compiled prompt has its character's identity written into it — "long red
+  // curls, freckles". Dropping Eva's saved prompt into the composer while
+  // Marco is selected would put Eva's hair in Marco's picture, and because the
+  // prompt is pre-approved it would run exactly as written, with nothing to
+  // catch it. So when the character doesn't match, the ORIGINAL sentence goes
+  // in instead (unapproved, so the pipeline compiles it fresh for whoever is
+  // selected now) and the panel says why. With no original sentence to fall
+  // back on, the compiled text goes in but stays unapproved, so drafting still
+  // gets a chance to reconcile it.
+  function openSavedPrompt(item: SavedPrompt) {
+    const sameCharacter = (item.characterId ?? "") === characterId;
+    if (sameCharacter) {
+      setPrompt(item.prompt);
+      setApprovedPrompt(item.prompt);
+      setSavedRecompiledFrom(null);
+    } else {
+      setPrompt(item.sourceInput || item.prompt);
+      setApprovedPrompt(null);
+      setSavedRecompiledFrom(
+        characters.find((c) => c.id === item.characterId)?.name ?? g.savedNoCharacter,
+      );
+    }
+    setSavedOpen(false);
+    setEnhanced(null);
+    setEnhanceError(null);
+    const formData = new FormData();
+    formData.set("id", item.id);
+    void touchSavedPrompt(formData);
+  }
+
+  async function removeSavedPrompt(id: string) {
+    setSavedItems((prev) => prev.filter((p) => p.id !== id));
+    const formData = new FormData();
+    formData.set("id", id);
+    try {
+      await deleteSavedPrompt(formData);
+    } catch {
+      // The row stays; the list refreshes correctly next time it opens.
+    }
+  }
+
   async function runEnhance() {
     const text = prompt.trim();
     if (!text || enhancing) return;
     setEnhancing(true);
     setEnhanceError(null);
+    setSavedJustSaved(false);
     try {
       const formData = new FormData();
       formData.set("prompt", text);
@@ -2454,6 +2569,7 @@ function GenerateFormInner({
     if (!image?.url || enhancing) return;
     setEnhancing(true);
     setEnhanceError(null);
+    setSavedJustSaved(false);
     try {
       const formData = new FormData();
       formData.set("image_url", image.url);
@@ -3853,6 +3969,86 @@ function GenerateFormInner({
                 </div>
               )}
 
+              {savedRecompiledFrom && (
+                <div className="mx-2.5 mb-2.5 rounded-[14px] border border-neutral-200 bg-neutral-50 p-3">
+                  <p className="text-[11px] leading-relaxed text-neutral-500">
+                    {g.savedRecompileNote.replace("{name}", savedRecompiledFrom)}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setSavedRecompiledFrom(null)}
+                    className="mt-1.5 text-[11px] font-medium text-neutral-500 underline underline-offset-2 hover:text-neutral-800"
+                  >
+                    {g.enhanceDismiss}
+                  </button>
+                </div>
+              )}
+
+              {savedOpen && (
+                <div className="mx-2.5 mb-2.5 max-h-72 overflow-y-auto rounded-[16px] border border-neutral-200 bg-white p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-neutral-500">
+                      {g.savedPrompts}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setSavedOpen(false)}
+                      className="text-[11px] text-neutral-400 transition-colors hover:text-neutral-700"
+                    >
+                      {g.enhanceDismiss}
+                    </button>
+                  </div>
+                  {savedLoading ? (
+                    <p className="py-3 text-center text-xs text-neutral-400">{g.savedLoading}</p>
+                  ) : savedItems.length === 0 ? (
+                    <p className="py-3 text-center text-xs leading-relaxed text-neutral-400">
+                      {g.savedEmpty}
+                    </p>
+                  ) : (
+                    <ul className="space-y-1.5">
+                      {savedItems.map((item) => {
+                        const owner = characters.find((c) => c.id === item.characterId);
+                        return (
+                          <li
+                            key={item.id}
+                            className="rounded-[12px] border border-neutral-100 bg-neutral-50/60 p-2.5"
+                          >
+                            <p className="line-clamp-2 text-xs leading-relaxed text-neutral-700">
+                              {item.prompt}
+                            </p>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <span className="text-[10px] text-neutral-400">
+                                {owner
+                                  ? g.savedForCharacter.replace("{name}", owner.name)
+                                  : g.savedNoCharacter}
+                                {" · "}
+                                {item.contentType === "video" ? g.video : g.image}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => openSavedPrompt(item)}
+                                className="ml-auto rounded-[8px] bg-ochre px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-ochre-deep"
+                              >
+                                {g.savedUse}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => removeSavedPrompt(item.id)}
+                                title={g.savedDelete}
+                                aria-label={g.savedDelete}
+                                className="rounded-[8px] px-1.5 py-1 text-[11px] text-neutral-400 transition-colors hover:text-red-600"
+                              >
+                                <XIcon className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              )}
+
               {(enhanced || enhanceError) && (
                 <div className="mx-2.5 mb-2.5 rounded-[16px] border border-ochre/30 bg-gradient-to-b from-ochre-soft/40 to-white p-3.5">
                   {enhanceError ? (
@@ -3885,6 +4081,15 @@ function GenerateFormInner({
                           className="rounded-[10px] border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 disabled:opacity-50"
                         >
                           {enhancing ? g.enhanceWorking : g.enhanceRetry}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={saveCurrentPrompt}
+                          disabled={savedJustSaved}
+                          className="flex items-center gap-1.5 rounded-[10px] border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 disabled:opacity-60"
+                        >
+                          <BookmarkIcon className="h-3 w-3" />
+                          {savedJustSaved ? g.savePromptDone : g.savePrompt}
                         </button>
                         <button
                           type="button"
@@ -4015,6 +4220,15 @@ function GenerateFormInner({
                       >
                         <FileIcon className="h-4 w-4 text-neutral-400" />
                         {g.uploadFiles}
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={openSavedPrompts}
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50"
+                      >
+                        <BookmarkIcon className="h-4 w-4 text-neutral-400" />
+                        {g.savedPrompts}
                       </button>
                       <button
                         type="button"
