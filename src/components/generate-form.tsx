@@ -1337,6 +1337,12 @@ function GenerateFormInner({
   // no sense for text.
   const [enhanceKind, setEnhanceKind] = useState<"text" | "image">("text");
   const [describedMode, setDescribedMode] = useState<"scene" | "standalone">("scene");
+  // The attachment an image-mode prompt was read from. Dropped from the
+  // composer when that prompt is accepted: it was source material for the
+  // WRITING, and leaving it attached makes it the generator's reference
+  // anchor instead — which reproduces the uploaded picture almost exactly
+  // and overrides the character's own face. Real report, 2026-08-16.
+  const [describedAttachmentId, setDescribedAttachmentId] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [stopping, setStopping] = useState(false);
   // Set by handleStop, read by submitPrompt/confirmMultiAngle once their
@@ -1869,7 +1875,15 @@ function GenerateFormInner({
     agentSpeakingRef.current = false;
   }
 
-  function resetChat() {
+  // `keepComposerInput` is for the character/type switch below. Starting a
+  // fresh THREAD per character is deliberate; throwing away what the person
+  // has staged in the composer but not sent yet is not — real report,
+  // 2026-08-16: uploading a photo and then picking a character silently
+  // deleted the upload, so the only order that worked was character first,
+  // photo second, and nothing on screen said so. Attachments are unsent
+  // input and survive; anything tied to the OLD character (a photo picked
+  // from its gallery, its advanced video frames) still has to go.
+  function resetChat(options?: { keepComposerInput?: boolean }) {
     setItems([]);
     setLivePrompt(null);
     setLiveAttachments([]);
@@ -1877,7 +1891,12 @@ function GenerateFormInner({
     setLiveResult(null);
     setRevealedCount(0);
     setError("");
-    setPendingAttachments([]);
+    if (!options?.keepComposerInput) setPendingAttachments([]);
+    // The engineered prompt was compiled against the character that was
+    // selected when it was made, so it's stale either way.
+    setEnhanced(null);
+    setEnhanceError(null);
+    setApprovedPrompt(null);
     setPendingMultiAngle(null);
     setLiveMultiAngle(null);
     setSelectedAngles(DEFAULT_ANGLE_IDS);
@@ -2206,7 +2225,7 @@ function GenerateFormInner({
   // thread. Past generations stay fully reachable via Recent/History/
   // Projects, which is the whole point of having them.
   useEffect(() => {
-    resetChat();
+    resetChat({ keepComposerInput: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId, contentType]);
 
@@ -2444,6 +2463,7 @@ function GenerateFormInner({
         setEnhanced(result.prompt);
         setEnhanceKind("image");
         setDescribedMode(mode);
+        setDescribedAttachmentId(image.id);
         setAssistsLeft(result.assistsLeft);
       } else {
         setEnhanceError(result.error);
@@ -2462,6 +2482,13 @@ function GenerateFormInner({
     setApprovedPrompt(enhanced);
     setEnhanced(null);
     setEnhanceError(null);
+    // See describedAttachmentId: the photo has done its job at this point,
+    // and keeping it would quietly turn it into the generation's reference
+    // image.
+    if (enhanceKind === "image" && describedAttachmentId) {
+      removeAttachment(describedAttachmentId);
+      setDescribedAttachmentId(null);
+    }
   }
 
   async function submitPrompt(
@@ -3303,7 +3330,7 @@ function GenerateFormInner({
           <div className="flex justify-end">
             <button
               type="button"
-              onClick={resetChat}
+              onClick={() => resetChat()}
               disabled={locked}
               className="flex-shrink-0 rounded-full border border-neutral-200 px-3.5 py-2 text-xs font-medium text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50"
             >
@@ -3891,6 +3918,14 @@ function GenerateFormInner({
                               starts to matter. */}
                           {describedMode === "standalone" && (
                             <p className="mt-1.5 text-[11px] text-neutral-400">{g.describeRights}</p>
+                          )}
+                          {/* Says out loud what accepting does to the upload,
+                              so the photo disappearing from the composer
+                              reads as intended rather than as a glitch. */}
+                          {describedAttachmentId && (
+                            <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-400">
+                              {g.describeSourceNote}
+                            </p>
                           )}
                         </div>
                       )}

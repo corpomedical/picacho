@@ -410,6 +410,7 @@ const it = {
     describeIncludePerson: "Descrivi anche la persona (usa un altro credito)",
     describeSceneOnly: "Descrivi solo la scena (usa un altro credito)",
     describeRights: "Descrivi solo immagini di cui possiedi i diritti.",
+    describeSourceNote: "La foto serve solo a scrivere questo prompt — accettandolo la foto viene rimossa, così viene usato il volto del tuo personaggio.",
     likeResult: "Buon risultato",
     dislikeResult: "Risultato scadente",
     feedbackSaveError: "Impossibile salvare — riprova.",

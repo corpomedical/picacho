@@ -425,6 +425,7 @@ const en = {
     describeIncludePerson: "Describe the person too (uses another assist)",
     describeSceneOnly: "Describe the scene only (uses another assist)",
     describeRights: "Only describe images you have the rights to use.",
+    describeSourceNote: "The photo is only read to write this prompt — accepting it removes the photo, so your character's own face is used.",
     likeResult: "Good result",
     dislikeResult: "Bad result",
     feedbackSaveError: "Couldn't save that — try again.",

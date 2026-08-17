@@ -410,6 +410,7 @@ const es = {
     describeIncludePerson: "Describir también a la persona (usa otra mejora)",
     describeSceneOnly: "Describir solo la escena (usa otra mejora)",
     describeRights: "Describe únicamente imágenes sobre las que tengas derechos.",
+    describeSourceNote: "La foto solo se lee para escribir este prompt — al aceptarlo se elimina la foto, para que se use el rostro de tu personaje.",
     likeResult: "Buen resultado",
     dislikeResult: "Mal resultado",
     feedbackSaveError: "No se pudo guardar — inténtalo de nuevo.",
