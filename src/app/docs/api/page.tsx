@@ -121,8 +121,9 @@ curl -X POST https://picacho.ai/api/v1/generations \\
           <Endpoint method="POST" path="/api/v1/generations">
             <p>
               Makes one image and returns it when it&apos;s ready — typically 20 to 60 seconds, so
-              set your client timeout accordingly. One credit, refunded automatically if the
-              generation fails or comes back unusable.
+              set your client timeout accordingly. One credit per image. Picacho retries
+              automatically before reporting a failure; if something goes wrong on our side,
+              get in touch and we&apos;ll credit it back.
             </p>
             <p className="mt-3">
               <strong className="font-semibold text-slate-900">Body:</strong>{" "}

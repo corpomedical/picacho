@@ -9,6 +9,8 @@ import {
   setUserStatus,
 } from "@/lib/admin/actions";
 import { getMonthlyUsage } from "@/lib/generations/actions";
+import { getUserEconomics } from "@/lib/admin/economics";
+import { UserEconomicsCard } from "@/components/admin/user-economics-card";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +92,15 @@ export default async function AdminUserDetailPage({
   const activity = (await getUserActivity([user])).get(user.id) ?? null;
 
   const plan = (user.plan ?? "none") as PlanId;
+
+  // What this account is worth and what it costs to serve — see
+  // lib/admin/economics.ts for how the cost side is estimated.
+  const economics = await getUserEconomics(
+    supabase,
+    id,
+    plan,
+    (user.plan_status as string | null) ?? null,
+  );
   const bonusCredits = user.bonus_credits ?? 0;
   const monthlyLimit = PLAN_LIMITS[plan] + bonusCredits;
   const successRate =
@@ -471,6 +482,10 @@ export default async function AdminUserDetailPage({
               </ul>
             )}
           </Card>
+
+          {/* Full width under both columns: the money table needs the room,
+              and it is the summary everything above is evidence for. */}
+          <UserEconomicsCard economics={economics} />
         </div>
       </div>
     </div>

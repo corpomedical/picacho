@@ -142,6 +142,29 @@ const REFUNDS: Record<FailureFault, boolean> = {
 export async function refundGenerationCosts(generationId: string): Promise<void> {
   const admin = createAdminClient();
 
+  // Master switch (Admin > Feature flags > automatic_refunds), currently OFF.
+  //
+  // The 2026-08-17 audit found the refund policy unsafe as designed: nothing
+  // bounded what a refunded failure cost us, and several paths handed credits
+  // back for work a provider had already billed. Rather than run a
+  // half-designed policy, the whole mechanism is paused here — one place,
+  // covering all eleven call sites — until it is designed properly.
+  //
+  // While it is off a failed generation costs a credit, and the remedy is
+  // deliberate rather than automatic: an admin grants bonus credits to anyone
+  // genuinely wronged, which leaves a decision on the record instead of a
+  // silent reversal nobody reviews.
+  const { data: refundFlag } = await admin
+    .from("feature_flags")
+    .select("enabled")
+    .eq("key", "automatic_refunds")
+    .maybeSingle<{ enabled: boolean }>();
+
+  if (refundFlag?.enabled !== true) {
+    console.info("Automatic refunds are off; not refunding", { generationId });
+    return;
+  }
+
   const { data: row } = await admin
     .from("generations")
     .select("user_id, purchased_credits_used, free_generation_used")
