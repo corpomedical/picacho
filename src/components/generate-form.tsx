@@ -4230,6 +4230,10 @@ function GenerateFormInner({
                         <BookmarkIcon className="h-4 w-4 text-neutral-400" />
                         {g.savedPrompts}
                       </button>
+                      {/* Divider: everything above works on the message you're
+                          writing (attach, reuse); everything below switches
+                          what you're making. Two different kinds of action. */}
+                      <div className="my-1 h-px bg-neutral-100" />
                       <button
                         type="button"
                         role="menuitem"
