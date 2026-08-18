@@ -80,6 +80,9 @@ type JobRow = {
   payload: { videoUrl?: string; audioUrl?: string };
   resume: ResumeState;
   started_at: string;
+  // Rewritten on every stage transition, so it marks when the CURRENT provider
+  // job began — used by reapStaleJobs' absolute-timeout backstop.
+  updated_at: string;
 };
 
 // User-facing progress labels, written to generations.progress_stage so the
@@ -97,6 +100,20 @@ const STAGE_PROGRESS: Record<JobStage, string> = {
 // needs to be short enough that abandoned rows don't sit at "generating"
 // indefinitely.
 const STALE_AFTER_MS = 30 * 60_000;
+
+// Absolute per-stage deadline. STALE_AFTER_MS decides when nobody is watching a
+// job; this decides when a job the provider has silently LOST — one that never
+// completes, never fails, and never fires its webhook — should stop being
+// retried and be written off, instead of sitting at "generating" forever while
+// each reap re-checks it and fal keeps saying "pending".
+//
+// Measured against updated_at, which is rewritten on every stage transition, so
+// it is the age of the CURRENT provider job — a generation legitimately moving
+// through video → dialogue → lip-sync resets it at each step and is never
+// caught here; only one genuinely stuck on the same provider job ages out. Set
+// well above any real render (video 6-10 min, dialogue a few more) so a merely
+// slow render is never mistaken for a lost one.
+const ABSOLUTE_JOB_TIMEOUT_MS = 45 * 60_000;
 
 // How long one advance may hold the exclusive claim before another poll is
 // allowed to assume the holder died and take over. Comfortably longer than a
@@ -775,19 +792,56 @@ export async function reapStaleJobs(userId: string): Promise<void> {
 
   const { data: stale } = await admin
     .from("generation_jobs")
-    .select("generation_id, user_id")
+    .select("*")
     .eq("user_id", userId)
     .lt("last_polled_at", cutoff)
     .limit(20)
-    .returns<{ generation_id: string; user_id: string }[]>();
+    .returns<JobRow[]>();
 
   for (const row of stale ?? []) {
+    let result: AdvanceResult | null = null;
     try {
-      await advanceGeneration(row.generation_id, row.user_id);
+      result = await advanceGeneration(row.generation_id, row.user_id);
     } catch {
       // advanceGeneration handles fal transport errors internally (returning
       // "pending"), so reaching here is genuinely unexpected. Leave the row for
       // the next reap rather than deleting work we couldn't classify.
+    }
+
+    // Absolute deadline. If a real advance still left the job "pending" and its
+    // current stage is older than any render could legitimately take, the
+    // provider has lost it — waiting longer just keeps the row at "generating".
+    if (result?.state === "pending" && Date.now() - Date.parse(row.updated_at) > ABSOLUTE_JOB_TIMEOUT_MS) {
+      // Re-read: advanceGeneration may have just advanced this to a fresh stage
+      // (which rewrites updated_at and the provider job id). Confirm against
+      // current state so a job that genuinely progressed is never written off.
+      const { data: current } = await admin
+        .from("generation_jobs")
+        .select("*")
+        .eq("generation_id", row.generation_id)
+        .maybeSingle<JobRow>();
+      if (!current) continue; // already finished or collected in the meantime
+      if (Date.now() - Date.parse(current.updated_at) <= ABSOLUTE_JOB_TIMEOUT_MS) continue; // advanced — fresh
+      // Claim so a late poll or webhook can't be mid-advance on this same job.
+      if (!(await claimAdvance(admin, current.generation_id, current.provider_request_id))) continue;
+      // Stop paying fal for a render whose output will never be collected.
+      // Best-effort: if fal is unreachable we still finish the row rather than
+      // leave it stuck at "generating" waiting for a cancel that can't be sent.
+      try {
+        await cancelQueuedJob(jobHandle(current));
+      } catch {
+        // ignore — finishing the row is what matters
+      }
+      await finish(current.generation_id, current.user_id, {
+        status: "failed",
+        attempts: appendStep(
+          current.resume?.attempts ?? [],
+          "This render didn't finish in time and was stopped.",
+          "generate",
+        ),
+        // "fal errored or lost the job" — the provider-fault case by definition.
+        fault: "provider_failed",
+      });
     }
   }
 }
