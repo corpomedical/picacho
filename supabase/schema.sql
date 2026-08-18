@@ -609,3 +609,52 @@ RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
 $$;
 REVOKE EXECUTE ON FUNCTION public.monthly_credits_used(uuid, timestamptz) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.monthly_credits_used(uuid, timestamptz) TO service_role;
+
+-- Atomic monthly-allowance reservation (round-6). The composer read usage,
+-- decided, then inserted the placeholder in separate steps, so a concurrent
+-- burst all read the same usage and all passed the plan cap. This serializes
+-- check-and-insert per user under one advisory lock: it re-sums the window's
+-- usage and inserts the row only if this request's MONTHLY portion still fits
+-- the remaining headroom. A request covered by purchased/free credits passes
+-- p_monthly_portion=0 and is never blocked here (those spends are guarded
+-- atomically elsewhere). Returns the new row id, or NULL when the monthly
+-- headroom can't cover it (caller re-decides and retries).
+CREATE OR REPLACE FUNCTION public.reserve_generation(
+  p_user_id uuid,
+  p_monthly_portion int,
+  p_limit int,
+  p_since timestamptz,
+  p_row jsonb
+) RETURNS uuid
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  used int;
+  rec public.generations;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 23));
+  SELECT coalesce(sum(CASE WHEN credits_used IS NULL THEN 1 ELSE credits_used END), 0)::int
+    INTO used
+    FROM public.generations
+   WHERE user_id = p_user_id AND created_at >= p_since;
+  IF p_monthly_portion > GREATEST(0, p_limit - used) THEN
+    RETURN NULL;
+  END IF;
+  rec := jsonb_populate_record(NULL::public.generations, p_row);
+  rec.user_id := p_user_id;
+  rec.id := coalesce(rec.id, gen_random_uuid());
+  rec.created_at := coalesce(rec.created_at, now());
+  rec.updated_at := coalesce(rec.updated_at, now());
+  rec.status := coalesce(rec.status, 'generating');
+  rec.attempts := coalesce(rec.attempts, 0);
+  rec.pipeline_log := coalesce(rec.pipeline_log, '[]'::jsonb);
+  rec.content_type := coalesce(rec.content_type, 'video');
+  rec.cancel_requested := coalesce(rec.cancel_requested, false);
+  rec.credits_used := coalesce(rec.credits_used, 0);
+  rec.character_profile_ids := coalesce(rec.character_profile_ids, '{}'::uuid[]);
+  rec.purchased_credits_used := coalesce(rec.purchased_credits_used, 0);
+  rec.free_generation_used := coalesce(rec.free_generation_used, false);
+  INSERT INTO public.generations VALUES (rec.*);
+  RETURN rec.id;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.reserve_generation(uuid,int,int,timestamptz,jsonb) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reserve_generation(uuid,int,int,timestamptz,jsonb) TO service_role;

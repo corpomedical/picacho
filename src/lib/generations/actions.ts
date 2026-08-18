@@ -707,14 +707,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
-  const {
-    error: allowanceError,
-    plan: userPlan,
-    isAdmin,
-    consumePurchased,
-    consumeFree,
-  } = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
-  if (allowanceError) return { error: allowanceError };
+  let allowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
+  if (allowance.error) return { error: allowance.error };
+  const userPlan = allowance.plan;
+  const isAdmin = allowance.isAdmin;
+  // Reassignable: the atomic reservation below may lose the monthly race and
+  // re-decide (a request that fit the plan allowance a moment ago might now
+  // need purchased credits), so the values the guarded spends use come from the
+  // iteration that actually won the reservation.
+  let consumePurchased = allowance.consumePurchased;
+  let consumeFree = allowance.consumeFree;
 
   // Multi-image reference and storyboard are Studio-and-up. Checked here,
   // server-side, so this can't be bypassed by a direct call even though the
@@ -785,18 +787,33 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     voice_tone_tags: c.voice_tone_tags ?? [],
   }));
 
-  // Save an "in progress" row up front. Previously nothing was written to the
-  // database until the whole pipeline finished, so a crash or timeout partway
-  // through left zero trace anywhere — not in history, not in the admin
-  // dashboard. Now there's always a record, even if this never gets past
-  // "generating".
-  const { data: placeholder, error: placeholderError } = await supabase
-    .from("generations")
-    .insert({
-      ...(clientGenerationId ? { id: clientGenerationId } : {}),
-      user_id: userData.user.id,
-      // Nullable — an empty string isn't a valid uuid, so "no character"
-      // has to be a real null here, not "".
+  // Save an "in progress" row up front — there's always a record even if this
+  // never gets past "generating".
+  //
+  // The insert goes through reserve_generation, an atomic per-user reservation:
+  // it re-sums this window's usage and inserts the row only if this request's
+  // MONTHLY portion still fits under one advisory lock. The old read-then-insert
+  // let a concurrent burst all read the same usage and all pass the plan cap.
+  // A request covered by purchased/free credits passes monthlyPortion 0 and is
+  // never blocked here — those spends are guarded atomically just below. If the
+  // reservation loses the monthly race it returns null; we re-decide against the
+  // fresh usage (which may now route to purchased credits) and retry.
+  const admin = createAdminClient();
+  let placeholderId: string | null = null;
+  for (let attempt = 0; attempt < 5 && !placeholderId; attempt++) {
+    if (attempt > 0) {
+      const reAllowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
+      if (reAllowance.error) return { error: reAllowance.error };
+      allowance = reAllowance;
+      consumePurchased = reAllowance.consumePurchased;
+      consumeFree = reAllowance.consumeFree;
+    }
+
+    const monthlyPortion =
+      isAdmin || consumeFree ? 0 : Math.max(0, creditWeight - (consumePurchased ?? 0));
+
+    const reservationRow = {
+      id: clientGenerationId || crypto.randomUUID(),
       character_profile_id: characterId || null,
       character_profile_ids: wantsMultiCharacter ? [characterId, ...companionCharacterIds] : [],
       prompt_input: userInput,
@@ -813,13 +830,29 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // from the two profile-side credit sources (see refundGenerationCosts).
       purchased_credits_used: consumePurchased ?? 0,
       free_generation_used: !!consumeFree,
-    })
-    .select("id")
-    .single();
+    };
 
-  if (placeholderError || !placeholder) {
-    return { error: "Couldn't start this generation — try again." };
+    const { data: reservedId, error: reserveError } = await admin.rpc("reserve_generation", {
+      p_user_id: userData.user.id,
+      p_monthly_portion: monthlyPortion,
+      p_limit: allowance.monthlyLimit ?? 0,
+      p_since: allowance.periodStartIso ?? new Date(0).toISOString(),
+      p_row: reservationRow,
+    });
+    if (reserveError) {
+      console.error("reserve_generation failed:", reserveError);
+      return { error: "Couldn't start this generation — try again." };
+    }
+    if (reservedId) placeholderId = reservedId as string;
+    // else: another request took the monthly headroom — loop and re-decide.
   }
+
+  if (!placeholderId) {
+    return { error: "You've used all the generations included in your plan this month." };
+  }
+
+  // Downstream code refers to placeholder.id; keep that shape.
+  const placeholder = { id: placeholderId };
 
   // Guarded spends: if a concurrent request already took the last credit / free
   // generation, these return false and we abort BEFORE any paid provider call.

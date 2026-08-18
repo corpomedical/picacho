@@ -36,12 +36,33 @@ export const COOLDOWN_MS = 3000;
 export function latestMonthlyAnniversary(periodStart: Date): Date {
   const now = new Date();
   let current = new Date(periodStart);
+  // A malformed current_period_start would make `next > now` never true
+  // (every comparison against an Invalid Date is false), spinning this loop
+  // forever and hanging every allowance check for that user. Fall back to the
+  // start of the current month rather than loop.
+  if (Number.isNaN(current.getTime())) {
+    const d = new Date();
+    d.setDate(1);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }
   for (;;) {
     const next = new Date(current);
     next.setMonth(next.getMonth() + 1);
     if (next > now) return current;
     current = next;
   }
+}
+
+// The start of the caller's current monthly usage window — the anchor both the
+// usage sum and the atomic reservation must agree on. Extracted so they can't
+// drift.
+export function monthlyWindowStart(periodStart?: string | null): Date {
+  if (periodStart) return latestMonthlyAnniversary(new Date(periodStart));
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  return startOfMonth;
 }
 
 // Sums credits used since the start of the caller's current monthly window.
@@ -60,14 +81,7 @@ export async function getMonthlyUsageWith(
   userId: string,
   periodStart?: string | null,
 ) {
-  const start = periodStart
-    ? latestMonthlyAnniversary(new Date(periodStart))
-    : (() => {
-        const startOfMonth = new Date();
-        startOfMonth.setDate(1);
-        startOfMonth.setHours(0, 0, 0, 0);
-        return startOfMonth;
-      })();
+  const start = monthlyWindowStart(periodStart);
 
   // monthly_credits_used counts NULL credits_used as 1 (legacy rows) and a real
   // 0 as 0, exactly as the previous JS reduce did — EXECUTE is revoked from
@@ -101,7 +115,18 @@ export async function checkGenerationAllowance(
   // while its documentation promised 30, and reported the refusal as a
   // billing error rather than a rate limit.
   options?: { skipCooldown?: boolean },
-): Promise<{ error: string | null; plan: PlanId; isAdmin: boolean; consumePurchased?: number; consumeFree?: boolean }> {
+): Promise<{
+  error: string | null;
+  plan: PlanId;
+  isAdmin: boolean;
+  consumePurchased?: number;
+  consumeFree?: boolean;
+  // For the caller's atomic reservation (reserve_generation): the plan+bonus
+  // monthly limit and the ISO start of the usage window this decision was made
+  // against, so the RPC re-checks the exact same window under its lock.
+  monthlyLimit?: number;
+  periodStartIso?: string;
+}> {
   const [{ data: profile }, { data: recent }] = await Promise.all([
     supabase
       .from("profiles")
@@ -118,6 +143,9 @@ export async function checkGenerationAllowance(
 
   const plan = (profile?.plan ?? "none") as PlanId;
   const isAdmin = profile?.role === "admin";
+  const periodStartIso = monthlyWindowStart(
+    profile?.current_period_start as string | null | undefined,
+  ).toISOString();
 
   // Suspended accounts can't generate — enforced here as well as in
   // middleware, so a direct call to this action (not just a page load) is
@@ -131,7 +159,7 @@ export async function checkGenerationAllowance(
     };
   }
 
-  if (isAdmin) return { error: null, plan, isAdmin };
+  if (isAdmin) return { error: null, plan, isAdmin, periodStartIso };
 
   const lastCreatedAt = recent?.[0]?.created_at as string | undefined;
   if (
@@ -165,7 +193,7 @@ export async function checkGenerationAllowance(
     // Counted per generation, not per credit: the free tier is pinned to the
     // cheapest model (enforced in runGeneration), so one generation is one
     // credit's worth of cost and the two can't drift apart.
-    return { error: null, plan, isAdmin, consumeFree: true };
+    return { error: null, plan, isAdmin, consumeFree: true, periodStartIso };
   }
 
   // Bonus credits (admin-granted, see setBonusCredits) stack on top of the
@@ -190,7 +218,7 @@ export async function checkGenerationAllowance(
   // Purchased credits (see credit_purchases) cover anything the monthly
   // allowance can't. They deplete, unlike bonus_credits.
   if (overflow > 0 && purchased >= overflow) {
-    return { error: null, plan, isAdmin, consumePurchased: overflow };
+    return { error: null, plan, isAdmin, consumePurchased: overflow, monthlyLimit: limit, periodStartIso };
   }
 
   if (used + requestedCredits > limit) {
@@ -219,7 +247,7 @@ export async function checkGenerationAllowance(
     };
   }
 
-  return { error: null, plan, isAdmin };
+  return { error: null, plan, isAdmin, monthlyLimit: limit, periodStartIso };
 }
 
 // Draws down the one-time credit balance by the amount the monthly allowance
