@@ -585,6 +585,23 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       : adminDefaultVideoModelId;
   const activeVideoModel = getVideoModel(videoModelId);
 
+  // The free trial is pinned to ONE credit's worth of the cheapest model — no
+  // long durations and no dialogue (dialogue fires extra paid ElevenLabs TTS +
+  // Sync Labs lipsync calls). Without this a single free generation could cost
+  // several credits' worth of provider spend while only decrementing the trial
+  // counter by one. Enforced server-side regardless of what the form sends.
+  if (
+    isFreeTierAccount &&
+    contentType === "video" &&
+    (wantsDialogue ||
+      (Number(formData.get("video_duration_seconds")) || 0) > getDefaultDurationSeconds(activeVideoModel))
+  ) {
+    return {
+      error:
+        "Dialogue and longer videos are part of a paid plan — the free trial makes short, silent clips. Pick a plan to unlock them.",
+    };
+  }
+
   // Duration is a per-generation choice too (see generate-form.tsx), same
   // pattern as the model picker — but never trust the raw number a form
   // could send: only accept it if it's actually one of this model's real
@@ -1363,7 +1380,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
 
   const userInput = (formData.get("prompt") as string)?.trim();
   const characterId = formData.get("character_id") as string;
-  const angleIds = (formData.getAll("angle") as string[]).filter(Boolean);
+  // De-dup and keep only real angle presets: duplicate angles would insert (and
+  // charge) two placeholder rows that collapse to one id — orphaning a paid fal
+  // job — and unknown ids would fan out billed renders. Bounded by preset count.
+  const angleIds = [...new Set((formData.getAll("angle") as string[]).filter(Boolean))].filter(
+    (a) => getAnglePreset(a) !== undefined,
+  );
   // Same idea as runGeneration's clientGenerationId — generated up front on
   // the client so the Stop button has something to cancel against before
   // this action has returned anything.
@@ -1511,7 +1533,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   let videoCharacterAnchorUrl: string | null = null;
   if (useRealProviders) {
     if (attachmentReferenceUrl) {
-      videoCharacterAnchorUrl = attachmentReferenceUrl;
+      // Absolutize — the value is a relative /api/media URL and fal.ai fetches
+      // it over the open internet (same as the single-generation path). Without
+      // this every angle fails at the provider and, with refunds off, is billed.
+      videoCharacterAnchorUrl = absolutizeMediaUrl(attachmentReferenceUrl, await getOrigin());
     } else {
       const chosenPath =
         requestedAnchorPhotoPath && character.reference_image_urls?.includes(requestedAnchorPhotoPath)
@@ -1627,7 +1652,11 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
 
     await createAdminClient()
       .from("generations")
-      .update({ status: "failed", pipeline_log: failureLog, credits_used: 0, progress_stage: null })
+      // NOTE: credits are NOT zeroed here — releasing the allowance is a refund
+      // and must pass through the flag-gated refundGenerationCosts loop below,
+      // exactly like finish(). Zeroing inline bypassed the automatic_refunds
+      // switch and the daily cap.
+      .update({ status: "failed", pipeline_log: failureLog, progress_stage: null })
       .eq("angle_group_id", groupId)
       // Scope to the caller — angle_group_id is client-supplied and not unique,
       // so without this an attacker who knew a victim's group id could flip

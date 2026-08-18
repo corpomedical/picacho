@@ -420,6 +420,11 @@ GRANT UPDATE (username, full_name, company, gender, has_completed_onboarding, ra
 -- credit_purchases money ledger: service-role write only.
 REVOKE INSERT, UPDATE, DELETE ON public.credit_purchases FROM authenticated;
 
+-- Belt-and-suspenders: the anon role shouldn't hold these write grants either
+-- (RLS neutralizes them today, but they shouldn't exist).
+REVOKE UPDATE, INSERT, DELETE ON public.profiles FROM anon;
+REVOKE INSERT, UPDATE, DELETE ON public.credit_purchases FROM anon;
+
 -- Atomic balance mutations (replace app-side read-then-write). SECURITY DEFINER,
 -- EXECUTE restricted to service_role so authenticated can't call them to mint
 -- or alter its own credits.

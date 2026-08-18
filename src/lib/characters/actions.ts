@@ -39,9 +39,14 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   const projectId = (formData.get("project_id") as string)?.trim() || null;
   const voiceId = (formData.get("voice_id") as string)?.trim() || null;
   const tags = JSON.parse((formData.get("tags") as string) || "[]") as string[];
-  const referenceImagePaths = JSON.parse(
-    (formData.get("reference_image_paths") as string) || "[]",
-  ) as string[];
+  // Only accept storage paths in the caller's OWN folder. Without this a user
+  // could save a character whose reference_image_urls point at another user's
+  // objects, and the media route (signature-only, no per-user check) would then
+  // mint valid capability URLs for those files — a cross-user read. Same guard
+  // generateReferenceImage already applies.
+  const referenceImagePaths = (
+    JSON.parse((formData.get("reference_image_paths") as string) || "[]") as string[]
+  ).filter((p) => typeof p === "string" && p.startsWith(`${data.user.id}/`));
 
   const traits = {
     hair: (formData.get("trait_hair") as string)?.trim() || "",

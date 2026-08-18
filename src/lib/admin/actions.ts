@@ -33,7 +33,10 @@ export async function setUserStatus(formData: FormData) {
   const { supabase, admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const status = formData.get("status") as string;
-  const redirectTo = (formData.get("redirect_to") as string) || "/admin/users";
+  const rawRedirect = (formData.get("redirect_to") as string) || "/admin/users";
+  // Only ever redirect back into the admin area — never an arbitrary or
+  // off-site path from form input.
+  const redirectTo = rawRedirect.startsWith("/admin/") ? rawRedirect : "/admin/users";
 
   if (status !== "active" && status !== "suspended") {
     redirect(`${redirectTo}?error=${encodeURIComponent("Invalid status.")}`);

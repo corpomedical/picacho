@@ -70,7 +70,14 @@ export async function getMonthlyUsageWith(
     .eq("user_id", userId)
     .gte("created_at", start.toISOString());
 
-  return (data ?? []).reduce((sum, row) => sum + (Number(row.credits_used) || 1), 0);
+  // NULL means a legacy row from before credits_used existed → count as 1.
+  // A real 0 (a refunded/released row) must count as 0, NOT 1 — using `|| 1`
+  // treated 0 as falsy and silently re-charged every refunded generation,
+  // defeating the monthly-allowance half of every refund.
+  return (data ?? []).reduce(
+    (sum, row) => sum + (row.credits_used == null ? 1 : Number(row.credits_used)),
+    0,
+  );
 }
 
 // Enforced here, server-side — previously the plan limits were only ever

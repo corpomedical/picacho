@@ -82,14 +82,15 @@ export function isAllowedFetchUrl(url: string, appOrigin: string): boolean {
   } catch {
     return false;
   }
-  let appHost = "";
   try {
-    appHost = new URL(appOrigin).hostname.toLowerCase();
+    // Our own origin — exact scheme + host + port match of the absolutized
+    // /api/media route. Matching the full origin (not just hostname) avoids
+    // trusting a spoofed Host header to whitelist an arbitrary scheme/port.
+    if (appOrigin && u.origin === new URL(appOrigin).origin) return true;
   } catch {
     /* origin unparseable — fall through to the https allowlist */
   }
   const host = u.hostname.toLowerCase();
-  if (appHost && host === appHost) return true; // our own /api/media route, any scheme (dev included)
   if (u.protocol !== "https:") return false;
   return host === "supabase.co" || host.endsWith(".supabase.co");
 }
