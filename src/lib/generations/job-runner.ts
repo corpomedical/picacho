@@ -11,6 +11,7 @@ import {
   type QueuedJob,
 } from "@/lib/generations/providers/fal";
 import type { AttemptLog } from "@/lib/generations/pipeline";
+import { getDialogueCreditWeight } from "@/lib/generations/providers/video-models";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
 import { notifyUser } from "@/lib/push/send";
@@ -291,6 +292,62 @@ export async function refundGenerationCosts(generationId: string): Promise<boole
   return true;
 }
 
+// Gives back ONLY the dialogue surcharge when a video is delivered silent.
+//
+// A dialogue request is charged up front for two extra paid steps — ElevenLabs
+// speech and a Sync Labs lip-sync (see getDialogueCreditWeight). When one of
+// those stages fails we still ship the already-rendered video rather than throw
+// it away, and mark the whole generation SUCCEEDED — which means the ordinary
+// failure-refund path never runs, and the person keeps paying for dialogue they
+// did not receive. This refunds exactly that surcharge (never the video), from
+// the same sources it was drawn from: the monthly allowance always (by lowering
+// credits_used, which is what getMonthlyUsage sums), and the purchased-credit
+// balance for the part that overflowed onto it.
+//
+// The atomic advance claim already means only one caller ships the silent
+// video, but the write is made idempotent (conditional on the pre-refund
+// values) so it can never double-apply.
+async function refundDialogueSurcharge(generationId: string): Promise<void> {
+  const admin = createAdminClient();
+  const { data: row } = await admin
+    .from("generations")
+    .select("user_id, video_duration_seconds, credits_used, purchased_credits_used")
+    .eq("id", generationId)
+    .maybeSingle<{
+      user_id: string;
+      video_duration_seconds: number | null;
+      credits_used: number | null;
+      purchased_credits_used: number | null;
+    }>();
+  if (!row) return;
+
+  const seconds = Number(row.video_duration_seconds) || 0;
+  if (seconds <= 0) return;
+  const surcharge = getDialogueCreditWeight(seconds);
+  if (surcharge <= 0) return;
+
+  const creditsUsed = Number(row.credits_used) || 0;
+  const purchasedUsed = Number(row.purchased_credits_used) || 0;
+  // The surcharge is the top of the charge, so the part that overflowed onto
+  // purchased credits is refunded there; the rest comes off the monthly usage.
+  const purchasedRefund = Math.min(surcharge, purchasedUsed);
+  const newCreditsUsed = Math.max(0, creditsUsed - surcharge);
+  const newPurchasedUsed = purchasedUsed - purchasedRefund;
+
+  const { data: claimed } = await admin
+    .from("generations")
+    .update({ credits_used: newCreditsUsed, purchased_credits_used: newPurchasedUsed })
+    .eq("id", generationId)
+    .eq("credits_used", creditsUsed)
+    .eq("purchased_credits_used", purchasedUsed)
+    .select("id");
+
+  if (claimed?.length && purchasedRefund > 0) {
+    // Atomic add — a read-then-write would race a concurrent spend.
+    await admin.rpc("add_purchased_credits", { p_user_id: row.user_id, p_amount: purchasedRefund });
+  }
+}
+
 function jobHandle(row: JobRow): QueuedJob {
   return {
     requestId: row.provider_request_id ?? "",
@@ -539,6 +596,9 @@ export async function advanceGeneration(
     // to throw that video away — same rule the inline pipeline followed. If
     // the voice or lip-sync stage fails we ship the silent video instead.
     if (row.stage !== "video" && row.payload.videoUrl) {
+      // Delivered silent because dialogue failed — give back the dialogue
+      // surcharge the person was charged for a feature they didn't receive.
+      await refundDialogueSurcharge(generationId);
       await finish(generationId, userId, {
         status: "succeeded",
         resultUrl: row.payload.videoUrl,
@@ -657,6 +717,9 @@ export async function advanceGeneration(
     // Same rule as above: never discard a rendered video over a dialogue
     // problem, even one that surfaces while fetching or submitting.
     if (row.stage !== "video" && row.payload.videoUrl) {
+      // Delivered silent because dialogue failed — refund the dialogue
+      // surcharge (see the matching branch above).
+      await refundDialogueSurcharge(generationId);
       await finish(generationId, userId, {
         status: "succeeded",
         resultUrl: row.payload.videoUrl,

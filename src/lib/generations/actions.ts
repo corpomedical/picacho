@@ -608,7 +608,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // fal.ai duration options, otherwise fall back to that model's default
   // rather than silently sending fal.ai a value it might reject.
   const requestedDurationSeconds = Number(formData.get("video_duration_seconds"));
-  const videoDurationSeconds =
+  let videoDurationSeconds =
     contentType === "video" && isValidDuration(activeVideoModel, requestedDurationSeconds)
       ? requestedDurationSeconds
       : getDefaultDurationSeconds(activeVideoModel);
@@ -622,7 +622,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // Labs lipsync re-render, neither of which a silent video touches. See
   // getDialogueCreditWeight for why that's scaled by duration rather than by
   // the model's own weight.
-  const creditWeight =
+  let creditWeight =
     contentType === "video"
       ? getDurationCreditWeight(activeVideoModel, videoDurationSeconds) +
         (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0)
@@ -685,6 +685,26 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (contentType === "video") videoModelId = resolved.modelId;
   else imageModelId = resolved.modelId;
   const substitutedFrom = resolved.substitutedFrom;
+
+  // Re-price for the model actually used. resolveModel above may have failed
+  // the user over to a DIFFERENT model when their pick was out of service, but
+  // the credit weight and duration were computed against the ORIGINAL pick —
+  // so without this, both the allowance check below and the credits_used saved
+  // on the row would charge the old model's price for a render on the new one.
+  // Substitution is cheapest-first, so this most often LOWERS the charge, but
+  // the row must record what was actually rendered either way. Only the
+  // resolved model's real durations are valid, so a duration the old model
+  // allowed but the new one doesn't falls back to the new model's default (and
+  // the placeholder row saves this same resolved duration below).
+  if (contentType === "video" && substitutedFrom) {
+    const substitutedModel = getVideoModel(videoModelId);
+    if (!isValidDuration(substitutedModel, videoDurationSeconds)) {
+      videoDurationSeconds = getDefaultDurationSeconds(substitutedModel);
+    }
+    creditWeight =
+      getDurationCreditWeight(substitutedModel, videoDurationSeconds) +
+      (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0);
+  }
 
   const {
     error: allowanceError,
@@ -1474,10 +1494,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const activeVideoModel = getVideoModel(videoModelId);
 
   const requestedDurationSeconds = Number(formData.get("video_duration_seconds"));
-  const videoDurationSeconds = isValidDuration(activeVideoModel, requestedDurationSeconds)
+  let videoDurationSeconds = isValidDuration(activeVideoModel, requestedDurationSeconds)
     ? requestedDurationSeconds
     : getDefaultDurationSeconds(activeVideoModel);
-  const creditWeight = getDurationCreditWeight(activeVideoModel, videoDurationSeconds);
+  let creditWeight = getDurationCreditWeight(activeVideoModel, videoDurationSeconds);
 
   // Same resolution order as runGeneration (see the comment there): prompt
   // text beats the icon pick, which beats the 16:9 default.
@@ -1494,6 +1514,18 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const angleResolved = await resolveModel(videoModelId, angleCandidates);
   if (!angleResolved.ok) return { error: angleResolved.message };
   videoModelId = angleResolved.modelId;
+
+  // Re-price for the substituted model, exactly as runGeneration does — the
+  // weight above was the original model's, and every angle is charged and
+  // saved at creditWeight, so a substitution would otherwise misprice the
+  // whole multi-angle request by a factor of the angle count.
+  if (angleResolved.substitutedFrom) {
+    const substitutedModel = getVideoModel(videoModelId);
+    if (!isValidDuration(substitutedModel, videoDurationSeconds)) {
+      videoDurationSeconds = getDefaultDurationSeconds(substitutedModel);
+    }
+    creditWeight = getDurationCreditWeight(substitutedModel, videoDurationSeconds);
+  }
 
   if (videoModelId === "kling-o3" && !character.reference_image_urls?.[0]) {
     return {

@@ -36,6 +36,22 @@ function usdToEurCents(usd: number): number {
   return Math.round(usd * EUR_PER_USD * 100);
 }
 
+// Revenue rows (credit purchases, promo redemptions) store an amount in cents
+// AND the currency it was charged in. This whole report is denominated in
+// euros (see EUR_PER_USD above), so a dollar-charged purchase or a
+// dollar-denominated promo subtotal must be converted before it is folded into
+// a euro total — otherwise a $100 purchase and a €100 purchase are summed as if
+// they were the same, and a rep's commission is computed against a subtotal in
+// the wrong currency. Only EUR and USD are billed; an unrecognised currency is
+// left at par rather than invented away, and the report's "estimate" framing
+// covers that rare case.
+function amountToEurCents(amountCents: number, currency: string | null | undefined): number {
+  const cents = Number(amountCents) || 0;
+  const cur = (currency ?? "eur").toLowerCase();
+  if (cur === "usd") return Math.round(cents * EUR_PER_USD);
+  return cents;
+}
+
 export type MonthEconomics = {
   /** First day of the month, ISO — the key and the sort order. */
   month: string;
@@ -147,7 +163,7 @@ export async function getUserEconomics(
       .gte("created_at", sinceIso),
     supabase
       .from("promo_redemptions")
-      .select("code, rep_name, amount_subtotal, discount_amount, commission_percent")
+      .select("code, rep_name, amount_subtotal, discount_amount, commission_percent, currency")
       .eq("user_id", userId)
       .maybeSingle(),
   ]);
@@ -204,7 +220,9 @@ export async function getUserEconomics(
   for (const p of purchases.data ?? []) {
     if (p.refunded_at) continue;
     const m = bucket(p.created_at as string);
-    m.purchaseRevenueCents += Number(p.amount_cents) || 0;
+    // Convert to euros: a USD-charged top-up must not be summed at face value
+    // into a euro revenue total.
+    m.purchaseRevenueCents += amountToEurCents(Number(p.amount_cents), p.currency as string | null);
   }
 
   // Subscription revenue: the plan's list price, counted for any month in
@@ -240,9 +258,17 @@ export async function getUserEconomics(
       ? {
           code: red.code as string,
           repName: red.rep_name as string,
-          discountGivenCents: Number(red.discount_amount) || 0,
-          commissionOwedCents: Math.round(
-            ((Number(red.amount_subtotal) || 0) * (Number(red.commission_percent) || 0)) / 100,
+          // Both the discount shown and the commission owed are converted from
+          // the redemption's own currency into the report's euros — the
+          // commission is a percentage of the euro subtotal, not of a dollar
+          // amount treated as euros.
+          discountGivenCents: amountToEurCents(
+            Number(red.discount_amount),
+            red.currency as string | null,
+          ),
+          commissionOwedCents: amountToEurCents(
+            Math.round(((Number(red.amount_subtotal) || 0) * (Number(red.commission_percent) || 0)) / 100),
+            red.currency as string | null,
           ),
         }
       : null,
