@@ -533,3 +533,31 @@ REVOKE EXECUTE ON FUNCTION public.spend_free_generation(uuid,int) FROM public, a
 REVOKE EXECUTE ON FUNCTION public.spend_purchased_credits(uuid,int) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.spend_free_generation(uuid,int) TO service_role;
 GRANT EXECUTE ON FUNCTION public.spend_purchased_credits(uuid,int) TO service_role;
+
+-- Atomic per-job advance claim (job-runner.ts). The client poll and fal's
+-- webhook both drive advanceGeneration and both re-check status with fal, so
+-- both can observe the same stage "completed" and both call the paid
+-- submitSpeechJob / submitLipSyncJob — double-charging and orphaning a render.
+-- Exactly one caller wins this claim before doing paid or terminal work; the
+-- loser reports the job still pending. Keyed on provider_request_id, which
+-- changes at every stage transition, so a stale caller claims nothing.
+ALTER TABLE public.generation_jobs
+  ADD COLUMN IF NOT EXISTS advance_lock uuid,
+  ADD COLUMN IF NOT EXISTS advance_locked_at timestamptz;
+CREATE OR REPLACE FUNCTION public.claim_job_advance(
+  p_generation_id uuid, p_provider_request_id text, p_lease_seconds int
+) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE affected int;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_generation_id::text, 11));
+  UPDATE public.generation_jobs
+     SET advance_lock = gen_random_uuid(), advance_locked_at = now()
+   WHERE generation_id = p_generation_id
+     AND provider_request_id IS NOT DISTINCT FROM p_provider_request_id
+     AND (advance_lock IS NULL
+          OR advance_locked_at < now() - make_interval(secs => p_lease_seconds));
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  RETURN affected > 0;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.claim_job_advance(uuid,text,int) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_job_advance(uuid,text,int) TO service_role;

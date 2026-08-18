@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import {
@@ -95,6 +96,40 @@ const STAGE_PROGRESS: Record<JobStage, string> = {
 // needs to be short enough that abandoned rows don't sit at "generating"
 // indefinitely.
 const STALE_AFTER_MS = 30 * 60_000;
+
+// How long one advance may hold the exclusive claim before another poll is
+// allowed to assume the holder died and take over. Comfortably longer than a
+// real advance takes (a status check plus at most one queue submit — a few
+// seconds) and far shorter than a render, so a genuinely crashed advance is
+// retried promptly while two live callers can never overlap.
+const ADVANCE_LEASE_SECONDS = 90;
+
+// Wins the exclusive right to ACT on this job's current stage — to submit the
+// next paid provider job, or to finish the generation — for the span of one
+// advance. Returns false when another caller already holds it: the client poll
+// and fal's webhook (and two overlapping polls) both re-check status with fal
+// and can both see the same stage "completed", so without this both would call
+// the paid submitSpeechJob / submitLipSyncJob and double-charge, orphaning one
+// render. The loser must do nothing and report the job still pending; the
+// holder drives it forward.
+//
+// Status POLLING itself is deliberately not gated on this — checkQueuedJob is a
+// read and safe to run concurrently. Only the money-spending and terminal
+// transitions are claimed. The claim is keyed on provider_request_id (server
+// side), so once a winner advances to the next stage — changing that id — a
+// stale caller keyed to the old id claims nothing.
+async function claimAdvance(
+  admin: SupabaseClient,
+  generationId: string,
+  providerRequestId: string | null,
+): Promise<boolean> {
+  const { data } = await admin.rpc("claim_job_advance", {
+    p_generation_id: generationId,
+    p_provider_request_id: providerRequestId,
+    p_lease_seconds: ADVANCE_LEASE_SECONDS,
+  });
+  return data === true;
+}
 
 // Who absorbs the cost when a generation doesn't produce anything.
 //
@@ -406,9 +441,14 @@ function appendStep(attempts: AttemptLog[], detail: string, step: AttemptLog["st
 }
 
 // Advances a job by exactly one step. Safe to call repeatedly and safe to call
-// concurrently — every terminal transition deletes the job row, so a second
-// overlapping poll just gets { state: "gone" } rather than doing the work
-// twice or double-charging.
+// concurrently. Terminal transitions delete the job row, so a later poll gets
+// { state: "gone" }; but the INTERMEDIATE transitions (video → dialogue TTS →
+// lip-sync) each submit a NEW paid provider job and merely update the row, so
+// "the row still exists" is not enough on its own. Before any paid submit or
+// any finish, the caller must first win claimAdvance() — an atomic per-job
+// claim — so that when the client poll and fal's webhook reach a completed
+// stage at the same instant, exactly one of them spends money and the other
+// reports the job still pending.
 export async function advanceGeneration(
   generationId: string,
   userId: string,
@@ -458,6 +498,12 @@ export async function advanceGeneration(
     }
 
     if (!finished) {
+      // Cancelling is a terminal, money-affecting action (it cancels the fal
+      // job and finishes the row). Claim first so a poll and the webhook can't
+      // both cancel-and-finish the same job.
+      if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
+        return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+      }
       await cancelQueuedJob(jobHandle(row));
       await finish(generationId, userId, {
         status: "failed",
@@ -485,6 +531,10 @@ export async function advanceGeneration(
   }
 
   if (status.state === "failed") {
+    // Finishing is terminal and may refund — claim so only one caller does it.
+    if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
+      return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+    }
     // Dialogue is an enhancement on an already-rendered video, never a reason
     // to throw that video away — same rule the inline pipeline followed. If
     // the voice or lip-sync stage fails we ship the silent video instead.
@@ -512,6 +562,17 @@ export async function advanceGeneration(
   // Completed — collect this stage's output and either move to the next stage
   // or finish. Each branch below submits at most one new queued job, so this
   // whole function stays a couple of seconds at worst.
+  //
+  // Claim BEFORE collecting: every branch here either submits a paid job
+  // (video → TTS, TTS → lip-sync) or finishes. Two callers observing the same
+  // completed stage would otherwise both submit and double-charge. The winner
+  // holds the claim across its submit; the follow-up UPDATE that records the
+  // next stage clears it, and finish() deletes the row — so the next stage
+  // starts unclaimed and a stale caller keyed to this stage's request id can't
+  // reacquire it.
+  if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
+    return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+  }
   try {
     if (row.stage === "video") {
       const videoUrl = await fetchQueuedVideoUrl(jobHandle(row));
@@ -537,6 +598,10 @@ export async function advanceGeneration(
           cancel_url: speech.cancelUrl,
           payload: { ...row.payload, videoUrl },
           updated_at: new Date().toISOString(),
+          // Release the claim: the next stage is a different provider job and
+          // its own advance must be able to claim it fresh.
+          advance_lock: null,
+          advance_locked_at: null,
         })
         .eq("generation_id", generationId);
       await admin
@@ -560,6 +625,9 @@ export async function advanceGeneration(
           cancel_url: lipsync.cancelUrl,
           payload: { ...row.payload, audioUrl },
           updated_at: new Date().toISOString(),
+          // Release the claim for the final stage's own advance.
+          advance_lock: null,
+          advance_locked_at: null,
         })
         .eq("generation_id", generationId);
       await admin
