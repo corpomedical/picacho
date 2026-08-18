@@ -1605,12 +1605,17 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     };
   }
 
-  const { error: allowanceError, consumePurchased } = await checkGenerationAllowance(
+  const totalRequestedCredits = angleIds.length * creditWeight;
+  let multiAllowance = await checkGenerationAllowance(
     supabase,
     userData.user.id,
-    angleIds.length * creditWeight,
+    totalRequestedCredits,
   );
-  if (allowanceError) return { error: allowanceError };
+  if (multiAllowance.error) return { error: multiAllowance.error };
+  const multiIsAdmin = multiAllowance.isAdmin;
+  // Reassignable — the atomic group reservation below may lose the monthly race
+  // and re-decide, exactly like the single-generation path.
+  let consumePurchased = multiAllowance.consumePurchased;
 
   if (useRealProviders) {
     const missingKeys = missingRealProviderKeys("video");
@@ -1656,38 +1661,67 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
 
   const groupId = clientGroupId ?? crypto.randomUUID();
 
-  const { data: placeholders, error: placeholderError } = await supabase
-    .from("generations")
-    .insert(
-      angleIds.map((angleId, angleIndex) => ({
-        user_id: userData.user!.id,
-        character_profile_id: characterId,
-        prompt_input: userInput,
-        content_type: "video",
-        status: "generating",
-        attempts: 0,
-        result_url: null,
-        pipeline_log: [],
-        angle_group_id: groupId,
-        angle: angleId,
-        video_model_id: videoModelId,
-        video_duration_seconds: videoDurationSeconds,
-        video_aspect_ratio: videoAspectRatio,
-        credits_used: creditWeight,
-        // The purchased-credit overflow is a single group-level number;
-        // spread it across the rows (base share everywhere, remainder on
-        // the first rows) so a partial failure refunds a fair slice rather
-        // than all-or-nothing (see refundGenerationCosts).
-        purchased_credits_used:
-          Math.floor((consumePurchased ?? 0) / angleIds.length) +
-          (angleIndex < (consumePurchased ?? 0) % angleIds.length ? 1 : 0),
-        free_generation_used: false,
-      })),
-    )
-    .select("id, angle");
+  // Atomic group reservation — the whole angle group's MONTHLY portion is
+  // checked and all N rows inserted under one advisory lock (reserve_generations,
+  // same lock key as the single-generation path so the two serialize together).
+  // The old bulk insert read usage and inserted separately, so a concurrent
+  // burst could exceed the plan cap. On a lost race we re-decide against the
+  // fresh usage (which may re-slice more onto purchased credits) and retry.
+  const admin = createAdminClient();
+  let placeholders: { id: string; angle: string }[] | null = null;
+  for (let attempt = 0; attempt < 5 && !placeholders; attempt++) {
+    if (attempt > 0) {
+      const reAllowance = await checkGenerationAllowance(supabase, userData.user.id, totalRequestedCredits);
+      if (reAllowance.error) return { error: reAllowance.error };
+      multiAllowance = reAllowance;
+      consumePurchased = reAllowance.consumePurchased;
+    }
 
-  if (placeholderError || !placeholders) {
-    return { error: "Couldn't start these generations — try again." };
+    const cp = consumePurchased ?? 0;
+    const monthlyPortion = multiIsAdmin ? 0 : Math.max(0, totalRequestedCredits - cp);
+
+    const rows = angleIds.map((angleId, angleIndex) => ({
+      id: crypto.randomUUID(),
+      character_profile_id: characterId,
+      prompt_input: userInput,
+      content_type: "video",
+      status: "generating",
+      attempts: 0,
+      result_url: null,
+      pipeline_log: [],
+      angle_group_id: groupId,
+      angle: angleId,
+      video_model_id: videoModelId,
+      video_duration_seconds: videoDurationSeconds,
+      video_aspect_ratio: videoAspectRatio,
+      credits_used: creditWeight,
+      // The purchased-credit overflow is a single group-level number; spread it
+      // across the rows (base share everywhere, remainder on the first rows) so
+      // a partial failure refunds a fair slice (see refundGenerationCosts).
+      purchased_credits_used:
+        Math.floor(cp / angleIds.length) + (angleIndex < cp % angleIds.length ? 1 : 0),
+      free_generation_used: false,
+    }));
+
+    const { data: ids, error: reserveError } = await admin.rpc("reserve_generations", {
+      p_user_id: userData.user.id,
+      p_monthly_portion: monthlyPortion,
+      p_limit: multiAllowance.monthlyLimit ?? 0,
+      p_since: multiAllowance.periodStartIso ?? new Date(0).toISOString(),
+      p_rows: rows,
+    });
+    if (reserveError) {
+      console.error("reserve_generations failed:", reserveError);
+      return { error: "Couldn't start these generations — try again." };
+    }
+    if (ids && (ids as string[]).length) {
+      placeholders = (ids as string[]).map((id, i) => ({ id, angle: angleIds[i] }));
+    }
+    // else: another request took the monthly headroom — loop and re-decide.
+  }
+
+  if (!placeholders) {
+    return { error: "You've used all the generations included in your plan this month." };
   }
 
   const purchasedOk = await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);

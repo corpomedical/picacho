@@ -658,3 +658,52 @@ BEGIN
 END $$;
 REVOKE EXECUTE ON FUNCTION public.reserve_generation(uuid,int,int,timestamptz,jsonb) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reserve_generation(uuid,int,int,timestamptz,jsonb) TO service_role;
+
+-- Batch reservation for multi-angle (round-6): same advisory-lock KEY as
+-- reserve_generation so single + group reservations for a user serialize
+-- together. Checks the group's total monthly portion under the lock, then
+-- inserts all N rows; returns their ids, or NULL when headroom can't cover it.
+CREATE OR REPLACE FUNCTION public.reserve_generations(
+  p_user_id uuid,
+  p_monthly_portion int,
+  p_limit int,
+  p_since timestamptz,
+  p_rows jsonb
+) RETURNS uuid[]
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE
+  used int;
+  rec public.generations;
+  elem jsonb;
+  ids uuid[] := '{}';
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 23));
+  SELECT coalesce(sum(CASE WHEN credits_used IS NULL THEN 1 ELSE credits_used END), 0)::int
+    INTO used
+    FROM public.generations
+   WHERE user_id = p_user_id AND created_at >= p_since;
+  IF p_monthly_portion > GREATEST(0, p_limit - used) THEN
+    RETURN NULL;
+  END IF;
+  FOR elem IN SELECT * FROM jsonb_array_elements(p_rows) LOOP
+    rec := jsonb_populate_record(NULL::public.generations, elem);
+    rec.user_id := p_user_id;
+    rec.id := coalesce(rec.id, gen_random_uuid());
+    rec.created_at := coalesce(rec.created_at, now());
+    rec.updated_at := coalesce(rec.updated_at, now());
+    rec.status := coalesce(rec.status, 'generating');
+    rec.attempts := coalesce(rec.attempts, 0);
+    rec.pipeline_log := coalesce(rec.pipeline_log, '[]'::jsonb);
+    rec.content_type := coalesce(rec.content_type, 'video');
+    rec.cancel_requested := coalesce(rec.cancel_requested, false);
+    rec.credits_used := coalesce(rec.credits_used, 0);
+    rec.character_profile_ids := coalesce(rec.character_profile_ids, '{}'::uuid[]);
+    rec.purchased_credits_used := coalesce(rec.purchased_credits_used, 0);
+    rec.free_generation_used := coalesce(rec.free_generation_used, false);
+    INSERT INTO public.generations VALUES (rec.*);
+    ids := array_append(ids, rec.id);
+  END LOOP;
+  RETURN ids;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.reserve_generations(uuid,int,int,timestamptz,jsonb) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.reserve_generations(uuid,int,int,timestamptz,jsonb) TO service_role;

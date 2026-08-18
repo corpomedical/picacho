@@ -107,37 +107,52 @@ export async function runApiImageGeneration(params: {
   // purchased credit handling, same suspension check.
   // Same credit gate as the composer, minus the human cooldown: the API's
   // own per-minute limit is the right shape for a script (see route.ts).
-  const allowance = await checkGenerationAllowance(supabase, userId, 1, { skipCooldown: true });
+  let allowance = await checkGenerationAllowance(supabase, userId, 1, { skipCooldown: true });
   if (allowance.error) {
     return { error: allowance.error, status: 402 };
   }
 
-  const { data: row, error: insertError } = await supabase
-    .from("generations")
-    .insert({
-      user_id: userId,
-      character_profile_id: characterId,
-      prompt_input: prompt,
-      status: "generating",
-      content_type: "image",
-      attempts: 0,
-      credits_used: 1,
-      purchased_credits_used: allowance.consumePurchased ?? 0,
-      free_generation_used: Boolean(allowance.consumeFree),
-    })
-    .select("id")
-    .single();
-
-  if (insertError || !row) {
-    // Logged, because the caller only ever sees a polite sentence: this
-    // exact path swallowed a CHECK-constraint violation once (status
-    // "running", which the table does not allow) and the message alone gave
-    // no way to tell a constraint failure from a database outage.
-    console.error("API generation insert failed", insertError);
-    return { error: "Couldn't start that generation.", status: 500 };
+  // Atomic reservation, same as the composer: the check-and-insert runs under a
+  // per-user advisory lock so a concurrent burst can't clear the plan cap. The
+  // API's per-minute rate limit already bounds bursts, but this makes the plan
+  // ceiling exact. supabase here is the service-role client, which may call the
+  // RPC directly. On a lost monthly race we re-decide and retry.
+  let generationId: string | null = null;
+  for (let attempt = 0; attempt < 5 && !generationId; attempt++) {
+    if (attempt > 0) {
+      const re = await checkGenerationAllowance(supabase, userId, 1, { skipCooldown: true });
+      if (re.error) return { error: re.error, status: 402 };
+      allowance = re;
+    }
+    const monthlyPortion =
+      allowance.isAdmin || allowance.consumeFree ? 0 : Math.max(0, 1 - (allowance.consumePurchased ?? 0));
+    const { data: reservedId, error: reserveError } = await supabase.rpc("reserve_generation", {
+      p_user_id: userId,
+      p_monthly_portion: monthlyPortion,
+      p_limit: allowance.monthlyLimit ?? 0,
+      p_since: allowance.periodStartIso ?? new Date(0).toISOString(),
+      // No id → the RPC generates one; there's no client-supplied id on this path.
+      p_row: {
+        character_profile_id: characterId,
+        prompt_input: prompt,
+        status: "generating",
+        content_type: "image",
+        attempts: 0,
+        credits_used: 1,
+        purchased_credits_used: allowance.consumePurchased ?? 0,
+        free_generation_used: Boolean(allowance.consumeFree),
+      },
+    });
+    if (reserveError) {
+      console.error("API generation reservation failed", reserveError);
+      return { error: "Couldn't start that generation.", status: 500 };
+    }
+    if (reservedId) generationId = reservedId as string;
   }
 
-  const generationId = row.id as string;
+  if (!generationId) {
+    return { error: "Insufficient credits for that request.", status: 402 };
+  }
 
   // The insert IS the charge — getMonthlyUsage sums credits_used — so the
   // balance moves immediately, and a failure below refunds it.
