@@ -35,3 +35,7 @@ next-env.d.ts
 
 # Scratch folder for files this environment can't unlink (see session notes).
 _to_delete/
+
+# Standalone read-only admin console (separate app, deployed on its own)
+picacho-admin/
+picacho-admin.zip

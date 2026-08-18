@@ -155,35 +155,29 @@ export async function POST(request: Request) {
             break;
           }
 
-          const { error: purchaseError } = await supabase.from("credit_purchases").insert({
-            user_id: userId,
-            credits,
-            amount_cents: session.amount_total ?? 0,
-            currency: session.currency ?? "eur",
-            stripe_session_id: session.id,
+          // Atomic record-and-grant (public.record_credit_purchase): inserts the
+          // purchase row AND adds the credits in ONE transaction. The old code
+          // inserted, then separately read-and-updated the balance — a crash in
+          // between left the purchase recorded with no credits, and Stripe's
+          // retry hit the unique constraint and skipped the grant forever.
+          // Idempotent on stripe_session_id; returns true only on the first grant.
+          const { data: granted, error: purchaseError } = await supabase.rpc("record_credit_purchase", {
+            p_user_id: userId,
+            p_session_id: session.id,
+            p_amount_cents: session.amount_total ?? 0,
+            p_currency: session.currency ?? "eur",
+            p_credits: credits,
           });
 
           if (purchaseError) {
-            // Unique violation means this delivery is a duplicate and the
-            // credits were already granted — not an error worth retrying.
-            if (purchaseError.code === "23505") {
-              console.log("Stripe webhook: duplicate credit purchase ignored", session.id);
-              break;
-            }
+            // Let Stripe retry — record_credit_purchase is idempotent, so a
+            // retry can never double-grant.
             console.error("Stripe webhook: couldn't record credit purchase", purchaseError.message);
-            break;
+            return NextResponse.json({ received: false }, { status: 500 });
           }
-
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("purchased_credits")
-            .eq("id", userId)
-            .single();
-
-          await supabase
-            .from("profiles")
-            .update({ purchased_credits: (profile?.purchased_credits ?? 0) + credits })
-            .eq("id", userId);
+          if (granted !== true) {
+            console.log("Stripe webhook: duplicate credit purchase ignored", session.id);
+          }
         }
         break;
       }
@@ -300,23 +294,24 @@ export async function POST(request: Request) {
         // partial refund on the same charge, so this has to be idempotent.
         if (!purchase || purchase.refunded_at) break;
 
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("purchased_credits")
-          .eq("id", purchase.user_id)
-          .single();
+        // Only reverse credits on a FULL refund. A partial refund (e.g. a
+        // goodwill gesture) used to claw back the ENTIRE pack, stripping a
+        // customer of credits they still paid for. On a partial refund we leave
+        // the credits untouched; only a full refund reverses the grant.
+        const fullyRefunded = charge.refunded === true && charge.amount_refunded >= charge.amount;
+        if (!fullyRefunded) {
+          console.log("Stripe webhook: partial refund — credits left intact", sessionId);
+          break;
+        }
 
-        // Floored at zero: the credits may already have been spent, and a
-        // negative balance would read as "owes us credits" everywhere it's
-        // displayed. The refund is honoured either way — we eat the cost of
-        // whatever was already generated, which is the correct outcome
-        // rather than leaving the account unusable.
-        await supabase
-          .from("profiles")
-          .update({
-            purchased_credits: Math.max(0, (profile?.purchased_credits ?? 0) - purchase.credits),
-          })
-          .eq("id", purchase.user_id);
+        // Atomic, floored decrement (public.decrement_purchased_credits): the
+        // credits may already be spent, and a negative balance would read as
+        // "owes us credits", so it floors at zero — we eat the cost of whatever
+        // was already generated. Atomic so it can't lose a concurrent update.
+        await supabase.rpc("decrement_purchased_credits", {
+          p_user_id: purchase.user_id,
+          p_amount: purchase.credits,
+        });
 
         await supabase
           .from("credit_purchases")

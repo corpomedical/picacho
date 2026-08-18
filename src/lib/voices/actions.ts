@@ -13,15 +13,26 @@ const PREVIEW_TEXT = "Hi, this is a quick preview of this voice.";
 // the character form's voice picker (a real user deciding which voice to
 // assign). Takes the voice_presets row id rather than a raw ElevenLabs
 // voice_id — the client never needs to see the provider's own id, it just
-// needs something to click. Gated on being signed in only (not admin-only)
-// since regular users need this in the character form; still enough to
-// keep it out of reach of anonymous scripts hammering paid TTS calls.
+// needs something to click. Gated on a paid plan (or admin, for the Admin >
+// Voices tool) — signed-in alone made this a free, internet-facing paid-TTS
+// endpoint any throwaway account could loop and bill to us.
 export async function previewVoice(
   voicePresetId: string,
 ): Promise<{ url?: string; error?: string }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Not signed in." };
+
+  // Voice is a paid-plan feature (admins exempt for the Admin > Voices tool).
+  // This is the gate that keeps a free signup from scripting paid TTS calls.
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("plan, role")
+    .eq("id", userData.user.id)
+    .single();
+  if ((profile?.plan ?? "none") === "none" && profile?.role !== "admin") {
+    return { error: "Voice previews are part of a paid plan — upgrade to use them." };
+  }
 
   const { data: preset } = await supabase
     .from("voice_presets")

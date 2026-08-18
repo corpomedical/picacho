@@ -13,12 +13,24 @@ import {
 import type { PlanId } from "@/lib/plans";
 import { getOrigin } from "@/lib/origin";
 import { isEUVisitor } from "@/lib/geo";
+import { isNativeApp } from "@/lib/native/server";
+
+// Reader-app policy (Apple App Store 3.1.1 / Google Play): inside the native
+// app we may NOT sell digital goods or open any purchase/billing flow —
+// subscriptions, credit top-ups, or the Customer Portal (which can change plans
+// and take payment). Hiding the buttons isn't enough: a Server Action is a POST
+// endpoint reachable from anything that has its id, so every checkout/portal
+// entry point refuses server-side when the request comes from the app.
+async function blockInNativeApp(): Promise<void> {
+  if (await isNativeApp()) redirect("/app/settings?tab=usage");
+}
 
 // Starts a Stripe Checkout session for a brand-new subscription. Existing
 // subscribers should use createPortalSession instead — Stripe's Customer
 // Portal handles upgrades, downgrades, and cancellation for accounts that
 // already have one. Native <form> action, so it uses redirect() throughout.
 export async function createCheckoutSession(formData: FormData) {
+  await blockInNativeApp();
   const planId = formData.get("plan") as PlanId | null;
   // "annual" bills yearly at the tier's annualPrice x 12 (~25% off, a true
   // three months free on every tier). Anything else is the monthly default.
@@ -121,6 +133,7 @@ export async function createCheckoutSession(formData: FormData) {
 // on the one above, because almost every field differs and conflating them
 // risks accidentally starting a recurring charge for a one-off purchase.
 export async function createCreditCheckoutSession(formData: FormData) {
+  await blockInNativeApp();
   const packId = formData.get("pack") as string | null;
   const pack = packId ? getCreditPack(packId) : undefined;
 
@@ -194,6 +207,7 @@ export async function createCreditCheckoutSession(formData: FormData) {
 // them change plans, update their payment method, view invoices, or cancel,
 // all without us building any of that UI ourselves.
 export async function createPortalSession() {
+  await blockInNativeApp();
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");

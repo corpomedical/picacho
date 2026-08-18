@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { runRealPipeline } from "@/lib/generations/pipeline";
 import { describeImageAsPrompt, type DescribeMode } from "@/lib/generations/providers/describe-image";
 import { absolutizeMediaUrl } from "@/lib/media/url";
@@ -35,10 +35,21 @@ export type CompilePromptResult =
 
 // Assists are capped rather than charged — see PLAN_PROMPT_ASSIST_LIMITS.
 // Returns the number left, or null for "uncapped" (Elite, and admins).
+// Also returns the window (`since`, null = lifetime) and `cap` (uncapped = true
+// for Elite/admin) so the atomic recordAssist below can re-check the cap and
+// insert in one guarded step instead of racing this read.
+type AssistAllowance = {
+  error?: string;
+  remaining: number | null;
+  cap: number;
+  since: string | null;
+  uncapped: boolean;
+};
+
 async function assistAllowance(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
-): Promise<{ error?: string; remaining: number | null }> {
+): Promise<AssistAllowance> {
   const { data: profile } = await supabase
     .from("profiles")
     .select("plan, role, status, bonus_credits, current_period_start")
@@ -46,9 +57,9 @@ async function assistAllowance(
     .single();
 
   if (profile?.status === "suspended") {
-    return { error: "This account is suspended.", remaining: 0 };
+    return { error: "This account is suspended.", remaining: 0, cap: 0, since: null, uncapped: false };
   }
-  if (profile?.role === "admin") return { remaining: null };
+  if (profile?.role === "admin") return { remaining: null, cap: -1, since: null, uncapped: true };
 
   const plan = (profile?.plan ?? "none") as PlanId;
   const isFreeTier = plan === "none" && (profile?.bonus_credits ?? 0) === 0;
@@ -67,13 +78,16 @@ async function assistAllowance(
           `You've used your ${FREE_PROMPT_ASSIST_LIMIT} free prompt assists. ` +
           "Subscribe to a plan for more — writing your own prompt is always free.",
         remaining: 0,
+        cap: FREE_PROMPT_ASSIST_LIMIT,
+        since: null,
+        uncapped: false,
       };
     }
-    return { remaining: FREE_PROMPT_ASSIST_LIMIT - used };
+    return { remaining: FREE_PROMPT_ASSIST_LIMIT - used, cap: FREE_PROMPT_ASSIST_LIMIT, since: null, uncapped: false };
   }
 
   const cap = PLAN_PROMPT_ASSIST_LIMITS[plan];
-  if (cap === Number.POSITIVE_INFINITY) return { remaining: null };
+  if (cap === Number.POSITIVE_INFINITY) return { remaining: null, cap: -1, since: null, uncapped: true };
 
   // Counted against the account's real billing period so it resets in step
   // with credits; calendar month if Stripe hasn't given us an anchor yet
@@ -86,12 +100,13 @@ async function assistAllowance(
         d.setHours(0, 0, 0, 0);
         return d;
       })();
+  const since = periodStart.toISOString();
 
   const { count } = await supabase
     .from("prompt_assists")
     .select("id", { count: "exact", head: true })
     .eq("user_id", userId)
-    .gte("created_at", periodStart.toISOString());
+    .gte("created_at", since);
 
   const used = count ?? 0;
   if (used >= cap) {
@@ -100,9 +115,32 @@ async function assistAllowance(
         `You've used all ${cap} prompt assists included in the ${PLAN_LABELS[plan]} plan this ` +
         "billing period. Writing your own prompt is always free.",
       remaining: 0,
+      cap,
+      since,
+      uncapped: false,
     };
   }
-  return { remaining: cap - used };
+  return { remaining: cap - used, cap, since, uncapped: false };
+}
+
+// Records the assist atomically (see record_prompt_assist): re-checks the cap
+// and inserts in one advisory-locked step, so a concurrent burst can't push the
+// ledger past the cap. Metered only on success — the callers reach here only
+// after a successful compile. Returns assists left (null = uncapped).
+async function recordAssist(
+  allowance: AssistAllowance,
+  userId: string,
+  kind: string,
+): Promise<number | null> {
+  const { data } = await createAdminClient().rpc("record_prompt_assist", {
+    p_user_id: userId,
+    p_since: allowance.since,
+    p_cap: allowance.uncapped ? -1 : allowance.cap,
+    p_kind: kind,
+  });
+  if (allowance.uncapped) return null;
+  const rem = typeof data === "number" ? data : 0;
+  return rem < 0 ? 0 : rem;
 }
 
 async function loadActiveBrandRules(
@@ -171,7 +209,12 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
   // Character is optional — the pipeline's empty-name placeholder is what
   // tells it "no specific character for this generation".
   const characterQuery = characterId
-    ? await supabase.from("character_profiles").select("*").eq("id", characterId).single()
+    ? await supabase
+        .from("character_profiles")
+        .select("*")
+        .eq("id", characterId)
+        .eq("user_id", userData.user.id)
+        .single()
     : { data: null, error: null };
   const character = characterQuery.data;
   if (characterId && (characterQuery.error || !character)) {
@@ -224,18 +267,11 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
     return { error: "Couldn't enhance that prompt — try again in a moment." };
   }
 
-  // Metered only on success. A failed assist charging the user for nothing is
-  // the kind of small unfairness that makes a feature feel hostile.
-  const { error: ledgerError } = await supabase
-    .from("prompt_assists")
-    .insert({ user_id: userData.user.id, kind: "enhance" });
-  if (ledgerError) console.error("prompt_assists insert failed", ledgerError);
+  // Metered only on success, and recorded atomically so a concurrent burst
+  // can't slip the ledger past the cap (see record_prompt_assist).
+  const assistsLeft = await recordAssist(allowance, userData.user.id, "enhance");
 
-  return {
-    error: null,
-    prompt: compiled,
-    assistsLeft: allowance.remaining === null ? null : Math.max(0, allowance.remaining - 1),
-  };
+  return { error: null, prompt: compiled, assistsLeft };
 }
 
 // Prompt Studio, image mode: an uploaded picture in, a usable prompt out.
@@ -280,16 +316,9 @@ export async function promptFromImage(formData: FormData): Promise<CompilePrompt
     return { error: "Couldn't read that image — try another one, or write the prompt yourself." };
   }
 
-  const { error: ledgerError } = await supabase
-    .from("prompt_assists")
-    .insert({ user_id: userData.user.id, kind: "from_image" });
-  if (ledgerError) console.error("prompt_assists insert failed", ledgerError);
+  const assistsLeft = await recordAssist(allowance, userData.user.id, "from_image");
 
-  return {
-    error: null,
-    prompt: described,
-    assistsLeft: allowance.remaining === null ? null : Math.max(0, allowance.remaining - 1),
-  };
+  return { error: null, prompt: described, assistsLeft };
 }
 
 // ---------------------------------------------------------------------------

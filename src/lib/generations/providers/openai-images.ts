@@ -18,7 +18,38 @@ export class ImageSafetyRejection extends Error {
   }
 }
 
+// Defense-in-depth SSRF guard. Callers only ever pass our own media route or
+// Supabase URLs (validated upstream in resolveMaybeSignedUrl / at the form
+// read), but never fetch a non-http(s) scheme or a private/loopback/link-local
+// address from here — that's what turns a reference image into an internal
+// request against something like the cloud metadata endpoint.
+function assertNotInternalAddress(url: string): void {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    throw new Error("Invalid reference image URL.");
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error("Unsupported reference image URL scheme.");
+  }
+  const h = u.hostname.toLowerCase();
+  const isInternal =
+    h === "localhost" ||
+    h === "::1" ||
+    /^127\./.test(h) ||
+    /^10\./.test(h) ||
+    /^192\.168\./.test(h) ||
+    /^169\.254\./.test(h) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(h) ||
+    /^0\./.test(h) ||
+    h.startsWith("fd") ||
+    h.startsWith("fc");
+  if (isInternal) throw new Error("Refusing to fetch an internal address.");
+}
+
 async function fetchAsBlob(url: string): Promise<Blob> {
+  assertNotInternalAddress(url);
   const res = await fetchWithTimeout(url, {}, 20_000);
   if (!res.ok) throw new Error(`Couldn't fetch the reference image (${res.status}).`);
   return res.blob();

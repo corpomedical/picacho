@@ -68,22 +68,24 @@ export async function POST(request: Request) {
     );
   }
 
-  // Rate limit, counted from the rows this account actually created in the
-  // last minute. No new table: generations are already written per request,
-  // so the ledger IS the counter. Credits remain the real limit; this only
-  // bounds a runaway loop.
-  // Counted from the generations ledger itself — no extra state to keep.
-  // Deleted rows still count: a soft-deleted row is still a request that
-  // was made, and letting delete reset the window would hand back exactly
-  // the rate limit it is supposed to enforce.
-  const oneMinuteAgo = new Date(Date.now() - 60_000).toISOString();
-  const { count } = await supabase
-    .from("generations")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", caller.userId)
-    .gte("created_at", oneMinuteAgo);
-
-  if ((count ?? 0) >= API_RATE_LIMIT_PER_MINUTE) {
+  // Atomic per-user rate limit (public.api_rate_check): serializes per user with
+  // an advisory lock and only records a hit when under the cap. The old version
+  // counted rows then acted — two statements, no atomicity — so N concurrent
+  // requests all read the same pre-insert count and all passed, letting a burst
+  // fire unbounded paid generations. Credits remain the real limit; this bounds
+  // a runaway loop.
+  const { data: rateAllowed, error: rateError } = await supabase.rpc("api_rate_check", {
+    p_user_id: caller.userId,
+    p_window_seconds: 60,
+    p_max: API_RATE_LIMIT_PER_MINUTE,
+  });
+  if (rateError) {
+    return NextResponse.json(
+      { error: { code: "internal_error", message: "Couldn't process that request." } },
+      { status: 500 },
+    );
+  }
+  if (rateAllowed !== true) {
     return NextResponse.json(
       {
         error: {

@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+function safeNext(next: string | null): string {
+  // Must be a single-leading-slash relative path — no "//", no scheme, no "@".
+  if (!next || !/^\/[a-zA-Z0-9/_\-?=&.%]*$/.test(next) || next.startsWith("//")) return "/app";
+  return next;
+}
+
 // Where OAuth providers (Google, Apple, Microsoft, Facebook) send the user
 // back to after they approve sign-in. Supabase includes a one-time `code`
 // here that gets exchanged for a real session — or, if something went wrong
@@ -9,7 +15,7 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/app";
+  const next = safeNext(searchParams.get("next"));
   const oauthError = searchParams.get("error_description") ?? searchParams.get("error");
 
   if (code) {

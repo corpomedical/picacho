@@ -211,7 +211,7 @@ export async function runApiImageGeneration(params: {
               match_notes: verdict.notes,
             })
             .eq("id", generationId);
-          await refundGenerationCosts(generationId);
+          const refunded = await refundGenerationCosts(generationId);
           return {
             error: null,
             id: generationId,
@@ -219,7 +219,9 @@ export async function runApiImageGeneration(params: {
             prompt: result.finalPrompt,
             imageUrl: null,
             matchScore: verdict.score,
-            creditsUsed: 0,
+            // Only report 0 if the credit was actually released — with the
+            // refund kill switch off it was kept, and saying otherwise is a lie.
+            creditsUsed: refunded ? 0 : 1,
           };
         }
       }
@@ -236,7 +238,7 @@ export async function runApiImageGeneration(params: {
       })
       .eq("id", generationId);
 
-    if (!succeeded) await refundGenerationCosts(generationId);
+    const refunded = !succeeded ? await refundGenerationCosts(generationId) : false;
 
     return {
       error: null,
@@ -245,13 +247,19 @@ export async function runApiImageGeneration(params: {
       prompt: result.finalPrompt,
       imageUrl: succeeded ? absolutizeMediaUrl(toMediaUrl(resultUrl) ?? "", params.origin) : null,
       matchScore,
-      creditsUsed: succeeded ? 1 : 0,
+      // Charged unless the credit was actually released by a refund.
+      creditsUsed: !succeeded && refunded ? 0 : 1,
     };
   } catch (err) {
     console.error("API generation failed", { generationId, err });
     await supabase.from("generations").update({ status: "failed" }).eq("id", generationId);
-    await refundGenerationCosts(generationId);
-    return { error: "The generation failed. You have not been charged.", status: 500 };
+    const refunded = await refundGenerationCosts(generationId);
+    return {
+      error: refunded
+        ? "The generation failed. You have not been charged."
+        : "The generation failed. The credit was used — contact support if you'd like it refunded.",
+      status: 500,
+    };
   }
 }
 

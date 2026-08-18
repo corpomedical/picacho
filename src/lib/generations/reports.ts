@@ -107,9 +107,22 @@ export async function autoReportFailedGeneration(
 
   try {
     const supabase = await createClient();
+    // Never trust the caller-supplied userId — derive it from the session.
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+
+    // Only file a report for a generation this user actually owns.
+    const { data: generation } = await supabase
+      .from("generations")
+      .select("id")
+      .eq("id", generationId)
+      .eq("user_id", user.id)
+      .single();
+    if (!generation) return;
+
     const { error } = await supabase.from("generation_reports").insert({
       generation_id: generationId,
-      user_id: userId,
+      user_id: user.id,
       reason: "technical_error",
       details: detail.slice(0, 1000),
       source: "auto",

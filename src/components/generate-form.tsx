@@ -21,6 +21,7 @@ import { synthesizeVoice } from "@/lib/voice/actions";
 import { parseVoiceCommand } from "@/lib/voice/commands";
 import { recommendCreditPack } from "@/lib/stripe/credit-packs";
 import { createCreditCheckoutSession } from "@/lib/stripe/actions";
+import { isNativeAppClient } from "@/lib/native/platform";
 import {
   pickPhrasing,
   isTrivialUtterance,
@@ -778,6 +779,16 @@ function InsufficientCreditsBanner({
 }) {
   const pack = recommendCreditPack(Math.max(0, needed - available));
 
+  // Native (iOS/Android app) must show no purchase entry point — Apple 3.1.1 /
+  // Google Play. Keep the shortfall MESSAGE (the numbers below), but drop the
+  // "Add credits" checkout button and its form when in the app. Defaults to
+  // false so a browser renders the button on the first frame; only flips true
+  // once the client detector confirms native.
+  const [native, setNative] = useState(false);
+  useEffect(() => {
+    setNative(isNativeAppClient());
+  }, []);
+
   // Dismissed for THIS selection only. The call site keys this component on
   // the model and duration, so picking a different combination mounts a fresh
   // one and the strip returns — "suspend" rather than "never show again",
@@ -828,13 +839,18 @@ function InsufficientCreditsBanner({
             the default arrow, and only <a> gets the hand automatically. This
             is styled as a link, so without it the one thing that looks
             clickable doesn't feel clickable. */}
-        <button
-          type="submit"
-          form="buy-credits-shortfall"
-          className="cursor-pointer font-medium text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
-        >
-          Add {pack.credits} credits
-        </button>
+        {/* No purchase entry point in the native app (Apple 3.1.1 / Google
+            Play): the message above still tells the person they're short, but
+            the "Add credits" button and its checkout form are omitted. */}
+        {!native && (
+          <button
+            type="submit"
+            form="buy-credits-shortfall"
+            className="cursor-pointer font-medium text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
+          >
+            Add {pack.credits} credits
+          </button>
+        )}
       </p>
       {/* Same dismiss affordance as the usage strip — same size, same
           placement on the far right, same hover. */}
@@ -848,11 +864,13 @@ function InsufficientCreditsBanner({
       </button>
       {/* The form lives outside the paragraph so the composer's own form
           isn't nested inside it — nested forms are invalid HTML and the
-          inner one silently stops submitting. */}
-      <form id="buy-credits-shortfall" action={createCreditCheckoutSession} className="hidden">
-        <input type="hidden" name="pack" value={pack.id} />
-        <input type="hidden" name="return_to" value="/app/generate" />
-      </form>
+          inner one silently stops submitting. Omitted entirely in native. */}
+      {!native && (
+        <form id="buy-credits-shortfall" action={createCreditCheckoutSession} className="hidden">
+          <input type="hidden" name="pack" value={pack.id} />
+          <input type="hidden" name="return_to" value="/app/generate" />
+        </form>
+      )}
         </div>
       </div>
     </div>

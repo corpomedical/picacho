@@ -6,6 +6,7 @@ import { LanguageSwitcher } from "@/components/language-switcher";
 import { Logo } from "@/components/logo";
 import { EarlyAccessBadge } from "@/components/early-access-badge";
 import { GetAppButton } from "@/components/install-badges";
+import { isNativeApp } from "@/lib/native/server";
 
 // Async Server Component — checks the session so someone who's already
 // logged in sees a way back into the app instead of "Log in"/"Sign up",
@@ -15,6 +16,9 @@ export async function MarketingHeader() {
   const { data } = await supabase.auth.getUser();
   const isLoggedIn = Boolean(data.user);
   const { t } = await getServerMessages();
+  // No pricing entry point inside the native app (Apple 3.1.1 / Google Play);
+  // the install button and everything else stay put for both platforms.
+  const native = await isNativeApp();
 
   return (
     <header className="border-b border-neutral-200/70">
@@ -24,9 +28,11 @@ export async function MarketingHeader() {
           <EarlyAccessBadge />
         </Link>
         <nav className="flex items-center gap-6 text-sm text-neutral-500">
-          <Link href="/pricing" className="transition-colors hover:text-neutral-900">
-            {t.marketing.nav.pricing}
-          </Link>
+          {!native && (
+            <Link href="/pricing" className="transition-colors hover:text-neutral-900">
+              {t.marketing.nav.pricing}
+            </Link>
+          )}
           {/* One quiet install entry point on every marketing page — it
               costs no vertical space, which the hero placement did. */}
           <GetAppButton />

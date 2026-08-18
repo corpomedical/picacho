@@ -66,6 +66,34 @@ export function absolutizeMediaUrl(url: string, origin: string): string {
   return url.startsWith("/api/media/") ? `${origin}${url}` : url;
 }
 
+/**
+ * SSRF guard for URLs the SERVER itself will fetch (reference images handed to
+ * image providers). The only legitimate targets are our own media route and
+ * Supabase storage — everything a user submits as a reference resolves to one
+ * of those. Anything else (arbitrary http(s), cloud-metadata IPs like
+ * 169.254.169.254, internal hostnames) is rejected, so a crafted
+ * attachment_reference_url can't turn a generation into a server-side request
+ * against an internal address.
+ */
+export function isAllowedFetchUrl(url: string, appOrigin: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  let appHost = "";
+  try {
+    appHost = new URL(appOrigin).hostname.toLowerCase();
+  } catch {
+    /* origin unparseable — fall through to the https allowlist */
+  }
+  const host = u.hostname.toLowerCase();
+  if (appHost && host === appHost) return true; // our own /api/media route, any scheme (dev included)
+  if (u.protocol !== "https:") return false;
+  return host === "supabase.co" || host.endsWith(".supabase.co");
+}
+
 /** True for anything the UI can render directly: absolute http(s) or our media route. */
 export function isRenderableUrl(url: string | null | undefined): boolean {
   return Boolean(url && (url.startsWith("http") || url.startsWith("/api/media/")));

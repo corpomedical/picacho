@@ -61,6 +61,12 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
 
   const audio = formData.get("audio") as File | null;
   if (!audio || audio.size === 0) return { error: "Didn't catch any audio — try again." };
+  // Cap the upload — Whisper is billed per audio-minute, so an uncapped file
+  // POSTed in a loop is an unbounded cost. A spoken prompt is well under this.
+  const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
+  if (audio.size > MAX_AUDIO_BYTES) {
+    return { error: "That audio clip is too large — keep voice prompts short." };
+  }
 
   const apiKey = process.env.OPENAI_API_KEY!;
   const form = new FormData();

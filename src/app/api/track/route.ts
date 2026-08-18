@@ -8,6 +8,24 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 // every failure is swallowed after being logged server-side.
 export async function POST(request: NextRequest) {
   try {
+    // Cheap same-origin guard to blunt drive-by abuse of this anonymous
+    // endpoint. Only reject when an Origin header is present AND clearly
+    // cross-site — legitimate same-origin beacons (and requests with no
+    // Origin header at all) still pass through.
+    const origin = request.headers.get("origin");
+    if (origin) {
+      const host = request.headers.get("host");
+      let originHost: string | null = null;
+      try {
+        originHost = new URL(origin).host;
+      } catch {
+        originHost = null;
+      }
+      if (!originHost || originHost !== host) {
+        return new Response(null, { status: 204 });
+      }
+    }
+
     const body = await request.json();
     const path = typeof body.path === "string" ? body.path.slice(0, 300) : "/";
     const visitorId = typeof body.visitorId === "string" ? body.visitorId.slice(0, 100) : null;

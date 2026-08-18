@@ -405,3 +405,99 @@ create policy "Users can manage their own chat attachments"
 --   20260806014850  add_elite_to_plan_check_constraint
 --   20260806014915  voice_presets_and_character_voice
 -- =====================================================================
+
+-- =====================================================================
+-- 2026-08-18  Security audit hardening (applied to the live DB; captured
+-- here so a rebuild/reset can't silently regress it).
+-- =====================================================================
+
+-- profiles: column-level write lockdown. authenticated may only edit its own
+-- safe columns; role/plan/status/credits/api_access are service-role only.
+REVOKE UPDATE ON public.profiles FROM authenticated;
+GRANT UPDATE (username, full_name, company, gender, has_completed_onboarding, rating_prompted_at, skip_ai_refinement, terms_accepted_at)
+  ON public.profiles TO authenticated;
+
+-- credit_purchases money ledger: service-role write only.
+REVOKE INSERT, UPDATE, DELETE ON public.credit_purchases FROM authenticated;
+
+-- Atomic balance mutations (replace app-side read-then-write). SECURITY DEFINER,
+-- EXECUTE restricted to service_role so authenticated can't call them to mint
+-- or alter its own credits.
+CREATE OR REPLACE FUNCTION public.decrement_purchased_credits(p_user_id uuid, p_amount int)
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  UPDATE public.profiles SET purchased_credits = greatest(0, coalesce(purchased_credits,0) - p_amount)
+   WHERE id = p_user_id AND p_amount > 0;
+$$;
+CREATE OR REPLACE FUNCTION public.add_purchased_credits(p_user_id uuid, p_amount int)
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  UPDATE public.profiles SET purchased_credits = coalesce(purchased_credits,0) + p_amount
+   WHERE id = p_user_id AND p_amount <> 0;
+$$;
+CREATE OR REPLACE FUNCTION public.increment_free_generations(p_user_id uuid)
+RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  UPDATE public.profiles SET free_generations_used = coalesce(free_generations_used,0) + 1
+   WHERE id = p_user_id;
+$$;
+CREATE OR REPLACE FUNCTION public.record_credit_purchase(
+  p_user_id uuid, p_session_id text, p_amount_cents int, p_currency text, p_credits int
+) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE n int;
+BEGIN
+  INSERT INTO public.credit_purchases (user_id, credits, amount_cents, currency, stripe_session_id)
+  VALUES (p_user_id, p_credits, p_amount_cents, p_currency, p_session_id)
+  ON CONFLICT (stripe_session_id) DO NOTHING;
+  GET DIAGNOSTICS n = ROW_COUNT;
+  IF n > 0 THEN
+    UPDATE public.profiles SET purchased_credits = coalesce(purchased_credits,0) + p_credits WHERE id = p_user_id;
+    RETURN true;
+  END IF;
+  RETURN false;
+END $$;
+
+-- Atomic per-user rate limiter for the public API.
+CREATE TABLE IF NOT EXISTS public.api_rate_hits (
+  id bigserial PRIMARY KEY,
+  user_id uuid NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS api_rate_hits_user_time ON public.api_rate_hits (user_id, created_at);
+ALTER TABLE public.api_rate_hits ENABLE ROW LEVEL SECURITY;
+CREATE OR REPLACE FUNCTION public.api_rate_check(p_user_id uuid, p_window_seconds int, p_max int)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE used int;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 0));
+  DELETE FROM public.api_rate_hits WHERE user_id = p_user_id AND created_at < now() - make_interval(secs => p_window_seconds * 4);
+  SELECT count(*) INTO used FROM public.api_rate_hits WHERE user_id = p_user_id AND created_at >= now() - make_interval(secs => p_window_seconds);
+  IF used >= p_max THEN RETURN false; END IF;
+  INSERT INTO public.api_rate_hits (user_id) VALUES (p_user_id);
+  RETURN true;
+END $$;
+
+-- Atomic "record a prompt assist iff under the cap".
+CREATE OR REPLACE FUNCTION public.record_prompt_assist(
+  p_user_id uuid, p_since timestamptz, p_cap int, p_kind text
+) RETURNS int LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE used int;
+BEGIN
+  PERFORM pg_advisory_xact_lock(hashtextextended(p_user_id::text, 7));
+  SELECT count(*) INTO used FROM public.prompt_assists
+   WHERE user_id = p_user_id AND (p_since IS NULL OR created_at >= p_since);
+  IF p_cap >= 0 AND used >= p_cap THEN RETURN -1; END IF;
+  INSERT INTO public.prompt_assists (user_id, kind) VALUES (p_user_id, p_kind);
+  IF p_cap < 0 THEN RETURN 2147483647; END IF;
+  RETURN greatest(0, p_cap - used - 1);
+END $$;
+
+REVOKE EXECUTE ON FUNCTION public.decrement_purchased_credits(uuid,int) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.add_purchased_credits(uuid,int) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.increment_free_generations(uuid) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.record_credit_purchase(uuid,text,int,text,int) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.api_rate_check(uuid,int,int) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.record_prompt_assist(uuid,timestamptz,int,text) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.decrement_purchased_credits(uuid,int) TO service_role;
+GRANT EXECUTE ON FUNCTION public.add_purchased_credits(uuid,int) TO service_role;
+GRANT EXECUTE ON FUNCTION public.increment_free_generations(uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_credit_purchase(uuid,text,int,text,int) TO service_role;
+GRANT EXECUTE ON FUNCTION public.api_rate_check(uuid,int,int) TO service_role;
+GRANT EXECUTE ON FUNCTION public.record_prompt_assist(uuid,timestamptz,int,text) TO service_role;

@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 
+function safeNext(next: string | null): string {
+  // Must be a single-leading-slash relative path — no "//", no scheme, no "@".
+  if (!next || !/^\/[a-zA-Z0-9/_\-?=&.%]*$/.test(next) || next.startsWith("//")) return "/app";
+  return next;
+}
+
 // Where a new user's "Confirm your email" link lands. Handles BOTH shapes of
 // confirmation link, because which one Supabase sends depends on a dashboard
 // setting we don't fully control:
@@ -28,7 +34,7 @@ export async function GET(request: Request) {
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/app";
+  const next = safeNext(searchParams.get("next"));
 
   const supabase = await createClient();
 

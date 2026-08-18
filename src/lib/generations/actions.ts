@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getOrigin } from "@/lib/origin";
-import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl } from "@/lib/media/url";
+import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -160,7 +160,13 @@ async function resolveMaybeSignedUrl(
     // but relative, and fal/OpenAI fetch these over the open internet.
     return absolutizeMediaUrl(pathOrUrl, await getOrigin());
   }
-  if (pathOrUrl.startsWith("http")) return pathOrUrl;
+  if (pathOrUrl.startsWith("http")) {
+    // SSRF guard: only our own media route or Supabase storage are ever
+    // legitimate server-fetch targets. Reject arbitrary/internal URLs
+    // (metadata IPs, internal hosts) rather than fetch them or hand them to a
+    // provider.
+    return isAllowedFetchUrl(pathOrUrl, await getOrigin()) ? pathOrUrl : null;
+  }
   const { data: signed } = await supabase.storage
     .from("character-references")
     .createSignedUrl(pathOrUrl, 60 * 10);
@@ -338,7 +344,15 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // signing is needed here. When present, this is what the person actually
   // wants used for this one generation, ahead of the character's saved
   // default photo (see the anchor-resolution block below).
-  const attachmentReferenceUrl = (formData.get("attachment_reference_url") as string) || "";
+  //
+  // SSRF guard: the only legitimate value is one of our own relative /api/media
+  // URLs (from uploadChatAttachment). Anything else — an absolute http(s) URL,
+  // a cloud-metadata IP — is discarded here so it can never become a
+  // server-side fetch target or get handed to a provider.
+  const attachmentReferenceUrl = (() => {
+    const raw = (formData.get("attachment_reference_url") as string) || "";
+    return raw.startsWith("/api/media/") ? raw : "";
+  })();
 
   // Which of the character's OWN saved reference photos to anchor to —
   // from the picker in the composer, for characters with more than one
@@ -419,7 +433,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // stay optional without one, an explicit check + early return for the
   // few — dialogue, multi-character — that still inherently need one).
   const characterQuery = characterId
-    ? await supabase.from("character_profiles").select("*").eq("id", characterId).single()
+    ? await supabase
+        .from("character_profiles")
+        .select("*")
+        .eq("id", characterId)
+        .eq("user_id", userData.user.id)
+        .single()
     : { data: null, error: null };
   const character = characterQuery.data;
   type CharacterRow = NonNullable<typeof character>;
@@ -1350,8 +1369,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // this action has returned anything.
   const clientGroupId = (formData.get("angle_group_id") as string) || undefined;
   // Same attachment/anchor-photo priority as runGeneration — see the
-  // comments there.
-  const attachmentReferenceUrl = (formData.get("attachment_reference_url") as string) || "";
+  // comments there. Same SSRF guard too: only our own /api/media URLs are
+  // accepted; anything else is discarded before it can reach a provider.
+  const attachmentReferenceUrl = (() => {
+    const raw = (formData.get("attachment_reference_url") as string) || "";
+    return raw.startsWith("/api/media/") ? raw : "";
+  })();
   const requestedAnchorPhotoPath = (formData.get("anchor_photo_path") as string) || "";
 
   if (!userInput) return { error: "Describe what you want first." };
@@ -1381,6 +1404,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     .from("character_profiles")
     .select("*")
     .eq("id", characterId)
+    .eq("user_id", userData.user.id)
     .single();
 
   if (characterError || !character) {
@@ -1604,7 +1628,11 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     await createAdminClient()
       .from("generations")
       .update({ status: "failed", pipeline_log: failureLog, credits_used: 0, progress_stage: null })
-      .eq("angle_group_id", groupId);
+      .eq("angle_group_id", groupId)
+      // Scope to the caller — angle_group_id is client-supplied and not unique,
+      // so without this an attacker who knew a victim's group id could flip
+      // that victim's rows to failed and zero their credits.
+      .eq("user_id", userData.user.id);
 
     // Whole group failed before any provider call — also give back the
     // purchased-credit slices recorded on each row.
@@ -1992,13 +2020,19 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
   };
 }
 
-export async function getReliabilityStats(userId: string) {
+export async function getReliabilityStats(_userId: string) {
+  // Derive the account from the verified session rather than trusting the
+  // argument — this only ever shows the caller their own dashboard.
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { firstTryRate: null, avgAttempts: null, total: 0 };
   const { data } = await supabase
     .from("generations")
     .select("attempts, status")
     .in("status", ["succeeded", "failed"])
-    .eq("user_id", userId);
+    .eq("user_id", user.id);
 
   const rows = data ?? [];
   const total = rows.length;
@@ -2040,5 +2074,18 @@ export async function getReliabilityStats(userId: string) {
 // itself now lives in core.ts so the API shares exactly one implementation.
 export async function getMonthlyUsage(userId: string, periodStart?: string | null) {
   const supabase = await createClient();
-  return getMonthlyUsageWith(supabase, userId, periodStart);
+  // Must be signed in. Another account's usage is readable only by an admin
+  // (the /admin user page passes a different id); otherwise the argument is
+  // ignored in favour of the caller's own — no trusting a raw id.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return 0;
+  let target = user.id;
+  if (userId !== user.id) {
+    const { data: me } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+    if (me?.role !== "admin") return 0;
+    target = userId;
+  }
+  return getMonthlyUsageWith(supabase, target, periodStart);
 }

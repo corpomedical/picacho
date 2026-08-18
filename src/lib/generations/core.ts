@@ -224,44 +224,31 @@ export async function checkGenerationAllowance(
 // instead of reusing the value the allowance check saw, so two requests
 // racing each other can't drive it negative.
 export async function consumePurchasedCredits(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   userId: string,
   amount: number,
 ): Promise<void> {
   if (!amount || amount <= 0) return;
-  // Service role, not the caller's client: `authenticated` no longer has
-  // UPDATE on the credit columns, precisely so a customer can't write their
-  // own balance. Spending them is server business.
+  // Atomic single-statement decrement via a service-role-only SQL function.
+  // A read-then-write here loses updates under concurrency — two generations
+  // racing would both read the same balance and both write it back, letting
+  // the same credit be spent twice. `authenticated` cannot call this RPC, so
+  // a customer still can't write their own balance.
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("profiles")
-    .select("purchased_credits")
-    .eq("id", userId)
-    .single();
-  const current = (data?.purchased_credits ?? 0) as number;
-  await admin
-    .from("profiles")
-    .update({ purchased_credits: Math.max(0, current - amount) })
-    .eq("id", userId);
+  await admin.rpc("decrement_purchased_credits", { p_user_id: userId, p_amount: amount });
 }
 
 // Free-tier equivalent of consumePurchasedCredits — a lifetime counter, so
 // it is never reset by a billing period rolling over.
 export async function consumeFreeGeneration(
-  supabase: SupabaseClient,
+  _supabase: SupabaseClient,
   userId: string,
 ): Promise<void> {
-  // Service role — see consumePurchasedCredits above.
+  // Service role — see consumePurchasedCredits above. Atomic increment so two
+  // concurrent free generations can't both read the same count and only bump
+  // it once.
   const admin = createAdminClient();
-  const { data } = await admin
-    .from("profiles")
-    .select("free_generations_used")
-    .eq("id", userId)
-    .single();
-  await admin
-    .from("profiles")
-    .update({ free_generations_used: ((data?.free_generations_used ?? 0) as number) + 1 })
-    .eq("id", userId);
+  await admin.rpc("increment_free_generations", { p_user_id: userId });
 }
 
 export async function persistGeneratedImage(

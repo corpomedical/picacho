@@ -139,7 +139,11 @@ const REFUNDS: Record<FailureFault, boolean> = {
 // an optimistic conditional update that zeroes the generation row's
 // consumption record first — whichever caller wins the update does the
 // refund; the loser matches zero rows and does nothing.
-export async function refundGenerationCosts(generationId: string): Promise<void> {
+// Returns true only when it actually released credits, false when it did not
+// (kill switch off, row missing, or the daily cap reached) — callers that
+// report billing to a customer rely on this to avoid claiming "not charged"
+// when the credit was in fact kept.
+export async function refundGenerationCosts(generationId: string): Promise<boolean> {
   const admin = createAdminClient();
 
   // Master switch (Admin > Feature flags > automatic_refunds), currently OFF.
@@ -162,7 +166,7 @@ export async function refundGenerationCosts(generationId: string): Promise<void>
 
   if (refundFlag?.enabled !== true) {
     console.info("Automatic refunds are off; not refunding", { generationId });
-    return;
+    return false;
   }
 
   const { data: row } = await admin
@@ -170,7 +174,7 @@ export async function refundGenerationCosts(generationId: string): Promise<void>
     .select("user_id, purchased_credits_used, free_generation_used")
     .eq("id", generationId)
     .maybeSingle<{ user_id: string; purchased_credits_used: number; free_generation_used: boolean }>();
-  if (!row) return;
+  if (!row) return false;
 
   // The daily ceiling is enforced HERE rather than at each of the eleven
   // call sites: this is the single function every refund in the product
@@ -205,7 +209,7 @@ export async function refundGenerationCosts(generationId: string): Promise<void>
         forgivenToday,
         generationId,
       });
-      return;
+      return false;
     }
   }
 
@@ -221,15 +225,12 @@ export async function refundGenerationCosts(generationId: string): Promise<void>
       .eq("purchased_credits_used", row.purchased_credits_used)
       .select("id");
     if (claimed?.length) {
-      const { data: profile } = await admin
-        .from("profiles")
-        .select("purchased_credits")
-        .eq("id", row.user_id)
-        .maybeSingle<{ purchased_credits: number }>();
-      await admin
-        .from("profiles")
-        .update({ purchased_credits: (profile?.purchased_credits ?? 0) + row.purchased_credits_used })
-        .eq("id", row.user_id);
+      // Atomic add — a read-then-write here would race a concurrent spend and
+      // lose the refund (or the spend).
+      await admin.rpc("add_purchased_credits", {
+        p_user_id: row.user_id,
+        p_amount: row.purchased_credits_used,
+      });
     }
   }
 
@@ -251,6 +252,8 @@ export async function refundGenerationCosts(generationId: string): Promise<void>
       .eq("id", generationId)
       .eq("free_generation_used", true);
   }
+
+  return true;
 }
 
 function jobHandle(row: JobRow): QueuedJob {
@@ -316,10 +319,11 @@ async function finish(
       result_url: outcome.status === "succeeded" ? outcome.resultUrl : null,
       pipeline_log: outcome.attempts,
       progress_stage: null,
-      // Refund decided by fault, not by circumstance — see REFUNDS above.
-      ...(outcome.status === "failed" && outcome.fault && REFUNDS[outcome.fault]
-        ? { credits_used: 0 }
-        : {}),
+      // NOTE: credits are NOT zeroed here. Releasing the monthly allowance is a
+      // refund, and every refund must pass through the single, flag-gated
+      // refundGenerationCosts below — otherwise (as happened here) a cancelled
+      // video would release its credit even with automatic_refunds OFF, letting
+      // start→stop loops run unbounded paid renders at zero metered cost.
     })
     .eq("id", generationId)
     .eq("user_id", userId);

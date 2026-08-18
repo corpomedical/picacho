@@ -5,6 +5,7 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
+import { isNativeApp } from "@/lib/native/server";
 import { cn } from "@/lib/cn";
 import { ShowcaseVideoPlayer } from "@/components/showcase-video-player";
 
@@ -208,6 +209,10 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const { t } = await getServerMessages();
   const m = t.marketing.home;
+  // No pricing UI inside the native app (Apple 3.1.1 / Google Play): the
+  // "See pricing" hero link, the pricing card grid, and the "full plan
+  // details" link are all omitted. Everything else on the page is unchanged.
+  const native = await isNativeApp();
 
   const STEPS = [
     {
@@ -257,12 +262,14 @@ export default async function Home() {
               >
                 {m.getStarted}
               </Link>
-              <Link
-                href="/pricing"
-                className="text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:decoration-slate-500"
-              >
-                {m.seePricing}
-              </Link>
+              {!native && (
+                <Link
+                  href="/pricing"
+                  className="text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:decoration-slate-500"
+                >
+                  {m.seePricing}
+                </Link>
+              )}
             </div>
             {/* The trial exists in the product (5 free generations, no card)
                 but was invisible on the marketing site — the single cheapest
@@ -461,21 +468,23 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-8 pb-24">
-        <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-900">
-          {m.pricingHeading}
-        </h2>
-        <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {PRICING_TIERS.map((tier) => (
-            <PricingCard key={tier.id} tier={tier} />
-          ))}
-        </div>
-        <p className="mt-6 text-center text-sm text-neutral-500">
-          <Link href="/pricing" className="font-medium text-neutral-900 underline">
-            {m.fullPlanDetails}
-          </Link>
-        </p>
-      </section>
+      {!native && (
+        <section className="mx-auto max-w-5xl px-8 pb-24">
+          <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-900">
+            {m.pricingHeading}
+          </h2>
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {PRICING_TIERS.map((tier) => (
+              <PricingCard key={tier.id} tier={tier} />
+            ))}
+          </div>
+          <p className="mt-6 text-center text-sm text-neutral-500">
+            <Link href="/pricing" className="font-medium text-neutral-900 underline">
+              {m.fullPlanDetails}
+            </Link>
+          </p>
+        </section>
+      )}
 
       {/* Final CTA — the light bookend to the hero above, same fixed
           bg-paper treatment for the same reason. */}

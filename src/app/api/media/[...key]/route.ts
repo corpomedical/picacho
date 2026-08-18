@@ -33,7 +33,12 @@ export async function GET(
   if (!bucket || pathParts.length === 0 || !isMediaBucket(bucket)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  const path = pathParts.map(decodeURIComponent).join("/");
+  let path: string;
+  try {
+    path = pathParts.map(decodeURIComponent).join("/");
+  } catch {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
 
   const searchParams = new URL(request.url).searchParams;
 
@@ -71,7 +76,7 @@ export async function GET(
       try {
         const { default: sharp } = await import("sharp");
         const input = Buffer.from(await blob.arrayBuffer());
-        const resized = await sharp(input)
+        const resized = await sharp(input, { limitInputPixels: 24000000 })
           .rotate() // honour EXIF orientation, which resizing would otherwise drop
           .resize({ width, withoutEnlargement: true })
           .webp({ quality: 78 })
@@ -81,6 +86,7 @@ export async function GET(
           headers: {
             "content-type": "image/webp",
             "cache-control": "public, max-age=31536000, immutable",
+            "X-Content-Type-Options": "nosniff",
           },
         });
       } catch (err) {
@@ -92,6 +98,7 @@ export async function GET(
       headers: {
         "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream",
         "cache-control": "public, max-age=31536000, immutable",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch {

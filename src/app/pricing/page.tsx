@@ -5,6 +5,7 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
+import { isNativeApp } from "@/lib/native/server";
 
 // Renders as "Pricing | Picacho" via the title.template set in the root
 // layout. Without this the tab title and search-result link for this page
@@ -32,6 +33,36 @@ export default async function PricingPage({
 }) {
   const { t } = await getServerMessages();
   const p = t.marketing.pricing;
+
+  // Inside the native app (Apple 3.1.1 / Google Play) this page may show no
+  // prices and no checkout buttons. Render a minimal "manage your plan on the
+  // web" message instead of the pricing tables — the server-side purchase
+  // actions are blocked separately; this is purely so an App reviewer never
+  // sees a purchase entry point. Web visitors fall through to the full page.
+  const native = await isNativeApp();
+  if (native) {
+    return (
+      <div className="min-h-screen bg-neutral-50">
+        <MarketingHeader />
+        <section className="mx-auto flex max-w-2xl flex-col items-center px-8 py-32 text-center">
+          <h1 className="font-display text-2xl font-bold tracking-[-0.03em] text-neutral-900 sm:text-3xl">
+            {p.title}
+          </h1>
+          <p className="mx-auto mt-4 max-w-md text-sm text-neutral-500">
+            Manage your plan on the web at picacho.ai.
+          </p>
+          <Link
+            href="/app"
+            className="mt-8 inline-flex items-center justify-center rounded-[10px] bg-neutral-900 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800"
+          >
+            {t.marketing.nav.goToApp}
+          </Link>
+        </section>
+        <MarketingFooter />
+      </div>
+    );
+  }
+
   const { billing } = await searchParams;
   // Annual is the default view — it's the offer we lead with. ?billing=monthly
   // flips it; a URL param (not client state) so the server-rendered cards and

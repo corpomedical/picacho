@@ -1,9 +1,13 @@
 import Link from "next/link";
 import { InstallBadges } from "@/components/install-badges";
 import { getServerMessages } from "@/lib/i18n/server";
+import { isNativeApp } from "@/lib/native/server";
 
 export async function MarketingFooter() {
   const { t } = await getServerMessages();
+  // Hide the Pricing footer link in the native app (Apple 3.1.1 / Google
+  // Play) — even a footer link to pricing counts as a purchase entry point.
+  const native = await isNativeApp();
 
   return (
     <footer className="border-t border-neutral-200/70">
@@ -15,9 +19,11 @@ export async function MarketingFooter() {
           © {new Date().getFullYear()} Picacho — {t.marketing.footer.rights}
         </p>
         <div className="flex flex-wrap items-center justify-center gap-6">
-          <Link href="/pricing" className="hover:text-neutral-900">
-            {t.marketing.nav.pricing}
-          </Link>
+          {!native && (
+            <Link href="/pricing" className="hover:text-neutral-900">
+              {t.marketing.nav.pricing}
+            </Link>
+          )}
           <Link href="/login" className="hover:text-neutral-900">
             {t.marketing.nav.login}
           </Link>
