@@ -2181,8 +2181,18 @@ function GenerateFormInner({
           if (outcome.state === "succeeded") {
             let url = outcome.resultUrl;
             if (!url) {
+              // "gone" means a webhook/reaper collected it before this poll —
+              // re-read the row. An angle ALWAYS has an angle_group_id, so its
+              // thread comes back kind:"multi", not "single"; reading only the
+              // "single" case here dropped the URL and marked every
+              // webhook-collected angle as failed. Pull this angle out of the
+              // group by id.
               const saved = await getGenerationThread(angle.id);
-              url = saved?.kind === "single" ? saved.resultUrl : null;
+              if (saved?.kind === "single") {
+                url = saved.resultUrl;
+              } else if (saved?.kind === "multi") {
+                url = saved.angles.find((a) => a.id === angle.id)?.resultUrl ?? null;
+              }
             }
             return { ...angle, pending: false, succeeded: Boolean(url), resultUrl: url };
           }

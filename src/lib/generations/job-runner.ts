@@ -386,7 +386,7 @@ export async function saveVideoJob(params: {
   attempts: AttemptLog[];
 }): Promise<void> {
   const admin = createAdminClient();
-  await admin.from("generation_jobs").upsert({
+  const { error: upsertError } = await admin.from("generation_jobs").upsert({
     generation_id: params.generationId,
     user_id: params.userId,
     stage: "video" satisfies JobStage,
@@ -404,6 +404,15 @@ export async function saveVideoJob(params: {
     last_polled_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   });
+  // Must NOT be swallowed. The fal render has already been submitted by the
+  // time we get here; if we fail to record its job row, nothing can ever poll,
+  // finish, or refund it — no job row means the poller and webhook both see
+  // "gone" and the reaper has nothing to scan, so the generation sits at
+  // "generating" forever with credits charged. Throwing lets the caller's
+  // belt-and-suspenders catch fail the row and refund it cleanly.
+  if (upsertError) {
+    throw new Error(`Couldn't record the queued video job: ${upsertError.message}`);
+  }
 
   await admin
     .from("generations")

@@ -1289,6 +1289,21 @@ export async function requestGenerationCancel(generationId: string): Promise<{ e
     return { error: "Couldn't stop this generation — try again." };
   }
 
+  // Drive the cancel NOW rather than waiting for a poll. For a queued video the
+  // client stops polling the instant Stop is pressed, so nothing else would run
+  // advanceGeneration — and without it fal is never told to stop, so we keep
+  // paying for a render nobody will collect until it finishes on its own. This
+  // reads the job, tells fal to cancel, and finishes it user_cancelled; for a
+  // non-queued generation there's no job row and it's a harmless no-op ("gone").
+  // Awaited so the cancel actually reaches fal before we return — a Stop is
+  // worth a second of latency. Best-effort: the cooperative cancel_requested
+  // flag and the reaper remain as backstops if this can't reach fal.
+  try {
+    await advanceGeneration(generationId, userData.user.id);
+  } catch (err) {
+    console.error("requestGenerationCancel: advanceGeneration failed", err);
+  }
+
   return { error: null };
 }
 
@@ -1681,8 +1696,18 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // before any angle is rendered, and each angle differs by its camera line
   // and nothing else. It's also cheaper: one Claude + OpenAI pass instead of
   // one per angle.
-  const sharedScene = useRealProviders
-    ? await runRealPipeline(
+  // Wrapped in try/catch for the same reason runGeneration wraps its pipeline
+  // call: runRealPipeline shouldn't throw (every provider call inside it is
+  // caught and recorded as a failed attempt), but if something truly
+  // unexpected does throw here, letting it reject the whole action would strand
+  // all N placeholder rows — already inserted and already charged — at
+  // "generating" forever, with no generation_jobs rows for the reaper to reach.
+  // Falling back to null routes it into the "didn't compile → fail the group
+  // and refund" branch below, which cleans up correctly.
+  let sharedScene: Awaited<ReturnType<typeof runRealPipeline>> | null = null;
+  if (useRealProviders) {
+    try {
+      sharedScene = await runRealPipeline(
         `${userInput}\n\n${SHARED_SCENE_INSTRUCTION}`,
         characterForPipeline,
         {
@@ -1696,8 +1721,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           compileOnly: true,
         },
         maxAttempts,
-      )
-    : null;
+      );
+    } catch (err) {
+      console.error("Multi-angle shared-scene compile threw:", err);
+      sharedScene = null;
+    }
+  }
 
   // If the shared scene didn't compile, every angle would submit an empty or
   // half-formed prompt — three paid Kling renders of nothing. Fail the batch
@@ -1889,17 +1918,27 @@ export async function requestMultiAngleGenerationCancel(
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
-  const { error } = await supabase
+  const { data: cancelled, error } = await supabase
     .from("generations")
     .update({ cancel_requested: true })
     .eq("angle_group_id", groupId)
     .eq("user_id", userData.user.id)
-    .eq("status", "generating");
+    .eq("status", "generating")
+    .select("id");
 
   if (error) {
     console.error("requestMultiAngleGenerationCancel failed:", error.message);
     return { error: "Couldn't stop these generations — try again." };
   }
+
+  // Drive each angle's cancel server-side now — the client stops polling on
+  // Stop, so otherwise fal is never told to stop any of the queued angle
+  // renders and we keep paying for all of them. Each call tells fal to cancel
+  // that angle's job and finishes it user_cancelled; angles with no job row are
+  // harmless no-ops. Best-effort, per the single-generation cancel above.
+  await Promise.allSettled(
+    (cancelled ?? []).map((row) => advanceGeneration(row.id as string, userData.user!.id)),
+  );
 
   return { error: null };
 }
