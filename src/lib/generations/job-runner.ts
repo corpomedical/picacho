@@ -678,7 +678,7 @@ export async function advanceGeneration(
   }
 }
 
-// Clears out jobs nobody has polled in a long time.
+// Drives jobs nobody has polled in a long time.
 //
 // Run lazily whenever a workspace page loads rather than on a schedule,
 // because Vercel's Hobby plan only allows one cron run per day, which is far
@@ -688,65 +688,43 @@ export async function advanceGeneration(
 //
 // Scoped to one user's own jobs so it stays a small, cheap query on a page
 // load and can't turn into an accidental full-table sweep.
+//
+// Each stale job is handed to advanceGeneration — the SAME state machine the
+// poller and the webhook drive — rather than a completion path reimplemented
+// here. The reimplemented version this replaced only understood the `video`
+// stage: a stale job whose dialogue TTS or lip-sync had already COMPLETED fell
+// through to cancel-and-abandon, discarding a finished, fully-paid render and
+// billing the user for a failure. Reusing advanceGeneration means every stage
+// and status is handled the one correct way — collect a finished render,
+// advance the next dialogue stage, ship the silent video when a dialogue stage
+// fails, finish — and, because advanceGeneration takes an atomic claim before
+// any paid or terminal step, this is safe even when a late poll or the fal
+// webhook fires for the same job at the same instant.
+//
+// advanceGeneration refreshes last_polled_at as its first act and swallows fal
+// transport errors as "pending", so a job that is genuinely still rendering (or
+// briefly unreachable) simply drops out of the stale window and is retried on a
+// later page load — never cancelled out from under a render that is still in
+// progress.
 export async function reapStaleJobs(userId: string): Promise<void> {
   const admin = createAdminClient();
   const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString();
 
   const { data: stale } = await admin
     .from("generation_jobs")
-    .select("*")
+    .select("generation_id, user_id")
     .eq("user_id", userId)
     .lt("last_polled_at", cutoff)
     .limit(20)
-    .returns<JobRow[]>();
+    .returns<{ generation_id: string; user_id: string }[]>();
 
   for (const row of stale ?? []) {
-    // Ask once whether it actually finished before writing it off.
-    //
-    // "Nobody polled this for half an hour" and "this failed" are different
-    // things, and the first does not imply the second — a render that
-    // completed while the browser was gone is sitting there, paid for, ready
-    // to collect. Binning it would throw away real money and a real result.
-    // Real incident, 2026-08-10: three multi-angle renders were orphaned by a
-    // client-side error and were minutes from being deleted despite running
-    // to completion.
     try {
-      const state = await checkQueuedJob(jobHandle(row));
-      if (state.state === "completed" && row.stage === "video") {
-        const videoUrl = await fetchQueuedVideoUrl(jobHandle(row));
-        await finish(row.generation_id, row.user_id, {
-          status: "succeeded",
-          resultUrl: videoUrl,
-          attempts: row.resume?.attempts ?? [],
-        });
-        continue;
-      }
-      if (state.state === "pending") {
-        // Still genuinely rendering. Leave it be and give it another window
-        // rather than cancelling work that's in progress.
-        await admin
-          .from("generation_jobs")
-          .update({ last_polled_at: new Date().toISOString() })
-          .eq("generation_id", row.generation_id);
-        continue;
-      }
+      await advanceGeneration(row.generation_id, row.user_id);
     } catch {
-      // Couldn't reach fal — fall through and clean up as before rather than
-      // leaving the row stuck at "generating" indefinitely.
+      // advanceGeneration handles fal transport errors internally (returning
+      // "pending"), so reaching here is genuinely unexpected. Leave the row for
+      // the next reap rather than deleting work we couldn't classify.
     }
-
-    // Tell fal.ai to stop too. Without this we'd keep paying for renders whose
-    // output nobody will ever collect — exactly the leak the queue API was
-    // adopted to close.
-    await cancelQueuedJob(jobHandle(row));
-    await finish(row.generation_id, row.user_id, {
-      status: "failed",
-      attempts: appendStep(
-        row.resume?.attempts ?? [],
-        "Nobody was here to collect this when it finished, so it was stopped.",
-        "generate",
-      ),
-      fault: "abandoned",
-    });
   }
 }
