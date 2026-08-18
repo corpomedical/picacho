@@ -2,7 +2,12 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import type { User } from "@supabase/supabase-js";
+import { createClient as createBareClient } from "@supabase/supabase-js";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
+import { getOrigin } from "@/lib/origin";
+import { rateLimited } from "@/lib/rate-limit";
 
 // Every file a user ever uploaded or generated lives under a `${userId}/...`
 // path in each of these buckets. Deleting the account previously only
@@ -52,6 +57,78 @@ type ActionResult = { error: string | null };
 
 const USERNAME_PATTERN = /^[a-z0-9_]{3,24}$/;
 
+// Whether this account can be asked for its password. OAuth-only accounts
+// (Google/Apple/etc., never set a password) have no "email" provider in
+// app_metadata, and challenging them for a password they don't have would
+// lock them out of the very settings that let them manage their account —
+// so the sensitive-change re-authentication below is skipped for them.
+// app_metadata is set server-side by Supabase Auth and not client-writable,
+// so it's safe to trust here.
+function hasPasswordIdentity(user: User): boolean {
+  const meta = (user.app_metadata ?? {}) as { provider?: string; providers?: string[] };
+  const providers = Array.isArray(meta.providers)
+    ? meta.providers
+    : meta.provider
+      ? [meta.provider]
+      : [];
+  return providers.includes("email");
+}
+
+// Verification attempts are throttled: "That password isn't right" is a
+// per-guess oracle, and unlike a login page (throttled by Supabase per
+// caller IP) these calls all originate from this server's egress IP — so
+// without our own per-user ceiling, a stolen-session holder could
+// brute-force the current password through updatePassword/updateEmail.
+// 5/min is far more than any human retyping a password, nothing for a script.
+const PASSWORD_VERIFY_RATE_WINDOW_SECONDS = 60;
+const PASSWORD_VERIFY_RATE_MAX_PER_WINDOW = 5;
+
+// Verifies the caller's current password before an email/password change goes
+// through — the standard guard against a hijacked session (an unattended
+// laptop, a stolen cookie) being able to silently take over the account by
+// swapping its login credentials. Returns null when verified, or the error
+// message to show. Skipped entirely for OAuth-only accounts (see above).
+//
+// The check runs on a BARE supabase-js client, never the request's SSR
+// client: signInWithPassword on the SSR client succeeds by minting a brand
+// new session and writing fresh auth cookies — so a routine email change
+// would silently rotate the caller's session (orphaning the old refresh
+// token, and under single-session enforcement logging them out elsewhere).
+// The bare client verifies the password and its session evaporates with it.
+async function verifyCurrentPassword(user: User, formData: FormData): Promise<string | null> {
+  if (!hasPasswordIdentity(user)) return null;
+  const currentPassword = (formData.get("current_password") as string) ?? "";
+  if (!currentPassword) return "Enter your current password to confirm this change.";
+
+  // Fails closed, same reasoning as every other limiter added in this round:
+  // better a retry message than an unthrottled password oracle. Own scope —
+  // 5/min is the tightest budget in the app, and in the old shared bucket a
+  // handful of unrelated uploads or voice calls would consume it and lock a
+  // legitimate user out of their own settings.
+  if (
+    await rateLimited(
+      user.id,
+      "password-verify",
+      PASSWORD_VERIFY_RATE_WINDOW_SECONDS,
+      PASSWORD_VERIFY_RATE_MAX_PER_WINDOW,
+    )
+  ) {
+    return "Too many attempts — wait a minute and try again.";
+  }
+
+  const bare = createBareClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    { auth: { persistSession: false, autoRefreshToken: false } },
+  );
+  const { error } = await bare.auth.signInWithPassword({
+    email: user.email ?? "",
+    password: currentPassword,
+  });
+  if (error) return "That password isn't right — check it and try again.";
+  return null;
+}
+
 // Invoked directly from the sidebar's inline editor (a Client Component),
 // not a native <form> action — same reasoning as the character/project
 // actions: it returns a result instead of calling redirect().
@@ -68,17 +145,32 @@ export async function updateUsername(formData: FormData): Promise<ActionResult> 
     };
   }
 
+  // Friendly pre-check only — the real guarantee is the unique index on
+  // lower(username) (supabase/pending-2026-08-19/auth-admin.sql). Note the
+  // escaping: ilike treats `_` as a single-character wildcard, and usernames
+  // may legitimately contain underscores — unescaped, checking "a_c" matched
+  // "abc"/"axc" too, reporting real usernames as taken (and, the reverse
+  // trap, letting lookalikes slip past nothing, since the check erred toward
+  // false positives). `%` and `\` can't appear in a valid username but are
+  // escaped anyway so the pattern is inert by construction.
+  const escaped = raw.replace(/[\\%_]/g, "\\$&");
   const { data: existing } = await supabase
     .from("profiles")
     .select("id")
-    .ilike("username", raw)
+    .ilike("username", escaped)
     .neq("id", data.user.id)
     .maybeSingle();
 
   if (existing) return { error: "That username is taken." };
 
   const { error } = await supabase.from("profiles").update({ username: raw }).eq("id", data.user.id);
-  if (error) return { error: error.message };
+  if (error) {
+    // Two concurrent claims can both pass the pre-check above; the unique
+    // index then rejects the loser with 23505. Same message as the
+    // pre-check — from the user's point of view it's the same fact.
+    if (error.code === "23505") return { error: "That username is taken." };
+    return { error: error.message };
+  }
 
   revalidatePath("/app", "layout");
   return { error: null };
@@ -154,6 +246,19 @@ export async function updateProfileDetails(formData: FormData) {
 
 // Client-invoked (shows an inline success/error message without navigating
 // away), so it returns a result instead of calling redirect().
+//
+// Changing the login email is an account takeover primitive, so it gets the
+// full treatment: the caller must prove they know the current password
+// (verifyCurrentPassword — a stolen session cookie alone isn't enough), and
+// the confirmation link is pinned to the host the person is actually using
+// via emailRedirectTo, same as signup (auth/actions.ts) — without it the
+// link lands on whatever the Supabase dashboard Site URL points at, which
+// may be the wrong domain for this session's cookies.
+//
+// OPERATOR: verify "Secure email change" (double opt-in — confirmation
+// links sent to BOTH the old and the new address) is enabled in the
+// Supabase dashboard (Authentication → Email). Without it a single click on
+// the new address rehomes the account and the old owner is never told.
 export async function updateEmail(formData: FormData): Promise<ActionResult> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -162,12 +267,26 @@ export async function updateEmail(formData: FormData): Promise<ActionResult> {
   const email = ((formData.get("email") as string) || "").trim().toLowerCase();
   if (!email || !email.includes("@")) return { error: "Enter a valid email address." };
 
-  const { error } = await supabase.auth.updateUser({ email });
+  const reauthError = await verifyCurrentPassword(data.user, formData);
+  if (reauthError) return { error: reauthError };
+
+  // /auth/confirm verifies the token and lands the person back in Settings
+  // signed in, rather than on the marketing homepage logged out.
+  const origin = await getOrigin();
+  const { error } = await supabase.auth.updateUser(
+    { email },
+    { emailRedirectTo: `${origin}/auth/confirm?next=/app/settings` },
+  );
   if (error) return { error: error.message };
 
   return { error: null };
 }
 
+// Settings entry point (components/settings/password-form.tsx): requires the
+// current password, because a change here is made from a long-lived session
+// and "I hold the cookie" is not "I am the owner". The recovery flow — where
+// not knowing the password is the entire premise — uses
+// updatePasswordFromRecovery below instead.
 export async function updatePassword(formData: FormData): Promise<ActionResult> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -178,6 +297,70 @@ export async function updatePassword(formData: FormData): Promise<ActionResult> 
 
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
   if (password !== confirmPassword) return { error: "Passwords don't match." };
+
+  // OAuth-only accounts (no password yet) skip this and simply set their
+  // first password — see hasPasswordIdentity.
+  const reauthError = await verifyCurrentPassword(data.user, formData);
+  if (reauthError) return { error: reauthError };
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) return { error: error.message };
+
+  return { error: null };
+}
+
+// Recovery entry point (components/reset-password-form.tsx): the session was
+// just minted by the emailed reset link (/auth/callback exchanged the code),
+// so proving control of the inbox already happened and there is no current
+// password to ask for. Kept as a separate action rather than a flag on
+// updatePassword so the no-reauth path can't be reached by simply omitting a
+// field on the Settings form.
+export async function updatePasswordFromRecovery(formData: FormData): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const password = (formData.get("password") as string) ?? "";
+  const confirmPassword = (formData.get("confirm_password") as string) ?? "";
+
+  if (password.length < 8) return { error: "Password must be at least 8 characters." };
+  if (password !== confirmPassword) return { error: "Passwords don't match." };
+
+  // Best-effort check that this session actually came from an email link
+  // rather than a plain password login calling this endpoint to dodge the
+  // current-password requirement above. The access token's amr claim lists
+  // how the session was authenticated; a recovery/OTP/magic-link session
+  // carries one of those methods, a plain login carries only "password".
+  // Deliberately fails OPEN when the claim is missing or unreadable —
+  // Supabase's amr vocabulary isn't a contract we control, and blocking a
+  // legitimate reset outright is worse than falling back to the pre-existing
+  // behaviour for an edge case. The token comes from our own httpOnly cookie
+  // and getUser() above already validated the session, so decoding without
+  // re-verifying the signature is fine here.
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (token) {
+      const payload = JSON.parse(
+        Buffer.from(token.split(".")[1] ?? "", "base64url").toString("utf8"),
+      ) as { amr?: { method?: string }[] };
+      if (Array.isArray(payload.amr) && payload.amr.length > 0) {
+        const methods = payload.amr.map((m) => m?.method).filter(Boolean);
+        const cameFromEmailLink = methods.some((m) =>
+          ["otp", "recovery", "magiclink", "email/signup", "email_change"].includes(m as string),
+        );
+        const passwordOnly = methods.every((m) => m === "password" || m === "token_refresh");
+        if (!cameFromEmailLink && passwordOnly) {
+          return {
+            error:
+              "This reset link session has expired — use the link from your reset email again, or change your password from Settings.",
+          };
+        }
+      }
+    }
+  } catch {
+    // Unreadable token — fail open, see above.
+  }
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) return { error: error.message };
@@ -199,6 +382,38 @@ export async function deleteAccount() {
 
   const userId = data.user.id;
   const admin = createAdminClient();
+
+  // Cancel Stripe billing FIRST, while the profile row still holds the ids —
+  // the auth deletion below cascades profiles away, taking the only record of
+  // which subscription/customer to stop with it. Skipping this left people
+  // who deleted their account still being charged every month for a service
+  // they could no longer even log into. Deliberately NOT best-effort like the
+  // storage purge: if Stripe errors, abort loudly and keep the account,
+  // because "account gone, subscription still billing" is strictly worse than
+  // asking them to try again. (redirect() throws, so the error is carried out
+  // of the try/catch rather than redirecting inside it.)
+  const { data: billingProfile } = await admin
+    .from("profiles")
+    .select("stripe_customer_id, stripe_subscription_id")
+    .eq("id", userId)
+    .single();
+  let stripeCancelError = false;
+  try {
+    await cancelStripeCustomerBilling({
+      stripeCustomerId: billingProfile?.stripe_customer_id ?? null,
+      stripeSubscriptionId: billingProfile?.stripe_subscription_id ?? null,
+    });
+  } catch (err) {
+    console.error("deleteAccount: Stripe cancellation failed — aborting deletion", err);
+    stripeCancelError = true;
+  }
+  if (stripeCancelError) {
+    redirect(
+      `/app/settings?error=${encodeURIComponent(
+        "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.",
+      )}`,
+    );
+  }
 
   await removeAllUserFiles(admin, userId);
 

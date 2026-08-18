@@ -44,20 +44,39 @@ export default async function AdminPromoPage({
   // rather than applying the code's current rate to the total — otherwise
   // editing a rep's rate would silently rewrite what they're owed on business
   // already banked.
+  //
+  // Totals are kept PER CURRENCY, never folded into one number — the same
+  // rule economics.ts and admin/billing/page.tsx follow. Since EUR pricing
+  // went live a single code can close both USD and EUR sales, and the old
+  // rollup summed the cents together under whichever currency the first
+  // redemption happened to use: $100 + €100 displayed as "€200", and a rep's
+  // commission with it. €19 and $19 are two different amounts of money even
+  // when the digits match.
   const byCode = new Map<
     string,
-    { count: number; subtotal: number; discount: number; commission: number; currency: string }
+    {
+      count: number;
+      byCurrency: Map<string, { currency: string; subtotal: number; discount: number; commission: number }>;
+    }
   >();
   for (const r of redemptions ?? []) {
     const key = r.promo_code_id ?? r.code;
-    const agg =
-      byCode.get(key) ?? { count: 0, subtotal: 0, discount: 0, commission: 0, currency: r.currency };
+    const agg = byCode.get(key) ?? { count: 0, byCurrency: new Map() };
     agg.count += 1;
-    agg.subtotal += r.amount_subtotal;
-    agg.discount += r.discount_amount;
-    agg.commission += Math.round((r.amount_subtotal * (r.commission_percent ?? 0)) / 100);
+    const currency = (r.currency ?? "usd").toLowerCase();
+    const totals =
+      agg.byCurrency.get(currency) ?? { currency, subtotal: 0, discount: 0, commission: 0 };
+    totals.subtotal += r.amount_subtotal;
+    totals.discount += r.discount_amount;
+    totals.commission += Math.round((r.amount_subtotal * (r.commission_percent ?? 0)) / 100);
+    agg.byCurrency.set(currency, totals);
     byCode.set(key, agg);
   }
+  const statsFor = (promo: { id: string; code: string }) => {
+    const agg = byCode.get(promo.id) ?? byCode.get(promo.code);
+    if (!agg) return null;
+    return { count: agg.count, totals: Array.from(agg.byCurrency.values()) };
+  };
 
   return (
     <div>
@@ -112,11 +131,7 @@ export default async function AdminPromoPage({
           </Card>
         ) : (
           codes.map((promo) => (
-            <PromoCodeCard
-              key={promo.id}
-              promo={promo}
-              stats={byCode.get(promo.id) ?? byCode.get(promo.code) ?? null}
-            />
+            <PromoCodeCard key={promo.id} promo={promo} stats={statsFor(promo)} />
           ))
         )}
       </div>

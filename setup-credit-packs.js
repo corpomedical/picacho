@@ -37,14 +37,11 @@ if (!process.env.STRIPE_SECRET_KEY) {
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// Kept in sync with src/lib/stripe/credit-packs.ts by hand — that file is
-// TypeScript, which plain node can't import. If you change the packs there,
-// change them here too.
-const PACKS = [
-  { id: "small", credits: 20, price: 45 },
-  { id: "medium", credits: 60, price: 119 },
-  { id: "large", credits: 150, price: 279 },
-];
+// The same JSON file src/lib/stripe/credit-packs.ts imports — plain node
+// can't import the TS module, so the data lives in JSON both sides can read.
+// Change the packs there and this script picks the change up automatically;
+// there is no second copy to keep in sync.
+const PACKS = require("./src/lib/stripe/credit-packs.json");
 
 async function findExistingProduct(packId) {
   const existing = await stripe.products.search({

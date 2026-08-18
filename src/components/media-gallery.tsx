@@ -69,7 +69,12 @@ export function MediaGallery({
           <Link
             key={item.id}
             href={`/app/history/${item.id}`}
-            className="group relative aspect-square overflow-hidden rounded-[14px] border border-neutral-100 bg-neutral-100"
+            // Accessible name for the whole tile. Image tiles at least had
+            // the img's alt; video tiles had NO text alternative at all — a
+            // <video> contributes nothing to a link's name, so a screen
+            // reader announced every video as just "link".
+            aria-label={item.prompt_input}
+            className="group relative aspect-square overflow-hidden rounded-[14px] border border-neutral-100 bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
           >
             {hasRealMedia ? (
               contentType === "image" ? (
@@ -114,7 +119,12 @@ export function MediaGallery({
               </span>
             )}
 
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-neutral-950/80 to-transparent p-2.5 opacity-0 transition-opacity group-hover:opacity-100">
+            {/* group-focus-visible alongside hover: hover doesn't exist on
+                touch or for keyboard users, so the prompt/date metadata was
+                simply unreachable there — tabbing to a tile now reveals the
+                same overlay a mouse hover does. (The full details remain one
+                tap away on the history page either way.) */}
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-neutral-950/80 to-transparent p-2.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
               <p className="truncate text-[11px] font-medium text-white">{item.prompt_input}</p>
               <p className="truncate text-[10px] text-neutral-300">
                 {item.characterName} · <LocalDate date={item.created_at} />

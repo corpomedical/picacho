@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
+import { isNativeAppClient } from "@/lib/native/platform";
 import { Button } from "@/components/ui/button";
 
 // "Install the app" card — the point of the PWA setup (app/manifest.ts):
@@ -34,6 +35,12 @@ export function InstallAppHint() {
     } catch {
       // Storage blocked — fine, just evaluate the rest.
     }
+    // Already inside the Capacitor shell (the real iOS/Android app): there is
+    // nothing left to install. The standalone check below doesn't catch this
+    // — the shell is a WKWebView/WebView, not a standalone-display-mode PWA —
+    // so the native iOS app was showing "Install the app" with Safari
+    // share-sheet instructions that can't work inside it.
+    if (isNativeAppClient()) return;
     const standalone =
       window.matchMedia("(display-mode: standalone)").matches ||
       (navigator as { standalone?: boolean }).standalone === true;

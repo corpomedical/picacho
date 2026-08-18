@@ -48,9 +48,7 @@ export default async function PricingPage({
           <h1 className="font-display text-2xl font-bold tracking-[-0.03em] text-neutral-900 sm:text-3xl">
             {p.title}
           </h1>
-          <p className="mx-auto mt-4 max-w-md text-sm text-neutral-500">
-            Manage your plan on the web at picacho.ai.
-          </p>
+          <p className="mx-auto mt-4 max-w-md text-sm text-neutral-500">{p.manageOnWeb}</p>
           <Link
             href="/app"
             className="mt-8 inline-flex items-center justify-center rounded-[10px] bg-neutral-900 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-neutral-800"

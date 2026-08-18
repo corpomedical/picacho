@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { previewVoice } from "@/lib/voices/actions";
 import { cn } from "@/lib/cn";
 
@@ -49,6 +49,18 @@ export function VoicePreviewButton({
 }) {
   const [state, setState] = useState<"idle" | "loading" | "playing" | "error">("idle");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  // An Audio object isn't tied to the DOM, so it doesn't stop just because
+  // this button unmounts — without this cleanup, previewing a voice and then
+  // navigating away (client-side, e.g. Cancel on the character form) left
+  // the sample playing over whatever page came next, with no control
+  // anywhere on screen to stop it.
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      audioRef.current = null;
+    };
+  }, []);
 
   function stop() {
     audioRef.current?.pause();

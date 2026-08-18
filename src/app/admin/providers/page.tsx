@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/admin/require-admin";
 import { toggleFeatureFlag, setVideoModel, setImageModel, restoreModel, suspendModel } from "@/lib/admin/actions";
 import { getAllModelHealth } from "@/lib/generations/model-health";
 import { VIDEO_MODELS, pricingAudit, COST_BASIS_USD_PER_CREDIT } from "@/lib/generations/providers/video-models";
@@ -15,6 +16,14 @@ export default async function AdminProvidersPage({
   searchParams: Promise<{ error?: string }>;
 }) {
   const { error: actionError } = await searchParams;
+
+  // Re-checked here, not just in the admin layout: getAllModelHealth below
+  // reads through the service role (model_health has no user-facing RLS
+  // story), so this page verifies the caller's role itself rather than
+  // trusting that the layout gate can never be sidestepped. requireAdmin()
+  // can't live inside getAllModelHealth — the generation pipeline's circuit
+  // breaker calls it with no admin (or any) session in scope.
+  await requireAdmin();
   const supabase = await createClient();
 
   const [{ data: flag }, { data: modelSetting }, { data: imageModelSetting }] = await Promise.all([

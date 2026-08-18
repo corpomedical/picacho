@@ -177,7 +177,17 @@ type QueueStatusResponse = {
 
 async function cancelQueueRequest(cancelUrl: string, apiKey: string): Promise<void> {
   try {
-    await fetch(cancelUrl, { method: "PUT", headers: { authorization: `Key ${apiKey}` } });
+    // Short hard timeout — this sits on the user-facing Stop path
+    // (requestGenerationCancel awaits it so the cancel actually reaches fal
+    // before returning), and a bare fetch with no timeout could hang that
+    // Stop click for as long as the platform allows. A cancel is a single
+    // tiny PUT; if fal can't take it in a few seconds, the cooperative
+    // cancel flag and the reaper are the backstops anyway.
+    await fetchWithTimeout(
+      cancelUrl,
+      { method: "PUT", headers: { authorization: `Key ${apiKey}` } },
+      5_000,
+    );
   } catch {
     // Best effort — if this fails there's nothing more we can do from here,
     // and it must never mask whatever error/timeout triggered the cancel.

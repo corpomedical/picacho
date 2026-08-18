@@ -8,6 +8,7 @@ import { useLocale } from "@/lib/i18n/provider";
 
 export function PasswordForm() {
   const { t } = useLocale();
+  const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
@@ -19,6 +20,11 @@ export function PasswordForm() {
     setError("");
 
     const formData = new FormData();
+    // Re-authentication for a sensitive change — the server verifies this
+    // against the account's real password (see updatePassword in
+    // lib/profile/actions.ts). OAuth-only accounts can leave it empty; the
+    // server skips the check for them.
+    formData.set("current_password", currentPassword);
     formData.set("password", password);
     formData.set("confirm_password", confirmPassword);
     const result = await updatePassword(formData);
@@ -29,12 +35,26 @@ export function PasswordForm() {
       return;
     }
     setStatus("saved");
+    setCurrentPassword("");
     setPassword("");
     setConfirmPassword("");
   }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
+      <div>
+        <Label htmlFor="current_password">{t.settings.currentPasswordLabel}</Label>
+        <Input
+          id="current_password"
+          type="password"
+          autoComplete="current-password"
+          value={currentPassword}
+          onChange={(e) => {
+            setCurrentPassword(e.target.value);
+            setStatus("idle");
+          }}
+        />
+      </div>
       <div>
         <Label htmlFor="password">{t.settings.newPasswordLabel}</Label>
         <Input

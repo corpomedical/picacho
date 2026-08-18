@@ -25,6 +25,9 @@ const MAX_CLOCK_SKEW_SECONDS = 300;
 
 let jwksCache: { keys: { x?: string }[]; fetchedAt: number } | null = null;
 
+// Log the missing-pin warning once per process, not once per webhook.
+let warnedNoAccountPin = false;
+
 async function fetchJwks(): Promise<{ x?: string }[]> {
   const now = Date.now();
   if (jwksCache && now - jwksCache.fetchedAt < JWKS_TTL_MS) return jwksCache.keys;
@@ -99,6 +102,35 @@ export async function POST(req: Request) {
     // 401, not 400 — this is authentication, and fal should retry a transient
     // JWKS failure on our side.
     return new Response("Invalid signature", { status: 401 });
+  }
+
+  // The signature above only proves the request came from fal's PLATFORM —
+  // any fal customer can point their own jobs' webhooks at this URL and every
+  // one of them signs valid. Pin the delivery to OUR fal account:
+  // x-fal-webhook-user-id (part of the signed message, so it can't be forged
+  // past the check above) must match FAL_ACCOUNT_ID when the operator has set
+  // it. The blast radius today is small — advanceGeneration re-checks status
+  // with fal and a foreign request_id matches no job row — but a foreign
+  // customer could still burn our compute and probe timing, and any future
+  // handler that trusts the payload more would inherit the hole. Unset keeps
+  // current behavior (warn once) so this deploys safely before the env var
+  // exists. Operator: FAL_ACCOUNT_ID = the user id fal sends in this header
+  // (visible in fal's dashboard / one legitimate webhook's headers).
+  const expectedAccountId = process.env.FAL_ACCOUNT_ID;
+  const falAccountId = req.headers.get("x-fal-webhook-user-id");
+  if (expectedAccountId) {
+    if (falAccountId !== expectedAccountId) {
+      // 403, not 401: authentication succeeded, this account just isn't ours.
+      // A non-2xx makes fal retry a delivery that will never be accepted, but
+      // that's fal's queue burning, not ours.
+      return new Response("Not this account", { status: 403 });
+    }
+  } else if (!warnedNoAccountPin) {
+    warnedNoAccountPin = true;
+    console.warn(
+      "FAL_ACCOUNT_ID is not set — the fal webhook accepts deliveries for ANY fal customer's jobs. " +
+        `Set FAL_ACCOUNT_ID to pin it to our account (this delivery's account id: ${falAccountId}).`,
+    );
   }
 
   let body: { request_id?: string; status?: string };

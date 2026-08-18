@@ -999,7 +999,11 @@ export function AppSidebar({
 
             <div className="border-t border-neutral-100 py-1">
               <Link
-                href="/app?tour=1"
+                // /app/generate, not /app: the walkthrough lives inside
+                // GenerateForm, and /app is a dashboard now with no composer
+                // on it — pointing here at /app?tour=1 made this link a
+                // no-op, since nothing on that page consumes the param.
+                href="/app/generate?tour=1"
                 onClick={() => setSettingsOpen(false)}
                 className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
               >

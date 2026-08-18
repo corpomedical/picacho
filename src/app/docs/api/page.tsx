@@ -9,6 +9,12 @@ import { MarketingFooter } from "@/components/marketing/footer";
 // endpoints, and a developer evaluating it wants to read the actual request
 // and the actual response, not navigate a documentation site. Every example
 // below is copy-pasteable as written.
+//
+// Example ids are OBVIOUSLY-FAKE placeholder UUIDs on purpose. This page
+// used to show a real production character id and generation id lifted from
+// a live account — public docs are exactly where an attacker shops for
+// known-valid ids to probe with, and a customer pasting the example got a
+// confusing "not yours" 404 instead of an obviously-placeholder error.
 
 export const metadata: Metadata = {
   title: "API — Picacho",
@@ -95,7 +101,7 @@ curl -X POST https://picacho.ai/api/v1/generations \\
   -H "Content-Type: application/json" \\
   -d '{
     "prompt": "walking through a snowy street at night",
-    "character_id": "15486a3c-4203-43e9-b80d-ab476f842404"
+    "character_id": "11111111-2222-4333-8444-555555555555"
   }'`}</Code>
 
         <div className="mt-14">
@@ -108,7 +114,7 @@ curl -X POST https://picacho.ai/api/v1/generations \\
             <Code>{`{
   "characters": [
     {
-      "id": "15486a3c-4203-43e9-b80d-ab476f842404",
+      "id": "11111111-2222-4333-8444-555555555555",
       "name": "Eva",
       "traits": { "hair": "long red curls", "distinguishing_features": "freckles" },
       "has_identity_photo": true,
@@ -132,7 +138,7 @@ curl -X POST https://picacho.ai/api/v1/generations \\
               generic image with no identity locking).
             </p>
             <Code>{`{
-  "id": "c8aeb00e-bf87-45b2-9f1a-53cc7704bb58",
+  "id": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
   "status": "succeeded",
   "image_url": "https://picacho.ai/api/media/generated-images/...",
   "final_prompt": "Eva walks along a narrow cobblestone street at night...",
@@ -155,7 +161,10 @@ curl -X POST https://picacho.ai/api/v1/generations \\
           <Endpoint method="GET" path="/api/v1/generations/{id}">
             <p>
               Fetch a generation later. Useful if your HTTP client timed out before the POST
-              returned — the work still finished on our side, and the result is here.
+              returned — the work still finished on our side, and the result is here, including the
+              same <code className="text-[12.5px]">final_prompt</code>,{" "}
+              <code className="text-[12.5px]">image_url</code> and{" "}
+              <code className="text-[12.5px]">match_score</code> the POST would have returned.
             </p>
           </Endpoint>
 
@@ -173,6 +182,14 @@ curl -X POST https://picacho.ai/api/v1/generations \\
   "purchased_credits": 0,
   "period_started_at": "2026-08-09T00:00:00.000Z"
 }`}</Code>
+            <p className="mt-3">
+              Two budgets, drawn in order: <code className="text-[12.5px]">remaining_this_period</code>{" "}
+              is the monthly allowance included with the plan, and{" "}
+              <code className="text-[12.5px]">purchased_credits</code> is a separate one-off balance
+              (credit packs) that covers anything the monthly allowance can&apos;t and never resets.
+              Generating stops with a 402 only once both are exhausted, so the real headroom before a
+              batch is the sum of the two.
+            </p>
           </Endpoint>
         </div>
 
@@ -185,7 +202,11 @@ curl -X POST https://picacho.ai/api/v1/generations \\
           matching HTTP status: <strong>401</strong> for a missing, invalid or revoked key,{" "}
           <strong>403</strong> when the account doesn&apos;t have API access, <strong>402</strong>{" "}
           when you&apos;re out of credits, <strong>404</strong> for an id that isn&apos;t yours, and{" "}
-          <strong>429</strong> past 30 generations per minute.
+          <strong>429</strong> past 30 requests per minute to{" "}
+          <code className="text-[12.5px]">POST /api/v1/generations</code>. The limit counts
+          requests, not finished images — a request refused with a 402 still consumes a slot — so a
+          batch that runs out of credits mid-loop can hit 429s too. Back off for the number of
+          seconds in the <code className="text-[12.5px]">retry-after</code> header.
         </p>
         <p className="mt-3 text-sm leading-relaxed text-slate-600">
           Video isn&apos;t in this version. A render takes six to ten minutes and needs a queue

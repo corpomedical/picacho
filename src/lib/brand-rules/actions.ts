@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import type { BrandRule, BrandRuleKind, BrandRuleSeverity } from "@/lib/brand-rules/types";
 import { getBrandRulePack } from "@/lib/brand-rules/packs";
 
@@ -23,6 +23,10 @@ import { getBrandRulePack } from "@/lib/brand-rules/packs";
 // types import them from ./types directly.
 const MAX_RULES = 40;
 const MAX_VALUE_LENGTH = 300;
+// The label rides along into prompts and admin views the same way the value
+// does (see loadActiveBrandRules), so it gets a cap in the same style — a
+// short name, not a second value field.
+const MAX_LABEL_LENGTH = 80;
 
 type RuleRow = {
   id: string;
@@ -73,6 +77,9 @@ export async function addBrandRule(formData: FormData): Promise<{ error: string 
 
   if (kind !== "require" && kind !== "forbid") return { error: "Pick whether this is a required or forbidden rule." };
   if (!label) return { error: "Give the rule a short name." };
+  if (label.length > MAX_LABEL_LENGTH) {
+    return { error: `Keep the rule name under ${MAX_LABEL_LENGTH} characters.` };
+  }
   if (!value) return { error: "Describe what the rule actually requires or forbids." };
   if (value.length > MAX_VALUE_LENGTH) {
     return { error: `Keep rules under ${MAX_VALUE_LENGTH} characters.` };
@@ -81,31 +88,35 @@ export async function addBrandRule(formData: FormData): Promise<{ error: string 
   if (!["block", "warn"].includes(severity)) return { error: "Invalid severity." };
 
   // A rulebook is fed to the draft model in full on every generation, so an
-  // unbounded list would quietly inflate both the prompt and its cost.
-  const { count } = await supabase
-    .from("brand_rules")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userData.user.id);
-
-  if ((count ?? 0) >= MAX_RULES) {
-    return { error: `You can have up to ${MAX_RULES} rules. Delete one first.` };
-  }
-
-  const { error } = await supabase.from("brand_rules").insert({
-    user_id: userData.user.id,
-    kind,
-    label,
-    value,
-    applies_to: appliesTo,
-    // A "require" rule is repairable by definition, so severity is only
-    // meaningful for prohibitions — pin it rather than storing something
-    // that would read as configurable but do nothing.
-    severity: kind === "forbid" ? severity : "warn",
+  // unbounded list would quietly inflate both the prompt and its cost. The
+  // cap is enforced atomically (insert_brand_rules_capped, in
+  // supabase/pending-2026-08-19/user-actions.sql): the old count-then-insert
+  // raced, so a concurrent burst all counted under the limit and all
+  // inserted. Same advisory-lock pattern as record_prompt_assist; EXECUTE
+  // revoked from `authenticated`, so it runs through the service-role client.
+  const { data: added, error } = await createAdminClient().rpc("insert_brand_rules_capped", {
+    p_user_id: userData.user.id,
+    p_cap: MAX_RULES,
+    p_rules: [
+      {
+        kind,
+        label,
+        value,
+        applies_to: appliesTo,
+        // A "require" rule is repairable by definition, so severity is only
+        // meaningful for prohibitions — pin it rather than storing something
+        // that would read as configurable but do nothing.
+        severity: kind === "forbid" ? severity : "warn",
+      },
+    ],
   });
 
   if (error) {
     console.error("addBrandRule failed:", error.message);
     return { error: "Couldn't save that rule — try again." };
+  }
+  if (added === -1) {
+    return { error: `You can have up to ${MAX_RULES} rules. Delete one first.` };
   }
 
   revalidatePath("/app/settings");
@@ -135,24 +146,29 @@ export async function applyBrandRulePack(formData: FormData): Promise<{ error: s
 
   if (toAdd.length === 0) return { error: null, added: 0 };
 
-  if ((existing?.length ?? 0) + toAdd.length > MAX_RULES) {
-    return { error: `That would exceed the ${MAX_RULES}-rule limit. Delete some rules first.` };
-  }
-
-  const { error } = await supabase.from("brand_rules").insert(
-    toAdd.map((r) => ({
-      user_id: userData.user!.id,
+  // Same atomic cap as addBrandRule — the whole pack counts and inserts under
+  // one advisory lock, so a concurrent burst can't stack packs past MAX_RULES.
+  // (The label dedupe above can still race with itself, but the worst case
+  // there is a duplicate rule the person can delete — the cap is the part
+  // that must hold.) -1 back means the batch wouldn't fit; nothing inserted.
+  const { data: added, error } = await createAdminClient().rpc("insert_brand_rules_capped", {
+    p_user_id: userData.user.id,
+    p_cap: MAX_RULES,
+    p_rules: toAdd.map((r) => ({
       kind: "forbid",
       label: r.label,
       value: r.value,
       applies_to: "all",
       severity: r.severity,
     })),
-  );
+  });
 
   if (error) {
     console.error("applyBrandRulePack failed:", error.message);
     return { error: "Couldn't add those rules — try again." };
+  }
+  if (added === -1) {
+    return { error: `That would exceed the ${MAX_RULES}-rule limit. Delete some rules first.` };
   }
 
   revalidatePath("/app/settings");

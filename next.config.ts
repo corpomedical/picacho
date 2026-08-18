@@ -67,14 +67,13 @@ const nextConfig: NextConfig = {
           // Forces HTTPS for two years, including subdomains, and opts into
           // browser preload lists.
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
-          // Restricts where scripts, styles, images, and connections can come
-          // from. Permissive where the app legitimately needs it (inline theme
-          // script + JSON-LD, Supabase, Stripe, Google Fonts, provider images).
-          {
-            key: "Content-Security-Policy",
-            value:
-              "default-src 'self'; img-src 'self' data: blob: https:; media-src 'self' https:; script-src 'self' 'unsafe-inline' https://js.stripe.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; connect-src 'self' https: wss:; frame-src https://js.stripe.com https://hooks.stripe.com; base-uri 'self'; form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'",
-          },
+          // Content-Security-Policy is NOT set here any more. It moved to
+          // middleware.ts, because a meaningful script-src needs a
+          // per-request nonce and a static config header can't carry one
+          // (the old policy here allowed 'unsafe-inline' scripts with
+          // connect-src https: — practically no XSS containment). Keeping a
+          // second copy here would also be wrong: two CSP headers combine as
+          // an intersection, so a stale one silently re-breaks the page.
         ],
       },
     ];

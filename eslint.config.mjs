@@ -13,6 +13,15 @@ const eslintConfig = [
   ...nextCoreWebVitals,
   ...nextTypescript,
   {
+    // Standalone Node CLI scripts (run with plain `node`, CommonJS by
+    // design since package.json has no "type": "module") — require() is
+    // correct there, so exempt them from the ESM-only import rule.
+    files: ["backfill-billing-period.js", "setup-credit-packs.js", "scripts/**/*.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     rules: {
       // eslint-plugin-react-hooks v7 (new, ships as part of Next 16's
       // eslint-config-next) adds this rule as an error by default. It flags

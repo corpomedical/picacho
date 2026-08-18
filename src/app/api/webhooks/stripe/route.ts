@@ -8,7 +8,12 @@ import { createAdminClient } from "@/lib/supabase/server";
 // Stripe → us. No user session here (Stripe calls this directly), so the
 // signature check below is the only auth — never skip it. Register this
 // endpoint in Stripe Dashboard > Developers > Webhooks once deployed, and
-// put the signing secret it gives you into STRIPE_WEBHOOK_SECRET.
+// put the signing secret it gives you into STRIPE_WEBHOOK_SECRET. Make sure
+// the endpoint's event list includes everything handled below — notably
+// checkout.session.async_payment_succeeded / _failed and
+// charge.dispute.created, added 2026-08-19; if the endpoint only subscribes
+// to the original events, async payments never grant and chargebacks never
+// claw back.
 export const runtime = "nodejs";
 
 function statusToPlanStatus(
@@ -29,22 +34,116 @@ function statusToPlanStatus(
   }
 }
 
+// Stripe's own "this thing doesn't exist" error — used to tolerate objects
+// that were already deleted/purged on Stripe's side.
+function isStripeMissingError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { code?: unknown }).code === "resource_missing"
+  );
+}
+
 // Subscriptions created through our Checkout flow always carry
 // metadata.supabase_user_id (set in createCheckoutSession). This falls back
-// to matching on stripe_customer_id for the rare case that's missing.
-async function resolveUserId(
+// to matching on stripe_customer_id for the rare case that's missing. Also
+// returns the profile's STORED stripe_subscription_id, so the subscription
+// handlers can refuse events about a subscription that isn't the one this
+// profile is actually on (a stale event for a deleted-and-replaced
+// subscription must not overwrite the live one's state).
+async function resolveProfile(
   supabase: ReturnType<typeof createAdminClient>,
   metadata: Stripe.Metadata | null | undefined,
   customerId: string | null,
-): Promise<string | null> {
-  if (metadata?.supabase_user_id) return metadata.supabase_user_id;
-  if (!customerId) return null;
-  const { data } = await supabase
+): Promise<{ id: string; stripeSubscriptionId: string | null } | null> {
+  const query = supabase.from("profiles").select("id, stripe_subscription_id");
+  const { data } = metadata?.supabase_user_id
+    ? await query.eq("id", metadata.supabase_user_id).single()
+    : customerId
+      ? await query.eq("stripe_customer_id", customerId).single()
+      : { data: null };
+  if (!data) return null;
+  return { id: data.id, stripeSubscriptionId: data.stripe_subscription_id ?? null };
+}
+
+// Drops a profile back to the free tier — the shared endpoint of
+// customer.subscription.deleted AND of an update handler discovering the
+// subscription is already dead. Throws on failure so the webhook 500s and
+// Stripe redelivers; silently acking a failed write here would leave a
+// canceled subscriber marked as paying forever.
+async function resetProfileToFree(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<void> {
+  const { error } = await supabase
     .from("profiles")
-    .select("id")
-    .eq("stripe_customer_id", customerId)
-    .single();
-  return data?.id ?? null;
+    .update({
+      plan: "none",
+      plan_status: "canceled",
+      stripe_subscription_id: null,
+      stripe_price_id: null,
+      plan_currency: null,
+      plan_interval: null,
+      current_period_start: null,
+      current_period_end: null,
+    })
+    .eq("id", userId);
+  if (error) throw new Error(`couldn't reset profile ${userId} to free: ${error.message}`);
+}
+
+// Finds the credit purchase behind a payment intent and reverses its grant.
+// Shared by charge.refunded and charge.dispute.created — a chargeback has to
+// take the credits back exactly like a refund does, or disputing the charge
+// becomes strictly better than asking for a refund: keep the credits AND get
+// the money back. Returns false when the caller should 500 so Stripe retries.
+async function clawbackCreditPurchase(
+  supabase: ReturnType<typeof createAdminClient>,
+  paymentIntentId: string,
+): Promise<boolean> {
+  // A charge/dispute doesn't name the Checkout Session, so the purchase is
+  // found via the payment intent recorded against it.
+  const sessions = await stripe.checkout.sessions.list({
+    payment_intent: paymentIntentId,
+    limit: 1,
+  });
+  const sessionId = sessions.data[0]?.id;
+  if (!sessionId) return true;
+
+  // maybeSingle, and the error is checked BEFORE the null check: with
+  // .single() a transient DB failure and "no matching row" both surface as
+  // data: null, and treating them alike acks the event (Stripe never
+  // redelivers an acked event) — a Supabase blip during a dispute would
+  // permanently lose the clawback. A real error must 500 so Stripe retries.
+  const { data: purchase, error: lookupError } = await supabase
+    .from("credit_purchases")
+    .select("id, refunded_at")
+    .eq("stripe_session_id", sessionId)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("Stripe webhook: clawback purchase lookup failed", lookupError.message);
+    return false;
+  }
+
+  // Not a credit purchase (an ordinary subscription refund/dispute), or one
+  // already reversed.
+  if (!purchase || purchase.refunded_at) return true;
+
+  // Atomic mark-and-decrement (public.clawback_credit_purchase): claims the
+  // row with a refunded_at IS NULL guard and decrements the balance in ONE
+  // transaction, so a redelivered event can never claw back twice — the old
+  // two-step version could crash between decrement and marker (double
+  // clawback on retry) and ignored the marker write's error entirely.
+  const { data: clawed, error } = await supabase.rpc("clawback_credit_purchase", {
+    p_purchase_id: purchase.id,
+  });
+  if (error) {
+    console.error("Stripe webhook: credit clawback failed", error.message);
+    return false;
+  }
+  if (clawed !== true) {
+    console.log("Stripe webhook: duplicate clawback ignored", sessionId);
+  }
+  return true;
 }
 
 export async function POST(request: Request) {
@@ -67,10 +166,18 @@ export async function POST(request: Request) {
 
   try {
     switch (event.type) {
-      // Fires right after a successful Checkout. Subscription-level details
-      // arrive via customer.subscription.created right after this — here we
-      // just make sure the new Stripe customer is linked to the profile.
-      case "checkout.session.completed": {
+      // "completed" fires right after Checkout finishes — but finishing
+      // Checkout is NOT the same as being paid. Delayed-notification methods
+      // (SEPA debit, some bank redirects) complete the session with
+      // payment_status "unpaid" and only settle days later, arriving as
+      // async_payment_succeeded (or _failed, below). Everything money-shaped
+      // in this block is therefore gated on payment_status, and the two
+      // events share one handler so the paid path can't drift: granting on
+      // "completed" alone would mint credits for payments that never clear.
+      // Subscription-level details arrive via customer.subscription.created
+      // right after this.
+      case "checkout.session.completed":
+      case "checkout.session.async_payment_succeeded": {
         const session = event.data.object as Stripe.Checkout.Session;
         const userId = session.metadata?.supabase_user_id ?? session.client_reference_id ?? null;
         const customerId =
@@ -82,10 +189,19 @@ export async function POST(request: Request) {
         // Promo attribution. The session's total_details say whether any
         // discount applied; the discounts array says which promotion code.
         // Recorded for subscriptions only — that's what reps sell and what
-        // commission is defined against. Best-effort by design: a logging
-        // failure must never 500 the webhook and make Stripe retry a
+        // commission is defined against. Gated on the payment actually
+        // existing: "paid", or "no_payment_required" (a trialing
+        // subscription — still a real sale, the charge just comes later).
+        // An unpaid async session records nothing yet; if the payment lands,
+        // async_payment_succeeded re-enters this block and the UNIQUE
+        // stripe_session_id keeps it single-count. Best-effort by design: a
+        // logging failure must never 500 the webhook and make Stripe retry a
         // checkout that actually succeeded.
-        if (session.mode === "subscription" && (session.total_details?.amount_discount ?? 0) > 0) {
+        if (
+          session.mode === "subscription" &&
+          (session.payment_status === "paid" || session.payment_status === "no_payment_required") &&
+          (session.total_details?.amount_discount ?? 0) > 0
+        ) {
           try {
             const discount = (session.discounts ?? [])[0];
             const promotionCodeId =
@@ -141,19 +257,43 @@ export async function POST(request: Request) {
         // customer.subscription.* cases below and must not fall through to
         // here, hence the explicit mode check.
         if (session.mode === "payment" && userId) {
+          // Only "paid" mints credits. "unpaid" means an async payment still
+          // in flight (the grant happens when async_payment_succeeded
+          // re-enters this block — or never, if it fails).
+          // "no_payment_required" should be impossible for a credit pack
+          // (no free packs, no promo codes on this flow), so it deliberately
+          // does NOT grant: credits nobody paid for are exactly what this
+          // gate exists to prevent. Loud log so a legitimate new zero-cost
+          // flow would be noticed, not silently eaten.
+          if (session.payment_status !== "paid") {
+            console.log(
+              "Stripe webhook: credit session not paid — no grant",
+              session.id,
+              session.payment_status,
+            );
+            break;
+          }
+
           // stripe_session_id is UNIQUE on credit_purchases, so a webhook
           // Stripe retries — which it does, routinely, on any non-2xx or
           // timeout — can't grant the same credits twice. Insert first and
           // let the constraint decide; checking-then-inserting would leave a
           // race between two concurrent deliveries.
           const lineItems = await stripe.checkout.sessions.listLineItems(session.id, { limit: 1 });
-          const priceId = lineItems.data[0]?.price?.id ?? null;
-          const credits = priceId ? creditsForPriceId(priceId) : null;
+          const line = lineItems.data[0];
+          const priceId = line?.price?.id ?? null;
+          const packCredits = priceId ? creditsForPriceId(priceId) : null;
 
-          if (!credits) {
+          if (!packCredits) {
             console.error("Stripe webhook: paid session has no matching credit pack", session.id, priceId);
             break;
           }
+
+          // Quantity-aware: Checkout is created with quantity: 1 today, but
+          // if adjustable quantities are ever switched on, granting one
+          // pack's credits against a multi-pack payment would silently short
+          // the customer on money already taken.
+          const credits = packCredits * (line?.quantity ?? 1);
 
           // Atomic record-and-grant (public.record_credit_purchase): inserts the
           // purchase row AND adds the credits in ONE transaction. The old code
@@ -182,17 +322,102 @@ export async function POST(request: Request) {
         break;
       }
 
+      // The delayed payment behind an already-"completed" session never
+      // cleared. Nothing was granted (the payment_status gate above made
+      // sure of that), so there is nothing to reverse — logged so a failed
+      // top-up can be traced when a customer writes in about it.
+      case "checkout.session.async_payment_failed": {
+        const session = event.data.object as Stripe.Checkout.Session;
+        console.log(
+          "Stripe webhook: async payment failed — nothing was granted",
+          session.id,
+          session.metadata?.supabase_user_id ?? session.client_reference_id ?? "unknown user",
+        );
+        break;
+      }
+
       // The source of truth for plan + billing status — fires on new
       // subscriptions and on every change (upgrade, downgrade, past-due,
       // reactivation) made via the Customer Portal or the Stripe dashboard.
       case "customer.subscription.created":
       case "customer.subscription.updated": {
-        const subscription = event.data.object as Stripe.Subscription;
+        const eventSubscription = event.data.object as Stripe.Subscription;
         const customerId =
-          typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-        const userId = await resolveUserId(supabase, subscription.metadata, customerId);
-        if (!userId) {
-          console.error("Stripe webhook: no Picacho user found for subscription", subscription.id);
+          typeof eventSubscription.customer === "string"
+            ? eventSubscription.customer
+            : eventSubscription.customer.id;
+        const profile = await resolveProfile(supabase, eventSubscription.metadata, customerId);
+        if (!profile) {
+          console.error("Stripe webhook: no Picacho user found for subscription", eventSubscription.id);
+          break;
+        }
+        const userId = profile.id;
+
+        // Only the subscription the profile is actually on may write its
+        // state. Without this, an event about some OTHER subscription on the
+        // same customer (an old one deleted and replaced, or one created by
+        // hand in the dashboard) would overwrite the live subscription's
+        // plan and status. A profile with nothing stored yet accepts any —
+        // that's the brand-new-subscriber case, before created has landed.
+        //
+        // But "different id" alone isn't grounds to ignore: the stored
+        // subscription can be a DEAD one that hasn't been reset yet (an
+        // async-payment checkout leaves an `incomplete` sub stored; the user
+        // retries with a card and pays for a NEW sub while the old id still
+        // occupies the profile). Ignoring the new sub's events here and then
+        // letting the old sub's incomplete_expired reset the profile would
+        // leave a paying customer on the free tier until the new sub's next
+        // lifecycle event — a month away. So on mismatch, ask Stripe whether
+        // the STORED sub is still live: only a live one may veto the event.
+        if (profile.stripeSubscriptionId && profile.stripeSubscriptionId !== eventSubscription.id) {
+          let storedIsLive = false;
+          try {
+            const stored = await stripe.subscriptions.retrieve(profile.stripeSubscriptionId);
+            storedIsLive = stored.status !== "canceled" && stored.status !== "incomplete_expired";
+          } catch (err) {
+            // Gone entirely → not live; the event's sub takes over. Any other
+            // error → rethrow (500 → retry) rather than guess.
+            if (!isStripeMissingError(err)) throw err;
+          }
+          if (storedIsLive) {
+            console.log(
+              "Stripe webhook: ignoring event for non-current subscription",
+              eventSubscription.id,
+              "profile is on",
+              profile.stripeSubscriptionId,
+            );
+            break;
+          }
+          console.log(
+            "Stripe webhook: stored subscription",
+            profile.stripeSubscriptionId,
+            "is dead — adopting replacement",
+            eventSubscription.id,
+          );
+        }
+
+        // Ordering guard: Stripe retries failed deliveries for days and makes
+        // no ordering promise, so a redelivered "updated" (status active) can
+        // arrive AFTER "deleted" and resurrect a dead plan. Rather than
+        // trusting the event's snapshot, re-fetch the subscription — the API
+        // answer is the authoritative CURRENT state, so however stale the
+        // event that woke us, what gets written can't be.
+        let subscription: Stripe.Subscription;
+        try {
+          subscription = await stripe.subscriptions.retrieve(eventSubscription.id);
+        } catch (err) {
+          if (isStripeMissingError(err)) {
+            // Gone entirely on Stripe's side — same outcome as deleted.
+            await resetProfileToFree(supabase, userId);
+            break;
+          }
+          throw err;
+        }
+        if (subscription.status === "canceled" || subscription.status === "incomplete_expired") {
+          // The event was stale: the subscription has since ended. Apply the
+          // CURRENT truth (the same reset the deleted handler does), never
+          // the snapshot.
+          await resetProfileToFree(supabase, userId);
           break;
         }
 
@@ -224,18 +449,33 @@ export async function POST(request: Request) {
         const currentPeriodStart = item ? new Date(item.current_period_start * 1000).toISOString() : null;
         const currentPeriodEnd = item ? new Date(item.current_period_end * 1000).toISOString() : null;
 
-        await supabase
+        const { error: profileError } = await supabase
           .from("profiles")
           .update({
             stripe_customer_id: customerId,
             stripe_subscription_id: subscription.id,
             stripe_price_id: priceId ?? null,
+            // The price's OWN currency and interval, snapshotted for revenue
+            // reporting (Admin > Billing): annual subscriptions bill on an
+            // inline price with no entry in PLAN_PRICE_IDS, so
+            // currencyForPriceId() can't classify them — before these two
+            // columns the MRR report bucketed EUR annual subscribers as USD
+            // and valued every annual subscriber at the full monthly rate.
+            plan_currency: item?.price.currency ?? null,
+            plan_interval: item?.price.recurring?.interval ?? null,
             plan_status: statusToPlanStatus(subscription.status),
             current_period_start: currentPeriodStart,
             current_period_end: currentPeriodEnd,
             ...(planId ? { plan: planId } : {}),
           })
           .eq("id", userId);
+        // Throw (→ 500 → Stripe redelivers) rather than ack a write that
+        // didn't happen — a silently dropped status change here is a wrong
+        // plan/quota until the NEXT subscription event, which for a healthy
+        // subscription is a month away.
+        if (profileError) {
+          throw new Error(`couldn't update profile ${userId} from subscription: ${profileError.message}`);
+        }
         break;
       }
 
@@ -245,20 +485,23 @@ export async function POST(request: Request) {
         const subscription = event.data.object as Stripe.Subscription;
         const customerId =
           typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-        const userId = await resolveUserId(supabase, subscription.metadata, customerId);
-        if (!userId) break;
+        const profile = await resolveProfile(supabase, subscription.metadata, customerId);
+        if (!profile) break;
 
-        await supabase
-          .from("profiles")
-          .update({
-            plan: "none",
-            plan_status: "canceled",
-            stripe_subscription_id: null,
-            stripe_price_id: null,
-            current_period_start: null,
-            current_period_end: null,
-          })
-          .eq("id", userId);
+        // Same non-current-subscription guard as the update handler: a stale
+        // "deleted" for a subscription this profile has already REPLACED must
+        // not tear down the live one it's now on.
+        if (profile.stripeSubscriptionId && profile.stripeSubscriptionId !== subscription.id) {
+          console.log(
+            "Stripe webhook: ignoring deletion of non-current subscription",
+            subscription.id,
+            "profile is on",
+            profile.stripeSubscriptionId,
+          );
+          break;
+        }
+
+        await resetProfileToFree(supabase, profile.id);
         break;
       }
 
@@ -268,31 +511,11 @@ export async function POST(request: Request) {
       // moment strangers can do it.
       case "charge.refunded": {
         const charge = event.data.object as Stripe.Charge;
-        // A charge doesn't name the Checkout Session, so the purchase is
-        // found via the payment intent recorded against it.
         const paymentIntentId =
           typeof charge.payment_intent === "string"
             ? charge.payment_intent
             : (charge.payment_intent?.id ?? null);
         if (!paymentIntentId) break;
-
-        const sessions = await stripe.checkout.sessions.list({
-          payment_intent: paymentIntentId,
-          limit: 1,
-        });
-        const sessionId = sessions.data[0]?.id;
-        if (!sessionId) break;
-
-        const { data: purchase } = await supabase
-          .from("credit_purchases")
-          .select("id, user_id, credits, refunded_at")
-          .eq("stripe_session_id", sessionId)
-          .single();
-
-        // Not a credit purchase (an ordinary subscription refund), or one
-        // already reversed — Stripe re-sends charge.refunded for each
-        // partial refund on the same charge, so this has to be idempotent.
-        if (!purchase || purchase.refunded_at) break;
 
         // Only reverse credits on a FULL refund. A partial refund (e.g. a
         // goodwill gesture) used to claw back the ENTIRE pack, stripping a
@@ -300,24 +523,34 @@ export async function POST(request: Request) {
         // the credits untouched; only a full refund reverses the grant.
         const fullyRefunded = charge.refunded === true && charge.amount_refunded >= charge.amount;
         if (!fullyRefunded) {
-          console.log("Stripe webhook: partial refund — credits left intact", sessionId);
+          console.log("Stripe webhook: partial refund — credits left intact", paymentIntentId);
           break;
         }
 
-        // Atomic, floored decrement (public.decrement_purchased_credits): the
-        // credits may already be spent, and a negative balance would read as
-        // "owes us credits", so it floors at zero — we eat the cost of whatever
-        // was already generated. Atomic so it can't lose a concurrent update.
-        await supabase.rpc("decrement_purchased_credits", {
-          p_user_id: purchase.user_id,
-          p_amount: purchase.credits,
-        });
+        const ok = await clawbackCreditPurchase(supabase, paymentIntentId);
+        // Let Stripe retry — clawback_credit_purchase is idempotent, so a
+        // redelivery can never double-reverse.
+        if (!ok) return NextResponse.json({ received: false }, { status: 500 });
+        break;
+      }
 
-        await supabase
-          .from("credit_purchases")
-          .update({ refunded_at: new Date().toISOString() })
-          .eq("id", purchase.id);
+      // A chargeback is a refund the customer forced through their bank —
+      // same money gone, so same clawback, or disputing becomes strictly
+      // better than asking us for a refund (keep the credits AND the money).
+      // No partial-refund carve-out here, unlike charge.refunded: a dispute
+      // contests the purchase itself, and the funds are pulled the moment it
+      // opens. If we later win the dispute, re-granting is a manual support
+      // step — rare enough not to automate yet.
+      case "charge.dispute.created": {
+        const dispute = event.data.object as Stripe.Dispute;
+        const paymentIntentId =
+          typeof dispute.payment_intent === "string"
+            ? dispute.payment_intent
+            : (dispute.payment_intent?.id ?? null);
+        if (!paymentIntentId) break;
 
+        const ok = await clawbackCreditPurchase(supabase, paymentIntentId);
+        if (!ok) return NextResponse.json({ received: false }, { status: 500 });
         break;
       }
 

@@ -15,7 +15,14 @@
 
 export type VideoAspectRatio = "16:9" | "9:16";
 
-const PORTRAIT_PATTERN = /\b(9:16|9x16|vertical|portrait|tiktok|reels?|instagram stor(?:y|ies))\b/i;
+// "portrait" only counts when it's phrased as an ORIENTATION ("portrait
+// mode/orientation/format/aspect/video"), not as a subject — the bare word
+// used to match, so "a portrait of the character" (an extremely common way
+// to ask for a picture of someone) silently forced every such video into
+// 9:16 the person never asked for. "vertical", the explicit ratios, and the
+// platform names are unambiguous orientation intent and stay as-is.
+const PORTRAIT_PATTERN =
+  /\b(9:16|9x16|vertical|portrait[ -](?:mode|orientation|format|aspect|ratio|video)|tiktok|reels?|instagram stor(?:y|ies))\b/i;
 const LANDSCAPE_PATTERN = /\b(16:9|16x9|landscape|widescreen|horizontal)\b/i;
 
 // Checked in this order (not "whichever matches first in the string") since

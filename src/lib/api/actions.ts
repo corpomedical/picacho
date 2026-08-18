@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { generateApiKey } from "@/lib/api/keys";
 import type { PlanId } from "@/lib/plans";
 
@@ -39,28 +39,32 @@ export async function createApiKey(
 
   // A handful is plenty for rotating keys and separating integrations;
   // unlimited keys are just unlimited things to leak.
-  const { count } = await supabase
-    .from("api_keys")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userData.user.id)
-    .is("revoked_at", null);
+  //
+  // The cap is enforced atomically by create_api_key_capped (supabase/
+  // pending-2026-08-19/auth-admin.sql): count-and-insert under a per-user
+  // advisory lock (key 41), same pattern as reserve_generation and friends.
+  // The old count-then-insert here was two separate statements, so a
+  // concurrent burst all counted 4 and all inserted — an unbounded pile of
+  // live credentials past the documented ceiling. Service-role RPC (EXECUTE
+  // is revoked from authenticated); fails CLOSED with a retry message until
+  // the SQL file is applied.
+  const { key, hash, prefix } = generateApiKey();
 
-  if ((count ?? 0) >= MAX_ACTIVE_KEYS) {
+  const admin = createAdminClient();
+  const { data: created, error } = await admin.rpc("create_api_key_capped", {
+    p_user_id: userData.user.id,
+    p_max: MAX_ACTIVE_KEYS,
+    p_name: name,
+    p_prefix: prefix,
+    p_key_hash: hash,
+  });
+
+  if (error) return { error: "Couldn't create that key — try again." };
+  if (created !== true) {
     return {
       error: `You already have ${MAX_ACTIVE_KEYS} active keys — revoke one before creating another.`,
     };
   }
-
-  const { key, hash, prefix } = generateApiKey();
-
-  const { error } = await supabase.from("api_keys").insert({
-    user_id: userData.user.id,
-    name,
-    prefix,
-    key_hash: hash,
-  });
-
-  if (error) return { error: "Couldn't create that key — try again." };
 
   revalidatePath("/app/settings");
   // The one and only time this value exists outside the caller's own machine.

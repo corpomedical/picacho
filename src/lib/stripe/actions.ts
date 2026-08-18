@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { stripe } from "@/lib/stripe/client";
 import { PLAN_PRICE_IDS, PLAN_PRICE_IDS_EUR } from "@/lib/stripe/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
@@ -23,6 +23,63 @@ import { isNativeApp } from "@/lib/native/server";
 // entry point refuses server-side when the request comes from the app.
 async function blockInNativeApp(): Promise<void> {
   if (await isNativeApp()) redirect("/app/settings?tab=usage");
+}
+
+// Ensures the profile has exactly ONE Stripe customer and returns its id.
+//
+// Created up front rather than left to Checkout's customer_email path: with
+// customer_email, Stripe mints a brand-new customer per completed session, so
+// someone who bought a credit pack and then subscribed (or topped up twice
+// quickly) ended up split across duplicate customer records — breaking the
+// Customer Portal, the webhook's stripe_customer_id fallback lookup, and the
+// deletion cleanup in cancel-customer.ts, none of which can see past the one
+// id the profile stores.
+//
+// The write goes through the service-role client (authenticated has no UPDATE
+// grant on stripe_customer_id — see the column lockdown in schema.sql), and
+// it's guarded against two concurrent checkouts racing each other: the update
+// only claims the column while it's still NULL, and the loser deletes its
+// just-created duplicate and uses the winner's id instead.
+async function ensureStripeCustomer(
+  userId: string,
+  email: string | null | undefined,
+  existingCustomerId: string | null | undefined,
+): Promise<string> {
+  if (existingCustomerId) return existingCustomerId;
+
+  const customer = await stripe.customers.create({
+    email: email ?? undefined,
+    metadata: { supabase_user_id: userId },
+  });
+
+  const admin = createAdminClient();
+  const { data: claimed } = await admin
+    .from("profiles")
+    .update({ stripe_customer_id: customer.id })
+    .eq("id", userId)
+    .is("stripe_customer_id", null)
+    .select("id");
+
+  if (!claimed || claimed.length === 0) {
+    // Lost the race (or the profile row is missing): another request already
+    // stored a customer. Use theirs and clean up ours — best-effort, an
+    // orphaned empty customer is cosmetic, not money.
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("stripe_customer_id")
+      .eq("id", userId)
+      .single();
+    if (profile?.stripe_customer_id && profile.stripe_customer_id !== customer.id) {
+      try {
+        await stripe.customers.del(customer.id);
+      } catch {
+        // ignore — see above
+      }
+      return profile.stripe_customer_id;
+    }
+  }
+
+  return customer.id;
 }
 
 // Starts a Stripe Checkout session for a brand-new subscription. Existing
@@ -58,14 +115,38 @@ export async function createCheckoutSession(formData: FormData) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, stripe_subscription_id, plan_status")
     .eq("id", userData.user.id)
     .single();
+
+  // Server-side twin of the UI rule ("straight to Checkout only if they have
+  // no live subscription") — a Server Action is a POST endpoint reachable by
+  // anything holding its id (same reasoning as blockInNativeApp above), so a
+  // hidden button is not a guard. A second Checkout for an existing
+  // subscriber wouldn't upgrade them, it would start a SECOND subscription
+  // billing in parallel; plan changes go through the Customer Portal, which
+  // prorates correctly. past_due counts as live, matching hasLiveSubscription
+  // in pricing-card.tsx — a failed payment is fixed in the portal, not by
+  // stacking a fresh subscription on top.
+  if (
+    profile?.stripe_subscription_id &&
+    (profile.plan_status === "active" || profile.plan_status === "past_due")
+  ) {
+    redirect(
+      `/app/settings?tab=usage&error=${encodeURIComponent("You already have a subscription — use Manage billing to change plans.")}`,
+    );
+  }
 
   const origin = await getOrigin();
   let checkoutUrl: string | null = null;
 
   try {
+    const customerId = await ensureStripeCustomer(
+      userData.user.id,
+      userData.user.email,
+      profile?.stripe_customer_id,
+    );
+
     // Annual has no pre-created Stripe Price: the line item is built inline
     // (price_data) against the SAME Product as the monthly price, so Stripe
     // reporting groups them and the currency follows the same USD/EUR
@@ -93,8 +174,10 @@ export async function createCheckoutSession(formData: FormData) {
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
-      customer: profile?.stripe_customer_id ?? undefined,
-      customer_email: profile?.stripe_customer_id ? undefined : (userData.user.email ?? undefined),
+      // Always a real, pre-created customer (ensureStripeCustomer above) —
+      // never customer_email, which mints a fresh Stripe customer per
+      // completed session and split one person across duplicate records.
+      customer: customerId,
       client_reference_id: userData.user.id,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       line_items: [lineItem as any],
@@ -176,10 +259,16 @@ export async function createCreditCheckoutSession(formData: FormData) {
   let checkoutUrl: string | null = null;
 
   try {
+    const customerId = await ensureStripeCustomer(
+      userData.user.id,
+      userData.user.email,
+      profile?.stripe_customer_id,
+    );
+
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer: profile?.stripe_customer_id ?? undefined,
-      customer_email: profile?.stripe_customer_id ? undefined : (userData.user.email ?? undefined),
+      // Same single-customer rule as createCheckoutSession above.
+      customer: customerId,
       client_reference_id: userData.user.id,
       line_items: [{ price: priceId, quantity: 1 }],
       automatic_tax: { enabled: true },

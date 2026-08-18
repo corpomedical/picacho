@@ -25,8 +25,20 @@ import crypto from "crypto";
 const MEDIA_BUCKETS = new Set(["character-references", "generated-images", "chat-attachments"]);
 
 function hmac(input: string): string {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set.");
+  // Prefer a dedicated signing secret over the service-role key. Every media
+  // URL ever minted embeds a signature under this key — keying them off
+  // SUPABASE_SERVICE_ROLE_KEY means rotating that credential (routine, and
+  // exactly what you do after a suspected leak) silently 404s every image
+  // and video URL ever handed out, including ones customers stored on their
+  // side via the public API ("permanent" is this route's documented
+  // promise). The fallback keeps today's URLs working with nothing set.
+  //
+  // OPERATOR: set MEDIA_SIGNING_SECRET (any long random string) in
+  // production BEFORE any future service-role key rotation. Note the
+  // one-time cost: the moment it's first set, URLs signed under the old
+  // key stop verifying — set it once, early, not during an incident.
+  const key = process.env.MEDIA_SIGNING_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) throw new Error("Neither MEDIA_SIGNING_SECRET nor SUPABASE_SERVICE_ROLE_KEY is set.");
   return crypto.createHmac("sha256", key).update(input).digest("base64url").slice(0, 24);
 }
 

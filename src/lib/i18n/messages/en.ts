@@ -152,6 +152,9 @@ const en = {
       billingMonthly: "Monthly",
       threeMonthsFree: "3 months free",
       savePercent: "Save {n}%",
+      // Shown inside the native app shell, where App Store reader rules
+      // forbid showing prices or checkout — see pricing/page.tsx.
+      manageOnWeb: "Manage your plan on the web at picacho.ai.",
       billedAnnually: "{sym}{total} billed once a year",
       monthlyEquivalent: "or {sym}{price}/mo if billed annually",
       faqTitle: "Frequently asked questions",
@@ -408,6 +411,24 @@ const en = {
     submitFailed: "Couldn't reach the server — check your connection and try again.",
     notifyReadyTitle: "Your generation is ready",
     notifyFailedTitle: "Generation didn't pass",
+    // The insufficient-credits strip attached above the composer.
+    insufficientCredits: "{model} at {seconds}s needs {needed} credits — you have {available}.",
+    addCreditsCta: "Add {n} credits",
+    dismissBanner: "Dismiss",
+    // Queued-render progress labels — what a long multi-angle render is
+    // actually doing, so the wait never reads as a hang.
+    renderingAngles: "Rendering your angles",
+    renderingAnglesProgress: "Rendering your angles ({done} of {total} done)",
+    resumingRender: "Picking up where you left off",
+    finishingRenders: "Finishing {n} renders",
+    lostTrackOfRender: "Lost track of this render, but it's still going — it'll appear in History when it lands.",
+    uploadFailedFile: "{name} couldn't be uploaded — it may be too large or the connection dropped.",
+    uploadPhotoFailed: "Couldn't upload that photo.",
+    resultMissing: "The result was missing: {issues}.",
+    // The /app/generate page header and its reliability stat tiles.
+    pageTitle: "Generate",
+    firstTrySuccess: "first-try success",
+    avgAttempts: "avg. attempts",
     download: "Download",
     copyPrompt: "Copy prompt",
     copied: "Copied",
@@ -569,6 +590,7 @@ const en = {
     giveName: "Give your character a name.",
     somethingWrong: "Something went wrong saving this.",
     connectionError: "Couldn't reach the server — check your connection and try again.",
+    lightboxAlt: "Reference photo (full size)",
   },
   projects: {
     title: "Projects",
@@ -699,6 +721,7 @@ const en = {
     usernameLabel: "Username",
     emailLabel: "Email",
     emailChangeNote: "Check your new inbox — click the link there to confirm the change.",
+    currentPasswordLabel: "Current password",
     newPasswordLabel: "New password",
     passwordMinChars: "At least 8 characters",
     confirmNewPasswordLabel: "Confirm new password",
@@ -732,6 +755,21 @@ const en = {
     skipRefinementHelp:
       "Send your prompt straight to the generator, skipping the Claude draft + OpenAI review steps. Faster and cheaper, but drops the extra polish those steps add.",
     replayWalkthrough: "Replay walkthrough",
+    // Localized messages for the ?error= codes server actions redirect back
+    // to Settings with. The page maps known codes to these and everything
+    // else to errorGeneric — the raw query value is never rendered, so a
+    // crafted link can't plant arbitrary text inside trusted settings chrome.
+    errorGeneric: "Something went wrong — try again.",
+    errorPlanUnavailable: "That plan isn't available.",
+    errorPlanNotConfigured: "This plan isn't set up for checkout yet.",
+    errorCheckoutFailed: "Couldn't start checkout — try again.",
+    errorPackUnavailable: "That credit pack isn't available.",
+    errorPackNotConfigured: "Credit packs aren't set up for checkout yet.",
+    errorNoBillingAccount: "No billing account yet — start with a plan below.",
+    errorBillingFailed: "Couldn't open billing — try again.",
+    errorAlreadySubscribed: "You already have a subscription — use Manage billing to change plans.",
+    errorDeletionAborted:
+      "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.",
   },
   pricingTiers: {
     starter: {

@@ -9,8 +9,10 @@
 // discount across the three sizes.
 //
 // These are starting numbers, not researched positioning — adjust freely.
-// Whatever you set here must match what setup-credit-packs.js creates in
-// Stripe; the script reads this same file so they can't drift.
+// The pack data itself lives in credit-packs.json (plain JSON, not TS) so
+// setup-credit-packs.js can require() the very same file this module
+// imports — one source of truth, so what the script creates in Stripe can't
+// drift from what the app sells. This file layers the types on top.
 
 export type CreditPack = {
   id: string;
@@ -19,11 +21,9 @@ export type CreditPack = {
   price: number;
 };
 
-export const CREDIT_PACKS: CreditPack[] = [
-  { id: "small", credits: 20, price: 45 },
-  { id: "medium", credits: 60, price: 119 },
-  { id: "large", credits: 150, price: 279 },
-];
+import creditPacksJson from "./credit-packs.json";
+
+export const CREDIT_PACKS: CreditPack[] = creditPacksJson;
 
 export function getCreditPack(id: string): CreditPack | undefined {
   return CREDIT_PACKS.find((p) => p.id === id);

@@ -1,15 +1,23 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/admin/require-admin";
 import { Card } from "@/components/ui/card";
 import { TrafficChart, type TrafficDay } from "@/components/admin/traffic-chart";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/cn";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
-import { currencyForPriceId } from "@/lib/stripe/plans";
+import { currencyForPriceId, planIdForPriceId } from "@/lib/stripe/plans";
 
 const PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
   PRICING_TIERS.map((t) => [t.id, t.price]),
+);
+
+// Monthly-equivalent value of an annual subscription — annual bills
+// tier.annualPrice * 12 once a year, so its MRR contribution is annualPrice.
+// Same constant and reasoning as admin/billing/page.tsx.
+const ANNUAL_PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
+  PRICING_TIERS.map((t) => [t.id, t.annualPrice]),
 );
 
 const PLAN_ORDER: PlanId[] = ["elite", "studio", "growth", "starter", "none"];
@@ -154,92 +162,182 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 export default async function AdminDashboard() {
+  // Re-checked here, not just in the admin layout: this page calls the
+  // admin_traffic_daily RPC (SECURITY DEFINER over the whole page_views
+  // table — hardened with its own role check in supabase/pending-2026-08-19/
+  // auth-admin.sql), so the page verifies the caller's role itself as well
+  // rather than trusting that the layout gate can never be sidestepped.
+  await requireAdmin();
   const supabase = await createClient();
 
   const startOfMonth = new Date();
   startOfMonth.setDate(1);
   startOfMonth.setHours(0, 0, 0, 0);
+  const last14 = daysAgo(13);
   const last30 = daysAgo(29);
+  // One generations window that covers both the 14-day chart and the
+  // current-month credit sum (whichever reaches further back).
+  const genSince = startOfMonth < last14 ? startOfMonth : last14;
 
+  // Counts come from head:true count queries and everything row-shaped is
+  // windowed and capped. The old version selected EVERY generations row and
+  // EVERY profile into memory — which not only grows without bound as the
+  // product does, but was already silently wrong: PostgREST caps an
+  // un-limited select at 1000 rows, so past the first thousand rows every
+  // "all-time" figure on this page quietly froze. Exact counts don't have
+  // that cap; the explicit .limit() calls raise the row windows well past
+  // current volumes and are commented where an approximation begins.
   const [
-    { data: profiles },
-    { data: generations },
+    { count: totalUsersCount },
+    { count: newUsersThisWeekCount },
+    { count: activeSubscribersCount },
+    { count: suspendedUsersCount },
+    { data: activeSubRows },
+    { data: planRows },
+    { data: recentProfileRows },
+    { data: signupRows },
+    { count: generationsMonthCount },
+    { count: succeededAllCount },
+    { count: failedAllCount },
+    { count: videoAllCount },
+    { count: imageAllCount },
+    { data: recentGenRows },
+    { data: genWindowRows },
     { data: pageViews },
     { data: reports },
-    { data: feedbackRows },
+    { count: openFeedbackCount },
   ] = await Promise.all([
+    supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase
       .from("profiles")
-      .select("id, email, created_at, plan, plan_status, status, stripe_price_id"),
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", daysAgo(7).toISOString()),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("plan_status", "active"),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "suspended"),
+    // MRR only needs the paying rows — a small set by definition.
+    supabase
+      .from("profiles")
+      .select("plan, stripe_price_id, plan_currency, plan_interval")
+      .eq("plan_status", "active")
+      .limit(10000),
+    // One narrow column for the distribution chart; approximate past 20k users.
+    supabase.from("profiles").select("plan").limit(20000),
+    supabase
+      .from("profiles")
+      .select("id, email, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5),
+    supabase
+      .from("profiles")
+      .select("created_at")
+      .gte("created_at", last14.toISOString())
+      .limit(20000),
     supabase
       .from("generations")
-      .select("id, user_id, status, content_type, credits_used, created_at"),
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", startOfMonth.toISOString()),
+    supabase
+      .from("generations")
+      .select("id", { count: "exact", head: true })
+      .eq("status", "succeeded"),
+    supabase.from("generations").select("id", { count: "exact", head: true }).eq("status", "failed"),
+    supabase
+      .from("generations")
+      .select("id", { count: "exact", head: true })
+      .eq("content_type", "video"),
+    supabase
+      .from("generations")
+      .select("id", { count: "exact", head: true })
+      .eq("content_type", "image"),
+    supabase
+      .from("generations")
+      .select("id, user_id, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(5),
+    // Feeds the 14-day chart and the month's credit sum; approximate past
+    // 20k generations in a month.
+    supabase
+      .from("generations")
+      .select("created_at, credits_used")
+      .gte("created_at", genSince.toISOString())
+      .limit(20000),
     supabase
       .from("page_views")
       .select("path, referrer, country, visitor_id, created_at")
-      .gte("created_at", last30.toISOString()),
-    supabase.from("generation_reports").select("status, source"),
-    supabase.from("feedback").select("status"),
+      .gte("created_at", last30.toISOString())
+      .limit(20000),
+    supabase.from("generation_reports").select("status, source").eq("status", "open").limit(5000),
+    supabase.from("feedback").select("id", { count: "exact", head: true }).eq("status", "open"),
   ]);
 
-  const allProfiles = profiles ?? [];
-  const allGenerations = generations ?? [];
   const allPageViews = pageViews ?? [];
-  const allReports = reports ?? [];
-  const allFeedback = feedbackRows ?? [];
 
   // --- Users & revenue ---
-  const totalUsers = allProfiles.length;
-  const newUsersThisWeek = allProfiles.filter(
-    (p) => new Date(p.created_at) >= daysAgo(7),
-  ).length;
-  const activeSubscribers = allProfiles.filter((p) => p.plan_status === "active").length;
-  const suspendedUsers = allProfiles.filter((p) => p.status === "suspended").length;
+  const totalUsers = totalUsersCount ?? 0;
+  const newUsersThisWeek = newUsersThisWeekCount ?? 0;
+  const activeSubscribers = activeSubscribersCount ?? 0;
+  const suspendedUsers = suspendedUsersCount ?? 0;
   const conversionRate = totalUsers > 0 ? (activeSubscribers / totalUsers) * 100 : 0;
 
   // Split by currency, not combined into one sum — see admin/billing/page.tsx
   // for why (€19 + $19 isn't a meaningful single number, even though the
   // digits match per plan under the same-number-swap pricing decision).
-  const mrrByCurrency = allProfiles.reduce(
+  //
+  // Same logic as that page exactly: plan_currency / plan_interval are the
+  // webhook-snapshotted truth (annual subscriptions bill on an INLINE price
+  // that currencyForPriceId can't classify, and an annual subscriber's MRR
+  // contribution is annualPrice, not the monthly rate). Rows from before the
+  // columns existed (NULL until their next webhook event) fall back to the
+  // old price-id guesses, valuing an unrecognized-price active subscription
+  // at annual/12. This card previously used the naive calc and disagreed
+  // with Billing about the same number on the next screen over.
+  const mrrByCurrency = (activeSubRows ?? []).reduce(
     (acc, p) => {
-      if (p.plan_status !== "active") return acc;
-      const currency = currencyForPriceId(p.stripe_price_id);
-      acc[currency] += PRICE_BY_PLAN[(p.plan ?? "none") as PlanId] ?? 0;
+      const plan = (p.plan ?? "none") as PlanId;
+      const currency: "usd" | "eur" =
+        p.plan_currency === "eur" || p.plan_currency === "usd"
+          ? (p.plan_currency as "usd" | "eur")
+          : currencyForPriceId(p.stripe_price_id);
+      const isAnnual = p.plan_interval
+        ? p.plan_interval === "year"
+        : Boolean(p.stripe_price_id) && !planIdForPriceId(p.stripe_price_id);
+      acc[currency] += (isAnnual ? ANNUAL_PRICE_BY_PLAN[plan] : PRICE_BY_PLAN[plan]) ?? 0;
       return acc;
     },
     { usd: 0, eur: 0 },
   );
 
   const planDistribution = new Map<PlanId, number>(PLAN_ORDER.map((p) => [p, 0]));
-  allProfiles.forEach((p) => {
+  (planRows ?? []).forEach((p) => {
     const plan = (p.plan ?? "none") as PlanId;
     planDistribution.set(plan, (planDistribution.get(plan) ?? 0) + 1);
   });
 
-  const signupsSeries = buildDailySeries(allProfiles, 14);
-  const recentUsers = [...allProfiles]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
+  const signupsSeries = buildDailySeries(signupRows ?? [], 14);
+  const recentUsers = recentProfileRows ?? [];
 
   // --- Generations ---
-  const generationsThisMonth = allGenerations.filter(
-    (g) => new Date(g.created_at) >= startOfMonth,
-  );
-  const succeededAll = allGenerations.filter((g) => g.status === "succeeded").length;
-  const failedAll = allGenerations.filter((g) => g.status === "failed").length;
+  const generationsThisMonthCount = generationsMonthCount ?? 0;
+  const succeededAll = succeededAllCount ?? 0;
+  const failedAll = failedAllCount ?? 0;
   const successRate =
     succeededAll + failedAll > 0 ? (succeededAll / (succeededAll + failedAll)) * 100 : null;
-  const creditsThisMonth = generationsThisMonth.reduce(
-    (sum, g) => sum + (g.credits_used ?? 1),
-    0,
-  );
-  const videoCount = allGenerations.filter((g) => g.content_type === "video").length;
-  const imageCount = allGenerations.filter((g) => g.content_type === "image").length;
+  const creditsThisMonth = (genWindowRows ?? [])
+    .filter((g) => new Date(g.created_at) >= startOfMonth)
+    .reduce((sum, g) => sum + (g.credits_used ?? 1), 0);
+  const videoCount = videoAllCount ?? 0;
+  const imageCount = imageAllCount ?? 0;
 
-  const generationsSeries = buildDailySeries(allGenerations, 14);
-  const recentGenerations = [...allGenerations]
-    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 5);
+  // buildDailySeries only buckets rows inside its window, so handing it the
+  // slightly wider genSince set is fine.
+  const generationsSeries = buildDailySeries(genWindowRows ?? [], 14);
+  const recentGenerations = recentGenRows ?? [];
 
   const userIds = Array.from(new Set(recentGenerations.map((g) => g.user_id)));
   const { data: genUsers } = userIds.length
@@ -268,10 +366,10 @@ export default async function AdminDashboard() {
   );
 
   // --- Health ---
-  const openReports = allReports.filter((r) => r.status === "open");
+  const openReports = reports ?? []; // query already filters to status=open
   const openReportsAuto = openReports.filter((r) => r.source === "auto").length;
   const openReportsUser = openReports.length - openReportsAuto;
-  const openFeedback = allFeedback.filter((f) => f.status === "open").length;
+  const openFeedback = openFeedbackCount ?? 0;
 
   const activity = [
     ...recentUsers.map((u) => ({
@@ -350,7 +448,7 @@ export default async function AdminDashboard() {
         <Card>
           <p className="text-sm text-neutral-500">Generations this month</p>
           <p className="mt-1 text-2xl font-semibold text-neutral-900">
-            {generationsThisMonth.length}
+            {generationsThisMonthCount}
           </p>
           <p className="mt-1 text-xs text-neutral-400">
             {creditsThisMonth} credit{creditsThisMonth === 1 ? "" : "s"} consumed

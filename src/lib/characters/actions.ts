@@ -22,6 +22,33 @@ import { latestMonthlyAnniversary } from "@/lib/generations/core";
 // unlimited, since that costs nothing to serve.
 const FREE_REFERENCE_GENERATIONS_LIMIT = 2;
 
+// Proportionate caps on the free-text character fields, in the style of the
+// existing 120-char name cap. These all get folded verbatim into prompts on
+// every generation (see buildScenePrompt / the visual-traits block below), so
+// an unbounded field quietly inflates every downstream model call — and with
+// no cap at all, one crafted save could store megabytes per row.
+const MAX_TAGS = 25;
+const MAX_TAG_LENGTH = 60;
+const MAX_TRAIT_LENGTH = 500;
+const MAX_MOTION_STYLE_LENGTH = 500;
+const MAX_REFERENCE_IMAGES = 20;
+
+// Client-supplied JSON fields (tags, image path lists) used to go straight
+// through JSON.parse — malformed input threw and surfaced as a 500 instead of
+// the action's normal validation-error shape. Returns null on anything that
+// isn't a JSON array; non-string elements are dropped rather than rejected,
+// matching how the path filters already treated them.
+function parseStringArray(raw: FormDataEntryValue | null): string[] | null {
+  if (raw == null || raw === "") return [];
+  try {
+    const parsed: unknown = JSON.parse(String(raw));
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter((v): v is string => typeof v === "string");
+  } catch {
+    return null;
+  }
+}
+
 type SaveResult = { error: string } | { error: null };
 
 // NOTE: this is called directly from a Client Component (not via a plain
@@ -39,7 +66,8 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   const motionStyle = (formData.get("motion_style") as string)?.trim() || null;
   const projectId = (formData.get("project_id") as string)?.trim() || null;
   const voiceId = (formData.get("voice_id") as string)?.trim() || null;
-  const tags = JSON.parse((formData.get("tags") as string) || "[]") as string[];
+  const tags = parseStringArray(formData.get("tags"));
+  if (tags === null) return { error: "Couldn't read the character's tags — refresh and try again." };
   // Only accept storage paths in the caller's OWN folder. Without this a user
   // could save a character whose reference_image_urls point at another user's
   // objects, and the media route (signature-only, no per-user check) would then
@@ -47,9 +75,11 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   // generateReferenceImage already applies. (uid hoisted so the null-narrowing
   // survives into the filter closure — TS drops property narrowing there.)
   const uid = data.user.id;
-  const referenceImagePaths = (
-    JSON.parse((formData.get("reference_image_paths") as string) || "[]") as string[]
-  ).filter((p) => typeof p === "string" && p.startsWith(`${uid}/`));
+  const rawReferencePaths = parseStringArray(formData.get("reference_image_paths"));
+  if (rawReferencePaths === null) {
+    return { error: "Couldn't read the reference photo list — refresh and try again." };
+  }
+  const referenceImagePaths = rawReferencePaths.filter((p) => p.startsWith(`${uid}/`));
 
   const traits = {
     hair: (formData.get("trait_hair") as string)?.trim() || "",
@@ -64,6 +94,45 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   }
   if (name.length > 120) {
     return { error: "Keep the character name under 120 characters." };
+  }
+  if (motionStyle && motionStyle.length > MAX_MOTION_STYLE_LENGTH) {
+    return { error: `Keep the motion style under ${MAX_MOTION_STYLE_LENGTH} characters.` };
+  }
+  if (tags.length > MAX_TAGS) {
+    return { error: `Keep it to ${MAX_TAGS} tags or fewer.` };
+  }
+  if (tags.some((t) => t.length > MAX_TAG_LENGTH)) {
+    return { error: `Keep each tag under ${MAX_TAG_LENGTH} characters.` };
+  }
+  if (Object.values(traits).some((t) => t.length > MAX_TRAIT_LENGTH)) {
+    return { error: `Keep each trait under ${MAX_TRAIT_LENGTH} characters.` };
+  }
+  if (referenceImagePaths.length > MAX_REFERENCE_IMAGES) {
+    return { error: `A character can have up to ${MAX_REFERENCE_IMAGES} reference photos.` };
+  }
+
+  // project_id / voice_id arrive from the client and are written straight into
+  // the row. The FK constraint doesn't enforce ownership and character_profiles
+  // RLS only checks user_id, so without these lookups a crafted request could
+  // attach a character to another user's project (FK bypasses RLS). Projects
+  // are owner-scoped; voice presets are a global admin-curated catalogue, so
+  // existence is the whole check there.
+  if (projectId) {
+    const { data: project } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("id", projectId)
+      .eq("user_id", uid)
+      .maybeSingle();
+    if (!project) return { error: "Couldn't find that project." };
+  }
+  if (voiceId) {
+    const { data: voice } = await supabase
+      .from("voice_presets")
+      .select("id")
+      .eq("id", voiceId)
+      .maybeSingle();
+    if (!voice) return { error: "Couldn't find that voice." };
   }
 
   const row = {
@@ -124,13 +193,15 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   // photos and the character's own gallery is two different people, which
   // then poisons every downstream generation anchored to those photos
   // (the root cause of "creating a character is not consistent").
-  const anchorPaths = (
-    JSON.parse((formData.get("anchor_paths") as string) || "[]") as string[]
-  ).filter(
+  const rawAnchorPaths = parseStringArray(formData.get("anchor_paths"));
+  if (rawAnchorPaths === null) {
+    return { error: "Couldn't read the character's photos — refresh and try again." };
+  }
+  const anchorPaths = rawAnchorPaths.filter(
     // Only this user's own files — paths are keyed ${userId}/... in the
     // bucket, so this also stops a crafted request from signing (and
     // generating from) someone else's photo.
-    (path) => typeof path === "string" && path.startsWith(`${data.user!.id}/`),
+    (path) => path.startsWith(`${data.user!.id}/`),
   );
   const traitHair = (formData.get("trait_hair") as string)?.trim() || "";
   const traitOutfit = (formData.get("trait_outfit") as string)?.trim() || "";
@@ -149,15 +220,17 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   // Free tier: a lifetime allowance, not a monthly one — two photos to see
   // whether the product does what they want, then a plan. Admins are exempt
   // for the same reason checkGenerationAllowance exempts them: testing and
-  // support work should never trip a consumer-facing cap.
+  // support work should never trip a consumer-facing cap. Enforcement is the
+  // atomic reservation further down — this early read is only a courtesy
+  // fast-path so an obviously capped account gets its answer before the
+  // flag/model lookups run.
   const isFreeTier = plan === "none" && !isAdmin;
   const freeUsed = profile?.free_reference_generations_used ?? 0;
+  const freeCapError =
+    `You've used your ${FREE_REFERENCE_GENERATIONS_LIMIT} free AI-generated character photos. ` +
+    "Subscribe to a plan to keep generating, or upload your own photo instead — that's always free.";
   if (isFreeTier && freeUsed >= FREE_REFERENCE_GENERATIONS_LIMIT) {
-    return {
-      error:
-        `You've used your ${FREE_REFERENCE_GENERATIONS_LIMIT} free AI-generated character photos. ` +
-        "Subscribe to a plan to keep generating, or upload your own photo instead — that's always free.",
-    };
+    return { error: freeCapError };
   }
 
   // Paid plans: a monthly cap, counted against this account's real billing
@@ -165,36 +238,23 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   // unlimited and free on every paid plan — the largest money leak in the
   // pricing analysis. See PLAN_REFERENCE_IMAGE_LIMITS for why this is a cap
   // rather than a credit charge, and why the numbers are set where they are.
-  if (!isFreeTier && !isAdmin) {
-    const periodStart = profile?.current_period_start
-      // Advance to the most recent MONTHLY anniversary — an annual sub's raw
-      // period start can be ~12 months ago, which made this cap span the whole
-      // year (never resetting monthly). Mirrors getMonthlyUsageWith.
-      ? latestMonthlyAnniversary(new Date(profile.current_period_start as string))
-      : (() => {
-          // No Stripe billing anchor yet (see backfill-billing-period.js) —
-          // fall back to the calendar month, matching getMonthlyUsage.
-          const d = new Date();
-          d.setDate(1);
-          d.setHours(0, 0, 0, 0);
-          return d;
-        })();
-
-    const { count } = await supabase
-      .from("reference_image_generations")
-      .select("id", { count: "exact", head: true })
-      .eq("user_id", data.user.id)
-      .gte("created_at", periodStart.toISOString());
-
-    const cap = PLAN_REFERENCE_IMAGE_LIMITS[plan];
-    if ((count ?? 0) >= cap) {
-      return {
-        error:
-          `You've generated ${cap} AI character photos this billing period, which is the limit on ` +
-          `the ${PLAN_LABELS[plan]} plan. Uploading your own photo is always free and unlimited.`,
-      };
-    }
-  }
+  const periodStart = profile?.current_period_start
+    // Advance to the most recent MONTHLY anniversary — an annual sub's raw
+    // period start can be ~12 months ago, which made this cap span the whole
+    // year (never resetting monthly). Mirrors getMonthlyUsageWith.
+    ? latestMonthlyAnniversary(new Date(profile.current_period_start as string))
+    : (() => {
+        // No Stripe billing anchor yet (see backfill-billing-period.js) —
+        // fall back to the calendar month, matching getMonthlyUsage.
+        const d = new Date();
+        d.setDate(1);
+        d.setHours(0, 0, 0, 0);
+        return d;
+      })();
+  const paidCap = PLAN_REFERENCE_IMAGE_LIMITS[plan];
+  const paidCapError =
+    `You've generated ${paidCap} AI character photos this billing period, which is the limit on ` +
+    `the ${PLAN_LABELS[plan]} plan. Uploading your own photo is always free and unlimited.`;
 
   const { data: flag } = await supabase
     .from("feature_flags")
@@ -222,6 +282,43 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   }
   if (model.provider === "fal" && !process.env.FAL_KEY) {
     return { error: "FAL_KEY is missing — add it to .env.local first." };
+  }
+
+  // Reserve the allowance atomically BEFORE the paid provider call. The old
+  // shape — read the count above, generate, then record — meant a concurrent
+  // burst all read the same count, all passed, and all called OpenAI/fal:
+  // unlimited free paid-API generations, the same bug class the composer
+  // fixed with reserve_generation (commits 538a2ee / 4a4e3ee). Both RPCs
+  // (supabase/pending-2026-08-19/user-actions.sql) serialize check-and-record
+  // per user; EXECUTE is revoked from `authenticated`, so they run through
+  // the service-role client. An RPC error fails closed, like the voice
+  // preview's rate limiter: better a retry than an unmetered paid call.
+  // A failed generation refunds the reservation in the catch below, keeping
+  // the old "a failed attempt never burns a slot" semantics.
+  const admin = createAdminClient();
+  // Paid path: the reserved meter row, deleted on failure.
+  let reservedRowId: string | null = null;
+  if (isFreeTier) {
+    const { data: spent, error: spendError } = await admin.rpc(
+      "spend_free_reference_generation",
+      { p_user_id: data.user.id, p_limit: FREE_REFERENCE_GENERATIONS_LIMIT },
+    );
+    if (spendError) {
+      console.error("spend_free_reference_generation failed:", spendError.message);
+      return { error: "Couldn't check your allowance — try again in a moment." };
+    }
+    if (spent !== true) return { error: freeCapError };
+  } else if (!isAdmin) {
+    const { data: reserved, error: reserveError } = await admin.rpc(
+      "reserve_reference_image_generation",
+      { p_user_id: data.user.id, p_cap: paidCap, p_since: periodStart.toISOString() },
+    );
+    if (reserveError) {
+      console.error("reserve_reference_image_generation failed:", reserveError.message);
+      return { error: "Couldn't check your allowance — try again in a moment." };
+    }
+    if (!reserved) return { error: paidCapError };
+    reservedRowId = reserved as string;
   }
 
   try {
@@ -306,24 +403,23 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
     const previewUrl = mediaUrl("character-references", path);
 
-    // Only counted once a photo actually came back — a safety-filter
-    // rejection or provider error above throws before this line, so a failed
-    // attempt never burns a free try or a slot in the monthly cap.
-    if (isFreeTier) {
-      await createAdminClient()
-        .from("profiles")
-        .update({ free_reference_generations_used: freeUsed + 1 })
-        .eq("id", data.user.id);
-    } else if (!isAdmin) {
-      // Admins are exempt from the cap, so logging their generations would
-      // only add noise to a table whose sole purpose is counting against it.
-      await supabase
-        .from("reference_image_generations")
-        .insert({ user_id: data.user.id });
-    }
-
+    // Nothing to record here: the free try / monthly slot was already
+    // reserved atomically before the provider call. (Admins reserve nothing —
+    // they're exempt from the cap, so logging their generations would only
+    // add noise to a table whose sole purpose is counting against it.)
     return { error: null, path, url: previewUrl };
   } catch (err) {
+    // A safety-filter rejection, provider error, or failed upload lands here —
+    // refund the up-front reservation so a failed attempt never burns a free
+    // try or a slot in the monthly cap (the semantics the old record-on-success
+    // code had). Both refunds are service-role and idempotent-safe: the free
+    // decrement floors at 0, and the paid delete targets exactly the row this
+    // request reserved.
+    if (isFreeTier) {
+      await admin.rpc("refund_free_reference_generation", { p_user_id: data.user.id });
+    } else if (reservedRowId) {
+      await admin.from("reference_image_generations").delete().eq("id", reservedRowId);
+    }
     const message = err instanceof Error ? err.message : "Couldn't generate that image.";
     // Full detail (including any raw provider JSON) goes to the server log
     // for debugging; the user only ever sees the sanitized version.

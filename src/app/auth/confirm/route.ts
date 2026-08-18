@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
+import { getOrigin } from "@/lib/origin";
 
 function safeNext(next: string | null): string {
   // Must be a single-leading-slash relative path — no "//", no scheme, no "@".
@@ -30,7 +31,13 @@ function safeNext(next: string | null): string {
 // (default /app), so the user lands signed in instead of back on the
 // homepage logged out.
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
+  // getOrigin(), not request.url: the URL's host comes from the Host header,
+  // which is client-controlled behind a proxy — an emailed confirmation link
+  // replayed with a spoofed Host would otherwise bounce the fresh session to
+  // an attacker-chosen origin. getOrigin() pins the redirect to a host we
+  // actually serve. Same reasoning as /auth/callback.
+  const origin = await getOrigin();
   const token_hash = searchParams.get("token_hash");
   const type = searchParams.get("type") as EmailOtpType | null;
   const code = searchParams.get("code");

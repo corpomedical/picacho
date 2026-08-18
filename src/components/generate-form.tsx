@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/field";
 import {
@@ -90,7 +90,10 @@ function isLiveTurn(attempts: AttemptLog[]): boolean {
 // provider rejection message (e.g. a content-safety violation, or a bad
 // request from a provider), or which specific rulebook items (outfit,
 // distinguishing features, ...) never made it into the compiled prompt.
-function summarizeFailure(attempts: AttemptLog[], stoppedLabel?: string): string | null {
+// Takes the whole `generate` message table rather than individual label
+// params — it needs several localized strings (stopped, missing-traits) and
+// every caller already has `g` in hand from useLocale.
+function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): string | null {
   const last = attempts[attempts.length - 1];
   if (!last) return null;
 
@@ -98,7 +101,7 @@ function summarizeFailure(attempts: AttemptLog[], stoppedLabel?: string): string
   // running it through the provider-error/missing-traits messaging below,
   // which would either show nothing useful (no error step exists) or, worse,
   // surface a stale reason left over from an earlier attempt.
-  if (last.issues.includes("cancelled")) return stoppedLabel ?? "Stopped.";
+  if (last.issues.includes("cancelled")) return g.stoppedByUser;
 
   if (last.issues.includes("provider_error")) {
     const errorStep = [...last.steps]
@@ -123,7 +126,7 @@ function summarizeFailure(attempts: AttemptLog[], stoppedLabel?: string): string
 
   const traitIssues = last.issues.filter((i) => i !== "provider_error");
   if (traitIssues.length > 0) {
-    return `The result was missing: ${traitIssues.join(", ")}.`;
+    return formatMsg(g.resultMissing, { issues: traitIssues.join(", ") });
   }
 
   return null;
@@ -154,6 +157,10 @@ async function awaitQueuedGeneration(
   generationId: string,
   onProgress: (label: string) => void,
   shouldAbandon: () => boolean,
+  // Localized "lost track of this render" copy — passed in because this
+  // module-level helper has no access to useLocale, and the message is
+  // user-facing (it lands in the failure card verbatim).
+  lostTrackMessage: string,
 ): Promise<QueuedOutcome> {
   // Starts responsive, then eases off. Short renders feel immediate, while a
   // ten-minute one settles to a poll every eight seconds — roughly 80 requests
@@ -191,10 +198,7 @@ async function awaitQueuedGeneration(
       // generous — a transient network blip must never be mistaken for a
       // failed generation.
       if (consecutiveErrors >= 60) {
-        return {
-          state: "failed",
-          error: "Lost track of this render, but it's still going — it'll appear in History when it lands.",
-        };
+        return { state: "failed", error: lostTrackMessage };
       }
       continue;
     }
@@ -255,11 +259,45 @@ function requestNotificationPermission() {
   }
 }
 
+// Best-effort only, and guaranteed never to throw. Android Chrome forbids the
+// page-context `new Notification(...)` constructor outright (it throws a
+// TypeError; notifications there must go through a service worker) — and this
+// used to run in the middle of the completion handlers, so on Android a
+// backgrounded render's success bookkeeping died on this line: the finished
+// result never reached the chat, submitting stayed true, and the composer was
+// stuck on Stop forever. The callers now run their bookkeeping FIRST (see
+// submitPrompt/confirmMultiAngle), and this wraps everything regardless, so a
+// notification can only ever fail silently — never take the composer with it.
 function notifyIfHidden(title: string, body: string) {
-  if (typeof window === "undefined" || !("Notification" in window)) return;
-  if (Notification.permission !== "granted") return;
-  if (document.visibilityState !== "hidden") return;
-  new Notification(title, { body });
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    if (document.visibilityState !== "hidden") return;
+
+    const sw = navigator.serviceWorker;
+    if (sw?.getRegistration) {
+      // Prefer the service-worker route — the only one Android Chrome
+      // supports, and it works everywhere else too when a worker is
+      // registered. Fall back to the page-context constructor when there's
+      // no registration; if THAT throws (Android with no worker), the
+      // rejection is swallowed and the notification is simply skipped.
+      void sw
+        .getRegistration()
+        .then((registration) => {
+          if (registration) return registration.showNotification(title, { body });
+          new Notification(title, { body });
+        })
+        .catch(() => {
+          // No way left to notify — skip silently.
+        });
+      return;
+    }
+
+    new Notification(title, { body });
+  } catch {
+    // Notifications are a nice-to-have; the in-page UI already shows the
+    // result. Never let this break anything.
+  }
 }
 
 function stepLabel(step: PipelineStepLog["step"], isLive: boolean, g: Messages["generate"]): string {
@@ -412,11 +450,19 @@ function AttachmentThumb({ attachment, className }: { attachment: ChatAttachment
 function promptTimestamp(iso: string, locale: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const seconds = Math.round((d.getTime() - Date.now()) / 1000);
+  // Clamped to the past: a message can't have been sent in the future, so a
+  // positive delta only ever means clock skew between the server timestamp
+  // and this device — treat it as "just now" rather than letting the buckets
+  // below round it into "in 1 minute".
+  const seconds = Math.min(0, Math.round((d.getTime() - Date.now()) / 1000));
   const rtf = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
   const abs = Math.abs(seconds);
-  if (abs < 90) return rtf.format(-1, "minute");
-  if (abs < 3600) return rtf.format(Math.round(seconds / 60), "minute");
+  // Under ~45s reads as "just now" — the old cutoff labelled a 2-second-old
+  // message "1 minute ago", which looked stale the moment it was sent.
+  // numeric:"auto" turns format(0, "second") into the localized idiom
+  // ("now" / "ahora" / "ora" / "agora"), so no i18n keys needed here either.
+  if (abs < 45) return rtf.format(0, "second");
+  if (abs < 3600) return rtf.format(Math.min(-1, Math.round(seconds / 60)), "minute");
   if (abs < 86400) return rtf.format(Math.round(seconds / 3600), "hour");
   if (abs < 604800) return rtf.format(Math.round(seconds / 86400), "day");
   return d.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" });
@@ -777,6 +823,8 @@ function InsufficientCreditsBanner({
   modelName: string;
   seconds: number;
 }) {
+  const { t } = useLocale();
+  const g = t.generate;
   const pack = recommendCreditPack(Math.max(0, needed - available));
 
   // Native (iOS/Android app) must show no purchase entry point — Apple 3.1.1 /
@@ -831,7 +879,7 @@ function InsufficientCreditsBanner({
           )}
         >
           <p className="flex-1">
-        {modelName} at {seconds}s needs {needed} credits — you have {available}.{" "}
+        {formatMsg(g.insufficientCredits, { model: modelName, seconds, needed, available })}{" "}
         {/* An inline underlined action, matching the usage strip's link. A
             filled button here reads as an interruption; this reads as the
             next thing you might do. */}
@@ -848,7 +896,7 @@ function InsufficientCreditsBanner({
             form="buy-credits-shortfall"
             className="cursor-pointer font-medium text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
           >
-            Add {pack.credits} credits
+            {formatMsg(g.addCreditsCta, { n: pack.credits })}
           </button>
         )}
       </p>
@@ -857,7 +905,7 @@ function InsufficientCreditsBanner({
       <button
         type="button"
         onClick={() => setDismissed(true)}
-        aria-label="Dismiss"
+        aria-label={g.dismissBanner}
         className="flex-shrink-0 cursor-pointer rounded-full p-1 text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-600"
       >
         <XIcon className="h-3.5 w-3.5" />
@@ -1202,7 +1250,7 @@ function SingleTurnBubble({ turn }: { turn: ChatTurn }) {
             <div className="mt-3 flex items-center gap-2">
               <Badge tone="danger">{g.couldntValidate}</Badge>
               <p className="text-xs text-neutral-500">
-                {summarizeFailure(turn.attempts, g.stoppedByUser) ??
+                {summarizeFailure(turn.attempts, g) ??
                   (turn.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: turn.attempts.length }))}
               </p>
             </div>
@@ -1260,7 +1308,7 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
             <div className="mt-3 flex items-center gap-2">
               <Badge tone="danger">{g.couldntValidate}</Badge>
               <p className="text-xs text-neutral-500">
-                {summarizeFailure(active.attempts, g.stoppedByUser) ??
+                {summarizeFailure(active.attempts, g) ??
                   (active.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: active.attempts.length }))}
               </p>
             </div>
@@ -1316,6 +1364,7 @@ function GenerateFormInner({
   startOnboarding?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const { t } = useLocale();
   const g = t.generate;
@@ -1472,6 +1521,14 @@ function GenerateFormInner({
 
   const [livePrompt, setLivePrompt] = useState<string | null>(null);
   const [liveAttachments, setLiveAttachments] = useState<ChatAttachment[]>([]);
+  // The content type the live request was actually SUBMITTED with. The
+  // archived item (see setItems in submitPrompt) already records
+  // effectiveContentType; the live result bubble used to read the current
+  // `contentType` toggle instead — so a voice-agent override, or flipping
+  // the video/image chip while a render was still in flight, made the live
+  // result render as the wrong media element (a video in an <img>, or vice
+  // versa) until it was archived.
+  const [liveContentType, setLiveContentType] = useState<ContentType>("video");
   const [liveTimeline, setLiveTimeline] = useState<VisibleItem[]>([]);
   const [liveIsLive, setLiveIsLive] = useState(false);
   const [liveResult, setLiveResult] = useState<{
@@ -2044,13 +2101,13 @@ function GenerateFormInner({
     uploadChatAttachment(formData)
       .then((result) => {
         if (result.error !== null || !result.attachment) {
-          setError(result.error ?? "Couldn't upload that photo.");
+          setError(result.error ?? g.uploadPhotoFailed);
           return;
         }
         setPanelUploads((prev) => [...prev, { path: result.attachment!.path, url: result.attachment!.url }]);
       })
       .catch(() => {
-        setError(`${file.name} couldn't be uploaded — it may be too large or the connection dropped.`);
+        setError(formatMsg(g.uploadFailedFile, { name: file.name }));
       })
       .finally(() => setPanelUploadBusy(false));
   }
@@ -2160,8 +2217,9 @@ function GenerateFormInner({
     // minutes each could never fit inside a 300s function, which is why
     // multi-angle had never produced a single finished result.
     let angles = result.angles;
-    if (angles.some((a) => a.pending)) {
-      setLiveProgress("Rendering your angles");
+    const hadPending = angles.some((a) => a.pending);
+    if (hadPending) {
+      setLiveProgress(g.renderingAngles);
       let finishedCount = 0;
       const pendingCount = angles.filter((a) => a.pending).length;
 
@@ -2173,10 +2231,21 @@ function GenerateFormInner({
             angle.id,
             // One shared label, since four angles finish at different times and
             // four competing progress strings would just flicker.
-            () => setLiveProgress(`Rendering your angles (${finishedCount} of ${pendingCount} done)`),
+            () =>
+              setLiveProgress(
+                formatMsg(g.renderingAnglesProgress, { done: finishedCount, total: pendingCount }),
+              ),
             () => userStoppedRef.current,
+            g.lostTrackOfRender,
           );
           finishedCount += 1;
+
+          if (outcome.state === "cancelled") {
+            // The server saw the stop request and cancelled this angle on
+            // fal.ai — record it so the shared stop handling below takes
+            // over, exactly like the single path does in submitPrompt.
+            userStoppedRef.current = true;
+          }
 
           if (outcome.state === "succeeded") {
             let url = outcome.resultUrl;
@@ -2200,18 +2269,31 @@ function GenerateFormInner({
         }),
       );
       setLiveProgress(null);
-      // One refresh, now that every angle has settled. Doing this per angle
-      // from inside the server action is what aborted the sibling polls.
-      router.refresh();
     }
 
-    const anyAngleSucceeded = angles.some((a) => a.succeeded);
-    notifyIfHidden(
-      anyAngleSucceeded ? g.notifyReadyTitle : g.notifyFailedTitle,
-      anyAngleSucceeded
-        ? formatMsg(g.passedOnAttempt, { n: angles[0]?.attempts.length ?? 1 })
-        : (summarizeFailure(angles[0]?.attempts ?? [], g.stoppedByUser) ?? g.noPassingResultOne),
-    );
+    // Stopped while the angles were in flight — the same handling the single
+    // path has in submitPrompt, which this path was missing entirely: without
+    // it, every abandoned angle rendered as a red "couldn't validate" failure
+    // card (a stop is not a failure), and the results the provider had
+    // already produced were never discarded, so Stop quietly kept — and
+    // showed — work the person had thrown away.
+    if (userStoppedRef.current) {
+      angles.forEach((angle) => void discardStoppedGeneration(angle.id));
+      activeGenerationRef.current = null;
+      setLiveMultiAngle(null);
+      setSubmitting(false);
+      setStopping(false);
+      setError(g.stoppedByUser);
+      return;
+    }
+
+    if (hadPending) {
+      // One refresh, now that every angle has settled. Doing this per angle
+      // from inside the server action is what aborted the sibling polls.
+      // Deliberately after the stop check above — refreshing on the stop
+      // path would just resurrect cards for a request the person discarded.
+      router.refresh();
+    }
 
     setItems((prev) => [
       ...prev,
@@ -2226,6 +2308,21 @@ function GenerateFormInner({
     ]);
     setLiveMultiAngle(null);
     setSubmitting(false);
+
+    // After the bookkeeping above, never before it — notifyIfHidden used to
+    // sit ahead of setItems/setSubmitting, and on Android Chrome (where the
+    // page-context Notification constructor throws) that killed the rest of
+    // this handler: the finished angles never reached the chat and the
+    // composer stayed locked on Stop. The notify itself is also try/caught
+    // now, but ordering it last means even an unforeseen failure there can
+    // no longer cost the person their result.
+    const anyAngleSucceeded = angles.some((a) => a.succeeded);
+    notifyIfHidden(
+      anyAngleSucceeded ? g.notifyReadyTitle : g.notifyFailedTitle,
+      anyAngleSucceeded
+        ? formatMsg(g.passedOnAttempt, { n: angles[0]?.attempts.length ?? 1 })
+        : (summarizeFailure(angles[0]?.attempts ?? [], g) ?? g.noPassingResultOne),
+    );
   }
 
   function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -2259,7 +2356,7 @@ function GenerateFormInner({
           // an oversized file before our own 25MB check ever runs. Without
           // this catch, the chip was left stuck on its spinner forever with
           // no visible sign anything had gone wrong.
-          const message = `${file.name} couldn't be uploaded — it may be too large or the connection dropped.`;
+          const message = formatMsg(g.uploadFailedFile, { name: file.name });
           setPendingAttachments((prev) =>
             prev.map((a) => (a.id === id ? { ...a, status: "error", error: message } : a)),
           );
@@ -2368,7 +2465,7 @@ function GenerateFormInner({
       if (cancelled || inFlight.length === 0) return;
 
       setLiveProgress(
-        inFlight.length === 1 ? "Picking up where you left off" : `Finishing ${inFlight.length} renders`,
+        inFlight.length === 1 ? g.resumingRender : formatMsg(g.finishingRenders, { n: inFlight.length }),
       );
 
       await Promise.all(
@@ -2377,6 +2474,7 @@ function GenerateFormInner({
             gen.id,
             () => {},
             () => cancelled,
+            g.lostTrackOfRender,
           ),
         ),
       );
@@ -2396,12 +2494,12 @@ function GenerateFormInner({
 
   // Watches for ?tour=1 arriving, rather than only reading it once at mount.
   //
-  // "Replay walkthrough" in the sidebar is a <Link href="/app?tour=1">, so
-  // Next.js handles it as a client-side navigation: this component never
-  // unmounts, so the useState initialiser above never runs again and
-  // tourActive stayed false. The only way to replay the tour was a hard
-  // refresh, which forces a fresh mount. Reacting to searchParams here makes
-  // the link work on the first click.
+  // "Replay walkthrough" in the sidebar is a <Link href="/app/generate?tour=1">,
+  // and Next.js can handle it as a client-side navigation: when this component
+  // is already mounted it never remounts, so the useState initialiser above
+  // never runs again and tourActive stayed false. The only way to replay the
+  // tour was a hard refresh, which forces a fresh mount. Reacting to
+  // searchParams here makes the link work on the first click.
   //
   // Resetting the step index matters too — without it, replaying after
   // finishing would reopen the tour on its last step.
@@ -2409,9 +2507,17 @@ function GenerateFormInner({
     if (searchParams.get("tour") !== "1") return;
     setTourActive(true);
     setTourStepIndex(0);
-    // Strip the param so a later refresh doesn't silently restart the tour.
-    router.replace("/app", { scroll: false });
-  }, [searchParams, router]);
+    // Strip the param so a later refresh doesn't silently restart the tour —
+    // on the SAME page this form is mounted on. This used to replace to a
+    // hardcoded "/app", which (now that /app is a dashboard with no
+    // GenerateForm) navigated away from the very page the tour runs on and
+    // unmounted the tour a frame after it started. Other params (?type=,
+    // ?character=) are kept; only tour is consumed.
+    const rest = new URLSearchParams(searchParams);
+    rest.delete("tour");
+    const qs = rest.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }, [searchParams, router, pathname]);
 
   // The "AI providers" and "multi-angle/storyboard" stops point at composer
   // elements that only exist once the composer is out of hero mode with
@@ -2421,13 +2527,18 @@ function GenerateFormInner({
   // measure the target, the same way clicking "Create video" from the +
   // menu would.
   useEffect(() => {
-    if (!tourActive) return;
+    // Never while a request is live: setContentType triggers the resetChat
+    // effect, which would wipe the in-flight thread mid-render — same hazard
+    // as the creation-mode chip's clear button, guarded the same way. With
+    // `submitting` in the deps, the nudge still lands once the render ends
+    // if the tour is somehow open through one.
+    if (!tourActive || submitting) return;
     const needsVideoMode = tourStepIndex === 2 || tourStepIndex === 3;
     if (needsVideoMode) {
       setContentType("video");
       setCreationModeActive(true);
     }
-  }, [tourActive, tourStepIndex]);
+  }, [tourActive, tourStepIndex, submitting]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -2684,6 +2795,7 @@ function GenerateFormInner({
     setStopping(false);
     setLivePrompt(submittedPrompt);
     setLiveAttachments(submittedAttachments);
+    setLiveContentType(effectiveContentType);
     setPrompt("");
     setPendingAttachments([]);
     setLiveTimeline([]);
@@ -2807,6 +2919,7 @@ function GenerateFormInner({
         result.id,
         setLiveProgress,
         () => userStoppedRef.current,
+        g.lostTrackOfRender,
       );
       setLiveProgress(null);
 
@@ -2863,7 +2976,7 @@ function GenerateFormInner({
     // was written before the job was even submitted.
     const failureReason = succeeded
       ? null
-      : (queuedFailure ?? summarizeFailure(result.attempts, g.stoppedByUser));
+      : (queuedFailure ?? summarizeFailure(result.attempts, g));
     setLiveResult({
       id: result.id,
       succeeded,
@@ -2872,14 +2985,6 @@ function GenerateFormInner({
       reason: failureReason,
       finalPrompt: result.finalPrompt,
     });
-
-    notifyIfHidden(
-      succeeded ? g.notifyReadyTitle : g.notifyFailedTitle,
-      succeeded
-        ? formatMsg(g.passedOnAttempt, { n: result.attempts.length })
-        : (failureReason ??
-            (result.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: result.attempts.length }))),
-    );
 
     if (shouldSpeak) {
       speak(
@@ -2912,6 +3017,20 @@ function GenerateFormInner({
     setLiveResult(null);
     setRevealedCount(0);
     setSubmitting(false);
+
+    // After ALL the success bookkeeping above, never before it — this used to
+    // run ahead of setItems/setSubmitting, and on Android Chrome (where the
+    // page-context Notification constructor throws) it killed the rest of the
+    // handler: a backgrounded render finished but never reached the chat, and
+    // the composer stayed locked on Stop. notifyIfHidden itself is try/caught
+    // now too; ordering it last is the second layer of the same fix.
+    notifyIfHidden(
+      succeeded ? g.notifyReadyTitle : g.notifyFailedTitle,
+      succeeded
+        ? formatMsg(g.passedOnAttempt, { n: result.attempts.length })
+        : (failureReason ??
+            (result.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: result.attempts.length }))),
+    );
   }
 
   // Says something and shows it in the session card at the same time. TTS
@@ -3610,7 +3729,7 @@ function GenerateFormInner({
                             <ResultMedia
                               succeeded={liveResult.succeeded}
                               resultUrl={liveResult.resultUrl}
-                              contentType={contentType}
+                              contentType={liveContentType}
                               prompt={livePrompt ?? undefined}
                             />
                             <div className="mt-3 flex items-center gap-2">
@@ -3621,7 +3740,10 @@ function GenerateFormInner({
                                 {formatMsg(g.passedOnAttempt, { n: liveResult.attempts })}
                               </p>
                             </div>
-                            <ResultActions generationId={liveResult.id} copyText={liveResult.finalPrompt || livePrompt || ""} promotable={contentType === "image"} />
+                            {/* Same submitted-type fix as ResultMedia above —
+                                promotability belongs to what the request
+                                produced, not the toggle's current position. */}
+                            <ResultActions generationId={liveResult.id} copyText={liveResult.finalPrompt || livePrompt || ""} promotable={liveContentType === "image"} />
                           </>
                         ) : (
                           <div className="mt-3 flex items-center gap-2">
@@ -4186,7 +4308,13 @@ function GenerateFormInner({
                     <button
                       type="button"
                       onClick={clearCreationMode}
-                      className="flex flex-shrink-0 items-center gap-1 rounded-full bg-neutral-100 py-1.5 pl-3 pr-2 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200"
+                      // Locked while a request is live, same as every sibling
+                      // control in this row: clearing flips contentType back
+                      // to video, which the resetChat effect treats as "new
+                      // thread" — mid-render that wiped the live bubble and
+                      // orphaned the in-flight generation.
+                      disabled={submitting}
+                      className="flex flex-shrink-0 items-center gap-1 rounded-full bg-neutral-100 py-1.5 pl-3 pr-2 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200 disabled:opacity-50"
                     >
                       {contentType === "video" ? g.video : g.image}
                       <XIcon className="h-3 w-3" />

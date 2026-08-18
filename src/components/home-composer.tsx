@@ -65,6 +65,11 @@ export function HomeComposer({
         />
         <VoiceRecorderButton
           onTranscript={(text) => setValue((prev) => (prev ? `${prev} ${text}` : text))}
+          // Honors the same disabled state as the input and send button —
+          // `disabled` here means the hero is mid-fade-out on its way to
+          // /app/generate, and starting a recording into a composer that's
+          // about to unmount would just lose the transcript.
+          disabled={disabled}
           size="md"
         />
         <button

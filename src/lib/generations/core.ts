@@ -130,7 +130,7 @@ export async function checkGenerationAllowance(
   const [{ data: profile }, { data: recent }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("plan, role, status, bonus_credits, purchased_credits, free_generations_used, current_period_start")
+      .select("plan, plan_status, role, status, bonus_credits, purchased_credits, free_generations_used, current_period_start")
       .eq("id", userId)
       .single(),
     supabase
@@ -181,24 +181,75 @@ export async function checkGenerationAllowance(
   // instead — those are a deliberate gift and shouldn't be capped at five.
   if (plan === "none" && (profile?.bonus_credits ?? 0) === 0) {
     const freeUsed = (profile?.free_generations_used ?? 0) as number;
-    if (freeUsed >= FREE_GENERATION_LIMIT) {
+    // A trial slot only ever covers a 1-credit request. The trial is counted
+    // per generation, not per credit, which is safe precisely because a pure
+    // trial account is pinned to the 1-credit shape (cheapest model, default
+    // duration, no dialogue — enforced in runGeneration). But an account that
+    // BOUGHT credits is deliberately unpinned (see isFreeTierAccount in
+    // actions.ts), so with trial slots still remaining it could otherwise pay
+    // for a 5-credit Veo render with one 1-generation trial slot — a 5x
+    // mispricing of the trial budget. Multi-credit requests fall through to
+    // the purchased-credit spend below instead; 1-credit requests keep the
+    // existing priority (trial first, purchased after), where one generation
+    // is one credit's worth of cost and the two can't drift apart. A pure
+    // trial account is never blocked by this: the composer only ever sends it
+    // 1-credit requests, and if a direct call asks for more, the top-up error
+    // below is the honest answer.
+    if (freeUsed < FREE_GENERATION_LIMIT && requestedCredits === 1) {
+      return { error: null, plan, isAdmin, consumeFree: true, periodStartIso };
+    }
+
+    // Trial exhausted — but purchased credits still spend here. Anyone can
+    // buy a credit pack by design (see the "deliberately no plan gating"
+    // note in stripe/credit-packs.ts), so a free-tier account that topped up
+    // must be able to use what it paid for. The old code returned "used all
+    // 5" without ever reading purchased_credits, which made every pack sold
+    // to a free account dead money — paid for and unspendable.
+    const freeTierPurchased = (profile?.purchased_credits ?? 0) as number;
+    if (freeTierPurchased >= requestedCredits) {
       return {
-        error:
-          `You've used all ${FREE_GENERATION_LIMIT} free generations. Pick a plan to keep going — ` +
-          `your characters and history stay exactly as they are.`,
+        error: null,
         plan,
         isAdmin,
+        consumePurchased: requestedCredits,
+        monthlyLimit: 0,
+        periodStartIso,
       };
     }
-    // Counted per generation, not per credit: the free tier is pinned to the
-    // cheapest model (enforced in runGeneration), so one generation is one
-    // credit's worth of cost and the two can't drift apart.
-    return { error: null, plan, isAdmin, consumeFree: true, periodStartIso };
+    return {
+      error:
+        freeTierPurchased > 0
+          ? `That would use ${requestedCredits} credits (some models cost more than 1 per video), but you only have ${freeTierPurchased} left. Top up or pick a plan to keep going.`
+          : // Trial slots still remaining but the request needs more than one
+            // credit (only reachable by a direct call — the composer pins
+            // trial accounts to the 1-credit shape): say what the trial
+            // actually covers rather than falsely claiming it's used up.
+            freeUsed < FREE_GENERATION_LIMIT
+            ? `That would use ${requestedCredits} credits (some models cost more than 1 per video) — the free trial only covers 1-credit generations. Top up credits or pick a plan to use this one.`
+            : `You've used all ${FREE_GENERATION_LIMIT} free generations. Pick a plan or top up credits to keep going — ` +
+              `your characters and history stay exactly as they are.`,
+      plan,
+      isAdmin,
+    };
   }
+
+  // The plan's monthly allowance only exists while Stripe says the
+  // subscription is in good standing. Quota used to read profiles.plan alone
+  // and never plan_status, so a subscriber whose card failed (past_due) kept
+  // burning their full allowance for as long as the row still said "growth" —
+  // free renders against a payment that never arrived. plan_status is written
+  // by the webhook's statusToPlanStatus: "active" covers Stripe's active AND
+  // trialing; past_due covers past_due/unpaid; canceled and inactive are the
+  // dead states. NULL passes on purpose — comped plans (setUserPlan) and
+  // pre-Stripe accounts never had a plan_status, and those allowances are a
+  // deliberate grant, not a lapsed payment. A gated account keeps spending
+  // bonus and purchased credits below; only the plan portion is paused.
+  const planStatus = (profile?.plan_status ?? null) as string | null;
+  const planAllowanceActive = planStatus === null || planStatus === "active";
 
   // Bonus credits (admin-granted, see setBonusCredits) stack on top of the
   // plan's normal allowance rather than replacing it.
-  const limit = (PLAN_LIMITS[plan] ?? 0) + (profile?.bonus_credits ?? 0);
+  const limit = (planAllowanceActive ? (PLAN_LIMITS[plan] ?? 0) : 0) + (profile?.bonus_credits ?? 0);
   const used = await getMonthlyUsageWith(
     supabase,
     userId,
@@ -222,6 +273,19 @@ export async function checkGenerationAllowance(
   }
 
   if (used + requestedCredits > limit) {
+    // A paused subscription gets its own message — "you've used all 0
+    // credits included in your Growth plan" would be both baffling and
+    // wrong. Says what happened and what unblocks it.
+    if (!planAllowanceActive && plan !== "none") {
+      return {
+        error:
+          planStatus === "past_due"
+            ? `Your last payment for the ${PLAN_LABELS[plan]} plan failed, so its monthly credits are paused — update your payment method in Settings, or top up credits to keep going.`
+            : `Your ${PLAN_LABELS[plan]} plan isn't active anymore, so its monthly credits are paused. Pick a plan or top up credits to keep going.`,
+        plan,
+        isAdmin,
+      };
+    }
     // Only the true zero-allowance case (no plan, and no bonus credits
     // covering them either) gets the "no plan yet" message — a "none" plan
     // user who's been granted bonus credits and used all of those should see

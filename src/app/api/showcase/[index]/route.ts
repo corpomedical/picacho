@@ -20,8 +20,16 @@ type ShowcaseItem =
   | { kind: "reference"; index: number }
   | { kind: "generation"; path: string };
 
-const SHOWCASE_CHARACTER_ID = "15486a3c-4203-43e9-b80d-ab476f842404"; // Eva
-const OWNER = "a3102bc1-2355-444a-8ade-caafd7980218";
+// Which real character/account backs the hero grid. Env-var first so the
+// ids of a live production account aren't baked into the public repo's
+// source as the only copy (they also used to be pasted into the public API
+// docs as "examples" — now scrubbed there; see docs/api/page.tsx). The
+// fallbacks keep the current deployment working with nothing set.
+// OPERATOR: set SHOWCASE_CHARACTER_ID / SHOWCASE_OWNER_ID in production if
+// the hero account ever changes — one env edit, no redeploy of code.
+const SHOWCASE_CHARACTER_ID =
+  process.env.SHOWCASE_CHARACTER_ID || "15486a3c-4203-43e9-b80d-ab476f842404"; // Eva
+const OWNER = process.env.SHOWCASE_OWNER_ID || "a3102bc1-2355-444a-8ade-caafd7980218";
 
 const SHOWCASE: ShowcaseItem[] = [
   // 0 — identity photo, the one the hero badges as such.

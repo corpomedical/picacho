@@ -404,8 +404,11 @@ export function OnboardingTour({
 
   // Keyboard control. The overlay claims aria-modal, so it has to actually
   // behave like a modal: Escape leaves, Enter and the right arrow advance,
-  // and Tab is kept inside the two buttons rather than wandering off into the
-  // page behind the scrim.
+  // and Tab is kept inside the balloon's buttons rather than wandering off
+  // into the page behind the scrim. The trap is the same first/last-focusable
+  // wrap search-dialog.tsx uses — until it existed, the comment above claimed
+  // it while Tab actually walked straight out into the dimmed page, which is
+  // exactly what aria-modal promises assistive tech can't happen.
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -414,6 +417,28 @@ export function OnboardingTour({
       } else if (e.key === "ArrowRight" || (e.key === "Enter" && e.target === document.body)) {
         e.preventDefault();
         goNext();
+      } else if (e.key === "Tab") {
+        const balloon = balloonRef.current;
+        if (!balloon) return;
+        const focusable = balloon.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        // Focus that's already escaped (or never entered) also gets pulled
+        // back in, so the trap can't be defeated by clicking the scrim first.
+        const inside = balloon.contains(document.activeElement);
+        if (!inside) {
+          e.preventDefault();
+          first.focus();
+        } else if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     }
     window.addEventListener("keydown", onKey);

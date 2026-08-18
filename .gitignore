@@ -36,6 +36,9 @@ next-env.d.ts
 # Scratch folder for files this environment can't unlink (see session notes).
 _to_delete/
 
+# Local snapshot/fix-bundle archives (never commit these)
+_*.tgz
+
 # Standalone read-only admin console (separate app, deployed on its own)
 picacho-admin/
 picacho-admin.zip

@@ -1,18 +1,27 @@
 import { createClient } from "@/lib/supabase/server";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
-import { currencyForPriceId } from "@/lib/stripe/plans";
+import { currencyForPriceId, planIdForPriceId } from "@/lib/stripe/plans";
 import { Card } from "@/components/ui/card";
 
 const PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
   PRICING_TIERS.map((t) => [t.id, t.price]),
 );
 
+// Monthly-equivalent value of an annual subscription. Annual bills
+// tier.annualPrice * 12 once a year (see createCheckoutSession), so its MRR
+// contribution is annualPrice — counting it at the full monthly rate (as
+// this page did before plan_interval existed) overstated every annual
+// subscriber by the exact discount they were given for prepaying.
+const ANNUAL_PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
+  PRICING_TIERS.map((t) => [t.id, t.annualPrice]),
+);
+
 export default async function AdminBillingPage() {
   const supabase = await createClient();
   const { data: profiles } = await supabase
     .from("profiles")
-    .select("plan, plan_status, stripe_price_id");
+    .select("plan, plan_status, stripe_price_id, plan_currency, plan_interval");
 
   const distribution = Object.fromEntries(
     (Object.keys(PLAN_LIMITS) as PlanId[]).map((plan) => [plan, 0]),
@@ -36,8 +45,26 @@ export default async function AdminBillingPage() {
     (acc, p) => {
       if (p.plan_status !== "active") return acc;
       const plan = (p.plan ?? "none") as PlanId;
-      const currency = currencyForPriceId(p.stripe_price_id);
-      acc[currency] += PRICE_BY_PLAN[plan] ?? 0;
+      // plan_currency / plan_interval are snapshotted by the webhook straight
+      // off the subscription's price object (added 2026-08-19, see
+      // supabase/pending-2026-08-19/billing.sql). They exist because annual
+      // subscriptions bill on an INLINE price with no entry in
+      // PLAN_PRICE_IDS, so currencyForPriceId() bucketed every EUR annual
+      // subscriber as USD and the sum valued annual subscribers at the full
+      // monthly rate. Profiles from before the columns (NULL until their
+      // subscription's next webhook event backfills them) fall back to the
+      // old guesses — with one improvement: an unrecognized price id on an
+      // active subscription can only be an inline annual price, so it's at
+      // least valued at annual/12 (its currency stays the USD fallback; the
+      // id alone genuinely can't say).
+      const currency: "usd" | "eur" =
+        p.plan_currency === "eur" || p.plan_currency === "usd"
+          ? (p.plan_currency as "usd" | "eur")
+          : currencyForPriceId(p.stripe_price_id);
+      const isAnnual = p.plan_interval
+        ? p.plan_interval === "year"
+        : Boolean(p.stripe_price_id) && !planIdForPriceId(p.stripe_price_id);
+      acc[currency] += (isAnnual ? ANNUAL_PRICE_BY_PLAN[plan] : PRICE_BY_PLAN[plan]) ?? 0;
       return acc;
     },
     { usd: 0, eur: 0 },

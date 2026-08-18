@@ -20,7 +20,7 @@ import {
   type AdvanceResult,
 } from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
-import { submitVideoJob } from "@/lib/generations/providers/fal";
+import { submitVideoJob, cancelQueuedJob, type QueuedJob } from "@/lib/generations/providers/fal";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
 
@@ -528,10 +528,18 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     supabase.from("app_settings").select("value").eq("key", "image_model").single(),
     supabase
       .from("profiles")
-      .select("skip_ai_refinement, plan, bonus_credits, role")
+      .select("skip_ai_refinement, plan, bonus_credits, purchased_credits, role, status")
       .eq("id", userData.user.id)
       .single(),
   ]);
+  // Suspension check IN the action, not just middleware. The middleware only
+  // guards by path prefix, and a "use server" export is a wire-callable
+  // endpoint — a suspended account could keep generating (and spending real
+  // provider money) by POSTing the action directly. Same explicit check the
+  // prompt-assist allowance does (see prompts/actions.ts).
+  if (userProfile?.status === "suspended") {
+    return { error: "This account is suspended." };
+  }
   const maxAttempts = Number(retrySetting?.value) || undefined;
   const useRealProviders = flag?.enabled === true;
   let imageModelId = imageModelSetting?.value ?? "gpt-image";
@@ -575,9 +583,21 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // generation is the same price. Silently downgrading rather than erroring:
   // a trial user hitting "that model needs a plan" before they've seen a
   // single result learns nothing about the product.
+  //
+  // Purchased top-up credits count as paid, same as a plan or bonus credits.
+  // Credit packs are deliberately sellable to plan-less accounts (see
+  // stripe/credit-packs.ts), and checkGenerationAllowance spends purchased
+  // credits on any model at its real multi-credit weight — its own copy
+  // advertises exactly that ("some models cost more than 1 per video... top
+  // up"). Before this check the composer still pinned those buyers to the
+  // trial's cheapest-model/short/silent shape, making every credit above the
+  // first per video unspendable. The trial-mispricing worry doesn't apply:
+  // core.ts only spends a free trial slot on a 1-credit request, so an
+  // unpinned multi-credit render always draws on the credits they bought.
   const isFreeTierAccount =
     (userProfile?.plan ?? "none") === "none" &&
     (userProfile?.bonus_credits ?? 0) === 0 &&
+    (userProfile?.purchased_credits ?? 0) === 0 &&
     userProfile?.role !== "admin";
   let videoModelId = isFreeTierAccount
     ? FREE_TIER_VIDEO_MODEL_ID
@@ -860,7 +880,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const purchasedOk = await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
   const freeOk = consumeFree ? await consumeFreeGeneration(supabase, userData.user.id) : true;
   if (!purchasedOk || !freeOk) {
-    await createAdminClient()
+    const { error: releaseError } = await createAdminClient()
       .from("generations")
       .update({
         status: "failed",
@@ -870,6 +890,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         progress_stage: null,
       })
       .eq("id", placeholder.id);
+    // A silent failure here has real cost: the row would keep counting against
+    // the monthly meter for a generation that never ran. Nothing better to do
+    // than say so loudly — the orphaned-generation reaper (reapStaleJobs) is
+    // the backstop that eventually fails-and-releases a row stuck like this.
+    if (releaseError) {
+      console.error("Guarded-spend abort couldn't release the placeholder charge:", {
+        generationId: placeholder.id,
+        error: releaseError.message,
+      });
+    }
     return {
       error: consumeFree
         ? "You've used all your free generations."
@@ -881,6 +911,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   let succeeded = false;
   let finalPrompt = "";
   let resultUrl: string | null = null;
+  // Set the moment the pipeline hands back a queued fal job, BEFORE the
+  // bookkeeping (saveVideoJob etc.) that can still throw. If that bookkeeping
+  // fails, the catch below fails the row and refunds — but without also
+  // cancelling at fal, the already-submitted render would keep running (and
+  // billing) with nothing left on our side that could ever collect it.
+  let pendingJobToCancel: QueuedJob | null = null;
 
   try {
     if (useRealProviders) {
@@ -1042,6 +1078,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // failed" update below, because neither is true yet: the row stays at
       // "generating" and job-runner writes the real outcome when it lands.
       if (result.pendingVideoJob) {
+        pendingJobToCancel = result.pendingVideoJob;
         // Say so when a substitution happened. Quietly rendering with a
         // different model than the one someone picked is the kind of thing
         // that reads as a bug when they notice — and they will notice.
@@ -1091,6 +1128,15 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     // failed attempt instead), but if something truly unexpected happens
     // here, fail this generation cleanly instead of crashing the request and
     // leaving the placeholder stuck at "generating" forever.
+    //
+    // If a fal render was already queued (saveVideoJob or the follow-up
+    // bookkeeping threw AFTER the submit succeeded), tell fal to stop it —
+    // otherwise the platform pays for an orphaned render nobody can ever
+    // collect, since the row is about to be failed and refunded here.
+    // cancelQueuedJob is best-effort and never throws.
+    if (pendingJobToCancel) {
+      await cancelQueuedJob(pendingJobToCancel);
+    }
     const message = err instanceof Error ? err.message : "Something went wrong generating this.";
     const crashLog: AttemptLog[] = [
       {
@@ -1590,18 +1636,32 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // is several generations at once — it would consume the whole trial in a
   // single click and, worse, the per-generation counter would undercount
   // what it actually cost.
+  //
+  // Purchased top-up credits unlock it, same as the single-generation path's
+  // isFreeTierAccount: multi-angle reserves angles × weight credits and every
+  // row is charged at its real weight (free_generation_used is hardcoded
+  // false below), so the per-generation trial counter can't undercount here —
+  // the whole batch is drawn from the credits they bought.
   const { data: multiAngleProfile } = await supabase
     .from("profiles")
-    .select("plan, bonus_credits, role")
+    .select("plan, bonus_credits, purchased_credits, role, status")
     .eq("id", userData.user.id)
     .single();
+  // Same in-action suspension check as runGeneration (see the comment there)
+  // — this entry point fans out several paid renders at once, so it matters
+  // here even more.
+  if (multiAngleProfile?.status === "suspended") {
+    return { error: "This account is suspended." };
+  }
   if (
     (multiAngleProfile?.plan ?? "none") === "none" &&
     (multiAngleProfile?.bonus_credits ?? 0) === 0 &&
+    (multiAngleProfile?.purchased_credits ?? 0) === 0 &&
     multiAngleProfile?.role !== "admin"
   ) {
     return {
-      error: "Multi-angle needs a plan. Your free generations work for single images and videos.",
+      error:
+        "Multi-angle needs a plan or topped-up credits. Your free generations work for single images and videos.",
     };
   }
 
@@ -1660,6 +1720,24 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   }
 
   const groupId = clientGroupId ?? crypto.randomUUID();
+
+  // angle_group_id is client-supplied (the Stop button needs it before this
+  // action returns) and NOT unique in the table — reject a re-used one rather
+  // than let a replayed id splice this batch into an old group. The
+  // group-level writes below are all scoped to this batch's own row ids
+  // anyway (see placeholderIds), so this is defense in depth for grouping
+  // semantics (History cards, group cancel), not the primary guard.
+  if (clientGroupId) {
+    const { data: existingGroup } = await supabase
+      .from("generations")
+      .select("id")
+      .eq("angle_group_id", clientGroupId)
+      .eq("user_id", userData.user.id)
+      .limit(1);
+    if (existingGroup?.length) {
+      return { error: "That request was already started — try again." };
+    }
+  }
 
   // Atomic group reservation — the whole angle group's MONTHLY portion is
   // checked and all N rows inserted under one advisory lock (reserve_generations,
@@ -1724,15 +1802,35 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     return { error: "You've used all the generations included in your plan this month." };
   }
 
+  // The ids this reservation just created — every group-level write below is
+  // keyed to THESE rows, never to angle_group_id alone. angle_group_id is
+  // client-supplied and non-unique, so a write keyed on it (as the abort
+  // below originally was) turned a spend-race abort into a meter-poisoning
+  // primitive: replaying an old group id zeroed the credits_used of
+  // historical, genuinely-charged rows. The status filter is belt-and-braces
+  // on top — a row that already reached a terminal state is never touched.
+  const placeholderIds = placeholders.map((p) => p.id);
+
   const purchasedOk = await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
   if (!purchasedOk) {
     // Lost the race for the last purchased credits — nothing has run yet, so
     // release every angle's charge and stop before any paid provider call.
-    await createAdminClient()
+    // Scoped strictly to the rows reserved above (see placeholderIds).
+    const { error: releaseError } = await createAdminClient()
       .from("generations")
       .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, progress_stage: null })
-      .eq("angle_group_id", groupId)
+      .in("id", placeholderIds)
+      .eq("status", "generating")
       .eq("user_id", userData.user.id);
+    // Same reasoning as the single-generation abort: a silent failure leaves
+    // phantom usage on the meter, and the orphaned-generation reaper is the
+    // backstop that eventually cleans a row stuck like this.
+    if (releaseError) {
+      console.error("Multi-angle spend-race abort couldn't release the placeholder charges:", {
+        placeholderIds,
+        error: releaseError.message,
+      });
+    }
     return { error: "You're out of credits — that request couldn't be covered." };
   }
 
@@ -1775,7 +1873,13 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   if (useRealProviders) {
     try {
       sharedScene = await runRealPipeline(
-        `${userInput}\n\n${SHARED_SCENE_INSTRUCTION}`,
+        // SHARED_SCENE_INSTRUCTION is written for the COMPILER (Claude), not
+        // the video model. With skip_ai_refinement on there is no compiler —
+        // the pipeline sends the input verbatim to Kling — so appending it
+        // there would ship meta-instructions ("Do not mention the camera
+        // angle...") as literal prompt text in every angle's render. The
+        // skip path gets the user's prompt untouched instead.
+        skipRefinement ? userInput : `${userInput}\n\n${SHARED_SCENE_INSTRUCTION}`,
         characterForPipeline,
         {
           contentType: "video",
@@ -1788,11 +1892,59 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           compileOnly: true,
         },
         maxAttempts,
+        // Same cooperative Stop polling runGeneration's pipeline call gets —
+        // without it, a Stop pressed during the compile was invisible until
+        // AFTER every angle's paid render had already been submitted. Any row
+        // of the group carries the flag (requestMultiAngleGenerationCancel
+        // flips them all), so one indexed lookup answers for the batch.
+        async () => {
+          const { data } = await supabase
+            .from("generations")
+            .select("id")
+            .in("id", placeholderIds)
+            .eq("cancel_requested", true)
+            .limit(1);
+          return Boolean(data?.length);
+        },
       );
     } catch (err) {
       console.error("Multi-angle shared-scene compile threw:", err);
       sharedScene = null;
     }
+  }
+
+  // Stop pressed while the scene was compiling: nothing has been submitted to
+  // fal yet, so honour it cleanly — fail only this batch's reserved rows and
+  // release what they charged — instead of falling through to submit N paid
+  // renders the user already asked to stop.
+  if (useRealProviders && sharedScene?.cancelled) {
+    const stoppedLog: AttemptLog[] = sharedScene.attempts?.length
+      ? sharedScene.attempts
+      : [
+          {
+            attempt: 1,
+            steps: [{ step: "generate", detail: "Stopped." }],
+            passed: false,
+            issues: ["cancelled"],
+            compiledPrompt: "",
+          },
+        ];
+    const { error: stopError } = await createAdminClient()
+      .from("generations")
+      .update({ status: "failed", pipeline_log: stoppedLog, progress_stage: null })
+      .in("id", placeholderIds)
+      .eq("status", "generating")
+      .eq("user_id", userData.user.id);
+    if (stopError) {
+      console.error("Multi-angle stop couldn't fail the reserved rows:", stopError.message);
+    }
+    // Same refund treatment as the async user_cancelled path (job-runner's
+    // REFUNDS table): a Stop honoured before any provider spend should give
+    // everything back — still through the one flag-gated refund door.
+    for (const p of placeholders) {
+      await refundGenerationCosts(p.id);
+    }
+    return { error: "Stopped before any renders were submitted." };
   }
 
   // If the shared scene didn't compile, every angle would submit an empty or
@@ -1811,18 +1963,23 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           },
         ];
 
-    await createAdminClient()
+    const { error: failError } = await createAdminClient()
       .from("generations")
       // NOTE: credits are NOT zeroed here — releasing the allowance is a refund
       // and must pass through the flag-gated refundGenerationCosts loop below,
       // exactly like finish(). Zeroing inline bypassed the automatic_refunds
       // switch and the daily cap.
       .update({ status: "failed", pipeline_log: failureLog, progress_stage: null })
-      .eq("angle_group_id", groupId)
-      // Scope to the caller — angle_group_id is client-supplied and not unique,
-      // so without this an attacker who knew a victim's group id could flip
-      // that victim's rows to failed and zero their credits.
+      // Keyed to the rows THIS reservation created, never to angle_group_id —
+      // the group id is client-supplied and not unique, so a replayed id would
+      // otherwise flip unrelated historical rows to failed (see placeholderIds
+      // above). user_id + the status filter are belt-and-braces on top.
+      .in("id", placeholderIds)
+      .eq("status", "generating")
       .eq("user_id", userData.user.id);
+    if (failError) {
+      console.error("Multi-angle compile-failure path couldn't fail the reserved rows:", failError.message);
+    }
 
     // Whole group failed before any provider call — also give back the
     // purchased-credit slices recorded on each row.
@@ -1861,6 +2018,53 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           });
         }
 
+        // Last look at the Stop flag before the money leaves — the compile
+        // above can take tens of seconds, ample time for a Stop to land.
+        // Honouring it here stops THIS angle's paid submit; scoped strictly
+        // to this angle's own reserved row, with the same clean bookkeeping
+        // as the group-level stop above.
+        if (rowId) {
+          const { data: cancelRow } = await createAdminClient()
+            .from("generations")
+            .select("cancel_requested")
+            .eq("id", rowId)
+            .maybeSingle<{ cancel_requested: boolean }>();
+          if (cancelRow?.cancel_requested) {
+            const stoppedAttempts: AttemptLog[] = angleAttempts.length
+              ? angleAttempts
+              : [
+                  {
+                    attempt: 1,
+                    steps: [],
+                    passed: false,
+                    issues: ["cancelled"],
+                    compiledPrompt: anglePrompt,
+                  },
+                ];
+            stoppedAttempts[stoppedAttempts.length - 1]?.steps.push({
+              step: "generate",
+              detail: "Stopped before this angle was submitted.",
+            });
+            const { error: stopError } = await createAdminClient()
+              .from("generations")
+              .update({ status: "failed", pipeline_log: stoppedAttempts, progress_stage: null })
+              .eq("id", rowId)
+              .eq("status", "generating");
+            if (stopError) {
+              console.error("Multi-angle per-angle stop couldn't fail the row:", stopError.message);
+            }
+            await refundGenerationCosts(rowId);
+            return {
+              angleId,
+              id: rowId,
+              succeeded: false,
+              attempts: stoppedAttempts,
+              finalPrompt: anglePrompt,
+              resultUrl: null,
+            };
+          }
+        }
+
         const result = {
           attempts: angleAttempts,
           succeeded: false,
@@ -1878,12 +2082,21 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
         // skips the status update below, which would otherwise write "failed"
         // for a render that is merely still in progress.
         if (result.pendingVideoJob && rowId) {
-          await saveVideoJob({
-            generationId: rowId,
-            userId: userData.user!.id,
-            job: result.pendingVideoJob,
-            attempts: result.attempts,
-          });
+          try {
+            await saveVideoJob({
+              generationId: rowId,
+              userId: userData.user!.id,
+              job: result.pendingVideoJob,
+              attempts: result.attempts,
+            });
+          } catch (err) {
+            // The render is already in fal's queue but we couldn't record its
+            // handle — nothing on our side will ever collect it, so stop the
+            // billing before the crash handler below fails and refunds this
+            // angle's row. Best-effort; cancelQueuedJob never throws.
+            await cancelQueuedJob(result.pendingVideoJob);
+            throw err;
+          }
           await createAdminClient()
             .from("generations")
             .update({ attempts: result.attempts.length, pipeline_log: result.attempts })

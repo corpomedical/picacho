@@ -33,12 +33,15 @@ export async function GET(
   if (!bucket || pathParts.length === 0 || !isMediaBucket(bucket)) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  let path: string;
-  try {
-    path = pathParts.map(decodeURIComponent).join("/");
-  } catch {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
-  }
+  // Next has ALREADY percent-decoded catch-all params by the time they reach
+  // a handler, so the segments are the raw storage path as minted by
+  // mediaUrl() (which encoded each segment exactly once). The previous
+  // decodeURIComponent here was a second decode: harmless for the UUID-named
+  // keys generation produces (nothing decodable in them — which is also why
+  // no working URL changes behaviour under this fix), but any key with a
+  // literal "%" arrived as "%" and either threw (URIError → 404) or mangled
+  // into the wrong path, so its signature never matched its own file.
+  const path = pathParts.join("/");
 
   const searchParams = new URL(request.url).searchParams;
 

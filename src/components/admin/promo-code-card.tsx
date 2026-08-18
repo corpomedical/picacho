@@ -28,11 +28,13 @@ export type PromoCodeRow = {
   created_at: string;
 };
 
+// Totals arrive split per currency (see the rollup in admin/promo/page.tsx):
+// a code can close both USD and EUR sales, and summing cents across
+// currencies under one symbol misstates real money. Each entry renders as
+// its own amount — "$120 + €80" — mirroring how admin/billing shows MRR.
 export type PromoStats = {
   count: number;
-  subtotal: number;
-  commission: number;
-  currency: string;
+  totals: { currency: string; subtotal: number; discount: number; commission: number }[];
 } | null;
 
 function money(cents: number, currency: string) {
@@ -40,6 +42,14 @@ function money(cents: number, currency: string) {
     style: "currency",
     currency: currency.toUpperCase(),
   }).format(cents / 100);
+}
+
+function moneyList(
+  totals: NonNullable<PromoStats>["totals"],
+  field: "subtotal" | "commission",
+): string {
+  if (totals.length === 0) return "—";
+  return totals.map((t) => money(t[field], t.currency)).join(" + ");
 }
 
 function durationLabel(months: number) {
@@ -78,13 +88,13 @@ export function PromoCodeCard({ promo, stats }: { promo: PromoCodeRow; stats: Pr
             <div>
               <dt className="text-neutral-400">Revenue (ex-tax)</dt>
               <dd className="mt-0.5 text-sm font-semibold text-neutral-900">
-                {stats ? money(stats.subtotal, stats.currency) : "—"}
+                {stats ? moneyList(stats.totals, "subtotal") : "—"}
               </dd>
             </div>
             <div>
               <dt className="text-neutral-400">Commission owed</dt>
               <dd className="mt-0.5 text-sm font-semibold text-neutral-900">
-                {stats ? money(stats.commission, stats.currency) : "—"}
+                {stats ? moneyList(stats.totals, "commission") : "—"}
               </dd>
             </div>
           </dl>
@@ -133,7 +143,7 @@ export function PromoCodeCard({ promo, stats }: { promo: PromoCodeRow; stats: Pr
                 {" "}
                 The {stats.count} sale{stats.count === 1 ? "" : "s"} it already brought in stay in
                 the redemption record below, with the commission owed on them —{" "}
-                {money(stats.commission, stats.currency)} — but this card and its totals disappear.
+                {moneyList(stats.totals, "commission")} — but this card and its totals disappear.
                 Clients already subscribed keep the discount they bought, which Stripe honours and we
                 can&apos;t revoke.
               </>

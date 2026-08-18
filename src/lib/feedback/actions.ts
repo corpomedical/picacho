@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { rateLimited } from "@/lib/rate-limit";
 
 // Stamps profiles.rating_prompted_at and drops the cached layout that decides
 // whether to show the star prompt.
@@ -43,6 +44,16 @@ async function closeRatingPrompt(userId: string): Promise<boolean> {
 
 const MAX_MESSAGE_LENGTH = 2000;
 
+// Cheap per-user rate cap — same atomic advisory-lock limiter the voice
+// preview uses (rateLimited in lib/rate-limit.ts, service-role only), under
+// its own 'feedback' scope so uploads or API traffic in the same minute
+// can't eat this budget. Feedback is free to serve, but the table lands in
+// the /admin/feedback review queue, so an unthrottled loop is a
+// queue-flooding vector. Ten a minute is far more than any sincere human
+// files.
+const FEEDBACK_RATE_WINDOW_SECONDS = 60;
+const FEEDBACK_RATE_MAX_PER_WINDOW = 10;
+
 // rating is optional so this one action serves both the written feedback
 // form and the star prompt. A rating with no message is valid — most people
 // who bother to rate won't write anything, and refusing those would throw
@@ -56,11 +67,28 @@ export async function submitFeedback(
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
   const trimmed = message.trim();
-  const hasRating = typeof rating === "number" && rating >= 1 && rating <= 5;
+  // Number.isInteger: the star prompt only ever sends 1–5, so a fractional
+  // rating (4.5 from a crafted POST — a server action is a public endpoint)
+  // is treated as no rating at all rather than stored to skew the average.
+  const hasRating =
+    typeof rating === "number" && Number.isInteger(rating) && rating >= 1 && rating <= 5;
 
   if (!trimmed && !hasRating) return { error: "Write a message first." };
   if (trimmed.length > MAX_MESSAGE_LENGTH) {
     return { error: `Keep feedback under ${MAX_MESSAGE_LENGTH} characters.` };
+  }
+
+  // Fails closed on a limiter error, same as previewVoice — a retry beats an
+  // unbounded queue-flooding loop when the limiter itself is unavailable.
+  if (
+    await rateLimited(
+      userData.user.id,
+      "feedback",
+      FEEDBACK_RATE_WINDOW_SECONDS,
+      FEEDBACK_RATE_MAX_PER_WINDOW,
+    )
+  ) {
+    return { error: "You're sending feedback a bit fast — wait a moment and try again." };
   }
 
   const { error } = await supabase.from("feedback").insert({
@@ -69,14 +97,18 @@ export async function submitFeedback(
     rating: hasRating ? rating : null,
   });
 
-  // Answering the star prompt also closes it, so it isn't shown again.
-  if (hasRating) {
-    await closeRatingPrompt(userData.user.id);
-  }
-
+  // Checked BEFORE closing the star prompt: closing used to run first, so a
+  // failed insert still stamped rating_prompted_at — the rating was lost AND
+  // the prompt never came back to ask again. Now a failed insert leaves the
+  // prompt open so the person can retry.
   if (error) {
     console.error("submitFeedback failed:", error.message);
     return { error: "Couldn't send that — try again." };
+  }
+
+  // Answering the star prompt also closes it, so it isn't shown again.
+  if (hasRating) {
+    await closeRatingPrompt(userData.user.id);
   }
 
   return { error: null };

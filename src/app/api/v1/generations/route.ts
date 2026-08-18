@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { API_RATE_LIMIT_PER_MINUTE, authenticateApiRequest } from "@/lib/api/keys";
+import { rateLimited } from "@/lib/rate-limit";
 import { runApiImageGeneration } from "@/lib/api/generate";
 import { getOrigin } from "@/lib/origin";
 
@@ -68,24 +69,18 @@ export async function POST(request: Request) {
     );
   }
 
-  // Atomic per-user rate limit (public.api_rate_check): serializes per user with
-  // an advisory lock and only records a hit when under the cap. The old version
-  // counted rows then acted — two statements, no atomicity — so N concurrent
-  // requests all read the same pre-insert count and all passed, letting a burst
-  // fire unbounded paid generations. Credits remain the real limit; this bounds
-  // a runaway loop.
-  const { data: rateAllowed, error: rateError } = await supabase.rpc("api_rate_check", {
-    p_user_id: caller.userId,
-    p_window_seconds: 60,
-    p_max: API_RATE_LIMIT_PER_MINUTE,
-  });
-  if (rateError) {
-    return NextResponse.json(
-      { error: { code: "internal_error", message: "Couldn't process that request." } },
-      { status: 500 },
-    );
-  }
-  if (rateAllowed !== true) {
+  // Atomic per-user rate limit (rateLimited in lib/rate-limit.ts, over
+  // public.api_rate_check): serializes per user with an advisory lock and only
+  // records a hit when under the cap. The old version counted rows then acted —
+  // two statements, no atomicity — so N concurrent requests all read the same
+  // pre-insert count and all passed, letting a burst fire unbounded paid
+  // generations. Credits remain the real limit; this bounds a runaway loop.
+  // The 'api' scope keeps this budget separate from voice/upload/feedback
+  // traffic (previously all shared one bucket, so in-app activity silently
+  // shrank a customer's API allowance). The helper fails closed on a limiter
+  // error, so an unavailable limiter reads as 429-retry-in-60s rather than an
+  // unbounded paid endpoint.
+  if (await rateLimited(caller.userId, "api", 60, API_RATE_LIMIT_PER_MINUTE)) {
     return NextResponse.json(
       {
         error: {

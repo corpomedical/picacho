@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Archivo } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
@@ -116,13 +117,22 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const locale = await getLocale();
+  // Per-request CSP nonce, minted by middleware.ts. Our hand-written inline
+  // script below must carry it or the browser refuses to run it under the
+  // nonce-based script-src (Next stamps its OWN inline scripts with the
+  // nonce automatically; this one is ours to stamp). Every page is already
+  // dynamically rendered (getLocale reads cookies), so headers() adds no new
+  // rendering constraint here. The JSON-LD block is inert data
+  // (type="application/ld+json"), not executable script — CSP doesn't gate
+  // it, so it needs no nonce.
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
 
   return (
     <html lang={locale} className={archivo.variable}>
       <head>
         {/* Runs before hydration so the right theme applies on first paint
             instead of flashing light and then switching to dark. */}
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}

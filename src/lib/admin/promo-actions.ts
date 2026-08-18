@@ -64,6 +64,19 @@ export async function createPromoCode(formData: FormData) {
     return;
   }
 
+  // Every failure below must end with NO live discount in Stripe and NO row
+  // here — the states this block may not produce are:
+  //   • coupon alive in Stripe with no promotion code / no row (silent
+  //     dangling discount an old promotionCodes.create failure used to leave
+  //     behind), and
+  //   • promotion code live in Stripe while our row has no Stripe ids (the
+  //     write-back at the end used to go unchecked, so a failed patch left a
+  //     code that redeems real money at checkout while this page shows it as
+  //     broken/unmanageable — live-in-Stripe, dead-in-DB).
+  // Compensation is collected into `failMessage` and the redirect happens
+  // OUTSIDE the try/catch — fail() throws NEXT_REDIRECT, and throwing it
+  // inside the try would run the catch's cleanup a second time.
+  let failMessage: string | null = null;
   try {
     const coupon = await stripe.coupons.create({
       percent_off: discountPercent,
@@ -77,24 +90,58 @@ export async function createPromoCode(formData: FormData) {
       name: `${code} — ${repName}`,
       metadata: { promo_code: code, rep_name: repName },
     });
-    const promotionCode = await stripe.promotionCodes.create({
-      promotion: { type: "coupon", coupon: coupon.id },
-      code,
-      // A closing tool for NEW clients: Stripe itself refuses the code for
-      // customers who have already paid us before, so a rep can't collect
-      // commission on someone who was already a paying customer.
-      restrictions: { first_time_transaction: true },
-      metadata: { rep_name: repName },
-    });
 
-    await supabase
+    let promotionCode;
+    try {
+      promotionCode = await stripe.promotionCodes.create({
+        promotion: { type: "coupon", coupon: coupon.id },
+        code,
+        // A closing tool for NEW clients: Stripe itself refuses the code for
+        // customers who have already paid us before, so a rep can't collect
+        // commission on someone who was already a paying customer.
+        restrictions: { first_time_transaction: true },
+        metadata: { rep_name: repName },
+      });
+    } catch (err) {
+      // The coupon exists but nothing points at it — delete it, or it sits
+      // in Stripe as an orphaned live discount forever.
+      try {
+        await stripe.coupons.del(coupon.id);
+      } catch (cleanupErr) {
+        console.error("createPromoCode: orphaned-coupon cleanup failed", coupon.id, cleanupErr);
+      }
+      throw err;
+    }
+
+    const { error: patchError } = await supabase
       .from("promo_codes")
       .update({ stripe_coupon_id: coupon.id, stripe_promotion_code_id: promotionCode.id })
       .eq("id", row.id);
+    if (patchError) {
+      // The write-back failed, so nothing here knows the Stripe ids — undo
+      // Stripe (deactivate the code, delete the coupon) so no discount can
+      // exist that this page can't see or turn off. Cleanup failures are
+      // logged loudly with the ids, because at that point the Stripe
+      // dashboard is the only place left that knows them.
+      try {
+        await stripe.promotionCodes.update(promotionCode.id, { active: false });
+        await stripe.coupons.del(coupon.id);
+      } catch (cleanupErr) {
+        console.error(
+          "createPromoCode: Stripe rollback after failed id write-back ALSO failed — deactivate promotion code and delete coupon by hand",
+          { promotionCodeId: promotionCode.id, couponId: coupon.id, cleanupErr },
+        );
+      }
+      failMessage = `Couldn't record the Stripe ids (${patchError.message.slice(0, 160)}) — the Stripe side was rolled back, nothing was saved. Try again.`;
+    }
   } catch (err) {
-    await supabase.from("promo_codes").delete().eq("id", row.id);
     const message = err instanceof Error ? err.message : "Stripe rejected the code.";
-    fail(`Stripe couldn't create the code: ${message.slice(0, 200)}`);
+    failMessage = `Stripe couldn't create the code: ${message.slice(0, 200)}`;
+  }
+
+  if (failMessage) {
+    await supabase.from("promo_codes").delete().eq("id", row.id);
+    fail(failMessage);
   }
 
   revalidatePath("/admin/promo");

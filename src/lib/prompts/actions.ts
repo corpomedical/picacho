@@ -1,5 +1,6 @@
 "use server";
 
+import { posix } from "node:path";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { latestMonthlyAnniversary } from "@/lib/generations/core";
 import { runRealPipeline } from "@/lib/generations/pipeline";
@@ -297,8 +298,28 @@ export async function promptFromImage(formData: FormData): Promise<CompilePrompt
 
   if (!rawUrl) return { error: "Attach an image first." };
   // Only our own media URLs. Without this the action would happily fetch and
-  // describe any URL on the internet on the caller's behalf.
+  // describe any URL on the internet on the caller's behalf. A plain
+  // startsWith isn't enough on its own: "/api/media/../../whatever" passes the
+  // prefix but escapes the media route the moment the path is resolved, so
+  // decode (catching %2E-encoded dots) and normalize first, and require the
+  // result to still sit inside /api/media/ with no ".." segments left.
   if (!rawUrl.startsWith("/api/media/")) {
+    return { error: "That image can't be read — upload it again." };
+  }
+  let decodedUrl: string;
+  try {
+    decodedUrl = decodeURIComponent(rawUrl);
+  } catch {
+    return { error: "That image can't be read — upload it again." };
+  }
+  const normalizedUrl = posix.normalize(decodedUrl);
+  if (
+    !normalizedUrl.startsWith("/api/media/") ||
+    // Segment check, not substring — a sanitized filename can legitimately
+    // contain ".." as text ("archive..tar.gz"), but never as a whole segment.
+    normalizedUrl.split("?")[0].split("/").some((seg) => seg === ".." || seg === ".") ||
+    normalizedUrl.includes("\\")
+  ) {
     return { error: "That image can't be read — upload it again." };
   }
 
@@ -360,43 +381,60 @@ export async function savePrompt(
 
   if (!prompt) return { error: "Nothing to save." };
   if (prompt.length > 4000) return { error: "That prompt is too long to save." };
+  // Same cap style as the prompt itself — source_input is the raw text the
+  // prompt was enhanced from, stored verbatim, so an uncapped value turns
+  // each library row into unbounded storage.
+  if (sourceInput && sourceInput.length > 4000) {
+    return { error: "That prompt's source text is too long to save." };
+  }
 
-  const { count } = await supabase
-    .from("saved_prompts")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", userData.user.id);
+  // Cap enforced atomically (insert_saved_prompt_capped, in
+  // supabase/pending-2026-08-19/user-actions.sql): count-then-insert here
+  // raced — a concurrent burst all counted under the limit and all inserted,
+  // sailing past SAVED_PROMPT_LIMIT. Same advisory-lock check-and-insert
+  // pattern as record_prompt_assist; EXECUTE revoked from `authenticated`, so
+  // it runs through the service-role client. NULL back means the library is
+  // full; an RPC error fails closed with a retry.
+  const { data, error } = await createAdminClient().rpc("insert_saved_prompt_capped", {
+    p_user_id: userData.user.id,
+    p_cap: SAVED_PROMPT_LIMIT,
+    p_prompt: prompt,
+    p_source_input: sourceInput,
+    p_character_profile_id: characterId,
+    p_content_type: contentType,
+    p_source: source,
+  });
 
-  if ((count ?? 0) >= SAVED_PROMPT_LIMIT) {
+  if (error) {
+    console.error("savePrompt failed:", error.message);
+    return { error: "Couldn't save that prompt — try again." };
+  }
+  if (!data) {
     return {
       error: `You've saved ${SAVED_PROMPT_LIMIT} prompts, which is the limit — delete one to make room.`,
     };
   }
 
-  const { data, error } = await supabase
-    .from("saved_prompts")
-    .insert({
-      user_id: userData.user.id,
-      prompt,
-      source_input: sourceInput,
-      character_profile_id: characterId,
-      content_type: contentType,
-      source,
-    })
-    .select("id, prompt, source_input, character_profile_id, content_type, source, created_at")
-    .single();
-
-  if (error || !data) return { error: "Couldn't save that prompt — try again." };
+  const row = data as {
+    id: string;
+    prompt: string;
+    source_input: string | null;
+    character_profile_id: string | null;
+    content_type: string;
+    source: string;
+    created_at: string;
+  };
 
   return {
     error: null,
     saved: {
-      id: data.id as string,
-      prompt: data.prompt as string,
-      sourceInput: data.source_input as string | null,
-      characterId: data.character_profile_id as string | null,
-      contentType: data.content_type as "image" | "video",
-      source: data.source as SavedPrompt["source"],
-      createdAt: data.created_at as string,
+      id: row.id,
+      prompt: row.prompt,
+      sourceInput: row.source_input,
+      characterId: row.character_profile_id,
+      contentType: row.content_type as "image" | "video",
+      source: row.source as SavedPrompt["source"],
+      createdAt: row.created_at,
     },
   };
 }

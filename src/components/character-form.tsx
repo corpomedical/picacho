@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -71,6 +71,23 @@ export function CharacterForm({
   const [keptImages, setKeptImages] = useState<ExistingImage[]>(existingImages);
   const [newFiles, setNewFiles] = useState<{ file: File; preview: string }[]>([]);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Every preview above is a URL.createObjectURL — each one pins its File's
+  // bytes in memory until it's explicitly revoked, and nothing was revoking
+  // them: not removing a tile, not leaving the page. On a phone, a few
+  // multi-megapixel photos picked and discarded across a couple of visits is
+  // real memory that never comes back. Removal revokes inline (see the tile's
+  // ✕ handler below); this ref + effect pair covers unmount, where the
+  // cleanup closure can't see current state directly.
+  const previewUrlsRef = useRef<string[]>([]);
+  useEffect(() => {
+    previewUrlsRef.current = newFiles.map((f) => f.preview);
+  }, [newFiles]);
+  useEffect(() => {
+    return () => {
+      previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, []);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(errorMessage ?? "");
@@ -312,7 +329,14 @@ export function CharacterForm({
               </button>
               <button
                 type="button"
-                onClick={() => setNewFiles(newFiles.filter((_, i) => i !== idx))}
+                onClick={() => {
+                  // Release the blob the moment the tile goes — and close the
+                  // lightbox first if it's showing this exact preview, since a
+                  // revoked object URL renders as a broken image.
+                  if (lightboxUrl === f.preview) setLightboxUrl(null);
+                  URL.revokeObjectURL(f.preview);
+                  setNewFiles(newFiles.filter((_, i) => i !== idx));
+                }}
                 className="absolute right-1 top-1 rounded-full bg-white/90 px-1.5 text-xs text-neutral-700 opacity-0 group-hover:opacity-100"
               >
                 ✕

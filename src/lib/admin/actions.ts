@@ -3,9 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { computeAdminBadgeCounts, type AdminBadgeCounts } from "@/lib/admin/badges";
 import { requireAdmin } from "@/lib/admin/require-admin";
+import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
+import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 
 // Called imperatively (not from a <form>) by AdminCommandBar, which polls
 // this on an interval to keep the nav's red-dot badges live without the
@@ -49,22 +52,40 @@ export async function setUserStatus(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("You can't suspend your own account.")}`);
   }
 
-  const { error } = await admin.from("profiles").update({ status }).eq("id", userId);
-  if (error) {
-    redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
-  }
-
-  // Also ban/unban at the auth layer, not just flip the profile flag. The
-  // profiles.status check (middleware + generation gate) blocks access on
-  // every request using an existing session, but a suspended user could
-  // otherwise still sign in again to get a fresh session. Banning makes
-  // Supabase reject their login and token refresh outright, so suspension
-  // actually keeps them out. ban_duration "none" lifts it on reinstate.
+  // Two layers must agree: the auth-layer ban (Supabase rejects login and
+  // token refresh, so a suspended user can't just mint a fresh session) and
+  // profiles.status (middleware + generation gate block the sessions that
+  // already exist). Ordered ban-first ON PURPOSE: the previous version wrote
+  // the profile flag first and a ban failure then redirected out, leaving a
+  // user marked suspended who could still sign straight back in — the two
+  // layers silently disagreeing, with the admin screen showing "suspended".
+  // Failing after the ban instead leaves the safer skew (can't log in, flag
+  // not yet set), and even that is compensated below: if the profile write
+  // fails, the ban is rolled back so both layers end up telling the same
+  // story, and the error banner says what actually happened.
   const { error: banError } = await admin.auth.admin.updateUserById(userId, {
     ban_duration: status === "suspended" ? "876000h" : "none",
   });
   if (banError) {
+    // Nothing was changed yet — plain failure, both layers untouched.
     redirect(`${redirectTo}?error=${encodeURIComponent(banError.message)}`);
+  }
+
+  const { error } = await admin.from("profiles").update({ status }).eq("id", userId);
+  if (error) {
+    // Roll the ban back so the auth layer matches the profile flag again.
+    // Best-effort: if even the rollback fails, say so explicitly rather
+    // than reporting only half the truth.
+    const { error: rollbackError } = await admin.auth.admin.updateUserById(userId, {
+      ban_duration: status === "suspended" ? "none" : "876000h",
+    });
+    redirect(
+      `${redirectTo}?error=${encodeURIComponent(
+        rollbackError
+          ? `Couldn't update the profile status (${error.message}) AND couldn't roll back the login ban (${rollbackError.message}) — the account's login ban does not match its listed status. Retry to reconcile.`
+          : `Couldn't update the profile status (${error.message}) — the login ban was rolled back, nothing changed.`,
+      )}`,
+    );
   }
 
   revalidatePath("/admin/users");
@@ -93,6 +114,37 @@ export async function deleteUser(formData: FormData) {
   }
 
   const admin = createAdminClient();
+
+  // Cancel their Stripe billing FIRST, while the profile row still holds the
+  // ids — the auth deletion below cascades profiles away, and with it the
+  // only record of which subscription/customer to stop. Skipping this left
+  // deleted paying users still being charged every month. Deliberately NOT
+  // best-effort: if Stripe errors, the deletion aborts loudly, because an
+  // account that's gone while its subscription keeps billing is the one
+  // outcome this must never produce. (redirect() throws, so the error is
+  // carried out of the try/catch rather than redirecting inside it.)
+  const { data: billingProfile } = await admin
+    .from("profiles")
+    .select("stripe_customer_id, stripe_subscription_id")
+    .eq("id", userId)
+    .single();
+  let stripeCancelError: string | null = null;
+  try {
+    await cancelStripeCustomerBilling({
+      stripeCustomerId: billingProfile?.stripe_customer_id ?? null,
+      stripeSubscriptionId: billingProfile?.stripe_subscription_id ?? null,
+    });
+  } catch (err) {
+    console.error("deleteUser: Stripe cancellation failed — aborting deletion", err);
+    stripeCancelError = err instanceof Error ? err.message : "Stripe error";
+  }
+  if (stripeCancelError) {
+    redirect(
+      `/admin/users/${userId}?error=${encodeURIComponent(
+        `Couldn't cancel their Stripe billing (${stripeCancelError}) — the account was NOT deleted. Sort it out in the Stripe dashboard, then try again.`,
+      )}`,
+    );
+  }
 
   // Purge the user's Storage files before deleting the account. Every file a
   // user uploads or generates lives under a `${userId}/...` path in these
@@ -151,6 +203,43 @@ export async function toggleFeatureFlag(formData: FormData) {
   revalidatePath("/admin/flags");
 }
 
+// Per-key validation for the settings this table actually holds. The generic
+// form on /admin/settings posts any key in the table, and "any non-empty
+// string" let a typo'd model id or a word where a number belongs sit in
+// config until something downstream read it and misbehaved (a bad
+// max_retry_attempts silently parses to NaN in the pipeline's Number()).
+// Known keys get real checks; unknown keys (future settings added in the DB
+// before this list learns about them) still save, just length-capped, so the
+// page never blocks an operator from a new knob.
+function validateAppSetting(key: string, value: string): string | null {
+  switch (key) {
+    case "video_model":
+      return VIDEO_MODELS.some((m) => m.id === value)
+        ? null
+        : `Unknown video model — expected one of: ${VIDEO_MODELS.map((m) => m.id).join(", ")}.`;
+    case "image_model":
+      return IMAGE_MODELS.some((m) => m.id === value)
+        ? null
+        : `Unknown image model — expected one of: ${IMAGE_MODELS.map((m) => m.id).join(", ")}.`;
+    case "max_retry_attempts": {
+      const n = Number(value);
+      return Number.isInteger(n) && n >= 1 && n <= 10
+        ? null
+        : "max_retry_attempts must be a whole number from 1 to 10.";
+    }
+    case "support_email":
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254
+        ? null
+        : "support_email must be a valid email address.";
+    case "admin_users_last_viewed_at":
+      return Number.isFinite(new Date(value).getTime())
+        ? null
+        : "admin_users_last_viewed_at must be a valid timestamp.";
+    default:
+      return value.length <= 500 ? null : "Value is too long (500 characters max).";
+  }
+}
+
 export async function updateAppSetting(formData: FormData) {
   const { supabase } = await requireAdmin();
   const key = formData.get("key") as string;
@@ -158,6 +247,11 @@ export async function updateAppSetting(formData: FormData) {
 
   if (!value) {
     redirect(`/admin/settings?error=${encodeURIComponent("Value can't be empty.")}`);
+  }
+
+  const invalid = validateAppSetting(key, value);
+  if (invalid) {
+    redirect(`/admin/settings?error=${encodeURIComponent(invalid)}`);
   }
 
   const { error } = await supabase
@@ -332,7 +426,17 @@ export async function setUserPlan(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("Invalid plan.")}`);
   }
 
-  const { error } = await admin.from("profiles").update({ plan }).eq("id", userId);
+  // plan_status is reset to NULL alongside the comp. The allowance gate
+  // (checkGenerationAllowance in generations/core.ts) only honours a plan's
+  // monthly credits while plan_status is NULL or "active" — a deliberate
+  // grant is exactly what NULL means there. Without this reset, comping a
+  // plan onto an account whose Stripe subscription had lapsed (past_due /
+  // canceled) handed them a plan whose credits stayed paused: the admin
+  // screen said Growth, the composer said "your payment failed".
+  const { error } = await admin
+    .from("profiles")
+    .update({ plan, plan_status: null })
+    .eq("id", userId);
   if (error) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
@@ -408,6 +512,15 @@ export async function restoreModel(formData: FormData): Promise<void> {
   const modelId = (formData.get("model_id") as string) ?? "";
   if (!modelId) redirect("/admin/providers?error=Missing+model");
 
+  // Validate against the actual catalogues instead of trusting the form
+  // value: model_health rows are keyed by model_id, and an arbitrary string
+  // here would upsert/update junk rows in the health table (and the same
+  // string round-trips into admin UI). The forms only ever post catalogue
+  // ids, so anything else is a hand-crafted request.
+  const known =
+    VIDEO_MODELS.some((m) => m.id === modelId) || IMAGE_MODELS.some((m) => m.id === modelId);
+  if (!known) redirect("/admin/providers?error=Unknown+model");
+
   const admin = createAdminClient();
   await admin
     .from("model_health")
@@ -430,8 +543,22 @@ export async function restoreModel(formData: FormData): Promise<void> {
 export async function suspendModel(formData: FormData): Promise<void> {
   await requireAdmin();
   const modelId = (formData.get("model_id") as string) ?? "";
-  const kind = ((formData.get("kind") as string) || "video") as "video" | "image";
+  const rawKind = (formData.get("kind") as string) || "video";
   if (!modelId) redirect("/admin/providers?error=Missing+model");
+
+  // kind comes from a closed set and model_id must exist in the catalogue
+  // FOR that kind — the old blind `as "video" | "image"` cast let a crafted
+  // request upsert a health row with any string in either column, and
+  // suspendModel writes rows (unlike restore, which only updates existing
+  // ones), so junk here would live in model_health indefinitely.
+  if (rawKind !== "video" && rawKind !== "image") {
+    redirect("/admin/providers?error=Unknown+model");
+  }
+  const kind = rawKind as "video" | "image";
+  const catalogue = kind === "video" ? VIDEO_MODELS : IMAGE_MODELS;
+  if (!catalogue.some((m) => m.id === modelId)) {
+    redirect("/admin/providers?error=Unknown+model");
+  }
 
   const admin = createAdminClient();
   await admin.from("model_health").upsert({

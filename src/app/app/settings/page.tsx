@@ -99,6 +99,32 @@ export default async function SettingsPage({
   const s = t.settings;
   const { saved, error, tab } = await searchParams;
   const activeTab: TabId = VALID_TABS.includes(tab as TabId) ? (tab as TabId) : "account";
+
+  // ?error= is attacker-reachable: anyone can send a link like
+  // /app/settings?error=Your+account+is+locked,+call+this+number — and this
+  // page used to render that text verbatim inside trusted settings chrome,
+  // which is exactly the surface a phishing message wants. So the param is
+  // treated as a CODE, never as copy: the known values our own server actions
+  // redirect back with (see createCheckoutSession/createPortalSession etc. in
+  // stripe/actions.ts) map to localized messages here, and anything
+  // unrecognized — including the free-text database messages profile actions
+  // still pass — collapses to one generic localized line.
+  const KNOWN_ERRORS: Record<string, string> = {
+    "That plan isn't available.": s.errorPlanUnavailable,
+    "This plan isn't set up for checkout yet.": s.errorPlanNotConfigured,
+    "Couldn't start checkout — try again.": s.errorCheckoutFailed,
+    "That credit pack isn't available.": s.errorPackUnavailable,
+    "Credit packs aren't set up for checkout yet.": s.errorPackNotConfigured,
+    "No billing account yet — start with a plan below.": s.errorNoBillingAccount,
+    "Couldn't open billing — try again.": s.errorBillingFailed,
+    "You already have a subscription — use Manage billing to change plans.": s.errorAlreadySubscribed,
+    // deleteAccount's abort notice — the one message on this page that must
+    // never collapse to the generic line: it's how the user learns the
+    // account still exists (and still bills) after a failed deletion.
+    "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.":
+      s.errorDeletionAborted,
+  };
+  const errorMessage = error ? (KNOWN_ERRORS[error] ?? s.errorGeneric) : null;
   const brandRules = await getBrandRules();
   // Drives the reader-app gating below — see lib/native/platform.ts.
   const nativeApp = await isNativeApp();
@@ -148,9 +174,17 @@ export default async function SettingsPage({
     created_at: string;
     last_used_at: string | null;
   }[];
-  // Bonus credits (admin-granted) stack on top of the plan limit — same rule
-  // as the actual enforcement in checkGenerationAllowance.
-  const limit = PLAN_LIMITS[plan] + (profile?.bonus_credits ?? 0);
+  // Display-only mirror of the actual enforcement in checkGenerationAllowance
+  // (generations/core.ts): the plan's monthly allowance only counts while
+  // plan_status is NULL (comped / pre-Stripe grants) or "active" — a
+  // past_due or canceled subscription has its plan credits paused, and this
+  // page used to keep showing the full plan limit anyway, so someone whose
+  // card failed saw "12 of 100 this month" while the composer refused them.
+  // Bonus credits (admin-granted) stack on top and are never paused — same
+  // rule as the enforcement.
+  const planAllowanceActive =
+    profile?.plan_status == null || profile.plan_status === "active";
+  const limit = (planAllowanceActive ? PLAN_LIMITS[plan] : 0) + (profile?.bonus_credits ?? 0);
   const pct = limit > 0 ? Math.min(100, Math.round((usedThisMonth / limit) * 100)) : 0;
   const nextPlanId = TIER_ORDER[TIER_ORDER.indexOf(plan) + 1];
   const nextTier = nextPlanId ? PRICING_TIERS.find((t) => t.id === nextPlanId) : undefined;
@@ -184,9 +218,9 @@ export default async function SettingsPage({
           {s.savedNotice}
         </p>
       )}
-      {error && (
+      {errorMessage && (
         <p className="mt-4 rounded-[10px] bg-red-50 px-3.5 py-2 text-sm text-red-600 dark:bg-red-500/15 dark:text-red-400">
-          {error}
+          {errorMessage}
         </p>
       )}
 

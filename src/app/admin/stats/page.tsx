@@ -87,8 +87,7 @@ export default async function AdminStatsPage() {
     { data: visitorRows7d },
     { data: pathRows30d },
     { data: countryRows30d },
-    { data: genderRows },
-    { data: companyRows },
+    { data: demographicRows },
     falBalance,
   ] = await Promise.all([
     supabase.from("profiles").select("*", { count: "exact", head: true }),
@@ -112,8 +111,12 @@ export default async function AdminStatsPage() {
     supabase.from("page_views").select("visitor_id").gte("created_at", sevenDaysAgo).limit(20000),
     supabase.from("page_views").select("path").gte("created_at", thirtyDaysAgo).limit(20000),
     supabase.from("page_views").select("country").gte("created_at", thirtyDaysAgo).limit(20000),
-    supabase.from("profiles").select("gender"),
-    supabase.from("profiles").select("company"),
+    // One query for both demographic cards, not two full-table selects —
+    // this page used to pull every profiles row twice (once for gender, once
+    // for company). Capped like the page_views selects above; past 20k users
+    // the two cards become a (very large) sample rather than a census, which
+    // is fine for self-reported optional fields.
+    supabase.from("profiles").select("gender, company").limit(20000),
     // Not a Supabase query — hits fal.ai's own billing API directly. Kept in
     // this same Promise.all purely so it loads in parallel with everything
     // else instead of adding its own extra round-trip; never throws (see
@@ -139,14 +142,14 @@ export default async function AdminStatsPage() {
   const topCountries = topCounts(countryRows30d, "country", 8);
 
   const genderCounts = new Map<string, number>();
-  (genderRows ?? []).forEach((r) => {
+  (demographicRows ?? []).forEach((r) => {
     const g = r.gender as string | null;
     const bucket = !g ? "Not specified" : STANDARD_GENDERS.includes(g) ? g : "Self-described";
     genderCounts.set(bucket, (genderCounts.get(bucket) ?? 0) + 1);
   });
   const genderItems = Array.from(genderCounts.entries()).sort((a, b) => b[1] - a[1]);
 
-  const companiesSet = (companyRows ?? []).filter((r) => r.company);
+  const companiesSet = (demographicRows ?? []).filter((r) => r.company);
   const companyFillRate = total > 0 ? Math.round((companiesSet.length / total) * 100) : 0;
   const topCompanies = topCounts(companiesSet as Record<string, unknown>[], "company", 10);
 

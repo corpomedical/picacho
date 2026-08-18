@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { requireAdmin } from "@/lib/admin/require-admin";
 
 // Sign-in / session facts for the admin area.
 //
@@ -48,6 +49,14 @@ export async function getUserActivity(
     total_active_seconds?: number | null;
   }[],
 ): Promise<Map<string, UserActivity>> {
+  // Role check INSIDE the helper, not just in the admin layout. This
+  // function reads auth.users/auth.sessions through the service role, so it
+  // must verify the caller itself rather than assume every code path that
+  // reaches it went through /admin's layout gate — deliberately OUTSIDE the
+  // degrade-to-empty try/catch below, so "not an admin" throws instead of
+  // quietly returning blank columns.
+  await requireAdmin();
+
   const result = new Map<string, UserActivity>();
   if (users.length === 0) return result;
 

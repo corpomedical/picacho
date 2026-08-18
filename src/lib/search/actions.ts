@@ -21,7 +21,13 @@ export async function searchAll(query: string): Promise<SearchResults> {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return EMPTY;
 
-  const like = `%${trimmed}%`;
+  // Escape LIKE metacharacters (and the escape character itself) so a query
+  // is matched literally: an unescaped "%" or "_" is a wildcard inside the
+  // ilike pattern, which made searching for "100%" match everything and let
+  // a crafted query probe rows one wildcard at a time. Backslash first, or
+  // it would re-escape the escapes.
+  const escaped = trimmed.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&");
+  const like = `%${escaped}%`;
 
   const [{ data: projects }, { data: characters }, { data: generations }] = await Promise.all([
     supabase.from("projects").select("id, name").ilike("name", like).limit(5),

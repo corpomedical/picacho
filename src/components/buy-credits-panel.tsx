@@ -8,6 +8,7 @@ import { Card } from "@/components/ui/card";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
+import { isEUVisitor } from "@/lib/geo";
 
 // Server component: the packs are static config and checkout is a plain
 // form action, so there's nothing here that needs to be a client component.
@@ -21,11 +22,17 @@ export async function BuyCreditsPanel({
   const { t } = await getServerMessages();
   const c = t.credits;
 
-  // Hide any pack that has no Stripe Price yet rather than rendering a
+  // Hide any pack THIS visitor can't actually buy rather than rendering a
   // button that can only fail — setup-credit-packs.js has to be run before
-  // these work at all.
+  // these work at all. Mirrors EXACTLY how createCreditCheckoutSession
+  // resolves the price ((EUR if EU visitor) ?? USD): the old check showed a
+  // pack when EITHER price id existed, so a pack with only a EUR price
+  // rendered a Buy button for a non-EU visitor whose action then bounced
+  // with "not set up yet" (the action falls back to the USD id, never the
+  // EUR one, for them).
+  const wantsEUR = await isEUVisitor();
   const available = CREDIT_PACKS.filter(
-    (p) => CREDIT_PACK_PRICE_IDS[p.id] || CREDIT_PACK_PRICE_IDS_EUR[p.id],
+    (p) => (wantsEUR ? CREDIT_PACK_PRICE_IDS_EUR[p.id] : null) ?? CREDIT_PACK_PRICE_IDS[p.id],
   );
 
   if (available.length === 0) return null;

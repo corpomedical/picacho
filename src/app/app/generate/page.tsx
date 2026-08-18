@@ -102,16 +102,16 @@ export default async function GeneratePage() {
         </div>
       )}
       <div className="mb-7 flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">Generate</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">{g.pageTitle}</h1>
         {stats.total > 0 && (
           <div className="flex gap-2">
             <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 px-3.5 py-2 text-right">
               <p className="text-base font-semibold text-neutral-900">{stats.firstTryRate}%</p>
-              <p className="text-[11px] text-neutral-500">first-try success</p>
+              <p className="text-[11px] text-neutral-500">{g.firstTrySuccess}</p>
             </div>
             <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 px-3.5 py-2 text-right">
               <p className="text-base font-semibold text-neutral-900">{stats.avgAttempts}</p>
-              <p className="text-[11px] text-neutral-500">avg. attempts</p>
+              <p className="text-[11px] text-neutral-500">{g.avgAttempts}</p>
             </div>
           </div>
         )}

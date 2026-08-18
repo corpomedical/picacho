@@ -10,8 +10,24 @@
 import { createClient } from "@/lib/supabase/server";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { rateLimited } from "@/lib/rate-limit";
 
 type VoiceResult<T extends object> = { error: string } | ({ error: null } & T);
+
+// Per-user rate limits — same atomic advisory-lock limiter the voice preview
+// uses (rateLimited in lib/rate-limit.ts, over api_rate_check). The plan
+// gate below keeps throwaway accounts out, but a single paid account could
+// still loop these actions and run up the OpenAI bill: Whisper is billed per
+// audio-minute and TTS per character, so both need a per-minute ceiling.
+// Sized like the preview's 20/min: generous for a human actually talking to
+// the app, binding for a script. Transcription is tighter because each call
+// can carry up to 20MB of billable audio — and each action gets its own
+// scope so a burst of TTS replies can't eat the transcription budget (or
+// vice versa), which is exactly what the old shared bucket allowed.
+const TRANSCRIBE_RATE_WINDOW_SECONDS = 60;
+const TRANSCRIBE_RATE_MAX_PER_WINDOW = 10;
+const SYNTHESIZE_RATE_WINDOW_SECONDS = 60;
+const SYNTHESIZE_RATE_MAX_PER_WINDOW = 20;
 
 // SECURITY: both actions below spend real OpenAI money on every call, and
 // until 2026-08-10 neither checked who was calling — only that the feature
@@ -24,11 +40,13 @@ type VoiceResult<T extends object> = { error: string } | ({ error: null } & T);
 // Signed-in is the minimum bar. The plan check on top of it means a
 // throwaway free signup can't run up a bill either — voice is a paid-plan
 // feature, matching how generations already work.
-async function checkVoiceAvailable(): Promise<string | null> {
+// Returns the caller's user id on success so the actions can rate-limit
+// per user without a second auth round trip.
+async function checkVoiceAvailable(): Promise<{ error: string } | { error: null; userId: string }> {
   const supabase = await createClient();
 
   const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return "Your session expired — please log in again.";
+  if (!userData.user) return { error: "Your session expired — please log in again." };
 
   const { data: profile } = await supabase
     .from("profiles")
@@ -38,7 +56,7 @@ async function checkVoiceAvailable(): Promise<string | null> {
 
   const onPaidPlan = (profile?.plan ?? "none") !== "none";
   if (!onPaidPlan && profile?.role !== "admin") {
-    return "Voice features are part of a paid plan — upgrade to use them.";
+    return { error: "Voice features are part of a paid plan — upgrade to use them." };
   }
 
   const { data: flag } = await supabase
@@ -48,17 +66,17 @@ async function checkVoiceAvailable(): Promise<string | null> {
     .single();
 
   if (flag?.enabled !== true) {
-    return "Real AI providers are off, so voice isn't live yet. Turn them on in Admin > Feature flags.";
+    return { error: "Real AI providers are off, so voice isn't live yet. Turn them on in Admin > Feature flags." };
   }
   if (!process.env.OPENAI_API_KEY) {
-    return "OPENAI_API_KEY is missing — add it to .env.local first.";
+    return { error: "OPENAI_API_KEY is missing — add it to .env.local first." };
   }
-  return null;
+  return { error: null, userId: userData.user.id };
 }
 
 export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{ text: string }>> {
-  const unavailable = await checkVoiceAvailable();
-  if (unavailable) return { error: unavailable };
+  const available = await checkVoiceAvailable();
+  if (available.error !== null) return { error: available.error };
 
   const audio = formData.get("audio") as File | null;
   if (!audio || audio.size === 0) return { error: "Didn't catch any audio — try again." };
@@ -67,6 +85,18 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
   const MAX_AUDIO_BYTES = 20 * 1024 * 1024;
   if (audio.size > MAX_AUDIO_BYTES) {
     return { error: "That audio clip is too large — keep voice prompts short." };
+  }
+
+  // After the cheap input checks, before the paid Whisper call.
+  if (
+    await rateLimited(
+      available.userId,
+      "voice-transcribe",
+      TRANSCRIBE_RATE_WINDOW_SECONDS,
+      TRANSCRIBE_RATE_MAX_PER_WINDOW,
+    )
+  ) {
+    return { error: "You're sending voice clips a bit fast — wait a moment and try again." };
   }
 
   const apiKey = process.env.OPENAI_API_KEY!;
@@ -94,8 +124,8 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
 }
 
 export async function synthesizeVoice(text: string): Promise<VoiceResult<{ audioBase64: string }>> {
-  const unavailable = await checkVoiceAvailable();
-  if (unavailable) return { error: unavailable };
+  const available = await checkVoiceAvailable();
+  if (available.error !== null) return { error: available.error };
 
   // Spoken replies belong to the conversational agent, which is flagged off
   // (see lib/voice/enabled.ts). Enforced server-side, not just by hiding the
@@ -107,6 +137,18 @@ export async function synthesizeVoice(text: string): Promise<VoiceResult<{ audio
 
   const trimmed = text.trim();
   if (!trimmed) return { error: "Nothing to say." };
+
+  // After the cheap input checks, before the paid TTS call.
+  if (
+    await rateLimited(
+      available.userId,
+      "voice-synthesize",
+      SYNTHESIZE_RATE_WINDOW_SECONDS,
+      SYNTHESIZE_RATE_MAX_PER_WINDOW,
+    )
+  ) {
+    return { error: "Voice replies are coming a bit fast — wait a moment and try again." };
+  }
 
   const apiKey = process.env.OPENAI_API_KEY!;
   const res = await fetchWithTimeout(

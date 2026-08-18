@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PlanId } from "@/lib/plans";
 
@@ -121,12 +122,23 @@ export async function authenticateApiRequest(
   }
 
   // Fire-and-forget: a failed timestamp write must never fail a request that
-  // is otherwise perfectly authorised.
-  void supabase
-    .from("api_keys")
-    .update({ last_used_at: new Date().toISOString() })
-    .eq("id", row.id)
-    .then(() => undefined);
+  // is otherwise authorised, and it must not add latency to the hot path.
+  // Scheduled through after() rather than a bare dangling promise — on a
+  // serverless platform the function can be frozen the instant the response
+  // is sent, and a floating .then() at that moment simply never runs, which
+  // is why last_used_at (the "is this key still in use?" signal an admin
+  // checks before revoking) was quietly stale. after() runs the callback
+  // once the response is done but keeps the invocation alive for it.
+  after(async () => {
+    try {
+      await supabase
+        .from("api_keys")
+        .update({ last_used_at: new Date().toISOString() })
+        .eq("id", row.id);
+    } catch {
+      // Best-effort by design — see above.
+    }
+  });
 
   return { caller: { userId: row.user_id as string, keyId: row.id as string, plan }, error: null };
 }

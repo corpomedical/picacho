@@ -10,6 +10,7 @@ import {
   submitSpeechJob,
   type QueuedJob,
 } from "@/lib/generations/providers/fal";
+import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { getDialogueCreditWeight } from "@/lib/generations/providers/video-models";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
@@ -115,12 +116,116 @@ const STALE_AFTER_MS = 30 * 60_000;
 // slow render is never mistaken for a lost one.
 const ABSOLUTE_JOB_TIMEOUT_MS = 45 * 60_000;
 
+// How old a status="generating" row with NO generation_jobs row must be
+// before the reaper writes it off as orphaned. These are rows where the
+// function died between reserve_generation and saveVideoJob (or the inline
+// image path never reached its terminal update) — nothing will ever poll,
+// webhook, or reap them through generation_jobs, because there is no job row
+// to scan, so without this sweep they sat at "generating" forever with
+// credits charged. Generous on purpose: a live request can legitimately hold
+// a row at "generating" with no job row for the length of the compile or an
+// inline image render, but Vercel kills any function at 300s, so anything
+// over an hour is definitively dead.
+const ORPHANED_GENERATION_TIMEOUT_MS = 60 * 60_000;
+
 // How long one advance may hold the exclusive claim before another poll is
 // allowed to assume the holder died and take over. Comfortably longer than a
 // real advance takes (a status check plus at most one queue submit — a few
 // seconds) and far shorter than a render, so a genuinely crashed advance is
 // retried promptly while two live callers can never overlap.
 const ADVANCE_LEASE_SECONDS = 90;
+
+// A database write the pipeline's correctness depends on failed. Distinct
+// class so callers can tell "our DB blinked" apart from "the provider failed"
+// — the two must not share a handler: a provider failure fails the generation
+// (correct), but failing a generation because OUR terminal write hiccuped
+// would permanently strand — or double-charge — a billed render. Callers let
+// this propagate so the webhook 500s (fal retries), the client poll errors and
+// retries, and the reaper leaves the row for the next pass.
+class CriticalWriteError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CriticalWriteError";
+  }
+}
+
+// Guard for writes where a silent failure has real cost. The stage-transition
+// UPDATEs after submitSpeechJob/submitLipSyncJob are the canonical case: the
+// paid TTS job is already submitted, and if the row silently keeps saying
+// stage "video", every later advance (one per 90s lease expiry) re-observes
+// the video stage "completed" and submits ANOTHER paid TTS job, forever.
+// Throwing turns that unbounded silent leak into a loud, retried failure.
+// Deliberately NOT used for cosmetic writes (last_polled_at, progress_stage)
+// — those are marked fire-and-forget where they happen.
+function mustUpdate(result: { error: { message: string } | null }, what: string): void {
+  if (result.error) {
+    throw new CriticalWriteError(`${what}: ${result.error.message}`);
+  }
+}
+
+// Transport-class failures reaching fal — a timeout, a connection reset, fal
+// returning 5xx — as opposed to fal genuinely reporting the JOB failed. The
+// distinction decides whether a billed render lives or dies: after winning the
+// advance claim on a COMPLETED stage, a mere network blip on the result fetch
+// used to terminally fail the generation as provider_failed, throwing away a
+// render fal had finished and billed. Transport errors are retried (release
+// the claim, stay pending); only real provider verdicts are terminal. Mirrors
+// the classification checkQueuedJob itself uses (4xx terminal, 5xx/transport
+// throw-and-retry).
+function isTransportError(err: unknown): boolean {
+  if (!(err instanceof Error)) return false;
+  if (err instanceof CriticalWriteError) return false;
+  // Our own fetch timeout, matched on the error's stable name rather than its
+  // prose (see FetchTimeoutError in fetch-with-timeout.ts) — the message-regex
+  // fallback below is only for legacy errors that predate the class.
+  if (err instanceof FetchTimeoutError || err.name === "FetchTimeoutError") return true;
+  const m = err.message;
+  // If the message carries an explicit provider status — fal errors embed it
+  // as "(NNN):" (see submitToQueue/fetchQueuedResult in fal.ts) — that status
+  // is the verdict, full stop. This must run BEFORE any message pattern-match
+  // below: fal error messages also embed up to 300 chars of the provider's
+  // response body, and a terminal 4xx whose body happened to contain
+  // "aborted" or "socket" used to classify as transport and be retried for
+  // the full 45-minute absolute timeout instead of failing immediately. 5xx
+  // is fal having a moment (retry, same as checkQueuedJob treats it);
+  // anything below is a real answer from the provider and terminal. The ":"
+  // anchors the match to the status fal.ts itself formatted — which always
+  // precedes any body text — not a stray "(404)" inside the body.
+  const status = m.match(/\((\d{3})\):/);
+  if (status) return Number(status[1]) >= 500;
+  // No status, so the request never got an HTTP answer. First the legacy
+  // fallback for fetch-with-timeout.ts's old plain-Error timeout message —
+  // kept only so an error thrown by stale code (or one serialized before
+  // FetchTimeoutError existed) still classifies; new timeouts match on the
+  // name above. Then undici/network-level failures (DNS, reset, TLS), which
+  // surface as these.
+  if (/timed out after \d+s/i.test(m)) return true;
+  return /fetch failed|network|ECONNRESET|ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket|aborted/i.test(m);
+}
+
+// Hands back a claim won by claimAdvance without acting on it, so the next
+// poll/webhook can retry immediately instead of waiting out the 90s lease.
+// Best-effort: if this write fails too, the lease expiry is the backstop.
+async function releaseAdvanceClaim(
+  admin: SupabaseClient,
+  generationId: string,
+  providerRequestId: string | null,
+): Promise<void> {
+  let query = admin
+    .from("generation_jobs")
+    .update({ advance_lock: null, advance_locked_at: null })
+    .eq("generation_id", generationId);
+  // Only release the claim for the SAME provider job we claimed — if a
+  // concurrent winner already advanced the stage (new request id), its fresh
+  // claim must not be wiped out from under it.
+  query = providerRequestId
+    ? query.eq("provider_request_id", providerRequestId)
+    : query.is("provider_request_id", null);
+  const { error } = await query;
+  if (error) {
+    console.warn("Couldn't release advance claim (lease expiry will):", { generationId, error: error.message });
+  }
+}
 
 // Wins the exclusive right to ACT on this job's current stage — to submit the
 // next paid provider job, or to finish the generation — for the span of one
@@ -233,9 +338,13 @@ export async function refundGenerationCosts(generationId: string): Promise<boole
   // call sites: this is the single function every refund in the product
   // passes through, so one check cannot be forgotten by a future caller.
   //
-  // A refunded failure is a row that already ran, already failed, and had
-  // its credits zeroed — so counting those in the last 24 hours is exactly
-  // "how much has this account already been forgiven today".
+  // Counted by refunded_at — the marker this function stamps below on every
+  // refund it actually performs — NOT by "failed with credits_used=0". That
+  // proxy overcounted: the guarded-spend abort paths (a lost race for the
+  // last credit, before any provider call) also produce failed rows with
+  // zeroed credits, and each one silently ate a slot of the daily cap,
+  // withholding legitimate refunds from people who'd merely hit a busy
+  // moment. Only rows this function stamped in the last 24h count.
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const [{ data: profile }, { count: forgivenToday }] = await Promise.all([
     admin.from("profiles").select("plan, role").eq("id", row.user_id).maybeSingle<{
@@ -246,9 +355,7 @@ export async function refundGenerationCosts(generationId: string): Promise<boole
       .from("generations")
       .select("id", { count: "exact", head: true })
       .eq("user_id", row.user_id)
-      .eq("status", "failed")
-      .eq("credits_used", 0)
-      .gte("created_at", dayAgo),
+      .gte("refunded_at", dayAgo),
   ]);
 
   // Admins are exempt, same as everywhere else — support and testing must
@@ -268,7 +375,23 @@ export async function refundGenerationCosts(generationId: string): Promise<boole
 
   // Always release the monthly allowance, even when there's nothing else to
   // refund — some callers reach here without having zeroed credits_used.
-  await admin.from("generations").update({ credits_used: 0 }).eq("id", generationId);
+  // refunded_at is stamped in the same write: it's both the honest "this row
+  // was actually refunded" marker the daily cap above counts, and what keeps
+  // spend-race aborts (which zero credits without ever passing through here)
+  // out of that count. Checked, not fire-and-forget: if this write fails
+  // nothing was released, and returning true would let the caller tell the
+  // customer their credits came back when they didn't.
+  const { error: releaseError } = await admin
+    .from("generations")
+    .update({ credits_used: 0, refunded_at: new Date().toISOString() })
+    .eq("id", generationId);
+  if (releaseError) {
+    console.error("Refund couldn't release the monthly allowance:", {
+      generationId,
+      error: releaseError.message,
+    });
+    return false;
+  }
 
   if ((row.purchased_credits_used ?? 0) > 0) {
     const { data: claimed } = await admin
@@ -414,6 +537,7 @@ export async function saveVideoJob(params: {
     throw new Error(`Couldn't record the queued video job: ${upsertError.message}`);
   }
 
+  // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
   await admin
     .from("generations")
     .update({ progress_stage: STAGE_PROGRESS.video })
@@ -429,7 +553,7 @@ async function finish(
 ): Promise<void> {
   const admin = createAdminClient();
 
-  const { data: transitioned } = await admin
+  const { data: transitioned, error: transitionError } = await admin
     .from("generations")
     .update({
       status: outcome.status,
@@ -453,10 +577,32 @@ async function finish(
     .eq("status", "generating")
     .select("id");
 
-  // Always clear the job row, even when we didn't transition — a discarded
-  // generation still needs its queue handle cleaned up so nothing re-processes
-  // it.
-  await admin.from("generation_jobs").delete().eq("generation_id", generationId);
+  // An ERRORED update is not "already terminal" — the two used to be
+  // conflated, and on a transient DB error the job row was still deleted and
+  // success reported, permanently stranding a billed generation at
+  // status="generating" with nothing left that could ever finish it. Keep the
+  // job row so the next poll/webhook/reap retries this whole finish, and
+  // propagate so the current caller reports failure rather than success.
+  if (transitionError) {
+    throw new CriticalWriteError(
+      `Couldn't finish generation ${generationId}: ${transitionError.message}`,
+    );
+  }
+
+  // Only after a CONFIRMED transition (or a confirmed "already terminal" read
+  // — no error, zero rows) is it safe to clear the job row. A delete failure
+  // is tolerable: the next advance finds the generation already terminal,
+  // matches zero rows above, and retries this delete.
+  const { error: deleteError } = await admin
+    .from("generation_jobs")
+    .delete()
+    .eq("generation_id", generationId);
+  if (deleteError) {
+    console.error("Couldn't clear finished job row (next advance will retry):", {
+      generationId,
+      error: deleteError.message,
+    });
+  }
 
   // Already terminal (discarded/cancelled by the user, or finished by a
   // concurrent caller): stop here. Do not refund again, notify, or feed the
@@ -465,9 +611,12 @@ async function finish(
 
   // Refund the other two credit sources (purchased top-ups, free-trial
   // generations) for refundable faults — the update above only released the
-  // monthly allowance via credits_used.
+  // monthly allowance via credits_used. The boolean matters: with the
+  // automatic_refunds kill switch OFF (or the daily cap reached) nothing is
+  // actually given back, and the notification below must not claim otherwise.
+  let refunded = false;
   if (outcome.status === "failed" && outcome.fault && REFUNDS[outcome.fault]) {
-    await refundGenerationCosts(generationId);
+    refunded = await refundGenerationCosts(generationId);
   }
 
   // Tell the phone. This is the pay-off from the webhook work: a render now
@@ -478,12 +627,19 @@ async function finish(
   // Not awaited, and it swallows its own errors: the row above is already
   // saved, and a notification failure must never be able to affect a
   // generation someone paid for.
+  //
+  // The failure copy only mentions credits when refundGenerationCosts
+  // actually released them — it used to promise "your credits weren't charged
+  // if it was our fault" unconditionally, which was untrue whenever the
+  // refund flag was off or the daily cap had been reached.
   void notifyUser(userId, {
     title: outcome.status === "succeeded" ? "Your video is ready" : "That generation didn't finish",
     body:
       outcome.status === "succeeded"
         ? "Tap to watch it."
-        : "Tap to see what happened — your credits weren't charged if it was our fault.",
+        : refunded
+          ? "Tap to see what happened — the credits it used were released."
+          : "Tap to see what happened.",
     path: `/app/history/${generationId}`,
   });
 
@@ -562,6 +718,9 @@ export async function advanceGeneration(
 
   if (!row) return { state: "gone" };
 
+  // Deliberately fire-and-forget: a missed heartbeat only means the reaper
+  // might look at this job one pass earlier, and the reaper re-checks with
+  // fal before touching anything.
   await admin
     .from("generation_jobs")
     .update({ last_polled_at: new Date().toISOString() })
@@ -674,6 +833,13 @@ export async function advanceGeneration(
   if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
     return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
   }
+  // Which side of the money line this advance was on when an error escaped.
+  // Every branch below is "fetch the finished stage's result, then maybe
+  // submit the next paid job" — flipped to "submit" immediately before each
+  // paid submit call. The catch below only grants transport errors a retry
+  // during the RESULT-FETCH phase; see the comment there for why a transport
+  // error mid-submit must stay terminal instead.
+  let phase: "result-fetch" | "submit" = "result-fetch";
   try {
     if (row.stage === "video") {
       const videoUrl = await fetchQueuedVideoUrl(jobHandle(row));
@@ -688,23 +854,34 @@ export async function advanceGeneration(
         return { state: "succeeded", resultUrl: videoUrl };
       }
 
+      phase = "submit";
       const speech = await submitSpeechJob(row.resume.dialogueText!.trim(), row.resume.dialogueVoiceId!);
-      await admin
-        .from("generation_jobs")
-        .update({
-          stage: "dialogue_tts" satisfies JobStage,
-          provider_request_id: speech.requestId,
-          status_url: speech.statusUrl,
-          response_url: speech.responseUrl,
-          cancel_url: speech.cancelUrl,
-          payload: { ...row.payload, videoUrl },
-          updated_at: new Date().toISOString(),
-          // Release the claim: the next stage is a different provider job and
-          // its own advance must be able to claim it fresh.
-          advance_lock: null,
-          advance_locked_at: null,
-        })
-        .eq("generation_id", generationId);
+      // mustUpdate, not fire-and-forget: the paid TTS job above is already
+      // submitted, and if this transition silently failed the row would keep
+      // saying stage "video" — so every 90s lease expiry another caller would
+      // re-observe the video "completed" and submit ANOTHER paid TTS job.
+      // Throwing surfaces it as a CriticalWriteError, which the catch below
+      // propagates for a retry instead of failing the billed render.
+      mustUpdate(
+        await admin
+          .from("generation_jobs")
+          .update({
+            stage: "dialogue_tts" satisfies JobStage,
+            provider_request_id: speech.requestId,
+            status_url: speech.statusUrl,
+            response_url: speech.responseUrl,
+            cancel_url: speech.cancelUrl,
+            payload: { ...row.payload, videoUrl },
+            updated_at: new Date().toISOString(),
+            // Release the claim: the next stage is a different provider job and
+            // its own advance must be able to claim it fresh.
+            advance_lock: null,
+            advance_locked_at: null,
+          })
+          .eq("generation_id", generationId),
+        `Couldn't record the dialogue TTS stage for generation ${generationId}`,
+      );
+      // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
       await admin
         .from("generations")
         .update({ progress_stage: STAGE_PROGRESS.dialogue_tts })
@@ -715,28 +892,44 @@ export async function advanceGeneration(
 
     if (row.stage === "dialogue_tts") {
       const audioUrl = await fetchQueuedAudioUrl(jobHandle(row));
+      phase = "submit";
       const lipsync = await submitLipSyncJob(row.payload.videoUrl!, audioUrl);
-      await admin
-        .from("generation_jobs")
-        .update({
-          stage: "dialogue_lipsync" satisfies JobStage,
-          provider_request_id: lipsync.requestId,
-          status_url: lipsync.statusUrl,
-          response_url: lipsync.responseUrl,
-          cancel_url: lipsync.cancelUrl,
-          payload: { ...row.payload, audioUrl },
-          updated_at: new Date().toISOString(),
-          // Release the claim for the final stage's own advance.
-          advance_lock: null,
-          advance_locked_at: null,
-        })
-        .eq("generation_id", generationId);
+      // Recorded into resume BEFORE the transition write so the persisted
+      // pipeline_log ends up complete — this used to be appended to the
+      // in-memory copy only, after the UPDATE, so the "Generated dialogue
+      // audio" step vanished from every finished generation's log.
+      const attemptsWithSpeech = appendStep(
+        row.resume.attempts ?? [],
+        "Generated dialogue audio via ElevenLabs.",
+        "speech",
+      );
+      // Same mustUpdate reasoning as the TTS transition above — the paid
+      // lip-sync job is already submitted.
+      mustUpdate(
+        await admin
+          .from("generation_jobs")
+          .update({
+            stage: "dialogue_lipsync" satisfies JobStage,
+            provider_request_id: lipsync.requestId,
+            status_url: lipsync.statusUrl,
+            response_url: lipsync.responseUrl,
+            cancel_url: lipsync.cancelUrl,
+            payload: { ...row.payload, audioUrl },
+            resume: { ...row.resume, attempts: attemptsWithSpeech } satisfies ResumeState,
+            updated_at: new Date().toISOString(),
+            // Release the claim for the final stage's own advance.
+            advance_lock: null,
+            advance_locked_at: null,
+          })
+          .eq("generation_id", generationId),
+        `Couldn't record the lip-sync stage for generation ${generationId}`,
+      );
+      // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
       await admin
         .from("generations")
         .update({ progress_stage: STAGE_PROGRESS.dialogue_lipsync })
         .eq("id", generationId);
 
-      appendStep(row.resume.attempts ?? [], "Generated dialogue audio via ElevenLabs.", "speech");
       return { state: "pending", stage: "dialogue_lipsync", progress: STAGE_PROGRESS.dialogue_lipsync };
     }
 
@@ -753,6 +946,36 @@ export async function advanceGeneration(
     });
     return { state: "succeeded", resultUrl: syncedUrl };
   } catch (err) {
+    // Our own DB write failed mid-advance (stage transition, terminal
+    // update). NOT a provider failure — swallowing it here would either
+    // strand or double-charge a billed render. Propagate so the webhook
+    // 500s (fal retries), the poll errors (client retries), and the reaper
+    // leaves the row for its next pass.
+    if (err instanceof CriticalWriteError) throw err;
+
+    // Transport blip (timeout, connection reset, fal 5xx) while FETCHING a
+    // completed stage's result — the render itself is fine and already
+    // billed, so failing it terminally as provider_failed (what this catch
+    // used to do for every error) threw away paid work over a network
+    // hiccup. Release the claim and stay pending; the next poll/webhook
+    // retries the fetch, same as the checkQueuedJob transport-error path
+    // above.
+    //
+    // Deliberately NOT extended to the SUBMIT phase, and the asymmetry is
+    // the point: a result fetch is a read, so retrying it is free — but a
+    // submit that died in transport is ambiguous. fal may have accepted the
+    // paid TTS/lip-sync job before the connection dropped, and since no
+    // requestId was persisted, "release and retry" would submit a SECOND
+    // paid job on the next advance — one orphaned paid render per ambiguous
+    // timeout, repeatable every 90s lease. So the submit phase keeps the
+    // pre-existing terminal semantics below (for the dialogue stages that
+    // still ships the already-rendered silent video): a wasted job at
+    // worst, never a double-pay.
+    if (phase === "result-fetch" && isTransportError(err)) {
+      await releaseAdvanceClaim(admin, generationId, row.provider_request_id);
+      return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
+    }
+
     const message = err instanceof Error ? err.message : "Generation failed.";
 
     // Same rule as above: never discard a rendered video over a dialogue
@@ -856,16 +1079,78 @@ export async function reapStaleJobs(userId: string): Promise<void> {
       } catch {
         // ignore — finishing the row is what matters
       }
-      await finish(current.generation_id, current.user_id, {
-        status: "failed",
-        attempts: appendStep(
-          current.resume?.attempts ?? [],
-          "This render didn't finish in time and was stopped.",
-          "generate",
-        ),
-        // "fal errored or lost the job" — the provider-fault case by definition.
-        fault: "provider_failed",
-      });
+      try {
+        await finish(current.generation_id, current.user_id, {
+          status: "failed",
+          attempts: appendStep(
+            current.resume?.attempts ?? [],
+            "This render didn't finish in time and was stopped.",
+            "generate",
+          ),
+          // "fal errored or lost the job" — the provider-fault case by definition.
+          fault: "provider_failed",
+        });
+      } catch {
+        // finish() throws CriticalWriteError when its terminal write fails —
+        // it kept the job row, so the next reap retries this write-off.
+      }
+    }
+  }
+
+  // Second sweep: generations stuck at "generating" with NO job row at all.
+  //
+  // Everything above scans generation_jobs, which by definition can never see
+  // a row whose function died between reserve_generation and saveVideoJob (or
+  // an inline image path that never reached its terminal update). Those rows
+  // aren't reachable by any poll, webhook, or the job scan — they sat at
+  // "generating" forever, credits charged, spinner spinning. Same admin
+  // client as the job scan (generation_jobs is RLS-locked server-only, and
+  // the generations filter here is explicit on user_id), same lazy page-load
+  // cadence, same small bounded query.
+  const orphanCutoff = new Date(Date.now() - ORPHANED_GENERATION_TIMEOUT_MS).toISOString();
+  const { data: longRunning } = await admin
+    .from("generations")
+    .select("id, pipeline_log")
+    .eq("user_id", userId)
+    .eq("status", "generating")
+    .lt("created_at", orphanCutoff)
+    .limit(20);
+
+  if (longRunning?.length) {
+    // Split "old but still legitimately queued" (has a job row — the absolute
+    // timeout above owns those) from the genuinely orphaned.
+    const { data: jobRows } = await admin
+      .from("generation_jobs")
+      .select("generation_id")
+      .in(
+        "generation_id",
+        longRunning.map((g) => g.id as string),
+      );
+    const withJob = new Set((jobRows ?? []).map((j) => j.generation_id as string));
+
+    for (const gen of longRunning) {
+      if (withJob.has(gen.id as string)) continue;
+      try {
+        // finish() gives the standard failure bookkeeping — the
+        // status-guarded terminal write, the flag-gated refund, the push
+        // notification, the failure report — and its job-row delete is a
+        // harmless no-op here. Fault "our_error": the function died on our
+        // side before the job was ever recorded, so the refund policy treats
+        // it like any other bug of ours; it says nothing about the provider,
+        // so the circuit breaker correctly isn't fed (only provider_failed
+        // feeds it).
+        await finish(gen.id as string, userId, {
+          status: "failed",
+          attempts: appendStep(
+            ((gen.pipeline_log ?? []) as AttemptLog[]),
+            "This generation was interrupted before the render could be tracked, and has been written off.",
+            "generate",
+          ),
+          fault: "our_error",
+        });
+      } catch {
+        // CriticalWriteError from finish() — row untouched, next reap retries.
+      }
     }
   }
 }

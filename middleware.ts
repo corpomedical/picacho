@@ -2,7 +2,100 @@ import { type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { NATIVE_COOKIE, userAgentIsNativeApp } from "@/lib/native/platform";
 
+// ---------------------------------------------------------------------------
+// Content-Security-Policy — built here, per request, because it carries a
+// per-request nonce (the Next.js official CSP pattern).
+//
+// The previous policy lived in next.config.ts headers() and allowed
+// script-src 'unsafe-inline' with connect-src https: and img-src https: —
+// which contains almost nothing: any injected <script> ran, and any injected
+// code could exfiltrate to any https host. With a nonce + 'strict-dynamic',
+// only scripts stamped with this request's nonce (Next stamps its own
+// bootstrap scripts automatically when it sees the nonce in the REQUEST's
+// CSP header — that is why the header is set on the request below, not just
+// the response) and scripts THEY load may execute. The remaining sources are
+// the exact hosts the browser legitimately talks to, no wildcards.
+//
+// Serving both hosts' traffic notes:
+//   • Supabase (auth + direct storage uploads from the browser — see
+//     lib/supabase/client.ts and character-form.tsx) — derived from
+//     NEXT_PUBLIC_SUPABASE_URL rather than hardcoded.
+//   • fal.media — finished VIDEO renders stay hosted on fal's CDN
+//     (generations.result_url; images are re-hosted into our storage but
+//     fall back to the fal URL if that download hiccups — see
+//     providers/image.ts), so <video>/<img> need it. Subdomain wildcard
+//     because fal serves from versioned hosts (v3.fal.media etc.).
+//   • Stripe — frame-src for js.stripe.com/hooks.stripe.com as Stripe
+//     requires, and form-action for the Checkout/Billing-portal redirects
+//     that follow our own server-action form posts (Chrome enforces
+//     form-action on the redirect target). js.stripe.com stays in
+//     script-src for older browsers that ignore 'strict-dynamic' and for
+//     Stripe.js if it's ever added.
+//   • Google Fonts hosts are kept from the old policy (next/font self-hosts,
+//     but the entries are harmless and cover any legacy stylesheet link).
+//
+// The old inline theme-init script in app/layout.tsx now receives the nonce
+// via the x-nonce request header (headers() in the root layout). JSON-LD
+// <script type="application/ld+json"> blocks are inert data, not executable
+// script, so CSP does not gate them and they need no nonce.
+//
+// 'unsafe-eval' in dev only: Next's dev tooling (react-refresh) needs it;
+// production never gets it.
+function buildCsp(nonce: string): string {
+  const isDev = process.env.NODE_ENV === "development";
+
+  let supabaseOrigin = "";
+  let supabaseWs = "";
+  try {
+    const u = new URL(process.env.NEXT_PUBLIC_SUPABASE_URL ?? "");
+    supabaseOrigin = u.origin;
+    supabaseWs = `wss://${u.host}`;
+  } catch {
+    // Missing/invalid env — the app can't talk to Supabase anyway; the
+    // policy simply omits it rather than throwing in middleware.
+  }
+
+  return [
+    `default-src 'self'`,
+    // 'self' https: 'unsafe-inline' are fallbacks for pre-strict-dynamic
+    // browsers only — anything that understands 'strict-dynamic' ignores
+    // them, so modern browsers run nonce-approved scripts and nothing else.
+    `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://js.stripe.com https: 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ""}`,
+    // 'unsafe-inline' stays for styles: React writes style="" attributes
+    // everywhere and Tailwind/Next inject style tags without nonce support.
+    // Style injection is a far smaller sink than script and the script side
+    // is what this change locks down.
+    `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
+    `img-src 'self' data: blob:${supabaseOrigin ? ` ${supabaseOrigin}` : ""} https://*.fal.media`,
+    `media-src 'self' blob:${supabaseOrigin ? ` ${supabaseOrigin}` : ""} https://*.fal.media`,
+    // Browser-side fetch/XHR/WebSocket targets: our own routes plus Supabase
+    // (auth token refresh, storage uploads, realtime). Previously `https:
+    // wss:` — i.e. anywhere. fal.media must stay here too: DownloadButton
+    // saves results via fetch(url) → blob (a plain <a download> can't save
+    // cross-origin), and video result_urls live on fal's CDN — without this
+    // entry every video Download silently degrades to opening a tab.
+    `connect-src 'self'${supabaseOrigin ? ` ${supabaseOrigin} ${supabaseWs}` : ""} https://*.fal.media`,
+    `font-src 'self' data: https://fonts.gstatic.com`,
+    `frame-src https://js.stripe.com https://hooks.stripe.com`,
+    `object-src 'none'`,
+    `base-uri 'self'`,
+    `form-action 'self' https://checkout.stripe.com https://billing.stripe.com`,
+    `frame-ancestors 'none'`,
+  ].join("; ");
+}
+
 export async function middleware(request: NextRequest) {
+  // Nonce first, on the REQUEST headers, before updateSession builds the
+  // response with NextResponse.next({ request }) — that forwarding is what
+  // lets Next's renderer see the nonce and stamp its own inline scripts
+  // with it. x-nonce is how the root layout reads it for the theme script.
+  const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
+  const csp = buildCsp(nonce);
+  request.headers.set("x-nonce", nonce);
+  request.headers.set("content-security-policy", csp);
+
+  // Auth/session logic is unchanged and still runs on exactly the same
+  // matcher as before — the CSP additions above touch only headers.
   const response = await updateSession(request);
 
   // Record whether this session is running inside the iOS/Android shell, so
@@ -21,6 +114,11 @@ export async function middleware(request: NextRequest) {
     response.cookies.delete(NATIVE_COOKIE);
   }
 
+  // And on the response, which is what the browser actually enforces. Also
+  // set on updateSession's redirect responses (suspension bounce) — harmless
+  // there, correct everywhere else.
+  response.headers.set("content-security-policy", csp);
+
   return response;
 }
 
@@ -29,6 +127,8 @@ export const config = {
     /*
      * Run on every route except static files and images, so the session
      * cookie stays fresh everywhere without wasting work on assets.
+     * The CSP header rides along on the same matcher: excluded paths are
+     * assets and API responses, which a document-level CSP doesn't apply to.
      */
     // api/v1 is excluded: it authenticates with an API key, has no
     // session cookie to refresh, and every request through it would

@@ -64,6 +64,14 @@ export function isProviderFault(message: string): boolean {
 }
 
 // Records a failed generation. Trips the breaker on the third in a row.
+//
+// The increment is atomic (record_model_failure RPC, advisory-locked — see
+// supabase/pending-2026-08-19/pipeline.sql). It used to be a read-modify-write
+// here in JS, which loses counts under concurrency — and concurrent failures
+// are exactly what an outage produces: three simultaneous failures could all
+// read consecutive_failures=0, all write 1, and the breaker that exists for
+// outages would never trip during one. The failing_user_ids distinct-merge
+// semantics are preserved inside the RPC.
 export async function recordModelFailure(
   modelId: string,
   kind: "video" | "image",
@@ -73,6 +81,23 @@ export async function recordModelFailure(
   if (!modelId || !isProviderFault(error)) return;
 
   const admin = createAdminClient();
+  const { error: rpcError } = await admin.rpc("record_model_failure", {
+    p_model_id: modelId,
+    p_kind: kind,
+    p_error: error.slice(0, 500),
+    p_user_id: userId ?? null,
+    p_failure_threshold: FAILURE_THRESHOLD,
+    p_min_distinct_users: MIN_DISTINCT_USERS,
+    p_base_cooldown_ms: BASE_COOLDOWN_MS,
+    p_max_cooldown_ms: MAX_COOLDOWN_MS,
+  });
+  if (!rpcError) return;
+
+  // Fallback: the RPC isn't applied yet (pipeline.sql pending) or errored.
+  // The old read-modify-write is lossy under concurrency but infinitely
+  // better than dropping the failure on the floor — and it keeps this
+  // deployable ahead of the SQL migration.
+  console.warn("record_model_failure RPC unavailable; falling back to read-modify-write:", rpcError.message);
   const { data: existing } = await admin
     .from("model_health")
     .select("consecutive_failures, trip_count, failing_user_ids")

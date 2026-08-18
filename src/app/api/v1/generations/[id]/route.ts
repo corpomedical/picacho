@@ -36,7 +36,9 @@ export async function GET(
   // only thing standing between one customer and another's history.
   const { data: row } = await supabase
     .from("generations")
-    .select("id, status, prompt_input, result_url, match_score, credits_used, content_type, created_at")
+    .select(
+      "id, status, prompt_input, result_url, match_score, credits_used, content_type, created_at, pipeline_log",
+    )
     .eq("id", id)
     .eq("user_id", caller.userId)
     .is("deleted_at", null)
@@ -51,11 +53,25 @@ export async function GET(
 
   const mediaUrl = toMediaUrl(row.result_url as string | null);
 
+  // The prompt that actually ran, after Picacho's drafting step — the same
+  // final_prompt the POST response carries, recovered from the stored
+  // pipeline log (the last attempt's compiledPrompt is what POST returns as
+  // result.finalPrompt). Without it, a client whose HTTP timeout forced them
+  // onto this recovery endpoint got a strictly poorer answer than the POST
+  // they missed — and final_prompt is the field the docs tell developers to
+  // tune against. Null for rows that predate pipeline logging.
+  const log = (row.pipeline_log ?? null) as { compiledPrompt?: string }[] | null;
+  const finalPrompt =
+    Array.isArray(log) && log.length > 0
+      ? (log[log.length - 1]?.compiledPrompt ?? null) || null
+      : null;
+
   return NextResponse.json({
     id: row.id,
     status: row.status,
     type: row.content_type,
     prompt: row.prompt_input,
+    final_prompt: finalPrompt,
     image_url: mediaUrl ? absolutizeMediaUrl(mediaUrl, await getOrigin()) : null,
     match_score: row.match_score,
     credits_used: row.credits_used,

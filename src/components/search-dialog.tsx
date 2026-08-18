@@ -46,6 +46,12 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
   const [isPending, startTransition] = useTransition();
   const inputRef = useRef<HTMLInputElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  // Monotonic id for the most recently ISSUED search. Server-action round
+  // trips aren't guaranteed to come back in order — with fast typing, the
+  // response for "no" could land after the response for "nova" and overwrite
+  // the fresher results with stale ones. Each request captures its own id and
+  // only the one that still matches at resolution time may write results.
+  const searchSeqRef = useRef(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -93,13 +99,20 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   useEffect(() => {
     if (!query.trim()) {
+      // Bump the sequence so any still-in-flight search can't repopulate
+      // results the person just cleared.
+      searchSeqRef.current += 1;
       setResults(EMPTY);
       return;
     }
     const handle = setTimeout(() => {
+      const seq = ++searchSeqRef.current;
       startTransition(async () => {
         const r = await searchAll(query);
-        setResults(r);
+        // Stale-response guard: a newer query has been issued (or the box was
+        // cleared) since this request went out — drop it instead of letting
+        // an out-of-order response overwrite the newer results.
+        if (seq === searchSeqRef.current) setResults(r);
       });
     }, 200);
     return () => clearTimeout(handle);

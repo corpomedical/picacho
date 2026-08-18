@@ -5,7 +5,7 @@ import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Input } from "@/components/ui/field";
-import { AdminErrorBanner } from "@/components/admin-error-banner";
+import { AdminErrorBanner, AdminSuccessBanner } from "@/components/admin-error-banner";
 import { LocalDate } from "@/components/local-date";
 import { getUserActivity, formatDuration } from "@/lib/admin/activity";
 import { cn } from "@/lib/cn";
@@ -20,9 +20,12 @@ const TABS = [
 export default async function AdminUsersPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; error?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; error?: string; message?: string }>;
 }) {
-  const { q, status, error: actionError } = await searchParams;
+  // ?message= carries success notices (deleteUser redirects here with one) —
+  // it used to be silently dropped, so deleting a user landed on a list that
+  // said nothing about whether it worked.
+  const { q, status, error: actionError, message } = await searchParams;
   const activeTab = TABS.some((t) => t.id === status) ? status! : "all";
   const supabase = await createClient();
 
@@ -69,6 +72,7 @@ export default async function AdminUsersPage({
   return (
     <div>
       <AdminErrorBanner error={actionError} />
+      <AdminSuccessBanner message={message} />
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-neutral-900">Users</h1>
         <form className="w-64">

@@ -74,6 +74,22 @@ export async function assignCharacterToProject(formData: FormData) {
     redirect(`/app/projects/${projectId}?error=${encodeURIComponent("Pick at least one character to assign.")}`);
   }
 
+  // project_id arrives from the form and is written straight into the rows.
+  // The .eq("user_id") below only proves the CHARACTERS are the caller's —
+  // the FK constraint doesn't enforce project ownership and character RLS
+  // only checks user_id, so without this lookup a crafted request could
+  // point the caller's characters at another user's project id. Same check
+  // saveCharacterProfile does (characters/actions.ts).
+  const { data: project } = await supabase
+    .from("projects")
+    .select("id")
+    .eq("id", projectId)
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+  if (!project) {
+    redirect(`/app/projects?error=${encodeURIComponent("Couldn't find that project.")}`);
+  }
+
   const { error } = await supabase
     .from("character_profiles")
     .update({ project_id: projectId })
