@@ -101,13 +101,24 @@ export async function deleteUser(formData: FormData) {
   // with no record left to find them by. Mirrors the account self-deletion
   // flow in profile/actions.ts. Best-effort: a storage hiccup must not block
   // the actual account deletion below.
+  const PAGE = 1000;
   for (const bucket of ["character-references", "generated-images", "chat-attachments"]) {
     try {
-      const { data: files } = await admin.storage.from(bucket).list(userId, { limit: 1000 });
-      if (files && files.length > 0) {
-        await admin.storage
-          .from(bucket)
-          .remove(files.map((f: { name: string }) => `${userId}/${f.name}`));
+      // Page through the full listing rather than deleting a single 1000-object
+      // page — a prolific user can have far more than that, and a single page
+      // would orphan everything past the first 1000 (billed storage with no DB
+      // row left to find it by). Collect all keys against the unchanged bucket,
+      // then delete in batches; deleting per-page would shift the offset window
+      // and skip files. Mirrors profile/actions.ts removeAllUserFiles.
+      const paths: string[] = [];
+      for (let offset = 0; ; offset += PAGE) {
+        const { data: files } = await admin.storage.from(bucket).list(userId, { limit: PAGE, offset });
+        if (!files || files.length === 0) break;
+        for (const f of files as { name: string }[]) paths.push(`${userId}/${f.name}`);
+        if (files.length < PAGE) break;
+      }
+      for (let i = 0; i < paths.length; i += PAGE) {
+        await admin.storage.from(bucket).remove(paths.slice(i, i + PAGE));
       }
     } catch {
       // swallow — proceed to delete the account regardless

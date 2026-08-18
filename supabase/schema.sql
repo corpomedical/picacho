@@ -561,3 +561,51 @@ BEGIN
 END $$;
 REVOKE EXECUTE ON FUNCTION public.claim_job_advance(uuid,text,int) FROM public, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_job_advance(uuid,text,int) TO service_role;
+
+-- Round-5 hardening (2026-08-18) ---------------------------------------------
+
+-- Meter-poisoning guard: `authenticated` has INSERT on every generations column
+-- and RLS only checks user_id, so a user could insert a row for themselves with
+-- a negative credits_used to drive their summed monthly usage below zero and
+-- lift the plan cap. Non-negativity CHECKs neutralise that; legitimate inserts
+-- (real weights, or 0) are unaffected.
+ALTER TABLE public.generations
+  ADD CONSTRAINT generations_credits_used_nonneg
+    CHECK (credits_used IS NULL OR credits_used >= 0),
+  ADD CONSTRAINT generations_purchased_credits_used_nonneg
+    CHECK (purchased_credits_used IS NULL OR purchased_credits_used >= 0);
+
+-- Enforce that a character's reference_image_urls only ever point inside the
+-- OWNER's storage folder. The server action filters to `${uid}/`, but
+-- `authenticated` can UPDATE the column directly via PostgREST, bypassing that
+-- to a victim's path — which /api/media then signs unconditionally. This makes
+-- the ownership rule hold at the database regardless of client.
+CREATE OR REPLACE FUNCTION public.enforce_reference_paths_owned()
+RETURNS trigger LANGUAGE plpgsql SET search_path = public AS $$
+BEGIN
+  IF NEW.reference_image_urls IS NOT NULL AND EXISTS (
+    SELECT 1 FROM unnest(NEW.reference_image_urls) u
+    WHERE u IS NULL OR position((NEW.user_id::text || '/') in u) <> 1
+  ) THEN
+    RAISE EXCEPTION 'reference_image_urls must all be under the owner''s storage folder';
+  END IF;
+  RETURN NEW;
+END $$;
+DROP TRIGGER IF EXISTS trg_enforce_reference_paths_owned ON public.character_profiles;
+CREATE TRIGGER trg_enforce_reference_paths_owned
+  BEFORE INSERT OR UPDATE ON public.character_profiles
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_reference_paths_owned();
+
+-- Server-side monthly usage sum. A PostgREST select caps at ~1000 rows, so
+-- summing generations in JS silently undercounted usage for accounts with
+-- >1000 generations in the window, lifting the plan cap for the heaviest
+-- accounts. A SQL sum has no cap. NULL credits_used counts as 1 (legacy), real
+-- 0 stays 0 — matching getMonthlyUsageWith's semantics.
+CREATE OR REPLACE FUNCTION public.monthly_credits_used(p_user_id uuid, p_since timestamptz)
+RETURNS integer LANGUAGE sql SECURITY DEFINER SET search_path = public AS $$
+  SELECT coalesce(sum(CASE WHEN credits_used IS NULL THEN 1 ELSE credits_used END), 0)::int
+  FROM public.generations
+  WHERE user_id = p_user_id AND created_at >= p_since;
+$$;
+REVOKE EXECUTE ON FUNCTION public.monthly_credits_used(uuid, timestamptz) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.monthly_credits_used(uuid, timestamptz) TO service_role;

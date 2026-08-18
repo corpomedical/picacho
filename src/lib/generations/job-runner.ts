@@ -420,7 +420,7 @@ async function finish(
 ): Promise<void> {
   const admin = createAdminClient();
 
-  await admin
+  const { data: transitioned } = await admin
     .from("generations")
     .update({
       status: outcome.status,
@@ -435,9 +435,24 @@ async function finish(
       // start→stop loops run unbounded paid renders at zero metered cost.
     })
     .eq("id", generationId)
-    .eq("user_id", userId);
+    .eq("user_id", userId)
+    // Only transition a row that is STILL running. If the person already
+    // stopped-and-discarded it (discardStoppedGeneration sets status "failed"
+    // but the job row survives), a late webhook or reaper must NOT resurrect it
+    // to "succeeded" and re-charge them for a render they were told was
+    // discarded. Matching zero rows here means it's already terminal.
+    .eq("status", "generating")
+    .select("id");
 
+  // Always clear the job row, even when we didn't transition — a discarded
+  // generation still needs its queue handle cleaned up so nothing re-processes
+  // it.
   await admin.from("generation_jobs").delete().eq("generation_id", generationId);
+
+  // Already terminal (discarded/cancelled by the user, or finished by a
+  // concurrent caller): stop here. Do not refund again, notify, or feed the
+  // circuit breaker for a transition that didn't happen.
+  if (!transitioned?.length) return;
 
   // Refund the other two credit sources (purchased top-ups, free-trial
   // generations) for refundable faults — the update above only released the

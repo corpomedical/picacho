@@ -50,6 +50,7 @@ import {
   getDurationCreditWeight,
   getDialogueCreditWeight,
   isValidDuration,
+  requiresReferenceImage,
   VIDEO_MODELS,
   VIDEO_MODELS_BY_PRICE,
 } from "@/lib/generations/providers/video-models";
@@ -643,24 +644,6 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const promptAspectRatio = contentType === "video" ? detectAspectRatioFromPrompt(userInput) : null;
   const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
 
-  // Kling O3 Standard's image-to-video endpoint requires a start frame —
-  // there's no text-to-video fallback wired up for it (see fal.ts). That
-  // frame can come from either the character's own saved reference photo or
-  // a photo attached directly to this message (see attachmentReferenceUrl
-  // above) — either satisfies it. Catch having neither before spending any
-  // credits, not after the provider call fails.
-  if (
-    contentType === "video" &&
-    videoModelId === "kling-o3" &&
-    !attachmentReferenceUrl &&
-    !character?.reference_image_urls?.[0]
-  ) {
-    return {
-      error:
-        "Kling O3 needs a reference photo — add one to this character, attach a photo to this message, or switch to Kling 1.6.",
-    };
-  }
-
   // Circuit breaker, checked BEFORE any credit is spent or any provider call
   // is made. A model that has failed three times in a row (across at least two
   // accounts) is out of service, and rather than turning the person away we
@@ -704,6 +687,24 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     creditWeight =
       getDurationCreditWeight(substitutedModel, videoDurationSeconds) +
       (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0);
+  }
+
+  // A model whose fal endpoint starts from a frame (image/reference-to-video)
+  // cannot run without one. Checked on the RESOLVED model — the circuit breaker
+  // may have substituted the user's text-to-video pick into a frame-requiring
+  // one (or vice-versa) — and before any credit is spent, so we never charge
+  // for a render that could never start. This replaces the old kling-o3-only
+  // guard that ran BEFORE substitution and so both missed a substituted-in
+  // requirement and could wrongly reject a pick that got substituted away.
+  if (
+    contentType === "video" &&
+    requiresReferenceImage(getVideoModel(videoModelId)) &&
+    !attachmentReferenceUrl &&
+    !character?.reference_image_urls?.[0]
+  ) {
+    return {
+      error: `${getVideoModel(videoModelId).name} needs a reference photo — add one to this character, attach a photo to this message, or pick a different model.`,
+    };
   }
 
   const {
@@ -1527,10 +1528,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     creditWeight = getDurationCreditWeight(substitutedModel, videoDurationSeconds);
   }
 
-  if (videoModelId === "kling-o3" && !character.reference_image_urls?.[0]) {
+  // Any frame-starting model (image/reference-to-video), checked on the
+  // RESOLVED model so a substitution into one is caught — multi-angle has no
+  // per-message attachment, so only the character's saved photo can satisfy it.
+  if (requiresReferenceImage(getVideoModel(videoModelId)) && !character.reference_image_urls?.[0]) {
     return {
-      error:
-        "Kling O3 needs this character to have a reference photo — add one in Character settings, or switch to Kling 1.6.",
+      error: `${getVideoModel(videoModelId).name} needs this character to have a reference photo — add one in Character settings, or pick a different model.`,
     };
   }
 
@@ -1901,19 +1904,36 @@ export async function requestMultiAngleGenerationCancel(
   return { error: null };
 }
 
-// Pulls the Storage object path back out of a signed URL created by
-// persistGeneratedImage, e.g.
-// ".../object/sign/generated-images/<userId>/<uuid>.png?token=..." ->
-// "<userId>/<uuid>.png". Video results are hosted externally on fal.ai's CDN
-// and were never uploaded to our own Storage, so this only ever applies to
-// image generations.
+// Pulls the Storage object path back out of a result_url created by
+// persistGeneratedImage. Handles BOTH formats a row can hold: the current
+// capability URL "/api/media/<bucket>/<userId>/<uuid>.png?v=..." (mediaUrl,
+// see lib/media/url.ts) AND the legacy signed URL
+// ".../object/sign/<bucket>/<userId>/<uuid>.png?token=...". The signed-only
+// version silently returned null for every image made since the stable-media-
+// URL migration, so "deleted" images were never actually removed from Storage
+// and stayed fetchable through their never-expiring capability URL. Video
+// results live on fal.ai's CDN and were never in our Storage, so this only
+// ever matches image generations.
 function extractStoragePath(url: string | null, bucket: string): string | null {
   if (!url) return null;
-  const marker = `/object/sign/${bucket}/`;
-  const idx = url.indexOf(marker);
-  if (idx === -1) return null;
-  const path = url.slice(idx + marker.length).split("?")[0];
-  return path ? decodeURIComponent(path) : null;
+  for (const marker of [`/api/media/${bucket}/`, `/object/sign/${bucket}/`]) {
+    const idx = url.indexOf(marker);
+    if (idx === -1) continue;
+    const raw = url.slice(idx + marker.length).split("?")[0];
+    if (!raw) return null;
+    // Path segments are percent-encoded individually (mediaUrl) — decode each.
+    return raw
+      .split("/")
+      .map((seg) => {
+        try {
+          return decodeURIComponent(seg);
+        } catch {
+          return seg;
+        }
+      })
+      .join("/");
+  }
+  return null;
 }
 
 // Client-invoked (see the note on saveCharacterProfile above for why this

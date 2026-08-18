@@ -51,7 +51,12 @@ export function latestMonthlyAnniversary(periodStart: Date): Date {
 // user_id filter below is what makes it correct in both cases. Dropping it
 // would silently bill one account for the whole platform's usage.
 export async function getMonthlyUsageWith(
-  supabase: SupabaseClient,
+  // Kept in the signature for its callers, but the sum now runs through a
+  // service-role RPC (below) rather than this client: a PostgREST select is
+  // capped at ~1000 rows, so summing rows in JS silently undercounted usage for
+  // any account with >1000 generations in its window — lifting the plan cap for
+  // exactly the heaviest accounts. A SQL sum has no such cap.
+  _supabase: SupabaseClient,
   userId: string,
   periodStart?: string | null,
 ) {
@@ -64,20 +69,16 @@ export async function getMonthlyUsageWith(
         return startOfMonth;
       })();
 
-  const { data } = await supabase
-    .from("generations")
-    .select("credits_used")
-    .eq("user_id", userId)
-    .gte("created_at", start.toISOString());
-
-  // NULL means a legacy row from before credits_used existed → count as 1.
-  // A real 0 (a refunded/released row) must count as 0, NOT 1 — using `|| 1`
-  // treated 0 as falsy and silently re-charged every refunded generation,
-  // defeating the monthly-allowance half of every refund.
-  return (data ?? []).reduce(
-    (sum, row) => sum + (row.credits_used == null ? 1 : Number(row.credits_used)),
-    0,
-  );
+  // monthly_credits_used counts NULL credits_used as 1 (legacy rows) and a real
+  // 0 as 0, exactly as the previous JS reduce did — EXECUTE is revoked from
+  // authenticated, so it goes through the service-role client. The explicit
+  // user_id argument is what scopes it (the service role bypasses RLS).
+  const admin = createAdminClient();
+  const { data } = await admin.rpc("monthly_credits_used", {
+    p_user_id: userId,
+    p_since: start.toISOString(),
+  });
+  return Number(data) || 0;
 }
 
 // Enforced here, server-side — previously the plan limits were only ever

@@ -196,6 +196,15 @@ export function getDefaultDurationSeconds(model: VideoModel): number {
   return model.durations.find((d) => d.default)?.seconds ?? model.durations[0].seconds;
 }
 
+// True when the model's fal endpoint starts FROM an image (image-to-video or
+// reference-to-video) and therefore cannot run without a reference frame — a
+// saved character photo or a photo attached to the message. text-to-video
+// models (Kling 1.6, Veo) return false. Used to reject before any credit is
+// spent, including after the circuit breaker substitutes into such a model.
+export function requiresReferenceImage(model: VideoModel): boolean {
+  return /image-to-video|reference-to-video/.test(model.falEndpoint);
+}
+
 // Server-side source of truth for what a specific duration choice actually
 // costs — never trust a duration value that arrived via form data without
 // checking it against this first (see runGeneration/runMultiAngleGeneration).
