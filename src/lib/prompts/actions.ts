@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { latestMonthlyAnniversary } from "@/lib/generations/core";
 import { runRealPipeline } from "@/lib/generations/pipeline";
 import { describeImageAsPrompt, type DescribeMode } from "@/lib/generations/providers/describe-image";
 import { absolutizeMediaUrl } from "@/lib/media/url";
@@ -93,7 +94,9 @@ async function assistAllowance(
   // with credits; calendar month if Stripe hasn't given us an anchor yet
   // (same fallback as getMonthlyUsage and the reference-photo cap).
   const periodStart = profile?.current_period_start
-    ? new Date(profile.current_period_start as string)
+    // Monthly anniversary, not the raw (possibly year-old) annual period start —
+    // otherwise annual subs never get their monthly assist cap back.
+    ? latestMonthlyAnniversary(new Date(profile.current_period_start as string))
     : (() => {
         const d = new Date();
         d.setDate(1);

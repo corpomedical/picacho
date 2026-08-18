@@ -506,3 +506,30 @@ GRANT EXECUTE ON FUNCTION public.increment_free_generations(uuid) TO service_rol
 GRANT EXECUTE ON FUNCTION public.record_credit_purchase(uuid,text,int,text,int) TO service_role;
 GRANT EXECUTE ON FUNCTION public.api_rate_check(uuid,int,int) TO service_role;
 GRANT EXECUTE ON FUNCTION public.record_prompt_assist(uuid,timestamptz,int,text) TO service_role;
+
+-- Guarded atomic spends (concurrency-safe): decrement/increment only when the
+-- balance/limit covers it, returning whether it did so the caller can abort
+-- before any paid work when a concurrent request already took the last credit.
+CREATE OR REPLACE FUNCTION public.spend_free_generation(p_user_id uuid, p_limit int)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE updated int;
+BEGIN
+  UPDATE public.profiles SET free_generations_used = coalesce(free_generations_used,0) + 1
+   WHERE id = p_user_id AND coalesce(free_generations_used,0) < p_limit;
+  GET DIAGNOSTICS updated = ROW_COUNT;
+  RETURN updated > 0;
+END $$;
+CREATE OR REPLACE FUNCTION public.spend_purchased_credits(p_user_id uuid, p_amount int)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE updated int;
+BEGIN
+  IF p_amount IS NULL OR p_amount <= 0 THEN RETURN true; END IF;
+  UPDATE public.profiles SET purchased_credits = purchased_credits - p_amount
+   WHERE id = p_user_id AND coalesce(purchased_credits,0) >= p_amount;
+  GET DIAGNOSTICS updated = ROW_COUNT;
+  RETURN updated > 0;
+END $$;
+REVOKE EXECUTE ON FUNCTION public.spend_free_generation(uuid,int) FROM public, anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.spend_purchased_credits(uuid,int) FROM public, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.spend_free_generation(uuid,int) TO service_role;
+GRANT EXECUTE ON FUNCTION public.spend_purchased_credits(uuid,int) TO service_role;

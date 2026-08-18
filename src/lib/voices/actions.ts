@@ -1,7 +1,18 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { generateSpeech } from "@/lib/generations/providers/fal";
+
+// A voice preview is a real, paid TTS call (see providers/fal.ts). The
+// paid-plan gate below stops free signups from scripting it, but a single
+// paid account — or an admin — could still loop this endpoint and run up the
+// FAL bill. Bound it the same way the public API is bounded: an atomic,
+// advisory-lock per-user limiter (public.api_rate_check) that only records a
+// hit while under the cap, so a burst of concurrent clicks can't all pass a
+// stale count. Generous enough that no human clicking through the picker will
+// ever hit it.
+const PREVIEW_RATE_WINDOW_SECONDS = 60;
+const PREVIEW_RATE_MAX_PER_WINDOW = 20;
 
 // Fixed sample line, same for every voice — the point is to hear the
 // voice's tone/accent/pace, not to preview specific dialogue. Kept short to
@@ -32,6 +43,20 @@ export async function previewVoice(
     .single();
   if ((profile?.plan ?? "none") === "none" && profile?.role !== "admin") {
     return { error: "Voice previews are part of a paid plan — upgrade to use them." };
+  }
+
+  // Per-user rate limit — api_rate_check's EXECUTE is revoked from
+  // `authenticated`, so it runs through the service-role client. A limiter
+  // error fails closed: better to make the user retry than to leave the paid
+  // endpoint unbounded when the limiter itself is unavailable.
+  const admin = createAdminClient();
+  const { data: rateAllowed, error: rateError } = await admin.rpc("api_rate_check", {
+    p_user_id: userData.user.id,
+    p_window_seconds: PREVIEW_RATE_WINDOW_SECONDS,
+    p_max: PREVIEW_RATE_MAX_PER_WINDOW,
+  });
+  if (rateError || rateAllowed !== true) {
+    return { error: "You're previewing voices a bit fast — wait a moment and try again." };
   }
 
   const { data: preset } = await supabase

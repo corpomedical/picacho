@@ -10,6 +10,7 @@ import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { PLAN_LABELS, PLAN_REFERENCE_IMAGE_LIMITS, type PlanId } from "@/lib/plans";
+import { latestMonthlyAnniversary } from "@/lib/generations/core";
 
 // Real incident, 2026-08-09: a plan=none account generated an AI reference
 // photo for free — this function had no plan/credit check at all, unlike
@@ -43,10 +44,12 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   // could save a character whose reference_image_urls point at another user's
   // objects, and the media route (signature-only, no per-user check) would then
   // mint valid capability URLs for those files — a cross-user read. Same guard
-  // generateReferenceImage already applies.
+  // generateReferenceImage already applies. (uid hoisted so the null-narrowing
+  // survives into the filter closure — TS drops property narrowing there.)
+  const uid = data.user.id;
   const referenceImagePaths = (
     JSON.parse((formData.get("reference_image_paths") as string) || "[]") as string[]
-  ).filter((p) => typeof p === "string" && p.startsWith(`${data.user.id}/`));
+  ).filter((p) => typeof p === "string" && p.startsWith(`${uid}/`));
 
   const traits = {
     hair: (formData.get("trait_hair") as string)?.trim() || "",
@@ -164,7 +167,10 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   // rather than a credit charge, and why the numbers are set where they are.
   if (!isFreeTier && !isAdmin) {
     const periodStart = profile?.current_period_start
-      ? new Date(profile.current_period_start as string)
+      // Advance to the most recent MONTHLY anniversary — an annual sub's raw
+      // period start can be ~12 months ago, which made this cap span the whole
+      // year (never resetting monthly). Mirrors getMonthlyUsageWith.
+      ? latestMonthlyAnniversary(new Date(profile.current_period_start as string))
       : (() => {
           // No Stripe billing anchor yet (see backfill-billing-period.js) —
           // fall back to the calendar month, matching getMonthlyUsage.

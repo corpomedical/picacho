@@ -33,7 +33,7 @@ export const COOLDOWN_MS = 3000;
 // year, so the quota effectively reset once every twelve months.
 // (Anniversary days past a month's end roll forward per JS Date semantics —
 // a Jan 31 anchor gives Feb 28/29 → Mar 3 windows; imperfect, harmless.)
-function latestMonthlyAnniversary(periodStart: Date): Date {
+export function latestMonthlyAnniversary(periodStart: Date): Date {
   const now = new Date();
   let current = new Date(periodStart);
   for (;;) {
@@ -234,15 +234,16 @@ export async function consumePurchasedCredits(
   _supabase: SupabaseClient,
   userId: string,
   amount: number,
-): Promise<void> {
-  if (!amount || amount <= 0) return;
-  // Atomic single-statement decrement via a service-role-only SQL function.
-  // A read-then-write here loses updates under concurrency — two generations
-  // racing would both read the same balance and both write it back, letting
-  // the same credit be spent twice. `authenticated` cannot call this RPC, so
-  // a customer still can't write their own balance.
+): Promise<boolean> {
+  if (!amount || amount <= 0) return true;
+  // Atomic GUARDED spend: decrements only if the balance covers it, and returns
+  // whether it did. This fixes the lost-update race AND lets the caller abort
+  // before any paid work when a concurrent request already spent the credit —
+  // the read in checkGenerationAllowance can't be trusted under concurrency.
+  // `authenticated` cannot call this RPC.
   const admin = createAdminClient();
-  await admin.rpc("decrement_purchased_credits", { p_user_id: userId, p_amount: amount });
+  const { data } = await admin.rpc("spend_purchased_credits", { p_user_id: userId, p_amount: amount });
+  return data === true;
 }
 
 // Free-tier equivalent of consumePurchasedCredits — a lifetime counter, so
@@ -250,12 +251,17 @@ export async function consumePurchasedCredits(
 export async function consumeFreeGeneration(
   _supabase: SupabaseClient,
   userId: string,
-): Promise<void> {
-  // Service role — see consumePurchasedCredits above. Atomic increment so two
-  // concurrent free generations can't both read the same count and only bump
-  // it once.
+): Promise<boolean> {
+  // Atomic GUARDED spend: increments only while under the lifetime free limit,
+  // and returns whether it did — so concurrent free generations can't all pass
+  // a stale count and run unbounded free paid renders. The caller aborts before
+  // any paid work when this returns false.
   const admin = createAdminClient();
-  await admin.rpc("increment_free_generations", { p_user_id: userId });
+  const { data } = await admin.rpc("spend_free_generation", {
+    p_user_id: userId,
+    p_limit: FREE_GENERATION_LIMIT,
+  });
+  return data === true;
 }
 
 export async function persistGeneratedImage(

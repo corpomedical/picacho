@@ -800,8 +800,28 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     return { error: "Couldn't start this generation — try again." };
   }
 
-  await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
-  if (consumeFree) await consumeFreeGeneration(supabase, userData.user.id);
+  // Guarded spends: if a concurrent request already took the last credit / free
+  // generation, these return false and we abort BEFORE any paid provider call.
+  // Nothing has run, so this placeholder's charge is released (credits_used 0).
+  const purchasedOk = await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
+  const freeOk = consumeFree ? await consumeFreeGeneration(supabase, userData.user.id) : true;
+  if (!purchasedOk || !freeOk) {
+    await createAdminClient()
+      .from("generations")
+      .update({
+        status: "failed",
+        credits_used: 0,
+        purchased_credits_used: 0,
+        free_generation_used: false,
+        progress_stage: null,
+      })
+      .eq("id", placeholder.id);
+    return {
+      error: consumeFree
+        ? "You've used all your free generations."
+        : "You're out of credits — that request couldn't be covered.",
+    };
+  }
 
   let attempts: AttemptLog[] = [];
   let succeeded = false;
@@ -1587,7 +1607,17 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     return { error: "Couldn't start these generations — try again." };
   }
 
-  await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
+  const purchasedOk = await consumePurchasedCredits(supabase, userData.user.id, consumePurchased ?? 0);
+  if (!purchasedOk) {
+    // Lost the race for the last purchased credits — nothing has run yet, so
+    // release every angle's charge and stop before any paid provider call.
+    await createAdminClient()
+      .from("generations")
+      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, progress_stage: null })
+      .eq("angle_group_id", groupId)
+      .eq("user_id", userData.user.id);
+    return { error: "You're out of credits — that request couldn't be covered." };
+  }
 
   const placeholderByAngle = new Map(placeholders.map((p) => [p.angle as string, p.id as string]));
 

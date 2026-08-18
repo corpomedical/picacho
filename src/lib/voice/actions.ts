@@ -9,6 +9,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
+import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 
 type VoiceResult<T extends object> = { error: string } | ({ error: null } & T);
 
@@ -73,15 +74,16 @@ export async function transcribeVoice(formData: FormData): Promise<VoiceResult<{
   form.set("model", "whisper-1");
   form.set("file", audio, "voice.webm");
 
-  const res = await fetch("https://api.openai.com/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { authorization: `Bearer ${apiKey}` },
-    body: form,
-  });
+  const res = await fetchWithTimeout(
+    "https://api.openai.com/v1/audio/transcriptions",
+    { method: "POST", headers: { authorization: `Bearer ${apiKey}` }, body: form },
+    30_000,
+  );
 
   if (!res.ok) {
-    const text = await res.text();
-    return { error: `OpenAI transcription error (${res.status}): ${text.slice(0, 300)}` };
+    // Log provider detail server-side; never surface a raw upstream error body.
+    console.error("Whisper transcription failed", res.status, (await res.text()).slice(0, 300));
+    return { error: "Couldn't process the audio — try again." };
   }
 
   const data = await res.json();
@@ -107,22 +109,19 @@ export async function synthesizeVoice(text: string): Promise<VoiceResult<{ audio
   if (!trimmed) return { error: "Nothing to say." };
 
   const apiKey = process.env.OPENAI_API_KEY!;
-  const res = await fetch("https://api.openai.com/v1/audio/speech", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
+  const res = await fetchWithTimeout(
+    "https://api.openai.com/v1/audio/speech",
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: "tts-1", voice: "alloy", input: trimmed.slice(0, 800) }),
     },
-    body: JSON.stringify({
-      model: "tts-1",
-      voice: "alloy",
-      input: trimmed.slice(0, 800),
-    }),
-  });
+    30_000,
+  );
 
   if (!res.ok) {
-    const errText = await res.text();
-    return { error: `OpenAI speech error (${res.status}): ${errText.slice(0, 300)}` };
+    console.error("OpenAI speech failed", res.status, (await res.text()).slice(0, 300));
+    return { error: "Couldn't generate audio — try again." };
   }
 
   const bytes = Buffer.from(await res.arrayBuffer());

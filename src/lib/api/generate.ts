@@ -141,11 +141,23 @@ export async function runApiImageGeneration(params: {
 
   // The insert IS the charge — getMonthlyUsage sums credits_used — so the
   // balance moves immediately, and a failure below refunds it.
-  if (allowance.consumePurchased) {
-    await consumePurchasedCredits(supabase, userId, allowance.consumePurchased);
-  }
-  if (allowance.consumeFree) {
-    await consumeFreeGeneration(supabase, userId);
+  const purchasedOk = allowance.consumePurchased
+    ? await consumePurchasedCredits(supabase, userId, allowance.consumePurchased)
+    : true;
+  const freeOk = allowance.consumeFree ? await consumeFreeGeneration(supabase, userId) : true;
+  if (!purchasedOk || !freeOk) {
+    // Concurrent request already took the last credit / free generation — abort
+    // before any paid work and release this row's charge.
+    await supabase
+      .from("generations")
+      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, free_generation_used: false })
+      .eq("id", generationId);
+    return {
+      error: allowance.consumeFree
+        ? "You've used all your free generations."
+        : "Insufficient credits for that request.",
+      status: 402,
+    };
   }
 
   try {
