@@ -118,14 +118,14 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
         <button
           type="button"
           onClick={handleNewNote}
-          className="flex w-full items-center justify-center gap-2 rounded-[10px] border border-dashed border-neutral-300 px-3 py-2 text-sm text-neutral-500 transition-colors hover:border-neutral-400 hover:text-neutral-900"
+          className="flex w-full items-center justify-center gap-2 rounded-control border border-dashed border-atelier-rule px-3 py-2 text-sm text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink"
         >
           <PlusIcon className="h-3.5 w-3.5" />
           {nt.newNote}
         </button>
 
         {notes.length === 0 ? (
-          <p className="mt-4 px-1 text-xs text-neutral-400">{nt.noNotesYet}</p>
+          <p className="mt-4 px-1 text-xs text-atelier-muted">{nt.noNotesYet}</p>
         ) : (
           <ul className="mt-3 space-y-0.5">
             {notes.map((note) => (
@@ -134,12 +134,14 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
                   type="button"
                   onClick={() => selectNote(note)}
                   className={cn(
-                    "w-full rounded-[10px] px-2.5 py-2 text-left transition-colors",
-                    note.id === selectedId ? "bg-neutral-100" : "hover:bg-neutral-50",
+                    "w-full rounded-control px-2.5 py-2 text-left transition-colors",
+                    note.id === selectedId
+                      ? "bg-atelier-surface shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                      : "hover:bg-atelier-ink/5",
                   )}
                 >
-                  <p className="truncate text-sm text-neutral-900">{note.title}</p>
-                  <p className="mt-0.5 truncate text-xs text-neutral-400">
+                  <p className="truncate text-sm text-atelier-ink">{note.title}</p>
+                  <p className="mt-0.5 truncate text-xs text-atelier-muted">
                     {note.body ? note.body.slice(0, 40) : nt.emptyNote} ·{" "}
                     <LocalDate date={note.updated_at} />
                   </p>
@@ -150,7 +152,7 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
         )}
       </div>
 
-      <div className="min-h-[60vh] rounded-[18px] border border-neutral-200/70 bg-white p-6">
+      <div className="min-h-[60vh] rounded-control border border-atelier-rule bg-atelier-surface p-6">
         {selected ? (
           <>
             <div className="flex items-center justify-between gap-4">
@@ -161,10 +163,10 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
                   scheduleSave(e.target.value, body);
                 }}
                 placeholder={nt.untitledNote}
-                className="w-full border-none bg-transparent text-lg font-semibold text-neutral-900 outline-none placeholder:text-neutral-300"
+                className="w-full border-none bg-transparent text-lg font-semibold text-atelier-ink outline-none placeholder:text-atelier-muted/50"
               />
               <div className="flex flex-shrink-0 items-center gap-3">
-                <span className="whitespace-nowrap text-xs text-neutral-400">
+                <span className="whitespace-nowrap text-xs text-atelier-muted">
                   {status === "saving" ? nt.saving : status === "saved" ? nt.saved : ""}
                 </span>
                 <button
@@ -172,7 +174,7 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
                   onClick={() => handleDelete(selected)}
                   title={nt.deleteNote}
                   aria-label={nt.deleteNote}
-                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[8px] text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/15 dark:hover:text-red-400"
+                  className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/15 dark:hover:text-red-400"
                 >
                   <TrashIcon className="h-4 w-4" />
                 </button>
@@ -186,16 +188,16 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
               }}
               placeholder={nt.startTyping}
               rows={20}
-              className="mt-4 w-full resize-none border-none bg-transparent text-sm leading-relaxed text-neutral-700 outline-none placeholder:text-neutral-300"
+              className="mt-4 w-full resize-none border-none bg-transparent text-sm leading-relaxed text-atelier-ink outline-none placeholder:text-atelier-muted/50"
             />
           </>
         ) : (
           <div className="flex h-full min-h-[50vh] flex-col items-center justify-center text-center">
-            <p className="text-sm text-neutral-500">{nt.noNotesYet}</p>
+            <p className="text-sm text-atelier-muted">{nt.noNotesYet}</p>
             <button
               type="button"
               onClick={handleNewNote}
-              className="mt-3 rounded-[10px] bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-800"
+              className="mt-3 rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90"
             >
               {nt.writeFirstNote}
             </button>

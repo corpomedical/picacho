@@ -20,7 +20,7 @@ function SearchIcon(props: SVGProps<SVGSVGElement>) {
 function ResultGroup({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="mb-1">
-      <p className="px-3 py-1.5 text-xs font-medium uppercase tracking-wide text-neutral-400">{label}</p>
+      <p className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{label}</p>
       {children}
     </div>
   );
@@ -31,7 +31,7 @@ function ResultItem({ label, onClick }: { label: string; onClick: () => void }) 
     <button
       type="button"
       onClick={onClick}
-      className="block w-full truncate rounded-[10px] px-3 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-100"
+      className="block w-full truncate border-b border-atelier-rule/50 px-3 py-2 text-left text-sm text-atelier-ink transition-colors last:border-0 hover:bg-atelier-ink/5"
     >
       {label}
     </button>
@@ -130,7 +130,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-neutral-950/40 pt-[12vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 pt-[12vh]"
       onClick={onClose}
     >
       <div
@@ -138,23 +138,23 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
         role="dialog"
         aria-modal="true"
         aria-label={se.placeholder}
-        className="w-full max-w-lg rounded-[16px] border border-neutral-200 bg-white shadow-[0_24px_48px_-12px_rgba(0,0,0,0.25)]"
+        className="w-full max-w-lg rounded-control border border-atelier-rule bg-atelier-surface shadow-[0_24px_48px_-12px_rgba(33,29,18,0.35)]"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center gap-2 border-b border-neutral-100 px-4 py-3">
-          <SearchIcon className="h-4 w-4 flex-shrink-0 text-neutral-400" />
+        <div className="flex items-center gap-2 border-b border-atelier-rule/60 px-4 py-3">
+          <SearchIcon className="h-4 w-4 flex-shrink-0 text-atelier-muted" />
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={se.placeholder}
-            className="flex-1 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+            className="flex-1 bg-transparent text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/60"
           />
           <button
             type="button"
             onClick={onClose}
             aria-label={se.close}
-            className="rounded-[6px] border border-neutral-200 px-1.5 py-0.5 text-[10px] text-neutral-400 hover:bg-neutral-50"
+            className="rounded-control border border-atelier-rule px-1.5 py-0.5 text-[10px] text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
           >
             Esc
           </button>
@@ -162,9 +162,9 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
 
         <div className="max-h-[50vh] overflow-y-auto p-2">
           {!query.trim() ? (
-            <p className="px-3 py-6 text-center text-sm text-neutral-400">{se.startTyping}</p>
+            <p className="px-3 py-6 text-center text-sm text-atelier-muted">{se.startTyping}</p>
           ) : !hasResults && !isPending ? (
-            <p className="px-3 py-6 text-center text-sm text-neutral-400">
+            <p className="px-3 py-6 text-center text-sm text-atelier-muted">
               {formatMsg(se.noMatches, { query })}
             </p>
           ) : (

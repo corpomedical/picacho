@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 import { updatePassword } from "@/lib/profile/actions";
-import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+
+// Atelier form idiom (settings-popover, extended): caps label over an
+// ink-hairline input at the control radius; accent only marks focus.
+const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+const FIELD =
+  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
 
 export function PasswordForm() {
   const { t } = useLocale();
@@ -43,9 +48,10 @@ export function PasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <Label htmlFor="current_password">{t.settings.currentPasswordLabel}</Label>
-        <Input
+        <label htmlFor="current_password" className={LABEL}>{t.settings.currentPasswordLabel}</label>
+        <input
           id="current_password"
+          className={FIELD}
           type="password"
           autoComplete="current-password"
           value={currentPassword}
@@ -56,9 +62,10 @@ export function PasswordForm() {
         />
       </div>
       <div>
-        <Label htmlFor="password">{t.settings.newPasswordLabel}</Label>
-        <Input
+        <label htmlFor="password" className={LABEL}>{t.settings.newPasswordLabel}</label>
+        <input
           id="password"
+          className={FIELD}
           type="password"
           value={password}
           onChange={(e) => {
@@ -70,9 +77,10 @@ export function PasswordForm() {
         />
       </div>
       <div>
-        <Label htmlFor="confirm_password">{t.settings.confirmNewPasswordLabel}</Label>
-        <Input
+        <label htmlFor="confirm_password" className={LABEL}>{t.settings.confirmNewPasswordLabel}</label>
+        <input
           id="confirm_password"
+          className={FIELD}
           type="password"
           value={confirmPassword}
           onChange={(e) => {
@@ -82,11 +90,12 @@ export function PasswordForm() {
           minLength={8}
         />
       </div>
-      {error && <p className="text-xs text-red-600">{error}</p>}
+      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
       {status === "saved" && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t.settings.passwordUpdated}</p>}
       <Button
         type="submit"
         variant="secondary"
+        className="rounded-control! border-atelier-rule! bg-transparent! text-atelier-ink! hover:border-atelier-muted! hover:bg-atelier-ink/5!"
         disabled={!password || !confirmPassword}
         pending={status === "saving"}
         pendingLabel={t.common.saving}

@@ -2,7 +2,6 @@ import Link from "next/link";
 import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
@@ -138,7 +137,7 @@ export default async function HistoryDetailPage({
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between gap-4">
-        <Link href="/app/history" className="text-sm text-neutral-500 hover:text-neutral-900">
+        <Link href="/app/history" className="text-sm text-atelier-muted hover:text-atelier-ink">
           ← {h.backToHistory}
         </Link>
         {isOwner && (
@@ -157,20 +156,21 @@ export default async function HistoryDetailPage({
         )}
       </div>
 
-      <Card className="mt-4">
+      <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-sm font-medium text-neutral-900">{generation.prompt_input}</p>
-            <p className="mt-1 text-xs text-neutral-500">
+            <p className="text-sm font-medium text-atelier-ink">{generation.prompt_input}</p>
+            <p className="mt-1 text-xs text-atelier-muted">
               {generation.character_profile_id ? (character?.name ?? h.unknownCharacter) : h.noCharacter} ·{" "}
               <LocalDate date={generation.created_at} mode="datetime" />
               {sortedAngleRows.length > 1 && ` · ${formatMsg(h.angleCountOther, { n: sortedAngleRows.length })}`}
             </p>
             {/* The validation pipeline is the product's whole pitch, but it
                 used to be invisible unless someone expanded the attempt log.
-                One line of proof on every successful result. */}
+                One line of proof on every successful result — and proof is
+                the accent's job, in the numeral serif. */}
             {generation.status === "succeeded" && attempts.length > 0 && (
-              <p className="mt-1.5 text-xs font-medium text-emerald-600">
+              <p className="mt-1.5 font-numeral text-xs font-medium tabular-nums text-atelier-accent">
                 {attempts.length === 1
                   ? h.validatedFirstTry
                   : formatMsg(h.validatedAfterRetries, { n: attempts.length })}
@@ -184,7 +184,7 @@ export default async function HistoryDetailPage({
             </Badge>
           </div>
         </div>
-      </Card>
+      </div>
 
       {sortedAngleRows.length > 1 ? (
         <AngleResultViewer
@@ -197,60 +197,70 @@ export default async function HistoryDetailPage({
         />
       ) : (
         <>
-          <Card className="mt-4">
-            <h2 className="text-sm font-semibold text-neutral-900">{h.pipelineLog}</h2>
+          {/* Printed-proof-sheet voice: engraved serif attempt stamps, caps
+              step labels, a hairline left rule. A failed attempt's stamp goes
+              calm semantic red — the styling varies by state, the text bytes
+              never do. */}
+          <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-atelier-muted">{h.pipelineLog}</h2>
             <ol className="mt-4 space-y-5">
               {attempts.map((attempt) => (
                 <li key={attempt.attempt}>
-                  <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                  <p
+                    className={`font-numeral text-xs font-medium uppercase tracking-widest tabular-nums ${attempt.passed ? "text-atelier-muted" : "text-red-600 dark:text-red-400"}`}
+                  >
                     {formatMsg(h.attemptLabel, { n: attempt.attempt })}
                     {!attempt.passed && ` ${h.didntPassSuffix}`}
                   </p>
-                  <ul className="mt-2 space-y-2 border-l border-neutral-100 pl-4">
+                  <ul className="mt-2 space-y-2 border-l border-atelier-rule pl-4">
                     {attempt.steps.map((step, idx) => (
                       <li key={idx}>
-                        <p className="text-sm font-medium text-neutral-900">
+                        <p className="text-xs font-medium uppercase tracking-wider text-atelier-ink">
                           {stepLabels[step.step]}
                         </p>
-                        <p className="text-xs text-neutral-500">{step.detail}</p>
+                        <p className="text-xs text-atelier-muted">{step.detail}</p>
                       </li>
                     ))}
                   </ul>
                 </li>
               ))}
             </ol>
-          </Card>
+          </div>
 
-          <Card className="group mt-4">
-            <h2 className="text-sm font-semibold text-neutral-900">{h.result}</h2>
+          <div className="group mt-4 rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-atelier-muted">{h.result}</h2>
             {generation.status === "succeeded" ? (
               <>
                 {isRenderableUrl(generation.result_url) ? (
                   generation.content_type === "image" ? (
-                    <div className="relative mt-3">
+                    // Darkroom easel: the render sits inset on a warm-charcoal
+                    // mat — the same charcoal in both themes — so it glows on
+                    // the paper chrome instead of butting against it.
+                    <div className="relative mt-3 overflow-hidden rounded-media bg-atelier-stage p-2">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={generation.result_url}
                         alt={generation.prompt_input || t.generate.resultAlt}
-                        className="w-full rounded-[14px] bg-neutral-100 object-cover"
+                        className="w-full rounded-[6px] object-cover"
                       />
                       <DownloadButton url={generation.result_url} contentType="image" />
                     </div>
                   ) : (
-                    <div className="relative mt-3">
+                    <div className="relative mt-3 overflow-hidden rounded-media bg-atelier-stage p-2">
                       <video
                         src={generation.result_url}
                         controls
                         aria-label={generation.prompt_input}
-                        className="aspect-video w-full rounded-[14px] bg-neutral-950"
+                        className="aspect-video w-full rounded-[6px] bg-neutral-950"
                       />
                       <DownloadButton url={generation.result_url} contentType="video" />
                     </div>
                   )
                 ) : (
                   <>
-                    <div className="mt-3 flex aspect-video items-center justify-center rounded-[14px] bg-neutral-100 text-center">
-                      <p className="max-w-xs px-4 text-xs text-neutral-500">
+                    <div className="mt-3 flex aspect-video items-center justify-center rounded-media bg-atelier-stage text-center">
+                      {/* Fixed Darkroom muted — the stage never flips themes. */}
+                      <p className="max-w-xs px-4 text-xs text-[#a39a88]">
                         {formatMsg(t.generate.simulatedResult, { type: typeLabel.toLowerCase() })}
                       </p>
                     </div>
@@ -262,7 +272,7 @@ export default async function HistoryDetailPage({
                   </>
                 )}
                 {typeof generation.match_score === "number" && (
-                  <p className="mt-2 text-xs text-neutral-500">
+                  <p className="mt-2 font-numeral text-xs tabular-nums text-atelier-accent">
                     {formatMsg(t.generate.identityMatch, { n: generation.match_score })}
                   </p>
                 )}
@@ -281,11 +291,11 @@ export default async function HistoryDetailPage({
               // is not a failed one, and must not be described as one.
               <StillRendering startedAt={generation.created_at as string} />
             ) : (
-              <p className="mt-2 text-sm text-neutral-500">
+              <p className="mt-2 text-sm text-atelier-muted">
                 {h.noResult}
               </p>
             )}
-          </Card>
+          </div>
         </>
       )}
     </div>

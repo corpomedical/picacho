@@ -62,8 +62,8 @@ export default async function VideosPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-900">{t.gallery.videosTitle}</h1>
-      <p className="mt-1 text-sm text-neutral-500">{t.gallery.videosSubtitle}</p>
+      <h1 className="text-lg font-semibold text-atelier-ink">{t.gallery.videosTitle}</h1>
+      <p className="mt-1 text-sm text-atelier-muted">{t.gallery.videosSubtitle}</p>
 
       <MediaGallery
         items={items}

@@ -49,9 +49,9 @@ export function MediaGallery({
 }) {
   if (items.length === 0) {
     return (
-      <div className="mt-10 flex flex-col items-center justify-center rounded-[18px] border border-dashed border-neutral-200 py-16 text-center">
-        <p className="text-sm text-neutral-500">{emptyLabel}</p>
-        <Link href="/app/generate" className="mt-3 text-sm font-medium text-neutral-900 underline">
+      <div className="mt-10 flex flex-col items-center justify-center rounded-media border border-dashed border-atelier-rule py-16 text-center">
+        <p className="text-sm text-atelier-muted">{emptyLabel}</p>
+        <Link href="/app/generate" className="mt-3 text-sm font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2">
           {labels.generateOne}
         </Link>
       </div>
@@ -74,7 +74,10 @@ export function MediaGallery({
             // <video> contributes nothing to a link's name, so a screen
             // reader announced every video as just "link".
             aria-label={item.prompt_input}
-            className="group relative aspect-square overflow-hidden rounded-[14px] border border-neutral-100 bg-neutral-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
+            // Darkroom stage: every tile ground is the same warm charcoal in
+            // both themes, so renders read like mounted slides on the light
+            // paper chrome and blend into the dark theme seamlessly.
+            className="group relative aspect-square overflow-hidden rounded-media border border-[#eae6dc]/10 bg-atelier-stage focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent"
           >
             {hasRealMedia ? (
               contentType === "image" ? (
@@ -94,19 +97,24 @@ export function MediaGallery({
                 />
               )
             ) : (
-              <div className="flex h-full w-full items-center justify-center bg-neutral-100 p-3 text-center">
-                <p className="line-clamp-4 text-[11px] text-neutral-400">{item.prompt_input}</p>
+              <div className="flex h-full w-full items-center justify-center p-3 text-center">
+                {/* Fixed Darkroom muted, not a theme token — the stage under
+                    it never flips, so neither may the ink sitting on it. */}
+                <p className="line-clamp-4 text-[11px] text-[#a39a88]">{item.prompt_input}</p>
               </div>
             )}
 
             {contentType === "video" && (
-              <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-950/60 text-white">
+              // The same white/95 chip the marketing score band and identity
+              // labels use — a printed label pinned on the render, constant
+              // across themes (bg-white would repaint dark in dark mode).
+              <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#faf8f3]/95 text-[#211d16] shadow-sm">
                 <PlayIcon className="h-3 w-3" />
               </span>
             )}
 
             {item.angleCount && item.angleCount > 1 && (
-              <span className="absolute bottom-2 right-2 rounded-full bg-neutral-950/60 px-2 py-0.5 text-[10px] font-medium text-white">
+              <span className="absolute bottom-2 right-2 rounded-full bg-[#faf8f3]/95 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-[#211d16] shadow-sm">
                 {formatMsg(labels.angleCountOther, { n: item.angleCount })}
               </span>
             )}
@@ -124,9 +132,11 @@ export function MediaGallery({
                 simply unreachable there — tabbing to a tile now reveals the
                 same overlay a mouse hover does. (The full details remain one
                 tap away on the history page either way.) */}
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-neutral-950/80 to-transparent p-2.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-              <p className="truncate text-[11px] font-medium text-white">{item.prompt_input}</p>
-              <p className="truncate text-[10px] text-neutral-300">
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17150f]/85 to-transparent p-2.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+              <p className="truncate text-[11px] font-medium text-[#f5f1e9]">{item.prompt_input}</p>
+              {/* Caps-label voice for on-media metadata (uppercase is a CSS
+                  transform — the rendered string bytes are untouched). */}
+              <p className="truncate text-[9px] font-medium uppercase tracking-wider text-[#cfc7b6]">
                 {item.characterName} · <LocalDate date={item.created_at} />
               </p>
             </div>

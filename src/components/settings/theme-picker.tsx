@@ -62,10 +62,10 @@ export function ThemePicker() {
           type="button"
           onClick={() => setTheme(opt.value)}
           className={cn(
-            "flex flex-col items-center gap-1.5 rounded-[10px] border px-3 py-3 text-sm transition-colors",
+            "flex flex-col items-center gap-1.5 rounded-control border px-3 py-3 text-sm transition-colors",
             theme === opt.value
-              ? "border-neutral-900 bg-neutral-50 text-neutral-900"
-              : "border-neutral-200 text-neutral-500 hover:border-neutral-300 hover:text-neutral-900",
+              ? "border-atelier-accent bg-atelier-accent/5 text-atelier-ink"
+              : "border-atelier-rule text-atelier-muted hover:border-atelier-muted hover:text-atelier-ink",
           )}
         >
           <opt.icon className="h-4 w-4" />

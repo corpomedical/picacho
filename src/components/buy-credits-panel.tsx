@@ -4,11 +4,15 @@ import {
   CREDIT_PACK_PRICE_IDS,
   CREDIT_PACK_PRICE_IDS_EUR,
 } from "@/lib/stripe/credit-packs";
-import { Card } from "@/components/ui/card";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { isEUVisitor } from "@/lib/geo";
+
+// Atelier paper sheet (the local stand-in for ui/Card): raised warm surface,
+// hairline rule, control radius. Pack numerals are set in the numeral serif
+// — printed-proof voice — while ochre stays reserved for meters and proof.
+const SHEET = "rounded-control border border-atelier-rule bg-atelier-surface p-8";
 
 // Server component: the packs are static config and checkout is a plain
 // form action, so there's nothing here that needs to be a client component.
@@ -38,12 +42,12 @@ export async function BuyCreditsPanel({
   if (available.length === 0) return null;
 
   return (
-    <Card className="mt-4">
-      <h2 className="text-sm font-semibold text-neutral-900">{c.title}</h2>
-      <p className="mt-1 text-sm text-neutral-500">{c.subtitle}</p>
+    <div className={`mt-4 ${SHEET}`}>
+      <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{c.title}</h2>
+      <p className="mt-1 text-sm text-atelier-muted">{c.subtitle}</p>
 
       {purchasedCredits > 0 && (
-        <p className="mt-3 rounded-[10px] bg-neutral-50 px-3.5 py-2.5 text-sm text-neutral-700">
+        <p className="mt-3 rounded-control border border-atelier-rule/60 bg-atelier-paper px-3.5 py-2.5 font-numeral text-sm tabular-nums text-atelier-ink">
           {formatMsg(c.currentBalance, { n: purchasedCredits })}
         </p>
       )}
@@ -52,20 +56,24 @@ export async function BuyCreditsPanel({
         {available.map((pack) => (
           <form key={pack.id} action={createCreditCheckoutSession}>
             <input type="hidden" name="pack" value={pack.id} />
-            <div className="flex h-full flex-col rounded-[14px] border border-neutral-200 p-4">
-              <p className="text-lg font-semibold text-neutral-900">
+            <div className="flex h-full flex-col rounded-control border border-atelier-rule p-4">
+              <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">
                 {formatMsg(c.packCredits, { n: pack.credits })}
               </p>
-              <p className="mt-0.5 text-sm text-neutral-500">
+              <p className="mt-0.5 font-numeral text-sm tabular-nums text-atelier-muted">
                 {currencySymbol}
                 {pack.price}
               </p>
-              <p className="mt-0.5 text-xs text-neutral-400">
+              <p className="mt-0.5 font-numeral text-xs tabular-nums text-atelier-muted/80">
                 {currencySymbol}
                 {(pack.price / pack.credits).toFixed(2)} {c.perCredit}
               </p>
               <div className="mt-4">
-                <SubmitButton size="sm" pendingLabel={c.starting} className="w-full">
+                <SubmitButton
+                  size="sm"
+                  pendingLabel={c.starting}
+                  className="w-full rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
+                >
                   {c.buy}
                 </SubmitButton>
               </div>
@@ -74,7 +82,7 @@ export async function BuyCreditsPanel({
         ))}
       </div>
 
-      <p className="mt-4 text-xs text-neutral-400">{c.note}</p>
-    </Card>
+      <p className="mt-4 text-xs text-atelier-muted">{c.note}</p>
+    </div>
   );
 }

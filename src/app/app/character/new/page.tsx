@@ -25,7 +25,7 @@ export default async function NewCharacterPage({
 
   return (
     <div>
-      <h1 className="mx-auto mb-6 max-w-2xl text-lg font-semibold text-neutral-900">
+      <h1 className="mx-auto mb-6 max-w-2xl text-lg font-semibold text-atelier-ink">
         {t.character.newTitle}
       </h1>
       <CharacterForm

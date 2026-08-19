@@ -198,7 +198,7 @@ export function ResultActions({
         onClick={handleCopy}
         aria-label={copied ? g.copied : g.copyPrompt}
         title={copied ? g.copied : g.copyPrompt}
-        className="flex h-7 w-7 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+        className="flex h-7 w-7 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
       >
         {copied ? <CheckIcon className="h-3.5 w-3.5" /> : <CopyIcon className="h-3.5 w-3.5" />}
       </button>
@@ -210,8 +210,8 @@ export function ResultActions({
         aria-pressed={feedback === "like"}
         title={g.likeResult}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-neutral-100",
-          feedback === "like" ? "text-neutral-900" : "text-neutral-400 hover:text-neutral-700",
+          "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-atelier-ink/5",
+          feedback === "like" ? "text-atelier-ink" : "text-atelier-muted hover:text-atelier-ink",
         )}
       >
         <ThumbsUpIcon className="h-3.5 w-3.5" fill={feedback === "like" ? "currentColor" : "none"} />
@@ -224,8 +224,8 @@ export function ResultActions({
         aria-pressed={feedback === "dislike"}
         title={g.dislikeResult}
         className={cn(
-          "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-neutral-100",
-          feedback === "dislike" ? "text-neutral-900" : "text-neutral-400 hover:text-neutral-700",
+          "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-atelier-ink/5",
+          feedback === "dislike" ? "text-atelier-ink" : "text-atelier-muted hover:text-atelier-ink",
         )}
       >
         <ThumbsDownIcon className="h-3.5 w-3.5" fill={feedback === "dislike" ? "currentColor" : "none"} />
@@ -240,8 +240,8 @@ export function ResultActions({
           aria-pressed={promoted}
           title={promoted ? g.referenceAdded : g.useAsReference}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-neutral-100",
-            promoted ? "text-emerald-600" : "text-neutral-400 hover:text-neutral-700",
+            "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-atelier-ink/5",
+            promoted ? "text-emerald-600" : "text-atelier-muted hover:text-atelier-ink",
           )}
         >
           {promoted ? <CheckIcon className="h-3.5 w-3.5" /> : <ImagePlusIcon className="h-3.5 w-3.5" />}
@@ -256,8 +256,8 @@ export function ResultActions({
           aria-pressed={reported}
           title={reported ? g.reportSent : g.reportProblem}
           className={cn(
-            "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-neutral-100",
-            reported ? "text-amber-600" : "text-neutral-400 hover:text-neutral-700",
+            "flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-atelier-ink/5",
+            reported ? "text-amber-600" : "text-atelier-muted hover:text-atelier-ink",
           )}
         >
           <FlagIcon className="h-3.5 w-3.5" fill={reported ? "currentColor" : "none"} />
@@ -267,9 +267,11 @@ export function ResultActions({
           <div
             role="dialog"
             aria-label={g.reportProblem}
-            className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-[16px] border border-neutral-200 bg-white p-3 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.18)]"
+            // Phase-1 popover idiom (see the sidebar settings menu): warm
+            // surface, hairline rule, control radius, warm-tinted shadow.
+            className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
           >
-            <p className="text-xs font-medium text-neutral-900">{g.reportTitle}</p>
+            <p className="text-xs font-medium text-atelier-ink">{g.reportTitle}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {REPORT_REASONS.map((reason) => (
                 <button
@@ -279,8 +281,8 @@ export function ResultActions({
                   className={cn(
                     "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
                     reportReason === reason
-                      ? "border-neutral-900 bg-neutral-900 text-white"
-                      : "border-neutral-200 text-neutral-600 hover:border-neutral-300",
+                      ? "border-atelier-ink bg-atelier-ink text-atelier-paper"
+                      : "border-atelier-rule text-atelier-muted hover:border-atelier-muted",
                   )}
                 >
                   {reasonLabels[reason]}
@@ -293,14 +295,14 @@ export function ResultActions({
               placeholder={g.reportDetailsPlaceholder}
               rows={2}
               maxLength={1000}
-              className="mt-2 w-full resize-none rounded-[10px] border border-neutral-200 p-2 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none"
+              className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/70 focus:border-atelier-accent focus:outline-none"
             />
-            {reportError && <p className="mt-1.5 text-[11px] text-red-600">{reportError}</p>}
+            {reportError && <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{reportError}</p>}
             <button
               type="button"
               onClick={handleReportSubmit}
               disabled={reportSending}
-              className="mt-2 w-full rounded-full bg-neutral-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
+              className="mt-2 w-full rounded-control bg-atelier-ink py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               {reportSending ? g.reportSending : g.reportSubmit}
             </button>
@@ -308,7 +310,7 @@ export function ResultActions({
         )}
       </div>
 
-      {promoteError && <span className="text-[11px] text-red-600">{promoteError}</span>}
+      {promoteError && <span className="text-[11px] text-red-600 dark:text-red-400">{promoteError}</span>}
     </div>
   );
 }

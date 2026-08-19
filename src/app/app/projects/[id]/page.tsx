@@ -2,11 +2,18 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { saveProject, assignCharacterToProject, removeCharacterFromProject } from "@/lib/projects/actions";
-import { Card } from "@/components/ui/card";
-import { Label, Input, Textarea } from "@/components/ui/field";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { DeleteProjectButton } from "@/components/delete-project-button";
 import { getServerMessages } from "@/lib/i18n/server";
+
+// Atelier form idiom (settings-popover, extended): paper sheets with caps
+// section titles, caps labels over ink-hairline fields at the control
+// radius; accent only marks focus and checkbox ticks.
+const SHEET = "rounded-control border border-atelier-rule bg-atelier-surface p-8";
+const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+const FIELD =
+  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
 
 export default async function ProjectDetailPage({
   params,
@@ -61,44 +68,50 @@ export default async function ProjectDetailPage({
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <Link href="/app/projects" className="text-sm text-neutral-500 hover:text-neutral-900">
+      <Link href="/app/projects" className="text-sm text-atelier-muted hover:text-atelier-ink">
         {p.backToProjects}
       </Link>
 
-      <Card>
-        <h2 className="text-sm font-semibold text-neutral-900">{p.projectDetails}</h2>
+      <div className={SHEET}>
+        <h2 className={SHEET_TITLE}>{p.projectDetails}</h2>
         <form action={saveProject} className="mt-4 space-y-4">
           <input type="hidden" name="id" value={project.id} />
           <div>
-            <Label htmlFor="name">{p.projectName}</Label>
-            <Input id="name" name="name" defaultValue={project.name} required />
+            <label htmlFor="name" className={LABEL}>{p.projectName}</label>
+            <input id="name" className={FIELD} name="name" defaultValue={project.name} required />
           </div>
           <div>
-            <Label htmlFor="description">{p.descriptionLabel}</Label>
-            <Textarea
+            <label htmlFor="description" className={LABEL}>{p.descriptionLabel}</label>
+            <textarea
               id="description"
+              className={`resize-none ${FIELD}`}
               name="description"
               rows={3}
               defaultValue={project.description ?? ""}
               placeholder={p.descriptionPlaceholder}
             />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           <div className="flex justify-end">
-            <SubmitButton pendingLabel={p.savingChanges}>{p.saveChanges}</SubmitButton>
+            <SubmitButton
+              className="rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
+              pendingLabel={p.savingChanges}
+            >
+              {p.saveChanges}
+            </SubmitButton>
           </div>
         </form>
-      </Card>
+      </div>
 
-      <Card>
+      <div className={SHEET}>
         <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-900">{p.charactersInProject}</h2>
-          <Link href="/app/character/new" className="text-xs text-neutral-500 hover:text-neutral-900">
+          <h2 className={SHEET_TITLE}>{p.charactersInProject}</h2>
+          <Link href="/app/character/new" className="text-xs text-atelier-muted hover:text-atelier-ink">
             {p.newCharacter}
           </Link>
         </div>
         {!characters || characters.length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-500">
+          <p className="mt-3 text-sm text-atelier-muted">
             {p.noCharactersYet}
           </p>
         ) : (
@@ -107,7 +120,7 @@ export default async function ProjectDetailPage({
               <li key={c.id} className="flex items-center gap-2">
                 <Link
                   href={`/app/character/${c.id}`}
-                  className="block flex-1 rounded-[10px] border border-neutral-100 px-4 py-2.5 text-sm text-neutral-700 transition-colors hover:border-neutral-300"
+                  className="block flex-1 rounded-control border border-atelier-rule/60 px-4 py-2.5 text-sm text-atelier-ink transition-colors hover:border-atelier-muted"
                 >
                   {c.name}
                 </Link>
@@ -118,7 +131,7 @@ export default async function ProjectDetailPage({
                     variant="ghost"
                     size="sm"
                     pendingLabel={p.removeFromProject}
-                    className="text-neutral-400 hover:text-red-600"
+                    className="text-atelier-muted! hover:text-red-600! dark:hover:text-red-400!"
                   >
                     {p.removeFromProject}
                   </SubmitButton>
@@ -129,27 +142,31 @@ export default async function ProjectDetailPage({
         )}
 
         {availableCharacters && availableCharacters.length > 0 ? (
-          <form action={assignCharacterToProject} className="mt-4 border-t border-neutral-100 pt-4">
+          <form action={assignCharacterToProject} className="mt-4 border-t border-atelier-rule/60 pt-4">
             <input type="hidden" name="project_id" value={project.id} />
-            <p className="mb-1.5 block text-[13px] font-medium text-neutral-600">{p.assignCharacter}</p>
-            <div className="max-h-48 space-y-1 overflow-y-auto rounded-[10px] border border-neutral-200 p-2">
+            <p className={LABEL}>{p.assignCharacter}</p>
+            <div className="max-h-48 space-y-1 overflow-y-auto rounded-control border border-atelier-rule p-2">
               {availableCharacters.map((c) => (
                 <label
                   key={c.id}
-                  className="flex items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50"
+                  className="flex items-center gap-2.5 rounded-control px-2 py-1.5 text-sm text-atelier-ink transition-colors hover:bg-atelier-ink/5"
                 >
                   <input
                     type="checkbox"
                     name="character_id"
                     value={c.id}
-                    className="h-3.5 w-3.5 flex-shrink-0 rounded border-neutral-300"
+                    className="h-3.5 w-3.5 flex-shrink-0 rounded border-atelier-rule accent-atelier-accent"
                   />
                   {c.name}
                 </label>
               ))}
             </div>
             <div className="mt-3 flex justify-end">
-              <SubmitButton pendingLabel={p.assigning} size="sm">
+              <SubmitButton
+                className="rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
+                pendingLabel={p.assigning}
+                size="sm"
+              >
                 {p.assign}
               </SubmitButton>
             </div>
@@ -157,12 +174,12 @@ export default async function ProjectDetailPage({
         ) : (
           characters &&
           characters.length > 0 && (
-            <p className="mt-4 border-t border-neutral-100 pt-4 text-xs text-neutral-400">
+            <p className="mt-4 border-t border-atelier-rule/60 pt-4 text-xs text-atelier-muted">
               {p.noAvailableCharacters}
             </p>
           )
         )}
-      </Card>
+      </div>
 
       <DeleteProjectButton id={project.id} name={project.name} />
     </div>

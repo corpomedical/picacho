@@ -47,19 +47,26 @@ export function StillRendering({ startedAt }: { startedAt: string | Date }) {
   const secs = totalSeconds % 60;
 
   return (
-    <div className="mt-2 flex items-start gap-3 rounded-[14px] bg-neutral-50 p-4 dark:bg-neutral-900">
+    // The Darkroom stage — the same warm charcoal in both themes, standing in
+    // for the media it will become. Everything on it is a fixed Darkroom
+    // literal (never a theme-mapped color): the stage doesn't flip, so its
+    // ink mustn't either. That constancy is also why the old dark: variants
+    // are gone rather than translated.
+    <div className="mt-2 flex items-start gap-3 rounded-media bg-atelier-stage p-4">
       <span
         aria-hidden
-        className="mt-0.5 h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-600 dark:border-neutral-700 dark:border-t-neutral-300"
+        className="mt-0.5 h-4 w-4 flex-shrink-0 animate-spin rounded-full border-2 border-[#3b3323] border-t-[#e0a468]"
       />
       <div className="min-w-0">
-        <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">
+        <p className="text-sm font-medium text-[#eae6dc]">
           {h.stillRendering}{" "}
-          <span className="tabular-nums font-normal text-neutral-500">
+          {/* The ticking counter IS the liveness signal — amber, serif
+              tabular numerals, so the one moving thing is the lit one. */}
+          <span className="font-numeral tabular-nums font-normal text-[#e0a468]">
             {mins}:{String(secs).padStart(2, "0")}
           </span>
         </p>
-        <p className="mt-1 text-xs leading-relaxed text-neutral-500">
+        <p className="mt-1 text-xs leading-relaxed text-[#a39a88]">
           {/* The reassurance that matters most is that leaving is safe. Since
               the fire-and-poll rewrite the job genuinely does survive the page
               closing, so this is a promise the system can actually keep. */}

@@ -21,6 +21,15 @@ import { VoicePreviewButton } from "@/components/voice-preview-button";
 // one image in the product that must never be a downscale.
 type ExistingImage = { path: string; url: string; thumbUrl?: string };
 
+// Atelier idiom for this form (settings-popover, extended): paper sheets
+// with hairline rules, caps section titles, ink-hairline fields at the
+// control radius. Accent only ever marks focus; photos keep the media radius.
+const SHEET = "rounded-control border border-atelier-rule bg-atelier-surface p-8";
+const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+const LABEL = "block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+const FIELD =
+  "rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
+
 type Initial = {
   id?: string;
   name?: string;
@@ -242,10 +251,10 @@ export function CharacterForm({
   return (
     <div className="mx-auto max-w-2xl space-y-6">
     <form onSubmit={handleSubmit} className="space-y-6">
-      <section className="rounded-[18px] border border-neutral-100 bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        <h2 className="text-sm font-semibold text-neutral-900">{c.basics}</h2>
+      <section className={SHEET}>
+        <h2 className={SHEET_TITLE}>{c.basics}</h2>
         <div className="mt-4">
-          <label htmlFor="name" className="block text-sm text-neutral-700">
+          <label htmlFor="name" className={LABEL}>
             {c.characterName}
           </label>
           <input
@@ -254,19 +263,19 @@ export function CharacterForm({
             onChange={(e) => setName(e.target.value)}
             required
             maxLength={120}
-            className="mt-1 w-full rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+            className={`mt-1 w-full ${FIELD}`}
             placeholder={c.namePlaceholder}
           />
         </div>
         <div className="mt-4">
-          <label htmlFor="project" className="block text-sm text-neutral-700">
+          <label htmlFor="project" className={LABEL}>
             {c.project}
           </label>
           <select
             id="project"
             value={projectId}
             onChange={(e) => setProjectId(e.target.value)}
-            className="mt-1 w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+            className={`mt-1 w-full ${FIELD}`}
           >
             <option value="">{c.noProject}</option>
             {projects.map((p) => (
@@ -278,15 +287,15 @@ export function CharacterForm({
         </div>
       </section>
 
-      <section className="rounded-[18px] border border-neutral-100 bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        <h2 className="text-sm font-semibold text-neutral-900">{c.referenceImages}</h2>
-        <p className="mt-1 text-sm text-neutral-500">
+      <section className={SHEET}>
+        <h2 className={SHEET_TITLE}>{c.referenceImages}</h2>
+        <p className="mt-1 text-sm text-atelier-muted">
           {c.referenceImagesSubtitle}
         </p>
 
         <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
           {keptImages.map((img, idx) => (
-            <div key={img.path} className="group relative aspect-square overflow-hidden rounded-[10px] bg-neutral-100">
+            <div key={img.path} className="group relative aspect-square overflow-hidden rounded-media bg-atelier-ink/5">
               <button
                 type="button"
                 onClick={() => setLightboxUrl(img.url)}
@@ -303,21 +312,21 @@ export function CharacterForm({
                 />
               </button>
               {idx === 0 && (
-                <span className="pointer-events-none absolute bottom-1 left-1 rounded-full bg-white/90 px-1.5 py-0.5 text-[10px] font-medium text-neutral-700 shadow-sm">
+                <span className="pointer-events-none absolute bottom-1 left-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-ink">
                   {c.identityPhoto}
                 </span>
               )}
               <button
                 type="button"
                 onClick={() => setKeptImages(keptImages.filter((i) => i.path !== img.path))}
-                className="absolute right-1 top-1 rounded-full bg-white/90 px-1.5 text-xs text-neutral-700 opacity-0 group-hover:opacity-100"
+                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
               >
                 ✕
               </button>
             </div>
           ))}
           {newFiles.map((f, idx) => (
-            <div key={f.preview} className="group relative aspect-square overflow-hidden rounded-[10px] bg-neutral-100">
+            <div key={f.preview} className="group relative aspect-square overflow-hidden rounded-media bg-atelier-ink/5">
               <button
                 type="button"
                 onClick={() => setLightboxUrl(f.preview)}
@@ -337,7 +346,7 @@ export function CharacterForm({
                   URL.revokeObjectURL(f.preview);
                   setNewFiles(newFiles.filter((_, i) => i !== idx));
                 }}
-                className="absolute right-1 top-1 rounded-full bg-white/90 px-1.5 text-xs text-neutral-700 opacity-0 group-hover:opacity-100"
+                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
               >
                 ✕
               </button>
@@ -347,7 +356,7 @@ export function CharacterForm({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className="flex aspect-square items-center justify-center rounded-[10px] border border-dashed border-neutral-300 text-xs text-neutral-400 hover:border-neutral-400 hover:text-neutral-600"
+              className="flex aspect-square items-center justify-center rounded-media border border-dashed border-atelier-rule text-xs text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink"
             >
               {c.addImage}
             </button>
@@ -362,8 +371,8 @@ export function CharacterForm({
           onChange={(e) => onFilesSelected(e.target.files)}
         />
 
-        <div className="mt-4 border-t border-neutral-100 pt-4">
-          <p className="text-sm text-neutral-700">{c.noPhotoYet}</p>
+        <div className="mt-4 border-t border-atelier-rule/60 pt-4">
+          <p className="text-sm text-atelier-muted">{c.noPhotoYet}</p>
           <div className="mt-2 flex gap-2">
             <input
               value={genPrompt}
@@ -375,13 +384,13 @@ export function CharacterForm({
               // grow but can't shrink past that floor, so on a phone-width
               // screen the input refuses to compress enough to leave room
               // for the Generate button, pushing it out past the card edge.
-              className="min-w-0 flex-1 rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400 disabled:bg-neutral-50"
+              className={`min-w-0 flex-1 ${FIELD} disabled:opacity-60`}
             />
             <button
               type="button"
               onClick={handleGenerateReference}
               disabled={generating || totalImages >= 5}
-              className="flex-shrink-0 rounded-[10px] border border-neutral-200 px-4 py-2 text-sm text-neutral-700 hover:border-neutral-400 disabled:opacity-50"
+              className="flex-shrink-0 rounded-control border border-atelier-rule px-4 py-2 text-sm text-atelier-ink transition-colors hover:border-atelier-muted hover:bg-atelier-ink/5 disabled:opacity-50"
             >
               {generating ? c.generating : c.generate}
             </button>
@@ -391,78 +400,78 @@ export function CharacterForm({
                  which used to happen with no explanation at all — the box
                  just looked broken. Reuses the same message the button
                  would have shown if it were clickable. */
-              <p className="mt-1.5 text-xs text-neutral-400">{c.maxImages}</p>
+              <p className="mt-1.5 text-xs text-atelier-muted">{c.maxImages}</p>
             )}
-          {genError && <p className="mt-2 text-sm text-red-600">{genError}</p>}
+          {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{genError}</p>}
         </div>
       </section>
 
-      <section className="rounded-[18px] border border-neutral-100 bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        <h2 className="text-sm font-semibold text-neutral-900">{c.fixedTraits}</h2>
-        <p className="mt-1 text-sm text-neutral-500">
+      <section className={SHEET}>
+        <h2 className={SHEET_TITLE}>{c.fixedTraits}</h2>
+        <p className="mt-1 text-sm text-atelier-muted">
           {c.fixedTraitsSubtitle}
         </p>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-sm text-neutral-700">{c.hair}</label>
+            <label className={LABEL}>{c.hair}</label>
             <input
               value={hair}
               onChange={(e) => setHair(e.target.value)}
-              className="mt-1 w-full rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+              className={`mt-1 w-full ${FIELD}`}
               placeholder={c.hairPlaceholder}
             />
           </div>
           <div>
-            <label className="block text-sm text-neutral-700">{c.outfit}</label>
+            <label className={LABEL}>{c.outfit}</label>
             <input
               value={outfit}
               onChange={(e) => setOutfit(e.target.value)}
-              className="mt-1 w-full rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+              className={`mt-1 w-full ${FIELD}`}
               placeholder={c.outfitPlaceholder}
             />
           </div>
           <div>
-            <label className="block text-sm text-neutral-700">{c.personality}</label>
+            <label className={LABEL}>{c.personality}</label>
             <input
               value={personality}
               onChange={(e) => setPersonality(e.target.value)}
-              className="mt-1 w-full rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+              className={`mt-1 w-full ${FIELD}`}
               placeholder={c.personalityPlaceholder}
             />
           </div>
           <div>
-            <label className="block text-sm text-neutral-700">{c.distinguishingFeatures}</label>
+            <label className={LABEL}>{c.distinguishingFeatures}</label>
             <input
               value={distinguishing}
               onChange={(e) => setDistinguishing(e.target.value)}
-              className="mt-1 w-full rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+              className={`mt-1 w-full ${FIELD}`}
               placeholder={c.distinguishingPlaceholder}
             />
           </div>
         </div>
       </section>
 
-      <section className="rounded-[18px] border border-neutral-100 bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        <h2 className="text-sm font-semibold text-neutral-900">{c.motionStyle}</h2>
+      <section className={SHEET}>
+        <h2 className={SHEET_TITLE}>{c.motionStyle}</h2>
         <input
           value={motionStyle}
           onChange={(e) => setMotionStyle(e.target.value)}
-          className="mt-4 w-full rounded-[10px] border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-neutral-400"
+          className={`mt-4 w-full ${FIELD}`}
           placeholder={c.motionStylePlaceholder}
         />
       </section>
 
-      <section className="rounded-[18px] border border-neutral-100 bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        <h2 className="text-sm font-semibold text-neutral-900">{c.dialogueVoice}</h2>
-        <p className="mt-1 text-sm text-neutral-500">{c.dialogueVoiceSubtitle}</p>
+      <section className={SHEET}>
+        <h2 className={SHEET_TITLE}>{c.dialogueVoice}</h2>
+        <p className="mt-1 text-sm text-atelier-muted">{c.dialogueVoiceSubtitle}</p>
         {voices.length === 0 ? (
-          <p className="mt-4 text-sm text-neutral-400">{c.noVoicesYet}</p>
+          <p className="mt-4 text-sm text-atelier-muted/80">{c.noVoicesYet}</p>
         ) : (
           <div className="mt-4 flex items-center gap-2">
             <select
               value={voiceId}
               onChange={(e) => setVoiceId(e.target.value)}
-              className="w-full rounded-[10px] border border-neutral-200 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+              className={`w-full ${FIELD}`}
             >
               <option value="">{c.noVoice}</option>
               {voices.map((v) => (
@@ -477,19 +486,19 @@ export function CharacterForm({
         )}
       </section>
 
-      <section className="rounded-[18px] border border-neutral-100 bg-white p-8 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-        <h2 className="text-sm font-semibold text-neutral-900">{c.voiceToneTags}</h2>
+      <section className={SHEET}>
+        <h2 className={SHEET_TITLE}>{c.voiceToneTags}</h2>
         <div className="mt-4 flex flex-wrap gap-2">
           {tags.map((tag) => (
             <span
               key={tag}
-              className="flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-700"
+              className="flex items-center gap-1 rounded-full border border-atelier-rule bg-atelier-paper px-3 py-1 text-xs text-atelier-ink"
             >
               {tag}
               <button
                 type="button"
                 onClick={() => setTags(tags.filter((t) => t !== tag))}
-                className="text-neutral-400 hover:text-neutral-700"
+                className="text-atelier-muted hover:text-atelier-ink"
               >
                 ✕
               </button>
@@ -506,22 +515,22 @@ export function CharacterForm({
             }}
             onBlur={addTag}
             placeholder={c.tagPlaceholder}
-            className="min-w-[140px] flex-1 rounded-[10px] border border-neutral-200 px-3 py-1.5 text-sm outline-none focus:border-neutral-400"
+            className="min-w-[140px] flex-1 rounded-control border border-atelier-rule bg-transparent px-3 py-1.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent"
           />
         </div>
       </section>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
       <div className="flex items-center justify-between">
-        <Link href="/app/character" className="text-sm text-neutral-500 hover:text-neutral-700">
+        <Link href="/app/character" className="text-sm text-atelier-muted hover:text-atelier-ink">
           {c.cancel}
         </Link>
         <Button
           type="submit"
           pending={submitting}
           pendingLabel={c.saving}
-          className="px-6"
+          className="px-6 rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
         >
           {c.saveCharacter}
         </Button>
@@ -532,7 +541,7 @@ export function CharacterForm({
       {initial?.id && (
         <form
           action={deleteCharacterProfile}
-          className="border-t border-neutral-100 pt-4 text-center"
+          className="border-t border-atelier-rule/60 pt-4 text-center"
           onSubmit={(e) => {
             if (!window.confirm(formatMsg(c.deleteConfirm, { name: initial.name || "" }))) {
               e.preventDefault();
@@ -540,7 +549,7 @@ export function CharacterForm({
           }}
         >
           <input type="hidden" name="id" value={initial.id} />
-          <button type="submit" className="text-sm text-red-500 hover:text-red-700">
+          <button type="submit" className="text-sm text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">
             {c.deleteCharacter}
           </button>
         </form>

@@ -132,14 +132,14 @@ export function VoiceRecorderButton({
           dim,
           status === "recording"
             ? "animate-pulse bg-red-500 text-white"
-            : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700",
+            : "bg-atelier-ink/5 text-atelier-muted hover:bg-atelier-ink/10 hover:text-atelier-ink",
           className,
         )}
       >
         <MicIcon className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} />
       </button>
       {status === "transcribing" && (
-        <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-neutral-400">
+        <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-atelier-muted">
           {v.transcribing}
         </span>
       )}

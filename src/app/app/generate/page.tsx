@@ -73,8 +73,8 @@ export default async function GeneratePage() {
     return (
       <div className="mx-auto max-w-md text-center">
         <Card>
-          <h1 className="text-lg font-semibold text-neutral-900">{g.noCharacterTitle}</h1>
-          <p className="mt-2 text-sm text-neutral-500">{g.noCharacterBody}</p>
+          <h1 className="text-lg font-semibold text-atelier-ink">{g.noCharacterTitle}</h1>
+          <p className="mt-2 text-sm text-atelier-muted">{g.noCharacterBody}</p>
           <Link href="/app/character/new" className="mt-6 block">
             <Button className="w-full">{g.noCharacterCta}</Button>
           </Link>
@@ -101,17 +101,17 @@ export default async function GeneratePage() {
           </Link>
         </div>
       )}
-      <div className="mb-7 flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold tracking-tight text-neutral-900">{g.pageTitle}</h1>
+      <div className="mb-7 flex items-end justify-between gap-3 border-b border-atelier-rule pb-4">
+        <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
         {stats.total > 0 && (
-          <div className="flex gap-2">
-            <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 px-3.5 py-2 text-right">
-              <p className="text-base font-semibold text-neutral-900">{stats.firstTryRate}%</p>
-              <p className="text-[11px] text-neutral-500">{g.firstTrySuccess}</p>
+          <div className="flex gap-5">
+            <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
+              <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</p>
+              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</p>
             </div>
-            <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 px-3.5 py-2 text-right">
-              <p className="text-base font-semibold text-neutral-900">{stats.avgAttempts}</p>
-              <p className="text-[11px] text-neutral-500">{g.avgAttempts}</p>
+            <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
+              <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</p>
+              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</p>
             </div>
           </div>
         )}

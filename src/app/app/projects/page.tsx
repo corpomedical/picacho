@@ -1,7 +1,5 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { ProjectRow } from "@/components/project-row";
 import { getServerMessages } from "@/lib/i18n/server";
 
@@ -44,26 +42,26 @@ export default async function ProjectsPage({
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">
+        <h1 className="text-lg font-semibold text-atelier-ink">
           {showArchived ? p.archivedTitle : p.title}
         </h1>
         {!showArchived && (
           <Link href="/app/projects/new">
-            <Button>{p.newProject}</Button>
+            <button className="inline-flex items-center justify-center gap-2 rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90">{p.newProject}</button>
           </Link>
         )}
       </div>
 
       {error ? (
-        <Card className="mt-6 text-center">
-          <p className="text-sm text-red-600">{p.couldntLoad}</p>
-        </Card>
+        <div className="mt-6 rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center">
+          <p className="text-sm text-red-600 dark:text-red-400">{p.couldntLoad}</p>
+        </div>
       ) : !projects || projects.length === 0 ? (
-        <Card className="mt-6 text-center">
-          <p className="text-sm text-neutral-500">
+        <div className="mt-6 rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center">
+          <p className="text-sm text-atelier-muted">
             {showArchived ? p.noArchivedProjects : p.noProjectsYet}
           </p>
-        </Card>
+        </div>
       ) : (
         <div className="mt-6 space-y-3">
           {projects.map((project) => (
@@ -77,13 +75,13 @@ export default async function ProjectsPage({
         </div>
       )}
 
-      <p className="mt-6 text-center text-xs text-neutral-400">
+      <p className="mt-6 text-center text-xs text-atelier-muted">
         {showArchived ? (
-          <Link href="/app/projects" className="hover:text-neutral-600">
+          <Link href="/app/projects" className="hover:text-atelier-ink">
             {p.backToActive}
           </Link>
         ) : (
-          <Link href="/app/projects?view=archived" className="hover:text-neutral-600">
+          <Link href="/app/projects?view=archived" className="hover:text-atelier-ink">
             {p.viewArchived}
           </Link>
         )}

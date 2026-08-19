@@ -46,7 +46,7 @@ export function HomeComposer({
         e.preventDefault();
         go();
       }}
-      className="mx-auto w-full max-w-2xl rounded-[24px] border border-neutral-200 bg-white px-3 py-2 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_16px_40px_-16px_rgba(0,0,0,0.12)] transition-colors focus-within:border-neutral-300"
+      className="mx-auto w-full max-w-2xl rounded-control border border-atelier-rule bg-atelier-surface px-3 py-2 transition-colors focus-within:border-atelier-accent"
     >
       <div className="flex items-center gap-1.5">
         <input
@@ -61,7 +61,7 @@ export function HomeComposer({
           placeholder={d.composerPlaceholder}
           autoFocus
           disabled={disabled}
-          className="min-w-0 flex-1 border-none bg-transparent px-2.5 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 disabled:opacity-60"
+          className="min-w-0 flex-1 border-none bg-transparent px-2.5 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/60 disabled:opacity-60"
         />
         <VoiceRecorderButton
           onTranscript={(text) => setValue((prev) => (prev ? `${prev} ${text}` : text))}
@@ -77,7 +77,7 @@ export function HomeComposer({
           title={d.start}
           aria-label={d.start}
           disabled={disabled}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-70"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-70"
         >
           <SendIcon className="h-4 w-4" />
         </button>

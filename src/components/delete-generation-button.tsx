@@ -66,11 +66,11 @@ export function DeleteGenerationButton({
           type="button"
           onClick={handleDelete}
           disabled={pending}
-          className={cn("text-sm text-red-500 hover:text-red-700 disabled:opacity-50", className)}
+          className={cn("text-sm text-red-600 hover:text-red-700 disabled:opacity-50 dark:text-red-400 dark:hover:text-red-300", className)}
         >
           {h.deleteGeneration}
         </button>
-        {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>}
       </div>
     );
   }
@@ -83,7 +83,7 @@ export function DeleteGenerationButton({
       aria-label={h.deleteGeneration}
       title={h.deleteGeneration}
       className={cn(
-        "flex items-center justify-center rounded-[8px] text-neutral-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-500/15",
+        "flex items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-500/15 dark:hover:text-red-400",
         className,
       )}
     >

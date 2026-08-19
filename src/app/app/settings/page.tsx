@@ -10,7 +10,6 @@ import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { BuyCreditsPanel } from "@/components/buy-credits-panel";
 import { isNativeApp } from "@/lib/native/server";
 import { FeedbackForm } from "@/components/settings/feedback-form";
-import { Card } from "@/components/ui/card";
 import { ProfileForm } from "@/components/profile-form";
 import { UsernameForm } from "@/components/settings/username-form";
 import { EmailForm } from "@/components/settings/email-form";
@@ -27,6 +26,13 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { isEUVisitor } from "@/lib/geo";
 import { cn } from "@/lib/cn";
+
+// Atelier paper sheet — the local stand-in for ui/Card (which keeps its old
+// look for screens not yet moved onto the tokens): raised warm surface, one
+// hairline rule, control radius, no drop shadow. Section titles inside a
+// sheet are set as small caps labels, the settings-popover idiom extended.
+const SHEET = "rounded-control border border-atelier-rule bg-atelier-surface p-8";
+const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 
 // The upsell ladder for the "next tier" card below — each plan nudges toward
 // the one after it. Basic slots in as the first paid step (2026-08-19): a
@@ -221,16 +227,16 @@ export default async function SettingsPage({
 
   return (
     <div className="mx-auto max-w-4xl">
-      <h1 className="text-lg font-semibold text-neutral-900">{s.title}</h1>
-      <p className="mt-1 text-sm text-neutral-500">{s.subtitle}</p>
+      <h1 className="text-lg font-semibold text-atelier-ink">{s.title}</h1>
+      <p className="mt-1 text-sm text-atelier-muted">{s.subtitle}</p>
 
       {saved && (
-        <p className="mt-4 rounded-[10px] bg-emerald-50 px-3.5 py-2 text-sm text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+        <p className="mt-4 rounded-control border border-emerald-600/25 bg-emerald-500/10 px-3.5 py-2 text-sm text-emerald-700 dark:text-emerald-400">
           {s.savedNotice}
         </p>
       )}
       {errorMessage && (
-        <p className="mt-4 rounded-[10px] bg-red-50 px-3.5 py-2 text-sm text-red-600 dark:bg-red-500/15 dark:text-red-400">
+        <p className="mt-4 rounded-control border border-red-600/25 bg-red-500/10 px-3.5 py-2 text-sm text-red-600 dark:text-red-400">
           {errorMessage}
         </p>
       )}
@@ -242,10 +248,10 @@ export default async function SettingsPage({
               key={item.id}
               href={item.id === "account" ? "/app/settings" : `/app/settings?tab=${item.id}`}
               className={cn(
-                "flex flex-shrink-0 items-center gap-2.5 whitespace-nowrap rounded-[10px] px-3 py-2 text-sm transition-colors",
+                "flex flex-shrink-0 items-center gap-2.5 whitespace-nowrap rounded-control px-3 py-2 text-sm transition-colors",
                 activeTab === item.id
-                  ? "bg-neutral-100 font-medium text-neutral-900"
-                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900",
+                  ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
               )}
             >
               <item.icon className="h-4 w-4 flex-shrink-0" />
@@ -257,101 +263,101 @@ export default async function SettingsPage({
         <div className="min-w-0 flex-1">
           {activeTab === "account" && (
             <div className="space-y-4">
-              <Card>
-                <h2 className="text-sm font-semibold text-neutral-900">{s.account}</h2>
+              <div className={SHEET}>
+                <h2 className={SHEET_TITLE}>{s.account}</h2>
                 <div className="mt-4 space-y-5">
                   <UsernameForm initialUsername={username} />
                   <EmailForm initialEmail={data.user.email ?? ""} />
-                  <div className="border-t border-neutral-100 pt-5">
+                  <div className="border-t border-atelier-rule/60 pt-5">
                     <ProfileForm initialCompany={profile?.company ?? ""} initialGender={profile?.gender ?? ""} />
                   </div>
                 </div>
-              </Card>
+              </div>
 
-              <Card>
-                <h2 className="text-sm font-semibold text-neutral-900">{s.aiGeneration}</h2>
+              <div className={SHEET}>
+                <h2 className={SHEET_TITLE}>{s.aiGeneration}</h2>
                 <div className="mt-4">
                   <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
                 </div>
-              </Card>
+              </div>
 
-              <Card>
-                <h2 className="text-sm font-semibold text-neutral-900">{s.emailPreferences}</h2>
+              <div className={SHEET}>
+                <h2 className={SHEET_TITLE}>{s.emailPreferences}</h2>
                 <div className="mt-4">
                   {/* enabled = NOT opted out; a missing profile row degrades
                       to the column's default (false → emails on), matching
                       what the blast query would actually do. */}
                   <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
                 </div>
-              </Card>
+              </div>
 
               {/* Only shown where it's actually usable — an API-keys card on a
                   Starter account is an advert dressed as a setting. */}
               {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
 
-              <Card>
+              <div className={SHEET}>
                 <form action={logout}>
                   <button
                     type="submit"
-                    className="text-sm font-medium text-neutral-700 underline hover:text-neutral-900"
+                    className="text-sm font-medium text-atelier-muted underline underline-offset-2 hover:text-atelier-ink"
                   >
                     {s.logOut}
                   </button>
                 </form>
-              </Card>
+              </div>
 
-              <Card>
-                <h2 className="text-sm font-semibold text-red-600 dark:text-red-400">{s.dangerZone}</h2>
+              <div className={SHEET}>
+                <h2 className="text-[11px] font-medium uppercase tracking-widest text-red-600 dark:text-red-400">{s.dangerZone}</h2>
                 <div className="mt-3">
                   <DeleteAccountForm username={username} />
                 </div>
-              </Card>
+              </div>
             </div>
           )}
 
           {activeTab === "appearance" && (
-            <Card>
-              <h2 className="text-sm font-semibold text-neutral-900">{s.appearance}</h2>
-              <p className="mt-1 text-xs text-neutral-500">{s.appearanceSubtitle}</p>
+            <div className={SHEET}>
+              <h2 className={SHEET_TITLE}>{s.appearance}</h2>
+              <p className="mt-1 text-xs text-atelier-muted">{s.appearanceSubtitle}</p>
               <div className="mt-4">
                 <ThemePicker />
               </div>
-              <div className="mt-5 flex items-center justify-between border-t border-neutral-100 pt-4">
+              <div className="mt-5 flex items-center justify-between border-t border-atelier-rule/60 pt-4">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">{s.language}</p>
-                  <p className="mt-0.5 text-xs text-neutral-500">{s.languageSubtitle}</p>
+                  <p className="text-sm font-medium text-atelier-ink">{s.language}</p>
+                  <p className="mt-0.5 text-xs text-atelier-muted">{s.languageSubtitle}</p>
                 </div>
                 <LanguageSwitcher />
               </div>
-            </Card>
+            </div>
           )}
 
           {activeTab === "security" && (
-            <Card>
-              <h2 className="text-sm font-semibold text-neutral-900">{s.security}</h2>
-              <p className="mt-1 text-xs text-neutral-500">{s.securitySubtitle}</p>
+            <div className={SHEET}>
+              <h2 className={SHEET_TITLE}>{s.security}</h2>
+              <p className="mt-1 text-xs text-atelier-muted">{s.securitySubtitle}</p>
               <div className="mt-4">
                 <PasswordForm />
               </div>
-            </Card>
+            </div>
           )}
 
           {activeTab === "usage" && (
-            <Card>
-              <h2 className="text-sm font-semibold text-neutral-900">{s.usageAndPlan}</h2>
+            <div className={SHEET}>
+              <h2 className={SHEET_TITLE}>{s.usageAndPlan}</h2>
               <div className="mt-3 flex items-center justify-between">
-                <p className="text-sm text-neutral-500">
+                <p className="text-sm text-atelier-muted">
                   {plan === "none" ? s.noActivePlan : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
                 </p>
-                <p className="text-sm text-neutral-500">{limit > 0 ? formatMsg(s.percentUsed, { pct }) : ""}</p>
+                <p className="font-numeral text-sm tabular-nums text-atelier-ink">{limit > 0 ? formatMsg(s.percentUsed, { pct }) : ""}</p>
               </div>
-              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-neutral-100">
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-atelier-ink/10">
                 <div
-                  className="h-full rounded-full bg-neutral-900 transition-[width]"
+                  className="h-full rounded-full bg-atelier-accent transition-[width]"
                   style={{ width: `${limit > 0 ? Math.max(pct, usedThisMonth > 0 ? 3 : 0) : 0}%` }}
                 />
               </div>
-              <p className="mt-2 text-xs text-neutral-500">
+              <p className="mt-2 font-numeral text-xs tabular-nums text-atelier-muted">
                 {usedThisMonth === 1 ? s.generationCountOne : formatMsg(s.generationCountOther, { n: usedThisMonth })}
                 {limit > 0 && ` ${formatMsg(s.ofLimitThisMonth, { limit })}`}
               </p>
@@ -370,8 +376,8 @@ export default async function SettingsPage({
                   Rendered on the server rather than hidden with CSS, so the
                   purchase UI never exists in the app's DOM at all. */}
               {nativeApp ? (
-                <div className="mt-4 rounded-[14px] bg-neutral-100 p-4">
-                  <p className="text-sm font-semibold text-neutral-900">
+                <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-paper p-4">
+                  <p className="text-sm font-semibold text-atelier-ink">
                     {profile?.plan_status === "past_due"
                       ? s.paymentFailed
                       : plan === "none"
@@ -380,19 +386,19 @@ export default async function SettingsPage({
                   </p>
                 </div>
               ) : hasLiveSubscription ? (
-                <div className="mt-4 flex items-center justify-between gap-4 rounded-[14px] bg-neutral-900 p-4 text-white">
+                <div className="mt-4 flex items-center justify-between gap-4 rounded-control bg-atelier-ink p-4 text-atelier-paper">
                   <div className="min-w-0">
                     <p className="text-sm font-semibold">
                       {profile?.plan_status === "past_due" ? s.paymentFailed : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
                     </p>
-                    <p className="mt-0.5 text-xs text-neutral-300">
+                    <p className="mt-0.5 text-xs text-atelier-paper/70">
                       {profile?.plan_status === "past_due" ? s.paymentFailedDesc : s.managePlanDesc}
                     </p>
                   </div>
                   <form action={createPortalSession}>
                     <button
                       type="submit"
-                      className="flex-shrink-0 rounded-[10px] bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-100"
+                      className="flex-shrink-0 rounded-control bg-atelier-paper px-4 py-2 text-sm font-medium text-atelier-ink transition-opacity hover:opacity-90"
                     >
                       {s.manageBilling}
                     </button>
@@ -400,14 +406,14 @@ export default async function SettingsPage({
                 </div>
               ) : (
                 nextTier && (
-                  <div className="mt-4 flex items-center justify-between gap-4 rounded-[14px] bg-neutral-900 p-4 text-white">
+                  <div className="mt-4 flex items-center justify-between gap-4 rounded-control bg-atelier-ink p-4 text-atelier-paper">
                     <div className="min-w-0">
                       <p className="text-sm font-semibold">
                         {plan === "none"
                           ? formatMsg(s.getStartedWith, { tier: t.pricingTiers[nextTier.id].name })
                           : formatMsg(s.upgradeTo, { tier: t.pricingTiers[nextTier.id].name })}
                       </p>
-                      <p className="mt-0.5 text-xs text-neutral-300">
+                      <p className="mt-0.5 font-numeral text-xs tabular-nums text-atelier-paper/70">
                         {formatMsg(s.priceLine, {
                           price: `${currencySymbol}${nextTier.price}`,
                           credits: nextTier.credits,
@@ -418,7 +424,7 @@ export default async function SettingsPage({
                       <input type="hidden" name="plan" value={nextTier.id} />
                       <button
                         type="submit"
-                        className="flex-shrink-0 rounded-[10px] bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-100"
+                        className="flex-shrink-0 rounded-control bg-atelier-paper px-4 py-2 text-sm font-medium text-atelier-ink transition-opacity hover:opacity-90"
                       >
                         {plan === "none" ? s.getStarted : s.upgrade}
                       </button>
@@ -426,7 +432,7 @@ export default async function SettingsPage({
                   </div>
                 )
               )}
-            </Card>
+            </div>
           )}
 
           {/* Buying credits is a purchase, so it can't exist in the app at
@@ -438,8 +444,8 @@ export default async function SettingsPage({
           {activeTab === "brand" && <BrandRulesPanel rules={brandRules} enforcementPaused={brandRulesPaused} />}
 
           {activeTab === "support" && (
-            <Card>
-              <h2 className="text-sm font-semibold text-neutral-900">{s.support}</h2>
+            <div className={SHEET}>
+              <h2 className={SHEET_TITLE}>{s.support}</h2>
               {/* Feedback is a form, not a mailto — it lands in the
                   /admin/feedback queue instead of an inbox, and doesn't
                   depend on the person having a mail client set up. Help
@@ -448,15 +454,15 @@ export default async function SettingsPage({
               <div className="mt-4">
                 <FeedbackForm />
               </div>
-              <div className="mt-4 border-t border-neutral-100 pt-4 text-sm">
+              <div className="mt-4 border-t border-atelier-rule/60 pt-4 text-sm">
                 <a
                   href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho help")}`}
-                  className="text-neutral-700 underline hover:text-neutral-900"
+                  className="text-atelier-muted underline underline-offset-2 hover:text-atelier-ink"
                 >
                   {s.getHelp}
                 </a>
               </div>
-            </Card>
+            </div>
           )}
         </div>
       </div>

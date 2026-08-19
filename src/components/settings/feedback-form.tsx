@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 import { submitFeedback } from "@/lib/feedback/actions";
-import { Label, Textarea } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+
+// Atelier form idiom (settings-popover, extended): caps label over an
+// ink-hairline field at the control radius; accent only marks focus.
+const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+const FIELD =
+  "w-full resize-none rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
 
 // Replaces the mailto: link that used to sit here. A mailto is a dead end:
 // it depends on the person having a mail client configured, it drops them
@@ -35,7 +40,7 @@ export function FeedbackForm() {
 
   if (sent) {
     return (
-      <div className="rounded-[10px] bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+      <div className="rounded-control border border-emerald-600/25 bg-emerald-500/10 px-3.5 py-2.5 text-sm text-emerald-700 dark:text-emerald-400">
         {c.feedbackSent}
       </div>
     );
@@ -44,9 +49,10 @@ export function FeedbackForm() {
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
       <div>
-        <Label htmlFor="feedback">{c.feedbackTitle}</Label>
-        <Textarea
+        <label htmlFor="feedback" className={LABEL}>{c.feedbackTitle}</label>
+        <textarea
           id="feedback"
+          className={FIELD}
           rows={4}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
@@ -55,10 +61,11 @@ export function FeedbackForm() {
           disabled={pending}
         />
       </div>
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
       <div className="flex justify-end">
         <Button
           type="submit"
+          className="rounded-control! bg-atelier-ink! text-atelier-paper! shadow-none! hover:bg-atelier-ink/90!"
           disabled={!message.trim()}
           pending={pending}
           pendingLabel={c.feedbackSending}

@@ -44,8 +44,8 @@ export default async function ImagesPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-900">{t.gallery.imagesTitle}</h1>
-      <p className="mt-1 text-sm text-neutral-500">{t.gallery.imagesSubtitle}</p>
+      <h1 className="text-lg font-semibold text-atelier-ink">{t.gallery.imagesTitle}</h1>
+      <p className="mt-1 text-sm text-atelier-muted">{t.gallery.imagesSubtitle}</p>
 
       <MediaGallery
         items={items}

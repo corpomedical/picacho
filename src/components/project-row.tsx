@@ -105,10 +105,10 @@ function MenuAction({
       type="button"
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-[8px] px-2.5 py-1.5 text-left text-sm transition-colors",
+        "flex w-full items-center gap-2.5 rounded-control px-2.5 py-1.5 text-left text-sm transition-colors",
         destructive
           ? "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/15"
-          : "text-neutral-700 hover:bg-neutral-50",
+          : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
       )}
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0" />
@@ -199,16 +199,16 @@ export function ProjectRow({
         onClick={() => setMenuOpen((v) => !v)}
         aria-label={p.projectOptions}
         className={cn(
-          "flex items-center justify-center rounded-[8px] text-neutral-400 opacity-0 transition-opacity hover:bg-neutral-100 hover:text-neutral-700 group-hover:opacity-100 focus:opacity-100",
+          "flex items-center justify-center rounded-control text-atelier-muted opacity-0 transition-opacity hover:bg-atelier-ink/5 hover:text-atelier-ink group-hover:opacity-100 focus:opacity-100",
           compact ? "h-6 w-6" : "h-7 w-7",
-          menuOpen && "bg-neutral-100 opacity-100",
+          menuOpen && "bg-atelier-ink/10 opacity-100",
         )}
       >
         <MoreIcon className="h-3.5 w-3.5" />
       </button>
 
       {menuOpen && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-[10px] border border-neutral-200 bg-white p-1 shadow-[0_8px_24px_-8px_rgba(0,0,0,0.15)]">
+        <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-control border border-atelier-rule bg-atelier-surface p-1 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]">
           <MenuAction
             icon={StarIcon}
             label={project.is_starred ? p.unstar : p.star}
@@ -232,7 +232,7 @@ export function ProjectRow({
             label={project.is_archived ? p.unarchive : p.archive}
             onClick={() => runAction(toggleProjectArchive, { archived: String(project.is_archived) })}
           />
-          <div className="my-1 h-px bg-neutral-100" />
+          <div className="my-1 h-px bg-atelier-rule/60" />
           <MenuAction icon={TrashIcon} label={p.remove} destructive onClick={handleRemove} />
         </div>
       )}
@@ -258,23 +258,23 @@ export function ProjectRow({
                 setRenaming(false);
               }
             }}
-            className="min-w-0 flex-1 rounded-[8px] border border-neutral-300 bg-white px-2 py-1 text-xs outline-none focus:border-neutral-400"
+            className="min-w-0 flex-1 rounded-control border border-atelier-rule bg-transparent px-2 py-1 text-xs text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
           />
         ) : (
           <Link
             href={`/app/projects/${project.id}`}
             className={cn(
-              "flex min-w-0 flex-1 items-center gap-2 rounded-[10px] px-2.5 py-2 text-xs transition-colors",
+              "flex min-w-0 flex-1 items-center gap-2 rounded-control px-2.5 py-2 text-xs transition-colors",
               isActive
-                ? "bg-neutral-100 text-neutral-900"
-                : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                ? "bg-atelier-surface text-atelier-ink"
+                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
-            {project.is_pinned && <PinIcon className="h-3 w-3 flex-shrink-0 text-neutral-400" />}
+            {project.is_pinned && <PinIcon className="h-3 w-3 flex-shrink-0 text-atelier-muted" />}
             <FolderIcon className="h-3.5 w-3.5 flex-shrink-0" />
             <span className="truncate">{project.name}</span>
             {project.is_starred && (
-              <StarIcon filled className="h-3 w-3 flex-shrink-0 text-amber-400" />
+              <StarIcon filled className="h-3 w-3 flex-shrink-0 text-atelier-accent" />
             )}
           </Link>
         )}
@@ -286,7 +286,7 @@ export function ProjectRow({
   return (
     <div
       className={cn(
-        "group relative flex items-center justify-between gap-4 rounded-[18px] border border-neutral-100 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)] transition-shadow hover:shadow-[0_8px_20px_-10px_rgba(0,0,0,0.12)]",
+        "group relative flex items-center justify-between gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-5 transition-colors hover:border-atelier-muted/70",
         pending && "opacity-60",
       )}
     >
@@ -306,18 +306,18 @@ export function ProjectRow({
               setRenaming(false);
             }
           }}
-          className="min-w-0 flex-1 rounded-[10px] border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:border-neutral-400"
+          className="min-w-0 flex-1 rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
         />
       ) : (
         <Link href={`/app/projects/${project.id}`} className="min-w-0 flex-1">
-          <p className="flex items-center gap-1.5 truncate text-sm font-medium text-neutral-900">
-            {project.is_pinned && <PinIcon className="h-3.5 w-3.5 flex-shrink-0 text-neutral-400" />}
+          <p className="flex items-center gap-1.5 truncate text-sm font-medium text-atelier-ink">
+            {project.is_pinned && <PinIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-muted" />}
             <span className="truncate">{project.name}</span>
             {project.is_starred && (
-              <StarIcon filled className="h-3.5 w-3.5 flex-shrink-0 text-amber-400" />
+              <StarIcon filled className="h-3.5 w-3.5 flex-shrink-0 text-atelier-accent" />
             )}
           </p>
-          <p className="mt-0.5 truncate text-xs text-neutral-500">
+          <p className="mt-0.5 truncate text-xs text-atelier-muted">
             {project.description || p.noDescription}
           </p>
         </Link>
@@ -325,7 +325,7 @@ export function ProjectRow({
 
       <div className="flex flex-shrink-0 items-center gap-2">
         {characterCount !== undefined && (
-          <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium text-neutral-700">
+          <span className="rounded-full border border-atelier-rule bg-atelier-paper px-2.5 py-1 text-xs font-medium text-atelier-muted">
             {characterCount === 1 ? p.characterCountOne : formatMsg(p.characterCountOther, { n: characterCount })}
           </span>
         )}

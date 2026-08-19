@@ -38,10 +38,10 @@ export function SkipRefinementToggle({
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className={cn("font-medium text-neutral-900", variant === "full" ? "text-sm" : "text-xs")}>
+        <p className={cn("font-medium text-atelier-ink", variant === "full" ? "text-sm" : "text-xs")}>
           {s.skipRefinementLabel}
         </p>
-        <p className={cn("text-neutral-500", variant === "full" ? "mt-0.5 text-xs" : "mt-0.5 text-[11px] leading-snug")}>
+        <p className={cn("text-atelier-muted", variant === "full" ? "mt-0.5 text-xs" : "mt-0.5 text-[11px] leading-snug")}>
           {s.skipRefinementHelp}
         </p>
       </div>
@@ -54,12 +54,12 @@ export function SkipRefinementToggle({
         disabled={pending}
         className={cn(
           "relative h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50",
-          enabled ? "bg-neutral-900" : "bg-neutral-200",
+          enabled ? "bg-atelier-accent" : "bg-atelier-ink/15",
         )}
       >
         <span
           className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
+            "absolute top-0.5 h-5 w-5 rounded-full bg-atelier-surface shadow transition-transform",
             enabled ? "translate-x-[22px]" : "translate-x-0.5",
           )}
         />

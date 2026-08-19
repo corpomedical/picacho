@@ -346,21 +346,21 @@ function PipelineTrace({
             <span
               className={cn(
                 "mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full",
-                isCurrent ? "animate-pulse bg-neutral-900" : "bg-neutral-300",
+                isCurrent ? "animate-pulse bg-atelier-ink" : "bg-atelier-rule",
               )}
             />
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+                <span className="inline-flex items-center text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
                   {stepLabel(item.step.step, isLive, g)}
                 </span>
                 {timeline.some((entry) => entry.kind === "step" && entry.attempt > 1) && (
-                  <span className="text-[11px] text-neutral-400">
+                  <span className="text-[11px] text-atelier-muted/70">
                     {formatMsg(g.attemptSuffix, { n: item.attempt })}
                   </span>
                 )}
               </div>
-              <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-700">
+              <p className="mt-1 whitespace-pre-wrap text-sm text-atelier-ink/80">
                 {/* Raw provider dumps (fal/OpenAI JSON, status codes, docs
                     URLs) are admin diagnostics — in the composer everyone
                     gets the friendly line; the full text is preserved in
@@ -401,7 +401,7 @@ function ResultMedia({
           src={resultUrl}
           controls
           aria-label={prompt}
-          className="aspect-video w-full rounded-[16px] bg-neutral-950"
+          className="aspect-video w-full rounded-media bg-neutral-950"
         />
         <DownloadButton url={resultUrl} contentType={contentType} />
       </div>
@@ -411,7 +411,7 @@ function ResultMedia({
         <img
           src={resultUrl}
           alt={prompt || t.generate.resultAlt}
-          className="w-full rounded-[16px] bg-neutral-100 object-cover"
+          className="w-full rounded-media bg-atelier-ink/5 object-cover"
         />
         <DownloadButton url={resultUrl} contentType={contentType} />
       </div>
@@ -421,8 +421,8 @@ function ResultMedia({
   const typeLabel = (contentType === "video" ? t.generate.video : t.generate.image).toLowerCase();
 
   return (
-    <div className="mt-4 flex aspect-video items-center justify-center rounded-[16px] bg-neutral-100 text-center">
-      <p className="max-w-xs px-4 text-xs text-neutral-500">
+    <div className="mt-4 flex aspect-video items-center justify-center rounded-media bg-atelier-ink/5 text-center">
+      <p className="max-w-xs px-4 text-xs text-atelier-muted">
         {formatMsg(t.generate.simulatedResult, { type: typeLabel })}
       </p>
     </div>
@@ -440,7 +440,7 @@ function AttachmentThumb({ attachment, className }: { attachment: ChatAttachment
     return <video src={attachment.url} className={cn("object-cover", className)} muted />;
   }
   return (
-    <div className={cn("flex items-center justify-center bg-neutral-100 text-neutral-400", className)}>
+    <div className={cn("flex items-center justify-center bg-atelier-ink/5 text-atelier-muted", className)}>
       <FileIcon className="h-5 w-5" />
     </div>
   );
@@ -516,7 +516,7 @@ function UserBubble({
                 target="_blank"
                 rel="noreferrer"
                 title={att.name}
-                className="block h-16 w-16 flex-shrink-0 overflow-hidden rounded-[12px] border border-neutral-200"
+                className="block h-16 w-16 flex-shrink-0 overflow-hidden rounded-media border border-atelier-rule"
               >
                 <AttachmentThumb attachment={att} className="h-full w-full" />
               </a>
@@ -524,14 +524,14 @@ function UserBubble({
           </div>
         )}
         {prompt && (
-          <div className="rounded-[18px] rounded-br-[6px] bg-neutral-900 px-4.5 py-3 text-sm leading-relaxed text-white">
+          <div className="rounded-[18px] rounded-br-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-3 text-sm leading-relaxed text-atelier-ink">
             {prompt}
           </div>
         )}
         {prompt && (
           <div className="flex items-center justify-end gap-1 pr-1 transition-opacity duration-150 sm:opacity-0 sm:focus-within:opacity-100 sm:group-hover/prompt:opacity-100">
             {createdAt && (
-              <time dateTime={createdAt} className="text-[11px] text-neutral-400">
+              <time dateTime={createdAt} className="text-[11px] text-atelier-muted/70">
                 {promptTimestamp(createdAt, locale)}
               </time>
             )}
@@ -540,7 +540,7 @@ function UserBubble({
               onClick={handleCopy}
               aria-label={copied ? g.copied : g.copyPrompt}
               title={copied ? g.copied : g.copyPrompt}
-              className="flex h-6 w-6 items-center justify-center rounded-full text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+              className="flex h-6 w-6 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
             >
               {copied ? (
                 <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 6 9 17l-5-5" /></svg>
@@ -792,7 +792,7 @@ function ComposerToast({ message, onDone }: { message: string; onDone: () => voi
         role="status"
         aria-live="polite"
         className={cn(
-          "pointer-events-auto max-w-[92%] rounded-full bg-neutral-900 px-4 py-2.5 text-center text-sm text-white shadow-[0_12px_28px_-10px_rgba(0,0,0,0.45)] transition-all duration-300 ease-out",
+          "pointer-events-auto max-w-[92%] rounded-full bg-atelier-ink px-4 py-2.5 text-center text-sm text-atelier-paper shadow-[0_12px_28px_-10px_rgba(33,29,18,0.45)] transition-all duration-300 ease-out",
           entered ? "-translate-y-[130%] opacity-100" : "translate-y-0 opacity-0",
         )}
       >
@@ -877,7 +877,7 @@ function InsufficientCreditsBanner({
         <div
           role="status"
           className={cn(
-            "flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500 transition-transform duration-300 ease-out",
+            "flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted transition-transform duration-300 ease-out",
             // Slides up behind the composer on the way out, down into place on
             // the way in.
             visible ? "translate-y-0" : "-translate-y-2",
@@ -899,7 +899,7 @@ function InsufficientCreditsBanner({
           <button
             type="submit"
             form="buy-credits-shortfall"
-            className="cursor-pointer font-medium text-neutral-700 underline underline-offset-2 hover:text-neutral-900"
+            className="cursor-pointer font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
           >
             {formatMsg(g.addCreditsCta, { n: pack.credits })}
           </button>
@@ -911,7 +911,7 @@ function InsufficientCreditsBanner({
         type="button"
         onClick={() => setDismissed(true)}
         aria-label={g.dismissBanner}
-        className="flex-shrink-0 cursor-pointer rounded-full p-1 text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-600"
+        className="flex-shrink-0 cursor-pointer rounded-full p-1 text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
       >
         <XIcon className="h-3.5 w-3.5" />
       </button>
@@ -976,14 +976,14 @@ function UsageBanner({
   return (
     <div
       role="status"
-      className="flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-neutral-100 bg-neutral-50 px-4 py-2.5 text-xs text-neutral-500"
+      className="flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted"
     >
       {/* suppressHydrationWarning: resetLabel formats a date with the
           browser's locale/timezone, which legitimately differs from the SSR
           output — let React patch the text instead of throwing #418. */}
       <p className="flex-1" suppressHydrationWarning>
         {formatMsg(g.approachingLimitUsage, { used, limit })} · {resetLabel} ·{" "}
-        <Link href="/app/settings?tab=usage" className="font-medium text-neutral-700 underline underline-offset-2">
+        <Link href="/app/settings?tab=usage" className="font-medium text-atelier-accent underline underline-offset-2">
           {g.getMoreUsage}
         </Link>
       </p>
@@ -991,7 +991,7 @@ function UsageBanner({
         type="button"
         onClick={() => setDismissed(true)}
         aria-label={g.dismissUsageBanner}
-        className="flex-shrink-0 rounded-full p-1 text-neutral-400 transition-colors hover:bg-neutral-200/70 hover:text-neutral-600"
+        className="flex-shrink-0 rounded-full p-1 text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
       >
         <XIcon className="h-3.5 w-3.5" />
       </button>
@@ -1055,7 +1055,7 @@ function VoiceSessionCard({
           {WAVEFORM_BARS.map((bar, i) => (
             <span
               key={i}
-              className={cn("animate-voice-waveform w-1 origin-bottom rounded-full bg-neutral-900", bar.height)}
+              className={cn("animate-voice-waveform w-1 origin-bottom rounded-full bg-atelier-ink", bar.height)}
               style={{ animationDelay: `${bar.delay}ms` }}
             />
           ))}
@@ -1064,12 +1064,12 @@ function VoiceSessionCard({
             the question stays put while the answer is being spoken, so
             there's always something on screen explaining what's expected. */}
         {agentMessage && (
-          <p className="mt-4 text-center text-sm font-medium text-neutral-900">{agentMessage}</p>
+          <p className="mt-4 text-center text-sm font-medium text-atelier-ink">{agentMessage}</p>
         )}
-        <p className="mt-2 min-h-[20px] text-center text-sm text-neutral-500">
+        <p className="mt-2 min-h-[20px] text-center text-sm text-atelier-muted">
           {statusMessage || interimText || (agentMessage ? "" : g.voiceListeningLabel)}
         </p>
-        <p className="mt-1 min-h-[16px] text-center text-xs text-neutral-400">
+        <p className="mt-1 min-h-[16px] text-center text-xs text-atelier-muted/80">
           {statusMessage || interimText ? "" : g.voiceListeningHint}
         </p>
         <div className="mt-4 flex justify-center">
@@ -1078,7 +1078,7 @@ function VoiceSessionCard({
             onClick={onStop}
             aria-label={g.voiceStopSession}
             title={g.voiceStopSession}
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900 text-white transition-colors hover:bg-neutral-800"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90"
           >
             <StopIcon className="h-3.5 w-3.5" />
           </button>
@@ -1094,23 +1094,23 @@ function PendingAttachmentChip({ attachment, onRemove }: { attachment: PendingAt
   const isVideo = attachment.type.startsWith("video/");
 
   return (
-    <div className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-[12px] border border-neutral-200 bg-neutral-50">
+    <div className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-media border border-atelier-rule bg-atelier-paper">
       {isImage && attachment.url ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={attachment.url} alt={attachment.name} className="h-full w-full object-cover" />
       ) : isVideo && attachment.url ? (
         <video src={attachment.url} className="h-full w-full object-cover" muted />
       ) : (
-        <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-neutral-400">
+        <div className="flex h-full w-full flex-col items-center justify-center gap-1 px-1 text-atelier-muted">
           <FileIcon className="h-4 w-4" />
           <span className="w-full truncate text-center text-[9px] leading-tight">{attachment.name}</span>
-          <span className="text-[8px] text-neutral-300">{formatBytes(attachment.size)}</span>
+          <span className="text-[8px] text-atelier-muted/60">{formatBytes(attachment.size)}</span>
         </div>
       )}
 
       {attachment.status === "uploading" && (
-        <div className="absolute inset-0 flex items-center justify-center bg-white/70">
-          <LoaderIcon className="h-4 w-4 text-neutral-500" />
+        <div className="absolute inset-0 flex items-center justify-center bg-atelier-surface/70">
+          <LoaderIcon className="h-4 w-4 text-atelier-muted" />
         </div>
       )}
       {attachment.status === "error" && (
@@ -1127,7 +1127,7 @@ function PendingAttachmentChip({ attachment, onRemove }: { attachment: PendingAt
         onClick={onRemove}
         title={t.generate.removeAttachment}
         aria-label={t.generate.removeAttachment}
-        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-950/70 text-white opacity-0 transition-opacity group-hover:opacity-100"
+        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-950/70 text-[#faf8f3] opacity-0 transition-opacity group-hover:opacity-100"
       >
         <XIcon className="h-2.5 w-2.5" />
       </button>
@@ -1237,16 +1237,16 @@ function SingleTurnBubble({ turn }: { turn: ChatTurn }) {
     <div className="space-y-3">
       <UserBubble prompt={turn.prompt} attachments={turn.attachments} createdAt={turn.createdAt} />
       <div className="flex justify-start">
-        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-4">
+        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
           <PipelineTrace timeline={timeline} revealedCount={timeline.length} isAnimating={false} isLive={live} />
           {turn.succeeded ? (
             <>
               <ResultMedia succeeded={turn.succeeded} resultUrl={turn.resultUrl} contentType={turn.contentType} prompt={turn.prompt} />
               <div className="mt-3 flex items-center gap-2">
                 <Badge tone={live ? "success" : "neutral"}>{live ? g.live : g.simulated}</Badge>
-                <p className="text-xs text-neutral-500">{formatMsg(g.passedOnAttempt, { n: turn.attempts.length })}</p>
+                <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.passedOnAttempt, { n: turn.attempts.length })}</p>
                 {typeof turn.matchScore === "number" && (
-                  <p className="text-xs text-neutral-500">{formatMsg(g.identityMatch, { n: turn.matchScore })}</p>
+                  <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.identityMatch, { n: turn.matchScore })}</p>
                 )}
               </div>
               <ResultActions generationId={turn.id} copyText={turn.finalPrompt || turn.prompt} promotable={turn.contentType === "image"} />
@@ -1254,7 +1254,7 @@ function SingleTurnBubble({ turn }: { turn: ChatTurn }) {
           ) : (
             <div className="mt-3 flex items-center gap-2">
               <Badge tone="danger">{g.couldntValidate}</Badge>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-atelier-muted">
                 {summarizeFailure(turn.attempts, g) ??
                   (turn.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: turn.attempts.length }))}
               </p>
@@ -1285,10 +1285,10 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
               type="button"
               onClick={() => setActiveAngle(a.angleId)}
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                "rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-widest transition-colors",
                 isActive
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-200 text-neutral-500 hover:border-neutral-300 hover:text-neutral-900",
+                  ? "border-atelier-ink bg-atelier-ink text-atelier-paper"
+                  : "border-atelier-rule text-atelier-muted hover:border-atelier-muted hover:text-atelier-ink",
               )}
             >
               {label}
@@ -1305,14 +1305,14 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
             <>
               <div className="mt-3 flex items-center gap-2">
                 <Badge tone={isLive ? "success" : "neutral"}>{isLive ? g.live : g.simulated}</Badge>
-                <p className="text-xs text-neutral-500">{formatMsg(g.passedOnAttempt, { n: active.attempts.length })}</p>
+                <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.passedOnAttempt, { n: active.attempts.length })}</p>
               </div>
               <ResultActions key={active.id} generationId={active.id} copyText={active.finalPrompt || prompt || ""} />
             </>
           ) : (
             <div className="mt-3 flex items-center gap-2">
               <Badge tone="danger">{g.couldntValidate}</Badge>
-              <p className="text-xs text-neutral-500">
+              <p className="text-xs text-atelier-muted">
                 {summarizeFailure(active.attempts, g) ??
                   (active.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: active.attempts.length }))}
               </p>
@@ -1329,7 +1329,7 @@ function MultiAngleTurnBubble({ item }: { item: MultiAngleChatItem }) {
     <div className="space-y-3">
       <UserBubble prompt={item.prompt} attachments={item.attachments} createdAt={item.createdAt} />
       <div className="flex justify-start">
-        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-4">
+        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
           <MultiAngleResult angles={item.angles} prompt={item.prompt} />
         </div>
       </div>
@@ -3304,8 +3304,8 @@ function GenerateFormInner({
           aria-haspopup="listbox"
           aria-expanded={characterMenuOpen}
           className={cn(
-            "flex w-full items-center gap-2.5 rounded-full border bg-neutral-50 py-1.5 pl-1.5 pr-3.5 text-left transition-colors disabled:opacity-50",
-            characterMenuOpen ? "border-neutral-300" : "border-neutral-100 hover:border-neutral-200",
+            "flex w-full items-center gap-2.5 rounded-full border bg-atelier-paper py-1.5 pl-1.5 pr-3.5 text-left transition-colors disabled:opacity-50",
+            characterMenuOpen ? "border-atelier-muted" : "border-atelier-rule hover:border-atelier-muted",
           )}
         >
           {isMultiCharacter ? (
@@ -3313,7 +3313,7 @@ function GenerateFormInner({
               {[currentCharacter, ...companionCharacters].filter(Boolean).slice(0, 3).map((c, i) => (
                 <span
                   key={c!.id}
-                  className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-neutral-100 text-xs font-medium text-neutral-600"
+                  className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-atelier-paper bg-atelier-ink/10 text-xs font-medium text-atelier-muted"
                   style={{ zIndex: 3 - i }}
                 >
                   {c!.name?.[0]?.toUpperCase() ?? "?"}
@@ -3321,14 +3321,14 @@ function GenerateFormInner({
               ))}
             </span>
           ) : (
-            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-medium text-neutral-600">
+            <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-xs font-medium text-atelier-muted">
               {currentCharacter?.name?.[0]?.toUpperCase() ?? "?"}
             </span>
           )}
           <span
             className={cn(
               "min-w-0 flex-1 truncate text-sm",
-              currentCharacter ? "text-neutral-900" : "text-neutral-500",
+              currentCharacter ? "text-atelier-ink" : "text-atelier-muted",
             )}
           >
             {isMultiCharacter
@@ -3337,7 +3337,7 @@ function GenerateFormInner({
           </span>
           <ChevronDownIcon
             className={cn(
-              "h-3.5 w-3.5 flex-shrink-0 text-neutral-400 transition-transform",
+              "h-3.5 w-3.5 flex-shrink-0 text-atelier-muted transition-transform",
               characterMenuOpen && "rotate-180",
             )}
           />
@@ -3347,7 +3347,7 @@ function GenerateFormInner({
           <div
             role="listbox"
             aria-multiselectable="true"
-            className="absolute left-0 top-full z-20 mt-1.5 max-h-72 w-full min-w-[240px] overflow-y-auto rounded-[16px] border border-neutral-200 bg-white p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.18)]"
+            className="absolute left-0 top-full z-20 mt-1.5 max-h-72 w-full min-w-[240px] overflow-y-auto rounded-control border border-atelier-rule bg-atelier-surface p-1.5 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
           >
             {characters.map((c) => {
               const selected = c.id === characterId || companionCharacterIds.includes(c.id);
@@ -3361,27 +3361,27 @@ function GenerateFormInner({
                   disabled={disabled}
                   onClick={() => toggleCompanionCharacter(c.id)}
                   className={cn(
-                    "flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-                    selected ? "bg-neutral-100 text-neutral-900" : "text-neutral-600 hover:bg-neutral-50",
+                    "flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40",
+                    selected ? "bg-atelier-ink/5 text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]" : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                   )}
                 >
                   <span
                     className={cn(
                       "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[5px] border transition-colors",
-                      selected ? "border-neutral-900 bg-neutral-900" : "border-neutral-300 bg-white",
+                      selected ? "border-atelier-ink bg-atelier-ink" : "border-atelier-rule bg-transparent",
                     )}
                   >
-                    {selected && <CheckIcon className="h-2.5 w-2.5 text-white" />}
+                    {selected && <CheckIcon className="h-2.5 w-2.5 text-atelier-paper" />}
                   </span>
-                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-100 text-[11px] font-medium text-neutral-600">
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-[11px] font-medium text-atelier-muted">
                     {c.name?.[0]?.toUpperCase() ?? "?"}
                   </span>
                   <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                  {c.id === characterId && <span className="text-[10px] text-neutral-400">{g.primaryCharacter}</span>}
+                  {c.id === characterId && <span className="text-[10px] text-atelier-muted/70">{g.primaryCharacter}</span>}
                 </button>
               );
             })}
-            <div className="mt-1 border-t border-neutral-100 px-2.5 pt-2 text-[11px] leading-snug text-neutral-400">
+            <div className="mt-1 border-t border-atelier-rule/70 px-2.5 pt-2 text-[11px] leading-snug text-atelier-muted/80">
               {castSize >= 4 ? g.multiCharacterCapReached : g.multiCharacterHint}
             </div>
           </div>
@@ -3420,19 +3420,19 @@ function GenerateFormInner({
           aria-haspopup="listbox"
           aria-expanded={videoModelMenuOpen}
           className={cn(
-            "flex w-full items-center gap-2 rounded-full border bg-neutral-50 py-1.5 pl-3 pr-3.5 text-left transition-colors disabled:opacity-50",
-            videoModelMenuOpen ? "border-neutral-300" : "border-neutral-100 hover:border-neutral-200",
+            "flex w-full items-center gap-2 rounded-full border bg-atelier-paper py-1.5 pl-3 pr-3.5 text-left transition-colors disabled:opacity-50",
+            videoModelMenuOpen ? "border-atelier-muted" : "border-atelier-rule hover:border-atelier-muted",
           )}
         >
-          <span className="min-w-0 flex-1 truncate text-sm text-neutral-900">{currentVideoModel?.name}</span>
+          <span className="min-w-0 flex-1 truncate text-sm text-atelier-ink">{currentVideoModel?.name}</span>
           {currentDurationCredits > 1 && (
-            <span className="flex-shrink-0 rounded-full bg-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+            <span className="flex-shrink-0 rounded-full border border-atelier-rule px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
               {formatMsg(g.creditsEach, { n: currentDurationCredits })}
             </span>
           )}
           <ChevronDownIcon
             className={cn(
-              "h-3.5 w-3.5 flex-shrink-0 text-neutral-400 transition-transform",
+              "h-3.5 w-3.5 flex-shrink-0 text-atelier-muted transition-transform",
               videoModelMenuOpen && "rotate-180",
             )}
           />
@@ -3441,7 +3441,7 @@ function GenerateFormInner({
         {videoModelMenuOpen && (
           <div
             role="listbox"
-            className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[260px] overflow-y-auto rounded-[16px] border border-neutral-200 bg-white p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.18)]"
+            className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[260px] overflow-y-auto rounded-control border border-atelier-rule bg-atelier-surface p-1.5 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
           >
             {videoModels.map((m) => {
               const listCredits = creditsForDuration(m, m.defaultDurationSeconds);
@@ -3456,22 +3456,22 @@ function GenerateFormInner({
                     setVideoModelMenuOpen(false);
                   }}
                   className={cn(
-                    "flex w-full flex-col gap-0.5 rounded-[10px] px-2.5 py-2 text-left transition-colors",
+                    "flex w-full flex-col gap-0.5 rounded-control px-2.5 py-2 text-left transition-colors",
                     m.id === videoModelId
-                      ? "bg-neutral-100 text-neutral-900"
-                      : "text-neutral-600 hover:bg-neutral-50",
+                      ? "bg-atelier-ink/5 text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                      : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                   )}
                 >
                   <span className="flex items-center gap-2 text-sm">
                     <span className="min-w-0 flex-1 truncate">{m.name}</span>
                     {listCredits > 1 && (
-                      <span className="flex-shrink-0 rounded-full bg-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
+                      <span className="flex-shrink-0 rounded-full border border-atelier-rule px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
                         {formatMsg(g.creditsEach, { n: listCredits })}
                       </span>
                     )}
-                    {m.id === videoModelId && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-neutral-900" />}
+                    {m.id === videoModelId && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-ink" />}
                   </span>
-                  <span className="text-xs text-neutral-500">{m.description}</span>
+                  <span className="text-xs text-atelier-muted">{m.description}</span>
                 </button>
               );
             })}
@@ -3487,7 +3487,7 @@ function GenerateFormInner({
   // against the plan limit.
   const videoDurationPicker =
     contentType === "video" && currentVideoModel && currentVideoModel.durations.length > 1 ? (
-      <div className="flex flex-shrink-0 items-center gap-1 rounded-full border border-neutral-100 bg-neutral-50 p-1">
+      <div className="flex flex-shrink-0 items-center gap-1 rounded-full border border-atelier-rule p-1">
         {currentVideoModel.durations.map((d) => (
           <button
             key={d.seconds}
@@ -3499,8 +3499,8 @@ function GenerateFormInner({
             className={cn(
               "rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
               videoDurationSeconds === d.seconds
-                ? "bg-neutral-900 text-white"
-                : "text-neutral-500 hover:text-neutral-900",
+                ? "bg-atelier-ink text-atelier-paper"
+                : "text-atelier-muted hover:text-atelier-ink",
             )}
           >
             {formatMsg(g.durationSecondsShort, { n: d.seconds })}
@@ -3578,7 +3578,7 @@ function GenerateFormInner({
             // element — putting the Safari shadow-corner mask fix here would
             // also clip the "+" dropdown and character switcher, which need
             // to render outside this box's bounds.
-            "isolate transform-gpu rounded-[22px] border border-neutral-100 bg-white",
+            "isolate transform-gpu rounded-[22px] border border-atelier-rule bg-atelier-surface",
         justArrived && "transition-opacity duration-[220ms] ease-out",
         justArrived && !settled && "opacity-0",
       )}
@@ -3586,21 +3586,21 @@ function GenerateFormInner({
       {!isHero && (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 rounded-[22px] shadow-[0_1px_2px_rgba(0,0,0,0.04),0_20px_44px_-18px_rgba(0,0,0,0.14)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[22px] shadow-[0_1px_2px_rgba(33,29,18,0.05),0_20px_44px_-18px_rgba(33,29,18,0.16)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
         />
       )}
-      {isHero && <h1 className="text-2xl font-semibold text-neutral-900">{greeting}</h1>}
+      {isHero && <h1 className="text-2xl font-semibold text-atelier-ink">{greeting}</h1>}
 
       {!isHero && (
       <>
-      <div className="space-y-3 border-b border-neutral-100 p-5">
+      <div className="space-y-3 border-b border-atelier-rule p-5">
         {hasAnyMessages && (
           <div className="flex justify-end">
             <button
               type="button"
               onClick={() => resetChat()}
               disabled={locked}
-              className="flex-shrink-0 rounded-full border border-neutral-200 px-3.5 py-2 text-xs font-medium text-neutral-600 transition-colors hover:border-neutral-300 hover:bg-neutral-50 disabled:opacity-50"
+              className="flex-shrink-0 rounded-full border border-atelier-rule px-3.5 py-2 text-xs font-medium text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
             >
               {g.newChat}
             </button>
@@ -3610,10 +3610,10 @@ function GenerateFormInner({
         {characterPicker}
         {referencePhotos.length > 1 && videoAdvancedMode === "none" && !isMultiCharacter && (
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+            <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
               {g.anchorPhotoLabel}
             </p>
-            <p className="mt-0.5 text-[11px] leading-snug text-neutral-400">{g.anchorPhotoHint}</p>
+            <p className="mt-0.5 text-[11px] leading-snug text-atelier-muted/80">{g.anchorPhotoHint}</p>
             <div className="mt-1.5 flex gap-1.5">
               {referencePhotos.map((p, i) => {
                 const selected = anchorPhotoPath ? anchorPhotoPath === p.path : i === 0;
@@ -3623,14 +3623,14 @@ function GenerateFormInner({
                     type="button"
                     onClick={() => setAnchorPhotoPath(p.path)}
                     className={cn(
-                      "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-[10px] border-2",
-                      selected ? "border-neutral-900" : "border-transparent",
+                      "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-media border-2",
+                      selected ? "border-atelier-ink" : "border-transparent",
                     )}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={p.url} alt="" className="h-full w-full object-cover" />
                     {selected && (
-                      <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-neutral-900 text-white">
+                      <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper">
                         <CheckIcon className="h-2 w-2" />
                       </span>
                     )}
@@ -3657,18 +3657,18 @@ function GenerateFormInner({
         {!hasAnyMessages ? (
           creationModeActive ? (
             <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-neutral-900 text-white">
+              <div className="flex h-12 w-12 items-center justify-center rounded-media bg-atelier-ink text-atelier-paper">
                 {contentType === "video" ? <VideoIcon className="h-5 w-5" /> : <ImageIcon className="h-5 w-5" />}
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-neutral-900">
+                <h2 className="text-lg font-semibold text-atelier-ink">
                   {contentType === "video" ? g.createVideosTitle : g.createImagesTitle}
                 </h2>
-                <p className="mt-1 text-sm text-neutral-500">{g.createModeSubtitle}</p>
+                <p className="mt-1 text-sm text-atelier-muted">{g.createModeSubtitle}</p>
               </div>
             </div>
           ) : (
-            <p className="py-10 text-center text-sm text-neutral-400">
+            <p className="py-10 text-center text-sm text-atelier-muted">
               {g.noMessages}
             </p>
           )
@@ -3686,8 +3686,8 @@ function GenerateFormInner({
               <div className="space-y-3">
                 <UserBubble prompt={liveMultiAngle.prompt} attachments={liveMultiAngle.attachments} />
                 <div className="flex justify-start">
-                  <div className="max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-4">
-                    <div className="flex items-center gap-2 text-sm text-neutral-500">
+                  <div className="max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
+                    <div className="flex items-center gap-2 text-sm text-atelier-muted">
                       <LoaderIcon className="h-4 w-4" />
                       {liveMultiAngle.angleIds.length === 1
                         ? g.generatingAngleOne
@@ -3702,7 +3702,7 @@ function GenerateFormInner({
               <div className="space-y-3">
                 <UserBubble prompt={livePrompt} attachments={liveAttachments} />
                 <div className="flex justify-start">
-                  <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-neutral-50 px-4.5 py-4">
+                  <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
                     {liveTimeline.length === 0 && !liveResult && (
                       // The server call itself (draft + review + the actual
                       // generation) can take anywhere from several seconds to
@@ -3710,7 +3710,7 @@ function GenerateFormInner({
                       // nothing else renders in this bubble until it resolves
                       // — without this, the bubble just sits empty and looks
                       // frozen the whole time.
-                      <div className="flex items-center gap-2 text-sm text-neutral-500">
+                      <div className="flex items-center gap-2 text-sm text-atelier-muted">
                         <LoaderIcon className="h-4 w-4" />
                         {/* Once the render is queued, say what it's actually
                             doing. A video can take ten minutes, and a single
@@ -3741,7 +3741,7 @@ function GenerateFormInner({
                               <Badge tone={liveIsLive ? "success" : "neutral"}>
                                 {liveIsLive ? g.live : g.simulated}
                               </Badge>
-                              <p className="text-xs text-neutral-500">
+                              <p className="font-numeral text-xs tabular-nums text-atelier-accent">
                                 {formatMsg(g.passedOnAttempt, { n: liveResult.attempts })}
                               </p>
                             </div>
@@ -3753,7 +3753,7 @@ function GenerateFormInner({
                         ) : (
                           <div className="mt-3 flex items-center gap-2">
                             <Badge tone="danger">{g.couldntValidate}</Badge>
-                            <p className="text-xs text-neutral-500">
+                            <p className="text-xs text-atelier-muted">
                               {liveResult.reason ??
                                 (liveResult.attempts === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: liveResult.attempts }))}
                             </p>
@@ -3811,10 +3811,10 @@ function GenerateFormInner({
       <form
         onSubmit={handleSubmit}
         className={cn(
-          "relative z-10 bg-white p-4",
+          "relative z-10 bg-atelier-surface p-4",
           isHero
-            ? "isolate transform-gpu rounded-[28px] border border-neutral-100"
-            : "rounded-b-[22px] border-t border-neutral-100",
+            ? "isolate transform-gpu rounded-[28px] border border-atelier-rule"
+            : "rounded-b-[22px] border-t border-atelier-rule",
         )}
       >
         {/* Lives inside the form (not the outer wrapper) specifically so its
@@ -3829,25 +3829,25 @@ function GenerateFormInner({
           // and needs to render outside its bounds when open.
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 -z-10 rounded-[28px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
+            className="pointer-events-none absolute inset-0 -z-10 rounded-[28px] shadow-[0_1px_2px_rgba(33,29,18,0.05)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
           />
         )}
         <Label htmlFor="prompt" className="sr-only">
           {g.messageLabel}
         </Label>
 
-        <div className="rounded-[24px] border border-neutral-200 bg-white transition-colors focus-within:border-neutral-400 focus-within:ring-4 focus-within:ring-neutral-900/[0.04]">
+        <div className="rounded-control border border-atelier-ink bg-atelier-paper transition-colors focus-within:ring-4 focus-within:ring-atelier-ink/5">
           {pendingMultiAngle ? (
             <div className="space-y-3 p-4">
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+                <p className="text-xs font-medium uppercase tracking-widest text-atelier-muted">
                   {g.multiAnglePromptLabel}
                 </p>
-                <p className="mt-1 text-sm text-neutral-700">{pendingMultiAngle.prompt}</p>
+                <p className="mt-1 text-sm text-atelier-ink/80">{pendingMultiAngle.prompt}</p>
               </div>
 
               <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">{g.anglesLabel}</p>
+                <p className="text-xs font-medium uppercase tracking-widest text-atelier-muted">{g.anglesLabel}</p>
                 <div className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-5">
                   {ANGLE_PRESETS.map((preset) => {
                     const checked = selectedAngles.includes(preset.id);
@@ -3857,10 +3857,10 @@ function GenerateFormInner({
                         type="button"
                         onClick={() => toggleAngle(preset.id)}
                         className={cn(
-                          "flex flex-col items-center gap-1 rounded-[14px] border px-2 py-2.5 text-xs transition-colors",
+                          "flex flex-col items-center gap-1 rounded-control border px-2 py-2.5 text-xs transition-colors",
                           checked
-                            ? "border-neutral-900 bg-neutral-50 text-neutral-900"
-                            : "border-neutral-200 text-neutral-400 hover:border-neutral-300 hover:text-neutral-700",
+                            ? "border-atelier-ink bg-atelier-surface text-atelier-ink"
+                            : "border-atelier-rule text-atelier-muted hover:border-atelier-muted hover:text-atelier-ink",
                         )}
                       >
                         <span>{preset.label}</span>
@@ -3875,7 +3875,7 @@ function GenerateFormInner({
                 <button
                   type="button"
                   onClick={cancelMultiAngle}
-                  className="rounded-full px-3.5 py-2 text-sm text-neutral-500 transition-colors hover:bg-neutral-100"
+                  className="rounded-control px-3.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5"
                 >
                   {g.cancel}
                 </button>
@@ -3883,7 +3883,7 @@ function GenerateFormInner({
                   type="button"
                   onClick={confirmMultiAngle}
                   disabled={selectedAngles.length === 0}
-                  className="rounded-full bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                  className="rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
                   {selectedAngles.length === 1 ? g.generateAngleOne : formatMsg(g.generateAngleOther, { n: selectedAngles.length })}
                 </button>
@@ -3901,7 +3901,7 @@ function GenerateFormInner({
 
               {videoAdvancedMode !== "none" && !advancedPanelOpen && (
                 <div className="flex flex-wrap items-center gap-2 px-3 pt-3">
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-600">
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-atelier-rule px-3 py-1 text-xs text-atelier-muted">
                     {videoAdvancedMode === "storyboard"
                       ? g.storyboardActive
                       : formatMsg(g.multiRefActive, { n: multiRefPaths.length })}
@@ -3909,7 +3909,7 @@ function GenerateFormInner({
                       type="button"
                       onClick={clearAdvancedVideo}
                       aria-label={g.cancel}
-                      className="text-neutral-400 hover:text-neutral-700"
+                      className="text-atelier-muted/80 hover:text-atelier-ink"
                     >
                       <XIcon className="h-3 w-3" />
                     </button>
@@ -3931,24 +3931,24 @@ function GenerateFormInner({
                 placeholder={contentType === "video" ? g.videoPlaceholder : g.imagePlaceholder}
                 disabled={submitting}
                 maxLength={2000}
-                className="max-h-40 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 disabled:opacity-60"
+                className="max-h-40 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
               />
 
               {contentType === "video" && currentCharacter?.voiceId && (
-                <div className="border-t border-neutral-100 px-3.5 py-2.5">
+                <div className="border-t border-atelier-rule/70 px-3.5 py-2.5">
                   <input
                     value={dialogueText}
                     onChange={(e) => setDialogueText(e.target.value)}
                     disabled={submitting}
                     maxLength={500}
                     placeholder={formatMsg(g.dialoguePlaceholder, { name: currentCharacter.name })}
-                    className="w-full border-none bg-transparent text-sm text-neutral-700 outline-none placeholder:text-neutral-400 disabled:opacity-60"
+                    className="w-full border-none bg-transparent text-sm text-atelier-ink/80 outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
                   />
                   {/* Only once there's actually dialogue to charge for —
                       showing a surcharge against an empty field would read
                       as a warning about something they haven't done. */}
                   {dialogueText.trim().length > 0 && (
-                    <p className="mt-1 text-[11px] text-neutral-400">
+                    <p className="mt-1 font-numeral text-[11px] tabular-nums text-atelier-accent">
                       {formatMsg(g.dialogueCreditNote, {
                         n: Math.max(1, Math.ceil(videoDurationSeconds / 5)),
                       })}
@@ -3958,18 +3958,18 @@ function GenerateFormInner({
               )}
 
               {advancedPanelOpen && advancedVideoEligible && (
-                <div className="space-y-3 border-t border-neutral-100 px-3 py-3">
-                  <div className="flex gap-1 rounded-full bg-neutral-100 p-1">
+                <div className="space-y-3 border-t border-atelier-rule/70 px-3 py-3">
+                  <div className="flex gap-1 rounded-control bg-atelier-ink/5 p-1">
                     {(["storyboard", "multiref"] as const).map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => setVideoAdvancedMode(mode)}
                         className={cn(
-                          "flex-1 rounded-full py-1.5 text-xs font-medium transition-colors",
+                          "flex-1 rounded-[4px] py-1.5 text-xs font-medium transition-colors",
                           videoAdvancedMode === mode
-                            ? "bg-white text-neutral-900 shadow-sm"
-                            : "text-neutral-500 hover:text-neutral-900",
+                            ? "bg-atelier-surface text-atelier-ink shadow-sm"
+                            : "text-atelier-muted hover:text-atelier-ink",
                         )}
                       >
                         {mode === "storyboard" ? g.storyboardLabel : g.multiRefLabel}
@@ -3979,9 +3979,9 @@ function GenerateFormInner({
 
                   {videoAdvancedMode === "storyboard" && (
                     <div className="space-y-3">
-                      <p className="text-xs text-neutral-500">{g.storyboardHint}</p>
+                      <p className="text-xs text-atelier-muted">{g.storyboardHint}</p>
                       <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                        <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
                           {g.startFrameLabel}
                         </p>
                         <div className="mt-1.5 grid grid-cols-5 gap-1.5">
@@ -3991,7 +3991,7 @@ function GenerateFormInner({
                             aria-label={g.uploadPhotoTitle}
                             onClick={() => panelUploadInputRef.current?.click()}
                             disabled={panelUploadBusy}
-                            className="flex aspect-square items-center justify-center rounded-[10px] border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 disabled:opacity-50"
+                            className="flex aspect-square items-center justify-center rounded-media border-2 border-dashed border-atelier-rule text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
                           >
                             {panelUploadBusy ? (
                               <LoaderIcon className="h-4 w-4" />
@@ -4005,8 +4005,8 @@ function GenerateFormInner({
                               type="button"
                               onClick={() => toggleStoryboardPhoto(p.value, "start")}
                               className={cn(
-                                "relative aspect-square overflow-hidden rounded-[10px] border-2",
-                                storyboardStartPath === p.value ? "border-neutral-900" : "border-transparent",
+                                "relative aspect-square overflow-hidden rounded-media border-2",
+                                storyboardStartPath === p.value ? "border-atelier-ink" : "border-transparent",
                               )}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -4016,7 +4016,7 @@ function GenerateFormInner({
                         </div>
                       </div>
                       <div>
-                        <p className="text-[11px] font-medium uppercase tracking-wide text-neutral-400">
+                        <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
                           {g.endFrameLabel}
                         </p>
                         <div className="mt-1.5 grid grid-cols-5 gap-1.5">
@@ -4026,7 +4026,7 @@ function GenerateFormInner({
                             aria-label={g.uploadPhotoTitle}
                             onClick={() => panelUploadInputRef.current?.click()}
                             disabled={panelUploadBusy}
-                            className="flex aspect-square items-center justify-center rounded-[10px] border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 disabled:opacity-50"
+                            className="flex aspect-square items-center justify-center rounded-media border-2 border-dashed border-atelier-rule text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
                           >
                             {panelUploadBusy ? (
                               <LoaderIcon className="h-4 w-4" />
@@ -4040,8 +4040,8 @@ function GenerateFormInner({
                               type="button"
                               onClick={() => toggleStoryboardPhoto(p.value, "end")}
                               className={cn(
-                                "relative aspect-square overflow-hidden rounded-[10px] border-2",
-                                storyboardEndPath === p.value ? "border-neutral-900" : "border-transparent",
+                                "relative aspect-square overflow-hidden rounded-media border-2",
+                                storyboardEndPath === p.value ? "border-atelier-ink" : "border-transparent",
                               )}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -4055,7 +4055,7 @@ function GenerateFormInner({
 
                   {videoAdvancedMode === "multiref" && (
                     <div className="space-y-2">
-                      <p className="text-xs text-neutral-500">{g.multiRefHint}</p>
+                      <p className="text-xs text-atelier-muted">{g.multiRefHint}</p>
                       <div className="grid grid-cols-5 gap-1.5">
                         <button
                           type="button"
@@ -4063,7 +4063,7 @@ function GenerateFormInner({
                           aria-label={g.uploadPhotoTitle}
                           onClick={() => panelUploadInputRef.current?.click()}
                           disabled={panelUploadBusy}
-                          className="flex aspect-square items-center justify-center rounded-[10px] border-2 border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600 disabled:opacity-50"
+                          className="flex aspect-square items-center justify-center rounded-media border-2 border-dashed border-atelier-rule text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
                         >
                           {panelUploadBusy ? (
                             <LoaderIcon className="h-4 w-4" />
@@ -4079,14 +4079,14 @@ function GenerateFormInner({
                               type="button"
                               onClick={() => toggleMultiRefPhoto(p.value)}
                               className={cn(
-                                "relative aspect-square overflow-hidden rounded-[10px] border-2",
-                                checked ? "border-neutral-900" : "border-transparent",
+                                "relative aspect-square overflow-hidden rounded-media border-2",
+                                checked ? "border-atelier-ink" : "border-transparent",
                               )}
                             >
                               {/* eslint-disable-next-line @next/next/no-img-element */}
                               <img src={p.thumbUrl} alt="" className="h-full w-full object-cover" />
                               {checked && (
-                                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-900 text-white">
+                                <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper">
                                   <CheckIcon className="h-2.5 w-2.5" />
                                 </span>
                               )}
@@ -4109,14 +4109,14 @@ function GenerateFormInner({
                     <button
                       type="button"
                       onClick={clearAdvancedVideo}
-                      className="rounded-full px-3 py-1.5 text-xs text-neutral-500 transition-colors hover:bg-neutral-100"
+                      className="rounded-control px-3 py-1.5 text-xs text-atelier-muted transition-colors hover:bg-atelier-ink/5"
                     >
                       {g.cancel}
                     </button>
                     <button
                       type="button"
                       onClick={() => setAdvancedPanelOpen(false)}
-                      className="rounded-full bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+                      className="rounded-control bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
                     >
                       {g.done}
                     </button>
@@ -4125,14 +4125,14 @@ function GenerateFormInner({
               )}
 
               {savedRecompiledFrom && (
-                <div className="mx-2.5 mb-2.5 rounded-[14px] border border-neutral-200 bg-neutral-50 p-3">
-                  <p className="text-[11px] leading-relaxed text-neutral-500">
+                <div className="mx-2.5 mb-2.5 rounded-control border border-atelier-rule bg-atelier-surface p-3">
+                  <p className="text-[11px] leading-relaxed text-atelier-muted">
                     {g.savedRecompileNote.replace("{name}", savedRecompiledFrom)}
                   </p>
                   <button
                     type="button"
                     onClick={() => setSavedRecompiledFrom(null)}
-                    className="mt-1.5 text-[11px] font-medium text-neutral-500 underline underline-offset-2 hover:text-neutral-800"
+                    className="mt-1.5 text-[11px] font-medium text-atelier-muted underline underline-offset-2 hover:text-atelier-ink"
                   >
                     {g.enhanceDismiss}
                   </button>
@@ -4140,23 +4140,23 @@ function GenerateFormInner({
               )}
 
               {savedOpen && (
-                <div className="mx-2.5 mb-2.5 max-h-72 overflow-y-auto rounded-[16px] border border-neutral-200 bg-white p-3">
+                <div className="mx-2.5 mb-2.5 max-h-72 overflow-y-auto rounded-control border border-atelier-rule bg-atelier-surface p-3">
                   <div className="mb-2 flex items-center justify-between">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-neutral-500">
+                    <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
                       {g.savedPrompts}
                     </p>
                     <button
                       type="button"
                       onClick={() => setSavedOpen(false)}
-                      className="text-[11px] text-neutral-400 transition-colors hover:text-neutral-700"
+                      className="text-[11px] text-atelier-muted transition-colors hover:text-atelier-ink"
                     >
                       {g.enhanceDismiss}
                     </button>
                   </div>
                   {savedLoading ? (
-                    <p className="py-3 text-center text-xs text-neutral-400">{g.savedLoading}</p>
+                    <p className="py-3 text-center text-xs text-atelier-muted">{g.savedLoading}</p>
                   ) : savedItems.length === 0 ? (
-                    <p className="py-3 text-center text-xs leading-relaxed text-neutral-400">
+                    <p className="py-3 text-center text-xs leading-relaxed text-atelier-muted">
                       {g.savedEmpty}
                     </p>
                   ) : (
@@ -4166,13 +4166,13 @@ function GenerateFormInner({
                         return (
                           <li
                             key={item.id}
-                            className="rounded-[12px] border border-neutral-100 bg-neutral-50/60 p-2.5"
+                            className="rounded-control border border-atelier-rule/70 bg-atelier-paper/60 p-2.5"
                           >
-                            <p className="line-clamp-2 text-xs leading-relaxed text-neutral-700">
+                            <p className="line-clamp-2 text-xs leading-relaxed text-atelier-ink/80">
                               {item.prompt}
                             </p>
                             <div className="mt-1.5 flex items-center gap-2">
-                              <span className="text-[10px] text-neutral-400">
+                              <span className="text-[10px] text-atelier-muted/70">
                                 {owner
                                   ? g.savedForCharacter.replace("{name}", owner.name)
                                   : g.savedNoCharacter}
@@ -4182,7 +4182,7 @@ function GenerateFormInner({
                               <button
                                 type="button"
                                 onClick={() => openSavedPrompt(item)}
-                                className="ml-auto rounded-[8px] bg-ochre px-2.5 py-1 text-[11px] font-semibold text-white transition-colors hover:bg-ochre-deep"
+                                className="ml-auto rounded-control bg-atelier-ink px-2.5 py-1 text-[11px] font-semibold text-atelier-paper transition-colors hover:bg-atelier-ink/90"
                               >
                                 {g.savedUse}
                               </button>
@@ -4191,7 +4191,7 @@ function GenerateFormInner({
                                 onClick={() => removeSavedPrompt(item.id)}
                                 title={g.savedDelete}
                                 aria-label={g.savedDelete}
-                                className="rounded-[8px] px-1.5 py-1 text-[11px] text-neutral-400 transition-colors hover:text-red-600"
+                                className="rounded-control px-1.5 py-1 text-[11px] text-atelier-muted transition-colors hover:text-red-600"
                               >
                                 <XIcon className="h-3 w-3" />
                               </button>
@@ -4205,25 +4205,25 @@ function GenerateFormInner({
               )}
 
               {(enhanced || enhanceError) && (
-                <div className="mx-2.5 mb-2.5 rounded-[16px] border border-ochre/30 bg-gradient-to-b from-ochre-soft/40 to-white p-3.5">
+                <div className="mx-2.5 mb-2.5 rounded-control border border-atelier-accent/30 bg-atelier-accent/5 p-3.5">
                   {enhanceError ? (
                     <p className="text-xs leading-relaxed text-red-600">{enhanceError}</p>
                   ) : (
                     <>
                       <div className="flex items-baseline justify-between gap-3">
-                        <p className="text-[11px] font-bold uppercase tracking-[0.11em] text-ochre">
+                        <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-accent">
                           {g.enhanceTitle}
                         </p>
-                        <p className="text-[11px] text-neutral-400">{g.enhanceSubtitle}</p>
+                        <p className="text-[11px] text-atelier-muted/80">{g.enhanceSubtitle}</p>
                       </div>
-                      <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-neutral-800">
+                      <p className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-atelier-ink">
                         {enhanced}
                       </p>
                       <div className="mt-3 flex flex-wrap items-center gap-2">
                         <button
                           type="button"
                           onClick={useEnhancedPrompt}
-                          className="rounded-[10px] bg-ochre px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-ochre-deep"
+                          className="rounded-control bg-atelier-ink px-3.5 py-1.5 text-xs font-semibold text-atelier-paper transition-colors hover:bg-atelier-ink/90"
                         >
                           {g.enhanceUse}
                         </button>
@@ -4233,7 +4233,7 @@ function GenerateFormInner({
                             enhanceKind === "image" ? runDescribe(describedMode) : runEnhance()
                           }
                           disabled={enhancing}
-                          className="rounded-[10px] border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 disabled:opacity-50"
+                          className="rounded-control border border-atelier-rule bg-atelier-surface px-3 py-1.5 text-xs font-medium text-atelier-ink/80 transition-colors hover:border-atelier-muted disabled:opacity-50"
                         >
                           {enhancing ? g.enhanceWorking : g.enhanceRetry}
                         </button>
@@ -4241,7 +4241,7 @@ function GenerateFormInner({
                           type="button"
                           onClick={saveCurrentPrompt}
                           disabled={savedJustSaved}
-                          className="flex items-center gap-1.5 rounded-[10px] border border-neutral-200 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 transition-colors hover:border-neutral-300 disabled:opacity-60"
+                          className="flex items-center gap-1.5 rounded-control border border-atelier-rule bg-atelier-surface px-3 py-1.5 text-xs font-medium text-atelier-ink/80 transition-colors hover:border-atelier-muted disabled:opacity-60"
                         >
                           <BookmarkIcon className="h-3 w-3" />
                           {savedJustSaved ? g.savePromptDone : g.savePrompt}
@@ -4249,12 +4249,12 @@ function GenerateFormInner({
                         <button
                           type="button"
                           onClick={() => setEnhanced(null)}
-                          className="rounded-[10px] px-2 py-1.5 text-xs text-neutral-500 transition-colors hover:text-neutral-800"
+                          className="rounded-control px-2 py-1.5 text-xs text-atelier-muted transition-colors hover:text-atelier-ink"
                         >
                           {g.enhanceDismiss}
                         </button>
                         {assistsLeft !== undefined && (
-                          <span className="ml-auto text-[11px] text-neutral-400">
+                          <span className="ml-auto font-numeral text-[11px] tabular-nums text-atelier-accent">
                             {assistsLeft === null
                               ? g.enhanceUnlimited
                               : g.enhanceLeft.replace("{n}", String(assistsLeft))}
@@ -4262,14 +4262,14 @@ function GenerateFormInner({
                         )}
                       </div>
                       {enhanceKind === "image" && (
-                        <div className="mt-2.5 border-t border-ochre/15 pt-2.5">
+                        <div className="mt-2.5 border-t border-atelier-accent/20 pt-2.5">
                           <button
                             type="button"
                             onClick={() =>
                               runDescribe(describedMode === "scene" ? "standalone" : "scene")
                             }
                             disabled={enhancing}
-                            className="text-[11px] font-medium text-ochre underline underline-offset-2 transition-opacity hover:opacity-80 disabled:opacity-50"
+                            className="text-[11px] font-medium text-atelier-accent underline underline-offset-2 transition-opacity hover:opacity-80 disabled:opacity-50"
                           >
                             {describedMode === "scene" ? g.describeIncludePerson : g.describeSceneOnly}
                           </button>
@@ -4277,13 +4277,13 @@ function GenerateFormInner({
                               person: that's the one where whose photo it is
                               starts to matter. */}
                           {describedMode === "standalone" && (
-                            <p className="mt-1.5 text-[11px] text-neutral-400">{g.describeRights}</p>
+                            <p className="mt-1.5 text-[11px] text-atelier-muted/80">{g.describeRights}</p>
                           )}
                           {/* Says out loud what accepting does to the upload,
                               so the photo disappearing from the composer
                               reads as intended rather than as a glitch. */}
                           {describedAttachmentId && (
-                            <p className="mt-1.5 text-[11px] leading-relaxed text-neutral-400">
+                            <p className="mt-1.5 text-[11px] leading-relaxed text-atelier-muted/80">
                               {g.describeSourceNote}
                             </p>
                           )}
@@ -4304,7 +4304,7 @@ function GenerateFormInner({
                     aria-label={plusMenuOpen ? g.cancel : g.attachTitle}
                     aria-haspopup="menu"
                     aria-expanded={plusMenuOpen}
-                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900 disabled:opacity-50"
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50"
                   >
                     {plusMenuOpen ? <XIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
                   </button>
@@ -4319,7 +4319,7 @@ function GenerateFormInner({
                       // thread" — mid-render that wiped the live bubble and
                       // orphaned the in-flight generation.
                       disabled={submitting}
-                      className="flex flex-shrink-0 items-center gap-1 rounded-full bg-neutral-100 py-1.5 pl-3 pr-2 text-xs font-medium text-neutral-700 transition-colors hover:bg-neutral-200 disabled:opacity-50"
+                      className="flex flex-shrink-0 items-center gap-1 rounded-full border border-atelier-rule py-1.5 pl-3 pr-2 text-xs font-medium text-atelier-ink/80 transition-colors hover:border-atelier-muted disabled:opacity-50"
                     >
                       {contentType === "video" ? g.video : g.image}
                       <XIcon className="h-3 w-3" />
@@ -4347,7 +4347,7 @@ function GenerateFormInner({
                     <div
                       role="menu"
                       className={cn(
-                        "absolute left-0 z-20 w-56 overflow-hidden rounded-[16px] border border-neutral-200 bg-white p-1.5 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.18)]",
+                        "absolute left-0 z-20 w-56 overflow-hidden rounded-control border border-atelier-rule bg-atelier-surface p-1.5 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]",
                         // Docked mode sits near the bottom of the viewport
                         // (sticky), so the menu opens upward there. Hero mode
                         // has open space below instead — opening upward in
@@ -4364,9 +4364,9 @@ function GenerateFormInner({
                             setPlusMenuOpen(false);
                             cameraInputRef.current?.click();
                           }}
-                          className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50"
+                          className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                         >
-                          <CameraIcon className="h-4 w-4 text-neutral-400" />
+                          <CameraIcon className="h-4 w-4" />
                           {g.takePhoto}
                         </button>
                       )}
@@ -4377,40 +4377,40 @@ function GenerateFormInner({
                           setPlusMenuOpen(false);
                           fileInputRef.current?.click();
                         }}
-                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50"
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                       >
-                        <FileIcon className="h-4 w-4 text-neutral-400" />
+                        <FileIcon className="h-4 w-4" />
                         {g.uploadFiles}
                       </button>
                       <button
                         type="button"
                         role="menuitem"
                         onClick={openSavedPrompts}
-                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50"
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                       >
-                        <BookmarkIcon className="h-4 w-4 text-neutral-400" />
+                        <BookmarkIcon className="h-4 w-4" />
                         {g.savedPrompts}
                       </button>
                       {/* Divider: everything above works on the message you're
                           writing (attach, reuse); everything below switches
                           what you're making. Two different kinds of action. */}
-                      <div className="my-1 h-px bg-neutral-100" />
+                      <div className="my-1 h-px bg-atelier-rule/70" />
                       <button
                         type="button"
                         role="menuitem"
                         onClick={() => chooseCreationMode("image")}
-                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50"
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                       >
-                        <ImageIcon className="h-4 w-4 text-neutral-400" />
+                        <ImageIcon className="h-4 w-4" />
                         {g.createImage}
                       </button>
                       <button
                         type="button"
                         role="menuitem"
                         onClick={() => chooseCreationMode("video")}
-                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-left text-sm text-neutral-700 transition-colors hover:bg-neutral-50"
+                        className="flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                       >
-                        <VideoIcon className="h-4 w-4 text-neutral-400" />
+                        <VideoIcon className="h-4 w-4" />
                         {g.createVideo}
                       </button>
                     </div>
@@ -4442,7 +4442,7 @@ function GenerateFormInner({
                       }
                       disabled={enhancing || submitting}
                       title={prompt.trim().length > 0 ? g.enhance : g.describeImage}
-                      className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-ochre/40 bg-ochre-soft/60 px-3 py-1.5 text-xs font-semibold text-ochre transition-colors hover:bg-ochre-soft disabled:opacity-50"
+                      className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-atelier-accent/40 px-3 py-1.5 text-xs font-semibold text-atelier-accent transition-colors hover:bg-atelier-accent/10 disabled:opacity-50"
                     >
                       <SparkIcon className={cn("h-3.5 w-3.5", enhancing && "animate-pulse")} />
                       {enhancing
@@ -4498,10 +4498,10 @@ function GenerateFormInner({
                             className={cn(
                               "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                               multiAngleLocked
-                                ? "text-neutral-300 hover:bg-neutral-100 hover:text-neutral-400"
+                                ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                                 : multiAngleMode
-                                  ? "bg-neutral-900 text-white"
-                                  : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                                  ? "bg-atelier-ink text-atelier-paper"
+                                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                             )}
                           >
                             <AnglesIcon className="h-4 w-4" />
@@ -4548,10 +4548,10 @@ function GenerateFormInner({
                             className={cn(
                               "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                               advancedVideoLockedReason !== null
-                                ? "text-neutral-300 hover:bg-neutral-100 hover:text-neutral-400"
+                                ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                                 : videoAdvancedMode !== "none"
-                                  ? "bg-neutral-900 text-white"
-                                  : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                                  ? "bg-atelier-ink text-atelier-paper"
+                                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                             )}
                           >
                             <StackIcon className="h-4 w-4" />
@@ -4566,7 +4566,7 @@ function GenerateFormInner({
                         title={advancedOpen ? g.advancedOptionsHide : g.advancedOptionsShow}
                         aria-label={advancedOpen ? g.advancedOptionsHide : g.advancedOptionsShow}
                         aria-expanded={advancedOpen}
-                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                       >
                         <ChevronLeftIcon
                           className={cn("h-4 w-4 transition-transform duration-300", advancedOpen && "rotate-180")}
@@ -4576,7 +4576,7 @@ function GenerateFormInner({
                   )}
 
                   {contentType === "video" && (
-                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-neutral-100 bg-neutral-50 p-1">
+                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-atelier-rule p-1">
                       <button
                         type="button"
                         onClick={() => setVideoAspectRatio((prev) => (prev === "16:9" ? null : "16:9"))}
@@ -4587,8 +4587,8 @@ function GenerateFormInner({
                         className={cn(
                           "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                           videoAspectRatio === "16:9"
-                            ? "bg-neutral-900 text-white"
-                            : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900",
+                            ? "bg-atelier-ink text-atelier-paper"
+                            : "text-atelier-muted/80 hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <LandscapeIcon className="h-4 w-4" />
@@ -4603,8 +4603,8 @@ function GenerateFormInner({
                         className={cn(
                           "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                           videoAspectRatio === "9:16"
-                            ? "bg-neutral-900 text-white"
-                            : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900",
+                            ? "bg-atelier-ink text-atelier-paper"
+                            : "text-atelier-muted/80 hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <PortraitIcon className="h-4 w-4" />
@@ -4626,8 +4626,8 @@ function GenerateFormInner({
                     className={cn(
                       "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                       voiceSessionActive
-                        ? "bg-neutral-900 text-white"
-                        : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                        ? "bg-atelier-ink text-atelier-paper"
+                        : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                     )}
                   >
                     <VoiceIcon className="h-4 w-4" />
@@ -4644,7 +4644,7 @@ function GenerateFormInner({
                       disabled={stopping}
                       title={stopping ? g.stopping : g.stop}
                       aria-label={stopping ? g.stopping : g.stop}
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-60"
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-60"
                     >
                       <StopIcon className="h-3.5 w-3.5" />
                     </button>
@@ -4654,7 +4654,7 @@ function GenerateFormInner({
                       disabled={isUploading || (!prompt.trim() && pendingAttachments.length === 0)}
                       title={g.send}
                       aria-label={g.send}
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-white transition-colors hover:bg-neutral-800 disabled:opacity-30"
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-30"
                     >
                       <SendIcon className="h-4 w-4" />
                     </button>
@@ -4671,7 +4671,7 @@ function GenerateFormInner({
             disclaimer. Multi-angle review and upload progress still show
             here since neither has a bubble to live in yet at that point. */}
         {(pendingMultiAngle || isUploading) && (
-          <p className="mt-3 text-xs text-neutral-400">
+          <p className="mt-3 text-xs text-atelier-muted/80">
             {pendingMultiAngle ? g.reviewAngles : g.uploading}
           </p>
         )}
@@ -4684,7 +4684,7 @@ function GenerateFormInner({
             behavior. */}
         <div
           className={cn(
-            "text-xs text-neutral-400",
+            "text-xs text-atelier-muted/80",
             pendingMultiAngle || isUploading ? "mt-1" : "mt-3",
           )}
         >

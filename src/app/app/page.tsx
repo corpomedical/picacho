@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { Button } from "@/components/ui/button";
 import { FirstRunTour } from "@/components/first-run-tour";
 import { InstallAppHint } from "@/components/install-app-hint";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
@@ -56,12 +55,12 @@ export default async function AppHome() {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
         {profile?.has_completed_onboarding !== true && <FirstRunTour />}
-        <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-neutral-900">
+        <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-atelier-ink">
           {formatMsg(d.greeting, { name })}
         </h1>
-        <p className="mt-2 max-w-sm text-sm text-neutral-500">{d.setupCharacterBody}</p>
+        <p className="mt-2 max-w-sm text-sm text-atelier-muted">{d.setupCharacterBody}</p>
         <Link href="/app/character/new" className="mt-6" data-tour-id="tour-create-character">
-          <Button>{d.setupCharacterCta}</Button>
+          <button className="inline-flex items-center justify-center gap-2 rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90">{d.setupCharacterCta}</button>
         </Link>
       </div>
     );
@@ -77,22 +76,22 @@ export default async function AppHome() {
       {/* Greeting + credits, one glance. */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-neutral-900">
+          <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-atelier-ink">
             {formatMsg(d.greeting, { name })}
           </h1>
-          <p className="mt-1 text-xs text-neutral-400">
-            <span className="mr-1.5 rounded-full border border-neutral-200 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-neutral-500">
+          <p className="mt-1 text-xs text-atelier-muted">
+            <span className="mr-1.5 rounded-full border border-atelier-rule px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-muted">
               {PLAN_LABELS[plan]}
             </span>
-            {d.creditsTitle}: <span className="font-medium text-neutral-700">{creditsUsed}</span>
-            {creditsLimit > 0 && <span> / {creditsLimit}</span>}
+            {d.creditsTitle}: <span className="font-numeral text-[13px] font-medium tabular-nums text-atelier-accent">{creditsUsed}</span>
+            {creditsLimit > 0 && <span className="font-numeral text-[13px] tabular-nums"> / {creditsLimit}</span>}
             {purchasedCredits > 0 && (
-              <span className="ml-1.5">{formatMsg(d.creditsPurchased, { n: purchasedCredits })}</span>
+              <span className="ml-1.5 font-numeral tabular-nums">{formatMsg(d.creditsPurchased, { n: purchasedCredits })}</span>
             )}
           </p>
         </div>
         <Link href="/app/generate">
-          <Button>{d.continueCreating}</Button>
+          <button className="inline-flex items-center justify-center gap-2 rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90">{d.continueCreating}</button>
         </Link>
       </div>
 
@@ -106,21 +105,21 @@ export default async function AppHome() {
           <Link
             key={href}
             href={href}
-            className="group flex flex-col items-start gap-2.5 rounded-[18px] border border-neutral-100 bg-white p-4 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-shadow hover:shadow-[0_8px_20px_-10px_rgba(0,0,0,0.12)]"
+            className="group flex flex-col items-start gap-2.5 rounded-control border border-atelier-rule bg-atelier-surface p-4 transition-colors hover:border-atelier-muted/70"
           >
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-ochre-soft text-ochre">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-atelier-ink/5 text-atelier-ink">
               <Icon className="h-4 w-4" />
             </span>
-            <span className="text-xs font-medium leading-snug text-neutral-800">{label}</span>
+            <span className="text-xs font-medium leading-snug text-atelier-ink">{label}</span>
           </Link>
         ))}
       </div>
 
       {/* Characters strip. */}
-      <section>
+      <section className="border-t border-atelier-rule pt-6">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-900">{d.yourCharacters}</h2>
-          <Link href="/app/character" className="text-xs text-neutral-400 hover:text-neutral-700">
+          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{d.yourCharacters}</h2>
+          <Link href="/app/character" className="text-xs text-atelier-muted hover:text-atelier-ink">
             {d.seeAll}
           </Link>
         </div>
@@ -135,35 +134,35 @@ export default async function AppHome() {
                 href={`/app/generate?character=${c.id}`}
                 className="group w-16 flex-shrink-0 text-center"
               >
-                <div className="h-16 w-16 overflow-hidden rounded-full border border-neutral-200 bg-neutral-100 transition-transform group-hover:scale-105">
+                <div className="h-16 w-16 overflow-hidden rounded-full border border-atelier-rule bg-atelier-ink/5 transition-transform group-hover:scale-105">
                   {thumb && (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={thumb} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
                   )}
                 </div>
-                <p className="mt-1.5 truncate text-[11px] text-neutral-600">{c.name}</p>
+                <p className="mt-1.5 truncate text-[11px] text-atelier-muted">{c.name}</p>
               </Link>
             );
           })}
           <Link href="/app/character/new" className="w-16 flex-shrink-0 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-neutral-300 text-neutral-400 transition-colors hover:border-neutral-400 hover:text-neutral-600">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-atelier-rule text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink">
               <PlusIcon className="h-5 w-5" />
             </div>
-            <p className="mt-1.5 truncate text-[11px] text-neutral-500">{d.newCharacter}</p>
+            <p className="mt-1.5 truncate text-[11px] text-atelier-muted">{d.newCharacter}</p>
           </Link>
         </div>
       </section>
 
       {/* Recent creations. */}
-      <section>
+      <section className="border-t border-atelier-rule pt-6">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-neutral-900">{d.recentCreations}</h2>
-          <Link href="/app/images" className="text-xs text-neutral-400 hover:text-neutral-700">
+          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{d.recentCreations}</h2>
+          <Link href="/app/images" className="text-xs text-atelier-muted hover:text-atelier-ink">
             {d.seeAll}
           </Link>
         </div>
         {recentTiles.length === 0 ? (
-          <p className="rounded-[18px] border border-dashed border-neutral-200 p-6 text-center text-xs text-neutral-400">
+          <p className="rounded-control border border-dashed border-atelier-rule p-6 text-center text-xs text-atelier-muted">
             {d.emptyRecent}
           </p>
         ) : (
@@ -172,7 +171,7 @@ export default async function AppHome() {
               <Link
                 key={g.id}
                 href={`/app/history/${g.id}`}
-                className="group relative aspect-square overflow-hidden rounded-[14px] border border-neutral-100 bg-neutral-100"
+                className="group relative aspect-square overflow-hidden rounded-media border border-atelier-rule bg-atelier-ink/5"
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img

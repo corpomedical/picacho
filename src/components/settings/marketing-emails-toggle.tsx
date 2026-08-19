@@ -36,8 +36,8 @@ export function MarketingEmailsToggle({ initialEnabled }: { initialEnabled: bool
   return (
     <div className="flex items-center justify-between gap-3">
       <div className="min-w-0">
-        <p className="text-sm font-medium text-neutral-900">{s.marketingEmailsLabel}</p>
-        <p className="mt-0.5 text-xs text-neutral-500">{s.marketingEmailsHelp}</p>
+        <p className="text-sm font-medium text-atelier-ink">{s.marketingEmailsLabel}</p>
+        <p className="mt-0.5 text-xs text-atelier-muted">{s.marketingEmailsHelp}</p>
       </div>
       <button
         type="button"
@@ -48,12 +48,12 @@ export function MarketingEmailsToggle({ initialEnabled }: { initialEnabled: bool
         disabled={pending}
         className={cn(
           "relative h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50",
-          enabled ? "bg-neutral-900" : "bg-neutral-200",
+          enabled ? "bg-atelier-accent" : "bg-atelier-ink/15",
         )}
       >
         <span
           className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform",
+            "absolute top-0.5 h-5 w-5 rounded-full bg-atelier-surface shadow transition-transform",
             enabled ? "translate-x-[22px]" : "translate-x-0.5",
           )}
         />

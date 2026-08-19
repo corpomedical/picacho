@@ -25,11 +25,14 @@ const SCRIM_FEATHER = 40; // soft falloff at the spotlight's edge, in px
 // Apple's system blue (light-mode value) — used for the primary action, the
 // one spot of color against an otherwise grayscale UI, same as iOS/macOS
 // coach marks and alerts.
-// Brand ochre (see --color-ochre in globals.css) — the tour is often the
-// first thing a new user sees, so it should speak in the brand accent,
-// not in Apple's.
-const SYSTEM_BLUE = "#a84e24";
-const SYSTEM_BLUE_HOVER = "#8a3d18";
+// Atelier ink (see --color-atelier-ink in globals.css) — the primary action
+// follows the app's ink-filled button idiom, and the CSS variable means the
+// Darkroom theme resolves it automatically. Ochre stays reserved for proof:
+// here, the progress dots. The hover mixes a step of paper into the ink,
+// standing in for the ink/90 hover the utility classes use elsewhere.
+const SYSTEM_BLUE = "var(--color-atelier-ink)";
+const SYSTEM_BLUE_HOVER =
+  "color-mix(in srgb, var(--color-atelier-ink) 88%, var(--color-atelier-paper))";
 
 const ENTER_MS = 260;
 const EXIT_MS = 190;
@@ -515,14 +518,15 @@ export function OnboardingTour({
         }}
       />
 
-      {/* Speech balloon — a frosted-glass card (Apple's "material" look:
-          translucent surface + backdrop blur, a hairline edge instead of a
-          hard border) with a small fused notch on whichever edge faces the
-          target. The notch is a child of the balloon, so it always moves and
-          appears with it as one piece. */}
+      {/* Speech balloon — a raised paper sheet (translucent atelier surface +
+          backdrop blur, a hairline ring instead of a hard border) with a
+          small fused notch on whichever edge faces the target. The notch is
+          a child of the balloon, so it always moves and appears with it as
+          one piece. The atelier tokens carry the Darkroom values, so no
+          dark: variants are needed here. */}
       <div
         ref={balloonRef}
-        className="absolute left-0 top-0 w-80 max-w-[calc(100vw-32px)] rounded-[24px] bg-white/90 p-4 shadow-[0_24px_60px_-16px_rgba(0,0,0,0.4)] ring-1 ring-black/[0.04] backdrop-blur-2xl dark:bg-neutral-900/90 dark:ring-white/10"
+        className="absolute left-0 top-0 w-80 max-w-[calc(100vw-32px)] rounded-control bg-atelier-surface/95 p-4 shadow-[0_24px_60px_-16px_rgba(33,29,18,0.45)] ring-1 ring-atelier-rule/70 backdrop-blur-2xl"
         style={{
           ...surface,
           opacity: shown ? 1 : 0,
@@ -539,7 +543,7 @@ export function OnboardingTour({
         <span
           ref={notchRef}
           aria-hidden
-          className="absolute h-4 w-4 rotate-45 rounded-[4px] bg-white/90 dark:bg-neutral-900/90"
+          className="absolute h-4 w-4 rotate-45 rounded-[4px] bg-atelier-surface/95"
           style={{ opacity: 0, transition: "opacity 200ms ease-out" }}
         />
 
@@ -551,10 +555,10 @@ export function OnboardingTour({
           }}
           aria-live="polite"
         >
-          <p className="font-[system-ui] text-[15px] font-semibold tracking-[-0.01em] text-neutral-900 dark:text-neutral-50">
+          <p className="font-[system-ui] text-[15px] font-semibold tracking-[-0.01em] text-atelier-ink">
             {painted.title}
           </p>
-          <p className="mt-1.5 font-[system-ui] text-[13.5px] leading-relaxed tracking-[-0.005em] text-neutral-500 dark:text-neutral-400">
+          <p className="mt-1.5 font-[system-ui] text-[13.5px] leading-relaxed tracking-[-0.005em] text-atelier-muted">
             {painted.body}
           </p>
         </div>
@@ -568,9 +572,12 @@ export function OnboardingTour({
                 style={{
                   // The current stop stretches into a short capsule rather
                   // than only changing colour — motion the eye can follow
-                  // between steps, so progress is legible at a glance.
+                  // between steps, so progress is legible at a glance. The
+                  // active dot is the balloon's one spot of ochre: proof of
+                  // where you are, per the accent's reserved role.
                   width: i === index ? 14 : 6,
-                  backgroundColor: i === index ? "rgb(23,23,23)" : "rgba(163,163,163,0.5)",
+                  backgroundColor:
+                    i === index ? "var(--color-atelier-accent)" : "var(--color-atelier-rule)",
                 }}
               />
             ))}
@@ -580,7 +587,7 @@ export function OnboardingTour({
               <button
                 type="button"
                 onClick={close}
-                className="font-[system-ui] text-[13px] text-neutral-400 transition-colors hover:text-neutral-600 dark:hover:text-neutral-200"
+                className="font-[system-ui] text-[13px] text-atelier-muted transition-colors hover:text-atelier-ink"
               >
                 {skip}
               </button>
@@ -589,7 +596,7 @@ export function OnboardingTour({
               ref={nextButtonRef}
               type="button"
               onClick={goNext}
-              className="rounded-full px-4 py-[7px] font-[system-ui] text-[13px] font-medium text-white transition-[background-color,transform] duration-150 active:scale-[0.97]"
+              className="rounded-full px-4 py-[7px] font-[system-ui] text-[13px] font-medium text-atelier-paper transition-[background-color,transform] duration-150 active:scale-[0.97]"
               style={{ backgroundColor: SYSTEM_BLUE }}
               onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = SYSTEM_BLUE_HOVER)}
               onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = SYSTEM_BLUE)}

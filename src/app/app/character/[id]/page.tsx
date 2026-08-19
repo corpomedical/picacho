@@ -54,7 +54,7 @@ export default async function EditCharacterPage({
 
   return (
     <div>
-      <h1 className="mx-auto mb-6 max-w-2xl text-lg font-semibold text-neutral-900">
+      <h1 className="mx-auto mb-6 max-w-2xl text-lg font-semibold text-atelier-ink">
         {t.character.editTitle}
       </h1>
       <CharacterForm

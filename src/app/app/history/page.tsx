@@ -2,7 +2,6 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
@@ -83,43 +82,47 @@ export default async function HistoryPage() {
 
   return (
     <div className="mx-auto max-w-2xl">
-      <h1 className="text-lg font-semibold text-neutral-900">{h.title}</h1>
+      <h1 className="text-lg font-semibold text-atelier-ink">{h.title}</h1>
 
-      <Card className="mt-6">
-        <p className="text-sm text-neutral-500">{h.thisMonth}</p>
-        <p className="mt-1 text-2xl font-semibold text-neutral-900">
+      {/* Atelier sheet instead of ui/Card (which stays neutral/white until its
+          own phase): warm surface, hairline rule, control radius. The usage
+          count is a credits figure — serif tabular numerals in ochre, the
+          accent's one sanctioned job. */}
+      <div className="mt-6 rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+        <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{h.thisMonth}</p>
+        <p className="mt-1 font-numeral text-2xl font-semibold tabular-nums text-atelier-accent">
           {usedThisMonth}
-          {limit > 0 && <span className="text-base font-normal text-neutral-400"> / {limit}</span>}
+          {limit > 0 && <span className="text-base font-normal text-atelier-muted"> / {limit}</span>}
         </p>
-        <p className="mt-1 text-xs text-neutral-500">
+        <p className="mt-1 text-xs text-atelier-muted">
           {plan === "none" ? h.noActivePlan : formatMsg(h.planSuffix, { plan: PLAN_LABELS[plan] })}
         </p>
-      </Card>
+      </div>
 
       <div className="mt-6 space-y-3">
         {error ? (
-          <Card className="text-center">
-            <p className="text-sm text-red-600">{h.couldntLoad}</p>
-          </Card>
+          <div className="rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+            <p className="text-sm text-red-600 dark:text-red-400">{h.couldntLoad}</p>
+          </div>
         ) : cards.length === 0 ? (
-          <Card className="text-center">
-            <p className="text-sm text-neutral-500">
+          <div className="rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+            <p className="text-sm text-atelier-muted">
               {h.noGenerationsYet}{" "}
-              <Link href="/app/generate" className="font-medium text-neutral-900 underline">
+              <Link href="/app/generate" className="font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2">
                 {h.tryOne}
               </Link>
               .
             </p>
-          </Card>
+          </div>
         ) : (
           cards.map((g) => (
             <Link key={g.id} href={`/app/history/${g.id}`} className="group block">
-              <Card className="flex items-center justify-between gap-4 p-5 transition-shadow hover:shadow-[0_8px_20px_-10px_rgba(0,0,0,0.12)]">
+              <div className="flex items-center justify-between gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-5 transition-[border-color,box-shadow] hover:border-atelier-muted/60 hover:shadow-[0_8px_20px_-12px_rgba(33,29,22,0.25)]">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-neutral-900">
+                  <p className="truncate text-sm font-medium text-atelier-ink">
                     {g.prompt_input}
                   </p>
-                  <p className="mt-0.5 truncate text-xs text-neutral-500">
+                  <p className="mt-0.5 truncate text-xs text-atelier-muted">
                     {g.character_profile_id ? (nameById.get(g.character_profile_id) ?? h.unknownCharacter) : h.noCharacter} ·{" "}
                     <LocalDate date={g.created_at} /> ·{" "}
                     {g.angleCount
@@ -155,7 +158,7 @@ export default async function HistoryPage() {
                     className="h-7 w-7 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
                   />
                 </div>
-              </Card>
+              </div>
             </Link>
           ))
         )}

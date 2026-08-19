@@ -1,8 +1,6 @@
 import Link from "next/link";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 
 export default async function CharacterListPage() {
@@ -54,31 +52,31 @@ export default async function CharacterListPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">{c.listTitle}</h1>
+        <h1 className="text-lg font-semibold text-atelier-ink">{c.listTitle}</h1>
         <Link href="/app/character/new">
-          <Button>{c.newCharacter}</Button>
+          <button className="inline-flex items-center justify-center gap-2 rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90">{c.newCharacter}</button>
         </Link>
       </div>
 
       {error ? (
-        <Card className="mt-6 text-center">
-          <p className="text-sm text-red-600">{c.couldntLoad}</p>
-        </Card>
+        <div className="mt-6 rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center">
+          <p className="text-sm text-red-600 dark:text-red-400">{c.couldntLoad}</p>
+        </div>
       ) : withThumbnails.length === 0 ? (
-        <Card className="mt-6 text-center">
-          <p className="text-sm text-neutral-500">
+        <div className="mt-6 rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center">
+          <p className="text-sm text-atelier-muted">
             {c.noneYet}
           </p>
-        </Card>
+        </div>
       ) : (
         <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {withThumbnails.map((profile) => (
             <Link
               key={profile.id}
               href={`/app/character/${profile.id}`}
-              className="flex items-center gap-4 rounded-[18px] border border-neutral-100 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] transition-shadow hover:shadow-[0_8px_20px_-10px_rgba(0,0,0,0.12)]"
+              className="flex items-center gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-5 transition-colors hover:border-atelier-muted/70"
             >
-              <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-[10px] bg-neutral-100">
+              <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-media bg-atelier-ink/5">
                 {profile.thumbnailUrl && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -89,13 +87,13 @@ export default async function CharacterListPage() {
                 )}
               </div>
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-neutral-900">{profile.name}</p>
-                <p className="truncate text-xs text-neutral-500">
+                <p className="truncate text-sm font-medium text-atelier-ink">{profile.name}</p>
+                <p className="truncate text-xs text-atelier-muted">
                   {profile.voice_tone_tags?.length
                     ? profile.voice_tone_tags.join(", ")
                     : c.noTagsYet}
                 </p>
-                <p className="mt-0.5 truncate text-xs text-neutral-400">
+                <p className="mt-0.5 truncate text-xs text-atelier-muted/80">
                   {profile.project_id
                     ? (projectNameById.get(profile.project_id) ?? c.unknownProject)
                     : c.noProject}

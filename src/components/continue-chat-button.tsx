@@ -48,7 +48,7 @@ export function ContinueChatButton({
       aria-label={h.continueChat}
       title={h.continueChat}
       className={cn(
-        "flex items-center justify-center rounded-[8px] text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:hover:bg-neutral-500/15",
+        "flex items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink",
         className,
       )}
     >

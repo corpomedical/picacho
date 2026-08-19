@@ -79,7 +79,9 @@ export function ImageLightbox({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-neutral-950/70 p-6"
+      // Warm-charcoal darkroom scrim (a fixed literal — the Darkroom is the
+      // same in both themes), not the cool neutral overlay.
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#17150f]/85 p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -90,7 +92,7 @@ export function ImageLightbox({
         <img
           src={url}
           alt={alt ?? c.lightboxAlt}
-          className="max-h-[85vh] max-w-full rounded-[14px] object-contain shadow-[0_24px_48px_-12px_rgba(0,0,0,0.5)]"
+          className="max-h-[85vh] max-w-full rounded-media object-contain shadow-[0_24px_48px_-12px_rgba(0,0,0,0.5)]"
         />
         <DownloadButton url={url} contentType="image" />
         <button
@@ -99,7 +101,9 @@ export function ImageLightbox({
           onClick={onClose}
           aria-label={c.closeLightbox}
           title={c.closeLightbox}
-          className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-white text-neutral-700 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.3)] hover:text-neutral-900"
+          // The white/95-chip voice, in constants: on the fixed charcoal
+          // scrim a theme-mapped bg-white would go dark in dark mode.
+          className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#faf8f3] text-[#6f6656] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.3)] hover:text-[#211d16]"
         >
           <CloseIcon className="h-4 w-4" />
         </button>

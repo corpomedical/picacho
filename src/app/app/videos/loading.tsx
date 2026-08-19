@@ -1,5 +1,16 @@
-import { SkeletonGrid } from "@/components/ui/skeleton";
-
+// Inline rather than ui/SkeletonGrid — same reasoning as images/loading.tsx:
+// the tiles land on the theme-invariant Darkroom stage, so the skeleton
+// shows the same charcoal grounds in the same full-width grid.
 export default function Loading() {
-  return <SkeletonGrid items={6} />;
+  return (
+    <div>
+      <div className="h-6 w-40 animate-pulse rounded-control bg-atelier-ink/10" />
+      <div className="mt-2 h-4 w-64 animate-pulse rounded-control bg-atelier-ink/5" />
+      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="aspect-square animate-pulse rounded-media bg-atelier-stage" />
+        ))}
+      </div>
+    </div>
+  );
 }

@@ -80,18 +80,18 @@ export function RatePrompt() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 w-[min(21rem,calc(100vw-2.5rem))] rounded-[16px] border border-neutral-200 bg-white p-4 shadow-[0_16px_40px_-12px_rgba(0,0,0,0.18)] dark:border-neutral-700 dark:bg-neutral-900">
+    <div className="fixed bottom-5 right-5 z-50 w-[min(21rem,calc(100vw-2.5rem))] rounded-control border border-atelier-rule bg-atelier-surface p-4 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]">
       {thanks ? (
-        <p className="py-2 text-center text-sm text-neutral-700 dark:text-neutral-200">{r.thanks}</p>
+        <p className="py-2 text-center text-sm text-atelier-ink">{r.thanks}</p>
       ) : (
         <>
           <div className="flex items-start justify-between gap-3">
-            <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100">{r.title}</p>
+            <p className="text-sm font-medium text-atelier-ink">{r.title}</p>
             <button
               type="button"
               onClick={handleDismiss}
               aria-label={r.notNow}
-              className="-mr-1 -mt-1 flex-shrink-0 rounded-full p-1 text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-600 dark:hover:bg-neutral-800"
+              className="-mr-1 -mt-1 flex-shrink-0 rounded-full p-1 text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
             >
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                 <path d="M18 6 6 18M6 6l12 12" />
@@ -114,8 +114,8 @@ export function RatePrompt() {
                   className={cn(
                     "h-7 w-7 transition-colors",
                     star <= (hovered || chosen)
-                      ? "fill-amber-400 text-amber-400"
-                      : "fill-transparent text-neutral-300 dark:text-neutral-600",
+                      ? "fill-atelier-accent text-atelier-accent"
+                      : "fill-transparent text-atelier-rule",
                   )}
                   stroke="currentColor"
                   strokeWidth="1.5"
@@ -138,13 +138,13 @@ export function RatePrompt() {
                 rows={3}
                 maxLength={2000}
                 placeholder={chosen >= 4 ? r.placeholderPositive : r.placeholderCritical}
-                className="w-full rounded-[10px] border border-neutral-200 px-3 py-2 text-sm text-neutral-700 outline-none transition-colors focus:border-neutral-400 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-200"
+                className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent"
               />
               <button
                 type="button"
                 onClick={handleSubmit}
                 disabled={pending}
-                className="w-full rounded-full bg-neutral-900 py-2 text-sm font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50 dark:bg-white dark:text-neutral-900"
+                className="w-full rounded-control bg-atelier-ink py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-50"
               >
                 {pending ? r.sending : r.send}
               </button>
@@ -155,7 +155,7 @@ export function RatePrompt() {
             <button
               type="button"
               onClick={handleDismiss}
-              className="mt-3 w-full text-center text-xs text-neutral-400 transition-colors hover:text-neutral-600"
+              className="mt-3 w-full text-center text-xs text-atelier-muted transition-colors hover:text-atelier-ink"
             >
               {r.notNow}
             </button>

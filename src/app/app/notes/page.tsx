@@ -17,8 +17,8 @@ export default async function NotesPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-900">{t.notes.title}</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="text-lg font-semibold text-atelier-ink">{t.notes.title}</h1>
+      <p className="mt-1 text-sm text-atelier-muted">
         {t.notes.subtitle}
       </p>
 

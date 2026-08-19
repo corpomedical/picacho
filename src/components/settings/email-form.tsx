@@ -2,9 +2,14 @@
 
 import { useState } from "react";
 import { updateEmail } from "@/lib/profile/actions";
-import { Label, Input } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+
+// Atelier form idiom (settings-popover, extended): caps label over an
+// ink-hairline input at the control radius; accent only marks focus.
+const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+const FIELD =
+  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
 
 export function EmailForm({ initialEmail }: { initialEmail: string }) {
   const { t } = useLocale();
@@ -43,9 +48,10 @@ export function EmailForm({ initialEmail }: { initialEmail: string }) {
   return (
     <form onSubmit={handleSubmit} className="flex items-end gap-3">
       <div className="flex-1">
-        <Label htmlFor="email">{t.settings.emailLabel}</Label>
-        <Input
+        <label htmlFor="email" className={LABEL}>{t.settings.emailLabel}</label>
+        <input
           id="email"
+          className={FIELD}
           type="email"
           value={email}
           onChange={(e) => {
@@ -55,9 +61,10 @@ export function EmailForm({ initialEmail }: { initialEmail: string }) {
         />
         {dirty && (
           <div className="mt-2">
-            <Label htmlFor="email_current_password">{t.settings.currentPasswordLabel}</Label>
-            <Input
+            <label htmlFor="email_current_password" className={LABEL}>{t.settings.currentPasswordLabel}</label>
+            <input
               id="email_current_password"
+              className={FIELD}
               type="password"
               autoComplete="current-password"
               value={currentPassword}
@@ -68,9 +75,9 @@ export function EmailForm({ initialEmail }: { initialEmail: string }) {
             />
           </div>
         )}
-        {error && <p className="mt-1.5 text-xs text-red-600">{error}</p>}
+        {error && <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
         {status === "saved" && (
-          <p className="mt-1.5 text-xs text-neutral-500">
+          <p className="mt-1.5 text-xs text-atelier-muted">
             {t.settings.emailChangeNote}
           </p>
         )}
@@ -78,6 +85,7 @@ export function EmailForm({ initialEmail }: { initialEmail: string }) {
       <Button
         type="submit"
         variant="secondary"
+        className="rounded-control! border-atelier-rule! bg-transparent! text-atelier-ink! hover:border-atelier-muted! hover:bg-atelier-ink/5!"
         disabled={!dirty}
         pending={status === "saving"}
         pendingLabel={t.common.saving}
