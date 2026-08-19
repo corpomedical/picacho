@@ -105,7 +105,7 @@ Your {{plan}} plan now includes <b>{{credits}} credits every month</b>. The new 
 
 More credits means more scenes, more angles, and more finished clips — all locked to the same character you already built.
 
-<a href="https://picacho.io/app">Open Picacho</a> and put them to work.
+<a href="https://picacho.ai/app">Open Picacho</a> and put them to work.
 
 — The Picacho team'
 )
