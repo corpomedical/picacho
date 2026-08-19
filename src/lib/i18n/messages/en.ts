@@ -122,6 +122,21 @@ const en = {
       showcasePause: "Pause",
       showcaseMute: "Mute",
       showcaseUnmute: "Unmute",
+      // "Try it" interactive proof widget (try-it-widget.tsx + the shared
+      // showcase rows in lib/showcase.ts). Everything it shows is a real
+      // stored generation — prompts, scores, attempt counts — replayed, so
+      // the copy leans on "real" and tryItRealNote states the replay
+      // honestly. The section is omitted entirely when too few rows qualify.
+      tryItEyebrow: "Try the proof",
+      tryItTitle: "Watch a prompt become a scored result",
+      tryItSubtitle: "Real prompts, real renders, real scores — pulled straight from one Picacho character's history.",
+      tryItPick: "Pick a scene",
+      tryItStepDraft: "Draft",
+      tryItStepReview: "Review",
+      tryItStepValidate: "Validate",
+      tryItStepScore: "Score",
+      tryItRealNote: "A real render from this exact pipeline — generated once, scored {score}%, shown to you instantly.",
+      tryItCta: "Try it with your character",
     },
     install: {
       getApp: "Get the app",

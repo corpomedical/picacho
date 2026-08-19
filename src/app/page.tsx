@@ -5,9 +5,13 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
+import { formatMsg } from "@/lib/i18n/format";
 import { isNativeApp } from "@/lib/native/server";
 import { cn } from "@/lib/cn";
 import { ShowcaseVideoPlayer } from "@/components/showcase-video-player";
+import { TryItWidget } from "@/components/marketing/try-it-widget";
+import { HeroReel } from "@/components/marketing/hero-reel";
+import { getShowcaseProof } from "@/lib/showcase";
 
 // SoftwareApplication structured data, homepage-only (unlike the Organization
 // block in the root layout, this describes the product itself, which only
@@ -235,6 +239,12 @@ export default async function Home({
   // "See pricing" hero link, the pricing card grid, and the "full plan
   // details" link are all omitted. Everything else on the page is unchanged.
   const native = await isNativeApp();
+  // Real match_score/prompt data for the SAME rows the hero grid serves
+  // (shared row selection in lib/showcase.ts, service client — the rows
+  // belong to the showcase owner, not the visitor). Best-effort: on any
+  // failure this comes back empty and the score chips + "Try it" section
+  // below simply don't render — a score is either real or absent.
+  const { scores: showcaseScores, tryIt: tryItEntries } = await getShowcaseProof();
 
   const STEPS = [
     {
@@ -305,61 +315,64 @@ export default async function Home({
               no mockups — the product's own output is the pitch. */}
           <div>
             <div className="grid grid-cols-3 gap-2.5">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div
-                  key={i}
-                  className="relative aspect-square overflow-hidden rounded-[12px] bg-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/showcase/${i}`}
-                    alt=""
-                    loading={i < 3 ? "eager" : "lazy"}
-                    className={cn(
-                      "h-full w-full object-cover",
-                      // Tile 3 is the full-length cooking-show shot; square-
-                      // cropping it from the centre would land on the plate.
-                      // Anchoring near the top keeps it chest-up, so her face
-                      // still reads at this size.
-                      i === 3 && "object-[50%_12%]",
+              {[0, 1, 2, 3, 4, 5].map((i) => {
+                // The tile's REAL vision score, read from the same DB row
+                // the image itself comes from (lib/showcase.ts). null —
+                // reference-gallery tiles have no generations row, and a
+                // row without a numeric match_score stays chipless too —
+                // renders nothing: no score is ever invented for the hero.
+                const score = i === 0 ? null : (showcaseScores[i] ?? null);
+                return (
+                  <div
+                    key={i}
+                    className="relative aspect-square overflow-hidden rounded-[12px] bg-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/api/showcase/${i}`}
+                      alt=""
+                      loading={i < 3 ? "eager" : "lazy"}
+                      className={cn(
+                        "h-full w-full object-cover",
+                        // Tile 3 is the full-length cooking-show shot; square-
+                        // cropping it from the centre would land on the plate.
+                        // Anchoring near the top keeps it chest-up, so her face
+                        // still reads at this size.
+                        i === 3 && "object-[50%_12%]",
+                      )}
+                    />
+                    {i === 0 && (
+                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
+                        {m.heroIdentityPhoto}
+                      </span>
                     )}
-                  />
-                  {i === 0 && (
-                    <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
-                      {m.heroIdentityPhoto}
-                    </span>
-                  )}
-                </div>
-              ))}
+                    {score !== null && (
+                      <span
+                        className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm"
+                        title={formatMsg(t.generate.identityMatch, { n: score })}
+                        aria-label={formatMsg(t.generate.identityMatch, { n: score })}
+                      >
+                        {score}%
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
             <p className="mt-3 text-center text-xs text-slate-400">{m.heroRealNote}</p>
           </div>
         </div>
 
-        {/* Full-width motion band (operator-placed, 2026-08-19): one real
-            Picacho render of the same hero character, edge to edge, directly
+        {/* Full-width motion band (operator-placed, 2026-08-19): real
+            Picacho renders of the same hero character, edge to edge, directly
             under the still grid — the stills claim identity, this shows it
-            MOVING. public/hero-band.mp4 is a 1280x720 (~8MB) transcode of
-            the operator's 1080p original; muted+playsInline are required for
-            mobile autoplay, preload=metadata keeps it off the critical path,
-            and max-h keeps ultrawide screens from turning it into a wall.
-            The chip reuses the showcase badge — same claim, same words. */}
-        <section className="relative bg-slate-900">
-          <video
-            src="/hero-band.mp4"
-            autoPlay
-            muted
-            loop
-            playsInline
-            preload="metadata"
-            aria-hidden
-            className="block max-h-[70vh] w-full object-cover"
-            style={{ aspectRatio: "16 / 9" }}
-          />
-          <span className="absolute bottom-4 left-4 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-medium text-white shadow-sm sm:bottom-6 sm:left-6">
-            {m.showcaseBadge}
-          </span>
-        </section>
+            MOVING. Grew from one clip to a two-clip reel the same day; the
+            sequencing lives in HeroReel (each clip plays to the end, then
+            the next, looping the set forever). Both files are 1280x720
+            transcodes of the operator's 1080p originals (~8MB + ~7MB),
+            served from public/. The chip reuses the showcase badge — same
+            claim, same words. */}
+        <HeroReel sources={["/hero-band.mp4", "/hero-band-2.mp4"]} badge={m.showcaseBadge} />
 
         {/* Engine rail — the models Picacho actually runs, named for the
             first time on the marketing site. Sits between the hero's proof
@@ -415,6 +428,45 @@ export default async function Home({
           </div>
         </div>
       </section>
+
+      {/* "Try it" — the score band above states the claim; this lets a
+          visitor act it out. Every prompt, image and score in the widget is
+          a real stored generation from the showcase character (same rows as
+          the hero grid — lib/showcase.ts), replayed with a short pipeline
+          trace; the widget's own footnote says so. Renders only when at
+          least two rows genuinely qualify (image + prompt + score) —
+          otherwise the section is absent entirely, never padded with
+          placeholders. */}
+      {tryItEntries.length >= 2 && (
+        <section className="mx-auto max-w-5xl px-8 pt-16">
+          <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-neutral-400">
+            {m.tryItEyebrow}
+          </h2>
+          <h3 className="mx-auto mt-3 max-w-xl text-center text-2xl font-semibold tracking-tight text-neutral-900">
+            {m.tryItTitle}
+          </h3>
+          <p className="mx-auto mt-2 max-w-md text-center text-sm text-neutral-500">{m.tryItSubtitle}</p>
+          <div className="mx-auto mt-10 max-w-4xl">
+            <TryItWidget
+              entries={tryItEntries.map((e) => ({
+                ...e,
+                // Same crop quirk as hero tile 3 (full-length shot — anchor
+                // near the top so the face reads in a square box).
+                objectPosition: e.index === 3 ? "50% 12%" : undefined,
+              }))}
+              labels={{
+                pick: m.tryItPick,
+                steps: [m.tryItStepDraft, m.tryItStepReview, m.tryItStepValidate, m.tryItStepScore],
+                match: m.scoreBandMatch,
+                matchTitle: t.generate.identityMatch,
+                passed: m.scoreBandPassed,
+                realNote: m.tryItRealNote,
+                cta: m.tryItCta,
+              }}
+            />
+          </div>
+        </section>
+      )}
 
       {/* Differentiators — what Picacho does that a single-shot "type a
           prompt, get an image" tool doesn't: two AI models checking each
