@@ -331,7 +331,15 @@ async function buildVideoRequest(
       elements: [
         {
           frontal_image_url: anchorImages[0],
-          ...(anchorImages.length > 1 ? { reference_image_urls: anchorImages.slice(1) } : {}),
+          // NOT optional, despite the docs page marking it so — production
+          // 422, 2026-08-19: "Either frontal_image_url and reference_image_urls
+          // or video_url must be provided" came back for an element carrying
+          // only frontal_image_url. The validator wants the PAIR, so a
+          // single-photo character sends the same photo in both slots (an
+          // extra reference angle that happens to be identical is semantically
+          // harmless), and multi-photo characters send the real extras.
+          reference_image_urls:
+            anchorImages.length > 1 ? anchorImages.slice(1) : [anchorImages[0]],
         },
       ],
       aspect_ratio: resolvedAspectRatio,
