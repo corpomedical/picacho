@@ -8,7 +8,10 @@ android {
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
-        versionName "1.0"
+        // Tracks CURRENT_VERSION in src/lib/changelog.ts. versionCode stays 1
+        // for the first Play upload; bump it (never reuse a value) on every
+        // subsequent upload, keeping versionName in step with the changelog.
+        versionName "1.4.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

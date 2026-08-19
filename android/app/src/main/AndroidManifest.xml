@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- allowBackup=false: everything real lives on the server, so a device
+         backup would carry nothing worth restoring — except the WebView's
+         cookies, i.e. the Supabase session token, riding into cloud backups
+         and device-to-device transfers. Signing in again is cheaper than
+         letting an auth token travel. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -38,4 +43,16 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Android 13+ (API 33) shows no notifications unless the app BOTH
+         declares this permission and is granted it at runtime. The runtime
+         half is done by the Capacitor push plugin (native-push.tsx calls
+         requestPermissions() after sign-in); this declaration is the manifest
+         half — without it that runtime prompt is auto-denied and the
+         "render finished" pushes silently never arrive on any modern device.
+         Neither the plugin's own manifest nor firebase-messaging declares it
+         for us. Not declared: CAMERA — reference-photo capture goes through
+         the web <input capture> bridge, which delegates to the system camera
+         app precisely so no camera permission is needed (see
+         BridgeWebChromeClient.isMediaCaptureSupported). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

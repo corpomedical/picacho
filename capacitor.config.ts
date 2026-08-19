@@ -31,6 +31,15 @@ const config = {
 
   server: {
     url: "https://picacho.ai",
+    // The offline fallback, actually wired up. When a main-frame load of the
+    // remote site fails (no network, DNS, or an HTTP error page), the shell
+    // loads this file from webDir via its internal local server
+    // (https://localhost/index.html) instead of showing the WebView's raw
+    // net::ERR_… screen. Both platforms honor it: BridgeWebViewClient
+    // (onReceivedError/onReceivedHttpError) on Android,
+    // WebViewDelegationHandler on iOS. Without this line the page in
+    // public/native/ is dead weight — nothing ever navigates to it.
+    errorPath: "index.html",
     // No cleartext anywhere: the session cookie rides on these requests.
     cleartext: false,
     // Everything else opens in the system browser rather than inside the
