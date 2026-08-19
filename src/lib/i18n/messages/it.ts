@@ -734,6 +734,10 @@ const it = {
     skipRefinementLabel: "Salta bozza e revisione IA",
     skipRefinementHelp:
       "Invia il tuo prompt direttamente al generatore, saltando i passaggi di bozza con Claude e revisione con OpenAI. Più veloce ed economico, ma perde la rifinitura extra di quei passaggi.",
+    emailPreferences: "Preferenze email",
+    marketingEmailsLabel: "Novità e offerte sul prodotto",
+    marketingEmailsHelp:
+      "Email occasionali su nuove funzioni, piani e offerte. Gli avvisi su account e fatturazione vengono sempre recapitati.",
     replayWalkthrough: "Rivedi il tour",
     errorGeneric: "Qualcosa è andato storto — riprova.",
     errorPlanUnavailable: "Quel piano non è disponibile.",

@@ -734,6 +734,10 @@ const pt = {
     skipRefinementLabel: "Pular rascunho e revisão de IA",
     skipRefinementHelp:
       "Envia seu prompt direto para o gerador, pulando as etapas de rascunho com Claude e revisão com OpenAI. Mais rápido e barato, mas perde o refinamento extra dessas etapas.",
+    emailPreferences: "Preferências de e-mail",
+    marketingEmailsLabel: "Novidades e ofertas do produto",
+    marketingEmailsHelp:
+      "E-mails ocasionais sobre novos recursos, planos e ofertas. Avisos de conta e cobrança são sempre entregues.",
     replayWalkthrough: "Repetir o tour",
     errorGeneric: "Algo deu errado — tente novamente.",
     errorPlanUnavailable: "Esse plano não está disponível.",

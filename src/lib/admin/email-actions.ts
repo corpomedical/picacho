@@ -159,6 +159,19 @@ export async function sendEmailBlast(formData: FormData) {
   const audience = ((formData.get("audience") as string) ?? "").trim();
   const confirm = ((formData.get("confirm") as string) ?? "").trim();
 
+  // "Service notice" flag (2026-08-19): drops ONLY the marketing_opt_out
+  // exclusion from the recipient query — suspended accounts stay excluded.
+  // Legal footing: the unsubscribe flag governs MARKETING mail (CAN-SPAM /
+  // GDPR consent); genuine service communication about an account the
+  // person actually holds — billing changes, security notices, terms
+  // updates — may, and sometimes must, reach every affected account,
+  // opted out or not. This flag exists for those sends ONLY, never
+  // promotion, and it can't pass unnoticed: the typed confirmation
+  // changes to service:<audience> (checked below) so it never rides
+  // along on muscle memory, and the audit row records the audience as
+  // "<audience> (service notice)".
+  const serviceNotice = formData.get("service_notice") === "on";
+
   // Audience grammar: "all" | "free" (plan none) | "plan:<id>" for real
   // plans. plan:none is rejected rather than aliased — "free" is the one
   // spelling, so email_sends.audience stays greppable.
@@ -176,11 +189,19 @@ export async function sendEmailBlast(formData: FormData) {
   }
 
   // HARD CONFIRMATION, verified server-side: the admin must have TYPED the
-  // audience string into the form. A mis-click on a dropdown plus a reflexive
+  // audience string into the form — and when the service-notice flag is set,
+  // the DIFFERENT string "service:<audience>", so reaching opted-out inboxes
+  // always costs a deliberate keystroke and can never be a checkbox riding
+  // along on a memorized ritual. A mis-click on a dropdown plus a reflexive
   // submit must never email every account we have — the UI asks for the
   // typing, but this check is the one that counts.
-  if (confirm !== audience) {
-    fail("Confirmation text doesn't match the audience — nothing was sent.");
+  const expectedConfirm = serviceNotice ? `service:${audience}` : audience;
+  if (confirm !== expectedConfirm) {
+    fail(
+      serviceNotice
+        ? "Confirmation text doesn't match — a service notice must be confirmed as service:<audience>. Nothing was sent."
+        : "Confirmation text doesn't match the audience — nothing was sent.",
+    );
   }
 
   const { data: template } = await admin
@@ -196,6 +217,9 @@ export async function sendEmailBlast(formData: FormData) {
   // address the account was created with. Read with the service client:
   // suspended accounts and anyone who unsubscribed are excluded at the
   // query level, so an opted-out address can't even reach the render loop.
+  // A service notice keeps the suspension filter but drops the opt-out one
+  // (see the serviceNotice comment above) — the ONLY difference in the
+  // whole send path.
   //
   // Count first: the cap error should state the real size, and a too-big
   // audience shouldn't cost 6 pages of reads before being refused. Errors
@@ -204,15 +228,19 @@ export async function sendEmailBlast(formData: FormData) {
   let countQuery = admin
     .from("profiles")
     .select("id", { count: "exact", head: true })
-    .eq("status", "active")
-    .eq("marketing_opt_out", false);
+    .eq("status", "active");
+  if (!serviceNotice) countQuery = countQuery.eq("marketing_opt_out", false);
   if (planFilter !== null) countQuery = countQuery.eq("plan", planFilter);
   const { count, error: countError } = await countQuery;
   if (countError) {
     fail(`Couldn't count the audience: ${countError.message.slice(0, 160)}`);
   }
   if (!count) {
-    fail("No recipients match that audience (opted-out and suspended accounts are excluded).");
+    fail(
+      serviceNotice
+        ? "No recipients match that audience (suspended accounts are excluded; service notices include opted-out accounts)."
+        : "No recipients match that audience (opted-out and suspended accounts are excluded).",
+    );
   }
   if (count! > BLAST_RECIPIENT_CAP) {
     fail(
@@ -226,8 +254,8 @@ export async function sendEmailBlast(formData: FormData) {
     let pageQuery = admin
       .from("profiles")
       .select("id, email, username, plan")
-      .eq("status", "active")
-      .eq("marketing_opt_out", false);
+      .eq("status", "active");
+    if (!serviceNotice) pageQuery = pageQuery.eq("marketing_opt_out", false);
     if (planFilter !== null) pageQuery = pageQuery.eq("plan", planFilter);
     const { data, error } = await pageQuery
       // Stable order (created_at can tie; id can't) so the range windows
@@ -249,6 +277,11 @@ export async function sendEmailBlast(formData: FormData) {
 
   // Render PER RECIPIENT — the variables (and the signed unsubscribe link)
   // differ for every one of them, which is the whole point of templates.
+  // Service notices go through the IDENTICAL render, footer and
+  // unsubscribe link included, on purpose: the link still governs
+  // marketing mail (so clicking it from a service notice remains
+  // meaningful), and a bulk send with no visible opt-out reads as
+  // deceptive regardless of its legal category.
   const messages: { to: string; subject: string; html: string }[] = [];
   for (const recipient of recipients) {
     if (!recipient.email) continue; // NOT NULL in schema, but never send to ""
@@ -271,16 +304,21 @@ export async function sendEmailBlast(formData: FormData) {
 
   // Audit row AFTER the send, recording what Resend actually accepted.
   // Best-effort: the mail is already out, so a failed audit write is a loud
-  // log line, not a reason to tell the admin the blast failed.
+  // log line, not a reason to tell the admin the blast failed. The
+  // service-notice flag is recorded as a suffix in the free-text audience
+  // column — "which sends ignored the opt-out list?" must stay answerable
+  // from the log alone, with no schema change.
   const { error: auditError } = await admin.from("email_sends").insert({
     template_key: key,
     subject: template!.subject,
-    audience,
+    audience: serviceNotice ? `${audience} (service notice)` : audience,
     recipient_count: result.sent,
     sent_by: userId,
   });
   if (auditError) {
-    console.error("sendEmailBlast: audit insert failed", { key, audience, auditError });
+    // serviceNotice included: when the audit row fails, this log line is the
+    // only remaining record that the opt-out list was bypassed.
+    console.error("sendEmailBlast: audit insert failed", { key, audience, serviceNotice, auditError });
   }
 
   revalidatePath("/admin/emails");

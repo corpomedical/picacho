@@ -73,12 +73,19 @@ revoke all on public.email_sends from public, anon, authenticated;
 -- 3) Marketing opt-out flag on profiles.
 --
 -- Set to true by the signed unsubscribe route (service role — the link
--- must work logged out); every blast excludes rows where it's true.
--- Deliberately NOT in the authenticated column grant list (see the
--- 2026-08-18 profiles lockdown at the bottom of schema.sql), so a
--- browser session can't flip it for someone else — and nothing in the
--- app needs it client-writable today. If a Settings toggle is added
--- later, widen the grant then, deliberately.
+-- must work logged out); every MARKETING blast excludes rows where it's
+-- true. Service notices (sendEmailBlast's service_notice flag,
+-- 2026-08-19) deliberately ignore it — the flag governs marketing
+-- consent, not account/service communication. Deliberately NOT in the
+-- authenticated column grant list (see the 2026-08-18 profiles lockdown
+-- at the bottom of schema.sql), so a browser session can't flip it for
+-- someone else. The grant stays closed even though Settings now has a
+-- re-subscribe toggle (2026-08-19, "Product news and offers"):
+-- setMarketingEmails in src/lib/profile/actions.ts verifies the session
+-- and then writes this one column with the service-role client —
+-- identity from the session, privilege from the server, the same shape
+-- as the free-counter update in characters/actions.ts — so re-subscribing
+-- no longer needs SQL, and no grant was widened for it.
 -- ---------------------------------------------------------------------
 alter table public.profiles
   add column if not exists marketing_opt_out boolean not null default false;

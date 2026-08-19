@@ -32,6 +32,8 @@ export type AudienceOption = {
   label: string;
   /** Server-computed with the same filters the blast query uses; null when the count query failed (email.sql not applied). */
   count: number | null;
+  /** Same query WITHOUT the marketing opt-out exclusion — what the audience becomes when the send is flagged as a service notice. */
+  serviceCount: number | null;
 };
 
 // The variables legend, shared between the new-template form (page) and the
@@ -79,9 +81,23 @@ export function EmailTemplateCard({
 }) {
   const [panel, setPanel] = useState<Panel>(null);
   const [audience, setAudience] = useState(audiences[0]?.value ?? "all");
+  // Service-notice flag: reaches opted-out accounts, so every number and
+  // hint in the panel switches with it — the count shown must always be the
+  // count the send would hit, and the confirmation text the admin is asked
+  // to type must be the one the server will actually accept
+  // (service:<audience> — re-checked server-side in sendEmailBlast).
+  const [serviceNotice, setServiceNotice] = useState(false);
 
   const selected = audiences.find((a) => a.value === audience);
-  const toggle = (next: Exclude<Panel, null>) => setPanel((prev) => (prev === next ? null : next));
+  const selectedCount = selected ? (serviceNotice ? selected.serviceCount : selected.count) : null;
+  const confirmText = serviceNotice ? `service:${audience}` : audience;
+  const toggle = (next: Exclude<Panel, null>) => {
+    setPanel((prev) => (prev === next ? null : next));
+    // The card stays mounted across panel opens, so without this a checked
+    // service-notice box would silently survive into the NEXT send session —
+    // exactly the stale-decision carryover the flag must never have.
+    setServiceNotice(false);
+  };
 
   const panelButton = (target: Exclude<Panel, null>, label: string) => (
     <button
@@ -200,39 +216,61 @@ export function EmailTemplateCard({
                   onChange={(e) => setAudience(e.target.value)}
                   className="w-full rounded-[10px] border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 outline-none transition-shadow focus:border-neutral-400 focus:ring-2 focus:ring-neutral-900/5"
                 >
-                  {audiences.map((a) => (
-                    <option key={a.value} value={a.value}>
-                      {a.label} — {a.count === null ? "?" : a.count} recipient
-                      {a.count === 1 ? "" : "s"}
-                    </option>
-                  ))}
+                  {audiences.map((a) => {
+                    const count = serviceNotice ? a.serviceCount : a.count;
+                    return (
+                      <option key={a.value} value={a.value}>
+                        {a.label} — {count === null ? "?" : count} recipient
+                        {count === 1 ? "" : "s"}
+                      </option>
+                    );
+                  })}
                 </select>
                 <p className="mt-1.5 text-xs text-neutral-400">
-                  Counts exclude unsubscribed and suspended accounts — the same filter the send
-                  itself applies.
+                  {serviceNotice
+                    ? "Counts exclude only suspended accounts — a service notice also reaches people who unsubscribed."
+                    : "Counts exclude unsubscribed and suspended accounts — the same filter the send itself applies."}
                 </p>
               </div>
               <div>
                 <Label htmlFor={`confirm-${template.id}`}>
-                  Type <code className="font-mono text-[12px] text-neutral-900">{audience}</code> to
-                  confirm
+                  Type <code className="font-mono text-[12px] text-neutral-900">{confirmText}</code>{" "}
+                  to confirm
                 </Label>
                 {/* The typed value is re-checked server-side against the
-                    posted audience — this input is the ritual, the action
-                    holds the lock. */}
+                    posted audience (service:<audience> when the flag is
+                    set) — this input is the ritual, the action holds the
+                    lock. */}
                 <Input
                   id={`confirm-${template.id}`}
                   name="confirm"
-                  placeholder={audience}
+                  placeholder={confirmText}
                   autoComplete="off"
                   required
                 />
               </div>
             </div>
+            {/* Default unchecked, always: the marketing filter is the norm,
+                and this flag must be a fresh decision per send — state is
+                never carried between panel opens or templates. */}
+            <label className="mt-4 flex items-start gap-2.5 text-xs leading-relaxed text-neutral-600">
+              <input
+                type="checkbox"
+                name="service_notice"
+                checked={serviceNotice}
+                onChange={(e) => setServiceNotice(e.target.checked)}
+                className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-neutral-300 accent-neutral-900"
+              />
+              <span>
+                <span className="font-medium text-neutral-900">Service notice</span> — also reaches
+                people who unsubscribed from marketing. Use only for account/service information
+                (billing, security, terms). Never promotion.
+              </span>
+            </label>
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <SubmitButton size="sm" pendingLabel="Sending…">
-                Send to {selected && selected.count !== null ? selected.count : "?"} recipient
-                {selected?.count === 1 ? "" : "s"}
+                Send to {selectedCount === null ? "?" : selectedCount} recipient
+                {selectedCount === 1 ? "" : "s"}
               </SubmitButton>
               <p className="text-xs leading-relaxed text-neutral-400">
                 Sends once, immediately. Capped at 5,000 recipients per blast; every send is

@@ -734,6 +734,10 @@ const es = {
     skipRefinementLabel: "Omitir borrador y revisión de IA",
     skipRefinementHelp:
       "Envía tu prompt directamente al generador, saltando los pasos de borrador con Claude y revisión con OpenAI. Más rápido y económico, pero pierde el pulido extra que aportan esos pasos.",
+    emailPreferences: "Preferencias de correo",
+    marketingEmailsLabel: "Novedades y ofertas del producto",
+    marketingEmailsHelp:
+      "Correos ocasionales sobre nuevas funciones, planes y ofertas. Los avisos de cuenta y facturación se entregan siempre.",
     replayWalkthrough: "Repetir el recorrido",
     errorGeneric: "Algo salió mal — inténtalo de nuevo.",
     errorPlanUnavailable: "Ese plan no está disponible.",

@@ -754,6 +754,10 @@ const en = {
     skipRefinementLabel: "Skip AI draft & review",
     skipRefinementHelp:
       "Send your prompt straight to the generator, skipping the Claude draft + OpenAI review steps. Faster and cheaper, but drops the extra polish those steps add.",
+    emailPreferences: "Email preferences",
+    marketingEmailsLabel: "Product news and offers",
+    marketingEmailsHelp:
+      "Occasional emails about new features, plans, and offers. Account and billing notices are always delivered.",
     replayWalkthrough: "Replay walkthrough",
     // Localized messages for the ?error= codes server actions redirect back
     // to Settings with. The page maps known codes to these and everything

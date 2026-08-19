@@ -52,7 +52,9 @@ const KNOWN_ERRORS = new Set<string>([
   "Couldn't load your profile email.",
   "Invalid audience.",
   "Confirmation text doesn't match the audience — nothing was sent.",
+  "Confirmation text doesn't match — a service notice must be confirmed as service:<audience>. Nothing was sent.",
   "No recipients match that audience (opted-out and suspended accounts are excluded).",
+  "No recipients match that audience (suspended accounts are excluded; service notices include opted-out accounts).",
   "The blast could not be sent — nothing went out. Check RESEND_API_KEY and the server log.",
 ]);
 

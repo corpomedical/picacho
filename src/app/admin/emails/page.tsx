@@ -86,6 +86,9 @@ export default async function AdminEmailsPage({
   // Audience options + live recipient counts, computed with EXACTLY the
   // filters sendEmailBlast applies (active, not opted out, plan-scoped) —
   // the number on the send button must be the number the blast would hit.
+  // serviceCount is the same query minus the opt-out exclusion, mirroring
+  // what the blast query becomes when the service-notice flag is set, so
+  // ticking that checkbox shows the true (larger) reach before the send.
   // A failed count (e.g. marketing_opt_out not applied yet) degrades to "?"
   // and the blast itself still fails closed server-side.
   const audienceDefs: { value: string; label: string }[] = [
@@ -97,15 +100,19 @@ export default async function AdminEmailsPage({
   ];
   const audiences: AudienceOption[] = await Promise.all(
     audienceDefs.map(async (def) => {
-      let query = admin
-        .from("profiles")
-        .select("id", { count: "exact", head: true })
-        .eq("status", "active")
-        .eq("marketing_opt_out", false);
-      if (def.value === "free") query = query.eq("plan", "none");
-      else if (def.value.startsWith("plan:")) query = query.eq("plan", def.value.slice(5));
-      const { count, error } = await query;
-      return { ...def, count: error ? null : (count ?? 0) };
+      const countFor = async (serviceNotice: boolean): Promise<number | null> => {
+        let query = admin
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "active");
+        if (!serviceNotice) query = query.eq("marketing_opt_out", false);
+        if (def.value === "free") query = query.eq("plan", "none");
+        else if (def.value.startsWith("plan:")) query = query.eq("plan", def.value.slice(5));
+        const { count, error } = await query;
+        return error ? null : (count ?? 0);
+      };
+      const [count, serviceCount] = await Promise.all([countFor(false), countFor(true)]);
+      return { ...def, count, serviceCount };
     }),
   );
 

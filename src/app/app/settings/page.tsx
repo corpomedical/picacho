@@ -18,6 +18,7 @@ import { PasswordForm } from "@/components/settings/password-form";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { DeleteAccountForm } from "@/components/settings/delete-account-form";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
+import { MarketingEmailsToggle } from "@/components/settings/marketing-emails-toggle";
 import { ApiKeysCard } from "@/components/settings/api-keys-card";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { logout } from "@/lib/auth/actions";
@@ -148,10 +149,14 @@ export default async function SettingsPage({
   const brandRulesPaused = !brandFlag?.enabled;
 
   const [{ data: profile }, usedThisMonth, { data: supportEmailSetting }] = await Promise.all([
+    // marketing_opt_out reads fine with the session client: the 2026-08-18
+    // profiles lockdown (bottom of schema.sql) narrowed the UPDATE grant,
+    // not SELECT — only the WRITE goes through the service role, in
+    // setMarketingEmails.
     supabase
       .from("profiles")
       .select(
-        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, bonus_credits, purchased_credits, role, api_access",
+        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access",
       )
       .eq("id", data.user.id)
       .single(),
@@ -267,6 +272,16 @@ export default async function SettingsPage({
                 <h2 className="text-sm font-semibold text-neutral-900">{s.aiGeneration}</h2>
                 <div className="mt-4">
                   <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
+                </div>
+              </Card>
+
+              <Card>
+                <h2 className="text-sm font-semibold text-neutral-900">{s.emailPreferences}</h2>
+                <div className="mt-4">
+                  {/* enabled = NOT opted out; a missing profile row degrades
+                      to the column's default (false → emails on), matching
+                      what the blast query would actually do. */}
+                  <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
                 </div>
               </Card>
 

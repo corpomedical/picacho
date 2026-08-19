@@ -198,6 +198,48 @@ export async function setSkipAiRefinement(enabled: boolean): Promise<ActionResul
   return { error: null };
 }
 
+// Settings toggle for marketing email ("Product news and offers",
+// 2026-08-19) — the re-subscribe path the emailed unsubscribe link can't
+// offer, plus a plain in-app opt-out for anyone who'd rather not dig out an
+// old email. Client-invoked from MarketingEmailsToggle, so it returns a
+// result instead of calling redirect().
+//
+// The write goes through the SERVICE-ROLE client on purpose:
+// profiles.marketing_opt_out is deliberately absent from the authenticated
+// UPDATE column grant (see the section-3 posture comment in
+// supabase/pending-2026-08-19/email.sql and the 2026-08-18 lockdown at the
+// bottom of schema.sql), and widening that grant for one toggle would
+// reopen the column to every authenticated PostgREST caller. So: identity
+// comes from the verified session, then the service role writes that one
+// column scoped to that one id — the same house pattern as the free-counter
+// update in characters/actions.ts.
+//
+// Takes the DESIRED state ("on" / "off"), never a blind invert: a retried
+// request or a second tab must converge on what the person last chose, not
+// flip-flop them back onto a list they left.
+export async function setMarketingEmails(formData: FormData): Promise<ActionResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const desired = formData.get("enabled");
+  if (desired !== "on" && desired !== "off") {
+    return { error: "Invalid setting." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin
+    .from("profiles")
+    // enabled=on means marketing email WANTED, i.e. opt-out false.
+    .update({ marketing_opt_out: desired === "off" })
+    .eq("id", data.user.id);
+
+  if (error) return { error: error.message };
+
+  revalidatePath("/app/settings");
+  return { error: null };
+}
+
 // Flips profiles.has_completed_onboarding — called once the first-login
 // walkthrough (OnboardingTour, see generate-form.tsx) finishes OR is
 // skipped, either way the tour shouldn't auto-show again. "Replay

@@ -74,7 +74,10 @@ export async function GET(request: Request) {
   <title>Unsubscribed — Picacho</title>
 </head>
 <body style="margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;background-color:#fafafa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-  <p style="margin:24px;font-size:15px;color:#404040;">You&#39;re unsubscribed &mdash; no more announcement emails. <a href="${origin}" style="color:#a84e24;">Back to Picacho</a></p>
+  <div style="margin:24px;text-align:center;">
+    <p style="margin:0;font-size:15px;color:#404040;">You&#39;re unsubscribed &mdash; no more announcement emails. <a href="${origin}" style="color:#a84e24;">Back to Picacho</a></p>
+    <p style="margin:10px 0 0;font-size:13px;color:#737373;">You can turn these back on any time in <a href="${origin}/app/settings" style="color:#a84e24;">Settings</a>.</p>
+  </div>
 </body>
 </html>`;
 
