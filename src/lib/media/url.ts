@@ -60,12 +60,27 @@ export function mediaUrl(bucket: string, path: string): string {
 // already expired (their tokens lasted 7 days; the files are all still
 // there). This rescues them: pull bucket+path out of the stored URL and
 // re-issue the stable form. Anything unrecognized passes through untouched
-// (external video URLs, already-converted media URLs, null).
+// (external video URLs, null).
 const SIGNED_URL_RE = /\/storage\/v1\/object\/(?:sign|public)\/([^/]+)\/([^?]+)/;
+const MEDIA_ROUTE_RE = /^\/api\/media\/([^/]+)\/([^?]+)/;
 
 export function toMediaUrl(stored: string | null | undefined): string | null {
   if (!stored) return null;
-  if (stored.startsWith("/api/media/")) return stored;
+  // Already-media-form URLs are RE-SIGNED rather than passed through
+  // (changed 2026-08-19): rows written by persistGeneratedImage embed the
+  // signature that was current at write time, so the first flip of
+  // MEDIA_SIGNING_SECRET — this morning — instantly 403'd every stored
+  // image across the app. Re-minting here makes every in-app render carry
+  // a signature under the CURRENT key, whatever key that is, and keeps
+  // this function idempotent. (URLs customers copied externally still die
+  // on a key change — that's the documented one-time cost in hmac() above;
+  // in-app surfaces must not share it.)
+  const asMedia = stored.match(MEDIA_ROUTE_RE);
+  if (asMedia) {
+    const [, bucket, rawPath] = asMedia;
+    if (!isMediaBucket(bucket)) return stored;
+    return mediaUrl(bucket, rawPath.split("/").map(decodeURIComponent).join("/"));
+  }
   const match = stored.match(SIGNED_URL_RE);
   if (!match) return stored;
   const [, bucket, rawPath] = match;
