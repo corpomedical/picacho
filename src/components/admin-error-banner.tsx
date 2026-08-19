@@ -44,6 +44,16 @@ const KNOWN_ERRORS = new Set<string>([
   "Duration must be 0-36 months (0 = forever).",
   "Commission must be 0-100%.",
   "Code not found.",
+  // admin/email-actions.ts
+  "Key must be 2-40 characters: lowercase letters, numbers and hyphens.",
+  "Subject is required (200 characters max).",
+  "Body is required (20,000 characters max).",
+  "Template not found.",
+  "Couldn't load your profile email.",
+  "Invalid audience.",
+  "Confirmation text doesn't match the audience — nothing was sent.",
+  "No recipients match that audience (opted-out and suspended accounts are excluded).",
+  "The blast could not be sent — nothing went out. Check RESEND_API_KEY and the server log.",
 ]);
 
 // Messages whose tail is dynamic (a Stripe or Postgres error string). The
@@ -80,6 +90,31 @@ const PREFIX_SUMMARIES: [string, string][] = [
     "Unknown image model",
     "Unknown image model — pick one of the ids from the AI providers page.",
   ],
+  // admin/email-actions.ts
+  [
+    "Couldn't save the template",
+    "Couldn't save the template — details are in the server log.",
+  ],
+  [
+    "Couldn't delete the template",
+    "Couldn't delete the template — details are in the server log.",
+  ],
+  [
+    "Couldn't send the test email",
+    "Couldn't send the test email — details are in the server log.",
+  ],
+  [
+    "Couldn't count the audience",
+    "Couldn't load the audience — check that supabase/pending-2026-08-19/email.sql has been applied. Details are in the server log.",
+  ],
+  [
+    "Couldn't load the audience",
+    "Couldn't load the audience — check that supabase/pending-2026-08-19/email.sql has been applied. Details are in the server log.",
+  ],
+  [
+    "That audience has ",
+    "That audience is over the per-blast recipient cap — nothing was sent. The cap lives in lib/admin/email-actions.ts; raise it deliberately when the list outgrows it.",
+  ],
 ];
 
 const GENERIC_ERROR = "Something went wrong — try again. Details are in the server log.";
@@ -105,10 +140,28 @@ export function AdminErrorBanner({ error }: { error?: string }) {
 // success banner has no honest generic fallback).
 const KNOWN_MESSAGES = new Set<string>([
   "User deleted.", // deleteUser in lib/admin/actions.ts
+  // admin/email-actions.ts
+  "Template saved.",
+  "Template deleted.",
+  "Test email sent — check your inbox.",
 ]);
 
+// Success messages whose only dynamic part is a COUNT (email blast
+// summaries). Anchored patterns where the sole variable content is digits —
+// a crafted link can change the number, but can't make the banner say
+// anything we didn't write, which is the whole allowlist's promise.
+const KNOWN_MESSAGE_PATTERNS: RegExp[] = [
+  /^Sent to \d+ recipients?\.$/, // sendEmailBlast in lib/admin/email-actions.ts
+  /^Sent to \d+ of \d+ recipients — some chunks failed; details are in the server log\.$/,
+];
+
 export function AdminSuccessBanner({ message }: { message?: string }) {
-  if (!message || !KNOWN_MESSAGES.has(message)) return null;
+  if (
+    !message ||
+    (!KNOWN_MESSAGES.has(message) && !KNOWN_MESSAGE_PATTERNS.some((re) => re.test(message)))
+  ) {
+    return null;
+  }
   return (
     <div className="mb-6 rounded-[14px] border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
       {message}

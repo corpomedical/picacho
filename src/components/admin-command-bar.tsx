@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { href: "/admin/stats", label: "Stats", icon: ChartIcon },
   { href: "/admin/billing", label: "Billing", icon: CardIcon },
   { href: "/admin/promo", label: "Promo codes", icon: TicketIcon },
+  { href: "/admin/emails", label: "Emails", icon: MailIcon },
   { href: "/admin/moderation", label: "Moderation", icon: ShieldIcon },
   { href: "/admin/reports", label: "Reports", icon: FlagIcon },
   { href: "/admin/feedback", label: "Feedback", icon: ChatIcon },
@@ -600,6 +601,15 @@ function TicketIcon(props: SVGProps<SVGSVGElement>) {
       <path d="M13 5v2" />
       <path d="M13 17v2" />
       <path d="M13 11v2" />
+    </svg>
+  );
+}
+
+function MailIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3.5 7.5 8.5 6 8.5-6" />
     </svg>
   );
 }
