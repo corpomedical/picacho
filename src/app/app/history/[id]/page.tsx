@@ -104,21 +104,20 @@ export default async function HistoryDetailPage({
     .in("generation_id", reportableIds);
   const reportedIds = new Set((existingReports ?? []).map((r) => r.generation_id));
 
-  // Raw provider dumps in pipeline_log are admin diagnostics (see
-  // user-facing-error.ts): the full text stays in the DB and renders for
-  // admins, but a customer looking at their own failed render gets one
-  // friendly localized line instead of a wall of fal.ai JSON.
+  // Raw provider dumps in pipeline_log never render here — for ANYONE,
+  // admin included (operator decision, 2026-08-19: History is a product
+  // surface, not a debug console). Everyone gets the friendly localized
+  // line; the raw text auto-files into /admin/reports when a render fails
+  // (finish() in job-runner.ts) and the full pipeline_log stays in the DB.
   const sanitizeAttempts = (list: AttemptLog[]): AttemptLog[] =>
-    isAdmin
-      ? list
-      : list.map((attempt) => ({
-          ...attempt,
-          steps: attempt.steps.map((step) =>
-            isRawProviderError(step.detail)
-              ? { ...step, detail: t.generate.stepFailedGeneric }
-              : step,
-          ),
-        }));
+    list.map((attempt) => ({
+      ...attempt,
+      steps: attempt.steps.map((step) =>
+        isRawProviderError(step.detail)
+          ? { ...step, detail: t.generate.stepFailedGeneric }
+          : step,
+      ),
+    }));
 
   const attempts = sanitizeAttempts((generation.pipeline_log ?? []) as AttemptLog[]);
   const finalPrompt = attempts[attempts.length - 1]?.compiledPrompt || generation.prompt_input || "";

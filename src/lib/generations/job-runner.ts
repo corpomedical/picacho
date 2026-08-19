@@ -11,9 +11,10 @@ import {
   type QueuedJob,
 } from "@/lib/generations/providers/fal";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
+import { isRawProviderError } from "@/lib/generations/user-facing-error";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { getDialogueCreditWeight } from "@/lib/generations/providers/video-models";
-import { autoReportFailedGeneration } from "@/lib/generations/reports";
+
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
 import { notifyUser } from "@/lib/push/send";
 
@@ -632,6 +633,55 @@ async function finish(
     refunded = await refundGenerationCosts(generationId);
   }
 
+  // Auto-file provider/our-fault failures into the admin Reports queue with
+  // the SERVICE client. The session-scoped autoReportFailedGeneration (used
+  // by the pre-render crash paths in actions.ts, where a session always
+  // exists) silently no-ops when finish() is driven by the fal WEBHOOK or
+  // the reaper — no session, auth.getUser() null, early return — which is
+  // how the 2026-08-19 Seedance 422 failed with an empty admin Reports page
+  // while the raw JSON sat in the customer-visible pipeline log. Raw
+  // provider errors no longer render in user-facing surfaces at all
+  // (history shows everyone the friendly line), so this row IS the place a
+  // failure gets seen: /admin/reports renders source "auto" rows with its
+  // "Auto-detected" badge. Deliberate stops/abandons are not site problems
+  // and are not reported. Best-effort: a report insert must never break
+  // finishing a paid render. One row per generation — retried finishes and
+  // multi-driver races skip the insert.
+  if (
+    outcome.status === "failed" &&
+    outcome.fault !== "user_cancelled" &&
+    outcome.fault !== "abandoned"
+  ) {
+    try {
+      const lastAttempt = outcome.attempts[outcome.attempts.length - 1];
+      const failureDetail =
+        [...(lastAttempt?.steps ?? [])].reverse().find((s) => isRawProviderError(s.detail))
+          ?.detail ??
+        lastAttempt?.steps[lastAttempt.steps.length - 1]?.detail ??
+        "No step detail recorded.";
+      const { data: existing } = await admin
+        .from("generation_reports")
+        .select("id")
+        .eq("generation_id", generationId)
+        .limit(1)
+        .maybeSingle();
+      if (!existing) {
+        const { error: reportError } = await admin.from("generation_reports").insert({
+          generation_id: generationId,
+          user_id: userId,
+          reason: "technical_error",
+          details: `[${outcome.fault ?? "unknown fault"}] ${failureDetail}`.slice(0, 1000),
+          source: "auto",
+        });
+        if (reportError) {
+          console.error("Couldn't auto-file failure report:", reportError.message);
+        }
+      }
+    } catch (err) {
+      console.error("Couldn't auto-file failure report:", err);
+    }
+  }
+
   // Tell the phone. This is the pay-off from the webhook work: a render now
   // completes server-side whether or not anyone is watching, so the person
   // can be told rather than having to keep checking. Deep-linked to the
@@ -682,16 +732,12 @@ async function finish(
     }
   }
 
-  // Failures used to auto-file a report from runGeneration. Now that a queued
-  // render finishes here instead of there, this has to happen here too —
-  // otherwise moving to fire-and-poll would have silently switched off failure
-  // reporting for exactly the long jobs that fail most often.
-  //
-  // Reaped jobs are excluded: those are abandoned-and-refunded housekeeping,
-  // not a product fault, and filing reports for them would bury the real ones.
-  if (outcome.status === "failed" && outcome.fault !== "abandoned" && outcome.fault !== "user_cancelled") {
-    await autoReportFailedGeneration(generationId, userId, outcome.attempts);
-  }
+  // NOTE: the session-scoped autoReportFailedGeneration call that used to
+  // live here was replaced by the service-client auto-report further up.
+  // The session version silently no-ops for webhook- and reaper-driven
+  // finishes (no session → auth.getUser() null → early return), which is
+  // precisely when most queued failures land — the actions.ts pre-render
+  // crash paths still use it, since a session always exists there.
 }
 
 function appendStep(attempts: AttemptLog[], detail: string, step: AttemptLog["steps"][number]["step"]) {

@@ -111,7 +111,7 @@ async function reframeImage(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`fal.ai (reframe) error (${res.status}): ${text.slice(0, 300)}`);
+    throw new Error(`fal.ai (reframe) error (${res.status}): ${text.slice(0, 800)}`);
   }
 
   const data = (await res.json()) as { images?: { url?: string }[] };
@@ -483,7 +483,7 @@ async function submitToQueue(
 
   if (!submitRes.ok) {
     const text = await submitRes.text();
-    throw new Error(`fal.ai (${label}) error (${submitRes.status}): ${text.slice(0, 300)}`);
+    throw new Error(`fal.ai (${label}) error (${submitRes.status}): ${text.slice(0, 800)}`);
   }
 
   const submitted = (await submitRes.json()) as QueueSubmitResponse;
@@ -550,7 +550,7 @@ export async function checkQueuedJob(job: QueuedJob): Promise<QueuedJobState> {
         error: `fal.ai (${job.label}) lost track of this job (${res.status}): ${text.slice(0, 200)}`,
       };
     }
-    throw new Error(`fal.ai (${job.label}) status check error (${res.status}): ${text.slice(0, 300)}`);
+    throw new Error(`fal.ai (${job.label}) status check error (${res.status}): ${text.slice(0, 800)}`);
   }
 
   const data = (await res.json()) as QueueStatusResponse;
@@ -570,7 +570,7 @@ async function fetchQueuedResult(job: QueuedJob): Promise<unknown> {
   if (!res.ok) {
     const errorMessage = (data as { error?: string } | null)?.error;
     throw new Error(
-      `fal.ai (${job.label}) error (${res.status}): ${errorMessage ?? JSON.stringify(data).slice(0, 300)}`,
+      `fal.ai (${job.label}) error (${res.status}): ${errorMessage ?? JSON.stringify(data).slice(0, 800)}`,
     );
   }
   return data;
@@ -680,7 +680,7 @@ export async function generateSpeech(text: string, elevenLabsVoiceId: string): P
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`fal.ai (ElevenLabs TTS) error (${res.status}): ${errText.slice(0, 300)}`);
+    throw new Error(`fal.ai (ElevenLabs TTS) error (${res.status}): ${errText.slice(0, 800)}`);
   }
 
   const data = await res.json();
@@ -716,7 +716,7 @@ export async function lipSyncVideo(videoUrl: string, audioUrl: string): Promise<
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`fal.ai (Sync Lipsync) error (${res.status}): ${errText.slice(0, 300)}`);
+    throw new Error(`fal.ai (Sync Lipsync) error (${res.status}): ${errText.slice(0, 800)}`);
   }
 
   const data = await res.json();
