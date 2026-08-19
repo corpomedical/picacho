@@ -104,7 +104,19 @@ async function reframeImage(
         "content-type": "application/json",
         authorization: `Key ${apiKey}`,
       },
-      body: JSON.stringify({ image_url: imageUrl, aspect_ratio: aspectRatio }),
+      body: JSON.stringify({
+        image_url: imageUrl,
+        aspect_ratio: aspectRatio,
+        // The endpoint's safety filter defaults to "2" — strict enough that
+        // it was rejecting perfectly legitimate photoreal character photos
+        // (the most likely trigger of the 2026-08-19 pillarbox incident:
+        // reframe rejects the face, the silent catch at the call sites falls
+        // back to the un-reframed photo, and the video comes out in that
+        // photo's native shape). safety_tolerance is a real parameter on
+        // this endpoint (confirmed against fal.ai's docs, 2026-08-19);
+        // "5" is the most permissive value short of the maximum.
+        safety_tolerance: "5",
+      }),
     },
     60_000,
   );
@@ -120,8 +132,9 @@ async function reframeImage(
   return url;
 }
 
-// Confirmed directly against fal.ai's docs, 2026-08-07: every Kling
-// endpoint used here (1.6 text-to-video/elements, storyboard, O3) wants
+// Confirmed directly against fal.ai's docs, 2026-08-07 (O3 Pro reference
+// re-confirmed 2026-08-19): every Kling endpoint used here (1.6
+// text-to-video/elements, storyboard, O3, O3 Pro reference) wants
 // duration as a bare numeric string ("5", "10"). Veo 3.1 is the one
 // exception — its schema wants an "s" suffix ("4s", "6s", "8s"); sending it
 // the bare number is a documented common mistake (fal.ai's own docs call
@@ -243,8 +256,10 @@ async function buildVideoRequest(
   // single-photo anchor now shares this same endpoint instead of a
   // different one, just with a shorter image list.
   // The single-photo character anchor promotes into the reference list for
-  // BOTH models whose endpoint takes identity references: kling (elements)
-  // and seedance (reference-to-video). Seedance was missing from this
+  // every model whose endpoint takes identity references: kling (elements),
+  // seedance (reference-to-video), and kling-o3-pro (O3 Pro
+  // reference-to-video, whose `elements` are the same idea under a different
+  // name). Seedance was missing from this
   // condition from the day it shipped (2026-08-11) until 2026-08-19: the
   // composer only ever sets characterAnchorImageUrl on the single-character
   // path, so every "character reference" Seedance render went out with NO
@@ -254,7 +269,8 @@ async function buildVideoRequest(
   const anchorImages =
     referenceImageUrls.length > 0
       ? referenceImageUrls.slice(0, 4)
-      : options.characterAnchorImageUrl && (modelId === "kling" || modelId === "seedance")
+      : options.characterAnchorImageUrl &&
+          (modelId === "kling" || modelId === "seedance" || modelId === "kling-o3-pro")
         ? [options.characterAnchorImageUrl]
         : [];
 
@@ -282,6 +298,56 @@ async function buildVideoRequest(
       generate_audio: options.generateNativeAudio ?? true,
     };
     label = "Seedance 2.5";
+  } else if (modelId === "kling-o3-pro") {
+    // Kling O3 Pro reference-to-video — Kling's own identity-reference
+    // endpoint, same job as Seedance above: the photos anchor WHO is in the
+    // clip, not what frame one looks like.
+    //
+    // Schema confirmed against fal's own docs, 2026-08-19
+    // (fal.ai/models/fal-ai/kling-video/o3/pro/reference-to-video/api):
+    // `elements` is an array of { frontal_image_url, reference_image_urls? },
+    // cited in the prompt as @Element1/@Element2; an optional flat
+    // `image_urls` (non-identity scene references) can ride along, but
+    // elements + image_urls are capped at 4 images COMBINED — one element
+    // with up to 3 extra reference shots stays inside that cap, and
+    // anchorImages is already sliced to 4 above. The endpoint also takes an
+    // optional start_image_url, deliberately NOT sent: a first-frame lock is
+    // exactly what this model exists to escape. Unlike O3 standard it has a
+    // real aspect_ratio parameter (16:9/9:16/1:1), so no reframe workaround
+    // here. Output is { video: { url } }, same as every other Kling endpoint.
+    if (anchorImages.length === 0) {
+      // actions.ts already rejects a reference-less request before spending
+      // any credits (requiresReferenceImage) — this is just a backstop, same
+      // as O3 standard below.
+      throw new Error(
+        "Kling O3 Pro needs a reference photo — add one to this character, attach a photo, or switch to Kling 1.6.",
+      );
+    }
+    endpoint = "fal-ai/kling-video/o3/pro/reference-to-video";
+    body = {
+      // The @Element1 citation has to appear in the PROMPT for the model to
+      // bind to it — same contract as Seedance's @Image1 above.
+      prompt: `${prompt}\n\nThe person in this video is @Element1 — match their face, hair, and features exactly, but do not copy the pose or framing of that photo.`,
+      elements: [
+        {
+          frontal_image_url: anchorImages[0],
+          ...(anchorImages.length > 1 ? { reference_image_urls: anchorImages.slice(1) } : {}),
+        },
+      ],
+      aspect_ratio: resolvedAspectRatio,
+      duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      // Same default-on native audio as O3 standard (see the 2026-08-07
+      // incident note on generateNativeAudio above) — the caller turns it
+      // off when the ElevenLabs/Sync Labs dialogue pipeline is going to
+      // re-render this video's audio anyway.
+      generate_audio: options.generateNativeAudio ?? true,
+      // Same anti-frozen-frame terms as the elements/2.5 branches — identity
+      // references make the frozen open less likely, not impossible.
+      negative_prompt:
+        "blur, distort, and low quality, static posed portrait, frozen first frame, " +
+        "motionless opening shot, subject standing still facing camera",
+    };
+    label = "Kling O3 Pro";
   } else if (modelId === "kling-2.5") {
     // Kling 2.5 Turbo Pro. First-frame image-to-video, so image_url is
     // required and the clip does open on that photo — this model is the
@@ -299,8 +365,15 @@ async function buildVideoRequest(
     let startImage = options.characterAnchorImageUrl ?? anchorImages[0];
     try {
       startImage = await reframeImage(startImage, resolvedAspectRatio, apiKey);
-    } catch {
-      // Original photo it is.
+    } catch (err) {
+      // Original photo it is — but say so. This fallback was completely
+      // silent until 2026-08-19, which is what made the pillarbox incident
+      // (reframe's safety filter rejecting a photoreal face, the video then
+      // inheriting the photo's native shape) undiagnosable from the logs.
+      console.warn(
+        `fal.ai reframe failed for Kling 2.5 Turbo Pro — falling back to the original reference photo, so the video may come out in its shape instead of ${resolvedAspectRatio}:`,
+        err,
+      );
     }
     endpoint = "fal-ai/kling-video/v2.5-turbo/pro/image-to-video";
     body = {
@@ -331,8 +404,14 @@ async function buildVideoRequest(
     let o3ImageUrl = options.characterAnchorImageUrl;
     try {
       o3ImageUrl = await reframeImage(options.characterAnchorImageUrl, resolvedAspectRatio, apiKey);
-    } catch {
-      // Original photo it is — same behavior as before this fix existed.
+    } catch (err) {
+      // Original photo it is — same behavior as before this fix existed, but
+      // no longer silent (see the identical note on the 2.5 call site above:
+      // the 2026-08-19 pillarbox incident hid behind exactly this catch).
+      console.warn(
+        `fal.ai reframe failed for Kling O3 — falling back to the original reference photo, so the video may come out in its shape instead of ${resolvedAspectRatio}:`,
+        err,
+      );
     }
     endpoint = KLING_O3_STANDARD_ENDPOINT;
     body = {
@@ -340,6 +419,14 @@ async function buildVideoRequest(
       image_url: o3ImageUrl,
       generate_audio: options.generateNativeAudio ?? true,
       duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      // Same anti-frozen-frame terms as the elements/2.5 branches. This
+      // endpoint documents negative_prompt now (confirmed against fal.ai's
+      // docs, 2026-08-19 — it wasn't in the parameter table when this branch
+      // was written), and a clip whose frame one IS the posed reference
+      // photo is exactly the case those terms exist for.
+      negative_prompt:
+        "blur, distort, and low quality, static posed portrait, frozen first frame, " +
+        "motionless opening shot, subject standing still facing camera",
       ...(options.endImageUrl ? { end_image_url: options.endImageUrl } : {}),
     };
     label = "Kling O3";
@@ -410,6 +497,15 @@ async function buildVideoRequest(
       prompt,
       aspect_ratio: resolvedAspectRatio,
       duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      // Veo 3.1 has a real generate_audio parameter (confirmed against
+      // fal.ai's docs, 2026-08-19) and bills by it: $0.40/sec with audio,
+      // $0.20/sec without. This branch used to omit it entirely, so every
+      // Veo render paid for audio — including dialogue runs, where the
+      // ElevenLabs/Sync Labs pipeline replaces the audio track anyway (the
+      // caller sets generateNativeAudio false for exactly that case, see
+      // pipeline.ts). Kling 1.6 text-to-video, the only other model that can
+      // land in this branch, has no such parameter, so it's Veo-only.
+      ...(modelId === "veo" ? { generate_audio: options.generateNativeAudio ?? true } : {}),
     };
     label = model.name;
   }

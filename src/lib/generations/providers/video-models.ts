@@ -50,8 +50,13 @@ export const VIDEO_MODELS = [
   },
   {
     id: "kling-o3",
-    // fal.ai's real per-second price, for pricingAudit() below.
-    costPerSecondUsd: 0.08,
+    // fal.ai's real per-second price, for pricingAudit() below. $0.112/s is
+    // the WITH-audio price — the one that actually applies, since fal.ts
+    // requests generate_audio by default (see the comment below). This held
+    // the stale $0.08 no-audio figure until 2026-08-19, silently weakening
+    // the audit for the price that was really being paid; the 2/4/6 weights
+    // were always computed against $0.112 and pass exactly.
+    costPerSecondUsd: 0.112,
     // Kling's newest generation (2026-08-07: confirmed via fal.ai's model
     // catalog that v1.6 was no longer their latest — this is). Standard
     // tier (not Pro): same "start frame + prompt" shape we already send for
@@ -181,6 +186,43 @@ export const VIDEO_MODELS = [
       { seconds: 15, creditWeight: 26 },
       { seconds: 20, creditWeight: 34 },
       { seconds: 30, creditWeight: 51 },
+    ] satisfies VideoDurationOption[],
+  },
+  {
+    id: "kling-o3-pro",
+    // fal.ai's real per-second price, for pricingAudit() below. $0.14/sec
+    // WITH audio — the price that actually applies, since fal.ts requests
+    // generate_audio true by default (same reasoning as Kling O3 above) —
+    // $0.112/sec without.
+    costPerSecondUsd: 0.14,
+    name: "Kling O3 Pro (reference)",
+    falEndpoint: "fal-ai/kling-video/o3/pro/reference-to-video",
+    recommended: false,
+    // Kling's own answer to Seedance's identity references (confirmed
+    // against fal.ai's docs, 2026-08-19:
+    // fal.ai/models/fal-ai/kling-video/o3/pro/reference-to-video/api).
+    // The character's photos go in as `elements` — IDENTITY references cited
+    // in the prompt as @Element1, not the opening frame — so the clip
+    // doesn't start frozen in the photographed pose the way the first-frame
+    // endpoints (2.5 Turbo Pro, O3 standard) do. The endpoint also takes an
+    // optional start_image_url, deliberately NOT used here: a first-frame
+    // lock is exactly what this model exists to escape. Unlike O3 standard
+    // it has a real aspect_ratio parameter (16:9/9:16/1:1), so no reframe
+    // workaround is needed. See the branch in fal.ts for the full schema.
+    description:
+      "Kling's identity-reference model — anchors to the photo without copying its pose. About $0.14 per second. Needs a reference photo.",
+    // Confirmed against fal.ai's docs, 2026-08-19: duration is an integer
+    // string, 3-15s, default "5". Same 5/10/15 ladder as O3 standard rather
+    // than all 13 values, for the same reason (see above).
+    //
+    // Weights are cost / $0.28, rounded up, same as Seedance: $0.14/sec
+    // gives $0.70 for 5s = 2.5 → 3 credits, $1.40 for 10s = 5 exactly, and
+    // $2.10 for 15s = 7.5 → 8 credits. Dialogue's surcharge stacks on top
+    // via getDialogueCreditWeight, same as every other model.
+    durations: [
+      { seconds: 5, creditWeight: 3, default: true },
+      { seconds: 10, creditWeight: 5 },
+      { seconds: 15, creditWeight: 8 },
     ] satisfies VideoDurationOption[],
   },
 ] as const;
