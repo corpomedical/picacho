@@ -336,6 +336,31 @@ export default async function Home({
           </div>
         </div>
 
+        {/* Full-width motion band (operator-placed, 2026-08-19): one real
+            Picacho render of the same hero character, edge to edge, directly
+            under the still grid — the stills claim identity, this shows it
+            MOVING. public/hero-band.mp4 is a 1280x720 (~8MB) transcode of
+            the operator's 1080p original; muted+playsInline are required for
+            mobile autoplay, preload=metadata keeps it off the critical path,
+            and max-h keeps ultrawide screens from turning it into a wall.
+            The chip reuses the showcase badge — same claim, same words. */}
+        <section className="relative bg-slate-900">
+          <video
+            src="/hero-band.mp4"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="metadata"
+            aria-hidden
+            className="block max-h-[70vh] w-full object-cover"
+            style={{ aspectRatio: "16 / 9" }}
+          />
+          <span className="absolute bottom-4 left-4 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-medium text-white shadow-sm sm:bottom-6 sm:left-6">
+            {m.showcaseBadge}
+          </span>
+        </section>
+
         {/* Engine rail — the models Picacho actually runs, named for the
             first time on the marketing site. Sits between the hero's proof
             and the numbers because it answers the question the photos
