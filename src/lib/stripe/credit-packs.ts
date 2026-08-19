@@ -52,15 +52,18 @@ export function getCreditPack(id: string): CreditPack | undefined {
 // live secret key in the environment — the same caveat as PLAN_PRICE_IDS in
 // stripe/plans.ts.
 export const CREDIT_PACK_PRICE_IDS: Record<string, string | null> = {
-  small: null,
-  medium: null,
-  large: null,
+  // Minted by setup-credit-packs.js on 2026-08-19 at the repriced
+  // $15/$42/$99 amounts (products reused, prices new — Stripe price
+  // amounts are immutable).
+  small: "price_1U5zclApOHKJpXjx56fAsnOs",
+  medium: "price_1U5zcmApOHKJpXjxXE5RhUtf",
+  large: "price_1U5zcnApOHKJpXjxLOAx5NC5",
 };
 
 export const CREDIT_PACK_PRICE_IDS_EUR: Record<string, string | null> = {
-  small: null,
-  medium: null,
-  large: null,
+  small: "price_1U5zclApOHKJpXjxaVIpAYqJ",
+  medium: "price_1U5zcmApOHKJpXjxKCEe1zIX",
+  large: "price_1U5zcnApOHKJpXjxxKeU6Ope",
 };
 
 // Price ids retired by the 2026-08-19 repricing, kept ONLY so the webhook
