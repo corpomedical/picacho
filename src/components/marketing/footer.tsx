@@ -18,27 +18,48 @@ export async function MarketingFooter() {
         <p>
           © {new Date().getFullYear()} Picacho — {t.marketing.footer.rights}
         </p>
-        <div className="flex flex-wrap items-center justify-center gap-6">
-          {!native && (
-            <Link href="/pricing" className="hover:text-neutral-900">
-              {t.marketing.nav.pricing}
+        <div className="flex flex-col items-center gap-3 sm:items-end">
+          <div className="flex flex-wrap items-center justify-center gap-6 sm:justify-end">
+            {!native && (
+              <Link href="/pricing" className="hover:text-neutral-900">
+                {t.marketing.nav.pricing}
+              </Link>
+            )}
+            {/* Public showcase gallery — safe inside the native app too:
+                it's proof-of-output, not a purchase entry point. */}
+            <Link href="/gallery" className="hover:text-neutral-900">
+              {t.marketing.footer.madeWith}
             </Link>
+            <Link href="/login" className="hover:text-neutral-900">
+              {t.marketing.nav.login}
+            </Link>
+            <Link href="/signup" className="hover:text-neutral-900">
+              {t.marketing.nav.signup}
+            </Link>
+            <Link href="/privacy" className="hover:text-neutral-900">
+              {t.marketing.footer.privacy}
+            </Link>
+            <Link href="/terms" className="hover:text-neutral-900">
+              {t.marketing.footer.terms}
+            </Link>
+            <Link href="/content-policy" className="hover:text-neutral-900">
+              {t.marketing.footer.contentPolicy}
+            </Link>
+          </div>
+          {/* Comparison pages — hidden in the native app like the Pricing
+              link above, because they are wall-to-wall prices (Apple 3.1.1 /
+              Google Play). Link labels are brand names, kept literal. */}
+          {!native && (
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-neutral-400 sm:justify-end">
+              <span>{t.marketing.footer.compare}:</span>
+              <Link href="/compare/heygen" className="hover:text-neutral-700">
+                Picacho vs HeyGen
+              </Link>
+              <Link href="/compare/hedra" className="hover:text-neutral-700">
+                Picacho vs Hedra
+              </Link>
+            </div>
           )}
-          <Link href="/login" className="hover:text-neutral-900">
-            {t.marketing.nav.login}
-          </Link>
-          <Link href="/signup" className="hover:text-neutral-900">
-            {t.marketing.nav.signup}
-          </Link>
-          <Link href="/privacy" className="hover:text-neutral-900">
-            {t.marketing.footer.privacy}
-          </Link>
-          <Link href="/terms" className="hover:text-neutral-900">
-            {t.marketing.footer.terms}
-          </Link>
-          <Link href="/content-policy" className="hover:text-neutral-900">
-            {t.marketing.footer.contentPolicy}
-          </Link>
         </div>
       </div>
     </footer>

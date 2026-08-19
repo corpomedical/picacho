@@ -303,10 +303,10 @@ export default async function Home({
                 </Link>
               )}
             </div>
-            {/* The trial exists in the product (5 free generations, no card)
-                but was invisible on the marketing site — the single cheapest
-                conversion lever there is. One quiet line, right where the
-                decision happens. */}
+            {/* The trial exists in the product (a free generation every day,
+                no card) but was invisible on the marketing site — the single
+                cheapest conversion lever there is. One quiet line, right
+                where the decision happens. */}
             <p className="mt-4 text-sm text-slate-500">{m.heroFreeTrialNote}</p>
           </div>
 

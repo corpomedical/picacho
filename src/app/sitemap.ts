@@ -17,6 +17,11 @@ const PUBLIC_ROUTES = [
   "/privacy",
   "/terms",
   "/content-policy",
+  // Public showcase gallery + the comparison landing pages — marketing
+  // pages that exist precisely to rank, so they belong here.
+  "/gallery",
+  "/compare/heygen",
+  "/compare/hedra",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

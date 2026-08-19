@@ -38,23 +38,31 @@ export const PLAN_LABELS = {
 
 export type PlanId = keyof typeof PLAN_LIMITS;
 
-// Free tier: a one-time trial, not a monthly allowance.
+// Free tier: ONE free generation per day (operator-approved 2026-08-19),
+// replacing the old "5 generations, once, lifetime" trial.
 //
-// Five rather than three because the product's whole claim is CONSISTENCY
-// ACROSS generations — that can't be seen in one image. Someone needs the
-// same character three or four times to believe it, and the first attempt is
-// often not what they pictured while they're still learning to describe what
-// they want. Three only works if every attempt lands; five leaves room for
-// one miss and still demonstrates the thing being sold.
+// Daily rather than a lifetime pool because the product's whole claim is
+// CONSISTENCY ACROSS generations — and the lifetime five let someone burn
+// all five in ten minutes, half of them while still learning to describe
+// what they want, and never come back. One a day turns the same budget into
+// a reason to return: by the third visit they've watched the same character
+// hold up across days, which is the thing being sold.
 //
-// Costs roughly EUR1.50 per signup at ~EUR0.30/credit. At a 5% conversion to
-// Starter that pays back in about two months and compounds after that.
+// Use-it-or-lose-it, no rollover. The slot is a timestamp
+// (profiles.free_generation_last_at, spent atomically via
+// spend_daily_free_generation — see supabase/pending-2026-08-19/
+// daily-trial.sql), not a balance, so there is nothing to hoard and a
+// returning burst can never cost more than one render.
 //
-// Note this is a count of GENERATIONS, not credits, and the free tier is
-// restricted to the cheapest model (see FREE_TIER_VIDEO_MODEL_ID) — Veo costs
-// 12 credits for 8 seconds, so a free allowance denominated in credits with
-// free model choice would let a single signup cost EUR3+.
-export const FREE_GENERATION_LIMIT = 5;
+// Worst-case cost: ~$0.29 per day per ACTIVE free user (the pinned model's
+// default clip is 1 credit at the ~$0.28 cost basis) — and only on days
+// they actually generate, so the spend is bounded and scales with
+// engagement rather than with signups.
+//
+// The trial is counted in GENERATIONS, not credits, and is restricted to
+// the cheapest model (below) — Veo costs 12 credits for 8 seconds, so a
+// free allowance denominated in credits with free model choice would make
+// each free day cost 12x the budget.
 
 // The only video model a free-tier account may use. Also the fastest, so a
 // trial user sees a result sooner — which matters more at trial than quality
@@ -139,9 +147,11 @@ export const PLAN_PROMPT_ASSIST_LIMITS = {
 // What a trial account gets, in total rather than per period (a free account
 // has no billing anchor to reset against).
 //
-// Ten, because the free tier's whole job is to produce five generations good
+// Ten, because the free tier's whole job is to produce free generations good
 // enough to convert — and a weak first prompt is the most common way that
-// fails. Two assists per free generation is enough to learn the habit.
+// fails. Ten covers the first several days of the daily trial (2026-08-19)
+// with an assist or two per generation — enough to learn the habit.
+// Deliberately unchanged by the daily-trial switch: still a lifetime total.
 export const FREE_PROMPT_ASSIST_LIMIT = 10;
 
 export const PLAN_REFERENCE_IMAGE_LIMITS = {

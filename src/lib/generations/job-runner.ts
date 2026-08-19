@@ -288,11 +288,11 @@ const REFUNDS: Record<FailureFault, boolean> = {
 // Gives back everything a failed generation consumed, across all three
 // credit sources. The monthly allowance refunds itself the moment
 // credits_used hits 0 (getMonthlyUsage sums that column), but purchased
-// top-up credits and free-trial generations are decremented on the
-// *profile* at insert time, so they need an explicit refund — without this,
-// a free-trial user whose generation failed permanently lost one of their 5
-// trial generations, which is the exact opposite of the published
-// "failed generations never consume your allowance" promise.
+// top-up credits and the daily free generation are spent on the *profile*
+// at insert time, so they need an explicit refund — without this, a
+// free-trial user whose generation failed would keep the day's slot marked
+// spent, which is the exact opposite of the published "failed generations
+// never consume your allowance" promise.
 //
 // Idempotent under overlapping polls: each profile-side refund is gated on
 // an optimistic conditional update that zeroes the generation row's
@@ -411,23 +411,34 @@ export async function refundGenerationCosts(generationId: string): Promise<boole
     }
   }
 
-  // The lifetime trial counter is deliberately NOT given back.
+  // The daily free slot IS re-opened for refundable faults (2026-08-19, with
+  // the one-a-day trial). Under the old lifetime five this was deliberately
+  // withheld — refunding every failure quietly turned "5 free generations"
+  // into unlimited free attempts, because this refund was the only bound.
+  // The daily mechanic is bounded regardless: the automatic_refunds kill
+  // switch and the refundedFailureDailyCap above both gate this path, and
+  // refund_daily_free_generation can only ever re-open TODAY's single slot
+  // (it clears the timestamp — see daily-trial.sql for why NULL is always
+  // safe), so the worst case is a capped handful of extra attempts on a
+  // genuinely broken day, never an unbounded budget. Withholding it now
+  // would mean one provider failure eats the person's entire allowance for
+  // the day — the opposite of the published "failed generations never
+  // consume your allowance" promise.
   //
-  // It used to be, and that quietly turned "5 free generations" into
-  // "unlimited free attempts": every failure returned the trial credit, so a
-  // free account could sit at free_generations_used = 0 forever while
-  // burning real provider spend on our side. A trial is a budget for
-  // ATTEMPTS, not a guarantee of five good pictures — that is what makes it
-  // bounded, and bounded is the whole point of a trial.
-  //
-  // The row flag is still cleared so the row tells the truth about what it
-  // consumed; only the profile counter stays where it is.
+  // Same idempotency shape as the purchased-credit refund above: whichever
+  // caller wins the row-flag zeroing does the profile-side refund; the loser
+  // matches zero rows and does nothing, so overlapping polls can't re-open
+  // the slot twice (harmless anyway — NULL is idempotent — but consistent).
   if (row.free_generation_used) {
-    await admin
+    const { data: claimedFree } = await admin
       .from("generations")
       .update({ free_generation_used: false })
       .eq("id", generationId)
-      .eq("free_generation_used", true);
+      .eq("free_generation_used", true)
+      .select("id");
+    if (claimedFree?.length) {
+      await admin.rpc("refund_daily_free_generation", { p_user_id: row.user_id });
+    }
   }
 
   return true;
@@ -623,8 +634,8 @@ async function finish(
   // circuit breaker for a transition that didn't happen.
   if (!transitioned?.length) return;
 
-  // Refund the other two credit sources (purchased top-ups, free-trial
-  // generations) for refundable faults — the update above only released the
+  // Refund the other two credit sources (purchased top-ups, the daily free
+  // generation) for refundable faults — the update above only released the
   // monthly allowance via credits_used. The boolean matters: with the
   // automatic_refunds kill switch OFF (or the daily cap reached) nothing is
   // actually given back, and the notification below must not claim otherwise.

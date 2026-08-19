@@ -51,6 +51,11 @@ const en = {
       privacy: "Privacy Policy",
       terms: "Terms of Service",
       contentPolicy: "Content Policy",
+      // Label for the footer's comparison-pages group (/compare/*). The
+      // link texts themselves ("Picacho vs HeyGen") are brand names and stay
+      // literal in the component, like the engine names on the homepage.
+      compare: "Compare",
+      madeWith: "Made with Picacho",
     },
     home: {
       heroAccent: "frame.",
@@ -113,7 +118,7 @@ const en = {
       diffRulesTitle: "Brand rules, enforced",
       diffRulesDetail:
         "Define what your character must always — or must never — appear with, and every output is checked against those rules before you see it. Your mascot stays on-brand everywhere it shows up.",
-      heroFreeTrialNote: "Start with 5 free generations — no credit card required.",
+      heroFreeTrialNote: "A free generation every day — no credit card required.",
       showcaseEyebrow: "Real output",
       showcaseTitle: "This is an actual Picacho result",
       showcaseSubtitle: "Drafted, reviewed, generated, and validated automatically — no manual editing.",
@@ -157,7 +162,7 @@ const en = {
     pricing: {
       title: "Simple, credit-based pricing",
       subtitle:
-        "Every plan includes the full pipeline — draft, review, generate, validate, and automatic retries. A standard video or image costs one credit; premium models cost a few. Start with 5 free generations, no credit card required.",
+        "Every plan includes the full pipeline — draft, review, generate, validate, and automatic retries. A standard video or image costs one credit; premium models cost a few. Every account gets a free generation every day, no credit card required.",
       overageNote:
         "Credits reset every billing period. Need more room? Upgrade to a higher plan anytime, or top up with a one-time credit pack.",
       getStarted: "Get started",
@@ -183,7 +188,7 @@ const en = {
         },
         {
           q: "Is there a free trial?",
-          a: "Yes — every new account gets 5 free generations on our fastest model, no credit card required. That's enough to create a character and see it stay consistent across several outputs.",
+          a: "Yes — every account gets one free generation a day on our fastest model, no credit card required. It resets daily and doesn't stack up, so over a few days you'll see the same character stay consistent across outputs. Pick a plan whenever you want more than one a day.",
         },
         {
           q: "Can I get a refund?",
@@ -194,6 +199,108 @@ const en = {
           a: "Yes. Cancelling stops the next renewal; you keep full access and your remaining generations until the end of the period you've paid for.",
         },
       ],
+    },
+    // Comparison pages (/compare/heygen, /compare/hedra — see
+    // app/compare/compare-shell.tsx). Comparative advertising, so the rules
+    // are strict: every competitor claim below was verified from that
+    // competitor's own public pricing page in August 2026 and the pages link
+    // the source; where the source says nothing we say "not advertised",
+    // never a guess. Competitor names, plan names, and prices stay literal
+    // in every locale — only the prose is translated. When competitor
+    // numbers change, update ALL four locales together and refresh the
+    // "August 2026" date everywhere it appears in this block.
+    compare: {
+      eyebrow: "An honest comparison",
+      heroQuestion: "which fits your work?",
+      factCheck: "Every claim about {name} below was verified from their own public pricing page in August 2026:",
+      tableTitle: "Side by side",
+      colCriterion: "What to compare",
+      rowIdentity: "What the character is",
+      rowFormat: "Output focus",
+      rowScoring: "Identity verification",
+      rowFailures: "When a render fails",
+      rowEntry: "Price of entry",
+      rowCost: "Effective cost anchor",
+      rowWatermark: "Watermark policy",
+      rowApi: "API access",
+      // Shared "we don't know" cells — used whenever the competitor's pricing
+      // page doesn't state the row's fact. Deliberately about their PAGE, not
+      // their product: we verified an absence of advertising, nothing more.
+      notAdvertised: "Not advertised on their pricing page (as of August 2026).",
+      notCompared: "Not verified for this comparison — see their site for current details.",
+      // Picacho's column, shared by every competitor page. Each cell must
+      // stay in lockstep with what lib/pricing.ts, lib/plans.ts, and the
+      // /pricing page actually promise — this table is advertising too.
+      picIdentity: "A persistent identity anchored to your reference photo — the same character held across scenes, formats, and models.",
+      picFormat: "Scene-based character images and video: action shots, multi-angle takes, multi-character scenes, lip-synced dialogue.",
+      picScoring: "Every output is compared against the identity photo by a vision model, and the match score is printed under the result.",
+      picFailures: "Failed generations never use your credits — attempts are validated and retried before a result reaches you.",
+      picEntry: "A free generation every day, no card required. Paid plans from $9/mo (Basic, 12 credits) to $499/mo (Elite, 1,000 credits) — EU visitors are billed the same numbers in euros.",
+      picCost: "A standard 5-second clip is 1 credit — about $0.50–0.75 depending on plan. Premium models cost more; the exact cost is always shown before you confirm.",
+      picWatermark: "No watermarks on any plan, free trial included.",
+      picApi: "Included on Elite ($499/mo) — generate from your own software.",
+      chooseThemTitle: "Choose {name} if…",
+      choosePicachoTitle: "Choose Picacho if…",
+      creditsNote: "“Credits” are not comparable units across products — each platform defines its own. Compare the cost of a finished clip instead.",
+      proofTitle: "The difference, in one chip",
+      proofBody: "Most tools ask you to trust that the face carried over. Picacho checks — a vision model compares every output against your character's identity photo and prints the score, before your audience ever sees it.",
+      ctaTitle: "Try it on your own character",
+      ctaSubtitle: "Set up a character once and watch it hold the same identity across scenes — a free generation every day, no credit card required.",
+      ctaSignup: "Get started",
+      ctaPricing: "See pricing",
+      sourcesTitle: "Sources & fairness notes",
+      sourceLine: "{name} plan names, prices, and features verified from their public pricing page,",
+      asOfNote: "as of August 2026",
+      footnoteChange: "Prices and plans change. Always check the source above for current numbers — and if anything here is out of date, tell us and we'll correct it.",
+      footnoteNotAdvertised: "“Not advertised” means we could not find the feature stated on that page at the time of checking — the product may still offer something similar.",
+      trademarkNote: "{name} is a trademark of its respective owner. Picacho is an independent product and is not affiliated with, sponsored by, or endorsed by {name}.",
+      heygen: {
+        heroSubtitle: "HeyGen is a mature avatar platform: photo avatars and digital twins that present your script to camera, with lipsync in 175 languages. Picacho is built for something different — characters that act across cinematic scenes, with every output scored against the identity photo. Here's the honest breakdown.",
+        cellIdentity: "An avatar presenter — a photo avatar or digital twin that delivers your script to camera.",
+        cellFormat: "Presenter-style talking video, with lip-synced speech in 175 languages.",
+        cellEntry: "Free tier: 3 videos per month. Paid: Creator $29/mo (600 credits), Pro $49/mo (1,000), Business $149/mo (1,500, +$20 per extra seat).",
+        cellCost: "About $0.97 per video minute on Creator with Avatar IV — clear, minute-based economics.",
+        cellWatermark: "Watermark removed from the Creator plan ($29/mo) and up.",
+        chooseThem: [
+          "You need a presenter: a digital twin of yourself, or a stock avatar, reading a script to camera.",
+          "You publish in many languages — 175-language lipsync on a mature, widely deployed pipeline.",
+          "You think in video minutes and want team features like extra Business seats.",
+        ],
+        choosePicacho: [
+          "Your character has to act, not present — scenes, motion, and dialogue beyond a talking head.",
+          "You want the identity verified, not assumed: every output scored against the reference photo, number shown.",
+          "You'd rather pay per keeper — failed generations never use your credits.",
+        ],
+      },
+      hedra: {
+        heroSubtitle: "Hedra's Character-3 model animates an image into a talking-character clip at an excellent per-clip price. Picacho is built for something different — one identity kept persistent across many scenes and frontier models, with every output scored against it. Here's the honest breakdown.",
+        cellIdentity: "A character image brought to life — Character-3 animates a picture into a talking clip.",
+        cellFormat: "Talking-character clips, centered on Hedra's own Character-3 model.",
+        cellEntry: "Free tier available (watermarked). Paid: Basic $15/mo (1,500 credits), Creator $30/mo (5,400), Professional $75/mo (14,400) — and credit packs never expire.",
+        cellCost: "Roughly $0.17–0.30 per 5-second talking clip on Character-3 — an excellent per-clip price on its own model.",
+        cellWatermark: "Free-tier outputs are watermarked; paid plans start at $15/mo.",
+        chooseThem: [
+          "You mainly need talking-character clips and want the lowest per-clip price (≈$0.17–0.30 per 5 seconds on Character-3).",
+          "You like credits that never expire when bought as packs.",
+          "You want a focused tool built tightly around its own character model.",
+        ],
+        choosePicacho: [
+          "One character has to stay recognizably itself across many scenes and formats — not re-anchored image by image.",
+          "You want frontier models — Kling O3 Pro, Veo 3.1, Seedance 2.5 — behind one identity pipeline, with brand rules enforced before you see results.",
+          "You want every output scored against the identity photo, and failed generations to cost nothing.",
+        ],
+      },
+    },
+    // Public "Made with Picacho" gallery (/gallery). Deliberately its own
+    // block under marketing — not more keys in home, which is heavily
+    // concurrent-edited — so gallery copy changes never collide with it.
+    gallery: {
+      title: "Made with Picacho",
+      subtitle:
+        "A running selection of real renders — each one generated, validated, and scored against its character's identity photo by the same pipeline every plan gets.",
+      realNote: "Real, unretouched output. Every score is the vision model's actual measurement.",
+      emptyState: "Nothing featured yet — check back soon.",
+      backHome: "Back to the homepage",
     },
   },
   auth: {

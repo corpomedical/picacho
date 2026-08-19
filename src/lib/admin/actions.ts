@@ -416,6 +416,78 @@ export async function setFeedbackStatus(formData: FormData) {
   revalidatePath("/admin/feedback");
 }
 
+// Feature / unfeature a generation on the public "Made with Picacho"
+// gallery (/gallery). Toggles generations.featured_at (now() / NULL) — the
+// timestamp is also the gallery's sort key. Wired to the small form on the
+// admin user page's "Recent generations" card.
+//
+// V1 CONTENT-RIGHTS RULE: only generations OWNED BY AN ADMIN account may
+// be featured. Customer content is never publishable without a consent
+// mechanism, which is deliberately out of scope for v1 — so this action
+// checks the ROW OWNER's profile role (not the caller's; requireAdmin
+// already covers the caller) via the service client and refuses anything
+// else. /gallery re-checks the same rule at read time, so even a
+// featured_at set by some other route on a customer row never renders.
+export async function setGenerationFeatured(formData: FormData) {
+  const { admin } = await requireAdmin();
+  const generationId = formData.get("generation_id") as string;
+  const featured = formData.get("featured") === "true";
+  const rawRedirect = (formData.get("redirect_to") as string) || "/admin/users";
+  // Only ever redirect back into the admin area — never an arbitrary or
+  // off-site path from form input (same rule as setUserStatus).
+  const redirectTo = rawRedirect.startsWith("/admin/") ? rawRedirect : "/admin/users";
+
+  if (!generationId) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("Missing generation id.")}`);
+  }
+
+  // Service client on purpose: the row belongs to whoever owns it, not to
+  // the acting admin, and the decision below needs the owner's role.
+  const { data: row, error: rowError } = await admin
+    .from("generations")
+    .select("id, user_id, status")
+    .eq("id", generationId)
+    .maybeSingle();
+  if (rowError || !row) {
+    redirect(
+      `${redirectTo}?error=${encodeURIComponent(rowError?.message ?? "Generation not found.")}`,
+    );
+  }
+
+  if (featured) {
+    // Unfeaturing is always allowed (taking something off the public site
+    // must never be blockable); featuring has to clear both gates.
+    if (row.status !== "succeeded") {
+      redirect(
+        `${redirectTo}?error=${encodeURIComponent("Only succeeded generations can be featured.")}`,
+      );
+    }
+    const { data: owner } = await admin
+      .from("profiles")
+      .select("role")
+      .eq("id", row.user_id)
+      .maybeSingle();
+    if (owner?.role !== "admin") {
+      redirect(
+        `${redirectTo}?error=${encodeURIComponent(
+          "Only admin-owned generations can be featured — customer content needs a consent mechanism the gallery doesn't have yet.",
+        )}`,
+      );
+    }
+  }
+
+  const { error } = await admin
+    .from("generations")
+    .update({ featured_at: featured ? new Date().toISOString() : null })
+    .eq("id", generationId);
+  if (error) {
+    redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath(`/admin/users/${row.user_id}`);
+  revalidatePath("/gallery");
+}
+
 export async function setUserPlan(formData: FormData) {
   const { supabase, admin } = await requireAdmin();
   const userId = formData.get("user_id") as string;

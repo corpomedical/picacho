@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import {
   setApiAccess,
   setBonusCredits,
+  setGenerationFeatured,
   setUserPlan,
   setUserRole,
   setUserStatus,
@@ -64,7 +65,7 @@ export default async function AdminUserDetailPage({
       .order("created_at", { ascending: false }),
     supabase
       .from("generations")
-      .select("id, prompt_input, status, attempts, created_at")
+      .select("id, prompt_input, status, attempts, created_at, featured_at")
       .eq("user_id", id)
       .order("created_at", { ascending: false })
       .limit(10),
@@ -464,10 +465,10 @@ export default async function AdminUserDetailPage({
             ) : (
               <ul className="mt-3 space-y-3">
                 {generations.map((g) => (
-                  <li key={g.id}>
+                  <li key={g.id} className="flex items-center justify-between gap-4">
                     <Link
                       href={`/app/history/${g.id}`}
-                      className="flex items-center justify-between gap-4 text-sm hover:opacity-70"
+                      className="flex min-w-0 flex-1 items-center justify-between gap-4 text-sm hover:opacity-70"
                     >
                       <span className="min-w-0 truncate text-neutral-700">{g.prompt_input}</span>
                       <Badge
@@ -477,6 +478,21 @@ export default async function AdminUserDetailPage({
                         {g.status}
                       </Badge>
                     </Link>
+                    {/* Public-gallery toggle (/gallery). Only rendered on
+                        succeeded rows of ADMIN-owned accounts — the v1
+                        content-rights rule (customer content is never
+                        publishable without consent; see setGenerationFeatured,
+                        which enforces the same rule server-side either way). */}
+                    {user.role === "admin" && g.status === "succeeded" && (
+                      <form action={setGenerationFeatured} className="flex-shrink-0">
+                        <input type="hidden" name="generation_id" value={g.id} />
+                        <input type="hidden" name="featured" value={String(!g.featured_at)} />
+                        <input type="hidden" name="redirect_to" value={`/admin/users/${user.id}`} />
+                        <SubmitButton variant="secondary" size="sm" pendingLabel="Saving…">
+                          {g.featured_at ? "Unfeature" : "Feature"}
+                        </SubmitButton>
+                      </form>
+                    )}
                   </li>
                 ))}
               </ul>

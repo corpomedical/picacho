@@ -577,12 +577,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const requestedVideoModelId = (formData.get("video_model_id") as string) || "";
   const adminDefaultVideoModelId = videoModelSetting?.value ?? "kling";
   // Free-tier accounts are pinned to the cheapest model regardless of what
-  // was requested. Without this, one free signup choosing Veo would cost
-  // ~EUR3 of an allowance meant to cost ~EUR1.50 in total — and the free
-  // limit is counted in generations, which only equals cost if every free
-  // generation is the same price. Silently downgrading rather than erroring:
-  // a trial user hitting "that model needs a plan" before they've seen a
-  // single result learns nothing about the product.
+  // was requested. Without this, one free user choosing Veo would cost ~$3.40
+  // in a day budgeted at ~$0.29 (see the daily-trial note in plans.ts) — the
+  // free allowance is counted in generations (one a day), which only equals
+  // cost if every free generation is the same price. Silently downgrading
+  // rather than erroring: a trial user hitting "that model needs a plan"
+  // before they've seen a single result learns nothing about the product.
   //
   // Purchased top-up credits count as paid, same as a plan or bonus credits.
   // Credit packs are deliberately sellable to plan-less accounts (see
@@ -611,7 +611,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // (FREE_TIER_GENERATION_CREDITS worth) — no long durations and no dialogue
   // (dialogue fires extra paid ElevenLabs TTS + Sync Labs lipsync calls).
   // Without this a single free generation could cost several credits' worth
-  // of provider spend while only decrementing the trial counter by one.
+  // of provider spend while only spending the day's single trial slot.
   // Enforced server-side regardless of what the form sends.
   if (
     isFreeTierAccount &&
@@ -904,7 +904,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
     return {
       error: consumeFree
-        ? "You've used all your free generations."
+        ? "You've used today's free generation — it comes back tomorrow. Top up credits or pick a plan to keep going."
         : "You're out of credits — that request couldn't be covered.",
     };
   }
@@ -1634,16 +1634,15 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   }
 
   // Multi-angle is not available on the free trial. The free allowance is
-  // counted in generations rather than credits, and one multi-angle request
-  // is several generations at once — it would consume the whole trial in a
-  // single click and, worse, the per-generation counter would undercount
-  // what it actually cost.
+  // one generation per day, and one multi-angle request is several
+  // generations at once — far more than the day's slot covers, and the
+  // per-generation slot would undercount what it actually cost.
   //
   // Purchased top-up credits unlock it, same as the single-generation path's
   // isFreeTierAccount: multi-angle reserves angles × weight credits and every
   // row is charged at its real weight (free_generation_used is hardcoded
-  // false below), so the per-generation trial counter can't undercount here —
-  // the whole batch is drawn from the credits they bought.
+  // false below), so the daily trial slot can't undercount here — the whole
+  // batch is drawn from the credits they bought.
   const { data: multiAngleProfile } = await supabase
     .from("profiles")
     .select("plan, bonus_credits, purchased_credits, role, status")
@@ -1663,7 +1662,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   ) {
     return {
       error:
-        "Multi-angle needs a plan or topped-up credits. Your free generations work for single images and videos.",
+        "Multi-angle needs a plan or topped-up credits. Your daily free generation works for single images and videos.",
     };
   }
 

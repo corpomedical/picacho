@@ -161,15 +161,15 @@ export async function runApiImageGeneration(params: {
     : true;
   const freeOk = allowance.consumeFree ? await consumeFreeGeneration(supabase, userId) : true;
   if (!purchasedOk || !freeOk) {
-    // Concurrent request already took the last credit / free generation — abort
-    // before any paid work and release this row's charge.
+    // Concurrent request already took the last credit / today's free
+    // generation — abort before any paid work and release this row's charge.
     await supabase
       .from("generations")
       .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, free_generation_used: false })
       .eq("id", generationId);
     return {
       error: allowance.consumeFree
-        ? "You've used all your free generations."
+        ? "You've used today's free generation — it comes back tomorrow. Top up credits or pick a plan to keep going."
         : "Insufficient credits for that request.",
       status: 402,
     };
