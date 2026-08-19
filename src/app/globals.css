@@ -20,6 +20,29 @@
   /* Display face for marketing headlines — loaded via next/font in
      layout.tsx (build-time download, self-hosted at runtime, no FOUT). */
   --font-display: var(--font-archivo), var(--font-sans);
+
+  /* ── Atelier (app redesign, phase 1) ────────────────────────────────
+     The marketing site's paper-and-ink identity brought into the app.
+     Light values here; the dark "Darkroom" twins are re-declared in the
+     .dark block below — the exact same mechanism --color-paper and
+     --color-ink already use, so the theme provider's .dark class (and
+     the pre-hydration init script) drives both without any dark:
+     variants in markup. Namespaced under atelier-* so nothing existing
+     remaps — later phases move screens onto these tokens deliberately,
+     one surface at a time. */
+  --color-atelier-paper: #f5f1e9;   /* warm paper ground */
+  --color-atelier-surface: #faf8f3; /* raised sheet: popovers, active rows */
+  --color-atelier-ink: #211d16;     /* primary ink */
+  --color-atelier-muted: #6f6656;   /* secondary ink: labels, inactive nav */
+  --color-atelier-rule: #d9d2c2;    /* hairline warm rules, not gray card borders */
+  --color-atelier-accent: #b45a28;  /* ochre — reserved for proof: scores, credits, active states */
+  /* Numerals (credits, scores, stats) set in a text serif — pair with
+     Tailwind's `tabular-nums`. System stack for now; the production font
+     swap later is this one line. */
+  --font-numeral: "Iowan Old Style", Palatino, Georgia, serif;
+  /* Atelier radii: small on controls; larger radii are for media only. */
+  --radius-control: 6px;
+  --radius-media: 12px;
 }
 
 /* Dark theme — re-declares the neutral scale (and white, used throughout as
@@ -44,6 +67,17 @@
 
   --color-paper: oklch(14.5% 0 none);
   --color-ink: oklch(98.5% 0 none);
+
+  /* Darkroom — the Atelier tokens' dark twins: warm charcoal grounds,
+     warm off-white ink, amber accent, same structure. Every atelier-*
+     color declared in @theme MUST have a value here, so no shell color
+     ever exists in only one theme. */
+  --color-atelier-paper: #17150f;
+  --color-atelier-surface: #1e1b13;
+  --color-atelier-ink: #eae6dc;
+  --color-atelier-muted: #a39a88;
+  --color-atelier-rule: #3b3323;
+  --color-atelier-accent: #e0a468;
 }
 
 html,

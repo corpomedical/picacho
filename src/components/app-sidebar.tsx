@@ -537,13 +537,13 @@ export function AppSidebar({
           html.native-app rules in globals.css. */}
       <div
         data-mobile-topbar
-        className="fixed inset-x-0 top-0 z-30 flex h-14 flex-shrink-0 items-center justify-between border-b border-neutral-200/70 bg-neutral-50 px-3 md:hidden"
+        className="fixed inset-x-0 top-0 z-30 flex h-14 flex-shrink-0 items-center justify-between border-b border-atelier-rule bg-atelier-paper px-3 md:hidden"
       >
         <button
           type="button"
           onClick={() => setMobileOpen(true)}
           aria-label={s.showSidebar}
-          className="flex h-9 w-9 items-center justify-center rounded-[8px] text-neutral-600 hover:bg-neutral-100"
+          className="flex h-9 w-9 items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
         >
           <MenuIcon className="h-5 w-5" />
         </button>
@@ -565,7 +565,7 @@ export function AppSidebar({
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-shrink-0 flex-col overflow-hidden border-r border-neutral-200/70 bg-neutral-50 px-3 py-5 shadow-2xl transition-transform duration-200 ease-in-out",
+          "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-shrink-0 flex-col overflow-hidden border-r border-atelier-rule bg-atelier-paper px-3 py-5 shadow-2xl transition-transform duration-200 ease-in-out",
           "md:static md:z-auto md:shadow-none md:transition-[width,padding] md:duration-200",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           collapsed ? "md:w-14 md:items-center md:px-2" : "md:w-64 md:px-3",
@@ -580,7 +580,7 @@ export function AppSidebar({
           {iconOnly ? (
             // The wordmark is too wide to read as a small square icon, so
             // the collapsed rail keeps the compact "P" badge instead.
-            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-neutral-900 text-[11px] font-semibold text-white">
+            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-[11px] font-semibold text-atelier-paper">
               P
             </span>
           ) : (
@@ -595,7 +595,7 @@ export function AppSidebar({
           onClick={toggleCollapsed}
           aria-label={collapsed ? s.showSidebar : s.hideSidebar}
           title={collapsed ? s.showSidebar : s.hideSidebar}
-          className="hidden h-6 w-6 flex-shrink-0 items-center justify-center rounded-[6px] text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 md:flex"
+          className="hidden h-6 w-6 flex-shrink-0 items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink md:flex"
         >
           <PanelIcon className="h-4 w-4" />
         </button>
@@ -603,7 +603,7 @@ export function AppSidebar({
           type="button"
           onClick={() => setMobileOpen(false)}
           aria-label={s.hideSidebar}
-          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-[6px] text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700 md:hidden"
+          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink md:hidden"
         >
           <XIcon className="h-4 w-4" />
         </button>
@@ -616,13 +616,13 @@ export function AppSidebar({
           title={t.nav.search}
           aria-label={t.nav.search}
           className={cn(
-            "flex flex-1 items-center gap-2.5 whitespace-nowrap rounded-[10px] text-sm text-neutral-500 transition-colors hover:bg-neutral-100 hover:text-neutral-900",
+            "flex flex-1 items-center gap-2.5 whitespace-nowrap rounded-control text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink",
             iconOnly ? "h-9 w-9 justify-center" : "w-full px-2.5 py-2",
           )}
         >
           <SearchIcon className="h-4 w-4 flex-shrink-0" />
           {!iconOnly && <span>{t.nav.search}</span>}
-          {!iconOnly && <span className="ml-auto flex-shrink-0 text-xs text-neutral-300">⌘K</span>}
+          {!iconOnly && <span className="ml-auto flex-shrink-0 text-xs text-atelier-muted/60">⌘K</span>}
         </button>
 
         {/* Global voice command — part of voice mode, so it follows the
@@ -645,11 +645,11 @@ export function AppSidebar({
             aria-label={item.label}
             data-tour-id={item.href === "/app/character" ? "tour-characters" : undefined}
             className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-[10px] text-sm transition-colors",
+              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
               isActive(item.href)
-                ? "bg-neutral-900 text-white"
-                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
             <item.icon className="h-4 w-4 flex-shrink-0" />
@@ -667,10 +667,10 @@ export function AppSidebar({
             title={t.nav.media}
             aria-label={t.nav.media}
             className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-[10px] text-sm transition-colors",
+              "flex h-9 w-9 items-center justify-center rounded-control text-sm transition-colors",
               isMediaActive
-                ? "bg-neutral-900 text-white"
-                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
             <MediaIcon className="h-4 w-4 flex-shrink-0" />
@@ -684,10 +684,10 @@ export function AppSidebar({
               aria-label={t.nav.media}
               aria-expanded={mediaExpanded}
               className={cn(
-                "flex w-full items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-2 text-sm transition-colors",
+                "flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-sm transition-colors",
                 isMediaActive
-                  ? "bg-neutral-900 text-white"
-                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+                  ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
               )}
             >
               <MediaIcon className="h-4 w-4 flex-shrink-0" />
@@ -697,7 +697,7 @@ export function AppSidebar({
               />
             </button>
             {mediaExpanded && (
-              <div className="ml-4 mt-0.5 space-y-0.5 border-l border-neutral-100 pl-2">
+              <div className="ml-4 mt-0.5 space-y-0.5 border-l border-atelier-rule/70 pl-2">
                 {MEDIA_ITEMS.map((item) => (
                   <Link
                     key={item.href}
@@ -705,10 +705,10 @@ export function AppSidebar({
                     title={item.label}
                     aria-label={item.label}
                     className={cn(
-                      "flex items-center gap-2.5 whitespace-nowrap rounded-[10px] px-2.5 py-1.5 text-sm transition-colors",
+                      "flex items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-1.5 text-sm transition-colors",
                       isActive(item.href)
-                        ? "bg-neutral-900 text-white"
-                        : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                        ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                        : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                     )}
                   >
                     <item.icon className="h-3.5 w-3.5 flex-shrink-0" />
@@ -727,11 +727,11 @@ export function AppSidebar({
             title={item.label}
             aria-label={item.label}
             className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-[10px] text-sm transition-colors",
+              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
               isActive(item.href)
-                ? "bg-neutral-900 text-white"
-                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
             <item.icon className="h-4 w-4 flex-shrink-0" />
@@ -744,11 +744,11 @@ export function AppSidebar({
             title={t.nav.admin}
             aria-label={t.nav.admin}
             className={cn(
-              "flex items-center gap-2.5 whitespace-nowrap rounded-[10px] text-sm transition-colors",
+              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
               pathname?.startsWith("/admin")
-                ? "bg-neutral-900 text-white"
-                : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900",
+                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
             <ShieldIcon className="h-4 w-4 flex-shrink-0" />
@@ -760,11 +760,11 @@ export function AppSidebar({
       {!iconOnly && (
         <div className="mt-6 min-h-0 flex-1 space-y-6 overflow-y-auto pb-2">
           <div>
-            <p className="px-2.5 text-xs font-medium uppercase tracking-wide text-neutral-400">
+            <p className="px-2.5 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
               {s.recent}
             </p>
             {recentJobs.length === 0 ? (
-              <p className="mt-2 px-2.5 text-xs text-neutral-400">{s.nothingGeneratedYet}</p>
+              <p className="mt-2 px-2.5 text-xs text-atelier-muted">{s.nothingGeneratedYet}</p>
             ) : (
               <ul className="mt-1 space-y-0.5">
                 {recentJobs.map((job) => (
@@ -772,10 +772,10 @@ export function AppSidebar({
                     <Link
                       href={`/app/history/${job.id}`}
                       className={cn(
-                        "group flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-xs transition-colors",
+                        "group flex items-center gap-2 rounded-control px-2.5 py-2 text-xs transition-colors",
                         pathname === `/app/history/${job.id}`
-                          ? "bg-neutral-100 text-neutral-900"
-                          : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                          ? "bg-atelier-surface text-atelier-ink"
+                          : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                       )}
                     >
                       <span
@@ -785,7 +785,7 @@ export function AppSidebar({
                             ? "bg-emerald-500"
                             : job.status === "failed"
                               ? "bg-red-400"
-                              : "bg-neutral-300",
+                              : "bg-atelier-rule",
                         )}
                       />
                       <span className="min-w-0 flex-1 truncate">{job.prompt_input}</span>
@@ -802,15 +802,15 @@ export function AppSidebar({
 
           <div>
             <div className="flex items-center justify-between px-2.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+              <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
                 {t.nav.projects}
               </p>
-              <Link href="/app/projects/new" className="text-xs text-neutral-400 hover:text-neutral-700">
+              <Link href="/app/projects/new" className="text-xs text-atelier-muted hover:text-atelier-ink">
                 {s.newShort}
               </Link>
             </div>
             {projects.length === 0 ? (
-              <p className="mt-2 px-2.5 text-xs text-neutral-400">{s.noneYet}</p>
+              <p className="mt-2 px-2.5 text-xs text-atelier-muted">{s.noneYet}</p>
             ) : (
               <ul className="mt-1 space-y-0.5">
                 {projects.map((p) => (
@@ -824,15 +824,15 @@ export function AppSidebar({
 
           <div>
             <div className="flex items-center justify-between px-2.5">
-              <p className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+              <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
                 {t.nav.characters}
               </p>
-              <Link href="/app/character/new" className="text-xs text-neutral-400 hover:text-neutral-700">
+              <Link href="/app/character/new" className="text-xs text-atelier-muted hover:text-atelier-ink">
                 {s.newShort}
               </Link>
             </div>
             {characters.length === 0 ? (
-              <p className="mt-2 px-2.5 text-xs text-neutral-400">{s.noneYet}</p>
+              <p className="mt-2 px-2.5 text-xs text-atelier-muted">{s.noneYet}</p>
             ) : (
               <ul className="mt-1 space-y-0.5">
                 {characters.map((c) => (
@@ -840,13 +840,13 @@ export function AppSidebar({
                     <Link
                       href={`/app/character/${c.id}`}
                       className={cn(
-                        "group flex items-center gap-2 rounded-[10px] px-2.5 py-2 text-xs transition-colors",
+                        "group flex items-center gap-2 rounded-control px-2.5 py-2 text-xs transition-colors",
                         pathname === `/app/character/${c.id}`
-                          ? "bg-neutral-100 text-neutral-900"
-                          : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+                          ? "bg-atelier-surface text-atelier-ink"
+                          : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                       )}
                     >
-                      <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-neutral-200 text-[9px] font-semibold text-neutral-600">
+                      <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-[9px] font-semibold text-atelier-muted">
                         {c.name.charAt(0).toUpperCase()}
                       </span>
                       <span className="min-w-0 flex-1 truncate">{c.name}</span>
@@ -867,14 +867,14 @@ export function AppSidebar({
       <div
         ref={settingsRef}
         className={cn(
-          "relative mt-auto flex-shrink-0 border-t border-neutral-200/70 pt-3",
+          "relative mt-auto flex-shrink-0 border-t border-atelier-rule pt-3",
           iconOnly ? "flex flex-col items-center gap-2" : "flex items-center justify-between gap-2 px-0.5",
         )}
       >
         {!iconOnly && (
           <div className="flex min-w-0 flex-1 items-center gap-1.5 px-2">
-            <p className="min-w-0 truncate text-xs text-neutral-400">{displayUsername}</p>
-            <span className="flex-shrink-0 rounded-full border border-neutral-200 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wide text-neutral-500">
+            <p className="min-w-0 truncate text-xs text-atelier-muted">{displayUsername}</p>
+            <span className="flex-shrink-0 rounded-full border border-atelier-rule px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-muted">
               {PLAN_LABELS[plan]}
             </span>
           </div>
@@ -885,10 +885,10 @@ export function AppSidebar({
           title={t.nav.settings}
           aria-label={t.nav.settings}
           className={cn(
-            "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[8px] transition-colors",
+            "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-control transition-colors",
             settingsOpen
-              ? "bg-neutral-900 text-white"
-              : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900",
+              ? "bg-atelier-ink text-atelier-paper"
+              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
           )}
         >
           <GearIcon className="h-4 w-4 flex-shrink-0" />
@@ -900,10 +900,10 @@ export function AppSidebar({
             <div
               ref={menuRef}
               style={{ bottom: menuPos.bottom, left: menuPos.left }}
-              className="fixed z-50 w-72 rounded-[16px] border border-neutral-200 bg-white p-2 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.25)]"
+              className="fixed z-50 w-72 rounded-control border border-atelier-rule bg-atelier-surface p-2 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
             >
             <div className="px-2 pb-2 pt-1.5">
-              <p className="px-0.5 text-xs font-medium uppercase tracking-wide text-neutral-400">{s.theme}</p>
+              <p className="px-0.5 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.theme}</p>
               <div className="mt-2 grid grid-cols-3 gap-1.5">
                 {THEME_OPTIONS.map((opt) => (
                   <button
@@ -911,10 +911,10 @@ export function AppSidebar({
                     type="button"
                     onClick={() => setTheme(opt.value)}
                     className={cn(
-                      "flex flex-col items-center gap-1 rounded-[10px] border px-2 py-2 text-xs transition-colors",
+                      "flex flex-col items-center gap-1 rounded-control border px-2 py-2 text-xs transition-colors",
                       theme === opt.value
-                        ? "border-neutral-900 bg-neutral-50 text-neutral-900"
-                        : "border-neutral-200 text-neutral-500 hover:border-neutral-300 hover:text-neutral-900",
+                        ? "border-atelier-accent bg-atelier-accent/5 text-atelier-ink"
+                        : "border-atelier-rule text-atelier-muted hover:border-atelier-muted hover:text-atelier-ink",
                     )}
                   >
                     <opt.icon className="h-3.5 w-3.5" />
@@ -927,10 +927,10 @@ export function AppSidebar({
               </div>
             </div>
 
-            <div className="border-t border-neutral-100 px-2 py-2">
+            <div className="border-t border-atelier-rule/60 px-2 py-2">
               {editingUsername ? (
                 <div>
-                  <p className="px-0.5 text-xs font-medium uppercase tracking-wide text-neutral-400">
+                  <p className="px-0.5 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
                     {s.usernameLabel}
                   </p>
                   <input
@@ -941,14 +941,14 @@ export function AppSidebar({
                       if (e.key === "Enter") saveUsername();
                       if (e.key === "Escape") cancelEditingUsername();
                     }}
-                    className="mt-1.5 w-full rounded-[8px] border border-neutral-200 px-2 py-1.5 text-sm text-neutral-900 outline-none focus:border-neutral-400"
+                    className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-2 py-1.5 text-sm text-atelier-ink outline-none focus:border-atelier-accent"
                   />
                   {usernameError && <p className="mt-1 px-0.5 text-xs text-red-600">{usernameError}</p>}
                   <div className="mt-1.5 flex justify-end gap-1.5">
                     <button
                       type="button"
                       onClick={cancelEditingUsername}
-                      className="rounded-[8px] px-2 py-1 text-xs text-neutral-500 hover:bg-neutral-100"
+                      className="rounded-control px-2 py-1 text-xs text-atelier-muted hover:bg-atelier-ink/5"
                     >
                       {t.common.cancel}
                     </button>
@@ -956,7 +956,7 @@ export function AppSidebar({
                       type="button"
                       onClick={saveUsername}
                       disabled={savingUsername}
-                      className="rounded-[8px] bg-neutral-900 px-2.5 py-1 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                      className="rounded-control bg-atelier-ink px-2.5 py-1 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-50"
                     >
                       {savingUsername ? t.common.saving : t.common.save}
                     </button>
@@ -966,7 +966,7 @@ export function AppSidebar({
                 <button
                   type="button"
                   onClick={startEditingUsername}
-                  className="flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                  className="flex w-full items-center gap-2.5 rounded-control px-2 py-1.5 text-left text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                 >
                   <PencilIcon className="h-4 w-4 flex-shrink-0" />
                   {s.editUsername}
@@ -974,15 +974,15 @@ export function AppSidebar({
               )}
             </div>
 
-            <div className="border-t border-neutral-100 px-2 py-2">
+            <div className="border-t border-atelier-rule/60 px-2 py-2">
               <SkipRefinementToggle initialEnabled={skipAiRefinement} variant="compact" />
             </div>
 
-            <div className="border-t border-neutral-100 py-1">
+            <div className="border-t border-atelier-rule/60 py-1">
               <Link
                 href="/app/settings"
                 onClick={() => setSettingsOpen(false)}
-                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <IdCardIcon className="h-4 w-4 flex-shrink-0" />
                 {s.account}
@@ -990,14 +990,14 @@ export function AppSidebar({
               <Link
                 href="/app/settings?tab=usage"
                 onClick={() => setSettingsOpen(false)}
-                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <GaugeIcon className="h-4 w-4 flex-shrink-0" />
                 {s.usageAndPlan}
               </Link>
             </div>
 
-            <div className="border-t border-neutral-100 py-1">
+            <div className="border-t border-atelier-rule/60 py-1">
               <Link
                 // /app/generate, not /app: the walkthrough lives inside
                 // GenerateForm, and /app is a dashboard now with no composer
@@ -1005,7 +1005,7 @@ export function AppSidebar({
                 // no-op, since nothing on that page consumes the param.
                 href="/app/generate?tour=1"
                 onClick={() => setSettingsOpen(false)}
-                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <CompassIcon className="h-4 w-4 flex-shrink-0" />
                 {s.replayWalkthrough}
@@ -1013,7 +1013,7 @@ export function AppSidebar({
               <Link
                 href="/app/tutorial"
                 onClick={() => setSettingsOpen(false)}
-                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <BookIcon className="h-4 w-4 flex-shrink-0" />
                 {s.tutorial}
@@ -1021,14 +1021,14 @@ export function AppSidebar({
               <Link
                 href="/app/settings?tab=support"
                 onClick={() => setSettingsOpen(false)}
-                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <MailIcon className="h-4 w-4 flex-shrink-0" />
                 {s.sendFeedback}
               </Link>
               <a
                 href={`mailto:${supportEmail}?subject=${encodeURIComponent("Picacho help")}`}
-                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <HelpIcon className="h-4 w-4 flex-shrink-0" />
                 {s.help}
@@ -1036,18 +1036,18 @@ export function AppSidebar({
               <Link
                 href="/app/settings"
                 onClick={() => setSettingsOpen(false)}
-                className="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-sm text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900"
+                className="flex items-center gap-2.5 rounded-control px-2.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
               >
                 <GearIcon className="h-4 w-4 flex-shrink-0" />
                 {t.nav.settings}
               </Link>
             </div>
 
-            <div className="border-t border-neutral-100 pt-1">
+            <div className="border-t border-atelier-rule/60 pt-1">
               <form action={logout}>
                 <button
                   type="submit"
-                  className="flex w-full items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/15"
+                  className="flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm text-red-600 transition-colors hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/15"
                 >
                   <LogOutIcon className="h-4 w-4 flex-shrink-0" />
                   {s.logOut}

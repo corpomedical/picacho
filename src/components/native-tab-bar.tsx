@@ -82,7 +82,7 @@ export function NativeTabBar() {
     <nav
       // pb keeps the row clear of the home indicator on gesture-navigation
       // phones; without it the last few pixels of the tabs are unreachable.
-      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-neutral-200 bg-white/95 backdrop-blur-xl dark:border-neutral-800 dark:bg-neutral-950/95"
+      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-atelier-rule bg-atelier-paper/95 backdrop-blur-xl"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {tabs.map((tab) => {
@@ -100,8 +100,8 @@ export function NativeTabBar() {
             className={cn(
               "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors",
               active
-                ? "text-neutral-900 dark:text-neutral-50"
-                : "text-neutral-400 dark:text-neutral-500",
+                ? "text-atelier-accent"
+                : "text-atelier-muted",
             )}
           >
             <Icon className="h-5 w-5" />

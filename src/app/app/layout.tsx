@@ -76,7 +76,7 @@ export default async function AppLayout({
     (successfulGenerations ?? 0) >= 3 && !profile?.rating_prompted_at;
 
   return (
-    <div className="flex h-screen overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-atelier-paper">
       <AppErrorReporter />
       {/* Times how long this person actually uses the app — see the
           component for why it only beats while the tab is visible. */}
