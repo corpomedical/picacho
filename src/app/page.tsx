@@ -469,11 +469,14 @@ export default async function Home() {
       </section>
 
       {!native && (
-        <section className="mx-auto max-w-5xl px-8 pb-24">
+        // max-w-6xl + a 5-column top break, same as /pricing (2026-08-19):
+        // the Basic tier made it five cards, and five into lg:grid-cols-4
+        // left one orphaned on its own row.
+        <section className="mx-auto max-w-6xl px-8 pb-24">
           <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-900">
             {m.pricingHeading}
           </h2>
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {PRICING_TIERS.map((tier) => (
               <PricingCard key={tier.id} tier={tier} />
             ))}

@@ -592,8 +592,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // up"). Before this check the composer still pinned those buyers to the
   // trial's cheapest-model/short/silent shape, making every credit above the
   // first per video unspendable. The trial-mispricing worry doesn't apply:
-  // core.ts only spends a free trial slot on a 1-credit request, so an
-  // unpinned multi-credit render always draws on the credits they bought.
+  // core.ts only spends a free trial slot on a request within the trial's
+  // own pinned cost (FREE_TIER_GENERATION_CREDITS), so an unpinned render
+  // above that always draws on the credits they bought.
   const isFreeTierAccount =
     (userProfile?.plan ?? "none") === "none" &&
     (userProfile?.bonus_credits ?? 0) === 0 &&
@@ -606,11 +607,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       : adminDefaultVideoModelId;
   const activeVideoModel = getVideoModel(videoModelId);
 
-  // The free trial is pinned to ONE credit's worth of the cheapest model — no
-  // long durations and no dialogue (dialogue fires extra paid ElevenLabs TTS +
-  // Sync Labs lipsync calls). Without this a single free generation could cost
-  // several credits' worth of provider spend while only decrementing the trial
-  // counter by one. Enforced server-side regardless of what the form sends.
+  // The free trial is pinned to the cheapest model at its default duration
+  // (FREE_TIER_GENERATION_CREDITS worth) — no long durations and no dialogue
+  // (dialogue fires extra paid ElevenLabs TTS + Sync Labs lipsync calls).
+  // Without this a single free generation could cost several credits' worth
+  // of provider spend while only decrementing the trial counter by one.
+  // Enforced server-side regardless of what the form sends.
   if (
     isFreeTierAccount &&
     contentType === "video" &&
@@ -868,7 +870,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   }
 
   if (!placeholderId) {
-    return { error: "You've used all the generations included in your plan this month." };
+    return { error: "You've used all the credits included in your plan this month." };
   }
 
   // Downstream code refers to placeholder.id; keep that shape.
@@ -1799,7 +1801,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   }
 
   if (!placeholders) {
-    return { error: "You've used all the generations included in your plan this month." };
+    return { error: "You've used all the credits included in your plan this month." };
   }
 
   // The ids this reservation just created — every group-level write below is

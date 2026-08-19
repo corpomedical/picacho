@@ -114,17 +114,22 @@ export const VIDEO_MODELS = [
     // deliberately not decided unilaterally. Now that credits scale with
     // duration for every model (2026-08-07, user's explicit call), the same
     // $0.28/credit rate has been applied here too rather than leaving Veo as
-    // the one model where a longer video is still free against the plan —
-    // worth double-checking these land where you want them.
-    // Briefly raised to 12 on 2026-08-11 on the false premise that 11 sold
-    // below cost. It never did: $0.28 is the COST basis used to keep weights
-    // proportional to provider spend, not the price of a credit. A credit
-    // actually sells for about $1.80-2.15 depending on plan, so 8s of Veo
-    // earns roughly $20 against $3.20 of cost. Reverted.
+    // the one model where a longer video is still free against the plan.
+    //
+    // 8s is 12, not 11 (settled 2026-08-19, after flip-flopping: raised to
+    // 12 on 2026-08-11 for the wrong reason — "sold below cost", which
+    // confused the cost basis with the sale price — then reverted). The
+    // right reason is this file's own formula: weights are cost / $0.28
+    // rounded UP (see Seedance and O3 Pro), and $0.40/sec × 8s = $3.20 /
+    // $0.28 = 11.43 → 12. At 11 the option sits below its own cost line
+    // forever, so pricingAudit() flagged it on every Admin > AI providers
+    // load — a permanent false alarm that trains people to ignore the one
+    // audit meant to catch real provider price drift. 4s (5.71→6) and 6s
+    // (8.57→9) already rounded up.
     durations: [
       { seconds: 4, creditWeight: 6 },
       { seconds: 6, creditWeight: 9 },
-      { seconds: 8, creditWeight: 11, default: true },
+      { seconds: 8, creditWeight: 12, default: true },
     ] satisfies VideoDurationOption[],
   },
   {
@@ -289,12 +294,28 @@ export function getDialogueCreditWeight(seconds: number): number {
 // This is the number the picker sorts and labels by, because it's the one a
 // person is actually deciding between: "this generation will cost me N of my
 // credits". Sorting by cost-per-second looked defensible but ranked Veo above
-// Seedance, when a default Veo clip (8s, 11 credits) costs more than a default
+// Seedance, when a default Veo clip (8s, 12 credits) costs more than a default
 // Seedance one (5s, 9) — which is not what anyone reading the menu expects.
 export function defaultCreditCost(model: VideoModel): number {
   const seconds = getDefaultDurationSeconds(model);
   return model.durations.find((d) => d.seconds === seconds)?.creditWeight ?? model.durations[0].creditWeight;
 }
+
+// What ONE free-trial generation costs in credits: the free model's weight at
+// its own default duration — the exact shape runGeneration pins trial
+// accounts to (cheapest model, default length, no dialogue).
+//
+// Derived rather than written down (2026-08-19) because it used to be a bare
+// `=== 1` inside checkGenerationAllowance, which made the trial's whole
+// existence depend on the free model happening to cost exactly 1 credit —
+// the single point of failure: reassign FREE_TIER_VIDEO_MODEL_ID to any
+// 2-credit model and every trial request would silently stop matching the
+// gate, bricking the free tier for all new signups. Computed from the
+// catalog, the gate follows the model choice automatically.
+import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
+export const FREE_TIER_GENERATION_CREDITS = defaultCreditCost(
+  getVideoModel(FREE_TIER_VIDEO_MODEL_ID),
+);
 
 // Average credits per second, used only to break ties between models that
 // cost the same at their default length.

@@ -128,17 +128,16 @@ const it = {
       close: "Tocca ovunque per chiudere",
     },
     pricing: {
-      title: "Prezzi semplici, per generazione",
+      title: "Prezzi semplici, a crediti",
       subtitle:
-        "Ogni piano include la pipeline completa — bozza, revisione, generazione, validazione e nuovi tentativi automatici. Inizia con 5 generazioni gratuite, senza carta di credito.",
+        "Ogni piano include la pipeline completa — bozza, revisione, generazione, validazione e nuovi tentativi automatici. Un video o un'immagine standard costa un credito; i modelli premium ne costano qualcuno in più. Inizia con 5 generazioni gratuite, senza carta di credito.",
       overageNote:
-        "Le generazioni si rinnovano a ogni ciclo di fatturazione. Serve di più? Passa a un piano superiore quando vuoi.",
+        "I crediti si rinnovano a ogni ciclo di fatturazione. Serve di più? Passa a un piano superiore quando vuoi, oppure acquista un pacchetto di crediti una tantum.",
       getStarted: "Inizia",
       perMonth: "/mese",
       currentPlan: "Piano attuale",
       billingAnnual: "Annuale",
       billingMonthly: "Mensile",
-      threeMonthsFree: "3 mesi gratis",
       savePercent: "Risparmia il {n}%",
       // Shown inside the native app shell, where App Store reader rules
       // forbid showing prices or checkout — see pricing/page.tsx.
@@ -683,7 +682,7 @@ const it = {
     ofLimitThisMonth: "di {limit} questo mese",
     getStartedWith: "Inizia con {tier}",
     upgradeTo: "Passa a {tier}",
-    priceLine: "{price}/mese · {generations} generazioni",
+    priceLine: "{price}/mese · {credits} crediti",
     upgrade: "Esegui l'upgrade",
     getStarted: "Inizia",
     manageBilling: "Gestisci fatturazione",
@@ -749,31 +748,41 @@ const it = {
       "Non siamo riusciti ad annullare il tuo abbonamento in questo momento, quindi il tuo account NON è stato eliminato — riprova tra un minuto o contatta l'assistenza e lo sistemeremo.",
   },
   pricingTiers: {
+    basic: {
+      name: "Basic",
+      badge: "",
+      features: [
+        "12 crediti ≈ 12 video o immagini standard / mese",
+        "Profili personaggio illimitati",
+        "Pipeline completa bozza → revisione → convalida",
+        "Le generazioni fallite non consumano mai i tuoi crediti",
+      ],
+    },
     starter: {
       name: "Starter",
       badge: "",
       features: [
-        "10 generazioni / mese",
+        "30 crediti ≈ 30 video standard o 15 premium / mese",
         "Profili personaggio illimitati",
         "Pipeline completa bozza → revisione → convalida",
-        "Le generazioni fallite non consumano mai la tua quota",
+        "Le generazioni fallite non consumano mai i tuoi crediti",
       ],
     },
     growth: {
       name: "Growth",
       badge: "Più popolare",
       features: [
-        "40 generazioni / mese",
+        "140 crediti ≈ 140 video standard o 70 premium / mese",
         "Profili personaggio illimitati",
         "Pipeline completa bozza → revisione → convalida",
-        "Le generazioni fallite non consumano mai la tua quota",
+        "Le generazioni fallite non consumano mai i tuoi crediti",
       ],
     },
     studio: {
       name: "Studio",
       badge: "",
       features: [
-        "150 generazioni / mese",
+        "550 crediti ≈ 550 video standard o 275 premium / mese",
         "Tutto ciò che include Growth",
         "Storyboard — imposta un fotogramma iniziale e finale per una scena",
         "Riferimento multiplo — ancora un personaggio a più foto di riferimento contemporaneamente",
@@ -783,7 +792,7 @@ const it = {
       name: "Elite",
       badge: "",
       features: [
-        "300 generazioni / mese",
+        "1000 crediti ≈ 1000 video standard o 500 premium / mese",
         "Tutto ciò che include Studio",
         "Coda di rendering prioritaria",
         "Accesso anticipato a nuovi modelli e funzioni",
@@ -799,7 +808,7 @@ const it = {
     quickImage: "Crea un'immagine",
     quickVideo: "Crea un video",
     quickTutorial: "Come funziona",
-    creditsTitle: "Generazioni questo mese",
+    creditsTitle: "Crediti questo mese",
     creditsPurchased: "+{n} crediti acquistati",
     continueCreating: "Continua a creare",
     emptyRecent: "Le tue creazioni appariranno qui — crea la prima.",

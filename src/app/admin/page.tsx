@@ -20,7 +20,7 @@ const ANNUAL_PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
   PRICING_TIERS.map((t) => [t.id, t.annualPrice]),
 );
 
-const PLAN_ORDER: PlanId[] = ["elite", "studio", "growth", "starter", "none"];
+const PLAN_ORDER: PlanId[] = ["elite", "studio", "growth", "starter", "basic", "none"];
 
 function timeAgo(dateStr: string) {
   const diffMs = Date.now() - new Date(dateStr).getTime();

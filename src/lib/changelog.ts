@@ -20,6 +20,21 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.4.0",
+    build: 5,
+    date: "2026-08-19",
+    title: "Pricing restructure — 3-4x the credits, same prices",
+    items: [
+      "Every plan's monthly credits multiplied at the same price: Starter 10→30, Growth 40→140, Studio 150→550, Elite 300→1000. A standard clip now works out to roughly $0.50–0.75 instead of ~$1.90, and — for the first time — the per-credit rate genuinely improves with every step up the ladder (it used to quietly get WORSE at Studio and Elite). Existing subscribers keep their price and get the new credits immediately; nothing to do.",
+      "New $9 Basic plan: 12 credits a month, the full pipeline, unlimited characters — a real first paid step under Starter. Deliberately the least generous per-credit rate in the lineup, so every upgrade from it is a strictly better deal.",
+      "Credit packs repriced to match: 20 credits $15, 60 for $42, 150 for $99 (were $45/$119/$279). Packs still cost more per credit than any plan from Starter up — topping up forever must never beat upgrading.",
+      "Annual billing trimmed from ~25% off to ~15% off for NEW checkouts (Starter $16/mo, Growth $67/mo, Studio $254/mo, Elite $424/mo billed yearly; Basic $8/mo). Existing annual subscribers keep the rate they signed up on. The “3 months free” badge is retired — at 15% it stopped being literally true.",
+      "Pricing pages now speak in credits with an honest anchor (“30 credits ≈ 30 standard videos or 15 premium ones”) instead of the old “N generations / month” line, which had been false ever since premium models started costing several credits per video. All four languages.",
+      "Veo 3.1's 8-second option now weighs 12 credits (was 11) — the catalog's own cost formula rounds up ($3.20 ÷ $0.28 = 11.43), and at 11 the pricing audit flagged it as underwater on every admin load, a permanent false alarm.",
+      "The free trial's credit gate is now derived from the catalog instead of hardcoded to 1 credit — so if the free-tier model is ever switched to a pricier one, the trial keeps working instead of silently refusing every new signup.",
+    ],
+  },
+  {
     version: "1.3.0",
     build: 4,
     date: "2026-08-17",

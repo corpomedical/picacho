@@ -128,17 +128,16 @@ const pt = {
       close: "Toque em qualquer lugar para fechar",
     },
     pricing: {
-      title: "Preços simples, por geração",
+      title: "Preços simples, baseados em créditos",
       subtitle:
-        "Todos os planos incluem o pipeline completo — rascunho, revisão, geração, validação e novas tentativas automáticas. Comece com 5 gerações grátis, sem cartão de crédito.",
+        "Todos os planos incluem o pipeline completo — rascunho, revisão, geração, validação e novas tentativas automáticas. Um vídeo ou imagem padrão custa um crédito; modelos premium custam alguns a mais. Comece com 5 gerações grátis, sem cartão de crédito.",
       overageNote:
-        "As gerações são renovadas a cada período de cobrança. Precisa de mais? Faça upgrade de plano quando quiser.",
+        "Os créditos são renovados a cada período de cobrança. Precisa de mais? Faça upgrade de plano quando quiser, ou compre um pacote de créditos avulso.",
       getStarted: "Começar",
       perMonth: "/mês",
       currentPlan: "Plano atual",
       billingAnnual: "Anual",
       billingMonthly: "Mensal",
-      threeMonthsFree: "3 meses grátis",
       savePercent: "Economize {n}%",
       // Shown inside the native app shell, where App Store reader rules
       // forbid showing prices or checkout — see pricing/page.tsx.
@@ -683,7 +682,7 @@ const pt = {
     ofLimitThisMonth: "de {limit} este mês",
     getStartedWith: "Comece com {tier}",
     upgradeTo: "Fazer upgrade para {tier}",
-    priceLine: "{price}/mês · {generations} gerações",
+    priceLine: "{price}/mês · {credits} créditos",
     upgrade: "Fazer upgrade",
     getStarted: "Começar",
     manageBilling: "Gerenciar cobrança",
@@ -749,31 +748,41 @@ const pt = {
       "Não conseguimos cancelar sua assinatura agora, então sua conta NÃO foi excluída — tente novamente em um minuto ou fale com o suporte que resolveremos.",
   },
   pricingTiers: {
+    basic: {
+      name: "Basic",
+      badge: "",
+      features: [
+        "12 créditos ≈ 12 vídeos ou imagens padrão / mês",
+        "Perfis de personagem ilimitados",
+        "Pipeline completo de rascunho → revisão → validação",
+        "Gerações com falha nunca consomem seus créditos",
+      ],
+    },
     starter: {
       name: "Starter",
       badge: "",
       features: [
-        "10 gerações / mês",
+        "30 créditos ≈ 30 vídeos padrão ou 15 premium / mês",
         "Perfis de personagem ilimitados",
         "Pipeline completo de rascunho → revisão → validação",
-        "Gerações com falha nunca consomem sua cota",
+        "Gerações com falha nunca consomem seus créditos",
       ],
     },
     growth: {
       name: "Growth",
       badge: "Mais popular",
       features: [
-        "40 gerações / mês",
+        "140 créditos ≈ 140 vídeos padrão ou 70 premium / mês",
         "Perfis de personagem ilimitados",
         "Pipeline completo de rascunho → revisão → validação",
-        "Gerações com falha nunca consomem sua cota",
+        "Gerações com falha nunca consomem seus créditos",
       ],
     },
     studio: {
       name: "Studio",
       badge: "",
       features: [
-        "150 gerações / mês",
+        "550 créditos ≈ 550 vídeos padrão ou 275 premium / mês",
         "Tudo do Growth",
         "Storyboard — defina um quadro inicial e final para uma cena",
         "Referência múltipla — ancore um personagem a várias fotos de referência ao mesmo tempo",
@@ -783,7 +792,7 @@ const pt = {
       name: "Elite",
       badge: "",
       features: [
-        "300 gerações / mês",
+        "1000 créditos ≈ 1000 vídeos padrão ou 500 premium / mês",
         "Tudo do Studio",
         "Fila de renderização prioritária",
         "Acesso antecipado a novos modelos e recursos",
@@ -799,7 +808,7 @@ const pt = {
     quickImage: "Criar uma imagem",
     quickVideo: "Criar um vídeo",
     quickTutorial: "Como funciona",
-    creditsTitle: "Gerações neste mês",
+    creditsTitle: "Créditos neste mês",
     creditsPurchased: "+{n} créditos comprados",
     continueCreating: "Continuar criando",
     emptyRecent: "Suas criações aparecerão aqui — faça a primeira.",

@@ -89,8 +89,10 @@ async function ensureStripeCustomer(
 export async function createCheckoutSession(formData: FormData) {
   await blockInNativeApp();
   const planId = formData.get("plan") as PlanId | null;
-  // "annual" bills yearly at the tier's annualPrice x 12 (~25% off, a true
-  // three months free on every tier). Anything else is the monthly default.
+  // "annual" bills yearly at the tier's annualPrice x 12 (~15% off since
+  // 2026-08-19 — trimmed from ~25% alongside the credits multiplication;
+  // existing annual subscribers keep whatever price they subscribed on).
+  // Anything else is the monthly default.
   const interval = formData.get("billing_interval") === "annual" ? "annual" : "month";
 
   if (!planId || planId === "none" || !(planId in PLAN_PRICE_IDS)) {

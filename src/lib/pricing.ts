@@ -6,50 +6,78 @@
 // to exist, not just a bigger quota. Elite is now volume + priority + early
 // access. The server-side gating in generations/actions.ts and
 // workspace-data.ts mirrors this — change both together.
+//
+// Credits restructure (2026-08-19, operator-approved): monthly prices are
+// unchanged but every tier's credits multiplied (see PLAN_LIMITS in plans.ts
+// for the full rationale — per-credit rate now improves monotonically
+// up-tier, and a default clip costs ~$0.50–0.75 instead of ~$1.90), and a $9
+// Basic tier was added underneath Starter. `credits` here MUST stay equal to
+// PLAN_LIMITS — this table is what the marketing pages print, PLAN_LIMITS is
+// what the server enforces, and the two disagreeing is false advertising.
 
 // annualPrice is the per-month equivalent when billed yearly (total charged
-// = annualPrice * 12). Amounts are tuned per tier so the "3 months free"
-// badge is literally true everywhere (savings >= 3x the monthly price):
-// 19->14, 79->59, 299->224, 499->374 — all ~25-26% off.
+// = annualPrice * 12). Trimmed 2026-08-19 from ~25% off ("3 months free") to
+// ~15% off, alongside the credit multiplication — the credits got 3-4x more
+// generous, so the prepay discount no longer needs to carry the whole
+// value story. Rounded to whole dollars, same convention as before:
+// 9->8, 19->16, 79->67, 299->254, 499->424 (~15% off; Basic rounds to ~11%
+// because a $9 price leaves no finer step). The old "3 months free" badge
+// was removed with this — at 15% it is no longer literally true, and we
+// don't keep badges that aren't. Applies to NEW checkouts only; existing
+// annual subscribers keep the Stripe price they signed up on.
 export const PRICING_TIERS = [
   {
-    id: "starter",
-    annualPrice: 14,
-    name: "Starter",
-    price: 19,
-    generations: 10,
+    id: "basic",
+    annualPrice: 8,
+    name: "Basic",
+    price: 9,
+    credits: 12,
     highlight: false,
     features: [
-      "10 generations / month",
+      "12 credits / month — about 12 standard clips or images",
       "Unlimited character profiles",
       "Full draft → review → validate pipeline",
-      "Failed generations never use your allowance",
+      "Failed generations never use your credits",
+    ],
+  },
+  {
+    id: "starter",
+    annualPrice: 16,
+    name: "Starter",
+    price: 19,
+    credits: 30,
+    highlight: false,
+    features: [
+      "30 credits / month ≈ 30 standard videos, or 15 premium ones",
+      "Unlimited character profiles",
+      "Full draft → review → validate pipeline",
+      "Failed generations never use your credits",
     ],
   },
   {
     id: "growth",
-    annualPrice: 59,
+    annualPrice: 67,
     name: "Growth",
     price: 79,
-    generations: 40,
+    credits: 140,
     highlight: true,
     badge: "Most popular",
     features: [
-      "40 generations / month",
+      "140 credits / month ≈ 140 standard videos, or 70 premium ones",
       "Unlimited character profiles",
       "Full draft → review → validate pipeline",
-      "Failed generations never use your allowance",
+      "Failed generations never use your credits",
     ],
   },
   {
     id: "studio",
-    annualPrice: 224,
+    annualPrice: 254,
     name: "Studio",
     price: 299,
-    generations: 150,
+    credits: 550,
     highlight: false,
     features: [
-      "150 generations / month",
+      "550 credits / month ≈ 550 standard videos, or 275 premium ones",
       "Everything in Growth",
       "Storyboard — set a start and end frame for a shot",
       "Multi-image reference — anchor a character to several reference photos at once",
@@ -57,13 +85,13 @@ export const PRICING_TIERS = [
   },
   {
     id: "elite",
-    annualPrice: 374,
+    annualPrice: 424,
     name: "Elite",
     price: 499,
-    generations: 300,
+    credits: 1000,
     highlight: false,
     features: [
-      "300 generations / month",
+      "1000 credits / month ≈ 1000 standard videos, or 500 premium ones",
       "Everything in Studio",
       "Priority rendering queue",
       "Early access to new models and features",

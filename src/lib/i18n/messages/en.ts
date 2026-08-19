@@ -140,17 +140,16 @@ const en = {
       close: "Tap anywhere to close",
     },
     pricing: {
-      title: "Simple, per-generation pricing",
+      title: "Simple, credit-based pricing",
       subtitle:
-        "Every plan includes the full pipeline — draft, review, generate, validate, and automatic retries. Start with 5 free generations, no credit card required.",
+        "Every plan includes the full pipeline — draft, review, generate, validate, and automatic retries. A standard video or image costs one credit; premium models cost a few. Start with 5 free generations, no credit card required.",
       overageNote:
-        "Generations reset every billing period. Need more room? Upgrade to a higher plan anytime.",
+        "Credits reset every billing period. Need more room? Upgrade to a higher plan anytime, or top up with a one-time credit pack.",
       getStarted: "Get started",
       perMonth: "/mo",
       currentPlan: "Current plan",
       billingAnnual: "Annual",
       billingMonthly: "Monthly",
-      threeMonthsFree: "3 months free",
       savePercent: "Save {n}%",
       // Shown inside the native app shell, where App Store reader rules
       // forbid showing prices or checkout — see pricing/page.tsx.
@@ -703,7 +702,7 @@ const en = {
     ofLimitThisMonth: "of {limit} this month",
     getStartedWith: "Get started with {tier}",
     upgradeTo: "Upgrade to {tier}",
-    priceLine: "{price}/month · {generations} generations",
+    priceLine: "{price}/month · {credits} credits",
     upgrade: "Upgrade",
     getStarted: "Get started",
     manageBilling: "Manage billing",
@@ -772,32 +771,47 @@ const en = {
     errorDeletionAborted:
       "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.",
   },
+  // Every tier's first line speaks in CREDITS with a concrete anchor
+  // (2026-08-19) — the old "N generations / month" framing was false the
+  // moment premium models started costing several credits per video. Keep
+  // these numbers equal to PLAN_LIMITS in plans.ts; "standard" means a
+  // 1-credit clip (Kling 1.6 at 5s) or image, "premium" a 2-credit one.
   pricingTiers: {
+    basic: {
+      name: "Basic",
+      badge: "",
+      features: [
+        "12 credits ≈ 12 standard videos or images / month",
+        "Unlimited character profiles",
+        "Full draft → review → validate pipeline",
+        "Failed generations never use your credits",
+      ],
+    },
     starter: {
       name: "Starter",
       badge: "",
       features: [
-        "10 generations / month",
+        "30 credits ≈ 30 standard videos or 15 premium ones / month",
         "Unlimited character profiles",
         "Full draft → review → validate pipeline",
-        "Failed generations never use your allowance",
+        "Failed generations never use your credits",
       ],
     },
     growth: {
       name: "Growth",
       badge: "Most popular",
       features: [
-        "40 generations / month",
+        "140 credits ≈ 140 standard videos or 70 premium ones / month",
         "Unlimited character profiles",
         "Full draft → review → validate pipeline",
-        "Failed generations never use your allowance",
+        "Failed generations never use your credits",
       ],
     },
     studio: {
       name: "Studio",
       badge: "",
       features: [
-        "150 generations / month",
+        "550 credits ≈ 550 standard videos or 275 premium ones / month",
         "Everything in Growth",
         "Storyboard — set a start and end frame for a shot",
         "Multi-image reference — anchor a character to several reference photos at once",
@@ -807,7 +821,7 @@ const en = {
       name: "Elite",
       badge: "",
       features: [
-        "300 generations / month",
+        "1000 credits ≈ 1000 standard videos or 500 premium ones / month",
         "Everything in Studio",
         "Priority rendering queue",
         "Early access to new models and features",
@@ -823,7 +837,7 @@ const en = {
     quickImage: "Create an image",
     quickVideo: "Create a video",
     quickTutorial: "How it works",
-    creditsTitle: "Generations this month",
+    creditsTitle: "Credits this month",
     creditsPurchased: "+{n} purchased credits",
     continueCreating: "Continue creating",
     emptyRecent: "Your creations will appear here — make your first one.",

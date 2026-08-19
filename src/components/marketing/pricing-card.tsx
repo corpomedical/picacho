@@ -80,11 +80,12 @@ export async function PricingCard({
       </p>
       {annual ? (
         <div className="mt-2 space-y-1">
+          {/* Just the computed percentage — the "3 months free" badge was
+              retired 2026-08-19 when the annual discount was trimmed to
+              ~15%: at that rate it stopped being literally true, and a badge
+              that needs an asterisk is worse than no badge. */}
           <p className="flex flex-wrap items-center gap-1.5">
             <span className="rounded-full bg-ochre-soft px-2 py-0.5 text-[11px] font-semibold text-ochre">
-              {t.marketing.pricing.threeMonthsFree}
-            </span>
-            <span className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-500">
               {formatMsg(t.marketing.pricing.savePercent, { n: savePct })}
             </span>
           </p>

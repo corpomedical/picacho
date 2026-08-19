@@ -11,6 +11,15 @@ type PaidPlanId = Exclude<PlanId, "none">;
 // ever needs to exercise checkout again with a test key. A null value means
 // that plan isn't purchasable through Checkout yet.
 export const PLAN_PRICE_IDS: Record<PaidPlanId, string | null> = {
+  // Basic ($9/mo) added 2026-08-19 with the credits restructure. null until
+  // the OPERATOR creates the Stripe price: in the live Stripe Dashboard,
+  // create a Product "Picacho Basic" with a $9.00/month recurring USD Price
+  // (same shape as the four existing plan products), paste its price id
+  // here, and add the €9.00/month EUR Price on the SAME product for
+  // PLAN_PRICE_IDS_EUR below. Until then the tier fails closed exactly like
+  // any unconfigured plan: it renders on the pricing page but checkout
+  // redirects with "This plan isn't set up for checkout yet."
+  basic: null,
   starter: "price_1U2XAVApOHKJpXjxrELCc6RO",
   growth: "price_1U2XAWApOHKJpXjx03kFoMhA",
   studio: "price_1U2XAWApOHKJpXjxLHi3jyvH",
@@ -30,6 +39,9 @@ export const PLAN_PRICE_IDS: Record<PaidPlanId, string | null> = {
 // sandbox can't reach api.stripe.com), each attached to the same Product as
 // its USD counterpart above.
 export const PLAN_PRICE_IDS_EUR: Record<PaidPlanId, string | null> = {
+  // €9/month, same-number swap — see the operator note on PLAN_PRICE_IDS
+  // above. EU visitors fall back to the USD price until this is filled in.
+  basic: null,
   starter: "price_1U2ZItApOHKJpXjxMWvOYMa1",
   growth: "price_1U2ZIuApOHKJpXjxnwr2dakn",
   studio: "price_1U2ZIuApOHKJpXjxhvJSDafF",

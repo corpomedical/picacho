@@ -176,9 +176,9 @@ curl -X POST https://picacho.ai/api/v1/generations \\
             <Code>{`{
   "plan": "elite",
   "plan_label": "Elite",
-  "included_this_period": 300,
+  "included_this_period": 1000,
   "used_this_period": 42,
-  "remaining_this_period": 258,
+  "remaining_this_period": 958,
   "purchased_credits": 0,
   "period_started_at": "2026-08-09T00:00:00.000Z"
 }`}</Code>

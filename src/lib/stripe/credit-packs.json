@@ -1,5 +1,5 @@
 [
-  { "id": "small", "credits": 20, "price": 45 },
-  { "id": "medium", "credits": 60, "price": 119 },
-  { "id": "large", "credits": 150, "price": 279 }
+  { "id": "small", "credits": 20, "price": 15 },
+  { "id": "medium", "credits": 60, "price": 42 },
+  { "id": "large", "credits": 150, "price": 99 }
 ]

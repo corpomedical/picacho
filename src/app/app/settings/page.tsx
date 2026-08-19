@@ -27,7 +27,13 @@ import { formatMsg } from "@/lib/i18n/format";
 import { isEUVisitor } from "@/lib/geo";
 import { cn } from "@/lib/cn";
 
-const TIER_ORDER: PlanId[] = ["none", "starter", "growth", "studio"];
+// The upsell ladder for the "next tier" card below — each plan nudges toward
+// the one after it. Basic slots in as the first paid step (2026-08-19): a
+// plan-less account is offered the $9 entry, and a Basic account is offered
+// Starter, which is the whole point of Basic's deliberately-worst per-credit
+// rate (see PLAN_LIMITS in plans.ts). Ends at "studio" on purpose — Studio
+// accounts aren't nudged toward Elite, and Elite has nowhere to go.
+const TIER_ORDER: PlanId[] = ["none", "basic", "starter", "growth", "studio"];
 
 function AccountIcon(props: SVGProps<SVGSVGElement>) {
   return (
@@ -389,7 +395,7 @@ export default async function SettingsPage({
                       <p className="mt-0.5 text-xs text-neutral-300">
                         {formatMsg(s.priceLine, {
                           price: `${currencySymbol}${nextTier.price}`,
-                          generations: nextTier.generations,
+                          credits: nextTier.credits,
                         })}
                       </p>
                     </div>

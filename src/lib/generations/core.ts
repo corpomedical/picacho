@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
 import { FREE_GENERATION_LIMIT, PLAN_LABELS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
+import { FREE_TIER_GENERATION_CREDITS } from "@/lib/generations/providers/video-models";
 
 // Generation credits, and where a generated image is written.
 //
@@ -181,21 +182,26 @@ export async function checkGenerationAllowance(
   // instead — those are a deliberate gift and shouldn't be capped at five.
   if (plan === "none" && (profile?.bonus_credits ?? 0) === 0) {
     const freeUsed = (profile?.free_generations_used ?? 0) as number;
-    // A trial slot only ever covers a 1-credit request. The trial is counted
-    // per generation, not per credit, which is safe precisely because a pure
-    // trial account is pinned to the 1-credit shape (cheapest model, default
-    // duration, no dialogue — enforced in runGeneration). But an account that
-    // BOUGHT credits is deliberately unpinned (see isFreeTierAccount in
-    // actions.ts), so with trial slots still remaining it could otherwise pay
-    // for a 5-credit Veo render with one 1-generation trial slot — a 5x
-    // mispricing of the trial budget. Multi-credit requests fall through to
-    // the purchased-credit spend below instead; 1-credit requests keep the
+    // A trial slot only ever covers a request no bigger than the trial's own
+    // pinned shape — the free model at its default duration, whose weight is
+    // FREE_TIER_GENERATION_CREDITS (derived from the catalog, 2026-08-19;
+    // this was a literal `=== 1`, which meant reassigning
+    // FREE_TIER_VIDEO_MODEL_ID to any 2-credit model would have silently
+    // bricked the trial for every new signup). The trial is counted per
+    // generation, not per credit, which is safe precisely because a pure
+    // trial account is pinned to that exact shape (enforced in
+    // runGeneration). But an account that BOUGHT credits is deliberately
+    // unpinned (see isFreeTierAccount in actions.ts), so with trial slots
+    // still remaining it could otherwise pay for an expensive Veo render
+    // with one 1-generation trial slot — a many-x mispricing of the trial
+    // budget. Requests above the ceiling fall through to the
+    // purchased-credit spend below instead; requests at or under it keep the
     // existing priority (trial first, purchased after), where one generation
-    // is one credit's worth of cost and the two can't drift apart. A pure
-    // trial account is never blocked by this: the composer only ever sends it
-    // 1-credit requests, and if a direct call asks for more, the top-up error
-    // below is the honest answer.
-    if (freeUsed < FREE_GENERATION_LIMIT && requestedCredits === 1) {
+    // is at most one trial-generation's worth of cost and the two can't
+    // drift apart. A pure trial account is never blocked by this: the
+    // composer only ever sends it the pinned shape, and if a direct call
+    // asks for more, the top-up error below is the honest answer.
+    if (freeUsed < FREE_GENERATION_LIMIT && requestedCredits <= FREE_TIER_GENERATION_CREDITS) {
       return { error: null, plan, isAdmin, consumeFree: true, periodStartIso };
     }
 
@@ -220,12 +226,12 @@ export async function checkGenerationAllowance(
       error:
         freeTierPurchased > 0
           ? `That would use ${requestedCredits} credits (some models cost more than 1 per video), but you only have ${freeTierPurchased} left. Top up or pick a plan to keep going.`
-          : // Trial slots still remaining but the request needs more than one
-            // credit (only reachable by a direct call — the composer pins
-            // trial accounts to the 1-credit shape): say what the trial
-            // actually covers rather than falsely claiming it's used up.
+          : // Trial slots still remaining but the request costs more than a
+            // trial generation covers (only reachable by a direct call — the
+            // composer pins trial accounts to the trial shape): say what the
+            // trial actually covers rather than falsely claiming it's used up.
             freeUsed < FREE_GENERATION_LIMIT
-            ? `That would use ${requestedCredits} credits (some models cost more than 1 per video) — the free trial only covers 1-credit generations. Top up credits or pick a plan to use this one.`
+            ? `That would use ${requestedCredits} credits (some models cost more than 1 per video) — the free trial only covers generations of up to ${FREE_TIER_GENERATION_CREDITS} credit${FREE_TIER_GENERATION_CREDITS === 1 ? "" : "s"}. Top up credits or pick a plan to use this one.`
             : `You've used all ${FREE_GENERATION_LIMIT} free generations. Pick a plan or top up credits to keep going — ` +
               `your characters and history stay exactly as they are.`,
       plan,

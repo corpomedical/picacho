@@ -1,13 +1,35 @@
+// Monthly credit allowances (2026-08-19 restructure, operator-approved).
+//
+// Prices didn't move — the credits multiplied (10→30, 40→140, 150→550,
+// 300→1000) and a $9 Basic tier was added underneath. The old numbers priced
+// a default 1-credit clip at ~$1.90, far above the competitive band; the new
+// ones land it at ~$0.50–0.75. Two rules shaped the exact figures:
+//
+//   1. The per-credit rate must IMPROVE monotonically up-tier:
+//      basic $0.75 → starter ~$0.63 → growth ~$0.56 → studio ~$0.54 →
+//      elite ~$0.50. The previous table quietly inverted at the top
+//      (Studio $1.99/credit was WORSE than Growth's $1.98, Elite barely
+//      better) — upgrading for volume made the unit price worse, which is
+//      backwards.
+//   2. Basic deliberately has the WORST rate in the table. It exists to make
+//      the first paid click cheap, not to be good value — the honest upsell
+//      into Starter is "same credits cost less per credit".
+//
+// Existing subscribers: their Stripe price is untouched and these limits
+// apply the moment this deploys — the change only ever ADDS credits to what
+// a live subscription grants, so no migration or grandfathering is needed.
 export const PLAN_LIMITS = {
   none: 0,
-  starter: 10,
-  growth: 40,
-  studio: 150,
-  elite: 300,
+  basic: 12,
+  starter: 30,
+  growth: 140,
+  studio: 550,
+  elite: 1000,
 } as const;
 
 export const PLAN_LABELS = {
   none: "No active plan",
+  basic: "Basic",
   starter: "Starter",
   growth: "Growth",
   studio: "Studio",
@@ -30,7 +52,7 @@ export type PlanId = keyof typeof PLAN_LIMITS;
 //
 // Note this is a count of GENERATIONS, not credits, and the free tier is
 // restricted to the cheapest model (see FREE_TIER_VIDEO_MODEL_ID) — Veo costs
-// 11 credits for 8 seconds, so a free allowance denominated in credits with
+// 12 credits for 8 seconds, so a free allowance denominated in credits with
 // free model choice would let a single signup cost EUR3+.
 export const FREE_GENERATION_LIMIT = 5;
 
@@ -46,8 +68,9 @@ export const FREE_TIER_VIDEO_MODEL_ID = "kling";
 // pricing analysis flagged as the largest open money leak: a Starter
 // subscriber on EUR19 generating 200 of them costs more than they pay.
 //
-// Deliberately NOT priced in credits. A credit is worth ~EUR1.90 of revenue
-// against a ~EUR0.15 cost, so charging one would be an 11x markup on a setup
+// Deliberately NOT priced in credits. A credit sells for ~€0.50–0.75 since
+// the 2026-08-19 restructure (it was ~€1.90 when this cap was designed)
+// against a ~$0.17 photo cost — still a multiple-x markup on a setup
 // action — and setup is the moment you most want someone to succeed, not to
 // feel metered. A cap leaves normal use completely unaffected while bounding
 // the tail: a typical account generates a handful of these ever, so nobody
@@ -60,14 +83,15 @@ export const FREE_TIER_VIDEO_MODEL_ID = "kling";
 // credits (see reference_image_generations).
 //
 // Worst-case cost if an account maxes its cap, against plan revenue:
-//   starter ~EUR4.60 of EUR19 · growth ~EUR11.60 of EUR79
-//   studio  ~EUR31 of EUR299  · elite  ~EUR62 of EUR499
+//   basic ~EUR1.60 of EUR9   · starter ~EUR4.60 of EUR19
+//   growth ~EUR11.60 of EUR79 · studio ~EUR31 of EUR299
+//   elite ~EUR62 of EUR499
 // Monthly cap on Prompt Studio assists (Enhance, and the image-to-prompt
 // read).
 //
 // Same reasoning as PLAN_REFERENCE_IMAGE_LIMITS above, and deliberately NOT
 // priced in credits: an assist costs a fraction of a cent (one Claude call,
-// or one vision call), while a credit is worth ~EUR1.90 of revenue. Charging
+// or one vision call), while a credit sells for ~€0.50–0.75. Charging
 // credits for it would make people hesitate before using the one feature that
 // makes their PAID generations land first time — the exact opposite of what
 // it's for. A cap costs nothing to normal use and bounds the tail.
@@ -102,6 +126,10 @@ export function refundedFailureDailyCap(plan: PlanId): number {
 
 export const PLAN_PROMPT_ASSIST_LIMITS = {
   none: 0,
+  // Half of Starter's, mirroring how Basic sits under Starter everywhere
+  // else (2026-08-19): a real allowance for a $9 account, with room left
+  // for "upgrade and stop counting" to mean something.
+  basic: 20,
   starter: 40,
   growth: 150,
   studio: 600,
@@ -118,6 +146,11 @@ export const FREE_PROMPT_ASSIST_LIMIT = 10;
 
 export const PLAN_REFERENCE_IMAGE_LIMITS = {
   none: 0,
+  // A third of Starter's (2026-08-19, added with the Basic tier). Ten still
+  // covers building several characters — the typical account uses a handful
+  // of these ever — while keeping the worst-case spend (~$1.70) trivial
+  // against the $9 price.
+  basic: 10,
   starter: 30,
   growth: 75,
   studio: 200,

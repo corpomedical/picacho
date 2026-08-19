@@ -428,7 +428,7 @@ export async function POST(request: Request) {
         // tampered metadata value can never override a real known price.
         const metadataPlan = ((): ReturnType<typeof planIdForPriceId> => {
           const p = subscription.metadata?.plan;
-          return p === "starter" || p === "growth" || p === "studio" || p === "elite"
+          return p === "basic" || p === "starter" || p === "growth" || p === "studio" || p === "elite"
             ? p
             : undefined;
         })();

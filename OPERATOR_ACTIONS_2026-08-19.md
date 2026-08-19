@@ -43,6 +43,15 @@ Three independent reviewers hit tables with no DDL in the repo (`api_keys`, `pus
 - **Webhooks**: Stripe endpoint shows the new event types delivering 200s; fal webhook still 200s (watch for the `FAL_ACCOUNT_ID` log line if unset).
 - **Native shell**: confirm the iOS app no longer shows the "Install the app" card.
 
+## 7. Pricing restructure (2026-08-19) — Stripe actions
+
+The credits restructure (PLAN_LIMITS multiplied, $9 Basic tier, packs repriced to $15/$42/$99, annual trimmed to ~15%) ships fully fail-closed: everything below unlocks selling the new things, and nothing breaks while you get to it. Existing subscribers keep their Stripe price and simply receive the larger allowances on deploy — no migration.
+
+1. **Basic tier prices** (unlocks selling Basic): in the LIVE Stripe Dashboard create a Product "Picacho Basic" with a **$9.00/month** recurring USD Price and a **€9.00/month** recurring EUR Price on the same Product (same shape as the four existing plan products). Paste the two price ids into `PLAN_PRICE_IDS.basic` and `PLAN_PRICE_IDS_EUR.basic` in `src/lib/stripe/plans.ts`. Until then the Basic card renders but checkout says "This plan isn't set up for checkout yet."
+2. **Credit pack re-setup** (unlocks buying packs again): run `node setup-credit-packs.js` locally against the LIVE key. It reuses the existing pack Products, creates new Prices at the new amounts ($15/$42/$99 + EUR twins; a Stripe Price's amount is immutable, so new Prices are required), and prints the two id blocks — paste them into `CREDIT_PACK_PRICE_IDS` / `CREDIT_PACK_PRICE_IDS_EUR` in `src/lib/stripe/credit-packs.ts` (currently nulled, so packs are hidden and checkout fails closed until you do). Optionally archive the old $45/$119/$279 Prices in the Dashboard — the webhook still grants for any payment that straddled the deploy via `LEGACY_CREDIT_PACK_PRICE_CREDITS`, which is safe to delete from the code after ~30 days.
+3. **Annual prices**: nothing to create — annual checkouts build inline `price_data` from `PRICING_TIERS.annualPrice`, so the 15% rates are live on deploy for new checkouts only.
+4. Smoke test after pasting ids: buy Basic monthly (USD + a EU-geo check for EUR), buy the small pack, and confirm the webhook grants 20 credits.
+
 ## Known accepted trade-offs (no action needed, just awareness)
 
 - Reference-image caps reserve the slot **before** the paid provider call (that's what closed the unlimited-free-generations race). The flip side: if the serverless function dies mid-call (timeout/OOM/deploy), the catch-block refund never runs and the slot stays burned — for a free-tier account that's one of only 2 lifetime tries. Rare, and recoverable by support (reset `free_reference_generations_used` / delete the orphaned `reference_image_generations` row); a proper meter-reaper needs the live table schema, which the repo doesn't version yet (see §5).

@@ -78,7 +78,10 @@ export default async function PricingPage({
         <p className="mx-auto mt-4 max-w-xl text-sm text-neutral-500">{p.subtitle}</p>
       </section>
 
-      <section className="mx-auto max-w-5xl px-8 py-16">
+      {/* max-w-6xl + a 5-column top break (2026-08-19): the Basic tier made
+          it five cards, and five into the old lg:grid-cols-4 left one card
+          orphaned on its own row. */}
+      <section className="mx-auto max-w-6xl px-8 py-16">
         <div className="mb-10 flex justify-center">
           <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white p-1">
             <Link
@@ -90,6 +93,8 @@ export default async function PricingPage({
               }
             >
               {p.billingAnnual}
+              {/* Matches the real annualPrice discount in lib/pricing.ts
+                  (~15% since 2026-08-19; was -25%) — change both together. */}
               <span
                 className={
                   interval === "annual"
@@ -97,7 +102,7 @@ export default async function PricingPage({
                     : "hidden"
                 }
               >
-                -25%
+                -15%
               </span>
             </Link>
             <Link
@@ -112,7 +117,7 @@ export default async function PricingPage({
             </Link>
           </div>
         </div>
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           {PRICING_TIERS.map((tier) => (
             <PricingCard key={tier.id} tier={tier} interval={interval} />
           ))}
