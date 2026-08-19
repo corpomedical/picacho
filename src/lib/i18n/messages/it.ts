@@ -287,6 +287,7 @@ const it = {
     couldntValidate: "Impossibile convalidare",
     noPassingResultOne: "Nessun risultato valido dopo 1 tentativo.",
     noPassingResultOther: "Nessun risultato valido dopo {n} tentativi.",
+    stepFailedGeneric: "Qualcosa è andato storto durante la generazione. Riprova tra un momento.",
     generatingAngleOne: "Generazione di 1 angolazione…",
     generatingAngleOther: "Generazione di {n} angolazioni…",
     multiAnglePromptLabel: "Prompt multi-angolazione",

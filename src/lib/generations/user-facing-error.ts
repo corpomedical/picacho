@@ -15,8 +15,18 @@
 const RAW_PROVIDER_ERROR_PREFIX = /^[\w.() -]+ error \(\d+\):/i;
 const LOOKS_LIKE_JSON_BLOB = /[{[]\s*"/;
 
+// Exported for render-time gating: pipeline_log step details keep the raw
+// provider text (admins need it in /admin/reports and the history page),
+// so surfaces that show step details to END USERS use this to decide when
+// to swap in a localized generic line instead. Reported 2026-08-19: a
+// failed render's history page showed the owner a full fal.ai 422 JSON
+// dump, provider names, docs URLs and all.
+export function isRawProviderError(message: string): boolean {
+  return RAW_PROVIDER_ERROR_PREFIX.test(message) || LOOKS_LIKE_JSON_BLOB.test(message);
+}
+
 export function toUserFacingError(message: string): string {
-  if (RAW_PROVIDER_ERROR_PREFIX.test(message) || LOOKS_LIKE_JSON_BLOB.test(message)) {
+  if (isRawProviderError(message)) {
     return "Something went wrong generating that. Please try again in a moment.";
   }
   return message;

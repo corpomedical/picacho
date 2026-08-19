@@ -287,6 +287,7 @@ const es = {
     couldntValidate: "No se pudo validar",
     noPassingResultOne: "Ningún resultado aprobado tras 1 intento.",
     noPassingResultOther: "Ningún resultado aprobado tras {n} intentos.",
+    stepFailedGeneric: "Algo salió mal al generar eso. Inténtalo de nuevo en un momento.",
     generatingAngleOne: "Generando 1 ángulo…",
     generatingAngleOther: "Generando {n} ángulos…",
     multiAnglePromptLabel: "Prompt multiángulo",

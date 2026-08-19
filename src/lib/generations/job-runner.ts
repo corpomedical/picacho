@@ -78,7 +78,7 @@ type JobRow = {
   status_url: string | null;
   response_url: string | null;
   cancel_url: string | null;
-  payload: { videoUrl?: string; audioUrl?: string };
+  payload: { videoUrl?: string; audioUrl?: string; label?: string };
   resume: ResumeState;
   started_at: string;
   // Rewritten on every stage transition, so it marks when the CURRENT provider
@@ -494,7 +494,17 @@ function jobHandle(row: JobRow): QueuedJob {
     statusUrl: row.status_url ?? "",
     responseUrl: row.response_url ?? "",
     cancelUrl: row.cancel_url ?? "",
-    label: row.stage === "video" ? "Kling" : row.stage === "dialogue_tts" ? "ElevenLabs TTS" : "Sync Lipsync",
+    // The submit-time model label is persisted in payload (saveVideoJob) so
+    // provider errors name the model that actually ran. The hardcoded "Kling"
+    // fallback covers rows saved before 2026-08-19 — it misattributed a
+    // Seedance 422 during that render's post-mortem, which is why the real
+    // label is stored now.
+    label:
+      row.stage === "video"
+        ? (row.payload?.label ?? "Kling")
+        : row.stage === "dialogue_tts"
+          ? "ElevenLabs TTS"
+          : "Sync Lipsync",
   };
 }
 
@@ -517,7 +527,10 @@ export async function saveVideoJob(params: {
     status_url: params.job.statusUrl,
     response_url: params.job.responseUrl,
     cancel_url: params.job.cancelUrl,
-    payload: {},
+    // label: which model this render actually runs on — read back by
+    // jobHandle so poll/webhook-side provider errors are attributed to the
+    // right model instead of the old hardcoded "Kling".
+    payload: { label: params.job.label },
     resume: {
       dialogueText: params.dialogueText,
       dialogueVoiceId: params.dialogueVoiceId ?? undefined,

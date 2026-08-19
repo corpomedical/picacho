@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
+import { isRawProviderError } from "@/lib/generations/user-facing-error";
 import { angleSortIndex } from "@/lib/generations/angles";
 import { AngleResultViewer } from "@/components/angle-result-viewer";
 import { StillRendering } from "@/components/still-rendering";
@@ -103,7 +104,23 @@ export default async function HistoryDetailPage({
     .in("generation_id", reportableIds);
   const reportedIds = new Set((existingReports ?? []).map((r) => r.generation_id));
 
-  const attempts = (generation.pipeline_log ?? []) as AttemptLog[];
+  // Raw provider dumps in pipeline_log are admin diagnostics (see
+  // user-facing-error.ts): the full text stays in the DB and renders for
+  // admins, but a customer looking at their own failed render gets one
+  // friendly localized line instead of a wall of fal.ai JSON.
+  const sanitizeAttempts = (list: AttemptLog[]): AttemptLog[] =>
+    isAdmin
+      ? list
+      : list.map((attempt) => ({
+          ...attempt,
+          steps: attempt.steps.map((step) =>
+            isRawProviderError(step.detail)
+              ? { ...step, detail: t.generate.stepFailedGeneric }
+              : step,
+          ),
+        }));
+
+  const attempts = sanitizeAttempts((generation.pipeline_log ?? []) as AttemptLog[]);
   const finalPrompt = attempts[attempts.length - 1]?.compiledPrompt || generation.prompt_input || "";
 
   const statusLabel =
@@ -172,7 +189,12 @@ export default async function HistoryDetailPage({
 
       {sortedAngleRows.length > 1 ? (
         <AngleResultViewer
-          rows={sortedAngleRows.map((r) => ({ ...r, reported: reportedIds.has(r.id) }))}
+          rows={sortedAngleRows.map((r) => ({
+            ...r,
+            // Same admin-only gating as the single-generation log above.
+            pipeline_log: sanitizeAttempts((r.pipeline_log ?? []) as AttemptLog[]),
+            reported: reportedIds.has(r.id),
+          }))}
         />
       ) : (
         <>

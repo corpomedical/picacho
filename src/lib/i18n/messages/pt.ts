@@ -287,6 +287,7 @@ const pt = {
     couldntValidate: "Não foi possível validar",
     noPassingResultOne: "Nenhum resultado aprovado após 1 tentativa.",
     noPassingResultOther: "Nenhum resultado aprovado após {n} tentativas.",
+    stepFailedGeneric: "Algo deu errado ao gerar isso. Tente novamente em um momento.",
     generatingAngleOne: "Gerando 1 ângulo…",
     generatingAngleOther: "Gerando {n} ângulos…",
     multiAnglePromptLabel: "Prompt multiângulo",

@@ -32,7 +32,7 @@ import {
   type AgentStep,
 } from "@/lib/voice/agent";
 import { startListening } from "@/lib/voice/speech-recognition";
-import { toUserFacingError } from "@/lib/generations/user-facing-error";
+import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import {
   compilePrompt,
@@ -361,7 +361,12 @@ function PipelineTrace({
                 )}
               </div>
               <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-700">
-                {item.step.detail}
+                {/* Raw provider dumps (fal/OpenAI JSON, status codes, docs
+                    URLs) are admin diagnostics — in the composer everyone
+                    gets the friendly line; the full text is preserved in
+                    pipeline_log for the history page (admin view) and
+                    /admin/reports. */}
+                {isRawProviderError(item.step.detail) ? g.stepFailedGeneric : item.step.detail}
               </p>
             </div>
           </li>

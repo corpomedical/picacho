@@ -298,6 +298,7 @@ const en = {
     couldntValidate: "Couldn't validate",
     noPassingResultOne: "No passing result after 1 attempt.",
     noPassingResultOther: "No passing result after {n} attempts.",
+    stepFailedGeneric: "Something went wrong generating that. Please try again in a moment.",
     generatingAngleOne: "Generating 1 angle…",
     generatingAngleOther: "Generating {n} angles…",
     multiAnglePromptLabel: "Multi-angle prompt",

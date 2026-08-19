@@ -116,7 +116,11 @@ GRANT EXECUTE ON FUNCTION public.create_api_key_capped(uuid,int,text,text,text) 
 -- visitors). Re-grant EXECUTE to authenticated if the DROP path is
 -- taken — the dashboard calls it with the admin's own session.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION public.admin_traffic_daily(days integer)
+-- days keeps its DEFAULT: the live function has one, and Postgres refuses
+-- to remove an existing parameter default via CREATE OR REPLACE (42P13,
+-- hit when this was applied on 2026-08-19 — the app always passes days
+-- explicitly, so the default's value is inert).
+CREATE OR REPLACE FUNCTION public.admin_traffic_daily(days integer DEFAULT 30)
 RETURNS TABLE (day date, views bigint, visitors bigint)
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 BEGIN

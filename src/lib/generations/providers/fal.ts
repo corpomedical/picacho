@@ -242,10 +242,19 @@ async function buildVideoRequest(
   // beyond "required" — 1 image works the same way 2-4 do — so the baseline
   // single-photo anchor now shares this same endpoint instead of a
   // different one, just with a shorter image list.
+  // The single-photo character anchor promotes into the reference list for
+  // BOTH models whose endpoint takes identity references: kling (elements)
+  // and seedance (reference-to-video). Seedance was missing from this
+  // condition from the day it shipped (2026-08-11) until 2026-08-19: the
+  // composer only ever sets characterAnchorImageUrl on the single-character
+  // path, so every "character reference" Seedance render went out with NO
+  // image_urls at all — ByteDance 422'd the referenceless request, and even
+  // a referenceless success would have silently skipped the entire
+  // identity-anchoring feature the model was chosen for.
   const anchorImages =
     referenceImageUrls.length > 0
       ? referenceImageUrls.slice(0, 4)
-      : options.characterAnchorImageUrl && modelId === "kling"
+      : options.characterAnchorImageUrl && (modelId === "kling" || modelId === "seedance")
         ? [options.characterAnchorImageUrl]
         : [];
 
