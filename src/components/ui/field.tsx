@@ -1,13 +1,20 @@
 import { InputHTMLAttributes, TextareaHTMLAttributes, LabelHTMLAttributes } from "react";
 import { cn } from "@/lib/cn";
 
+// Atelier form idiom (same strings as UsernameForm's local FIELD/LABEL):
+// caps label over an ink-hairline input at the control radius; the accent
+// only ever marks focus. Transparent background so the field sits on
+// whatever ground it's printed on — paper page or surface sheet.
 const fieldStyles =
-  "w-full rounded-[10px] border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 placeholder:text-neutral-400 outline-none transition-shadow focus:border-neutral-400 focus:ring-2 focus:ring-neutral-900/5";
+  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
 
 export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
   return (
     <label
-      className={cn("mb-1.5 block text-[13px] font-medium text-neutral-600", className)}
+      className={cn(
+        "mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-atelier-muted",
+        className,
+      )}
       {...props}
     />
   );

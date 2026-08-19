@@ -5,13 +5,18 @@ type Variant = "primary" | "secondary" | "ghost" | "destructive";
 type Size = "sm" | "md";
 
 const base =
-  "inline-flex items-center justify-center gap-2 rounded-[10px] font-medium transition-colors duration-150 disabled:opacity-50 disabled:pointer-events-none";
+  "inline-flex items-center justify-center gap-2 rounded-control font-medium transition-colors duration-150 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent disabled:opacity-50 disabled:pointer-events-none";
 
+// Atelier variants: ink is the only "loud" fill; the accent stays reserved
+// for proof (here, just the focus ring). Reds are semantic, so they carry
+// explicit dark: twins — unlike the atelier-* tokens, which flip on their
+// own via the .dark block in globals.css.
 const variants: Record<Variant, string> = {
-  primary: "bg-ochre text-white hover:bg-ochre-deep shadow-[0_1px_1px_rgba(0,0,0,0.08)]",
-  secondary: "bg-white text-neutral-900 border border-neutral-200 hover:border-neutral-300 hover:bg-neutral-50",
-  ghost: "text-neutral-500 hover:text-neutral-900",
-  destructive: "text-red-600 hover:text-red-700",
+  primary: "bg-atelier-ink text-atelier-paper hover:bg-atelier-ink/90",
+  secondary:
+    "border border-atelier-rule bg-atelier-surface text-atelier-ink hover:border-atelier-muted hover:bg-atelier-ink/5",
+  ghost: "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+  destructive: "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/15",
 };
 
 const sizes: Record<Size, string> = {
@@ -19,8 +24,8 @@ const sizes: Record<Size, string> = {
   md: "px-5 py-2.5 text-sm",
 };
 
-// currentColor throughout, so one spinner works on every variant — white on
-// the primary button, near-black on secondary — without a per-variant class.
+// currentColor throughout, so one spinner works on every variant — paper on
+// the ink-filled primary, ink on secondary — without a per-variant class.
 function Spinner({ className }: { className?: string }) {
   return (
     <svg

@@ -65,7 +65,7 @@ export function FeedbackLink({
         type="button"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          "underline decoration-neutral-300 underline-offset-2 transition-colors hover:text-neutral-600",
+          "underline decoration-atelier-rule underline-offset-2 transition-colors hover:text-atelier-ink",
           className,
         )}
       >
@@ -76,13 +76,15 @@ export function FeedbackLink({
         <div
           role="dialog"
           aria-label={title}
-          className="absolute bottom-full left-0 z-30 mb-2 w-72 rounded-[16px] border border-neutral-200 bg-white p-3 text-left shadow-[0_16px_40px_-12px_rgba(0,0,0,0.18)]"
+          // Floating surface, so it carries the popover shadow (the one
+          // treatment sheets don't get) — same as the sidebar settings menu.
+          className="absolute bottom-full left-0 z-30 mb-2 w-72 rounded-control border border-atelier-rule bg-atelier-surface p-3 text-left shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
         >
           {sent ? (
-            <p className="py-2 text-center text-xs font-medium text-neutral-900">{sentLabel}</p>
+            <p className="py-2 text-center text-xs font-medium text-atelier-ink">{sentLabel}</p>
           ) : (
             <>
-              <p className="text-xs font-medium text-neutral-900">{title}</p>
+              <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{title}</p>
               <textarea
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
@@ -90,14 +92,14 @@ export function FeedbackLink({
                 rows={3}
                 maxLength={2000}
                 autoFocus
-                className="mt-2 w-full resize-none rounded-[10px] border border-neutral-200 p-2 text-xs text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none"
+                className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent"
               />
-              {error && <p className="mt-1.5 text-[11px] text-red-600">{error}</p>}
+              {error && <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
               <button
                 type="button"
                 onClick={handleSubmit}
                 disabled={sending || !message.trim()}
-                className="mt-2 w-full rounded-full bg-neutral-900 py-1.5 text-xs font-medium text-white transition-colors hover:bg-neutral-800 disabled:opacity-50"
+                className="mt-2 w-full rounded-control bg-atelier-ink py-1.5 text-xs font-medium text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-50"
               >
                 {sending ? sendingLabel : submitLabel}
               </button>

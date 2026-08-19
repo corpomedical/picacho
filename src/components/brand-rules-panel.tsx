@@ -79,23 +79,23 @@ export function BrandRulesPanel({
       {/* Honesty banner: rules stay editable while enforcement is globally
           switched off, and nobody should discover that the hard way. */}
       {enforcementPaused && (
-        <p className="rounded-[10px] bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+        <p className="rounded-control bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
           {b.pausedNotice}
         </p>
       )}
       <Card>
-        <h2 className="text-sm font-semibold text-neutral-900">{b.packsTitle}</h2>
-        <p className="mt-1 text-sm text-neutral-500">{b.packsSubtitle}</p>
+        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{b.packsTitle}</h2>
+        <p className="mt-1 text-xs text-atelier-muted">{b.packsSubtitle}</p>
 
         <div className="mt-4 space-y-2">
           {BRAND_RULE_PACKS.map((pack) => (
             <div
               key={pack.id}
-              className="flex flex-col gap-3 rounded-[12px] border border-neutral-100 p-3.5 sm:flex-row sm:items-center"
+              className="flex flex-col gap-3 rounded-control border border-atelier-rule p-3.5 sm:flex-row sm:items-center"
             >
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-neutral-900">{pack.name}</p>
-                <p className="mt-0.5 text-xs text-neutral-500">{pack.description}</p>
+                <p className="text-sm font-medium text-atelier-ink">{pack.name}</p>
+                <p className="mt-0.5 text-xs text-atelier-muted">{pack.description}</p>
               </div>
               <Button
                 type="button"
@@ -114,14 +114,14 @@ export function BrandRulesPanel({
         {/* Deliberately prominent rather than a footnote. These rules touch
             advertising law, and someone in a regulated trade should not
             infer from a tidy UI that they've been legally cleared. */}
-        <p className="mt-4 rounded-[10px] bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
+        <p className="mt-4 rounded-control bg-amber-50 px-3.5 py-2.5 text-xs text-amber-900 dark:bg-amber-500/15 dark:text-amber-200">
           {b.packsDisclaimer}
         </p>
       </Card>
 
       <Card>
-        <h2 className="text-sm font-semibold text-neutral-900">{b.title}</h2>
-        <p className="mt-1 text-sm text-neutral-500">{b.subtitle}</p>
+        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{b.title}</h2>
+        <p className="mt-1 text-xs text-atelier-muted">{b.subtitle}</p>
 
         <form action={handleAdd} className="mt-4 space-y-4">
           <div className="flex gap-2">
@@ -132,16 +132,18 @@ export function BrandRulesPanel({
                 onClick={() => setKind(k)}
                 aria-pressed={kind === k}
                 className={cn(
-                  "flex-1 rounded-[12px] border px-3 py-2.5 text-left transition-colors",
+                  // Accent border marks the ACTIVE choice — same idiom as the
+                  // sidebar theme picker (accent = active state, not chrome).
+                  "flex-1 rounded-control border px-3 py-2.5 text-left transition-colors",
                   kind === k
-                    ? "border-neutral-900 bg-neutral-50"
-                    : "border-neutral-200 hover:border-neutral-300",
+                    ? "border-atelier-accent bg-atelier-accent/5"
+                    : "border-atelier-rule hover:border-atelier-muted",
                 )}
               >
-                <span className="block text-sm font-medium text-neutral-900">
+                <span className="block text-sm font-medium text-atelier-ink">
                   {k === "forbid" ? b.kindForbid : b.kindRequire}
                 </span>
-                <span className="mt-0.5 block text-xs text-neutral-500">
+                <span className="mt-0.5 block text-xs text-atelier-muted">
                   {k === "forbid" ? b.kindForbidHint : b.kindRequireHint}
                 </span>
               </button>
@@ -165,7 +167,7 @@ export function BrandRulesPanel({
                 id="applies_to"
                 name="applies_to"
                 defaultValue="all"
-                className="mt-1 rounded-[10px] border border-neutral-200 px-3 py-2 text-sm"
+                className="mt-1 rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
               >
                 <option value="all">{b.appliesAll}</option>
                 <option value="image">{b.appliesImage}</option>
@@ -180,7 +182,7 @@ export function BrandRulesPanel({
                   id="severity"
                   name="severity"
                   defaultValue="block"
-                  className="mt-1 rounded-[10px] border border-neutral-200 px-3 py-2 text-sm"
+                  className="mt-1 rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
                 >
                   <option value="block">{b.severityBlock}</option>
                   <option value="warn">{b.severityWarn}</option>
@@ -189,7 +191,7 @@ export function BrandRulesPanel({
             )}
           </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
           <div className="flex justify-end">
             <Button type="submit" pending={pending} pendingLabel={b.adding}>
@@ -200,22 +202,22 @@ export function BrandRulesPanel({
       </Card>
 
       <Card>
-        <h2 className="text-sm font-semibold text-neutral-900">{b.yourRules}</h2>
+        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{b.yourRules}</h2>
         {rules.length === 0 ? (
-          <p className="mt-3 text-sm text-neutral-500">{b.noRules}</p>
+          <p className="mt-3 text-sm text-atelier-muted">{b.noRules}</p>
         ) : (
           <ul className="mt-3 space-y-2">
             {rules.map((rule) => (
               <li
                 key={rule.id}
                 className={cn(
-                  "flex items-start gap-3 rounded-[12px] border border-neutral-100 px-3.5 py-3",
+                  "flex items-start gap-3 rounded-control border border-atelier-rule px-3.5 py-3",
                   !rule.active && "opacity-50",
                 )}
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm font-medium text-neutral-900">{rule.label}</span>
+                    <span className="text-sm font-medium text-atelier-ink">{rule.label}</span>
                     <Badge tone={rule.kind === "forbid" ? "danger" : "neutral"}>
                       {rule.kind === "forbid" ? b.kindForbid : b.kindRequire}
                     </Badge>
@@ -228,20 +230,20 @@ export function BrandRulesPanel({
                       </Badge>
                     )}
                   </div>
-                  <p className="mt-1 break-words text-sm text-neutral-600">{rule.value}</p>
+                  <p className="mt-1 break-words text-sm text-atelier-muted">{rule.value}</p>
                 </div>
                 <div className="flex flex-shrink-0 items-center gap-3">
                   <button
                     type="button"
                     onClick={() => handleToggle(rule)}
-                    className="text-xs text-neutral-500 hover:text-neutral-900"
+                    className="text-xs text-atelier-muted hover:text-atelier-ink"
                   >
                     {rule.active ? b.disable : b.enable}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDelete(rule)}
-                    className="text-xs text-red-500 hover:text-red-700"
+                    className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
                   >
                     {b.delete}
                   </button>
@@ -250,7 +252,7 @@ export function BrandRulesPanel({
             ))}
           </ul>
         )}
-        <p className="mt-4 border-t border-neutral-100 pt-3 text-xs text-neutral-400">{b.promptLevelNote}</p>
+        <p className="mt-4 border-t border-atelier-rule/60 pt-3 text-xs text-atelier-muted">{b.promptLevelNote}</p>
       </Card>
     </div>
   );

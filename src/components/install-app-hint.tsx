@@ -80,10 +80,10 @@ export function InstallAppHint() {
   }
 
   return (
-    <div className="flex flex-col gap-3 rounded-[18px] border border-neutral-100 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)] sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-control border border-atelier-rule bg-atelier-surface p-5 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-neutral-900">{d.installTitle}</p>
-        <p className="mt-0.5 text-xs leading-relaxed text-neutral-500">
+        <p className="text-sm font-semibold text-atelier-ink">{d.installTitle}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-atelier-muted">
           {isIos ? d.installIosHint : d.installBody}
         </p>
       </div>
@@ -96,7 +96,7 @@ export function InstallAppHint() {
         <button
           type="button"
           onClick={dismiss}
-          className="rounded-full px-3 py-1.5 text-xs text-neutral-400 transition-colors hover:bg-neutral-100 hover:text-neutral-700"
+          className="rounded-control px-3 py-1.5 text-xs text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
         >
           {d.installDismiss}
         </button>

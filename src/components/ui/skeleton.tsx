@@ -6,7 +6,8 @@ import { cn } from "@/lib/cn";
 // connection. These are intentionally plain (no copy to translate, no data
 // dependency) so they can render instantly, before anything else loads.
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-[10px] bg-neutral-200/70", className)} />;
+  // Warm rule-toned pulse, not gray — a skeleton is unprinted paper.
+  return <div className={cn("animate-pulse rounded-control bg-atelier-rule/50", className)} />;
 }
 
 export function SkeletonPage({

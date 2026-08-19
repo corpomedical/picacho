@@ -43,7 +43,7 @@ export function ProfileForm({
           name="gender"
           value={genderChoice}
           onChange={(e) => setGenderChoice(e.target.value)}
-          className="w-full rounded-[10px] border border-neutral-200 bg-white px-3.5 py-2.5 text-sm text-neutral-900 outline-none transition-shadow focus:border-neutral-400 focus:ring-2 focus:ring-neutral-900/5"
+          className="w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
         >
           <option value="">{s.preferNotToSay}</option>
           {STANDARD_GENDERS.map((g) => (
@@ -63,7 +63,7 @@ export function ProfileForm({
         )}
       </div>
 
-      <p className="text-xs text-neutral-400">
+      <p className="text-xs text-atelier-muted">
         {s.profileNote}
       </p>
 
