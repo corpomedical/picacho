@@ -167,8 +167,17 @@ function ValidateMockup({ m }: { m: HomeMessages }) {
   const checks = [m.mockupCheckHair, m.mockupCheckOutfit, m.mockupCheckMotion];
   return (
     <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)]">
-      <div className="flex aspect-video w-full items-center justify-center rounded-[12px] bg-gradient-to-br from-neutral-200 to-neutral-100">
-        <MediaGlyphIcon className="h-8 w-8 text-neutral-400" />
+      {/* Redesigned 2026-08-19: this used to be a flat gray box with a media
+          glyph, which read as "video failed to load" rather than as a
+          mockup. Now it depicts what the step actually is — a frame under
+          inspection: dark render surface, a pulsing scan bar, and the same
+          identity-match chip the score band and the product itself use. */}
+      <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700">
+        <div className="absolute inset-x-6 top-1/2 h-px animate-pulse bg-white/30" />
+        <span className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-neutral-800 shadow-sm">
+          {m.scoreBandMatch}
+          <span className="text-ochre">92%</span>
+        </span>
       </div>
       <div className="mt-4 space-y-1.5">
         {checks.map((check) => (
@@ -206,9 +215,22 @@ function ResultMockup({ m }: { m: HomeMessages }) {
 // so a stale copy can't be served and the content always matches the deploy.
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ billing?: string }>;
+}) {
   const { t } = await getServerMessages();
   const m = t.marketing.home;
+  const p = t.marketing.pricing;
+  // Same URL-param billing toggle as /pricing (see the rationale there) —
+  // added 2026-08-19: this section used to show annual prices with a struck
+  // monthly figure and NO way to see monthly, so "$8/mo" met "$9" at
+  // checkout for anyone who never found the toggle on /pricing. The #pricing
+  // anchor keeps the page from jumping back to the hero on switch (the page
+  // is force-dynamic, so the toggle is a full server render).
+  const { billing } = await searchParams;
+  const interval: "annual" | "month" = billing === "monthly" ? "month" : "annual";
   // No pricing UI inside the native app (Apple 3.1.1 / Google Play): the
   // "See pricing" hero link, the pricing card grid, and the "full plan
   // details" link are all omitted. Everything else on the page is unchanged.
@@ -288,23 +310,48 @@ export default async function Home() {
                   key={i}
                   className="relative aspect-square overflow-hidden rounded-[12px] bg-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/showcase/${i}`}
-                    alt=""
-                    loading={i < 3 ? "eager" : "lazy"}
-                    className={cn(
-                      "h-full w-full object-cover",
-                      // Tile 3 is the full-length cooking-show shot; square-
-                      // cropping it from the centre would land on the plate.
-                      // Anchoring near the top keeps it chest-up, so her face
-                      // still reads at this size.
-                      i === 3 && "object-[50%_12%]",
-                    )}
-                  />
+                  {i === 4 ? (
+                    // The product is MOTION, and until 2026-08-19 the hero
+                    // was six stills — the one thing the page never showed
+                    // was a video. Tile 4 now loops a real Picacho render of
+                    // the same character (public/hero-loop.mp4, 960x540
+                    // ~5MB, transcoded from the full-res original). Muted +
+                    // playsInline are both required for mobile autoplay
+                    // policies; the square tile centre-crops the 16:9 frame.
+                    <video
+                      src="/hero-loop.mp4"
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                      aria-hidden
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`/api/showcase/${i}`}
+                      alt=""
+                      loading={i < 3 ? "eager" : "lazy"}
+                      className={cn(
+                        "h-full w-full object-cover",
+                        // Tile 3 is the full-length cooking-show shot; square-
+                        // cropping it from the centre would land on the plate.
+                        // Anchoring near the top keeps it chest-up, so her face
+                        // still reads at this size.
+                        i === 3 && "object-[50%_12%]",
+                      )}
+                    />
+                  )}
                   {i === 0 && (
                     <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
                       {m.heroIdentityPhoto}
+                    </span>
+                  )}
+                  {i === 4 && (
+                    <span className="absolute bottom-1.5 left-1.5 rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
+                      {m.heroVideoTag}
                     </span>
                   )}
                 </div>
@@ -472,13 +519,48 @@ export default async function Home() {
         // max-w-6xl + a 5-column top break, same as /pricing (2026-08-19):
         // the Basic tier made it five cards, and five into lg:grid-cols-4
         // left one orphaned on its own row.
-        <section className="mx-auto max-w-6xl px-8 pb-24">
+        <section id="pricing" className="mx-auto max-w-6xl scroll-mt-8 px-8 pb-24">
           <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-900">
             {m.pricingHeading}
           </h2>
+          <div className="mt-8 flex justify-center">
+            <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white p-1">
+              <Link
+                href="/#pricing"
+                className={
+                  interval === "annual"
+                    ? "flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
+                    : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
+                }
+              >
+                {p.billingAnnual}
+                {/* Matches the real annualPrice discount in lib/pricing.ts
+                    (~15% since 2026-08-19) — change together with /pricing. */}
+                <span
+                  className={
+                    interval === "annual"
+                      ? "rounded-full bg-ochre px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                      : "hidden"
+                  }
+                >
+                  -15%
+                </span>
+              </Link>
+              <Link
+                href="/?billing=monthly#pricing"
+                className={
+                  interval === "month"
+                    ? "rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
+                    : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
+                }
+              >
+                {p.billingMonthly}
+              </Link>
+            </div>
+          </div>
           <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
             {PRICING_TIERS.map((tier) => (
-              <PricingCard key={tier.id} tier={tier} />
+              <PricingCard key={tier.id} tier={tier} interval={interval} />
             ))}
           </div>
           <p className="mt-6 text-center text-sm text-neutral-500">

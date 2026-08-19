@@ -22,14 +22,25 @@ export async function MarketingHeader() {
 
   return (
     <header className="border-b border-neutral-200/70">
-      <div className="mx-auto flex max-w-5xl items-center justify-between px-8 py-5">
-        <Link href="/" className="flex items-center gap-1">
+      {/* Phone-width layout, 2026-08-19: px-8 + gap-6 + the badge used to
+          overflow a 375px viewport, and the flexbox "resolved" that by
+          painting the logo, badge, and nav links on top of each other —
+          the first thing every mobile visitor saw was a pile of glyphs.
+          Below sm: tighter padding and gaps, the (decorative) badge is
+          dropped, and every text link is nowrap so "Log in" can't split
+          into two lines. flex-shrink-0 on the logo keeps the wordmark
+          from being compressed into the badge. */}
+      <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4 sm:px-8 sm:py-5">
+        <Link href="/" className="flex flex-shrink-0 items-center gap-1">
           <Logo className="h-6" />
-          <EarlyAccessBadge />
+          <EarlyAccessBadge className="hidden sm:inline" />
         </Link>
-        <nav className="flex items-center gap-6 text-sm text-neutral-500">
+        <nav className="flex items-center gap-3 text-sm text-neutral-500 sm:gap-6">
           {!native && (
-            <Link href="/pricing" className="transition-colors hover:text-neutral-900">
+            <Link
+              href="/pricing"
+              className="whitespace-nowrap transition-colors hover:text-neutral-900"
+            >
               {t.marketing.nav.pricing}
             </Link>
           )}
@@ -37,16 +48,21 @@ export async function MarketingHeader() {
               costs no vertical space, which the hero placement did. */}
           <GetAppButton />
           {isLoggedIn ? (
-            <Link href="/app">
+            <Link href="/app" className="flex-shrink-0">
               <Button size="sm">{t.marketing.nav.goToApp}</Button>
             </Link>
           ) : (
             <>
-              <Link href="/login" className="transition-colors hover:text-neutral-900">
+              <Link
+                href="/login"
+                className="whitespace-nowrap transition-colors hover:text-neutral-900"
+              >
                 {t.marketing.nav.login}
               </Link>
-              <Link href="/signup">
-                <Button size="sm">{t.marketing.nav.signup}</Button>
+              <Link href="/signup" className="flex-shrink-0">
+                <Button size="sm" className="whitespace-nowrap">
+                  {t.marketing.nav.signup}
+                </Button>
               </Link>
             </>
           )}
