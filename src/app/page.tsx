@@ -310,48 +310,23 @@ export default async function Home({
                   key={i}
                   className="relative aspect-square overflow-hidden rounded-[12px] bg-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
                 >
-                  {i === 4 ? (
-                    // The product is MOTION, and until 2026-08-19 the hero
-                    // was six stills — the one thing the page never showed
-                    // was a video. Tile 4 now loops a real Picacho render of
-                    // the same character (public/hero-loop.mp4, 960x540
-                    // ~5MB, transcoded from the full-res original). Muted +
-                    // playsInline are both required for mobile autoplay
-                    // policies; the square tile centre-crops the 16:9 frame.
-                    <video
-                      src="/hero-loop.mp4"
-                      autoPlay
-                      muted
-                      loop
-                      playsInline
-                      preload="metadata"
-                      aria-hidden
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={`/api/showcase/${i}`}
-                      alt=""
-                      loading={i < 3 ? "eager" : "lazy"}
-                      className={cn(
-                        "h-full w-full object-cover",
-                        // Tile 3 is the full-length cooking-show shot; square-
-                        // cropping it from the centre would land on the plate.
-                        // Anchoring near the top keeps it chest-up, so her face
-                        // still reads at this size.
-                        i === 3 && "object-[50%_12%]",
-                      )}
-                    />
-                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`/api/showcase/${i}`}
+                    alt=""
+                    loading={i < 3 ? "eager" : "lazy"}
+                    className={cn(
+                      "h-full w-full object-cover",
+                      // Tile 3 is the full-length cooking-show shot; square-
+                      // cropping it from the centre would land on the plate.
+                      // Anchoring near the top keeps it chest-up, so her face
+                      // still reads at this size.
+                      i === 3 && "object-[50%_12%]",
+                    )}
+                  />
                   {i === 0 && (
                     <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
                       {m.heroIdentityPhoto}
-                    </span>
-                  )}
-                  {i === 4 && (
-                    <span className="absolute bottom-1.5 left-1.5 rounded-full bg-slate-900/80 px-2 py-0.5 text-[10px] font-semibold text-white shadow-sm">
-                      {m.heroVideoTag}
                     </span>
                   )}
                 </div>

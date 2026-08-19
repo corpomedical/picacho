@@ -47,7 +47,6 @@ const es = {
     home: {
       heroAccent: "fotograma.",
       heroIdentityPhoto: "Foto de identidad",
-      heroVideoTag: "Vídeo",
       heroRealNote: "Resultados reales, sin retocar, de un personaje de Picacho.",
       engineEyebrow: "Impulsado por los mejores modelos",
       engineImage: "Imagen",

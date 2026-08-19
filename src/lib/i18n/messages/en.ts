@@ -55,7 +55,6 @@ const en = {
     home: {
       heroAccent: "frame.",
       heroIdentityPhoto: "Identity photo",
-      heroVideoTag: "Video",
       heroRealNote: "Real, unretouched output from one Picacho character.",
       engineEyebrow: "Running on the frontier",
       engineImage: "Image",
