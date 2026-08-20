@@ -1,4 +1,4 @@
-import { type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { NATIVE_COOKIE, userAgentIsNativeApp } from "@/lib/native/platform";
 
@@ -85,6 +85,25 @@ function buildCsp(nonce: string): string {
 }
 
 export async function middleware(request: NextRequest) {
+  // The native shell opens at the site root. A phone must land in the
+  // product, not on the marketing homepage — the heaviest page on the site,
+  // which on a cold fresh-install WebView held the splash screen for 30+
+  // seconds (measured on the Play internal build, 2026-08-20) and read as
+  // "app is dead". /app's own auth guard takes over from here (login when
+  // signed out). Browsers are unaffected; the app can still reach the
+  // homepage through in-app links if it ever needs to — only the entry
+  // navigation is rerouted.
+  if (
+    request.nextUrl.pathname === "/" &&
+    userAgentIsNativeApp(request.headers.get("user-agent"))
+  ) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/app";
+    const redirect = NextResponse.redirect(url);
+    redirect.cookies.set(NATIVE_COOKIE, "1", { path: "/", sameSite: "lax" });
+    return redirect;
+  }
+
   // Nonce first, on the REQUEST headers, before updateSession builds the
   // response with NextResponse.next({ request }) — that forwarding is what
   // lets Next's renderer see the nonce and stamp its own inline scripts

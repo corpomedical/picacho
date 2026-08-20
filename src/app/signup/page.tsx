@@ -9,6 +9,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { Label, Input } from "@/components/ui/field";
 import { OAuthButtons } from "@/components/oauth-buttons";
 import { getServerMessages } from "@/lib/i18n/server";
+import { isNativeApp } from "@/lib/native/server";
 import { Logo } from "@/components/logo";
 
 export default async function SignupPage({
@@ -41,6 +42,11 @@ export default async function SignupPage({
 
   const { t } = await getServerMessages();
   const a = t.auth.signup;
+
+  // OAuth is web-only for now — same gate as the login page: inside the
+  // Capacitor shell the provider redirect bounces to the system browser and
+  // the session strands in Chrome, never reaching the app.
+  const native = await isNativeApp();
 
   // Post-signup confirmation screen. Reached by the signup action's redirect
   // to /signup?sent=1 — a clear "we emailed you, go click the link" state
@@ -121,17 +127,21 @@ export default async function SignupPage({
           <h1 className="font-display text-xl font-bold tracking-[-0.02em] text-neutral-900">{a.title}</h1>
           <p className="mt-1 text-sm text-neutral-500">{a.subtitle}</p>
 
-          <div className="mt-6">
-            <OAuthButtons />
-          </div>
+          {!native && (
+            <>
+              <div className="mt-6">
+                <OAuthButtons />
+              </div>
 
-          <div className="my-6 flex items-center gap-3">
-            <div className="h-px flex-1 bg-neutral-200" />
-            <span className="text-xs text-neutral-400">{a.or}</span>
-            <div className="h-px flex-1 bg-neutral-200" />
-          </div>
+              <div className="my-6 flex items-center gap-3">
+                <div className="h-px flex-1 bg-neutral-200" />
+                <span className="text-xs text-neutral-400">{a.or}</span>
+                <div className="h-px flex-1 bg-neutral-200" />
+              </div>
+            </>
+          )}
 
-          <form action={signup} className="space-y-4">
+          <form action={signup} className={native ? "mt-6 space-y-4" : "space-y-4"}>
             <div>
               <Label htmlFor="full_name">{a.nameLabel}</Label>
               <Input id="full_name" name="full_name" required maxLength={80} autoComplete="name" />
