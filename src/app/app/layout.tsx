@@ -4,6 +4,7 @@ import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
 import { NativeTabBar } from "@/components/native-tab-bar";
+import { NativeQuickPill } from "@/components/native-quick-pill";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
@@ -96,6 +97,7 @@ export default async function AppLayout({
           attach it to. No-ops entirely on the web. */}
       <NativePush />
       <NativeTabBar />
+      <NativeQuickPill />
       {showRatePrompt && <RatePrompt />}
       <div className="min-w-0 flex-1 overflow-y-auto">
         {/* pt-14 clears the fixed mobile top bar (see AppSidebar); not needed

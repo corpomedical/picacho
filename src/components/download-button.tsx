@@ -1,6 +1,8 @@
 "use client";
 
 import { useLocale } from "@/lib/i18n/provider";
+import { isNativeAppClient } from "@/lib/native/platform";
+import { capPlugin } from "@/lib/native/bridge";
 
 // Shared by the live Generate composer and the History detail page — both
 // show a generated image/video and both need the same "download it" button
@@ -38,6 +40,33 @@ async function downloadResult(url: string, filename: string) {
   }
 }
 
+// The Android WebView has no download manager: the anchor trick above is
+// simply swallowed (operator-reported, 2026-08-21 — "Download does not work
+// on Android app"). In the shell the file goes through the native layer
+// instead: fetch → base64 → Filesystem cache file → the system share sheet,
+// where "save to device / Photos / Drive / WhatsApp" are all one tap. The
+// plugins arrive with the versionCode-4 build; on an older shell without
+// them this quietly falls back to the web path.
+async function downloadResultNative(url: string, filename: string): Promise<boolean> {
+  const fs = capPlugin("Filesystem");
+  const share = capPlugin("Share");
+  if (!fs?.writeFile || !share?.share) return false;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const base64 = await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const s = String(reader.result);
+      resolve(s.slice(s.indexOf(",") + 1));
+    };
+    reader.readAsDataURL(blob);
+  });
+  const written = await fs.writeFile({ path: filename, data: base64, directory: "CACHE" });
+  await share.share({ title: filename, files: [written.uri] });
+  return true;
+}
+
 export function DownloadButton({
   url,
   contentType,
@@ -51,6 +80,14 @@ export function DownloadButton({
   // during render since it can produce different output on a re-render.
   function handleClick() {
     const filename = `picacho-${contentType}-${Date.now()}.${contentType === "video" ? "mp4" : "png"}`;
+    if (isNativeAppClient()) {
+      void downloadResultNative(url, filename)
+        .then((handled) => {
+          if (!handled) return downloadResult(url, filename).then(() => undefined);
+        })
+        .catch(() => downloadResult(url, filename));
+      return;
+    }
     void downloadResult(url, filename);
   }
   return (

@@ -46,6 +46,8 @@ import {
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
 import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { DownloadButton } from "@/components/download-button";
+import { ZoomableImage } from "@/components/zoomable-image";
+import { NEW_CHAT_EVENT } from "@/components/native-quick-pill";
 import { FeedbackLink } from "@/components/feedback-link";
 import { ResultActions } from "@/components/result-actions";
 import { OnboardingTour, type TourStep } from "@/components/onboarding-tour";
@@ -407,8 +409,7 @@ function ResultMedia({
       </div>
     ) : (
       <div className="relative mt-4">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <ZoomableImage
           src={resultUrl}
           alt={prompt || t.generate.resultAlt}
           className="w-full rounded-media bg-atelier-ink/5 object-cover"
@@ -2211,6 +2212,23 @@ function GenerateFormInner({
     clearAdvancedVideo();
     setAnchorPhotoPath(null);
   }
+
+  // The native quick pill's pencil fires this event from OUTSIDE the
+  // composer (it's fixed chrome in the app layout, not a child here). Ref
+  // indirection so the listener binds once but always calls the latest
+  // resetChat; ignored mid-request for the same reason the New chat button
+  // is disabled then — clearing the live bubble would orphan the render.
+  const resetChatRef = useRef(resetChat);
+  resetChatRef.current = resetChat;
+  const submittingRef = useRef(submitting);
+  submittingRef.current = submitting;
+  useEffect(() => {
+    const onNewChat = () => {
+      if (!submittingRef.current) resetChatRef.current();
+    };
+    window.addEventListener(NEW_CHAT_EVENT, onNewChat);
+    return () => window.removeEventListener(NEW_CHAT_EVENT, onNewChat);
+  }, []);
 
   function toggleAngle(id: AngleId) {
     setSelectedAngles((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
@@ -4689,14 +4707,21 @@ function GenerateFormInner({
                       }
                       disabled={enhancing || submitting}
                       title={prompt.trim().length > 0 ? g.enhance : g.describeImage}
+                      aria-label={prompt.trim().length > 0 ? g.enhance : g.describeImage}
                       className="flex flex-shrink-0 items-center gap-1.5 rounded-full border border-atelier-accent/40 px-3 py-1.5 text-xs font-semibold text-atelier-accent transition-colors hover:bg-atelier-accent/10 disabled:opacity-50"
                     >
                       <SparkIcon className={cn("h-3.5 w-3.5", enhancing && "animate-pulse")} />
-                      {enhancing
-                        ? g.enhanceWorking
-                        : prompt.trim().length > 0
-                          ? g.enhance
-                          : g.describeImage}
+                      {/* Icon-only below sm: on a phone the full label ate
+                          the strip's width and scrolled every other control
+                          out of view (operator-reported, 2026-08-21). The
+                          title/aria-label above carry the words. */}
+                      <span className="hidden sm:inline">
+                        {enhancing
+                          ? g.enhanceWorking
+                          : prompt.trim().length > 0
+                            ? g.enhance
+                            : g.describeImage}
+                      </span>
                     </button>
                   )}
                   {contentType === "video" && (

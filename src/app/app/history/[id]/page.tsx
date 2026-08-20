@@ -11,6 +11,7 @@ import { AngleResultViewer } from "@/components/angle-result-viewer";
 import { StillRendering } from "@/components/still-rendering";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { DownloadButton } from "@/components/download-button";
+import { ZoomableImage } from "@/components/zoomable-image";
 import { ResultActions } from "@/components/result-actions";
 import { LocalDate } from "@/components/local-date";
 import type { GenerationFeedback } from "@/lib/generations/actions";
@@ -237,8 +238,7 @@ export default async function HistoryDetailPage({
                     // mat — the same charcoal in both themes — so it glows on
                     // the paper chrome instead of butting against it.
                     <div className="relative mt-3 overflow-hidden rounded-media bg-atelier-stage p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <ZoomableImage
                         src={generation.result_url}
                         alt={generation.prompt_input || t.generate.resultAlt}
                         className="w-full rounded-[6px] object-cover"

@@ -31,6 +31,12 @@ const it = {
     settings: "Impostazioni",
     search: "Cerca",
   },
+  nativePill: {
+    menu: "Altre opzioni",
+    home: "Dashboard",
+    help: "Come funziona Picacho",
+    share: "Condividi Picacho",
+  },
   marketing: {
     nav: {
       pricing: "Prezzi",

@@ -42,6 +42,16 @@ function UserIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function PhotosIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <path d="m21 15-5-5L5 21" />
+    </svg>
+  );
+}
+
 function ClockIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -71,12 +81,17 @@ export function NativeTabBar() {
 
   if (!isNative) return null;
 
+  // Five tabs — the stated ceiling above. Media earned the fifth slot the
+  // hard way: with the sidebar hidden there was NO route to /app/images or
+  // /app/videos from inside the shell at all (operator-reported,
+  // 2026-08-21). extraMatch lights the tab for both media sections.
   const tabs = [
     { href: "/app/generate", label: t.nav.generate, icon: BoltIcon },
     { href: "/app/character", label: t.nav.characters, icon: UserIcon },
+    { href: "/app/images", label: t.nav.media, icon: PhotosIcon, extraMatch: "/app/videos" },
     { href: "/app/history", label: t.nav.history, icon: ClockIcon },
     { href: "/app/settings", label: t.nav.settings, icon: GearIcon },
-  ];
+  ] as { href: string; label: string; icon: typeof BoltIcon; extraMatch?: string }[];
 
   return (
     <nav
@@ -90,7 +105,10 @@ export function NativeTabBar() {
         // Characters tab. /app/generate is matched exactly as well as by
         // prefix so the composer counts from either entry point.
         const active =
-          pathname === tab.href || pathname.startsWith(`${tab.href}/`);
+          pathname === tab.href ||
+          pathname.startsWith(`${tab.href}/`) ||
+          (tab.extraMatch !== undefined &&
+            (pathname === tab.extraMatch || pathname.startsWith(`${tab.extraMatch}/`)));
         const Icon = tab.icon;
         return (
           <Link

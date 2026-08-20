@@ -39,6 +39,13 @@ const en = {
     settings: "Settings",
     search: "Search",
   },
+  // The floating quick-actions pill in the native app (see NativeQuickPill).
+  nativePill: {
+    menu: "More options",
+    home: "Dashboard",
+    help: "How Picacho works",
+    share: "Share Picacho",
+  },
   marketing: {
     nav: {
       pricing: "Pricing",

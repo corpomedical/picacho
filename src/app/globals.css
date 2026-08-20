@@ -213,6 +213,12 @@ html.native-app {
      so lists still feel right — it's the PAGE bouncing and revealing a blank
      strip that reads as a webview. */
   overscroll-behavior-y: none;
+  /* The strip behind the status bar / punch hole is the HTML element showing
+     through above body's safe-area padding — unpainted, it was default
+     white against the paper page (operator-reported, 2026-08-21: "I want it
+     to fully reach all the screen to unify the color"). The token follows
+     the theme on its own. */
+  background-color: var(--color-atelier-paper);
 }
 
 html.native-app * {

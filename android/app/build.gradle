@@ -18,7 +18,9 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 3
+        versionCode 4
+        // 4 = App + Filesystem plugins (hardware back handling, native
+        // download via share sheet) — the Android UX punch list, 2026-08-21.
         // Tracks CURRENT_VERSION in src/lib/changelog.ts. Bump versionCode
         // (never reuse a value) on every Play upload. 3 = launcher icon
         // committed to the dark tile in BOTH system themes (operator's call,
