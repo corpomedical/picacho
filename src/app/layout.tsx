@@ -6,8 +6,10 @@ import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
 import { PageViewTracker } from "@/components/page-view-tracker";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { NativeChrome } from "@/components/native-chrome";
+import { NativeIntro } from "@/components/native-intro";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
+import { isNativeApp } from "@/lib/native/server";
 
 
 // Marketing display face (see --font-display in globals.css). Downloaded at
@@ -117,6 +119,9 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const locale = await getLocale();
+  // The animated splash continuation, app-only. Gated here (server-side)
+  // rather than inside the component so the website never even ships it.
+  const native = await isNativeApp();
   // Per-request CSP nonce, minted by middleware.ts. Our hand-written inline
   // script below must carry it or the browser refuses to run it under the
   // nonce-based script-src (Next stamps its OWN inline scripts with the
@@ -142,6 +147,7 @@ export default async function RootLayout({
         <ThemeProvider>
           <LocaleProvider initialLocale={locale}>
             <NativeChrome />
+            {native && <NativeIntro />}
             <PageViewTracker />
             {children}
             <CookieConsentBanner />
