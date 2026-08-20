@@ -362,6 +362,7 @@ const pt = {
     image: "Imagem",
     newChat: "Novo chat",
     noMessages: "Ainda não há mensagens — descreva o que você quer abaixo, ou toque no microfone para falar.",
+    noMessagesNative: "Ainda não há mensagens — descreva o que você quer abaixo.",
     messageLabel: "Mensagem",
     stepDraft: "Rascunho",
     stepDraftLive: "Claude — rascunho",

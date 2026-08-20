@@ -362,6 +362,7 @@ const it = {
     image: "Immagine",
     newChat: "Nuova chat",
     noMessages: "Ancora nessun messaggio — descrivi cosa vuoi qui sotto, o tocca il microfono per parlare.",
+    noMessagesNative: "Ancora nessun messaggio — descrivi cosa vuoi qui sotto.",
     messageLabel: "Messaggio",
     stepDraft: "Bozza",
     stepDraftLive: "Claude — bozza",

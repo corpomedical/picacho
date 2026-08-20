@@ -399,6 +399,9 @@ const en = {
     image: "Image",
     newChat: "New chat",
     noMessages: "No messages yet — describe what you want below, or tap the mic to speak.",
+    // Native shell: the mic is hidden there (no WebView mic access), so the
+    // hint must not point at a control that doesn't exist.
+    noMessagesNative: "No messages yet — describe what you want below.",
     messageLabel: "Message",
     stepDraft: "Draft",
     stepDraftLive: "Claude — draft",

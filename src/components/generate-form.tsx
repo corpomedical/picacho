@@ -3895,7 +3895,7 @@ function GenerateFormInner({
             </div>
           ) : (
             <p className="py-10 text-center text-sm text-atelier-muted">
-              {g.noMessages}
+              {nativeClient ? g.noMessagesNative : g.noMessages}
             </p>
           )
         ) : (
@@ -4859,8 +4859,13 @@ function GenerateFormInner({
 
                   {/* Voice mode sits behind its own feature flag (see
                       lib/voice/enabled.ts) — off while the conversational
-                      agent is unfinished. The plain mic below stays. */}
-                  {voiceModeEnabled && (
+                      agent is unfinished. The plain mic below stays.
+                      Both voice buttons are hidden in the native shell:
+                      getUserMedia is denied in the WebView (no RECORD_AUDIO
+                      wiring), so on a phone they were dead controls whose
+                      only effect was overflowing the toolbar strip
+                      (operator-reported, 2026-08-20). */}
+                  {voiceModeEnabled && !nativeClient && (
                   <button
                     type="button"
                     onClick={voiceSessionActive ? stopVoiceSession : startVoiceSession}
@@ -4879,7 +4884,9 @@ function GenerateFormInner({
                   </button>
                   )}
 
-                  <VoiceRecorderButton onTranscript={handleVoiceTranscript} disabled={submitting} size="md" />
+                  {!nativeClient && (
+                    <VoiceRecorderButton onTranscript={handleVoiceTranscript} disabled={submitting} size="md" />
+                  )}
                   </div>
 
                   {submitting ? (
