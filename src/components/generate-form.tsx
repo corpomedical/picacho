@@ -673,18 +673,12 @@ function ChevronDownIcon(props: React.SVGProps<SVGSVGElement>) {
 }
 
 // Trigger for the composer's slide-out advanced-options panel (multi-angle,
-// storyboard/multi-reference). Was a left-pointing chevron hinting at the
-// slide direction — which on a phone read as a stray "back" button sitting
-// in the middle of the toolbar (operator-reported, 2026-08-20). A sliders
-// glyph says "more controls" no matter where the panel opens from; the
-// button fills like the other toggles while the panel is open.
-function SlidersIcon(props: React.SVGProps<SVGSVGElement>) {
+// storyboard/multi-reference) — points left to hint that the options slide
+// out in that direction, and flips to point right once open.
+function ChevronLeftIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M20 7h-9" />
-      <path d="M14 17H5" />
-      <circle cx="17" cy="17" r="3" />
-      <circle cx="7" cy="7" r="3" />
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="m15 6-6 6 6 6" />
     </svg>
   );
 }
@@ -4817,14 +4811,11 @@ function GenerateFormInner({
                         title={advancedOpen ? g.advancedOptionsHide : g.advancedOptionsShow}
                         aria-label={advancedOpen ? g.advancedOptionsHide : g.advancedOptionsShow}
                         aria-expanded={advancedOpen}
-                        className={cn(
-                          "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors",
-                          advancedOpen
-                            ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                        )}
+                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
                       >
-                        <SlidersIcon className="h-4 w-4" />
+                        <ChevronLeftIcon
+                          className={cn("h-4 w-4 transition-transform duration-300", advancedOpen && "rotate-180")}
+                        />
                       </button>
                     </>
                   )}
