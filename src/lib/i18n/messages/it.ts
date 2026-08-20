@@ -77,7 +77,7 @@ const it = {
       step2Title: "Scriviamo e revisioniamo il prompt",
       step2Detail: "I tratti e le regole fisse del tuo personaggio vengono inseriti automaticamente.",
       step3Title: "Generiamo, poi validiamo",
-      step3Detail: "Ogni risultato viene verificato rispetto al tuo regolamento prima di arrivare a te.",
+      step3Detail: "Ogni risultato viene valutato rispetto alla foto identità del tuo personaggio prima di arrivare a te.",
       step4Title: "Vedi solo il risultato buono",
       step4Detail: "I tentativi falliti vengono ripetuti automaticamente, fino a un limite — senza che tu te ne accorga.",
       pricingHeading: "Prezzi",
@@ -102,7 +102,7 @@ const it = {
         "Riusa lo stesso personaggio in immagini, video multi-angolazione, scene con altri personaggi e dialoghi parlati — tutto fedele allo stesso aspetto.",
       diffRulesTitle: "Regole di brand, applicate",
       diffRulesDetail:
-        "Definisci con cosa il tuo personaggio deve — o non deve — apparire, e ogni risultato viene verificato rispetto a quelle regole prima che tu lo veda. La tua mascotte resta fedele al brand ovunque compaia.",
+        "Definisci con cosa il tuo personaggio deve — o non deve — apparire, e ogni prompt viene verificato rispetto a quelle regole prima di generare qualsiasi cosa. La tua mascotte resta fedele al brand ovunque compaia.",
       heroFreeTrialNote: "Una generazione gratuita ogni giorno — senza carta di credito.",
       showcaseEyebrow: "Risultato reale",
       showcaseTitle: "Questo è un risultato reale di Picacho",
@@ -251,7 +251,7 @@ const it = {
         ],
         choosePicacho: [
           "Un personaggio deve restare riconoscibilmente sé stesso attraverso molte scene e formati — senza ri-ancorarlo immagine per immagine.",
-          "Vuoi modelli di frontiera — Kling O3 Pro, Veo 3.1, Seedance 2.5 — dietro un'unica pipeline d'identità, con regole di brand applicate prima che tu veda i risultati.",
+          "Vuoi modelli di frontiera — Kling O3 Pro, Veo 3.1, Seedance 2.5 — dietro un'unica pipeline d'identità, con regole di brand applicate prima di generare qualsiasi cosa.",
           "Vuoi ogni risultato valutato rispetto alla foto identità, e generazioni fallite che non costano nulla.",
         ],
       },

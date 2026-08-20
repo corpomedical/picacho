@@ -30,7 +30,7 @@ Picacho — AI Character Video
 The same face, in every single frame — every render scored to prove it.
 ```
 
-### Full description — 2354/4000
+### Full description — 2372/4000
 
 <!-- count:en.full -->
 ```text
@@ -46,8 +46,8 @@ Most tools hope the face carries over. Picacho checks. A vision model compares e
 THE PIPELINE
 Every generation runs the full pipeline: one AI model drafts your prompt, a second reviews it against your character's rulebook, then the result is generated and validated before it reaches you. Failed attempts retry automatically — and failed generations never use your credits.
 
-BRAND RULES, ENFORCED
-Define what your character must always — or must never — appear with, and every output is checked against those rules before you see it. Your mascot stays on-brand everywhere it shows up.
+BRAND RULES
+Give your character a rulebook — what it must always, or must never, appear with — and every prompt is drafted and reviewed against it before anything is generated. Your mascot stays on-brand everywhere it shows up.
 
 DIALOGUE AND MULTI-ANGLE
 Type what your character says, pick a voice, and the lips are synced to it. Multi-angle renders the same scene from several camera angles at once — same scene, same character, different cameras.
@@ -82,7 +82,7 @@ Picacho: personaje IA en vídeo
 La misma cara en cada fotograma — cada resultado puntuado para demostrarlo.
 ```
 
-### Full description — 2607/4000
+### Full description — 2612/4000
 
 <!-- count:es.full -->
 ```text
@@ -98,8 +98,8 @@ La mayoría de herramientas esperan que la cara se mantenga. Picacho lo comprueb
 EL PIPELINE
 Cada generación recorre el pipeline completo: un modelo de IA redacta tu prompt, un segundo lo revisa contra el reglamento de tu personaje, y el resultado se genera y se valida antes de llegar a ti. Los intentos fallidos se reintentan automáticamente — y las generaciones fallidas nunca consumen tus créditos.
 
-REGLAS DE MARCA, APLICADAS
-Define con qué debe —o no debe— aparecer tu personaje, y cada resultado se comprueba contra esas reglas antes de que lo veas. Tu mascota se mantiene fiel a la marca allí donde aparezca.
+REGLAS DE MARCA
+Dale a tu personaje un reglamento — con qué debe, o no debe, aparecer — y cada prompt se redacta y se revisa contra él antes de generar nada. Tu mascota se mantiene fiel a la marca allí donde aparezca.
 
 DIÁLOGO Y MULTIÁNGULO
 Escribe lo que dice tu personaje, elige una voz, y los labios se sincronizan con ella. El modo multiángulo genera la misma escena desde varios ángulos de cámara a la vez — misma escena, mismo personaje, distintas cámaras.
@@ -134,7 +134,7 @@ Picacho: video personaggi IA
 La stessa faccia in ogni fotogramma — e un punteggio che lo dimostra.
 ```
 
-### Full description — 2713/4000
+### Full description — 2723/4000
 
 <!-- count:it.full -->
 ```text
@@ -150,8 +150,8 @@ La maggior parte degli strumenti spera che il volto si mantenga. Picacho verific
 LA PIPELINE
 Ogni generazione percorre la pipeline completa: un modello IA scrive la bozza del prompt, un secondo la rivede confrontandola con il regolamento del personaggio, poi il risultato viene generato e validato prima di arrivare a te. I tentativi falliti vengono ripetuti automaticamente — e le generazioni fallite non consumano mai i tuoi crediti.
 
-REGOLE DI BRAND, APPLICATE
-Definisci con cosa il tuo personaggio deve — o non deve — apparire, e ogni risultato viene verificato rispetto a quelle regole prima che tu lo veda. La tua mascotte resta fedele al brand ovunque compaia.
+REGOLE DI BRAND
+Dai al tuo personaggio un regolamento — con cosa deve, o non deve, apparire — e ogni prompt viene scritto e revisionato rispetto a esso prima di generare qualsiasi cosa. La tua mascotte resta fedele al brand ovunque compaia.
 
 DIALOGHI E MULTI-ANGOLAZIONE
 Scrivi cosa dice il tuo personaggio, scegli una voce, e le labbra si sincronizzano. La modalità multi-angolazione genera la stessa scena da più angolazioni di ripresa contemporaneamente — stessa scena, stesso personaggio, inquadrature diverse.
@@ -186,7 +186,7 @@ Picacho: vídeo personagem IA
 O mesmo rosto em cada quadro — cada resultado pontuado para provar.
 ```
 
-### Full description — 2548/4000
+### Full description — 2554/4000
 
 <!-- count:pt.full -->
 ```text
@@ -202,8 +202,8 @@ A maioria das ferramentas torce para o rosto se manter. O Picacho confere: um mo
 O PIPELINE
 Cada geração percorre o pipeline completo: um modelo de IA redige seu prompt, um segundo o revisa contra o regulamento do seu personagem, e o resultado é gerado e validado antes de chegar até você. Tentativas com falha são refeitas automaticamente — e gerações com falha nunca consomem seus créditos.
 
-REGRAS DE MARCA, APLICADAS
-Defina com o que seu personagem deve — ou nunca deve — aparecer, e cada resultado é verificado contra essas regras antes de chegar até você. Seu mascote continua fiel à marca onde quer que apareça.
+REGRAS DE MARCA
+Dê ao seu personagem um regulamento — com o que ele deve, ou nunca deve, aparecer — e cada prompt é redigido e revisado contra ele antes de qualquer geração. Seu mascote continua fiel à marca onde quer que apareça.
 
 DIÁLOGO E MULTI-ÂNGULO
 Escreva o que seu personagem diz, escolha uma voz, e os lábios são sincronizados com ela. O modo multi-ângulo gera a mesma cena de vários ângulos de câmera ao mesmo tempo — mesma cena, mesmo personagem, câmeras diferentes.
@@ -238,7 +238,7 @@ own translation, so the es/it/pt listings map to the same keys in their own file
 | Full pipeline: draft → review → generate → validate | `marketing.pricing.subtitle`, `marketing.home.step1–step4` |
 | Failed attempts retry automatically | `marketing.home.stat2Caption`, `step4Detail` |
 | Failed generations never use your credits | `pricingTiers.*.features`, `marketing.pricing.faq[1]`, `marketing.compare.picFailures` |
-| Brand rules enforced; mascot stays on-brand | `marketing.home.diffRulesTitle/diffRulesDetail` — note `brandRules.pausedNotice` is an ops kill-switch; confirm rules are active platform-wide before shipping this claim |
+| Brand rules: every prompt drafted and reviewed against the rulebook before generation | `marketing.home.diffRulesTitle/diffRulesDetail`, `generate.promptLevelNote` — prompt-level checks (nothing generated, nothing charged when a rule blocks; deliberately NOT an output gate, per the 2026-08-20 economics decision). Requires the `brand_rules_enforcement` flag ON (Admin → Feature flags) — flip it before submitting for review, or rules aren't applied at all (`brandRules.pausedNotice`) |
 | Dialogue: type the line, pick a voice, lips synced | `character.dialogueVoiceSubtitle`, `generate.dialogueCreditNote` |
 | Multi-angle: same scene, several camera angles at once | `onboarding.multiAngleBody`, `marketing.home.diffFormatsDetail` — paid-plan feature per `generate.multiAngleLocked`; the listing describes it without claiming it's free. (Heads-up: `tutorial.s5p3` says "Studio plan" while `generate.multiAngleLocked` says "any paid plan" — reconcile before review.) |
 | A free generation every day, fastest model, no credit card, resets daily, doesn't stack | `marketing.home.heroFreeTrialNote`, `marketing.pricing.faq[2]` |

@@ -88,7 +88,7 @@ const en = {
       step2Title: "We draft and review the prompt",
       step2Detail: "Your character's locked-in traits and rules get engineered in automatically.",
       step3Title: "We generate, then validate",
-      step3Detail: "Every result is checked against your rulebook before it reaches you.",
+      step3Detail: "Every result is scored against your character's identity photo before it reaches you.",
       step4Title: "You see the good one",
       step4Detail: "Failed attempts retry automatically, up to a capped limit — silently.",
       pricingHeading: "Pricing",
@@ -117,7 +117,7 @@ const en = {
         "Reuse the same character across images, multi-angle video, scenes with other characters, and spoken dialogue — all locked to the same look.",
       diffRulesTitle: "Brand rules, enforced",
       diffRulesDetail:
-        "Define what your character must always — or must never — appear with, and every output is checked against those rules before you see it. Your mascot stays on-brand everywhere it shows up.",
+        "Define what your character must always — or must never — appear with, and every prompt is checked against those rules before anything is generated. Your mascot stays on-brand everywhere it shows up.",
       heroFreeTrialNote: "A free generation every day — no credit card required.",
       showcaseEyebrow: "Real output",
       showcaseTitle: "This is an actual Picacho result",
@@ -286,7 +286,7 @@ const en = {
         ],
         choosePicacho: [
           "One character has to stay recognizably itself across many scenes and formats — not re-anchored image by image.",
-          "You want frontier models — Kling O3 Pro, Veo 3.1, Seedance 2.5 — behind one identity pipeline, with brand rules enforced before you see results.",
+          "You want frontier models — Kling O3 Pro, Veo 3.1, Seedance 2.5 — behind one identity pipeline, with brand rules enforced before anything is generated.",
           "You want every output scored against the identity photo, and failed generations to cost nothing.",
         ],
       },

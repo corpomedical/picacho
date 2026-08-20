@@ -77,7 +77,7 @@ const pt = {
       step2Title: "Nós redigimos e revisamos o prompt",
       step2Detail: "As características e regras fixas do seu personagem são incorporadas automaticamente.",
       step3Title: "Geramos e depois validamos",
-      step3Detail: "Cada resultado é verificado com base nas suas regras antes de chegar até você.",
+      step3Detail: "Cada resultado é pontuado contra a foto de identidade do seu personagem antes de chegar até você.",
       step4Title: "Você vê o resultado certo",
       step4Detail: "Tentativas com falha são refeitas automaticamente, até um limite — sem você perceber.",
       pricingHeading: "Preços",
@@ -102,7 +102,7 @@ const pt = {
         "Reutilize o mesmo personagem em imagens, vídeo em múltiplos ângulos, cenas com outros personagens e diálogo falado — tudo fiel ao mesmo visual.",
       diffRulesTitle: "Regras de marca, aplicadas",
       diffRulesDetail:
-        "Defina com o que seu personagem deve — ou nunca deve — aparecer, e cada resultado é verificado contra essas regras antes de chegar até você. Seu mascote continua fiel à marca onde quer que apareça.",
+        "Defina com o que seu personagem deve — ou nunca deve — aparecer, e cada prompt é verificado contra essas regras antes de qualquer geração. Seu mascote continua fiel à marca onde quer que apareça.",
       heroFreeTrialNote: "Uma geração grátis por dia — sem cartão de crédito.",
       showcaseEyebrow: "Resultado real",
       showcaseTitle: "Este é um resultado real do Picacho",
@@ -251,7 +251,7 @@ const pt = {
         ],
         choosePicacho: [
           "Um personagem precisa continuar reconhecivelmente ele mesmo através de muitas cenas e formatos — sem re-ancorá-lo imagem por imagem.",
-          "Você quer modelos de fronteira — Kling O3 Pro, Veo 3.1, Seedance 2.5 — atrás de um único pipeline de identidade, com regras de marca aplicadas antes de você ver os resultados.",
+          "Você quer modelos de fronteira — Kling O3 Pro, Veo 3.1, Seedance 2.5 — atrás de um único pipeline de identidade, com regras de marca aplicadas antes de qualquer geração.",
           "Você quer cada resultado pontuado contra a foto de identidade, e gerações com falha custando nada.",
         ],
       },

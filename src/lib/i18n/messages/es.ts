@@ -77,7 +77,7 @@ const es = {
       step2Title: "Redactamos y revisamos la instrucción",
       step2Detail: "Los rasgos y reglas fijas de tu personaje se incorporan automáticamente.",
       step3Title: "Generamos y luego validamos",
-      step3Detail: "Cada resultado se comprueba contra tu guía de reglas antes de llegar a ti.",
+      step3Detail: "Cada resultado se puntúa contra la foto de identidad de tu personaje antes de llegar a ti.",
       step4Title: "Ves el resultado bueno",
       step4Detail: "Los intentos fallidos se reintentan automáticamente, hasta un límite — sin que lo notes.",
       pricingHeading: "Precios",
@@ -102,7 +102,7 @@ const es = {
         "Reutiliza el mismo personaje en imágenes, video multiángulo, escenas con otros personajes y diálogo hablado — todo fiel al mismo aspecto.",
       diffRulesTitle: "Reglas de marca, aplicadas",
       diffRulesDetail:
-        "Define con qué debe —o no debe— aparecer tu personaje, y cada resultado se comprueba contra esas reglas antes de que lo veas. Tu mascota se mantiene fiel a la marca allí donde aparezca.",
+        "Define con qué debe —o no debe— aparecer tu personaje, y cada prompt se comprueba contra esas reglas antes de generar nada. Tu mascota se mantiene fiel a la marca allí donde aparezca.",
       heroFreeTrialNote: "Una generación gratis cada día — sin tarjeta de crédito.",
       showcaseEyebrow: "Resultado real",
       showcaseTitle: "Este es un resultado real de Picacho",
@@ -251,7 +251,7 @@ const es = {
         ],
         choosePicacho: [
           "Un personaje tiene que seguir siendo reconociblemente él mismo a través de muchas escenas y formatos — sin re-anclarlo imagen a imagen.",
-          "Quieres modelos de frontera — Kling O3 Pro, Veo 3.1, Seedance 2.5 — detrás de un mismo pipeline de identidad, con reglas de marca aplicadas antes de ver los resultados.",
+          "Quieres modelos de frontera — Kling O3 Pro, Veo 3.1, Seedance 2.5 — detrás de un mismo pipeline de identidad, con reglas de marca aplicadas antes de generar nada.",
           "Quieres cada resultado puntuado contra la foto de identidad, y que las generaciones fallidas no cuesten nada.",
         ],
       },
