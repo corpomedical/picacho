@@ -165,7 +165,9 @@ export default async function GalleryPage() {
                         // treatment the app's video grid uses. No autoplay,
                         // no hover-play client component, no controls.
                         <video
-                          src={item.url}
+                          // #t fragment: forces a painted first frame in
+                          // Android WebView too — see history/page.tsx.
+                          src={`${item.url}#t=0.1`}
                           muted
                           playsInline
                           preload="metadata"

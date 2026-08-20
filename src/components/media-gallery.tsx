@@ -89,7 +89,9 @@ export function MediaGallery({
                 />
               ) : (
                 <video
-                  src={item.result_url!}
+                  // #t fragment: paints the first frame in Android WebView
+                  // too — see history/page.tsx.
+                  src={`${item.result_url!}#t=0.1`}
                   muted
                   playsInline
                   preload="metadata"

@@ -304,7 +304,13 @@ export default async function HistoryPage({
                     ) : (
                       <>
                         <video
-                          src={g.thumb}
+                          // The #t media fragment makes Chromium actually
+                          // paint that frame as the standing image. Desktop
+                          // Chrome paints frame 0 from bare metadata anyway;
+                          // Android's WebView does NOT — it showed the grey
+                          // system play tile instead (operator-reported,
+                          // 2026-08-21). Same fix on every video thumb site.
+                          src={`${g.thumb}#t=0.1`}
                           muted
                           playsInline
                           preload="metadata"

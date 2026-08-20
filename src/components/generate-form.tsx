@@ -1386,7 +1386,9 @@ function TakesRailEntry({
         <div className="aspect-video overflow-hidden rounded-media bg-atelier-stage">
           {resultUrl ? (
             isVideo ? (
-              <video src={resultUrl} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+              // #t fragment: paints the first frame in Android WebView too —
+              // see history/page.tsx.
+              <video src={`${resultUrl}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={resultUrl} alt="" className="h-full w-full object-cover" />
