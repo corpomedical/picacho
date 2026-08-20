@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 
 // Full-screen continuation of the native splash screen — the animated logo
 // intro (styles: .native-intro in globals.css). The layout renders this only
@@ -9,17 +9,18 @@ import { useEffect, useRef } from "react";
 //
 // Plays once per WebView session: cold app opens get the intro; full-page
 // reloads mid-session (rare — state restores, error recoveries) skip it via
-// sessionStorage. The JS removal below is a courtesy — the CSS animation
-// already ends at opacity 0 with pointer-events off, so even a dead
-// hydration can't leave a blocking sheet over the app.
+// sessionStorage. Unmounting goes through React state — NEVER node.remove():
+// the first version pulled its own node out of the DOM, and the next
+// client-side navigation crashed React's reconciler into the global error
+// boundary ("Something went wrong" on every sign-in, 2026-08-20). The CSS
+// animation already ends at opacity 0 with pointer-events off, so even a
+// dead hydration can't leave a blocking sheet over the app.
 const PLAYED_KEY = "picacho_intro_played";
 
 export function NativeIntro() {
-  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(true);
 
   useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
     let alreadyPlayed = false;
     try {
       alreadyPlayed = window.sessionStorage.getItem(PLAYED_KEY) === "1";
@@ -28,15 +29,17 @@ export function NativeIntro() {
       // Storage unavailable — treat as a first play; worst case it replays.
     }
     if (alreadyPlayed) {
-      node.remove();
+      setVisible(false);
       return;
     }
-    const timer = window.setTimeout(() => node.remove(), 1600);
+    const timer = window.setTimeout(() => setVisible(false), 1600);
     return () => window.clearTimeout(timer);
   }, []);
 
+  if (!visible) return null;
+
   return (
-    <div ref={ref} aria-hidden className="native-intro">
+    <div aria-hidden className="native-intro">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/logo.png" alt="" className="dark:hidden" />
       {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -303,3 +303,12 @@ html.native-app .min-w-0 > div {
     display: none;
   }
 }
+
+/* Short full-viewport pages (login, signup, forgot-password) scrolled by
+ * exactly the safe-area amount in the shell: body carries the inset padding
+ * AND the page asks for min-height 100vh, so total height beat the
+ * viewport. Subtract the insets inside the shell and the page fits — pages
+ * with real content still scroll, since this only lowers the MINIMUM. */
+html.native-app main.min-h-screen {
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
