@@ -105,7 +105,10 @@ export default async function AppLayout({
             The class is applied unconditionally rather than gated on the
             native check because that check is client-only, and a server-
             rendered page would otherwise briefly lay out at the wrong height. */}
-        <div className="mx-auto max-w-5xl px-4 py-8 pt-20 pb-24 sm:px-8 sm:py-12 sm:pb-24 md:pt-12">
+        <div
+          data-app-content
+          className="mx-auto max-w-5xl px-4 py-8 pt-20 pb-24 sm:px-8 sm:py-12 sm:pb-24 md:pt-12"
+        >
           {children}
         </div>
       </div>

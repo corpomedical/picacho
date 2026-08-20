@@ -245,9 +245,16 @@ html.native-app [data-mobile-topbar] {
 
 /* The pt-20 on the app container exists to clear the mobile top bar. With
  * that bar hidden the padding is just a gap under the status bar, so it comes
- * back down to the ordinary page inset. */
-html.native-app main > div,
-html.native-app .min-w-0 > div {
+ * back down to the ordinary page inset.
+ *
+ * Selector history matters here: this used to be `main > div` plus
+ * `.min-w-0 > div` — and `.min-w-0 > div` matched every div child of every
+ * min-w-0 element, including the composer's nested flex rows, stacking a
+ * phantom 24px top padding per nesting level. That is what made the
+ * toolbar icons stairstep downward in the app while the website looked
+ * fine (operator-reported, fixed 2026-08-20). The rule now names its one
+ * intended target and nothing else. */
+html.native-app [data-app-content] {
   padding-top: 1.5rem;
 }
 
