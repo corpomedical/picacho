@@ -4820,8 +4820,16 @@ function GenerateFormInner({
                     </>
                   )}
 
+                  {/* The aspect pair used to sit in its own bordered capsule —
+                      one more visual treatment in a row that already mixed
+                      bare glyphs and filled circles, which is exactly what
+                      read as "icons all over the place" on a phone
+                      (operator-reported, 2026-08-20). Same ghost-button
+                      grammar as every neighbor now — h-9 circles, selected =
+                      filled ink — grouped by tight spacing instead of a
+                      border. */}
                   {contentType === "video" && (
-                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-atelier-rule p-1">
+                    <div className="flex flex-shrink-0 items-center gap-0.5">
                       <button
                         type="button"
                         onClick={() => setVideoAspectRatio((prev) => (prev === "16:9" ? null : "16:9"))}
@@ -4830,10 +4838,10 @@ function GenerateFormInner({
                         aria-label={g.aspectWideTitle}
                         aria-pressed={videoAspectRatio === "16:9"}
                         className={cn(
-                          "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                          "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                           videoAspectRatio === "16:9"
                             ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted/80 hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                            : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <LandscapeIcon className="h-4 w-4" />
@@ -4846,10 +4854,10 @@ function GenerateFormInner({
                         aria-label={g.aspectTallTitle}
                         aria-pressed={videoAspectRatio === "9:16"}
                         className={cn(
-                          "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                          "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                           videoAspectRatio === "9:16"
                             ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted/80 hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                            : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <PortraitIcon className="h-4 w-4" />
