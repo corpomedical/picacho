@@ -24,11 +24,16 @@ export function CookieConsentBanner() {
   if (!visible) return null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-neutral-200 bg-white px-4 py-3 shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.12)]">
+    // Atelier sheet, not a stark white strip (2026-08-19: this banner was
+    // the last bg-white floating over the warm app theme — the operator
+    // spotted it as "the white that doesn't fit"). Tokens flip it for dark
+    // mode automatically, and it reads equally at home over the marketing
+    // pages' cream.
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-atelier-rule bg-atelier-surface px-4 py-3 shadow-[0_-8px_24px_-12px_rgba(33,29,22,0.15)]">
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-3 sm:flex-row">
-        <p className="text-center text-xs text-neutral-600 sm:text-left">
+        <p className="text-center text-xs text-atelier-muted sm:text-left">
           {t.cookie.message}{" "}
-          <Link href="/privacy" className="underline hover:text-neutral-900">
+          <Link href="/privacy" className="underline decoration-atelier-rule hover:text-atelier-ink">
             {t.cookie.privacyLink}
           </Link>
         </p>
@@ -36,14 +41,14 @@ export function CookieConsentBanner() {
           <button
             type="button"
             onClick={() => choose("declined")}
-            className="rounded-[10px] border border-neutral-200 px-3 py-1.5 text-xs font-medium text-neutral-600 transition-colors hover:bg-neutral-50"
+            className="rounded-control border border-atelier-rule px-3 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
           >
             {t.cookie.declineNonEssential}
           </button>
           <button
             type="button"
             onClick={() => choose("accepted")}
-            className="rounded-[10px] bg-neutral-900 px-3.5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
+            className="rounded-control bg-atelier-ink px-3.5 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
           >
             {t.cookie.accept}
           </button>

@@ -1195,7 +1195,14 @@ export function GenerateForm(props: {
   );
 }
 
-type ChatTurn = HistoryTurn & { attachments: ChatAttachment[] };
+type ChatTurn = HistoryTurn & {
+  attachments: ChatAttachment[];
+  // Which model/length produced this turn — captured client-side at submit
+  // time purely for the Takes rail's microlabel. HistoryTurn doesn't record
+  // it, so turns resumed from History won't have it; the rail falls back to
+  // the plain content-type label there.
+  takeMeta?: { modelName: string; durationSeconds: number } | null;
+};
 
 type MultiAngleClip = {
   angleId: string;
@@ -1228,13 +1235,16 @@ function historyItemToChatItem(item: ChatHistoryItem): ChatItem {
   return { ...item, attachments: [] };
 }
 
-function SingleTurnBubble({ turn }: { turn: ChatTurn }) {
+// `domId` (optional) is the anchor the Takes rail scrolls to — a plain DOM
+// id, set only at the session-thread call site, plus scroll-mt so the jumped-
+// to turn lands with breathing room instead of glued to the container's top.
+function SingleTurnBubble({ turn, domId }: { turn: ChatTurn; domId?: string }) {
   const { t } = useLocale();
   const g = t.generate;
   const live = isLiveTurn(turn.attempts);
   const timeline = buildTimeline(turn.attempts);
   return (
-    <div className="space-y-3">
+    <div id={domId} className="scroll-mt-6 space-y-3">
       <UserBubble prompt={turn.prompt} attachments={turn.attachments} createdAt={turn.createdAt} />
       <div className="flex justify-start">
         <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
@@ -1324,9 +1334,10 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
   );
 }
 
-function MultiAngleTurnBubble({ item }: { item: MultiAngleChatItem }) {
+// Same optional `domId` anchor as SingleTurnBubble — see the comment there.
+function MultiAngleTurnBubble({ item, domId }: { item: MultiAngleChatItem; domId?: string }) {
   return (
-    <div className="space-y-3">
+    <div id={domId} className="scroll-mt-6 space-y-3">
       <UserBubble prompt={item.prompt} attachments={item.attachments} createdAt={item.createdAt} />
       <div className="flex justify-start">
         <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
@@ -1334,6 +1345,165 @@ function MultiAngleTurnBubble({ item }: { item: MultiAngleChatItem }) {
         </div>
       </div>
     </div>
+  );
+}
+
+// One frame of the Takes rail below: stage-grounded thumb, one-line caption,
+// caps microlabel, and the identity score in the ochre numeral serif when the
+// turn was scored. The whole frame is a button that scrolls the chat to its
+// turn (each bubble carries a matching DOM id — see SingleTurnBubble's domId).
+function TakesRailEntry({
+  domId,
+  prompt,
+  resultUrl,
+  isVideo,
+  microLabel,
+  score,
+}: {
+  domId: string;
+  prompt: string;
+  resultUrl: string | null;
+  isVideo: boolean;
+  microLabel: string;
+  score: number | null;
+}) {
+  const { t } = useLocale();
+  const g = t.generate;
+  return (
+    <li>
+      <button
+        type="button"
+        onClick={() =>
+          document.getElementById(domId)?.scrollIntoView({ behavior: "smooth", block: "start" })
+        }
+        title={prompt}
+        className="group/take block w-full rounded-media text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent"
+      >
+        {/* Media sits on the fixed Darkroom stage, like every other render
+            surface — so anything drawn ON the thumb uses fixed Darkroom
+            literals (#a39a88 muted), never theme-mapped colors: the stage
+            deliberately doesn't flip with the theme (see globals.css). */}
+        <div className="aspect-video overflow-hidden rounded-media bg-atelier-stage">
+          {resultUrl ? (
+            isVideo ? (
+              <video src={resultUrl} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={resultUrl} alt="" className="h-full w-full object-cover" />
+            )
+          ) : (
+            // A take that didn't pass — an empty frame on the stage.
+            <div className="flex h-full w-full items-center justify-center text-[#a39a88]">
+              <XIcon className="h-4 w-4" />
+            </div>
+          )}
+        </div>
+        <p className="mt-1.5 truncate text-[11px] leading-snug text-atelier-ink/80 transition-colors group-hover/take:text-atelier-ink">
+          {prompt}
+        </p>
+        <div className="mt-0.5 flex items-baseline justify-between gap-2">
+          <span className="truncate text-[9px] font-medium uppercase tracking-widest text-atelier-muted/80">
+            {microLabel}
+          </span>
+          {score !== null && (
+            <span
+              title={formatMsg(g.identityMatch, { n: score })}
+              className="flex-shrink-0 font-numeral text-[11px] font-semibold tabular-nums text-atelier-accent"
+            >
+              {score}%
+            </span>
+          )}
+        </div>
+      </button>
+    </li>
+  );
+}
+
+// The Takes rail — a slim, desktop-only (hidden below xl, so phones and
+// tablets are untouched) filmstrip beside the chat listing THIS session's
+// finished turns, newest first, straight from the same `items` state the
+// thread renders — no fetch of its own. An in-flight render shows as a
+// dashed frame with an ochre "Rendering…" pulse until it's archived into
+// `items`. Sticky within the app's scroll container so it stays in view
+// while the thread scrolls.
+function TakesRail({ items, inFlightPrompt }: { items: ChatItem[]; inFlightPrompt: string | null }) {
+  const { t } = useLocale();
+  const g = t.generate;
+  const takes = [...items].reverse();
+
+  return (
+    <aside
+      aria-label={g.takesTitle}
+      className="sticky top-6 hidden max-h-[calc(100vh-8rem)] w-48 flex-shrink-0 flex-col overflow-y-auto xl:flex"
+    >
+      <div className="flex items-baseline justify-between gap-2 border-b border-atelier-rule pb-2">
+        <h2 className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+          {g.takesTitle}
+        </h2>
+        <p className="font-numeral text-sm font-semibold tabular-nums text-atelier-ink">{items.length}</p>
+      </div>
+
+      {takes.length === 0 && inFlightPrompt === null ? (
+        <p className="mt-3 text-[11px] leading-relaxed text-atelier-muted/80">{g.takesEmpty}</p>
+      ) : (
+        <ol className="mt-3 space-y-3.5">
+          {inFlightPrompt !== null && (
+            <li>
+              <div className="flex aspect-video items-center justify-center rounded-media border border-dashed border-atelier-rule">
+                <span className="animate-pulse text-[10px] font-medium uppercase tracking-widest text-atelier-accent">
+                  {g.takesRendering}
+                </span>
+              </div>
+              {inFlightPrompt && (
+                <p
+                  title={inFlightPrompt}
+                  className="mt-1.5 truncate text-[11px] leading-snug text-atelier-muted"
+                >
+                  {inFlightPrompt}
+                </p>
+              )}
+            </li>
+          )}
+          {takes.map((item) => {
+            if (item.kind === "single") {
+              return (
+                <TakesRailEntry
+                  key={item.id}
+                  domId={`take-${item.id}`}
+                  prompt={item.prompt}
+                  resultUrl={item.succeeded ? item.resultUrl : null}
+                  isVideo={item.contentType === "video"}
+                  microLabel={
+                    !item.succeeded
+                      ? g.failed
+                      : item.contentType === "video"
+                        ? item.takeMeta
+                          ? `${item.takeMeta.modelName} · ${formatMsg(g.durationSecondsShort, { n: item.takeMeta.durationSeconds })}`
+                          : g.video
+                        : g.image
+                  }
+                  score={typeof item.matchScore === "number" ? item.matchScore : null}
+                />
+              );
+            }
+            const firstClip = item.angles.find((a) => a.succeeded && a.resultUrl) ?? null;
+            return (
+              <TakesRailEntry
+                key={item.groupId}
+                domId={`take-${item.groupId}`}
+                prompt={item.prompt}
+                resultUrl={firstClip?.resultUrl ?? null}
+                isVideo
+                microLabel={
+                  firstClip ? formatMsg(g.takesAngles, { n: item.angles.length }) : g.failed
+                }
+                score={null}
+              />
+            );
+          })}
+        </ol>
+      )}
+    </aside>
   );
 }
 
@@ -1589,6 +1759,21 @@ function GenerateFormInner({
     setShowCameraOption(Boolean(nav.userAgentData?.mobile) || isIPad || uaMatch);
   }, []);
 
+  // Which "you can leave" reassurance the in-flight note under the composer
+  // can honestly make. The render itself survives leaving either way — it's
+  // queued at fal.ai and the webhook collects it server-side even with every
+  // tab closed (see app/api/webhooks/fal) — but only the native app can
+  // promise a notification: notifyUser delivers FCM pushes to push_tokens,
+  // which only the iOS/Android shell ever registers (NativePush no-ops on
+  // the web), and the browser Notification permission requested above dies
+  // with the tab. So native gets "we'll notify you"; the web gets "it lands
+  // in History". Starts false so SSR and the first client frame agree —
+  // same pattern as InsufficientCreditsBanner's native check.
+  const [nativeClient, setNativeClient] = useState(false);
+  useEffect(() => {
+    setNativeClient(isNativeAppClient());
+  }, []);
+
   // Hero mode (dashboard home only — see the heroMode prop): starts as just
   // a greeting and a plain composer, no toolbar/character-picker/card
   // chrome. Typing and hitting send does NOT dock it — that would expand
@@ -1598,6 +1783,12 @@ function GenerateFormInner({
   // Create image/video from the + menu (creationModeActive).
   const hasAnyMessages = items.length > 0 || livePrompt !== null || liveMultiAngle !== null;
   const isHero = heroMode && !creationModeActive && !hasAnyMessages;
+
+  // The Takes rail renders only for the /app/generate instance (heroMode is
+  // the dashboard-home embed, which keeps its narrower container and its
+  // plain greeting), and only at xl+ — see TakesRail itself for the
+  // below-xl hiding, so phones and tablets are untouched.
+  const takesRailEnabled = !heroMode;
 
   // Kling advanced video options — storyboard (start/end frame) and
   // multi-image reference both draw from the selected character's existing
@@ -1720,6 +1911,9 @@ function GenerateFormInner({
   // with the regular file input, so a captured photo lands in the chat
   // bubble through the exact same attachment pipeline as an uploaded one.
   const cameraInputRef = useRef<HTMLInputElement>(null);
+  // The composer's prompt textarea — held so the auto-grow effect below can
+  // measure its content height.
+  const promptTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isAnimating = revealedCount > 0 && revealedCount < liveTimeline.length;
   const isUploading = pendingAttachments.some((a) => a.status === "uploading");
   // Prompt Studio's image mode needs a finished upload to read.
@@ -2549,6 +2743,24 @@ function GenerateFormInner({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [items.length, revealedCount, livePrompt, liveMultiAngle]);
 
+  // Auto-grow the prompt field with its content: two visible lines at rest,
+  // up to six lines tall, internal scroll beyond (the 144px cap is exactly
+  // six 20px lines of text-sm plus the field's 24px of vertical padding —
+  // matched by max-h-36 on the element as the CSS backstop). One visible
+  // line was too cramped to read a real prompt back before sending.
+  // Measured in JS rather than CSS field-sizing:content because the
+  // iOS/Android shell runs in WKWebView, which hasn't shipped field-sizing.
+  // Keyed on `prompt` (not onInput) so programmatic fills — dictation,
+  // ?prompt= handoffs, saved/enhanced prompts — resize too, and on
+  // pendingMultiAngle because the textarea unmounts behind the multi-angle
+  // confirm panel and needs re-measuring on the way back.
+  useEffect(() => {
+    const el = promptTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+  }, [prompt, pendingMultiAngle]);
+
   // Multi-angle is video-only — switching to Image quietly turns it off
   // (resetChat, triggered by the effect above on contentType change, clears
   // any in-progress confirm panel too).
@@ -3014,6 +3226,13 @@ function GenerateFormInner({
         resultUrl,
         createdAt: new Date().toISOString(),
         attachments: submittedAttachments,
+        // Submit-time snapshot for the Takes rail's microlabel — the model/
+        // duration the request actually ran with, not wherever the pickers
+        // sit by the time this resolves.
+        takeMeta:
+          effectiveContentType === "video" && selectedVideoModel
+            ? { modelName: selectedVideoModel.name, durationSeconds: videoDurationSeconds }
+            : null,
       },
     ]);
     setLivePrompt(null);
@@ -3565,9 +3784,16 @@ function GenerateFormInner({
           finish={ob.finish}
         />
       )}
+    {/* Below xl (and on the dashboard-home embed) this wrapper is a plain
+        block and nothing changes; at xl+ on /app/generate it becomes the row
+        that seats the Takes rail beside the chat card. The card keeps
+        min-w-0 + flex-1 so it yields the rail's slim column without any of
+        its internals reflowing differently. */}
+    <div className={cn(takesRailEnabled && "xl:flex xl:items-start xl:gap-5")}>
     <div
       className={cn(
         "relative flex flex-col transition-all duration-300 ease-out",
+        takesRailEnabled && "xl:min-w-0 xl:flex-1",
         isHero
           ? "min-h-[60vh] items-center justify-center gap-6"
           : // isolate + transform-gpu forces this onto its own GPU layer, which
@@ -3676,9 +3902,9 @@ function GenerateFormInner({
           <>
             {items.map((item) =>
               item.kind === "single" ? (
-                <SingleTurnBubble key={item.id} turn={item} />
+                <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} />
               ) : (
-                <MultiAngleTurnBubble key={item.groupId} item={item} />
+                <MultiAngleTurnBubble key={item.groupId} item={item} domId={`take-${item.groupId}`} />
               ),
             )}
 
@@ -3836,7 +4062,20 @@ function GenerateFormInner({
           {g.messageLabel}
         </Label>
 
-        <div className="rounded-control border border-atelier-ink bg-atelier-paper transition-colors focus-within:ring-4 focus-within:ring-atelier-ink/5">
+        {/* rounded-[10px] is a deliberate one-off between rounded-control
+            (6px) and the chat bubbles' 18px. At rounded-control the composer
+            — the largest control on the screen — sat abruptly sharp inside
+            its 22px card frame and under the 18px bubbles, and its 6px
+            corners were the same radius as the much smaller panels nested
+            inside it, which is what made the corners read as a clash rather
+            than a choice. 10px keeps it in the same family as both without
+            minting a new radius for anything else. Every inner element
+            (rounded-full buttons, rounded-control panels, the transparent
+            textarea) is inset by its own padding, so nothing pokes through
+            the corners and the single crisp 1px ink hairline stays intact —
+            and there's deliberately NO overflow-hidden here, because the "+"
+            menu opens outside this box's bounds. */}
+        <div className="rounded-[10px] border border-atelier-ink bg-atelier-paper transition-colors focus-within:ring-4 focus-within:ring-atelier-ink/5">
           {pendingMultiAngle ? (
             <div className="space-y-3 p-4">
               <div>
@@ -3917,9 +4156,15 @@ function GenerateFormInner({
                 </div>
               )}
 
+              {/* rows={2} is the resting height (one line was too cramped to
+                  read a prompt back before sending); the auto-grow effect on
+                  `prompt` takes over from there, up to the max-h-36 cap
+                  (six lines) with internal scrolling beyond. Enter still
+                  sends and Shift+Enter still breaks the line — unchanged. */}
               <textarea
+                ref={promptTextareaRef}
                 id="prompt"
-                rows={1}
+                rows={2}
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 onKeyDown={(e) => {
@@ -3931,7 +4176,7 @@ function GenerateFormInner({
                 placeholder={contentType === "video" ? g.videoPlaceholder : g.imagePlaceholder}
                 disabled={submitting}
                 maxLength={2000}
-                className="max-h-40 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
+                className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
               />
 
               {contentType === "video" && currentCharacter?.voiceId && (
@@ -4665,6 +4910,18 @@ function GenerateFormInner({
           )}
         </div>
 
+        {/* "You can leave" reassurance, only while it's actually true:
+            liveProgress is set on exactly the paths where a render is queued
+            at fal.ai and being driven by polls (submit, multi-angle, resume)
+            — the phase the whole fire-and-poll architecture exists for. The
+            job's state lives server-side and the webhook collects the result
+            even with every tab closed, so leaving costs nothing. Which
+            promise we make depends on the platform — see nativeClient. */}
+        {liveProgress !== null && (
+          <p className="mt-3 text-xs text-atelier-muted/80">
+            {nativeClient ? g.safeToCloseNative : g.safeToCloseWeb}
+          </p>
+        )}
         {/* Submitting's own "running the pipeline" status now shows inside the
             chat bubble itself (with a spinner) as soon as a message exists —
             repeating it here too was redundant clutter right above the AI
@@ -4685,7 +4942,10 @@ function GenerateFormInner({
         <div
           className={cn(
             "text-xs text-atelier-muted/80",
-            pendingMultiAngle || isUploading ? "mt-1" : "mt-3",
+            // mt-1 whenever any status line renders above (multi-angle
+            // review, upload progress, or the safe-to-close note), mt-3
+            // when this sits alone under the composer.
+            pendingMultiAngle || isUploading || liveProgress !== null ? "mt-1" : "mt-3",
           )}
         >
           {t.common.aiDisclaimer}{" "}
@@ -4700,6 +4960,23 @@ function GenerateFormInner({
         </div>
       </form>
       </div>
+    </div>
+    {/* The Takes rail — this session's finished turns as a filmstrip, fed
+        straight from the `items`/live state above. Rendered in the tree even
+        in hero mode's brief docked-transition frames is harmless: it hides
+        itself below xl, and takesRailEnabled already excludes the dashboard
+        embed entirely. The in-flight placeholder clears once the result is
+        being revealed in the thread (liveResult), not when it's archived —
+        so the rail never says "Rendering…" next to an already-visible
+        result. */}
+    {takesRailEnabled && (
+      <TakesRail
+        items={items}
+        inFlightPrompt={
+          liveMultiAngle ? liveMultiAngle.prompt : liveResult === null ? livePrompt : null
+        }
+      />
+    )}
     </div>
     </>
   );

@@ -544,6 +544,19 @@ const en = {
     resumingRender: "Picking up where you left off",
     finishingRenders: "Finishing {n} renders",
     lostTrackOfRender: "Lost track of this render, but it's still going — it'll appear in History when it lands.",
+    // Shown under the composer while a queued render is being polled. Two
+    // variants because only the native app can honestly promise a ping:
+    // notifyUser delivers FCM pushes to push_tokens, which only the
+    // iOS/Android shell registers — on the web the render still survives
+    // the tab (fal webhook) and lands in History, but nothing can notify.
+    safeToCloseNative: "Safe to close — we'll notify you when it's done.",
+    safeToCloseWeb: "Safe to leave this page — the render keeps going and lands in History.",
+    // The Takes rail — the desktop-only filmstrip beside the chat listing
+    // this session's finished turns.
+    takesTitle: "Takes — this session",
+    takesEmpty: "Finished takes from this chat will collect here.",
+    takesRendering: "Rendering…",
+    takesAngles: "{n} angles",
     uploadFailedFile: "{name} couldn't be uploaded — it may be too large or the connection dropped.",
     uploadPhotoFailed: "Couldn't upload that photo.",
     resultMissing: "The result was missing: {issues}.",
@@ -610,6 +623,15 @@ const en = {
     statusSucceeded: "Succeeded",
     statusFailed: "Failed",
     statusDrafted: "Drafted",
+    statusGenerating: "Rendering",
+    filterByType: "Filter by type",
+    filterByOutcome: "Filter by outcome",
+    filterAllTypes: "All",
+    filterAllOutcomes: "All",
+    filterPassed: "Passed",
+    filterFailed: "Failed",
+    emptyFiltered: "Nothing matches these filters.",
+    showAll: "Show everything",
     backToHistory: "History",
     pipelineLog: "Pipeline log",
     attemptLabel: "Attempt {n}",
@@ -651,9 +673,9 @@ const en = {
   },
   gallery: {
     imagesTitle: "Images",
-    imagesSubtitle: "Every image you've generated, newest first.",
+    imagesSubtitle: "Your finished images, newest first — failed generations stay in History.",
     videosTitle: "Videos",
-    videosSubtitle: "Every video you've generated, newest first.",
+    videosSubtitle: "Your finished videos, newest first — failed generations stay in History.",
     noImagesYet: "No images yet.",
     noVideosYet: "No videos yet.",
     generateOne: "Generate one",

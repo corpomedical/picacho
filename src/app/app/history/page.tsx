@@ -1,31 +1,110 @@
 import Link from "next/link";
+import type { ReactNode, SVGProps } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
-import { Badge } from "@/components/ui/badge";
+import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
+import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { ContinueChatButton } from "@/components/continue-chat-button";
 import { LocalDate } from "@/components/local-date";
 
-export default async function HistoryPage() {
+// History, redesigned as a contact sheet (2026-08-20, operator: the old
+// text-only rows read stale and were hard to scan). Every row now leads with
+// its render on the Darkroom stage, the prompt is the headline, and the
+// caps microlabel line carries character/model/duration — so the eye can
+// sweep the thumbnails and only read when something catches. Two filter-chip
+// groups (type, outcome) live in the URL as search params — same pattern as
+// the pricing billing toggle — so this stays a pure server component and a
+// filtered view is shareable/bookmarkable. Unlike the media sections, this
+// list remains the COMPLETE record: failures and in-flight renders included.
+
+function PlayIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M8 5v14l11-7Z" />
+    </svg>
+  );
+}
+
+function ImageGlyph(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <circle cx="9" cy="10" r="1.5" />
+      <path d="m5 17 4.5-4.5 3.5 3.5 3-3 3 4" />
+    </svg>
+  );
+}
+
+// One pill of a chip group — the pricing page's billing toggle, spoken in
+// Atelier: ink-filled when active, muted text otherwise.
+function FilterPill({ href, active, children }: { href: string; active: boolean; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={
+        active
+          ? "rounded-full bg-atelier-ink px-3 py-1 text-xs font-medium text-atelier-paper"
+          : "rounded-full px-3 py-1 text-xs text-atelier-muted transition-colors hover:text-atelier-ink"
+      }
+    >
+      {children}
+    </Link>
+  );
+}
+
+export default async function HistoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ type?: string; outcome?: string }>;
+}) {
   const { t } = await getServerMessages();
   const h = t.history;
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return null;
 
+  // URL params, not client state (the pricing billing-toggle pattern): the
+  // server renders exactly the filtered list, nothing hydrates, and the
+  // choice survives refresh and sharing. Unknown values fall back to "all".
+  const raw = await searchParams;
+  const type = raw.type === "video" || raw.type === "image" ? raw.type : undefined;
+  const outcome = raw.outcome === "passed" || raw.outcome === "failed" ? raw.outcome : undefined;
+  const filtered = Boolean(type || outcome);
+
+  const filterHref = (next: { type?: "video" | "image"; outcome?: "passed" | "failed" }) => {
+    const params = new URLSearchParams();
+    if (next.type) params.set("type", next.type);
+    if (next.outcome) params.set("outcome", next.outcome);
+    const qs = params.toString();
+    return qs ? `/app/history?${qs}` : "/app/history";
+  };
+
+  // Filtering happens in SQL so each view digs through the user's FULL
+  // history (the 50 most recent MATCHING rows), not just whatever matches
+  // within the newest 50. Deliberate consequence for multi-angle groups: a
+  // mixed group (some angles passed, some failed) genuinely belongs to both
+  // outcome views — it appears under "Passed" via its passing angles and
+  // under "Failed" via its failing ones; the unfiltered list shows the
+  // collapsed truth. Counts on the chips are deliberately omitted: rows
+  // collapse into angle groups, so an honest DB count wouldn't match the
+  // number of cards on screen.
+  let query = supabase
+    .from("generations")
+    .select(
+      "id, prompt_input, status, attempts, character_profile_id, content_type, created_at, angle_group_id, angle, result_url, match_score, video_model_id, video_duration_seconds",
+    )
+    .eq("user_id", userData.user.id)
+    .is("deleted_at", null);
+  if (type) query = query.eq("content_type", type);
+  if (outcome) query = query.eq("status", outcome === "passed" ? "succeeded" : "failed");
+
   const [{ data: generations, error }, { data: profile }, usedThisMonth] = await Promise.all([
-    supabase
-      .from("generations")
-      .select(
-        "id, prompt_input, status, attempts, character_profile_id, content_type, created_at, angle_group_id, angle",
-      )
-      .eq("user_id", userData.user.id)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(50),
+    query.order("created_at", { ascending: false }).limit(50),
     supabase.from("profiles").select("plan, bonus_credits").eq("id", userData.user.id).single(),
     getMonthlyUsage(userData.user.id),
   ]);
@@ -62,8 +141,29 @@ export default async function HistoryPage() {
   const cards = Array.from(groups.values())
     .map((rows) => {
       const representative = rows.find((g) => g.angle === "front") ?? rows[0];
+      // Collapsed group status. "Generating" outranks "failed" on purpose: a
+      // group with one dud angle but others still rendering isn't done
+      // failing yet — it settles to failed only once nothing is in flight.
       const allSucceeded = rows.every((r) => r.status === "succeeded");
+      const anyGenerating = rows.some((r) => r.status === "generating");
       const anyFailed = rows.some((r) => r.status === "failed");
+      const groupStatus = allSucceeded
+        ? "succeeded"
+        : anyGenerating
+          ? "generating"
+          : anyFailed
+            ? "failed"
+            : "drafted";
+      // Thumbnail source: the representative's render, or — when the front
+      // angle has nothing to show — the first angle in the group that does.
+      const media =
+        [representative, ...rows]
+          .map((r) => toMediaUrl(r.result_url))
+          .find((u) => isRenderableUrl(u)) ?? null;
+      const modelName =
+        representative.content_type === "video" && representative.video_model_id
+          ? (VIDEO_MODELS.find((m) => m.id === representative.video_model_id)?.name ?? null)
+          : null;
       return {
         id: representative.id,
         prompt_input: representative.prompt_input,
@@ -71,14 +171,39 @@ export default async function HistoryPage() {
         content_type: representative.content_type,
         created_at: representative.created_at,
         attempts: representative.attempts,
-        status: rows.length > 1 ? (allSucceeded ? "succeeded" : anyFailed ? "failed" : "drafted") : representative.status,
+        status: rows.length > 1 ? groupStatus : representative.status,
         angleCount: rows.length > 1 ? rows.length : undefined,
+        // Images go through the resizing thumb route (320w covers a 64px
+        // tile at 2x); videos keep the stable media URL for <video>.
+        thumb: representative.content_type === "image" ? thumbUrl(media, 320) : media,
+        matchScore:
+          typeof representative.match_score === "number" ? representative.match_score : null,
+        modelName,
+        durationSeconds: representative.video_duration_seconds ?? null,
       };
     })
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
   const statusLabel = (status: string) =>
-    status === "succeeded" ? h.statusSucceeded : status === "failed" ? h.statusFailed : h.statusDrafted;
+    status === "succeeded"
+      ? h.statusSucceeded
+      : status === "failed"
+        ? h.statusFailed
+        : status === "generating"
+          ? h.statusGenerating
+          : h.statusDrafted;
+
+  // Calm chips: success is the norm here, so it stays a quiet paper chip
+  // (the ochre identity score next to it is the positive signal); failure
+  // is the calm semantic red the Badge tones use; a render in flight gets
+  // the live accent pulse — StillRendering's convention that the one moving
+  // thing is the lit one.
+  const chipClass = (status: string) =>
+    status === "failed"
+      ? "border-transparent bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-400"
+      : status === "generating"
+        ? "border-atelier-rule bg-atelier-paper text-atelier-ink"
+        : "border-atelier-rule bg-atelier-paper text-atelier-muted";
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -99,31 +224,138 @@ export default async function HistoryPage() {
         </p>
       </div>
 
-      <div className="mt-6 space-y-3">
+      {/* Filter chips — two independent axes, each a link group so the whole
+          thing works without a byte of client JS. */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
+        <nav
+          aria-label={h.filterByType}
+          className="inline-flex items-center gap-0.5 rounded-full border border-atelier-rule bg-atelier-surface p-1"
+        >
+          <FilterPill href={filterHref({ outcome })} active={!type}>
+            {h.filterAllTypes}
+          </FilterPill>
+          <FilterPill href={filterHref({ type: "video", outcome })} active={type === "video"}>
+            {t.gallery.videosTitle}
+          </FilterPill>
+          <FilterPill href={filterHref({ type: "image", outcome })} active={type === "image"}>
+            {t.gallery.imagesTitle}
+          </FilterPill>
+        </nav>
+        <nav
+          aria-label={h.filterByOutcome}
+          className="inline-flex items-center gap-0.5 rounded-full border border-atelier-rule bg-atelier-surface p-1"
+        >
+          <FilterPill href={filterHref({ type })} active={!outcome}>
+            {h.filterAllOutcomes}
+          </FilterPill>
+          <FilterPill href={filterHref({ type, outcome: "passed" })} active={outcome === "passed"}>
+            {h.filterPassed}
+          </FilterPill>
+          <FilterPill href={filterHref({ type, outcome: "failed" })} active={outcome === "failed"}>
+            {h.filterFailed}
+          </FilterPill>
+        </nav>
+      </div>
+
+      <div className="mt-4 space-y-3">
         {error ? (
           <div className="rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
             <p className="text-sm text-red-600 dark:text-red-400">{h.couldntLoad}</p>
           </div>
         ) : cards.length === 0 ? (
           <div className="rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
-            <p className="text-sm text-atelier-muted">
-              {h.noGenerationsYet}{" "}
-              <Link href="/app/generate" className="font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2">
-                {h.tryOne}
-              </Link>
-              .
-            </p>
+            {filtered ? (
+              // Empty because of the active filters, not an empty account —
+              // say so, and hand back the unfiltered view in one click.
+              <p className="text-sm text-atelier-muted">
+                {h.emptyFiltered}{" "}
+                <Link
+                  href="/app/history"
+                  className="font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2"
+                >
+                  {h.showAll}
+                </Link>
+              </p>
+            ) : (
+              <p className="text-sm text-atelier-muted">
+                {h.noGenerationsYet}{" "}
+                <Link
+                  href="/app/generate"
+                  className="font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2"
+                >
+                  {h.tryOne}
+                </Link>
+                .
+              </p>
+            )}
           </div>
         ) : (
           cards.map((g) => (
             <Link key={g.id} href={`/app/history/${g.id}`} className="group block">
-              <div className="flex items-center justify-between gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-5 transition-[border-color,box-shadow] hover:border-atelier-muted/60 hover:shadow-[0_8px_20px_-12px_rgba(33,29,22,0.25)]">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-atelier-ink">
+              <div className="flex items-center gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-3 pr-4 transition-[border-color,box-shadow] hover:border-atelier-muted/60 hover:shadow-[0_8px_20px_-12px_rgba(33,29,22,0.25)]">
+                {/* The render on its Darkroom stage — same warm charcoal in
+                    both themes. Decorative here (the prompt text names the
+                    link), so hidden from the accessibility tree. */}
+                <div aria-hidden className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-media bg-atelier-stage">
+                  {g.thumb ? (
+                    g.content_type === "image" ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={g.thumb} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <>
+                        <video
+                          src={g.thumb}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="h-full w-full object-cover"
+                        />
+                        {/* The printed-label play chip from the gallery tiles,
+                            scaled to the row thumb. Fixed literals: the stage
+                            under it never flips themes, so neither may it. */}
+                        <span className="absolute inset-0 m-auto flex h-5 w-5 items-center justify-center rounded-full bg-[#faf8f3]/95 text-[#211d16] shadow-sm">
+                          <PlayIcon className="h-2.5 w-2.5" />
+                        </span>
+                      </>
+                    )
+                  ) : g.status === "generating" ? (
+                    // StillRendering's spinner, row-sized — the live signal
+                    // for a render that's genuinely still in flight.
+                    <span className="absolute inset-0 m-auto h-4 w-4 animate-spin rounded-full border-2 border-[#3b3323] border-t-[#e0a468]" />
+                  ) : (
+                    // Nothing to show (failed, drafted, or an old mock run):
+                    // an empty stage with the type's glyph in fixed Darkroom
+                    // muted — calm, not an error state in itself.
+                    <span className="absolute inset-0 flex items-center justify-center text-[#a39a88]">
+                      {g.content_type === "image" ? (
+                        <ImageGlyph className="h-5 w-5" />
+                      ) : (
+                        <PlayIcon className="h-5 w-5" />
+                      )}
+                    </span>
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <p title={g.prompt_input} className="truncate text-sm font-medium text-atelier-ink">
                     {g.prompt_input}
                   </p>
+                  {/* Caps microlabel: character · model (or plain type) ·
+                      duration. Uppercase is a CSS transform — the rendered
+                      string bytes are untouched. */}
+                  <p className="mt-1 truncate text-[10px] font-medium uppercase tracking-wider text-atelier-muted">
+                    {[
+                      g.character_profile_id
+                        ? (nameById.get(g.character_profile_id) ?? h.unknownCharacter)
+                        : h.noCharacter,
+                      g.modelName ??
+                        (g.content_type === "image" ? t.generate.image : t.generate.video),
+                      g.durationSeconds ? `${g.durationSeconds}s` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
                   <p className="mt-0.5 truncate text-xs text-atelier-muted">
-                    {g.character_profile_id ? (nameById.get(g.character_profile_id) ?? h.unknownCharacter) : h.noCharacter} ·{" "}
                     <LocalDate date={g.created_at} /> ·{" "}
                     {g.angleCount
                       ? formatMsg(h.angleCountOther, { n: g.angleCount })
@@ -132,19 +364,26 @@ export default async function HistoryPage() {
                         : formatMsg(h.attemptCountOther, { n: g.attempts })}
                   </p>
                 </div>
+
                 <div className="flex flex-shrink-0 items-center gap-2">
-                  <Badge tone="neutral">{g.content_type === "image" ? t.generate.image : t.generate.video}</Badge>
-                  <Badge
-                    tone={
-                      g.status === "succeeded"
-                        ? "success"
-                        : g.status === "failed"
-                          ? "danger"
-                          : "neutral"
-                    }
+                  {/* Identity score — proof, so it gets the ochre serif
+                      numerals. Only ever the row's real score. */}
+                  {typeof g.matchScore === "number" && (
+                    <span
+                      title={formatMsg(t.generate.identityMatch, { n: g.matchScore })}
+                      className="font-numeral text-xs font-medium tabular-nums text-atelier-accent"
+                    >
+                      {g.matchScore}%
+                    </span>
+                  )}
+                  <span
+                    className={`inline-flex flex-shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider ${chipClass(g.status)}`}
                   >
+                    {g.status === "generating" && (
+                      <span aria-hidden className="h-1.5 w-1.5 animate-pulse rounded-full bg-atelier-accent" />
+                    )}
                     {statusLabel(g.status)}
-                  </Badge>
+                  </span>
                   {g.character_profile_id && (
                     <ContinueChatButton
                       characterId={g.character_profile_id}

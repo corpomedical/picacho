@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { toMediaUrl } from "@/lib/media/url";
+import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
 
@@ -17,13 +17,28 @@ export default async function VideosPage() {
     .eq("user_id", userData.user.id)
     .eq("content_type", "video")
     .is("deleted_at", null)
+    // The media sections show finished work only — a failed generation has
+    // no video, so it never gets a tile here (operator call, 2026-08-20).
+    // History remains the complete record, failures included. In-flight
+    // rows (drafted/generating/…) stay: in progress is not failed, and the
+    // placeholder tile is how a just-fired render shows up at all. For a
+    // multi-angle group this also means only its non-failed angles are
+    // fetched, so the surviving angle becomes the tile's representative.
+    .neq("status", "failed")
     .order("created_at", { ascending: false })
     .limit(60);
 
   if (error) console.error("Failed to load videos:", error);
 
+  // Same rule at the row level: a "succeeded" row with nothing the browser
+  // can render (old mock runs stored result_url "mock://…") has no video to
+  // hang a tile on — History keeps it, the gallery skips it.
+  const visibleRows = (generations ?? []).filter(
+    (g) => g.status !== "succeeded" || isRenderableUrl(toMediaUrl(g.result_url)),
+  );
+
   const characterIds = Array.from(
-    new Set((generations ?? []).map((g) => g.character_profile_id).filter(Boolean)),
+    new Set(visibleRows.map((g) => g.character_profile_id).filter(Boolean)),
   );
   const { data: characters } = characterIds.length
     ? await supabase.from("character_profiles").select("id, name").in("id", characterIds)
@@ -35,7 +50,7 @@ export default async function VideosPage() {
   // or whichever angle came first) so the gallery reads as one request.
   type VideoRow = NonNullable<typeof generations>[number];
   const groups = new Map<string, VideoRow[]>();
-  for (const g of generations ?? []) {
+  for (const g of visibleRows) {
     const key = g.angle_group_id ?? g.id;
     const arr = groups.get(key) ?? [];
     arr.push(g);
