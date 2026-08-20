@@ -54,7 +54,7 @@ async function assistAllowance(
 ): Promise<AssistAllowance> {
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role, status, bonus_credits, current_period_start")
+    .select("plan, role, status, current_period_start")
     .eq("id", userId)
     .single();
 
@@ -64,7 +64,12 @@ async function assistAllowance(
   if (profile?.role === "admin") return { remaining: null, cap: -1, since: null, uncapped: true };
 
   const plan = (profile?.plan ?? "none") as PlanId;
-  const isFreeTier = plan === "none" && (profile?.bonus_credits ?? 0) === 0;
+  // Every plan-less account is free-tier for assists, bonus credits or not:
+  // bonus credits buy generations, they carry no assist allowance, and the
+  // "none" row in PLAN_PROMPT_ASSIST_LIMITS is 0 — so routing granted
+  // accounts through the plan path meant zero assists and the nonsense
+  // "used all 0 … the No active plan plan" message (2026-08-20).
+  const isFreeTier = plan === "none";
 
   // Free tier: counted for the lifetime of the account, since a trial has no
   // billing anchor to reset against.
