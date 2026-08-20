@@ -6,6 +6,7 @@ import { GenerateForm } from "@/components/generate-form";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
+import { isNativeApp } from "@/lib/native/server";
 
 // No longer the constraint it used to be.
 //
@@ -94,7 +95,12 @@ export default async function GeneratePage() {
     // reached by submitting from the home page — the same screen at two
     // different widths depending on how you got there.
     <div className="mx-auto max-w-5xl">
-      {!advancedPlanActive && (
+      {/* Reader mode: no purchase entry points in the iOS/Android shell
+          (Apple 3.1.1 / Play payments policy — see lib/native/platform.ts).
+          This CTA was added with the repricing work, after the original
+          native-gating pass, and shipped ungated — caught live on the Play
+          internal build, 2026-08-20. */}
+      {!advancedPlanActive && !(await isNativeApp()) && (
         <div className="mb-3 flex justify-end">
           <Link href="/app/settings?tab=usage">
             <Button size="sm">{t.settings.upgrade}</Button>
