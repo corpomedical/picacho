@@ -1,5 +1,16 @@
 apply plugin: 'com.android.application'
 
+// Upload-key signing (2026-08-20, first Play submission). The keystore and
+// its password live OUTSIDE the repo: the .jks under ~/picacho-keys/ and the
+// password in android/keystore.properties (gitignored). When the properties
+// file is absent — CI, a fresh checkout, another machine — the release build
+// still works, just unsigned, exactly as before.
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "ai.picacho.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -19,10 +30,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
