@@ -18,10 +18,11 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        // Tracks CURRENT_VERSION in src/lib/changelog.ts. versionCode stays 1
-        // for the first Play upload; bump it (never reuse a value) on every
-        // subsequent upload, keeping versionName in step with the changelog.
+        versionCode 2
+        // Tracks CURRENT_VERSION in src/lib/changelog.ts. Bump versionCode
+        // (never reuse a value) on every Play upload. 2 = the launcher-icon
+        // fix (P monogram inside the adaptive safe zone; the full wordmark
+        // clipped against round masks).
         versionName "1.4.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
