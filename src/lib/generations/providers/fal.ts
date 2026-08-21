@@ -32,6 +32,11 @@ export type VideoGenerationOptions = {
   // ByteDance's cheaper with-video rate while we charge standard weights,
   // so continuation improves margin rather than costing it.
   continueFromVideoUrl?: string | null;
+  // Storyboard (Kling O3 Pro only): 2-6 shots for the endpoint's
+  // multi_prompt, each with its own prompt and 1-15s duration — one
+  // coherent multi-shot video out. Mutually exclusive with `prompt` on
+  // fal's side; the builder below sends one or the other, never both.
+  storyboardShots?: { prompt: string; seconds: number }[] | null;
   // Kling O3 only: whether to request O3's own native audio generation
   // (speech + ambient sound baked into the render itself, no separate TTS
   // call). Real incident, 2026-08-07: this defaults to off on fal.ai's side
@@ -351,10 +356,24 @@ async function buildVideoRequest(
       );
     }
     endpoint = "fal-ai/kling-video/o3/pro/reference-to-video";
+    const storyboard = options.storyboardShots ?? null;
     body = {
       // The @Element1 citation has to appear in the PROMPT for the model to
-      // bind to it — same contract as Seedance's @Image1 above.
-      prompt: `${prompt}\n\nThe person in this video is @Element1 — match their face, hair, and features exactly, but do not copy the pose or framing of that photo.`,
+      // bind to it — same contract as Seedance's @Image1 above. For a
+      // storyboard the citation rides EVERY shot, and per-shot durations are
+      // STRING literals "1".."15" — live-fired 2026-08-21: integers 422.
+      // multi_prompt and prompt are mutually exclusive on fal's side.
+      ...(storyboard && storyboard.length >= 2
+        ? {
+            multi_prompt: storyboard.map((shot) => ({
+              prompt: `${shot.prompt}\n\nThe person in this shot is @Element1 — match their face, hair, and features exactly.`,
+              duration: String(shot.seconds),
+            })),
+          }
+        : {
+            prompt: `${prompt}\n\nThe person in this video is @Element1 — match their face, hair, and features exactly, but do not copy the pose or framing of that photo.`,
+            duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+          }),
       elements: [
         {
           frontal_image_url: anchorImages[0],
@@ -370,7 +389,8 @@ async function buildVideoRequest(
         },
       ],
       aspect_ratio: resolvedAspectRatio,
-      duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      // (duration lives in the prompt/multi_prompt spread above — a single
+      // clip sends the flat duration, a storyboard sends per-shot ones.)
       // Same default-on native audio as O3 standard (see the 2026-08-07
       // incident note on generateNativeAudio above) — the caller turns it
       // off when the ElevenLabs/Sync Labs dialogue pipeline is going to
@@ -382,7 +402,7 @@ async function buildVideoRequest(
         "blur, distort, and low quality, static posed portrait, frozen first frame, " +
         "motionless opening shot, subject standing still facing camera",
     };
-    label = "Kling O3 Pro";
+    label = storyboard && storyboard.length >= 2 ? `Kling O3 Pro (storyboard, ${storyboard.length} shots)` : "Kling O3 Pro";
   } else if (modelId === "kling-2.5") {
     // Kling 2.5 Turbo Pro. First-frame image-to-video, so image_url is
     // required and the clip does open on that photo — this model is the

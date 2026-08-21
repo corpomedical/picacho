@@ -552,7 +552,44 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // Redrafting it would mean the user approved one prompt and a different one
   // ran — which would make the whole feature a lie. The composer only sets
   // this when the text is still byte-for-byte what it showed.
-  const promptIsFinal = formData.get("prompt_is_final") === "1";
+  // Storyboard (Kling O3 Pro multi_prompt, live-verified 2026-08-21): 2-6
+  // user-written shots, each 1-15s, one coherent video out. Shots are sent
+  // AS WRITTEN (per-shot drafting would multiply pipeline cost and latency
+  // for marginal gain — v1 decision), so a storyboard implies the
+  // final-prompt path below. Total capped at 30s to bound worst-case spend.
+  type StoryboardShot = { prompt: string; seconds: number };
+  let storyboardShots: StoryboardShot[] | null = null;
+  {
+    const raw = ((formData.get("storyboard_shots") as string) || "").trim();
+    if (raw) {
+      if (contentType !== "video") {
+        return { error: "Storyboards are a video feature." };
+      }
+      try {
+        const parsed: unknown = JSON.parse(raw);
+        if (!Array.isArray(parsed)) throw new Error("not an array");
+        storyboardShots = parsed.map((s) => {
+          const shot = s as { prompt?: unknown; seconds?: unknown };
+          const promptText = typeof shot.prompt === "string" ? shot.prompt.trim() : "";
+          const seconds = Number(shot.seconds);
+          if (!promptText) throw new Error("empty shot");
+          if (!Number.isInteger(seconds) || seconds < 1 || seconds > 15) throw new Error("bad seconds");
+          return { prompt: promptText.slice(0, 1200), seconds };
+        });
+      } catch {
+        return { error: "That storyboard couldn't be read — refresh and try again." };
+      }
+      if (storyboardShots.length < 2 || storyboardShots.length > 6) {
+        return { error: "A storyboard is 2 to 6 shots." };
+      }
+      const totalSeconds = storyboardShots.reduce((n, s) => n + s.seconds, 0);
+      if (totalSeconds > 30) {
+        return { error: "Storyboards are capped at 30 seconds total for now." };
+      }
+    }
+  }
+
+  const promptIsFinal = formData.get("prompt_is_final") === "1" || storyboardShots !== null;
   const skipRefinement = userProfile?.skip_ai_refinement === true || promptIsFinal;
 
   // Multi-character images need OpenAI's real multi-image edit endpoint —
@@ -651,6 +688,25 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0)
       : 1;
 
+  // Storyboard pricing: total seconds at the model's real per-second rate,
+  // over the established $0.28/credit basis, rounded UP — the same formula
+  // behind every duration weight in the catalog, just computed for an
+  // arbitrary total instead of a preset. The duration enum check below is
+  // skipped: per-shot lengths were validated at parse (1-15s each, ≤30s
+  // total), and videoDurationSeconds becomes the TOTAL so the saved row and
+  // any dialogue math stay honest.
+  if (storyboardShots) {
+    if (videoModelId !== "kling-o3-pro") {
+      return { error: "Storyboards run on Kling O3 Pro — switch the model, or clear the storyboard." };
+    }
+    if (wantsDialogue) {
+      return { error: "Storyboards and spoken dialogue can't combine yet — remove one." };
+    }
+    const totalSeconds = storyboardShots.reduce((n, s) => n + s.seconds, 0);
+    videoDurationSeconds = totalSeconds;
+    creditWeight = Math.ceil((totalSeconds * (activeVideoModel.costPerSecondUsd ?? 0.14)) / 0.28);
+  }
+
   // Aspect ratio — resolution order (real incident, 2026-08-07: a user typed
   // "16:9, no side bars" into their prompt and still got a pillarboxed video,
   // because the model in use had no parameter that could have honored it —
@@ -701,7 +757,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // resolved model's real durations are valid, so a duration the old model
   // allowed but the new one doesn't falls back to the new model's default (and
   // the placeholder row saves this same resolved duration below).
-  if (contentType === "video" && substitutedFrom) {
+  if (contentType === "video" && substitutedFrom && !storyboardShots) {
+    // (!storyboardShots: a storyboard's weight is computed above from total
+    // seconds, and a substitution away from O3 Pro already errored — this
+    // enum-based recompute would silently misprice it.)
     const substitutedModel = getVideoModel(videoModelId);
     if (!isValidDuration(substitutedModel, videoDurationSeconds)) {
       videoDurationSeconds = getDefaultDurationSeconds(substitutedModel);
@@ -1066,6 +1125,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         videoContinueFromUrl = absolutizeMediaUrl(priorUrl, await getOrigin());
       }
 
+      if (storyboardShots && (videoStartImageUrl || videoEndImageUrl)) {
+        return { error: "Storyboards and start/end frames can't combine — remove one." };
+      }
+
       const result = await runRealPipeline(
         userInput,
         characterForPipeline,
@@ -1080,6 +1143,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoEndImageUrl,
           videoCharacterAnchorUrl,
           videoContinueFromUrl,
+          videoStoryboardShots: storyboardShots,
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
           dialogueText: wantsDialogue ? dialogueText : undefined,
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,

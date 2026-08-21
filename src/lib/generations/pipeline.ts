@@ -467,6 +467,10 @@ export type RealPipelineOptions = {
   // through to Seedance as a @Video1 reference (see fal.ts). Caller
   // validates ownership and model support.
   videoContinueFromUrl?: string | null;
+  // Storyboard — 2-6 user-written shots for Kling O3 Pro's multi_prompt
+  // (see fal.ts). Present ⇒ the caller forced the final-prompt path, so
+  // drafting never rewrites shot text.
+  videoStoryboardShots?: { prompt: string; seconds: number }[] | null;
   // Character dialogue — a spoken line for the character to say, lip-synced
   // onto the finished video. dialogueVoiceId is the character's assigned
   // ElevenLabs voice_id (already resolved by the caller from voice_presets),
@@ -993,6 +997,7 @@ export async function runRealPipeline(
             endImageUrl: options.videoEndImageUrl,
             characterAnchorImageUrl: options.videoCharacterAnchorUrl,
             continueFromVideoUrl: options.videoContinueFromUrl,
+            storyboardShots: options.videoStoryboardShots,
             generateNativeAudio: !usingSeparateDialoguePipeline,
             durationSeconds: options.videoDurationSeconds,
             aspectRatio: options.videoAspectRatio,
