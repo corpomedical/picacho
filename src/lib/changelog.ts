@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.5.0",
+    build: 6,
+    date: "2026-08-21",
+    title: "Launch week — Play Store submission, the Android polish gauntlet, and the character-lock arsenal",
+    items: [
+      "Picacho was submitted to Google Play for review. The whole road got walked in one stretch: every Console declaration (content rating Everyone/PEGI 3, data safety, 18+ audience, ads/health/finance/government all clean), a working reviewer demo account stocked with credits and real renders, a four-language store listing with six real product screenshots produced on an emulator with a demo-clean status bar, an upload keystore and five signed bundles, and the AI-asset declaration done honestly. The listing's brand-rules claim was corrected to the exact truth first (rules check the PROMPT before generation — nothing is charged when one blocks) and the enforcement flag was switched on to match.",
+      "The Android app stopped feeling like a website in a box: the hardware back button (and edge swipe) now walks back through the app and lands on the dashboard instead of minimizing on first press; downloads actually work via the system share sheet (the WebView silently swallowed them before); generated images expand to a full-screen viewer with the download in reach; a Media tab joined the bar (there was genuinely no route to media in the app); the status-bar strip matches the page in both themes; the splash hands off to an animated logo intro; and a Gemini-style quick pill (new chat + overflow menu) slides in only once you scroll — after the operator rightly vetoed its always-on first draft.",
+      "A three-generation launcher icon saga ended on the dark tile: the P monogram cut from the real wordmark on near-black in BOTH system themes, with the Play store icon regenerated to match — after the full-wordmark icon clipped against round masks and a white variant read wrong on the shelf.",
+      "The 'Seedance is worthless' mystery got solved with about $2.50 of live-fire tests: ByteDance's 2.5 endpoints reject photoreal human likenesses outright (anti-deepfake policy — reproduced on both endpoints, while a cartoon mascot sailed through), and Seedance 2.0 accepts the very same faces. The catalog now tells the truth: Seedance 2.0 is the photoreal identity-reference lane (5/10/15s), and 2.5 is the illustrated/mascot lane with its 30-second takes.",
+      "Competitive research (Renoise, ImagineArt, BudgetPixel) turned into shipped product the same day: lock-strength coaching on every character page (a meter plus the front/three-quarter/full-body/expression recipe competitors bury in blogs), clip continuation ('Continue this clip' hands a finished video to Seedance as a reference so the next shot picks up the same world), and multi-shot storyboards on Kling O3 Pro — 2-6 shots, each with its own prompt and length, one coherent video with real cuts, priced by true total seconds. Every feature was live-fired against the provider before any user could touch it.",
+      "Monetization strategy settled after a full policy briefing: the app ships as a clean reader (fastest, safest first review), US users get a court-permitted external checkout link that opens the website in their real browser (server-side region gate, fail-closed everywhere else), and the complete Google Play Billing foundation — webhook with Stripe-grade idempotency, product contract, plan-ownership columns so Stripe and Play can never overwrite each other, and a step-by-step operator runbook — sits ready for the day the 15% is worth switching on.",
+      "Assorted truths restored along the way: the marketing site's over-broad native CSS rule that made the app's toolbar icons stairstep (the website was always fine), a reader-mode Upgrade button that had leaked into the shell, video thumbnails that showed Android's grey play tile instead of a first frame, an Enhance chip that ate the toolbar on phones, and a prompt-assist message that told bonus-credit users they'd 'used all 0 assists included in the No active plan plan.'",
+      "A third clip — the operator's own Seedance 2.0 render — joined the homepage reel.",
+    ],
+  },
+  {
     version: "1.4.0",
     build: 5,
     date: "2026-08-19",
