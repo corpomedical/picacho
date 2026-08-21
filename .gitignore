@@ -42,3 +42,4 @@ _*.tgz
 # Standalone read-only admin console (separate app, deployed on its own)
 picacho-admin/
 picacho-admin.zip
+.env*
