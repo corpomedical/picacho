@@ -75,18 +75,37 @@ async function resetProfileToFree(
   supabase: ReturnType<typeof createAdminClient>,
   userId: string,
 ): Promise<void> {
+  // Play Billing guard (2026-08-21): if the plan is now OWNED BY PLAY —
+  // the user let the Stripe subscription lapse and re-subscribed in the
+  // app — a straggling Stripe deletion event must only clear the Stripe
+  // columns, not wipe the live Play plan.
+  const { data: profile, error: readError } = await supabase
+    .from("profiles")
+    .select("plan_source")
+    .eq("id", userId)
+    .single();
+  if (readError) throw new Error(`couldn't read profile ${userId} before reset: ${readError.message}`);
+
+  const stripeColumnsOnly = {
+    stripe_subscription_id: null,
+    stripe_price_id: null,
+  };
   const { error } = await supabase
     .from("profiles")
-    .update({
-      plan: "none",
-      plan_status: "canceled",
-      stripe_subscription_id: null,
-      stripe_price_id: null,
-      plan_currency: null,
-      plan_interval: null,
-      current_period_start: null,
-      current_period_end: null,
-    })
+    .update(
+      profile?.plan_source === "play"
+        ? stripeColumnsOnly
+        : {
+            plan: "none",
+            plan_status: "canceled",
+            plan_source: null,
+            ...stripeColumnsOnly,
+            plan_currency: null,
+            plan_interval: null,
+            current_period_start: null,
+            current_period_end: null,
+          },
+    )
     .eq("id", userId);
   if (error) throw new Error(`couldn't reset profile ${userId} to free: ${error.message}`);
 }
@@ -466,6 +485,12 @@ export async function POST(request: Request) {
             plan_status: statusToPlanStatus(subscription.status),
             current_period_start: currentPeriodStart,
             current_period_end: currentPeriodEnd,
+            // A live Stripe subscription owns the plan — and clears any Play
+            // remnant, since Google won't sell a second subscription to
+            // someone the app already shows as subscribed (the store UI is
+            // hidden for active plans; this is the belt to that suspender).
+            plan_source: "stripe",
+            play_product_id: null,
             ...(planId ? { plan: planId } : {}),
           })
           .eq("id", userId);
