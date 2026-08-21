@@ -65,6 +65,7 @@ const en = {
       // link texts themselves ("Picacho vs HeyGen") are brand names and stay
       // literal in the component, like the engine names on the homepage.
       compare: "Compare",
+      guides: "Guides",
       madeWith: "Made with Picacho",
     },
     home: {

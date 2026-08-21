@@ -24,6 +24,9 @@ const PUBLIC_ROUTES = [
   "/compare/hedra",
   "/compare/renoise",
   "/compare/imagineart",
+  // Guides — the SEO content section (English-only bodies for now).
+  "/guides",
+  "/guides/ai-character-consistency",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

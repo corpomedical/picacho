@@ -51,6 +51,9 @@ export async function MarketingFooter() {
               Google Play). Link labels are brand names, kept literal. */}
           {!native && (
             <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-neutral-400 sm:justify-end">
+              <Link href="/guides" className="hover:text-neutral-700">
+                {t.marketing.footer.guides}
+              </Link>
               <span>{t.marketing.footer.compare}:</span>
               <Link href="/compare/heygen" className="hover:text-neutral-700">
                 Picacho vs HeyGen

@@ -140,6 +140,24 @@ export default async function PricingPage({
             </div>
           ))}
         </dl>
+        {/* FAQPage structured data for rich results — generated from the
+            SAME localized array rendered above, so the markup can never say
+            something the page doesn't (Google's core requirement for FAQ
+            snippets). JSON-LD is inert data, no nonce needed (see layout). */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "FAQPage",
+              mainEntity: p.faq.map((item) => ({
+                "@type": "Question",
+                name: item.q,
+                acceptedAnswer: { "@type": "Answer", text: item.a },
+              })),
+            }),
+          }}
+        />
       </section>
 
       <MarketingFooter />

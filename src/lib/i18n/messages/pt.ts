@@ -52,6 +52,7 @@ const pt = {
       terms: "Termos de Serviço",
       contentPolicy: "Política de Conteúdo",
       compare: "Comparações",
+      guides: "Guias",
       madeWith: "Feito com o Picacho",
     },
     home: {
