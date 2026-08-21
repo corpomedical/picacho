@@ -372,7 +372,13 @@ export default async function Home({
             transcodes of the operator's 1080p originals (~8MB + ~7MB),
             served from public/. The chip reuses the showcase badge — same
             claim, same words. */}
-        <HeroReel sources={["/hero-band.mp4", "/hero-band-2.mp4"]} badge={m.showcaseBadge} />
+        {/* Third clip added 2026-08-21: the operator's Seedance 2.0 render —
+            the reel now also demos the newest catalog model. Same 1280x720
+            10s shape as the first two. */}
+        <HeroReel
+          sources={["/hero-band.mp4", "/hero-band-2.mp4", "/hero-band-3.mp4"]}
+          badge={m.showcaseBadge}
+        />
 
         {/* Engine rail — the models Picacho actually runs, named for the
             first time on the marketing site. Sits between the hero's proof
