@@ -362,6 +362,37 @@ export function CharacterForm({
             </button>
           )}
         </div>
+
+        {/* Lock-strength coaching (competitive research, 2026-08-21): every
+            serious competitor teaches the same recipe — front face, a
+            three-quarter angle, full body, an expression — but makes users
+            find it in a blog. Coach it right where the photos live. The
+            meter is count-based (we can't classify pose from pixels); the
+            tip supplies the variety advice. */}
+        {totalImages > 0 && (
+          <div className="mt-3">
+            <div className="flex items-center gap-2.5">
+              <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                {c.lockStrength}
+              </span>
+              <span aria-hidden className="flex items-center gap-1">
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <span
+                    key={i}
+                    className={
+                      i < totalImages
+                        ? "h-1.5 w-5 rounded-full bg-atelier-accent"
+                        : "h-1.5 w-5 rounded-full bg-atelier-rule"
+                    }
+                  />
+                ))}
+              </span>
+            </div>
+            <p className="mt-1.5 text-xs text-atelier-muted">
+              {totalImages <= 1 ? c.lockTipOne : totalImages <= 3 ? c.lockTipFew : c.lockTipMax}
+            </p>
+          </div>
+        )}
         <input
           ref={fileInputRef}
           type="file"

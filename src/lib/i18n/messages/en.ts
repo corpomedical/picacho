@@ -647,6 +647,8 @@ const en = {
     showAll: "Show everything",
     backToHistory: "History",
     pipelineLog: "Pipeline log",
+    promoteCta: "Use as reference photo",
+    promoteDone: "Added to the character's reference photos.",
     attemptLabel: "Attempt {n}",
     didntPassSuffix: "— didn't pass",
     validatedFirstTry: "Validated against your character rules — passed on the first try.",
@@ -696,6 +698,12 @@ const en = {
   },
   character: {
     identityPhoto: "Identity photo",
+    // Reference-set coaching (competitive research 2026-08-21): a tighter
+    // identity lock comes from photo VARIETY, not just count.
+    lockStrength: "Lock strength",
+    lockTipOne: "One photo anchors the face. Add a three-quarter angle and a full-body shot to strengthen the lock.",
+    lockTipFew: "Strong. An expression shot or full-body photo tightens the lock further.",
+    lockTipMax: "Strongest — the model sees your character from several angles and expressions.",
     listTitle: "Characters",
     newCharacter: "New character",
     couldntLoad: "Couldn't load your characters — try refreshing the page.",
