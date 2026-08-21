@@ -10,6 +10,9 @@
 
 const en = {
   common: {
+    // US-only native handoff to website checkout (lib/native/external-purchase).
+    webPurchaseCta: "Get plans & credits on our website",
+    webPurchaseNote: "Opens in your browser — purchases happen on picacho.io.",
     aiDisclaimer: "Picacho is AI and can make mistakes.",
     aiDisclaimerFeedbackCta: "Give us your feedback — help us improve.",
     feedbackTitle: "Send feedback",

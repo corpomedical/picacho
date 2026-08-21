@@ -824,11 +824,17 @@ function InsufficientCreditsBanner({
   available,
   modelName,
   seconds,
+  allowExternalPurchase,
 }: {
   needed: number;
   available: number;
   modelName: string;
   seconds: number;
+  // US-only, server-decided (lib/native/external-purchase): the app may
+  // show a link OUT to website checkout at the exact moment someone is
+  // short on credits. False everywhere else — the banner stays a plain
+  // message there.
+  allowExternalPurchase: boolean;
 }) {
   const { t } = useLocale();
   const g = t.generate;
@@ -904,6 +910,18 @@ function InsufficientCreditsBanner({
             className="cursor-pointer font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
           >
             {formatMsg(g.addCreditsCta, { n: pack.credits })}
+          </button>
+        )}
+        {/* The US-native counterpart: same inline-link voice, but it opens
+            website checkout in the system browser (picacho.io is outside
+            allowNavigation, so the WebView kicks it external). */}
+        {native && allowExternalPurchase && (
+          <button
+            type="button"
+            onClick={() => window.open("https://picacho.io/pricing", "_blank")}
+            className="cursor-pointer font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
+          >
+            {t.common.webPurchaseCta}
           </button>
         )}
       </p>
@@ -1176,6 +1194,9 @@ export function GenerateForm(props: {
   // Stripe billing dates yet (see LAUNCH_CHECKLIST.md) — the banner falls
   // back to "resets on the 1st" in that case rather than showing nothing.
   currentPeriodEnd: string | null;
+  // US-native external checkout permission, decided server-side per request
+  // (lib/native/external-purchase). Optional so older call sites fail safe.
+  allowExternalPurchase?: boolean;
   // Set when this instance is embedded on the dashboard home page instead
   // of /app/generate — see the isHero logic inside GenerateFormInner for
   // what this actually changes.
@@ -1523,6 +1544,7 @@ function GenerateFormInner({
   creditsLimit,
   purchasedCredits,
   currentPeriodEnd,
+  allowExternalPurchase = false,
   heroMode = false,
   greeting,
   startOnboarding = false,
@@ -1538,6 +1560,7 @@ function GenerateFormInner({
   creditsLimit: number;
   purchasedCredits: number;
   currentPeriodEnd: string | null;
+  allowExternalPurchase?: boolean;
   heroMode?: boolean;
   greeting?: string;
   startOnboarding?: boolean;
@@ -4048,6 +4071,7 @@ function GenerateFormInner({
             key={`${selectedVideoModel.id}-${videoDurationSeconds}`}
             needed={selectedCreditCost}
             available={creditsAvailable}
+            allowExternalPurchase={allowExternalPurchase}
             modelName={selectedVideoModel.name}
             seconds={videoDurationSeconds}
           />

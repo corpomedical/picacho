@@ -9,6 +9,8 @@ import { getBrandRules } from "@/lib/brand-rules/actions";
 import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { BuyCreditsPanel } from "@/components/buy-credits-panel";
 import { isNativeApp } from "@/lib/native/server";
+import { allowExternalPurchaseLink, EXTERNAL_PURCHASE_URL } from "@/lib/native/external-purchase";
+import { ExternalCheckoutButton } from "@/components/external-checkout-button";
 import { FeedbackForm } from "@/components/settings/feedback-form";
 import { ProfileForm } from "@/components/profile-form";
 import { UsernameForm } from "@/components/settings/username-form";
@@ -141,6 +143,9 @@ export default async function SettingsPage({
   const brandRules = await getBrandRules();
   // Drives the reader-app gating below — see lib/native/platform.ts.
   const nativeApp = await isNativeApp();
+  // US-only external checkout link (per-request geo; false everywhere else
+  // and on the web) — see lib/native/external-purchase.
+  const externalPurchase = await allowExternalPurchaseLink();
 
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -384,6 +389,16 @@ export default async function SettingsPage({
                         ? PLAN_LABELS.none
                         : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
                   </p>
+                  {/* US requests only (see lib/native/external-purchase):
+                      the court-permitted external link to website checkout.
+                      Everywhere else this block simply doesn't exist. */}
+                  {externalPurchase && (
+                    <ExternalCheckoutButton
+                      url={EXTERNAL_PURCHASE_URL}
+                      label={t.common.webPurchaseCta}
+                      note={t.common.webPurchaseNote}
+                    />
+                  )}
                 </div>
               ) : hasLiveSubscription ? (
                 <div className="mt-4 flex items-center justify-between gap-4 rounded-control bg-atelier-ink p-4 text-atelier-paper">

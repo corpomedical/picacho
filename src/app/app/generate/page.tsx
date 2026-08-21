@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
+import { allowExternalPurchaseLink } from "@/lib/native/external-purchase";
 
 // No longer the constraint it used to be.
 //
@@ -136,6 +137,7 @@ export default async function GeneratePage() {
         creditsLimit={creditsLimit}
         purchasedCredits={purchasedCredits}
         currentPeriodEnd={currentPeriodEnd}
+        allowExternalPurchase={await allowExternalPurchaseLink()}
       />
     </div>
   );
