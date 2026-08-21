@@ -628,6 +628,7 @@ const it = {
   gallery: {
     imagesTitle: "Immagini",
     imagesSubtitle: "Le tue immagini completate, dalle più recenti — le generazioni fallite restano nella cronologia.",
+    mediaSubtitle: "Le tue immagini e i tuoi video completati, dai più recenti — le generazioni fallite restano nella cronologia.",
     videosTitle: "Video",
     videosSubtitle: "I tuoi video completati, dai più recenti — le generazioni fallite restano nella cronologia.",
     noImagesYet: "Ancora nessuna immagine.",

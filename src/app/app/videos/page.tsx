@@ -65,6 +65,7 @@ export default async function VideosPage() {
         prompt_input: representative.prompt_input,
         status: representative.status,
         result_url: toMediaUrl(representative.result_url),
+        full_url: toMediaUrl(representative.result_url),
         content_type: representative.content_type,
         created_at: representative.created_at,
         characterName: representative.character_profile_id

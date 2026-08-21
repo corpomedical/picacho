@@ -628,6 +628,7 @@ const es = {
   gallery: {
     imagesTitle: "Imágenes",
     imagesSubtitle: "Tus imágenes terminadas, las más recientes primero — las generaciones fallidas se quedan en el historial.",
+    mediaSubtitle: "Tus imágenes y vídeos terminados, los más recientes primero — las generaciones fallidas se quedan en el historial.",
     videosTitle: "Videos",
     videosSubtitle: "Tus videos terminados, los más recientes primero — las generaciones fallidas se quedan en el historial.",
     noImagesYet: "Aún no hay imágenes.",

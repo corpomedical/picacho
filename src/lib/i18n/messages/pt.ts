@@ -628,6 +628,7 @@ const pt = {
   gallery: {
     imagesTitle: "Imagens",
     imagesSubtitle: "Suas imagens concluídas, as mais recentes primeiro — as gerações que falharam ficam no histórico.",
+    mediaSubtitle: "Suas imagens e vídeos concluídos, os mais recentes primeiro — as gerações que falharam ficam no histórico.",
     videosTitle: "Vídeos",
     videosSubtitle: "Seus vídeos concluídos, os mais recentes primeiro — as gerações que falharam ficam no histórico.",
     noImagesYet: "Ainda não há imagens.",

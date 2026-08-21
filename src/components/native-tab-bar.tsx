@@ -82,16 +82,17 @@ export function NativeTabBar() {
   if (!isNative) return null;
 
   // Five tabs — the stated ceiling above. Media earned the fifth slot the
-  // hard way: with the sidebar hidden there was NO route to /app/images or
-  // /app/videos from inside the shell at all (operator-reported,
-  // 2026-08-21). extraMatch lights the tab for both media sections.
+  // hard way: with the sidebar hidden there was NO route to media from
+  // inside the shell at all (operator-reported, 2026-08-21). It lands on
+  // /app/media, the unified grid; extraMatch keeps the tab lit on the
+  // standalone Images/Videos pages too.
   const tabs = [
     { href: "/app/generate", label: t.nav.generate, icon: BoltIcon },
     { href: "/app/character", label: t.nav.characters, icon: UserIcon },
-    { href: "/app/images", label: t.nav.media, icon: PhotosIcon, extraMatch: "/app/videos" },
+    { href: "/app/media", label: t.nav.media, icon: PhotosIcon, extraMatch: ["/app/images", "/app/videos"] },
     { href: "/app/history", label: t.nav.history, icon: ClockIcon },
     { href: "/app/settings", label: t.nav.settings, icon: GearIcon },
-  ] as { href: string; label: string; icon: typeof BoltIcon; extraMatch?: string }[];
+  ] as { href: string; label: string; icon: typeof BoltIcon; extraMatch?: string[] }[];
 
   return (
     <nav
@@ -107,8 +108,9 @@ export function NativeTabBar() {
         const active =
           pathname === tab.href ||
           pathname.startsWith(`${tab.href}/`) ||
-          (tab.extraMatch !== undefined &&
-            (pathname === tab.extraMatch || pathname.startsWith(`${tab.extraMatch}/`)));
+          (tab.extraMatch ?? []).some(
+            (m) => pathname === m || pathname.startsWith(`${m}/`),
+          );
         const Icon = tab.icon;
         return (
           <Link

@@ -45,9 +45,10 @@ export default async function ImagesPage() {
     id: g.id,
     prompt_input: g.prompt_input,
     status: g.status,
-    // Grid thumbnails. Clicking through to /app/history/<id> loads the
-    // real file, and the download there is the untouched original.
+    // Grid thumbnails; the viewer and its download use full_url — the
+    // untouched original.
     result_url: thumbUrl(toMediaUrl(g.result_url), 640),
+    full_url: toMediaUrl(g.result_url),
     content_type: g.content_type,
     created_at: g.created_at,
     characterName: g.character_profile_id

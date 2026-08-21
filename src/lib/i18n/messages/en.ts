@@ -684,6 +684,7 @@ const en = {
   gallery: {
     imagesTitle: "Images",
     imagesSubtitle: "Your finished images, newest first — failed generations stay in History.",
+    mediaSubtitle: "Your finished images and videos, newest first — failed generations stay in History.",
     videosTitle: "Videos",
     videosSubtitle: "Your finished videos, newest first — failed generations stay in History.",
     noImagesYet: "No images yet.",
