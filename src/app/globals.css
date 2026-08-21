@@ -30,22 +30,28 @@
      variants in markup. Namespaced under atelier-* so nothing existing
      remaps — later phases move screens onto these tokens deliberately,
      one surface at a time. */
-  --color-atelier-paper: #f5f1e9;   /* warm paper ground */
-  --color-atelier-surface: #faf8f3; /* raised sheet: popovers, active rows */
-  --color-atelier-ink: #211d16;     /* primary ink */
-  --color-atelier-muted: #6f6656;   /* secondary ink: labels, inactive nav */
-  --color-atelier-rule: #e2dccd;    /* hairline warm rules, not gray card borders —
-                                       softened 2026-08-21 (operator: lines read too
-                                       hard next to ChatGPT-class chrome) */
+  /* FROST (2026-08-21, operator-chosen direction D): the app ground is a
+     soft cool-to-warm gradient (--frost-gradient, painted by .frost-ground
+     on the app shell) and surfaces are translucent near-white sitting on
+     it — glass without wall-to-wall backdrop blur (blur is applied only on
+     the composer, sidebar and tab bar; everywhere else translucency alone
+     is enough and Android WebView stays smooth). Ink went cool-neutral;
+     ochre stays, reserved for proof, exactly as before. Previous look:
+     git tag pre-frost-theme. */
+  --color-atelier-paper: #f1f1ef;   /* solid fallback ground (chips, banner tops) */
+  --color-atelier-surface: rgba(255, 255, 255, 0.85); /* glass sheet: cards, popovers */
+  --color-atelier-ink: #23252d;     /* primary ink */
+  --color-atelier-muted: #7b7f8b;   /* secondary ink: labels, inactive nav */
+  --color-atelier-rule: rgba(35, 37, 45, 0.1); /* hairlines over glass */
   --color-atelier-accent: #b45a28;  /* ochre — reserved for proof: scores, credits, active states */
-  /* Darkroom stage (phase 3) — the ground under MEDIA only: gallery tiles,
-     players, the still-rendering block. Deliberately the same warm charcoal
-     in BOTH themes (Lightroom/Frame.io logic: renders glow on charcoal even
-     when the page chrome is paper), so anything sitting ON the stage uses
-     fixed Darkroom literals (#eae6dc ink, #a39a88 muted, #e0a468 amber,
-     #faf8f3/95 chips), never theme-mapped colors — those flip in dark and
-     the stage does not. */
-  --color-atelier-stage: #1e1b13;
+  --frost-gradient: linear-gradient(135deg, #eef1f8 0%, #f7f1ea 55%, #f0ece2 100%);
+  --frost-top: #eef1f8;             /* the gradient's origin — status-bar strip color */
+  /* Stage — the ground under MEDIA only: gallery tiles, players, the
+     still-rendering block. Same near-black in BOTH themes (renders glow on
+     charcoal even when the chrome is light), so anything sitting ON the
+     stage uses fixed literals, never theme-mapped colors. Cool-shifted to
+     match Frost. */
+  --color-atelier-stage: #1b1c20;
   /* Numerals (credits, scores, stats) set in a text serif — pair with
      Tailwind's `tabular-nums`. System stack for now; the production font
      swap later is this one line. */
@@ -78,19 +84,21 @@
   --color-paper: oklch(14.5% 0 none);
   --color-ink: oklch(98.5% 0 none);
 
-  /* Darkroom — the Atelier tokens' dark twins: warm charcoal grounds,
-     warm off-white ink, amber accent, same structure. Every atelier-*
-     color declared in @theme MUST have a value here, so no shell color
-     ever exists in only one theme. */
-  --color-atelier-paper: #17150f;
-  --color-atelier-surface: #1e1b13;
-  --color-atelier-ink: #eae6dc;
-  --color-atelier-muted: #a39a88;
-  --color-atelier-rule: #332c1f;
+  /* Frost's dark twins: the same gradient idea in night tones — cool
+     blue-charcoal into warm espresso — with translucent elevated surfaces
+     and amber proof. Every atelier-* color declared in @theme MUST have a
+     value here, so no shell color ever exists in only one theme. */
+  --color-atelier-paper: #191a20;
+  --color-atelier-surface: rgba(36, 38, 47, 0.85);
+  --color-atelier-ink: #ecedf1;
+  --color-atelier-muted: #9aa0ad;
+  --color-atelier-rule: rgba(236, 237, 241, 0.09);
   --color-atelier-accent: #e0a468;
-  /* Same charcoal as light — the stage is theme-invariant by design; in dark
-     mode it simply blends into the surrounding Darkroom surfaces. */
-  --color-atelier-stage: #1e1b13;
+  --frost-gradient: linear-gradient(135deg, #1a1c24 0%, #221e19 55%, #1c1a16 100%);
+  --frost-top: #1a1c24;
+  /* Same near-black as light — the stage is theme-invariant by design; in
+     dark mode it simply blends into the surrounding surfaces. */
+  --color-atelier-stage: #1b1c20;
 }
 
 html,
@@ -217,10 +225,18 @@ html.native-app {
   overscroll-behavior-y: none;
   /* The strip behind the status bar / punch hole is the HTML element showing
      through above body's safe-area padding — unpainted, it was default
-     white against the paper page (operator-reported, 2026-08-21: "I want it
-     to fully reach all the screen to unify the color"). The token follows
-     the theme on its own. */
-  background-color: var(--color-atelier-paper);
+     white against the page (operator-reported, 2026-08-21: "I want it
+     to fully reach all the screen to unify the color"). Matches the Frost
+     gradient's origin corner so the strip blends into the page; the token
+     follows the theme on its own. */
+  background-color: var(--frost-top);
+}
+
+/* The Frost ground — painted on the app shell's viewport-sized root (which
+   never scrolls itself; inner panes do), so the gradient spans the screen
+   exactly once with no attachment tricks. */
+.frost-ground {
+  background: var(--frost-gradient);
 }
 
 html.native-app * {

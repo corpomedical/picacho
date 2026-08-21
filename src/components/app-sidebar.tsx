@@ -559,7 +559,7 @@ export function AppSidebar({
           html.native-app rules in globals.css. */}
       <div
         data-mobile-topbar
-        className="fixed inset-x-0 top-0 z-30 flex h-14 flex-shrink-0 items-center justify-between border-b border-atelier-rule bg-atelier-paper px-3 md:hidden"
+        className="fixed inset-x-0 top-0 z-30 flex h-14 flex-shrink-0 items-center justify-between border-b border-atelier-rule bg-atelier-surface/80 backdrop-blur-xl px-3 md:hidden"
       >
         <button
           type="button"
@@ -587,7 +587,7 @@ export function AppSidebar({
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-shrink-0 flex-col overflow-hidden border-r border-atelier-rule bg-atelier-paper px-3 py-5 shadow-2xl transition-transform duration-200 ease-in-out",
+          "fixed inset-y-0 left-0 z-40 flex h-screen w-72 flex-shrink-0 flex-col overflow-hidden border-r border-atelier-rule bg-atelier-surface/75 backdrop-blur-xl px-3 py-5 shadow-2xl transition-transform duration-200 ease-in-out",
           "md:static md:z-auto md:shadow-none md:transition-[width,padding] md:duration-200",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
           collapsed ? "md:w-14 md:items-center md:px-2" : "md:w-64 md:px-3",

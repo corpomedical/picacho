@@ -3937,7 +3937,7 @@ function GenerateFormInner({
             // element — putting the Safari shadow-corner mask fix here would
             // also clip the "+" dropdown and character switcher, which need
             // to render outside this box's bounds.
-            "isolate transform-gpu rounded-[26px] border border-atelier-rule/80 bg-atelier-surface",
+            "isolate transform-gpu rounded-[26px] border border-atelier-rule/80 bg-atelier-surface/80 backdrop-blur-xl",
         justArrived && "transition-opacity duration-[220ms] ease-out",
         justArrived && !settled && "opacity-0",
       )}

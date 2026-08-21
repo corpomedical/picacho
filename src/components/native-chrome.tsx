@@ -48,7 +48,9 @@ export function NativeChrome() {
       const dark = document.documentElement.classList.contains("dark");
       // Style.Light = light BACKGROUND (dark icons), Style.Dark the reverse.
       void statusBar?.setStyle?.({ style: dark ? "DARK" : "LIGHT" });
-      void statusBar?.setBackgroundColor?.({ color: dark ? "#17150f" : "#f5f1e9" });
+      // Frost: match the gradient's origin corner (--frost-top), not the old
+      // paper constants — a mismatched strip reads as a webview seam.
+      void statusBar?.setBackgroundColor?.({ color: dark ? "#1a1c24" : "#eef1f8" });
     };
     paintBars();
     // The theme toggle flips a class on <html>; watch it so the bar follows.
