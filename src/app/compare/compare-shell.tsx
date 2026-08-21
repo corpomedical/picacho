@@ -40,6 +40,16 @@ const COMPETITORS = {
     pricingUrl: "https://www.hedra.com/pricing",
     pricingLabel: "hedra.com/pricing",
   },
+  renoise: {
+    name: "Renoise",
+    pricingUrl: "https://renoise.ai/pricing",
+    pricingLabel: "renoise.ai/pricing",
+  },
+  imagineart: {
+    name: "ImagineArt",
+    pricingUrl: "https://www.imagine.art/pricing",
+    pricingLabel: "imagine.art/pricing",
+  },
 } as const;
 
 export type CompetitorId = keyof typeof COMPETITORS;

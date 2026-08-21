@@ -264,6 +264,42 @@ const en = {
       footnoteChange: "Prices and plans change. Always check the source above for current numbers — and if anything here is out of date, tell us and we'll correct it.",
       footnoteNotAdvertised: "“Not advertised” means we could not find the feature stated on that page at the time of checking — the product may still offer something similar.",
       trademarkNote: "{name} is a trademark of its respective owner. Picacho is an independent product and is not affiliated with, sponsored by, or endorsed by {name}.",
+      renoise: {
+        heroSubtitle: "Renoise is a multi-model canvas: frontier image, video, and audio models under one roof, with per-second pricing and a manual character-lock workflow — generate, pick your cleanest result, re-attach it as a reference shot by shot. Picacho is built for something different — the character is a saved object with traits and rules, engineered into every prompt automatically and scored on every output. Here's the honest breakdown.",
+        cellIdentity: "A reference workflow — you lock a generated result and re-attach it to each shot yourself, switching models as you go.",
+        cellFormat: "A multi-model canvas: Seedance 2.5/2.0, Kling 3.0 Omni, GPT Image 2, Midjourney V8.2 and more, plus audio models and an agent chat (beta).",
+        cellEntry: "Paid: Starter $20/mo (1,200 credits, ≈60 Seedance 2.0 videos), Standard $60/mo (3,600), Advanced $200/mo (14,000 + bonus). First-period promos vary.",
+        cellCost: "Usage-priced per second per model — e.g. Seedance 2.5 from about $0.113–0.133/s on subscription plans; heavier plans add generation discounts.",
+        cellWatermark: "Watermark-free exports on paid plans.",
+        chooseThem: [
+          "You want maximum model breadth — Midjourney, Grok, MiniMax, and the newest drops in one canvas.",
+          "You like granular per-second pricing and optimizing cost shot by shot.",
+          "You prefer hands-on control: picking a model per shot and managing references yourself.",
+        ],
+        choosePicacho: [
+          "You'd rather the character be saved once — traits, rules, references — and applied automatically, instead of re-attached by hand on every shot.",
+          "You want the lock measured, not assumed: a vision model scores every output against the identity photo and shows the number.",
+          "You'd rather pay per keeper — failed generations never use your credits.",
+        ],
+      },
+      imagineart: {
+        heroSubtitle: "ImagineArt is a broad creative suite: image, video, and chat models in one workspace, with unlimited-generation tiers and reference-based character consistency built around Seedance. Picacho is built for something different — one saved identity, engineered into every prompt and scored on every output, private by default on every plan. Here's the honest breakdown.",
+        cellIdentity: "Reference-based consistency — you attach a reference image (or start frame) to keep a character stable across clips.",
+        cellFormat: "A full creative suite: many image and video models, LLM chat access, and unlimited-model tiers on Ultimate and Creator.",
+        cellEntry: "Free tier available. Paid (billed yearly): Basic $13/mo (3K credits, ≈97 videos — image generations are public on Basic), Standard $30/mo (8K, private), Ultimate $55/mo (16K), Creator $350/mo (100K).",
+        cellCost: "Credit-based, with genuinely aggressive volume tiers — Ultimate and Creator include unlimited generations on a list of named models.",
+        cellWatermark: "Not stated on the pricing page we verified.",
+        chooseThem: [
+          "You want volume above all — the unlimited-model tiers are a real offer for high-throughput creators.",
+          "You want one subscription covering image, video, and chat models together.",
+          "You want the cheapest possible paid entry ($13/mo billed yearly).",
+        ],
+        choosePicacho: [
+          "Your work should be private on every plan — ImagineArt's Basic tier makes image generations public; Picacho never does.",
+          "You want the identity verified, not assumed: every output scored against the reference photo, number shown.",
+          "You'd rather pay per keeper — failed generations never use your credits.",
+        ],
+      },
       heygen: {
         heroSubtitle: "HeyGen is a mature avatar platform: photo avatars and digital twins that present your script to camera, with lipsync in 175 languages. Picacho is built for something different — characters that act across cinematic scenes, with every output scored against the identity photo. Here's the honest breakdown.",
         cellIdentity: "An avatar presenter — a photo avatar or digital twin that delivers your script to camera.",

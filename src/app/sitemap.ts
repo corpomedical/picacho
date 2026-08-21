@@ -22,6 +22,8 @@ const PUBLIC_ROUTES = [
   "/gallery",
   "/compare/heygen",
   "/compare/hedra",
+  "/compare/renoise",
+  "/compare/imagineart",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

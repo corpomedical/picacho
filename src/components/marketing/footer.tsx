@@ -58,6 +58,12 @@ export async function MarketingFooter() {
               <Link href="/compare/hedra" className="hover:text-neutral-700">
                 Picacho vs Hedra
               </Link>
+              <Link href="/compare/renoise" className="hover:text-neutral-700">
+                Picacho vs Renoise
+              </Link>
+              <Link href="/compare/imagineart" className="hover:text-neutral-700">
+                Picacho vs ImagineArt
+              </Link>
             </div>
           )}
         </div>

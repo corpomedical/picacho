@@ -227,6 +227,42 @@ const it = {
       footnoteChange: "Prezzi e piani cambiano. Controlla sempre la fonte qui sopra per le cifre aggiornate — e se qualcosa qui è superato, segnalacelo e lo correggeremo.",
       footnoteNotAdvertised: "“Non pubblicizzato” significa che non abbiamo trovato quella funzione dichiarata su quella pagina al momento della verifica — il prodotto potrebbe comunque offrire qualcosa di simile.",
       trademarkNote: "{name} è un marchio del rispettivo proprietario. Picacho è un prodotto indipendente e non è affiliato, sponsorizzato o approvato da {name}.",
+      renoise: {
+        heroSubtitle: "Renoise è una canvas multimodello: modelli di frontiera per immagini, video e audio sotto lo stesso tetto, con prezzi al secondo e un flusso manuale di ancoraggio del personaggio — generi, scegli il risultato migliore e lo ricolleghi come riferimento inquadratura per inquadratura. Picacho è costruito per altro: il personaggio è un oggetto salvato con tratti e regole, integrato automaticamente in ogni prompt e valutato su ogni risultato. Ecco il confronto onesto.",
+        cellIdentity: "Un flusso di riferimenti — blocchi un risultato generato e lo ricolleghi tu stesso a ogni inquadratura, cambiando modello lungo il percorso.",
+        cellFormat: "Una canvas multimodello: Seedance 2.5/2.0, Kling 3.0 Omni, GPT Image 2, Midjourney V8.2 e altri, più modelli audio e una chat-agente (beta).",
+        cellEntry: "A pagamento: Starter $20/mese (1.200 crediti, ≈60 video Seedance 2.0), Standard $60/mese (3.600), Advanced $200/mese (14.000 + bonus). Le promo del primo periodo variano.",
+        cellCost: "Prezzo a consumo, al secondo e per modello — es. Seedance 2.5 da ~$0,113–0,133/s sui piani in abbonamento; i piani maggiori aggiungono sconti.",
+        cellWatermark: "Esportazioni senza watermark sui piani a pagamento.",
+        chooseThem: [
+          "Vuoi la massima ampiezza di modelli — Midjourney, Grok, MiniMax e le ultime novità in un'unica canvas.",
+          "Ti piace il prezzo granulare al secondo e ottimizzare i costi inquadratura per inquadratura.",
+          "Preferisci il controllo manuale: scegliere il modello per ogni inquadratura e gestire da solo i riferimenti.",
+        ],
+        choosePicacho: [
+          "Preferisci salvare il personaggio una volta — tratti, regole, riferimenti — e vederlo applicato automaticamente, invece di ricollegarlo a mano a ogni inquadratura.",
+          "Vuoi l'ancoraggio misurato, non presunto: un modello di visione valuta ogni risultato contro la foto identità e mostra il numero.",
+          "Preferisci pagare solo ciò che tieni — le generazioni fallite non consumano mai i tuoi crediti.",
+        ],
+      },
+      imagineart: {
+        heroSubtitle: "ImagineArt è una suite creativa ampia: modelli di immagini, video e chat in un unico spazio, con livelli a generazione illimitata e consistenza del personaggio basata su riferimenti costruita attorno a Seedance. Picacho è costruito per altro: un'identità salvata, integrata in ogni prompt e valutata su ogni risultato, privata di default su ogni piano. Ecco il confronto onesto.",
+        cellIdentity: "Consistenza basata su riferimenti — alleghi un'immagine di riferimento (o un fotogramma iniziale) per tenere stabile il personaggio tra i clip.",
+        cellFormat: "Una suite creativa completa: molti modelli di immagini e video, accesso a chat LLM e livelli con modelli illimitati su Ultimate e Creator.",
+        cellEntry: "Esiste un livello gratuito. A pagamento (fatturazione annuale): Basic $13/mese (3K crediti, ≈97 video — le immagini sono pubbliche su Basic), Standard $30/mese (8K, privato), Ultimate $55/mese (16K), Creator $350/mese (100K).",
+        cellCost: "A crediti, con livelli di volume davvero aggressivi — Ultimate e Creator includono generazioni illimitate su una lista di modelli specifici.",
+        cellWatermark: "Non indicato nella pagina prezzi che abbiamo verificato.",
+        chooseThem: [
+          "Vuoi il volume sopra ogni cosa — i livelli illimitati sono un'offerta reale per creator ad alto ritmo.",
+          "Vuoi un solo abbonamento che copra immagini, video e modelli di chat.",
+          "Vuoi l'ingresso a pagamento più economico possibile ($13/mese con fatturazione annuale).",
+        ],
+        choosePicacho: [
+          "Il tuo lavoro deve restare privato su ogni piano — il livello Basic di ImagineArt rende pubbliche le immagini; Picacho mai.",
+          "Vuoi l'identità verificata, non presunta: ogni risultato valutato contro la foto di riferimento, numero in vista.",
+          "Preferisci pagare solo ciò che tieni — le generazioni fallite non consumano mai i tuoi crediti.",
+        ],
+      },
       heygen: {
         heroSubtitle: "HeyGen è una piattaforma di avatar matura: avatar fotografici e gemelli digitali che presentano il tuo copione in camera, con sincronizzazione labiale in 175 lingue. Picacho è fatto per qualcosa di diverso: personaggi che recitano in scene cinematografiche, con ogni risultato valutato rispetto alla foto identità. Ecco il confronto onesto.",
         cellIdentity: "Un avatar presentatore — un avatar fotografico o un gemello digitale che legge il tuo copione in camera.",
