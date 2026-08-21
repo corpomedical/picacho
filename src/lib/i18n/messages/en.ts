@@ -897,6 +897,12 @@ const en = {
   },
   settings: {
     tutorial: "Tutorial",
+    // Referral card (give 5, get 5 — see supabase referrals.sql).
+    inviteTitle: "Invite friends — you both get credits",
+    inviteBody: "Share your link. When someone signs up with it and creates their first render, you both get 5 bonus credits.",
+    inviteCopy: "Copy link",
+    inviteCopied: "Copied",
+    inviteShare: "Share",
     title: "Settings",
     subtitle: "Everything about your account, in one place.",
     savedNotice: "Saved.",

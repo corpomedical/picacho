@@ -13,6 +13,7 @@ import { allowExternalPurchaseLink, EXTERNAL_PURCHASE_URL } from "@/lib/native/e
 import { ExternalCheckoutButton } from "@/components/external-checkout-button";
 import { FeedbackForm } from "@/components/settings/feedback-form";
 import { ProfileForm } from "@/components/profile-form";
+import { InviteCard } from "@/components/invite-card";
 import { UsernameForm } from "@/components/settings/username-form";
 import { EmailForm } from "@/components/settings/email-form";
 import { PasswordForm } from "@/components/settings/password-form";
@@ -275,6 +276,9 @@ export default async function SettingsPage({
                   <EmailForm initialEmail={data.user.email ?? ""} />
                   <div className="border-t border-atelier-rule/60 pt-5">
                     <ProfileForm initialCompany={profile?.company ?? ""} initialGender={profile?.gender ?? ""} />
+                  </div>
+                  <div className="border-t border-atelier-rule/60 pt-5">
+                    <InviteCard username={username} />
                   </div>
                 </div>
               </div>

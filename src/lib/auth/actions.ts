@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getOrigin } from "@/lib/origin";
 
@@ -187,6 +188,31 @@ export async function signup(formData: FormData) {
           company: company || null,
         })
         .eq("id", data.user.id);
+    }
+
+    // Referral attribution (see app/r/[username]/route.ts, which sets the
+    // cookie). Best-effort by design: a broken referral must never break a
+    // signup, so every failure path here is silent. Self-referral can't
+    // happen (the referrer's row predates this one), and referred_by is
+    // written only when still NULL — first attribution wins.
+    try {
+      const refUsername = (await cookies()).get("picacho_ref")?.value?.trim().toLowerCase();
+      if (refUsername && /^[a-z0-9_]{3,24}$/.test(refUsername) && refUsername !== username) {
+        const { data: referrer } = await admin
+          .from("profiles")
+          .select("id")
+          .eq("username", refUsername)
+          .maybeSingle();
+        if (referrer?.id && referrer.id !== data.user.id) {
+          await admin
+            .from("profiles")
+            .update({ referred_by: referrer.id })
+            .eq("id", data.user.id)
+            .is("referred_by", null);
+        }
+      }
+    } catch {
+      // Attribution is a bonus, never a blocker.
     }
   }
 

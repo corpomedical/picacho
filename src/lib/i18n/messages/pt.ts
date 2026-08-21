@@ -837,6 +837,11 @@ const pt = {
   },
   settings: {
     tutorial: "Tutorial",
+    inviteTitle: "Convide amigos — vocês dois ganham créditos",
+    inviteBody: "Compartilhe seu link. Quando alguém se cadastrar com ele e criar o primeiro render, vocês dois ganham 5 créditos bônus.",
+    inviteCopy: "Copiar link",
+    inviteCopied: "Copiado",
+    inviteShare: "Compartilhar",
     title: "Configurações",
     subtitle: "Tudo sobre sua conta, em um só lugar.",
     savedNotice: "Salvo.",
