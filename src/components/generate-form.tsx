@@ -526,7 +526,7 @@ function UserBubble({
           </div>
         )}
         {prompt && (
-          <div className="rounded-[18px] rounded-br-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-3 text-sm leading-relaxed text-atelier-ink">
+          <div className="rounded-[18px] rounded-br-[6px] bg-atelier-surface px-4.5 py-3 text-sm leading-relaxed text-atelier-ink shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
             {prompt}
           </div>
         )}
@@ -894,7 +894,7 @@ function InsufficientCreditsBanner({
         <div
           role="status"
           className={cn(
-            "flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted transition-transform duration-300 ease-out",
+            "flex items-center gap-2.5 rounded-t-[26px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted transition-transform duration-300 ease-out",
             // Slides up behind the composer on the way out, down into place on
             // the way in.
             visible ? "translate-y-0" : "-translate-y-2",
@@ -1005,7 +1005,7 @@ function UsageBanner({
   return (
     <div
       role="status"
-      className="flex items-center gap-2.5 rounded-t-[22px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted"
+      className="flex items-center gap-2.5 rounded-t-[26px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted"
     >
       {/* suppressHydrationWarning: resetLabel formats a date with the
           browser's locale/timezone, which legitimately differs from the SSR
@@ -1279,7 +1279,7 @@ function SingleTurnBubble({ turn, domId }: { turn: ChatTurn; domId?: string }) {
     <div id={domId} className="scroll-mt-6 space-y-3">
       <UserBubble prompt={turn.prompt} attachments={turn.attachments} createdAt={turn.createdAt} />
       <div className="flex justify-start">
-        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
+        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
           <PipelineTrace timeline={timeline} revealedCount={timeline.length} isAnimating={false} isLive={live} />
           {turn.succeeded ? (
             <>
@@ -1372,7 +1372,7 @@ function MultiAngleTurnBubble({ item, domId }: { item: MultiAngleChatItem; domId
     <div id={domId} className="scroll-mt-6 space-y-3">
       <UserBubble prompt={item.prompt} attachments={item.attachments} createdAt={item.createdAt} />
       <div className="flex justify-start">
-        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
+        <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
           <MultiAngleResult angles={item.angles} prompt={item.prompt} />
         </div>
       </div>
@@ -3937,7 +3937,7 @@ function GenerateFormInner({
             // element — putting the Safari shadow-corner mask fix here would
             // also clip the "+" dropdown and character switcher, which need
             // to render outside this box's bounds.
-            "isolate transform-gpu rounded-[22px] border border-atelier-rule bg-atelier-surface",
+            "isolate transform-gpu rounded-[26px] border border-atelier-rule/80 bg-atelier-surface",
         justArrived && "transition-opacity duration-[220ms] ease-out",
         justArrived && !settled && "opacity-0",
       )}
@@ -3945,7 +3945,7 @@ function GenerateFormInner({
       {!isHero && (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 rounded-[22px] shadow-[0_1px_2px_rgba(33,29,18,0.05),0_20px_44px_-18px_rgba(33,29,18,0.16)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[26px] shadow-[0_1px_2px_rgba(33,29,18,0.05),0_24px_56px_-20px_rgba(33,29,18,0.20)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
         />
       )}
       {isHero && <h1 className="text-2xl font-semibold text-atelier-ink">{greeting}</h1>}
@@ -4061,7 +4061,7 @@ function GenerateFormInner({
               <div className="space-y-3">
                 <UserBubble prompt={livePrompt} attachments={liveAttachments} />
                 <div className="flex justify-start">
-                  <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
+                  <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
                     {liveTimeline.length === 0 && !liveResult && (
                       // The server call itself (draft + review + the actual
                       // generation) can take anywhere from several seconds to

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DownloadButton } from "@/components/download-button";
+import { MediaActionBar } from "@/components/media-action-bar";
 
 // A result image that expands to a fullscreen viewer on tap — the thing
 // every phone user tries first and the app previously didn't do at all
@@ -17,14 +17,22 @@ export function ZoomableImage({
   alt = "",
   className,
   downloadUrl,
+  generationId,
+  ownerActions = false,
+  redirectAfterDelete,
 }: {
   src: string;
   alt?: string;
   className?: string;
-  // When set, the expanded view gets the same download control the result
-  // card carries (bottom-right, operator-requested 2026-08-21) — pointing
-  // at the ORIGINAL asset, not whatever thumb/proxy `src` may be.
+  // When set, the expanded view's action bar points at the ORIGINAL asset,
+  // not whatever thumb/proxy `src` may be.
   downloadUrl?: string;
+  // With ownerActions, the expanded bar also offers report + delete (the
+  // server actions re-verify ownership regardless). redirectAfterDelete is a
+  // plain string because server pages can't pass a client callback.
+  generationId?: string;
+  ownerActions?: boolean;
+  redirectAfterDelete?: string;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -66,13 +74,18 @@ export function ZoomableImage({
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={src} alt={alt} className="max-h-full max-w-full rounded-media object-contain" />
-          {downloadUrl && (
-            // Stop the tap from also closing the sheet — the wrapper is in
-            // the bubble path even at display:contents.
-            <div className="contents" onClick={(e) => e.stopPropagation()}>
-              <DownloadButton url={downloadUrl} contentType="image" />
-            </div>
-          )}
+          <div
+            className="absolute inset-x-0 z-10 flex justify-center"
+            style={{ bottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
+          >
+            <MediaActionBar
+              url={downloadUrl ?? src}
+              contentType="image"
+              generationId={generationId}
+              ownerActions={ownerActions}
+              redirectAfterDelete={redirectAfterDelete}
+            />
+          </div>
           <button
             type="button"
             aria-label="Close"

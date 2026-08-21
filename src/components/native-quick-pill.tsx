@@ -147,6 +147,22 @@ export function NativeQuickPill() {
             {p.home}
           </Link>
           <Link
+            href="/app/templates"
+            role="menuitem"
+            onClick={() => setMenuOpen(false)}
+            className="block rounded-control px-3 py-2.5 text-sm text-atelier-ink transition-colors active:bg-atelier-ink/5"
+          >
+            {t.nav.templates}
+          </Link>
+          <Link
+            href="/app/community"
+            role="menuitem"
+            onClick={() => setMenuOpen(false)}
+            className="block rounded-control px-3 py-2.5 text-sm text-atelier-ink transition-colors active:bg-atelier-ink/5"
+          >
+            {t.nav.community}
+          </Link>
+          <Link
             href="/app/tutorial"
             role="menuitem"
             onClick={() => setMenuOpen(false)}

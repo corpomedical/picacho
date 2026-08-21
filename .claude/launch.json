@@ -6,6 +6,12 @@
       "runtimeExecutable": "python3",
       "runtimeArgs": ["-m", "http.server", "4173", "-d", "picacho-admin"],
       "port": 4173
+    },
+    {
+      "name": "logo-canvas",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4174", "-d", "/private/tmp/claude-501/-Users-ahmadkmm-Picacho/6bef860a-0a04-4d98-ac85-faf7aaf48074/scratchpad/logo-canvas"],
+      "port": 4174
     }
   ]
 }

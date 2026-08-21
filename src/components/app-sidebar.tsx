@@ -51,6 +51,26 @@ function BoltIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function TemplatesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="3" width="18" height="18" rx="2.5" />
+      <path d="M3 9h18M9 9v12" />
+    </svg>
+  );
+}
+
+function CommunityIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20a6 6 0 0 1 12 0" />
+      <path d="M16 6.5a3 3 0 0 1 0 6" />
+      <path d="M21 20a5.5 5.5 0 0 0-4-5.3" />
+    </svg>
+  );
+}
+
 function UserIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -298,9 +318,11 @@ const THEME_OPTIONS: { value: ThemeMode; icon: (props: SVGProps<SVGSVGElement>) 
 function getNavItems(t: Messages["nav"]) {
   return [
     { href: "/app/generate", label: t.generate, icon: BoltIcon },
+    { href: "/app/templates", label: t.templates, icon: TemplatesIcon },
     { href: "/app/projects", label: t.projects, icon: FolderIcon },
     { href: "/app/character", label: t.characters, icon: UserIcon },
     { href: "/app/history", label: t.history, icon: ClockIcon },
+    { href: "/app/community", label: t.community, icon: CommunityIcon },
   ];
 }
 

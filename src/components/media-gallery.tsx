@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState, type SVGProps } from "react";
 import { Badge } from "@/components/ui/badge";
 import { LocalDate } from "@/components/local-date";
-import { DownloadButton } from "@/components/download-button";
+import { MediaActionBar } from "@/components/media-action-bar";
 import { formatMsg } from "@/lib/i18n/format";
 
 export type GalleryItem = {
@@ -61,6 +61,9 @@ export function MediaGallery({
   };
 }) {
   const [viewer, setViewer] = useState<GalleryItem | null>(null);
+  // Rows deleted from inside the viewer, hidden without a server round-trip —
+  // the next server render won't include them anyway (deleted_at filter).
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!viewer) return;
@@ -76,7 +79,9 @@ export function MediaGallery({
     };
   }, [viewer]);
 
-  if (items.length === 0) {
+  const visibleItems = items.filter((i) => !hiddenIds.has(i.id));
+
+  if (visibleItems.length === 0) {
     return (
       <div className="mt-10 flex flex-col items-center justify-center rounded-media border border-dashed border-atelier-rule py-16 text-center">
         <p className="text-sm text-atelier-muted">{emptyLabel}</p>
@@ -93,7 +98,7 @@ export function MediaGallery({
   return (
     <>
     <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-      {items.map((item) => {
+      {visibleItems.map((item) => {
         const isVideo = (item.content_type ?? contentType) === "video";
         const hasRealMedia =
           item.status === "succeeded" &&
@@ -215,8 +220,20 @@ export function MediaGallery({
           // eslint-disable-next-line @next/next/no-img-element
           <img src={viewerUrl} alt={viewer.prompt_input} className="max-h-full max-w-full rounded-media object-contain" />
         )}
-        <div className="contents" onClick={(e) => e.stopPropagation()}>
-          <DownloadButton url={viewerUrl} contentType={viewerIsVideo ? "video" : "image"} />
+        <div
+          className="absolute inset-x-0 z-10 flex justify-center"
+          style={{ bottom: "calc(env(safe-area-inset-bottom) + 1.25rem)" }}
+        >
+          <MediaActionBar
+            url={viewerUrl}
+            contentType={viewerIsVideo ? "video" : "image"}
+            generationId={viewer.id}
+            ownerActions
+            onDeleted={() => {
+              setHiddenIds((prev) => new Set(prev).add(viewer.id));
+              setViewer(null);
+            }}
+          />
         </div>
         <button
           type="button"

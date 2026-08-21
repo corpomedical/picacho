@@ -12,6 +12,7 @@ import { StillRendering } from "@/components/still-rendering";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
+import { CommunityShareButton } from "@/components/community-share-button";
 import { ResultActions } from "@/components/result-actions";
 import { LocalDate } from "@/components/local-date";
 import type { GenerationFeedback } from "@/lib/generations/actions";
@@ -135,6 +136,21 @@ export default async function HistoryDetailPage({
   // generations, only for reading them).
   const isOwner = generation.user_id === userData.user.id;
 
+  // Whether this render is already in the community feed (drives the share
+  // button's state). Soft-fails to "not shared" if the community SQL hasn't
+  // been applied yet — supabase-js returns an error, not a throw.
+  const canShareToCommunity =
+    isOwner && generation.status === "succeeded" && isRenderableUrl(generation.result_url);
+  let sharedToCommunity = false;
+  if (canShareToCommunity) {
+    const { data: post } = await supabase
+      .from("community_posts")
+      .select("id")
+      .eq("generation_id", generation.id)
+      .maybeSingle();
+    sharedToCommunity = Boolean(post);
+  }
+
   return (
     <div className="mx-auto max-w-2xl">
       <div className="flex items-center justify-between gap-4">
@@ -165,6 +181,9 @@ export default async function HistoryDetailPage({
                   </Button>
                 </Link>
               )}
+            {canShareToCommunity && (
+              <CommunityShareButton generationId={generation.id} initialShared={sharedToCommunity} />
+            )}
             <DeleteGenerationButton id={generation.id} variant="full" redirectAfter="/app/history" />
           </div>
         )}
@@ -256,6 +275,9 @@ export default async function HistoryDetailPage({
                         alt={generation.prompt_input || t.generate.resultAlt}
                         className="w-full rounded-[6px] object-cover"
                         downloadUrl={generation.result_url}
+                        generationId={generation.id}
+                        ownerActions
+                        redirectAfterDelete="/app/history"
                       />
                       <DownloadButton url={generation.result_url} contentType="image" />
                     </div>

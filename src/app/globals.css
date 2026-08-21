@@ -34,7 +34,9 @@
   --color-atelier-surface: #faf8f3; /* raised sheet: popovers, active rows */
   --color-atelier-ink: #211d16;     /* primary ink */
   --color-atelier-muted: #6f6656;   /* secondary ink: labels, inactive nav */
-  --color-atelier-rule: #d9d2c2;    /* hairline warm rules, not gray card borders */
+  --color-atelier-rule: #e2dccd;    /* hairline warm rules, not gray card borders —
+                                       softened 2026-08-21 (operator: lines read too
+                                       hard next to ChatGPT-class chrome) */
   --color-atelier-accent: #b45a28;  /* ochre — reserved for proof: scores, credits, active states */
   /* Darkroom stage (phase 3) — the ground under MEDIA only: gallery tiles,
      players, the still-rendering block. Deliberately the same warm charcoal
@@ -84,7 +86,7 @@
   --color-atelier-surface: #1e1b13;
   --color-atelier-ink: #eae6dc;
   --color-atelier-muted: #a39a88;
-  --color-atelier-rule: #3b3323;
+  --color-atelier-rule: #332c1f;
   --color-atelier-accent: #e0a468;
   /* Same charcoal as light — the stage is theme-invariant by design; in dark
      mode it simply blends into the surrounding Darkroom surfaces. */

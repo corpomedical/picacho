@@ -23,7 +23,7 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
 // cross-origin link just opens the file in a new tab in most browsers
 // instead of actually saving it. Falls back to that same "open in a new tab"
 // behavior only if the fetch itself fails for some reason.
-async function downloadResult(url: string, filename: string) {
+export async function downloadResult(url: string, filename: string) {
   try {
     const res = await fetch(url);
     const blob = await res.blob();
@@ -47,7 +47,7 @@ async function downloadResult(url: string, filename: string) {
 // where "save to device / Photos / Drive / WhatsApp" are all one tap. The
 // plugins arrive with the versionCode-4 build; on an older shell without
 // them this quietly falls back to the web path.
-async function downloadResultNative(url: string, filename: string): Promise<boolean> {
+export async function downloadResultNative(url: string, filename: string): Promise<boolean> {
   const fs = capPlugin("Filesystem");
   const share = capPlugin("Share");
   if (!fs?.writeFile || !share?.share) return false;

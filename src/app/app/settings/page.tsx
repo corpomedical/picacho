@@ -34,7 +34,8 @@ import { cn } from "@/lib/cn";
 // look for screens not yet moved onto the tokens): raised warm surface, one
 // hairline rule, control radius, no drop shadow. Section titles inside a
 // sheet are set as small caps labels, the settings-popover idiom extended.
-const SHEET = "rounded-control border border-atelier-rule bg-atelier-surface p-8";
+const SHEET =
+  "rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)]";
 const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 
 // The upsell ladder for the "next tier" card below — each plan nudges toward
