@@ -152,6 +152,19 @@ export default async function HistoryDetailPage({
                 </Button>
               </Link>
             )}
+            {/* Clip continuation (2026-08-21): hands the composer this clip
+                as a Seedance @Video1 reference — the next shot picks up the
+                same world instead of reinventing it. Finished videos only. */}
+            {isOwner &&
+              generation.content_type === "video" &&
+              generation.status === "succeeded" &&
+              isRenderableUrl(generation.result_url) && (
+                <Link href={`/app/generate?continue=${encodeURIComponent(generation.id)}`}>
+                  <Button variant="secondary" size="sm">
+                    {h.continueClipCta}
+                  </Button>
+                </Link>
+              )}
             <DeleteGenerationButton id={generation.id} variant="full" redirectAfter="/app/history" />
           </div>
         )}

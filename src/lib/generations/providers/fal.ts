@@ -25,6 +25,13 @@ export type VideoGenerationOptions = {
   // incident notes below for why this exists and why it shares the
   // "elements" endpoint rather than image-to-video.
   characterAnchorImageUrl?: string | null;
+  // Clip continuation (2026-08-21, verified live before wiring): a prior
+  // finished clip passed as a VIDEO reference — Seedance's @Video citation
+  // makes the new shot pick up that clip's world (setting, light, wardrobe)
+  // instead of reinventing it. Seedance-only; video input also bills at
+  // ByteDance's cheaper with-video rate while we charge standard weights,
+  // so continuation improves margin rather than costing it.
+  continueFromVideoUrl?: string | null;
   // Kling O3 only: whether to request O3's own native audio generation
   // (speech + ambient sound baked into the render itself, no separate TTS
   // call). Real incident, 2026-08-07: this defaults to off on fal.ai's side
@@ -291,17 +298,26 @@ async function buildVideoRequest(
     // Schema confirmed against fal's own docs, 2026-08-11 (2.5) and
     // 2026-08-21 (2.0).
     const references = anchorImages.length > 0 ? anchorImages : [];
+    const continuation = options.continueFromVideoUrl ?? null;
     endpoint =
       modelId === "seedance"
         ? "bytedance/seedance-2.5/reference-to-video"
         : "bytedance/seedance-2.0/reference-to-video";
+    // Citations have to appear in the PROMPT for the model to bind to them —
+    // passing image_urls/video_urls alone does nothing. Continuation cites
+    // the prior clip as @Video1 alongside the identity's @Image1.
+    const citationLines = [
+      continuation
+        ? "The video continues directly from the final moment of @Video1 — same setting, same light, no cut back."
+        : null,
+      references.length
+        ? "The person in this video is @Image1 — match their face, hair, and features exactly, but do not copy the pose or framing of that photo."
+        : null,
+    ].filter(Boolean);
     body = {
-      // The @Image1 reference has to appear in the PROMPT for the model to
-      // bind to it — passing image_urls alone does nothing.
-      prompt: references.length
-        ? `${prompt}\n\nThe person in this video is @Image1 — match their face, hair, and features exactly, but do not copy the pose or framing of that photo.`
-        : prompt,
+      prompt: citationLines.length ? `${prompt}\n\n${citationLines.join(" ")}` : prompt,
       ...(references.length ? { image_urls: references } : {}),
+      ...(continuation ? { video_urls: [continuation] } : {}),
       // 480p is deliberately not offered — see video-models.ts.
       resolution: "720p",
       duration: String(options.durationSeconds ?? DEFAULT_DURATION_SECONDS),

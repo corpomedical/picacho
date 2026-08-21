@@ -1034,6 +1034,38 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         }
       }
 
+      // Clip continuation (2026-08-21): a prior finished clip of this user's,
+      // handed to Seedance as a @Video1 reference (see fal.ts). Validated
+      // against the FINAL model — the circuit breaker above may have
+      // rerouted — and never trusted beyond "my own finished video".
+      let videoContinueFromUrl: string | null = null;
+      const continueFromGenerationId = ((formData.get("continue_from_generation_id") as string) || "").trim();
+      if (continueFromGenerationId && contentType === "video") {
+        if (videoModelId !== "seedance" && videoModelId !== "seedance-2") {
+          return {
+            error:
+              "Continuing a clip works with the Seedance models — pick Seedance 2.0 (or 2.5 for illustrated characters), or clear the continuation.",
+          };
+        }
+        const { data: prior } = await supabase
+          .from("generations")
+          .select("id, user_id, content_type, status, result_url")
+          .eq("id", continueFromGenerationId)
+          .single();
+        const priorUrl = prior ? toMediaUrl(prior.result_url) : null;
+        if (
+          !prior ||
+          prior.user_id !== userData.user.id ||
+          prior.content_type !== "video" ||
+          prior.status !== "succeeded" ||
+          !priorUrl ||
+          !isRenderableUrl(priorUrl)
+        ) {
+          return { error: "That clip can't be continued — it must be one of your own finished videos." };
+        }
+        videoContinueFromUrl = absolutizeMediaUrl(priorUrl, await getOrigin());
+      }
+
       const result = await runRealPipeline(
         userInput,
         characterForPipeline,
@@ -1047,6 +1079,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoStartImageUrl,
           videoEndImageUrl,
           videoCharacterAnchorUrl,
+          videoContinueFromUrl,
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
           dialogueText: wantsDialogue ? dialogueText : undefined,
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,

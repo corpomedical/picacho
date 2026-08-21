@@ -412,6 +412,7 @@ const en = {
     // Native shell: the mic is hidden there (no WebView mic access), so the
     // hint must not point at a control that doesn't exist.
     noMessagesNative: "No messages yet — describe what you want below.",
+    continuingFromClip: "Continuing from a previous clip",
     messageLabel: "Message",
     stepDraft: "Draft",
     stepDraftLive: "Claude — draft",
@@ -648,6 +649,7 @@ const en = {
     backToHistory: "History",
     pipelineLog: "Pipeline log",
     promoteCta: "Use as reference photo",
+    continueClipCta: "Continue this clip",
     promoteDone: "Added to the character's reference photos.",
     attemptLabel: "Attempt {n}",
     didntPassSuffix: "— didn't pass",

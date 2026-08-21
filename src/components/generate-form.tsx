@@ -1829,6 +1829,28 @@ function GenerateFormInner({
   // allowance (see creditWeight, shown in the picker) — checked server-side
   // in runGeneration, not just hidden/disabled here.
   const [videoModelId, setVideoModelId] = useState(defaultVideoModelId);
+  // Clip continuation, arriving via ?continue=<generationId> from a video's
+  // History page. The chip above the composer shows it; the id rides the
+  // submit as continue_from_generation_id and the server re-validates
+  // ownership. Seedance-only: the mount effect below steers the model there
+  // once, and a LATER manual switch away quietly drops the chip instead of
+  // fighting the user for the picker.
+  const [continueFromId, setContinueFromId] = useState<string | null>(() =>
+    searchParams.get("continue"),
+  );
+  const continueModelAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!continueFromId) return;
+    if (videoModelId === "seedance" || videoModelId === "seedance-2") {
+      continueModelAppliedRef.current = true;
+      return;
+    }
+    if (!continueModelAppliedRef.current) {
+      setVideoModelId("seedance-2");
+    } else {
+      setContinueFromId(null);
+    }
+  }, [continueFromId, videoModelId]);
   const [videoModelMenuOpen, setVideoModelMenuOpen] = useState(false);
   const videoModelMenuRef = useRef<HTMLDivElement>(null);
 
@@ -3072,6 +3094,9 @@ function GenerateFormInner({
     const formData = new FormData();
     formData.set("generation_id", generationId);
     formData.set("prompt", submittedPrompt);
+    if (continueFromId && contentType === "video") {
+      formData.set("continue_from_generation_id", continueFromId);
+    }
     // Approved in Prompt Studio and unedited since: skip the draft step so
     // what the user saw is byte-for-byte what generates.
     if (approvedPrompt && submittedPrompt.trim() === approvedPrompt.trim()) {
@@ -4175,6 +4200,22 @@ function GenerateFormInner({
             </div>
           ) : (
             <>
+              {continueFromId && contentType === "video" && (
+                <div className="flex flex-wrap gap-2 px-3 pt-3">
+                  <span className="flex items-center gap-1.5 rounded-full border border-atelier-rule bg-atelier-surface px-2.5 py-1 text-xs text-atelier-ink">
+                    <VideoIcon className="h-3.5 w-3.5 text-atelier-muted" />
+                    {g.continuingFromClip}
+                    <button
+                      type="button"
+                      onClick={() => setContinueFromId(null)}
+                      aria-label={g.cancel}
+                      className="ml-0.5 rounded-full p-0.5 text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                    >
+                      <XIcon className="h-3 w-3" />
+                    </button>
+                  </span>
+                </div>
+              )}
               {pendingAttachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 px-3 pt-3">
                   {pendingAttachments.map((att) => (

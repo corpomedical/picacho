@@ -463,6 +463,10 @@ export type RealPipelineOptions = {
   // plan: it's the same "look like the saved character" behavior image
   // generation already gets automatically, not an Elite-exclusive extra.
   videoCharacterAnchorUrl?: string | null;
+  // Clip continuation — the absolute URL of a prior finished clip, passed
+  // through to Seedance as a @Video1 reference (see fal.ts). Caller
+  // validates ownership and model support.
+  videoContinueFromUrl?: string | null;
   // Character dialogue — a spoken line for the character to say, lip-synced
   // onto the finished video. dialogueVoiceId is the character's assigned
   // ElevenLabs voice_id (already resolved by the caller from voice_presets),
@@ -988,6 +992,7 @@ export async function runRealPipeline(
             startImageUrl: options.videoStartImageUrl,
             endImageUrl: options.videoEndImageUrl,
             characterAnchorImageUrl: options.videoCharacterAnchorUrl,
+            continueFromVideoUrl: options.videoContinueFromUrl,
             generateNativeAudio: !usingSeparateDialoguePipeline,
             durationSeconds: options.videoDurationSeconds,
             aspectRatio: options.videoAspectRatio,
