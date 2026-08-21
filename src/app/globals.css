@@ -46,6 +46,11 @@
   --color-atelier-accent: #b45a28;  /* ochre — reserved for proof: scores, credits, active states */
   --frost-gradient: linear-gradient(135deg, #eef1f8 0%, #f7f1ea 55%, #f0ece2 100%);
   --frost-top: #eef1f8;             /* the gradient's origin — status-bar strip color */
+  /* Borderless surfaces (the composer, per operator: "remove the lines, add
+     shadow as gpt's design") get edge definition from a 1px shadow RING in
+     this color instead of a border — theme-aware where a single literal
+     can't be (an ink-alpha ring vanishes on dark). */
+  --frost-ring: rgba(35, 37, 45, 0.05);
   /* Stage — the ground under MEDIA only: gallery tiles, players, the
      still-rendering block. Same near-black in BOTH themes (renders glow on
      charcoal even when the chrome is light), so anything sitting ON the
@@ -96,6 +101,7 @@
   --color-atelier-accent: #e0a468;
   --frost-gradient: linear-gradient(135deg, #1a1c24 0%, #221e19 55%, #1c1a16 100%);
   --frost-top: #1a1c24;
+  --frost-ring: rgba(236, 237, 241, 0.07);
   /* Same near-black as light — the stage is theme-invariant by design; in
      dark mode it simply blends into the surrounding surfaces. */
   --color-atelier-stage: #1b1c20;

@@ -894,7 +894,7 @@ function InsufficientCreditsBanner({
         <div
           role="status"
           className={cn(
-            "flex items-center gap-2.5 rounded-t-[26px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted transition-transform duration-300 ease-out",
+            "flex items-center gap-2.5 rounded-t-[26px] bg-atelier-surface/90 px-4 py-2.5 text-xs text-atelier-muted shadow-[0_0_0_1px_var(--frost-ring)] backdrop-blur-xl transition-transform duration-300 ease-out",
             // Slides up behind the composer on the way out, down into place on
             // the way in.
             visible ? "translate-y-0" : "-translate-y-2",
@@ -1005,7 +1005,7 @@ function UsageBanner({
   return (
     <div
       role="status"
-      className="flex items-center gap-2.5 rounded-t-[26px] border border-b-0 border-atelier-rule bg-atelier-paper px-4 py-2.5 text-xs text-atelier-muted"
+      className="flex items-center gap-2.5 rounded-t-[26px] bg-atelier-surface/90 px-4 py-2.5 text-xs text-atelier-muted shadow-[0_0_0_1px_var(--frost-ring)] backdrop-blur-xl"
     >
       {/* suppressHydrationWarning: resetLabel formats a date with the
           browser's locale/timezone, which legitimately differs from the SSR
@@ -3937,7 +3937,9 @@ function GenerateFormInner({
             // element — putting the Safari shadow-corner mask fix here would
             // also clip the "+" dropdown and character switcher, which need
             // to render outside this box's bounds.
-            "isolate transform-gpu rounded-[26px] border border-atelier-rule/80 bg-atelier-surface/80 backdrop-blur-xl",
+            // Borderless (operator, 2026-08-21): edge definition comes from
+            // the shadow layer's 1px ring below, GPT-style — no border line.
+            "isolate transform-gpu rounded-[26px] bg-atelier-surface/80 backdrop-blur-xl",
         justArrived && "transition-opacity duration-[220ms] ease-out",
         justArrived && !settled && "opacity-0",
       )}
@@ -3945,7 +3947,7 @@ function GenerateFormInner({
       {!isHero && (
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 -z-10 rounded-[26px] shadow-[0_1px_2px_rgba(33,29,18,0.05),0_24px_56px_-20px_rgba(33,29,18,0.20)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
+          className="pointer-events-none absolute inset-0 -z-10 rounded-[26px] shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
         />
       )}
       {isHero && <h1 className="text-2xl font-semibold text-atelier-ink">{greeting}</h1>}
