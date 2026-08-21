@@ -723,6 +723,15 @@ function CheckIcon(props: React.SVGProps<SVGSVGElement>) {
 
 // Multi-image reference + storyboard toggle — a small stack-of-photos glyph,
 // distinct from the single-angles icon above.
+function FilmIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M9 5v14M15 5v14" />
+    </svg>
+  );
+}
+
 function StackIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -1838,6 +1847,30 @@ function GenerateFormInner({
   const [continueFromId, setContinueFromId] = useState<string | null>(() =>
     searchParams.get("continue"),
   );
+  // Storyboard (Kling O3 Pro multi_prompt): the shot list replaces the
+  // textarea while on. State lives here so switching the toggle off and on
+  // again keeps the drafted shots. Auto-off when the model leaves O3 Pro —
+  // the effect below — mirroring how the continuation chip yields to a
+  // manual model switch instead of fighting the picker.
+  const [storyboardMode, setStoryboardMode] = useState(false);
+  const storyboardIdRef = useRef(2);
+  const [storyboardShots, setStoryboardShots] = useState<
+    { id: number; prompt: string; seconds: number }[]
+  >([
+    { id: 0, prompt: "", seconds: 5 },
+    { id: 1, prompt: "", seconds: 5 },
+  ]);
+  const storyboardActive = storyboardMode && contentType === "video" && videoModelId === "kling-o3-pro";
+  const storyboardTotalSeconds = storyboardShots.reduce((n, s) => n + s.seconds, 0);
+  const storyboardCredits = Math.ceil(storyboardTotalSeconds * 0.5); // $0.14/s ÷ $0.28 — server recomputes authoritatively
+  const storyboardReady =
+    storyboardShots.length >= 2 && storyboardShots.every((s) => s.prompt.trim().length > 0);
+  useEffect(() => {
+    if (storyboardMode && (contentType !== "video" || videoModelId !== "kling-o3-pro")) {
+      setStoryboardMode(false);
+    }
+  }, [storyboardMode, contentType, videoModelId]);
+
   const continueModelAppliedRef = useRef(false);
   useEffect(() => {
     if (!continueFromId) return;
@@ -1879,9 +1912,11 @@ function GenerateFormInner({
   // top up.
   const selectedVideoModel = videoModels.find((m) => m.id === videoModelId);
   const selectedCreditCost =
-    contentType === "video" && selectedVideoModel
-      ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
-      : 1;
+    contentType === "video" && storyboardActive
+      ? storyboardCredits
+      : contentType === "video" && selectedVideoModel
+        ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
+        : 1;
   const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
   const cannotAfford = selectedCreditCost > creditsAvailable;
   useEffect(() => {
@@ -3097,6 +3132,12 @@ function GenerateFormInner({
     if (continueFromId && contentType === "video") {
       formData.set("continue_from_generation_id", continueFromId);
     }
+    if (storyboardActive) {
+      formData.set(
+        "storyboard_shots",
+        JSON.stringify(storyboardShots.map((s) => ({ prompt: s.prompt.trim(), seconds: s.seconds }))),
+      );
+    }
     // Approved in Prompt Studio and unedited since: skip the draft step so
     // what the user saw is byte-for-byte what generates.
     if (approvedPrompt && submittedPrompt.trim() === approvedPrompt.trim()) {
@@ -3562,6 +3603,25 @@ function GenerateFormInner({
       return;
     }
 
+    if (storyboardActive) {
+      if (!storyboardReady) {
+        setError(g.storyboardNeedsPrompts);
+        return;
+      }
+      if (!characterId) {
+        setError(g.pickCharacter);
+        return;
+      }
+      setError("");
+      // The joined text is what History and the chat transcript show — the
+      // per-shot payload rides formData separately (see submitPrompt).
+      const joined = storyboardShots
+        .map((s, i) => `Shot ${i + 1} (${s.seconds}s): ${s.prompt.trim()}`)
+        .join("\n");
+      await submitPrompt(joined, { attachments: readyAttachments });
+      return;
+    }
+
     await submitPrompt(prompt, { attachments: readyAttachments });
   }
 
@@ -3774,7 +3834,9 @@ function GenerateFormInner({
   // longer clip is visible before generating, not just discovered later
   // against the plan limit.
   const videoDurationPicker =
-    contentType === "video" && currentVideoModel && currentVideoModel.durations.length > 1 ? (
+    // Hidden while a storyboard is on: per-shot durations rule there, and a
+    // dead global picker would just invite a click that does nothing.
+    contentType === "video" && !storyboardActive && currentVideoModel && currentVideoModel.durations.length > 1 ? (
       <div className="flex flex-shrink-0 items-center gap-1 rounded-full border border-atelier-rule p-1">
         {currentVideoModel.durations.map((d) => (
           <button
@@ -4242,6 +4304,99 @@ function GenerateFormInner({
                 </div>
               )}
 
+              {storyboardActive ? (
+                /* The shot list stands in for the textarea while the
+                   storyboard toggle is on — same padding rhythm, so the
+                   composer card doesn't jump. Turning the toggle off brings
+                   the textarea (and whatever was typed in it) straight
+                   back. */
+                <div className="max-h-64 space-y-2 overflow-y-auto px-3.5 py-3">
+                  {storyboardShots.map((shot, i) => (
+                    <div key={shot.id} className="flex items-center gap-2">
+                      <span className="w-14 flex-shrink-0 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                        {formatMsg(g.storyboardShotLabel, { n: i + 1 })}
+                      </span>
+                      <input
+                        value={shot.prompt}
+                        onChange={(e) =>
+                          setStoryboardShots((prev) =>
+                            prev.map((s) => (s.id === shot.id ? { ...s, prompt: e.target.value } : s)),
+                          )
+                        }
+                        placeholder={g.storyboardShotPlaceholder}
+                        disabled={submitting}
+                        maxLength={1200}
+                        className="min-w-0 flex-1 rounded-control border border-atelier-rule bg-transparent px-2.5 py-1.5 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/60 focus:border-atelier-muted disabled:opacity-60"
+                      />
+                      <div className="flex flex-shrink-0 items-center gap-0.5">
+                        <button
+                          type="button"
+                          disabled={submitting || shot.seconds <= 1}
+                          onClick={() =>
+                            setStoryboardShots((prev) =>
+                              prev.map((s) => (s.id === shot.id ? { ...s, seconds: s.seconds - 1 } : s)),
+                            )
+                          }
+                          className="flex h-6 w-6 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-30"
+                        >
+                          −
+                        </button>
+                        <span className="w-7 text-center font-numeral text-xs tabular-nums text-atelier-ink">
+                          {shot.seconds}s
+                        </span>
+                        <button
+                          type="button"
+                          disabled={submitting || shot.seconds >= 15 || storyboardTotalSeconds >= 30}
+                          onClick={() =>
+                            setStoryboardShots((prev) =>
+                              prev.map((s) => (s.id === shot.id ? { ...s, seconds: s.seconds + 1 } : s)),
+                            )
+                          }
+                          className="flex h-6 w-6 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-30"
+                        >
+                          +
+                        </button>
+                      </div>
+                      {storyboardShots.length > 2 && (
+                        <button
+                          type="button"
+                          disabled={submitting}
+                          onClick={() =>
+                            setStoryboardShots((prev) => prev.filter((s) => s.id !== shot.id))
+                          }
+                          aria-label={g.storyboardRemoveShot}
+                          className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                        >
+                          <XIcon className="h-3 w-3" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex items-center justify-between pt-0.5">
+                    {storyboardShots.length < 6 && storyboardTotalSeconds < 30 ? (
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() =>
+                          setStoryboardShots((prev) => [
+                            ...prev,
+                            { id: storyboardIdRef.current++, prompt: "", seconds: Math.min(5, 30 - storyboardTotalSeconds) },
+                          ])
+                        }
+                        className="cursor-pointer text-xs font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
+                      >
+                        + {g.storyboardAddShot}
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                    <span className="font-numeral text-xs tabular-nums text-atelier-muted">
+                      {formatMsg(g.storyboardCost, { seconds: storyboardTotalSeconds, credits: storyboardCredits })}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+              <>
               {/* rows={2} is the resting height (one line was too cramped to
                   read a prompt back before sending); the auto-grow effect on
                   `prompt` takes over from there, up to the max-h-36 cap
@@ -4264,6 +4419,8 @@ function GenerateFormInner({
                 maxLength={2000}
                 className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
               />
+              </>
+              )}
 
               {contentType === "video" && currentCharacter?.voiceId && (
                 <div className="border-t border-atelier-rule/70 px-3.5 py-2.5">
@@ -4807,7 +4964,7 @@ function GenerateFormInner({
                           // to a sliver behind the neighboring chip when
                           // expanded, real incident 2026-08-09.
                           "flex-shrink-0 overflow-hidden transition-all duration-300 ease-out",
-                          advancedOpen ? "max-w-[96px] opacity-100" : "max-w-0 opacity-0",
+                          advancedOpen ? "max-w-[144px] opacity-100" : "max-w-0 opacity-0",
                         )}
                       >
                         <div className="flex items-center gap-1.5 pr-1">
@@ -4894,6 +5051,44 @@ function GenerateFormInner({
                           >
                             <StackIcon className="h-4 w-4" />
                           </button>
+                          {/* Storyboard (multi-shot) — O3 Pro only, so the
+                              button exists only there; the same plan lock as
+                              its siblings. Turning it on clears the modes it
+                              can't combine with (multi-angle, start/end
+                              frames) instead of letting the server bounce
+                              the submit later. */}
+                          {videoModelId === "kling-o3-pro" && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (advancedVideoLockedReason === "plan") {
+                                  setError(g.advancedVideoLocked);
+                                  return;
+                                }
+                                if (storyboardMode) {
+                                  setStoryboardMode(false);
+                                  return;
+                                }
+                                if (multiAngleMode) toggleMultiAngleMode();
+                                clearAdvancedVideo();
+                                setStoryboardMode(true);
+                              }}
+                              disabled={submitting}
+                              title={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
+                              aria-label={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
+                              aria-pressed={storyboardActive}
+                              className={cn(
+                                "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                                advancedVideoLockedReason === "plan"
+                                  ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                                  : storyboardActive
+                                    ? "bg-atelier-ink text-atelier-paper"
+                                    : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                              )}
+                            >
+                              <FilmIcon className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
 
@@ -4996,7 +5191,12 @@ function GenerateFormInner({
                   ) : (
                     <button
                       type="submit"
-                      disabled={isUploading || (!prompt.trim() && pendingAttachments.length === 0)}
+                      disabled={
+                        isUploading ||
+                        (storyboardActive
+                          ? !storyboardReady
+                          : !prompt.trim() && pendingAttachments.length === 0)
+                      }
                       title={g.send}
                       aria-label={g.send}
                       className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-30"
