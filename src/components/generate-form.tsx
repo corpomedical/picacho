@@ -2300,9 +2300,11 @@ function GenerateFormInner({
   // resetChat; ignored mid-request for the same reason the New chat button
   // is disabled then — clearing the live bubble would orphan the render.
   const resetChatRef = useRef(resetChat);
-  resetChatRef.current = resetChat;
   const submittingRef = useRef(submitting);
-  submittingRef.current = submitting;
+  useEffect(() => {
+    resetChatRef.current = resetChat;
+    submittingRef.current = submitting;
+  });
   useEffect(() => {
     const onNewChat = () => {
       if (!submittingRef.current) resetChatRef.current();

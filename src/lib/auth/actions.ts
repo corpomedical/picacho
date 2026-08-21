@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getOrigin } from "@/lib/origin";
+import { notifyAdmins } from "@/lib/push/web-push";
 
 export async function login(formData: FormData) {
   const supabase = await createClient();
@@ -214,6 +215,16 @@ export async function signup(formData: FormData) {
     } catch {
       // Attribution is a bonus, never a blocker.
     }
+
+    // Buzz the admin console (best-effort, never throws). OAuth signups
+    // don't pass through here — the PWA's live feed still sees their
+    // profiles INSERT — but email/password is the main path and the only
+    // one the native app offers.
+    await notifyAdmins({
+      title: "New signup",
+      body: email,
+      path: "#users",
+    });
   }
 
   // Dedicated "check your email" screen rather than bouncing to /login with a

@@ -4,6 +4,7 @@ import { stripe } from "@/lib/stripe/client";
 import { planIdForPriceId } from "@/lib/stripe/plans";
 import { creditsForPriceId } from "@/lib/stripe/credit-packs";
 import { createAdminClient } from "@/lib/supabase/server";
+import { notifyAdmins } from "@/lib/push/web-push";
 
 // Stripe → us. No user session here (Stripe calls this directly), so the
 // signature check below is the only auth — never skip it. Register this
@@ -336,6 +337,13 @@ export async function POST(request: Request) {
           }
           if (granted !== true) {
             console.log("Stripe webhook: duplicate credit purchase ignored", session.id);
+          } else {
+            // First grant only — a redelivered webhook must not re-notify.
+            await notifyAdmins({
+              title: "Payment received",
+              body: `${((session.amount_total ?? 0) / 100).toFixed(2)} ${(session.currency ?? "eur").toUpperCase()} — ${credits} credits`,
+              path: "#money",
+            });
           }
         }
         break;
@@ -500,6 +508,19 @@ export async function POST(request: Request) {
         // subscription is a month away.
         if (profileError) {
           throw new Error(`couldn't update profile ${userId} from subscription: ${profileError.message}`);
+        }
+        // A brand-new paying subscriber (not the routine updated-event noise)
+        // — the one Stripe moment always worth buzzing the operator's phone.
+        if (
+          event.type === "customer.subscription.created" &&
+          planId &&
+          (subscription.status === "active" || subscription.status === "trialing")
+        ) {
+          await notifyAdmins({
+            title: "New subscription",
+            body: `${planId.charAt(0).toUpperCase() + planId.slice(1)} plan just started`,
+            path: "#money",
+          });
         }
         break;
       }

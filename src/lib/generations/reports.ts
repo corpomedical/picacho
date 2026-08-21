@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { REPORT_REASONS, type ReportReason } from "@/lib/generations/report-constants";
+import { notifyAdmins } from "@/lib/push/web-push";
 
 // "Report a problem" on a specific result — separate from the quick
 // like/dislike reaction in actions.ts (setGenerationFeedback). A dislike is
@@ -57,6 +58,14 @@ export async function reportGenerationProblem(
     console.error("reportGenerationProblem failed:", error.message);
     return { error: "Couldn't send that report — try again." };
   }
+
+  // A human took the time to report something — that's always worth the
+  // operator's phone buzzing. notifyAdmins never throws.
+  await notifyAdmins({
+    title: "New problem report",
+    body: trimmedDetails ? `${reason}: ${trimmedDetails.slice(0, 120)}` : reason,
+    path: "#content",
+  });
 
   return { error: null };
 }
@@ -128,6 +137,7 @@ export async function autoReportFailedGeneration(
       source: "auto",
     });
     if (error) console.error("autoReportFailedGeneration failed:", error.message);
+    else await notifyAdmins({ title: "Generation failed", body: detail.slice(0, 140), path: "#system" });
   } catch (err) {
     console.error("autoReportFailedGeneration failed:", err);
   }
@@ -155,6 +165,7 @@ export async function reportClientError(message: string, context: string): Promi
       source: "auto",
     });
     if (error) console.error("reportClientError failed:", error.message);
+    else await notifyAdmins({ title: "Client error", body: message.slice(0, 140), path: "#content" });
   } catch (err) {
     console.error("reportClientError failed:", err);
   }
