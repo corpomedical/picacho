@@ -99,7 +99,9 @@ export default async function AppLayout({
       <NativeTabBar />
       <NativeQuickPill />
       {showRatePrompt && <RatePrompt />}
-      <div className="min-w-0 flex-1 overflow-y-auto">
+      {/* data-app-scroll: the app's one real scroller — the native quick
+          pill watches its scrollTop to decide when to slide in. */}
+      <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">
         {/* pt-14 clears the fixed mobile top bar (see AppSidebar); not needed
             at md+ where that bar is hidden and the sidebar sits in-flow. */}
         {/* pb-24 in the app clears the fixed bottom tab bar — without it the

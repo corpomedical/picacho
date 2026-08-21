@@ -413,6 +413,7 @@ function ResultMedia({
           src={resultUrl}
           alt={prompt || t.generate.resultAlt}
           className="w-full rounded-media bg-atelier-ink/5 object-cover"
+          downloadUrl={resultUrl}
         />
         <DownloadButton url={resultUrl} contentType={contentType} />
       </div>

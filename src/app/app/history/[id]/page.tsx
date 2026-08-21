@@ -242,6 +242,7 @@ export default async function HistoryDetailPage({
                         src={generation.result_url}
                         alt={generation.prompt_input || t.generate.resultAlt}
                         className="w-full rounded-[6px] object-cover"
+                        downloadUrl={generation.result_url}
                       />
                       <DownloadButton url={generation.result_url} contentType="image" />
                     </div>

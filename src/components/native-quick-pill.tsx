@@ -44,9 +44,33 @@ export function NativeQuickPill() {
   const { t } = useLocale();
   const [isNative, setIsNative] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Hidden while the page is at (or near) the top: up there the page's own
+  // chrome — "New chat", headers — already offers these actions, and the
+  // pill floated right on top of them (operator-reported, 2026-08-21). It
+  // slides in from the right once you're genuinely down-page, which is the
+  // only place it earns its keep.
+  const [scrolled, setScrolled] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setIsNative(isNativeAppClient()), []);
+
+  useEffect(() => {
+    if (!isNative) return;
+    const scroller = document.querySelector("[data-app-scroll]");
+    if (!scroller) return;
+    const onScroll = () => setScrolled(scroller.scrollTop > 120);
+    onScroll();
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+    // Re-find the scroller per navigation: the layout persists but pages
+    // reset scroll, and a fresh check keeps the state honest.
+  }, [isNative, pathname]);
+
+  // The slide-out also closes the menu — an open menu attached to an
+  // off-screen pill would strand keyboard focus in the void.
+  useEffect(() => {
+    if (!scrolled) setMenuOpen(false);
+  }, [scrolled]);
 
   // Outside tap closes the menu — same contract as every popover in the app.
   useEffect(() => {
@@ -80,7 +104,10 @@ export function NativeQuickPill() {
   return (
     <div
       ref={rootRef}
-      className="fixed right-3 z-40"
+      className={
+        "fixed right-3 z-40 transition-transform duration-300 ease-out " +
+        (scrolled ? "translate-x-0" : "pointer-events-none translate-x-[130%]")
+      }
       style={{ top: "calc(env(safe-area-inset-top) + 8px)" }}
     >
       <div className="flex items-center rounded-full border border-atelier-rule bg-atelier-surface/95 shadow-[0_6px_18px_-8px_rgba(33,29,22,0.35)] backdrop-blur-xl">
