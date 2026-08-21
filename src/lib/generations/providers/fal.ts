@@ -270,20 +270,31 @@ async function buildVideoRequest(
     referenceImageUrls.length > 0
       ? referenceImageUrls.slice(0, 4)
       : options.characterAnchorImageUrl &&
-          (modelId === "kling" || modelId === "seedance" || modelId === "kling-o3-pro")
+          (modelId === "kling" || modelId === "seedance" || modelId === "seedance-2" || modelId === "kling-o3-pro")
         ? [options.characterAnchorImageUrl]
         : [];
 
-  if (modelId === "seedance") {
-    // Seedance 2.5 reference-to-video. The important difference from every
-    // other endpoint here: image_urls are IDENTITY references, cited in the
-    // prompt as @Image1, not the opening frame. That's what stops the clip
-    // starting frozen in the pose the photo was taken in — and what lets
-    // several camera angles actually differ from frame one.
+  if (modelId === "seedance" || modelId === "seedance-2") {
+    // Seedance reference-to-video, both generations. The important
+    // difference from every other endpoint here: image_urls are IDENTITY
+    // references, cited in the prompt as @Image1, not the opening frame.
+    // That's what stops the clip starting frozen in the pose the photo was
+    // taken in — and what lets several camera angles actually differ from
+    // frame one.
     //
-    // Schema confirmed against fal's own docs, 2026-08-11.
+    // One builder for both on purpose: 2.0's schema is a compatible
+    // superset of what we send (verified live 2026-08-21 — aspect_ratio,
+    // generate_audio, string durations all accepted). Only the endpoint and
+    // the likeness policy differ: 2.5 rejects photoreal people
+    // (mascot/illustrated lane), 2.0 accepts them (see video-models.ts).
+    //
+    // Schema confirmed against fal's own docs, 2026-08-11 (2.5) and
+    // 2026-08-21 (2.0).
     const references = anchorImages.length > 0 ? anchorImages : [];
-    endpoint = "bytedance/seedance-2.5/reference-to-video";
+    endpoint =
+      modelId === "seedance"
+        ? "bytedance/seedance-2.5/reference-to-video"
+        : "bytedance/seedance-2.0/reference-to-video";
     body = {
       // The @Image1 reference has to appear in the PROMPT for the model to
       // bind to it — passing image_urls alone does nothing.
@@ -297,7 +308,7 @@ async function buildVideoRequest(
       aspect_ratio: resolvedAspectRatio,
       generate_audio: options.generateNativeAudio ?? true,
     };
-    label = "Seedance 2.5";
+    label = modelId === "seedance" ? "Seedance 2.5" : "Seedance 2.0";
   } else if (modelId === "kling-o3-pro") {
     // Kling O3 Pro reference-to-video — Kling's own identity-reference
     // endpoint, same job as Seedance above: the photos anchor WHO is in the

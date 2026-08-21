@@ -154,6 +154,34 @@ export const VIDEO_MODELS = [
     ] satisfies VideoDurationOption[],
   },
   {
+    id: "seedance-2",
+    // fal.ai's real per-second price, for pricingAudit() below — 720p,
+    // standard tier, image references only ($0.3024/sec; confirmed against
+    // fal's pricing page 2026-08-21).
+    costPerSecondUsd: 0.3024,
+    name: "Seedance 2.0",
+    falEndpoint: "bytedance/seedance-2.0/reference-to-video",
+    recommended: false,
+    // The PHOTOREAL Seedance. ByteDance's 2.5 endpoints reject reference
+    // images that look like real people ("content_policy_violation /
+    // partner_validation_failed" — verified live 2026-08-21 on both the
+    // reference and image-to-video endpoints); 2.0 predates that policy
+    // tightening and accepts the same faces (verified the same day,
+    // end-to-end, with a generated clip). Same identity-reference contract
+    // as 2.5 — image_urls cited as @Image1, schema is a compatible superset
+    // (aspect_ratio, generate_audio, duration 4-15) — so fal.ts reuses one
+    // request builder for both.
+    //
+    // Weights: cost / $0.28, rounded up ($1.51/5s → 6, $3.02/10s → 11,
+    // $4.54/15s → 17).
+    description: "Identity-referenced clips of photoreal people, up to 15s (~$0.30/sec).",
+    durations: [
+      { seconds: 5, creditWeight: 6, default: true },
+      { seconds: 10, creditWeight: 11 },
+      { seconds: 15, creditWeight: 17 },
+    ] satisfies VideoDurationOption[],
+  },
+  {
     id: "seedance",
     // fal.ai's real per-second price, for pricingAudit() below.
     costPerSecondUsd: 0.4730,
@@ -176,7 +204,15 @@ export const VIDEO_MODELS = [
     // softer result undercuts the reliability-and-quality positioning, and a
     // second resolution would mean pricing every model by a duration x
     // resolution matrix rather than duration alone.
-    description: "Holds a character across clips up to 30s without copying the photo's pose. Premium (~$0.47/sec).",
+    // Repositioned 2026-08-21 (operator call): ByteDance's 2.5 endpoints
+    // REJECT photoreal human likenesses (anti-deepfake policy, verified
+    // live — see seedance-2 above for the full story), so this is now the
+    // ILLUSTRATED/MASCOT lane: a cartoon mascot sails through the same
+    // filter (verified with a generated clip) and 2.5's 30-second takes are
+    // exactly what mascot explainers want. Photoreal characters belong on
+    // Seedance 2.0 or Kling O3 Pro.
+    description:
+      "Illustrated & mascot characters up to 30s — the provider blocks photoreal people. Premium (~$0.47/sec).",
     // fal's schema allows 4-30 seconds (or "auto"). This originally shipped
     // capped at 5 and 10 because it was copied from Kling's enum rather than
     // read off Seedance's own — which threw away the single thing that most
