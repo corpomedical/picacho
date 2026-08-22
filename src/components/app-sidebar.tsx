@@ -670,7 +670,7 @@ export function AppSidebar({
               "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
               isActive(item.href)
-                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
                 : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
@@ -691,7 +691,7 @@ export function AppSidebar({
             className={cn(
               "flex h-9 w-9 items-center justify-center rounded-control text-sm transition-colors",
               isMediaActive
-                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
                 : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
@@ -708,7 +708,7 @@ export function AppSidebar({
               className={cn(
                 "flex w-full items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-2 text-sm transition-colors",
                 isMediaActive
-                  ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                  ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
                   : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
               )}
             >
@@ -729,7 +729,7 @@ export function AppSidebar({
                     className={cn(
                       "flex items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-1.5 text-sm transition-colors",
                       isActive(item.href)
-                        ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                        ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
                         : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                     )}
                   >
@@ -752,7 +752,7 @@ export function AppSidebar({
               "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
               isActive(item.href)
-                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
                 : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
@@ -769,7 +769,7 @@ export function AppSidebar({
               "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
               pathname?.startsWith("/admin")
-                ? "bg-atelier-surface font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
                 : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
@@ -796,7 +796,7 @@ export function AppSidebar({
                       className={cn(
                         "group flex items-center gap-2 rounded-control px-2.5 py-2 text-xs transition-colors",
                         pathname === `/app/history/${job.id}`
-                          ? "bg-atelier-surface text-atelier-ink"
+                          ? "bg-atelier-ink/[0.08] text-atelier-ink"
                           : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                       )}
                     >
@@ -864,7 +864,7 @@ export function AppSidebar({
                       className={cn(
                         "group flex items-center gap-2 rounded-control px-2.5 py-2 text-xs transition-colors",
                         pathname === `/app/character/${c.id}`
-                          ? "bg-atelier-surface text-atelier-ink"
+                          ? "bg-atelier-ink/[0.08] text-atelier-ink"
                           : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                       )}
                     >
