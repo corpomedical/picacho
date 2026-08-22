@@ -20,11 +20,10 @@ const PAD = 22; // breathing room between the target's real edge and the spotlig
 const GAP = 20; // balloon distance from the target
 const BALLOON_MAX_WIDTH = 320;
 const CORNER_RADIUS = 26; // spotlight + ring corner radius
-// A smooth LIGHT veil in the light theme, dark in dark — theme-resolved via
-// globals.css (operator-requested 2026-08-21, matching Google's coach-mark
-// backdrop: the page fades under a soft wash rather than going black, and
-// the wide feather below is what makes the spotlight's edge a gradient
-// instead of a cut).
+// "Lights turned off slightly, with a gradient finish" (operator-tuned
+// 2026-08-21 against Google's coach marks): a gentle theme-resolved dim —
+// the page stays legible under it — and the wide feather below is what
+// melts the spotlight's edge into the dim as a gradient instead of a cut.
 const SCRIM = "var(--tour-scrim)";
 const SCRIM_FEATHER = 64; // soft falloff at the spotlight's edge, in px
 // Apple's system blue (light-mode value) — used for the primary action, the
