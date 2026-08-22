@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
@@ -38,8 +38,16 @@ export function InviteCard({ username }: { username: string }) {
     }
   }
 
-  const canShare =
-    typeof navigator !== "undefined" && (isNativeAppClient() || Boolean(navigator.share));
+  // Decided AFTER mount, never during render: navigator only exists in the
+  // browser, so a render-time check made the server and client disagree
+  // about whether the Share button exists — React #418 hydration errors on
+  // every page this card appears on (found via the auto-filed client-error
+  // reports, 2026-08-22). First paint matches the server (no button); the
+  // button pops in a frame later where supported.
+  const [canShare, setCanShare] = useState(false);
+  useEffect(() => {
+    setCanShare(isNativeAppClient() || Boolean(navigator.share));
+  }, []);
 
   return (
     <div>
