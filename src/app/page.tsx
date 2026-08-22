@@ -57,15 +57,6 @@ function CheckIcon(props: React.SVGProps<SVGSVGElement>) {
 // circle instead — the same generic "media preview" glyph used all over
 // the web (and already used for video thumbnails elsewhere in this app,
 // see media-gallery.tsx's PlayIcon), tied to no particular brand.
-function MediaGlyphIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" {...props}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M10 8.5v7l6-3.5-6-3.5Z" fill="currentColor" stroke="none" />
-    </svg>
-  );
-}
-
 function TwoModelsIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -171,13 +162,17 @@ function ValidateMockup({ m }: { m: HomeMessages }) {
   const checks = [m.mockupCheckHair, m.mockupCheckOutfit, m.mockupCheckMotion];
   return (
     <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)]">
-      {/* Redesigned 2026-08-19: this used to be a flat gray box with a media
-          glyph, which read as "video failed to load" rather than as a
-          mockup. Now it depicts what the step actually is — a frame under
-          inspection: dark render surface, a pulsing scan bar, and the same
-          identity-match chip the score band and the product itself use. */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700">
-        <div className="absolute inset-x-6 top-1/2 h-px animate-pulse bg-white/30" />
+      {/* Third pass on this panel (2026-08-21, operator: still reads as an
+          empty image): abstract dark surfaces keep failing no matter how
+          they're dressed, so it now shows the REAL thing — the showcase's
+          cooking render, which is genuinely the 92% row (see lib/showcase.ts
+          index 3), under the scan bar and the same identity-match chip the
+          product prints. The chip's number stopped being decoration. */}
+      <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-neutral-900">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/api/showcase/3" alt="" className="h-full w-full object-cover object-[50%_25%]" />
+        <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/45 via-transparent to-transparent" />
+        <div className="absolute inset-x-6 top-1/2 h-px animate-pulse bg-white/40" />
         <span className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-neutral-800 shadow-sm">
           {m.scoreBandMatch}
           <span className="text-ochre">92%</span>
@@ -198,8 +193,21 @@ function ValidateMockup({ m }: { m: HomeMessages }) {
 function ResultMockup({ m }: { m: HomeMessages }) {
   return (
     <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)]">
-      <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden rounded-[12px] bg-gradient-to-br from-neutral-800 via-neutral-700 to-neutral-600">
-        <MediaGlyphIcon className="h-8 w-8 text-neutral-400" />
+      {/* Real output here too (2026-08-21, same operator report as the
+          validate panel): the reel's own Seedance clip loops quietly behind
+          the badge instead of a glyph on an empty box — "the good one you
+          see" IS one. */}
+      <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-neutral-900">
+        <video
+          src="/hero-band-3.mp4"
+          autoPlay
+          muted
+          loop
+          playsInline
+          preload="metadata"
+          aria-hidden
+          className="h-full w-full object-cover"
+        />
         <span className="absolute left-3 top-3 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-medium text-white">
           {m.mockupPassedBadge}
         </span>
