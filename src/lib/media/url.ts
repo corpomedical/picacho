@@ -141,7 +141,10 @@ export function isRenderableUrl(url: string | null | undefined): boolean {
 // so an open range would let one file be requested at ten thousand sizes and
 // evict everything else from the CDN cache. Two sizes cover every grid we
 // have (a phone-width tile and a retina/desktop one).
-export const THUMB_WIDTHS = [320, 640] as const;
+// 1600 added 2026-08-22 for the community feed's full-screen view — a
+// resized webp at 1600 wide beats shipping multi-MB PNG originals (which
+// can even exceed the platform's response limit and break outright).
+export const THUMB_WIDTHS = [320, 640, 1600] as const;
 export type ThumbWidth = (typeof THUMB_WIDTHS)[number];
 
 export function isThumbWidth(value: number): value is ThumbWidth {

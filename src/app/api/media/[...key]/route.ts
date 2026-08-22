@@ -79,7 +79,10 @@ export async function GET(
       try {
         const { default: sharp } = await import("sharp");
         const input = Buffer.from(await blob.arrayBuffer());
-        const resized = await sharp(input, { limitInputPixels: 24000000 })
+        // 50MP ceiling (was 24MP, which modern providers exceed — those
+        // renders failed resize, fell back to multi-MB originals, and the
+        // biggest broke entirely on the platform's response limit).
+        const resized = await sharp(input, { limitInputPixels: 50_000_000 })
           .rotate() // honour EXIF orientation, which resizing would otherwise drop
           .resize({ width, withoutEnlargement: true })
           .webp({ quality: 78 })
@@ -88,7 +91,12 @@ export async function GET(
         return new NextResponse(new Uint8Array(resized), {
           headers: {
             "content-type": "image/webp",
-            "cache-control": "public, max-age=31536000, immutable",
+            // s-maxage is what lets Vercel's EDGE cache this — max-age alone
+            // only caches in the browser, so every first view per user was
+            // a full lambda + storage download + resize (2026-08-22,
+            // operator: "pictures take forever to load"). Immutable content
+            // behind capability URLs is the ideal CDN citizen.
+            "cache-control": "public, max-age=31536000, s-maxage=31536000, immutable",
             "X-Content-Type-Options": "nosniff",
           },
         });
@@ -100,7 +108,8 @@ export async function GET(
     return new NextResponse(blob.stream(), {
       headers: {
         "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream",
-        "cache-control": "public, max-age=31536000, immutable",
+        // Same edge-cache note as the thumbnail branch above.
+        "cache-control": "public, max-age=31536000, s-maxage=31536000, immutable",
         "X-Content-Type-Options": "nosniff",
       },
     });

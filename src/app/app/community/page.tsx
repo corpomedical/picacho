@@ -86,6 +86,7 @@ export default async function CommunityPage({
       contentType: r.content_type === "video" ? "video" : "image",
       displayUrl: display,
       thumbUrl: r.content_type === "video" ? display : (thumbUrl(r.media_url, 640) ?? display),
+      feedUrl: r.content_type === "video" ? display : (thumbUrl(r.media_url, 1600) ?? display),
       hearts: r.hearts_count ?? 0,
       views: r.views_count ?? 0,
       createdAt: r.created_at,

@@ -35,6 +35,9 @@ export type CommunityPostView = {
   contentType: "image" | "video";
   displayUrl: string;
   thumbUrl: string;
+  // Full-screen-sized resize (1600w webp) for the feed — far lighter than
+  // the original, which stays as the fallback.
+  feedUrl: string;
   hearts: number;
   views: number;
   createdAt: string;
@@ -446,7 +449,7 @@ export function CommunityFeed({
                   ) : (
                     <div className="relative flex h-full w-full items-center justify-center">
                       <ResilientImage
-                        thumb={post.displayUrl}
+                        thumb={post.feedUrl}
                         full={post.displayUrl}
                         alt={post.caption ?? post.prompt ?? ""}
                         className="max-h-full max-w-full object-contain"
