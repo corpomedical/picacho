@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { setSkipAiRefinement } from "@/lib/profile/actions";
 import { useLocale } from "@/lib/i18n/provider";
+import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/cn";
 
 // Per-user preference — each account decides for itself whether ITS OWN
@@ -45,25 +46,14 @@ export function SkipRefinementToggle({
           {s.skipRefinementHelp}
         </p>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        aria-label={s.skipRefinementLabel}
-        onClick={toggle}
+      <Switch
+        checked={enabled}
+        onChange={toggle}
         disabled={pending}
-        className={cn(
-          "relative h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50",
-          enabled ? "bg-atelier-accent" : "bg-atelier-ink/15",
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-atelier-surface shadow transition-transform",
-            enabled ? "translate-x-[22px]" : "translate-x-0.5",
-          )}
-        />
-      </button>
+        ariaLabel={s.skipRefinementLabel}
+        labelOn={t.common.toggleOn}
+        labelOff={t.common.toggleOff}
+      />
     </div>
   );
 }

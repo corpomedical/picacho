@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { setMarketingEmails } from "@/lib/profile/actions";
 import { useLocale } from "@/lib/i18n/provider";
-import { cn } from "@/lib/cn";
+import { Switch } from "@/components/ui/switch";
 
 // Per-user marketing-email preference — the Settings face of
 // profiles.marketing_opt_out, the same flag the emailed unsubscribe link
@@ -39,25 +39,14 @@ export function MarketingEmailsToggle({ initialEnabled }: { initialEnabled: bool
         <p className="text-sm font-medium text-atelier-ink">{s.marketingEmailsLabel}</p>
         <p className="mt-0.5 text-xs text-atelier-muted">{s.marketingEmailsHelp}</p>
       </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={enabled}
-        aria-label={s.marketingEmailsLabel}
-        onClick={toggle}
+      <Switch
+        checked={enabled}
+        onChange={toggle}
         disabled={pending}
-        className={cn(
-          "relative h-6 w-11 flex-shrink-0 rounded-full transition-colors disabled:opacity-50",
-          enabled ? "bg-atelier-accent" : "bg-atelier-ink/15",
-        )}
-      >
-        <span
-          className={cn(
-            "absolute top-0.5 h-5 w-5 rounded-full bg-atelier-surface shadow transition-transform",
-            enabled ? "translate-x-[22px]" : "translate-x-0.5",
-          )}
-        />
-      </button>
+        ariaLabel={s.marketingEmailsLabel}
+        labelOn={t.common.toggleOn}
+        labelOff={t.common.toggleOff}
+      />
     </div>
   );
 }

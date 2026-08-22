@@ -2,6 +2,8 @@ import type { Messages } from "./en";
 
 const pt = {
   common: {
+    toggleOn: "ON",
+    toggleOff: "OFF",
     webPurchaseCta: "Planos e créditos no nosso site",
     webPurchaseNote: "Abre no seu navegador — as compras acontecem em picacho.io.",
     aiDisclaimer: "Picacho é IA e pode cometer erros.",

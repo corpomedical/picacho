@@ -10,6 +10,8 @@
 
 const en = {
   common: {
+    toggleOn: "ON",
+    toggleOff: "OFF",
     // US-only native handoff to website checkout (lib/native/external-purchase).
     webPurchaseCta: "Get plans & credits on our website",
     webPurchaseNote: "Opens in your browser — purchases happen on picacho.io.",
