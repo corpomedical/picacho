@@ -134,6 +134,7 @@ export function OnboardingTour({
 
   const holeRef = useRef<HTMLDivElement | null>(null);
   const scrimRef = useRef<HTMLDivElement | null>(null);
+  const gradientRef = useRef<HTMLDivElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
   const balloonRef = useRef<HTMLDivElement | null>(null);
   const notchRef = useRef<HTMLSpanElement | null>(null);
@@ -295,6 +296,22 @@ export function OnboardingTour({
         }
       }
       if (scrimRef.current) scrimRef.current.style.opacity = hasTarget ? "0" : "1";
+
+      // The radial falloff — the "lights turned down" gradient. Centred on
+      // the spotlight every frame: fully clear at the hole, deepening with
+      // distance like lamplight, so the dim is never a flat wash.
+      if (gradientRef.current) {
+        gradientRef.current.style.opacity = hasTarget ? "1" : "0";
+        if (c && hasTarget) {
+          const cx = c.left + c.width / 2;
+          const cy = c.top + c.height / 2;
+          const r0 = Math.max(c.width, c.height) / 2 + 40;
+          const r1 = r0 + Math.max(vw, vh) * 0.6;
+          gradientRef.current.style.background = `radial-gradient(circle at ${Math.round(cx)}px ${Math.round(
+            cy,
+          )}px, transparent ${Math.round(r0)}px, var(--tour-scrim-deep) ${Math.round(r1)}px)`;
+        }
+      }
 
       if (ringRef.current) {
         ringRef.current.style.opacity = hasTarget ? "1" : "0";
@@ -514,6 +531,14 @@ export function OnboardingTour({
           transition: "opacity 260ms ease-out",
           willChange: "transform, width, height",
         }}
+      />
+
+      {/* The distance falloff over the base dim — its radial background is
+          written by the frame loop, centred on the live spotlight. */}
+      <div
+        ref={gradientRef}
+        className="pointer-events-none absolute inset-0"
+        style={{ opacity: 0, transition: "opacity 260ms ease-out" }}
       />
 
       <div

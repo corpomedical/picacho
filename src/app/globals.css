@@ -57,7 +57,11 @@
      wrong read of the reference), soft enough that the page stays legible
      underneath, with the spotlight's wide feather melting the hole's edge
      into it. The ring stays light: it reads against a dim in both themes. */
-  --tour-scrim: rgba(21, 23, 31, 0.42);
+  /* Two layers: --tour-scrim is the base dim the spotlight cuts through;
+     --tour-scrim-deep is what the radial falloff ADDS far from the
+     spotlight, so the darkness grows with distance like light from a lamp. */
+  --tour-scrim: rgba(21, 23, 31, 0.3);
+  --tour-scrim-deep: rgba(21, 23, 31, 0.38);
   --tour-ring-line: rgba(255, 255, 255, 0.9);
   --tour-ring-glow: rgba(255, 255, 255, 0.25);
   /* Stage — the ground under MEDIA only: gallery tiles, players, the
@@ -111,7 +115,8 @@
   --frost-gradient: linear-gradient(135deg, #1a1c24 0%, #221e19 55%, #1c1a16 100%);
   --frost-top: #1a1c24;
   --frost-ring: rgba(236, 237, 241, 0.07);
-  --tour-scrim: rgba(5, 6, 9, 0.55);
+  --tour-scrim: rgba(5, 6, 9, 0.42);
+  --tour-scrim-deep: rgba(5, 6, 9, 0.4);
   --tour-ring-line: rgba(255, 255, 255, 0.9);
   --tour-ring-glow: rgba(255, 255, 255, 0.28);
   /* Same near-black as light — the stage is theme-invariant by design; in
