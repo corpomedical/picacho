@@ -245,6 +245,28 @@ html.native-app {
   background: var(--frost-gradient);
 }
 
+/* The validate mockup's scan sweep (app/page.tsx) — a soft band that
+   travels down the frame on a loop. It replaced a static pulsing hairline
+   that, once a real photo sat under it, read as a rendering glitch across
+   the face (operator-reported 2026-08-21). Motion-reduce hides it entirely;
+   the chip and checkmarks carry the story on their own. */
+@keyframes scan-sweep {
+  0% {
+    top: -14%;
+  }
+  100% {
+    top: 106%;
+  }
+}
+.scan-sweep {
+  animation: scan-sweep 2.8s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .scan-sweep {
+    display: none;
+  }
+}
+
 html.native-app * {
   /* No iOS text-selection callout or tap-highlight on chrome. Deliberately
      re-enabled below for the places where selecting text is the point. */

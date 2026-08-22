@@ -193,7 +193,7 @@ export function TryItWidget({
               dark render surface the ValidateMockup uses, so nothing shifts. */}
           <div className="relative mt-3 aspect-square w-full overflow-hidden rounded-[12px] bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700">
             {entry !== null && !done && (
-              <div className="absolute inset-x-6 top-1/2 h-px animate-pulse bg-white/30" />
+              <div className="scan-sweep pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
             )}
             {entry !== null && (
               /* eslint-disable-next-line @next/next/no-img-element */

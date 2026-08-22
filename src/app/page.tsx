@@ -172,7 +172,7 @@ function ValidateMockup({ m }: { m: HomeMessages }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/api/showcase/3" alt="" className="h-full w-full object-cover object-[50%_25%]" />
         <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/45 via-transparent to-transparent" />
-        <div className="absolute inset-x-6 top-1/2 h-px animate-pulse bg-white/40" />
+        <div className="scan-sweep pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-white/25 to-transparent" />
         <span className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-neutral-800 shadow-sm">
           {m.scoreBandMatch}
           <span className="text-ochre">92%</span>
