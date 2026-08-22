@@ -32,11 +32,11 @@ function FilterPill({ href, active, children }: { href: string; active: boolean;
 export default async function CommunityPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string }>;
+  searchParams: Promise<{ sort?: string; item?: string }>;
 }) {
   const { t } = await getServerMessages();
   const c = t.community;
-  const { sort: sortParam } = await searchParams;
+  const { sort: sortParam, item } = await searchParams;
   const sort = sortParam === "top" ? "top" : "new";
 
   const supabase = await createClient();
@@ -46,7 +46,9 @@ export default async function CommunityPage({
   let query = supabase
     .from("community_posts")
     .select(
-      "id, user_id, username, caption, prompt, media_url, content_type, hearts_count, views_count, created_at, hidden_at",
+      // match_score + character_name arrive with pending-2026-08-22/
+      // community-feed.sql — apply it BEFORE deploying this select.
+      "id, user_id, username, caption, prompt, media_url, content_type, hearts_count, views_count, created_at, hidden_at, match_score, character_name",
     )
     .limit(48);
   query =
@@ -89,6 +91,8 @@ export default async function CommunityPage({
       createdAt: r.created_at,
       hidden: r.hidden_at != null,
       mine: r.user_id === userId,
+      matchScore: typeof r.match_score === "number" ? Math.round(r.match_score) : null,
+      characterName: r.character_name ?? null,
     };
   });
 
@@ -109,7 +113,7 @@ export default async function CommunityPage({
         </div>
       </div>
 
-      <CommunityFeed posts={posts} heartedIds={heartedIds} isAdmin={isAdmin} />
+      <CommunityFeed posts={posts} heartedIds={heartedIds} isAdmin={isAdmin} initialPostId={item} />
     </div>
   );
 }
