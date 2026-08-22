@@ -64,7 +64,10 @@ export function Switch({
       </span>
       <span
         className={cn(
-          "absolute top-0.5 h-6 w-6 rounded-full bg-[#ffffff] shadow-[0_1px_4px_rgba(0,0,0,0.35)] transition-transform",
+          // left-0 anchors the translate to a deterministic origin — without
+          // it the knob's start position depends on static-position quirks
+          // and drifted outside the track (operator screenshot, ON state).
+          "absolute left-0 top-0.5 h-6 w-6 rounded-full bg-[#ffffff] shadow-[0_1px_4px_rgba(0,0,0,0.35)] transition-transform",
           checked ? "translate-x-[32px]" : "translate-x-0.5",
         )}
       />
