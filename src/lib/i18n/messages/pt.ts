@@ -55,6 +55,18 @@ const pt = {
     unhide: "Mostrar",
     hiddenBadge: "Oculto",
   },
+  checkout: {
+    title: "Pagamento",
+    subtitle: "Está a um passo de gerar.",
+    back: "Voltar",
+    creditsMonthly: "{n} créditos por mês",
+    priceMonthly: "{price}/mês",
+    priceAnnual: "{price}/ano",
+    packTitle: "{n} créditos",
+    packNote: "Recarga única — seus até usar",
+    taxNote: "Impostos calculados no pagamento",
+    securedNote: "Os pagamentos são processados com segurança pela Stripe. Os dados do cartão nunca tocam os servidores da Picacho.",
+  },
   templates: {
     title: "Modelos",
     subtitle: "Cenas prontas para o seu personagem. Toque em uma, ajuste os [colchetes] e envie.",

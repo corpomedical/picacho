@@ -55,6 +55,18 @@ const it = {
     unhide: "Mostra",
     hiddenBadge: "Nascosto",
   },
+  checkout: {
+    title: "Pagamento",
+    subtitle: "Sei a un passo dal generare.",
+    back: "Indietro",
+    creditsMonthly: "{n} crediti ogni mese",
+    priceMonthly: "{price}/mese",
+    priceAnnual: "{price}/anno",
+    packTitle: "{n} crediti",
+    packNote: "Ricarica una tantum — tuoi finché non li usi",
+    taxNote: "Tasse calcolate al pagamento",
+    securedNote: "I pagamenti sono elaborati in modo sicuro da Stripe. I dati della carta non toccano mai i server di Picacho.",
+  },
   templates: {
     title: "Modelli",
     subtitle: "Scene pronte per il tuo personaggio. Tocca, regola le [parentesi] e invia.",

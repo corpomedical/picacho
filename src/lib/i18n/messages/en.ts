@@ -64,6 +64,18 @@ const en = {
     unhide: "Unhide",
     hiddenBadge: "Hidden",
   },
+  checkout: {
+    title: "Checkout",
+    subtitle: "You're one step from rendering.",
+    back: "Back",
+    creditsMonthly: "{n} credits every month",
+    priceMonthly: "{price}/month",
+    priceAnnual: "{price}/year",
+    packTitle: "{n} credits",
+    packNote: "One-time top-up — yours until used",
+    taxNote: "Tax calculated at payment",
+    securedNote: "Payments are processed securely by Stripe. Card details never touch Picacho's servers.",
+  },
   templates: {
     title: "Templates",
     subtitle: "Ready-made scenes for your character. Tap one, tweak the [brackets], and send.",
