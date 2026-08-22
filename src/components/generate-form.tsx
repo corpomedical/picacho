@@ -4047,7 +4047,7 @@ function GenerateFormInner({
               <div className="space-y-3">
                 <UserBubble prompt={liveMultiAngle.prompt} attachments={liveMultiAngle.attachments} />
                 <div className="flex justify-start">
-                  <div className="max-w-[90%] rounded-[18px] rounded-bl-[6px] border border-atelier-rule bg-atelier-paper px-4.5 py-4">
+                  <div className="max-w-[90%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
                     <div className="flex items-center gap-2 text-sm text-atelier-muted">
                       <LoaderIcon className="h-4 w-4" />
                       {liveMultiAngle.angleIds.length === 1
@@ -4173,10 +4173,14 @@ function GenerateFormInner({
       <form
         onSubmit={handleSubmit}
         className={cn(
-          "relative z-10 bg-atelier-surface p-4",
+          // Borderless everywhere (operator, 2026-08-21 — GPT-style): the
+          // hero frame gets its edge from the shadow ring layer below; the
+          // docked form's old border-t divider is gone too — the input
+          // chip's own fill is the separation now.
+          "relative z-10 p-4",
           isHero
-            ? "isolate transform-gpu rounded-[28px] border border-atelier-rule"
-            : "rounded-b-[22px] border-t border-atelier-rule",
+            ? "isolate transform-gpu rounded-[28px] bg-atelier-surface/80 backdrop-blur-xl"
+            : "rounded-b-[22px] bg-atelier-surface",
         )}
       >
         {/* Lives inside the form (not the outer wrapper) specifically so its
@@ -4191,27 +4195,21 @@ function GenerateFormInner({
           // and needs to render outside its bounds when open.
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 -z-10 rounded-[28px] shadow-[0_1px_2px_rgba(33,29,18,0.05)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
+            className="pointer-events-none absolute inset-0 -z-10 rounded-[28px] shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
           />
         )}
         <Label htmlFor="prompt" className="sr-only">
           {g.messageLabel}
         </Label>
 
-        {/* rounded-[10px] is a deliberate one-off between rounded-control
-            (6px) and the chat bubbles' 18px. At rounded-control the composer
-            — the largest control on the screen — sat abruptly sharp inside
-            its 22px card frame and under the 18px bubbles, and its 6px
-            corners were the same radius as the much smaller panels nested
-            inside it, which is what made the corners read as a clash rather
-            than a choice. 10px keeps it in the same family as both without
-            minting a new radius for anything else. Every inner element
-            (rounded-full buttons, rounded-control panels, the transparent
-            textarea) is inset by its own padding, so nothing pokes through
-            the corners and the single crisp 1px ink hairline stays intact —
-            and there's deliberately NO overflow-hidden here, because the "+"
+        {/* The input chip: NO outline (the old "single crisp 1px ink
+            hairline" was exactly the line the operator called too thick —
+            removed 2026-08-21, GPT-style). Separation now comes from a soft
+            ink-tint fill that works in both themes (ink flips with the
+            theme, so the tint does too), deepening slightly on focus.
+            There's deliberately NO overflow-hidden here, because the "+"
             menu opens outside this box's bounds. */}
-        <div className="rounded-[10px] border border-atelier-ink bg-atelier-paper transition-colors focus-within:ring-4 focus-within:ring-atelier-ink/5">
+        <div className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
           {pendingMultiAngle ? (
             <div className="space-y-3 p-4">
               <div>
