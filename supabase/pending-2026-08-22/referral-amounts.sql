@@ -62,3 +62,8 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+-- CREATE OR REPLACE preserves the original ACL, but re-state the lockdown
+-- explicitly so the function is never directly callable by a session even
+-- if this file is ever applied to a fresh database: only the trigger runs it.
+REVOKE ALL ON FUNCTION public.reward_referral_on_success() FROM anon, authenticated;
