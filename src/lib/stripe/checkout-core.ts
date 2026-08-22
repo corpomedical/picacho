@@ -286,6 +286,12 @@ export async function startCreditCheckout(
       client_reference_id: userData.user.id,
       line_items: [{ price: priceId, quantity: 1 }],
       automatic_tax: { enabled: true },
+      // One-time payments create NO invoice by default — a business customer
+      // buying a credit pack had nothing proper for their books. This mints a
+      // real numbered invoice per pack purchase (2026-08-22, operator:
+      // "What about the invoice sent to customers?"); the account-level
+      // branding and the Jeartecnica/CIF footer apply to it automatically.
+      invoice_creation: { enabled: true },
       // The webhook credits the account off this, so it has to be present.
       // client_reference_id is also set above as a belt-and-braces second
       // copy — a payment that can't be attributed to an account is money
