@@ -3654,8 +3654,10 @@ function GenerateFormInner({
           aria-haspopup="listbox"
           aria-expanded={characterMenuOpen}
           className={cn(
-            "flex w-full items-center gap-2.5 rounded-full border bg-atelier-paper py-1.5 pl-1.5 pr-3.5 text-left transition-colors disabled:opacity-50",
-            characterMenuOpen ? "border-atelier-muted" : "border-atelier-rule hover:border-atelier-muted",
+            // Borderless soft chip — same recipe as the input box (operator,
+            // 2026-08-21: "apply the same to Select Character").
+            "flex w-full items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-3.5 text-left transition-colors disabled:opacity-50",
+            characterMenuOpen ? "bg-atelier-ink/[0.08]" : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
           )}
         >
           {isMultiCharacter ? (
@@ -3697,7 +3699,7 @@ function GenerateFormInner({
           <div
             role="listbox"
             aria-multiselectable="true"
-            className="absolute left-0 top-full z-20 mt-1.5 max-h-72 w-full min-w-[240px] overflow-y-auto rounded-control border border-atelier-rule bg-atelier-surface p-1.5 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
+            className="absolute left-0 top-full z-20 mt-1.5 max-h-72 w-full min-w-[240px] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
             {characters.map((c) => {
               const selected = c.id === characterId || companionCharacterIds.includes(c.id);
@@ -3770,13 +3772,14 @@ function GenerateFormInner({
           aria-haspopup="listbox"
           aria-expanded={videoModelMenuOpen}
           className={cn(
-            "flex w-full items-center gap-2 rounded-full border bg-atelier-paper py-1.5 pl-3 pr-3.5 text-left transition-colors disabled:opacity-50",
-            videoModelMenuOpen ? "border-atelier-muted" : "border-atelier-rule hover:border-atelier-muted",
+            // Borderless soft chip — matches the character select above.
+            "flex w-full items-center gap-2 rounded-full py-1.5 pl-3 pr-3.5 text-left transition-colors disabled:opacity-50",
+            videoModelMenuOpen ? "bg-atelier-ink/[0.08]" : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
           )}
         >
           <span className="min-w-0 flex-1 truncate text-sm text-atelier-ink">{currentVideoModel?.name}</span>
           {currentDurationCredits > 1 && (
-            <span className="flex-shrink-0 rounded-full border border-atelier-rule px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
+            <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
               {formatMsg(g.creditsEach, { n: currentDurationCredits })}
             </span>
           )}
@@ -3791,7 +3794,7 @@ function GenerateFormInner({
         {videoModelMenuOpen && (
           <div
             role="listbox"
-            className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[260px] overflow-y-auto rounded-control border border-atelier-rule bg-atelier-surface p-1.5 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
+            className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[260px] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
             {videoModels.map((m) => {
               const listCredits = creditsForDuration(m, m.defaultDurationSeconds);
@@ -3815,7 +3818,7 @@ function GenerateFormInner({
                   <span className="flex items-center gap-2 text-sm">
                     <span className="min-w-0 flex-1 truncate">{m.name}</span>
                     {listCredits > 1 && (
-                      <span className="flex-shrink-0 rounded-full border border-atelier-rule px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
+                      <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
                         {formatMsg(g.creditsEach, { n: listCredits })}
                       </span>
                     )}
