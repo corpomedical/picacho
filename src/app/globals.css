@@ -51,6 +51,15 @@
      this color instead of a border — theme-aware where a single literal
      can't be (an ink-alpha ring vanishes on dark). */
   --frost-ring: rgba(35, 37, 45, 0.05);
+  /* Onboarding-tour backdrop (operator-requested 2026-08-21, after Google
+     Ads' coach marks): a smooth LIGHT veil over the page instead of a hard
+     dark scrim — the page fades, the spotlighted element stays true-color,
+     and the balloon separates with shadow rather than contrast. The ring
+     pair paints the spotlight's edge, so it must read against the veil:
+     ink-based here, light-based in dark mode. */
+  --tour-scrim: rgba(240, 242, 247, 0.85);
+  --tour-ring-line: rgba(35, 37, 45, 0.4);
+  --tour-ring-glow: rgba(35, 37, 45, 0.16);
   /* Stage — the ground under MEDIA only: gallery tiles, players, the
      still-rendering block. Same near-black in BOTH themes (renders glow on
      charcoal even when the chrome is light), so anything sitting ON the
@@ -102,6 +111,9 @@
   --frost-gradient: linear-gradient(135deg, #1a1c24 0%, #221e19 55%, #1c1a16 100%);
   --frost-top: #1a1c24;
   --frost-ring: rgba(236, 237, 241, 0.07);
+  --tour-scrim: rgba(8, 9, 12, 0.62);
+  --tour-ring-line: rgba(255, 255, 255, 0.9);
+  --tour-ring-glow: rgba(255, 255, 255, 0.28);
   /* Same near-black as light — the stage is theme-invariant by design; in
      dark mode it simply blends into the surrounding surfaces. */
   --color-atelier-stage: #1b1c20;

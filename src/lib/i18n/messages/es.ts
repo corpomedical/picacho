@@ -1127,6 +1127,7 @@ const es = {
     firstRunDoneTitle: "Listo",
     firstRunDoneBody: "Crea un personaje y se abrirá el compositor, con un segundo tour breve de las herramientas de generación. La guía completa está siempre en el menú de ajustes, en Tutorial.",
     firstRunFinish: "Crear un personaje",
+    stepsLabel: "Pasos del tour",
     next: "Siguiente",
     skip: "Omitir",
     finish: "Empezar",

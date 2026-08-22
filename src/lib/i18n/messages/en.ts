@@ -1197,6 +1197,7 @@ const en = {
     firstRunDoneTitle: "That's it",
     firstRunDoneBody: "Create a character and the composer opens up, with a second short tour of the generation tools. The full guide is always in the settings menu under Tutorial.",
     firstRunFinish: "Create a character",
+    stepsLabel: "Tour steps",
     next: "Next",
     skip: "Skip",
     finish: "Get started",

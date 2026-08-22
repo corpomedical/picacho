@@ -1127,6 +1127,7 @@ const it = {
     firstRunDoneTitle: "Fatto",
     firstRunDoneBody: "Crea un personaggio e si aprirà il compositore, con un secondo breve tour degli strumenti di generazione. La guida completa è sempre nel menu impostazioni, sotto Tutorial.",
     firstRunFinish: "Crea un personaggio",
+    stepsLabel: "Tappe del tour",
     next: "Avanti",
     skip: "Salta",
     finish: "Inizia",

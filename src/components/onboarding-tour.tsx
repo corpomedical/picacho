@@ -20,8 +20,13 @@ const PAD = 22; // breathing room between the target's real edge and the spotlig
 const GAP = 20; // balloon distance from the target
 const BALLOON_MAX_WIDTH = 320;
 const CORNER_RADIUS = 26; // spotlight + ring corner radius
-const SCRIM = "rgba(0,0,0,0.5)";
-const SCRIM_FEATHER = 40; // soft falloff at the spotlight's edge, in px
+// A smooth LIGHT veil in the light theme, dark in dark — theme-resolved via
+// globals.css (operator-requested 2026-08-21, matching Google's coach-mark
+// backdrop: the page fades under a soft wash rather than going black, and
+// the wide feather below is what makes the spotlight's edge a gradient
+// instead of a cut).
+const SCRIM = "var(--tour-scrim)";
+const SCRIM_FEATHER = 64; // soft falloff at the spotlight's edge, in px
 // Apple's system blue (light-mode value) — used for the primary action, the
 // one spot of color against an otherwise grayscale UI, same as iOS/macOS
 // coach marks and alerts.
@@ -60,9 +65,11 @@ export function OnboardingTour({
   stepIndex,
   onNext,
   onFinish,
+  onJump,
   next,
   skip,
   finish,
+  stepsLabel,
 }: {
   steps: TourStep[];
   // Controlled, not internal, state — the caller (generate-form.tsx) needs
@@ -72,9 +79,14 @@ export function OnboardingTour({
   stepIndex: number;
   onNext: () => void;
   onFinish: () => void;
+  // When provided, the n/N counter expands into a Google-style list of every
+  // stop, and tapping one jumps straight to it.
+  onJump?: (index: number) => void;
   next: string;
   skip: string;
   finish: string;
+  // Accessible name for the counter button / step list.
+  stepsLabel?: string;
 }) {
   const index = stepIndex;
   const step = steps[index];
@@ -99,6 +111,9 @@ export function OnboardingTour({
     const id = requestAnimationFrame(() => setPhase("open"));
     return () => cancelAnimationFrame(id);
   }, []);
+
+  // The n/N counter's expandable list of stops (Google coach-mark style).
+  const [listOpen, setListOpen] = useState(false);
 
   // Which step's text is actually painted. Trails stepIndex by one fade so
   // the words cross-dissolve instead of snapping mid-move.
@@ -509,9 +524,11 @@ export function OnboardingTour({
           borderRadius: CORNER_RADIUS,
           // A soft ambient halo around a hairline ring — the same gentle
           // focus glow tvOS and macOS use, which is what makes the spotlight
-          // read as "this, specifically" rather than a faint outline.
+          // read as "this, specifically" rather than a faint outline. Theme
+          // vars: the veil is light in the light theme, so the ring is ink
+          // there and light in dark.
           boxShadow:
-            "inset 0 0 0 1.5px rgba(255,255,255,0.9), 0 0 0 1px rgba(255,255,255,0.15), 0 0 32px 6px rgba(255,255,255,0.28)",
+            "inset 0 0 0 1.5px var(--tour-ring-line), 0 0 32px 6px var(--tour-ring-glow)",
           opacity: 0,
           transition: "opacity 260ms ease-out",
           willChange: "transform, width, height",
@@ -526,7 +543,7 @@ export function OnboardingTour({
           dark: variants are needed here. */}
       <div
         ref={balloonRef}
-        className="absolute left-0 top-0 w-80 max-w-[calc(100vw-32px)] rounded-control bg-atelier-surface/95 p-4 shadow-[0_24px_60px_-16px_rgba(33,29,18,0.45)] ring-1 ring-atelier-rule/70 backdrop-blur-2xl"
+        className="absolute left-0 top-0 w-80 max-w-[calc(100vw-32px)] rounded-control bg-atelier-surface/95 p-4 shadow-[0_2px_8px_rgba(20,22,30,0.08),0_28px_80px_-16px_rgba(20,22,30,0.4)] ring-1 ring-atelier-rule/70 backdrop-blur-2xl"
         style={{
           ...surface,
           opacity: shown ? 1 : 0,
@@ -563,16 +580,98 @@ export function OnboardingTour({
           </p>
         </div>
 
+        {/* The expandable stop list (Google coach-mark style): the counter
+            below toggles it, tapping a stop jumps straight there. Rendered
+            ABOVE the footer so the card grows upward-in-reading-order and
+            the buttons never move under the pointer. */}
+        {onJump && listOpen && (
+          <div
+            role="list"
+            aria-label={stepsLabel}
+            className="mt-3 space-y-0.5 border-t border-atelier-rule/60 pt-2.5"
+          >
+            {steps.map((s, i) => {
+              const isDone = i < index;
+              const isCurrent = i === index;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  role="listitem"
+                  aria-current={isCurrent ? "step" : undefined}
+                  onClick={() => {
+                    if (!isCurrent) onJump(i);
+                  }}
+                  className="flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left transition-colors hover:bg-atelier-ink/5"
+                >
+                  <span
+                    className="flex h-4.5 w-4.5 flex-shrink-0 items-center justify-center rounded-full text-[9px] font-bold tabular-nums"
+                    style={{
+                      backgroundColor: isCurrent
+                        ? "var(--color-atelier-accent)"
+                        : isDone
+                          ? "color-mix(in srgb, var(--color-atelier-accent) 18%, transparent)"
+                          : "color-mix(in srgb, var(--color-atelier-ink) 8%, transparent)",
+                      color: isCurrent ? "#fff" : "var(--color-atelier-muted)",
+                    }}
+                  >
+                    {isDone ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="var(--color-atelier-accent)" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5">
+                        <path d="M20 6 9 17l-5-5" />
+                      </svg>
+                    ) : (
+                      i + 1
+                    )}
+                  </span>
+                  <span
+                    className={
+                      isCurrent
+                        ? "truncate text-[12.5px] font-semibold text-atelier-ink"
+                        : "truncate text-[12.5px] text-atelier-muted"
+                    }
+                  >
+                    {s.title}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         <div className="mt-4 flex items-center justify-between">
-          {/* Progress: an explicit n/N counter (the longer tour outgrew
-              dots-only legibility — same pattern Google's coach marks use,
-              operator-requested 2026-08-21), with the capsule dots kept as a
-              bonus only while they stay glanceable. */}
+          {/* Progress: an explicit n/N counter (Google's coach-mark pattern,
+              operator-requested 2026-08-21). With onJump it becomes the
+              toggle for the stop list above; the capsule dots stay only for
+              short tours where they remain glanceable. */}
           <div className="flex items-center gap-2.5">
-            <span className="font-numeral text-[12px] font-semibold tabular-nums text-atelier-muted">
-              {index + 1}/{steps.length}
-            </span>
-            {steps.length <= 6 && (
+            {onJump ? (
+              <button
+                type="button"
+                onClick={() => setListOpen((v) => !v)}
+                aria-expanded={listOpen}
+                aria-label={stepsLabel}
+                className="flex items-center gap-1 rounded-full px-1.5 py-0.5 font-numeral text-[12px] font-semibold tabular-nums text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+              >
+                {index + 1}/{steps.length}
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.25"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-3 w-3 transition-transform duration-200"
+                  style={{ transform: listOpen ? "rotate(180deg)" : "none" }}
+                >
+                  <path d="m6 9 6 6 6-6" />
+                </svg>
+              </button>
+            ) : (
+              <span className="font-numeral text-[12px] font-semibold tabular-nums text-atelier-muted">
+                {index + 1}/{steps.length}
+              </span>
+            )}
+            {steps.length <= 6 && !listOpen && (
               <div className="flex gap-1.5" aria-hidden="true">
                 {steps.map((_, i) => (
                   <span

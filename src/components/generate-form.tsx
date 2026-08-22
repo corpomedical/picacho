@@ -3970,9 +3970,11 @@ function GenerateFormInner({
           stepIndex={tourStepIndex}
           onNext={() => setTourStepIndex((i) => i + 1)}
           onFinish={finishTour}
+          onJump={setTourStepIndex}
           next={ob.next}
           skip={ob.skip}
           finish={ob.finish}
+          stepsLabel={ob.stepsLabel}
         />
       )}
     {/* Below xl (and on the dashboard-home embed) this wrapper is a plain
