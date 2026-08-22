@@ -38,7 +38,14 @@ function DotsIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function NativeQuickPill() {
+export function NativeQuickPill({
+  // The user's personal referral link (2026-08-22): "Share Picacho" now
+  // shares THIS when available, so the existing share button doubles as the
+  // referral engine — every share can earn its sender a credit.
+  shareUrl,
+}: {
+  shareUrl?: string;
+} = {}) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useLocale();
@@ -98,7 +105,7 @@ export function NativeQuickPill() {
   function shareApp() {
     setMenuOpen(false);
     const share = capPlugin("Share");
-    void share?.share?.({ title: "Picacho", url: "https://picacho.ai" });
+    void share?.share?.({ title: "Picacho", url: shareUrl ?? "https://picacho.ai" });
   }
 
   return (

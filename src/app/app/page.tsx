@@ -7,6 +7,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { mediaUrl, toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
+import { InviteCard } from "@/components/invite-card";
 
 export const maxDuration = 300;
 
@@ -186,6 +187,15 @@ export default async function AppHome() {
           </div>
         )}
       </section>
+
+      {/* Referral tile (2026-08-22): the dashboard is the highest-traffic
+          surface in the product — a referral card only in Settings referred
+          nobody. Same component the settings sheet uses. */}
+      {profile?.username && (
+        <div className="rounded-control bg-atelier-surface p-5 shadow-[0_0_0_1px_var(--frost-ring),0_16px_40px_-24px_rgba(33,29,22,0.12)]">
+          <InviteCard username={profile.username} />
+        </div>
+      )}
 
       <InstallAppHint />
     </div>

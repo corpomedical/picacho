@@ -97,7 +97,9 @@ export default async function AppLayout({
           attach it to. No-ops entirely on the web. */}
       <NativePush />
       <NativeTabBar />
-      <NativeQuickPill />
+      <NativeQuickPill
+        shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
+      />
       {showRatePrompt && <RatePrompt />}
       {/* data-app-scroll: the app's one real scroller — the native quick
           pill watches its scrollTop to decide when to slide in. */}
