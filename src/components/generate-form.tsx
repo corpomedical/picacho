@@ -1219,6 +1219,8 @@ export function GenerateForm(props: {
   // at first-time orientation. The tour can always be brought back later via
   // ?tour=1 regardless of this prop — see the sidebar's "Replay walkthrough".
   startOnboarding?: boolean;
+  dailyFreeAvailable?: boolean;
+  hasGeneratedBefore?: boolean;
 }) {
   return (
     <Suspense fallback={null}>
@@ -1557,6 +1559,8 @@ function GenerateFormInner({
   heroMode = false,
   greeting,
   startOnboarding = false,
+  dailyFreeAvailable = false,
+  hasGeneratedBefore = true,
 }: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
@@ -1573,6 +1577,13 @@ function GenerateFormInner({
   heroMode?: boolean;
   greeting?: string;
   startOnboarding?: boolean;
+  // Guardrails after the 2026-08-21 confused-new-user incident (a 3-minute-
+  // old account pasted text and burned its daily free shot on an accidental
+  // 5s video): the composer says what a send will spend, and first-time
+  // accounts start on Image. Defaults chosen so older call sites (the
+  // dashboard hero) behave exactly as before until they pass the props.
+  dailyFreeAvailable?: boolean;
+  hasGeneratedBefore?: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -1618,9 +1629,16 @@ function GenerateFormInner({
   });
   const [characterMenuOpen, setCharacterMenuOpen] = useState(false);
   const characterMenuRef = useRef<HTMLDivElement>(null);
-  const [contentType, setContentType] = useState<ContentType>(() =>
-    searchParams.get("type") === "image" ? "image" : "video",
-  );
+  const [contentType, setContentType] = useState<ContentType>(() => {
+    const fromUrl = searchParams.get("type");
+    if (fromUrl === "image") return "image";
+    if (fromUrl === "video") return "video";
+    // First-ever generation defaults to Image (guardrail, 2026-08-21): it's
+    // the fastest, cheapest way to meet your character — a confused first
+    // tap should not produce a surprise video. Explicit links (templates,
+    // continue/resume flows) always carry ?type= and win above.
+    return hasGeneratedBefore ? "video" : "image";
+  });
   const [prompt, setPrompt] = useState("");
   // Prompt Studio (Enhance). `approvedPrompt` holds the exact text the user
   // accepted from the panel: at submit time, a prompt still identical to it
@@ -3657,7 +3675,16 @@ function GenerateFormInner({
             // Borderless soft chip — same recipe as the input box (operator,
             // 2026-08-21: "apply the same to Select Character").
             "flex w-full items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-3.5 text-left transition-colors disabled:opacity-50",
-            characterMenuOpen ? "bg-atelier-ink/[0.08]" : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
+            characterMenuOpen
+              ? "bg-atelier-ink/[0.08]"
+              : !characterId
+                ? // Nothing picked yet: warm the chip so the empty selector
+                  // can't be overlooked (the 2026-08-21 incident: a new user
+                  // created a character, never selected it, and sent a
+                  // character-less render without realising). Still never
+                  // auto-picks — that rule stands.
+                  "bg-atelier-accent/[0.09] hover:bg-atelier-accent/[0.14]"
+                : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
           )}
         >
           {isMultiCharacter ? (
@@ -5211,6 +5238,31 @@ function GenerateFormInner({
                   )}
                 </div>
               </div>
+              {/* Guardrail footer (2026-08-21 incident): what a send spends,
+                  and the two first-session nudges. Renders nothing for
+                  established paid accounts. */}
+              {(dailyFreeAvailable ||
+                (!characterId && characters.length > 0) ||
+                (!hasGeneratedBefore && contentType === "image")) &&
+                !submitting && (
+                  <div className="space-y-1 px-4 pb-2.5">
+                    {dailyFreeAvailable && (
+                      <p className="flex items-center justify-end gap-1.5 text-[11px] text-atelier-muted">
+                        <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-atelier-accent" />
+                        {g.dailyFreeNotice} ·{" "}
+                        {contentType === "video"
+                          ? `${videoDurationSeconds}s ${g.video.toLowerCase()}`
+                          : g.image.toLowerCase()}
+                      </p>
+                    )}
+                    {!characterId && characters.length > 0 && (
+                      <p className="text-[11px] text-atelier-muted">{g.pickCharacterHint}</p>
+                    )}
+                    {!hasGeneratedBefore && contentType === "image" && (
+                      <p className="text-[11px] text-atelier-muted">{g.imageFirstHint}</p>
+                    )}
+                  </div>
+                )}
             </>
           )}
         </div>

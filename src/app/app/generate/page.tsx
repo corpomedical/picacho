@@ -67,9 +67,23 @@ export default async function GeneratePage() {
   // home is here — the first time someone actually faces these controls.
   const { data: onboardingProfile } = await supabase
     .from("profiles")
-    .select("has_completed_onboarding")
+    .select("has_completed_onboarding, plan, bonus_credits, free_generation_last_at")
     .eq("id", userData.user?.id ?? "")
     .single();
+
+  // Free-tier accounts get one generation per UTC day; whether today's slot
+  // is still open drives the composer's "uses today's free generation"
+  // notice (guardrail after the 2026-08-21 confused-new-user incident).
+  // Mirrors canGenerate's read in lib/generations/core.ts — display only,
+  // the RPC's guarded UPDATE remains the source of truth on spend.
+  const utcDayStart = new Date();
+  utcDayStart.setUTCHours(0, 0, 0, 0);
+  const onDailyFreeTier =
+    (onboardingProfile?.plan ?? "none") === "none" && (onboardingProfile?.bonus_credits ?? 0) === 0;
+  const dailyFreeAvailable =
+    onDailyFreeTier &&
+    (!onboardingProfile?.free_generation_last_at ||
+      new Date(onboardingProfile.free_generation_last_at) < utcDayStart);
 
   if (!hasCharacter) {
     return (
@@ -138,6 +152,8 @@ export default async function GeneratePage() {
         purchasedCredits={purchasedCredits}
         currentPeriodEnd={currentPeriodEnd}
         allowExternalPurchase={await allowExternalPurchaseLink()}
+        dailyFreeAvailable={dailyFreeAvailable}
+        hasGeneratedBefore={stats.total > 0}
       />
     </div>
   );
