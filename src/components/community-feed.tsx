@@ -92,6 +92,65 @@ function EyeOffIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+// Every image in Community loads through this: a quiet spinner while
+// loading, an automatic retry at the full-size URL when the thumb fails
+// (the media route's resizer can choke on individual files — the original
+// usually still serves), and a calm glyph if both die. The browser's
+// broken-image icon can never appear (operator, 2026-08-22: "This just
+// looks cheap").
+function ResilientImage({
+  thumb,
+  full,
+  alt,
+  className,
+}: {
+  thumb: string;
+  full: string;
+  alt: string;
+  className?: string;
+}) {
+  const [src, setSrc] = useState(thumb);
+  const [phase, setPhase] = useState<"loading" | "ok" | "dead">("loading");
+
+  if (phase === "dead") {
+    return (
+      <div className={cn("flex items-center justify-center", className)}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#4a4d58" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-7 w-7">
+          <rect x="3" y="3" width="18" height="18" rx="2.5" />
+          <path d="M4 16l5-4 4 3 3-3 4 4" />
+          <path d="M3 3l18 18" />
+        </svg>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {phase === "loading" && (
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#f5f1e9]/20 border-t-[#f5f1e9]/80" />
+        </span>
+      )}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        onLoad={() => setPhase("ok")}
+        onError={() => {
+          if (src !== full) {
+            setSrc(full);
+            setPhase("loading");
+          } else {
+            setPhase("dead");
+          }
+        }}
+        className={cn(className, "transition-opacity duration-300", phase === "ok" ? "opacity-100" : "opacity-0")}
+      />
+    </>
+  );
+}
+
 export function CommunityFeed({
   posts,
   heartedIds,
@@ -311,11 +370,10 @@ export function CommunityFeed({
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                 />
               ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={post.thumbUrl}
+                <ResilientImage
+                  thumb={post.thumbUrl}
+                  full={post.displayUrl}
                   alt={post.caption ?? post.prompt ?? ""}
-                  loading="lazy"
                   className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                 />
               )}
@@ -365,6 +423,11 @@ export function CommunityFeed({
                       src={post.thumbUrl}
                       alt=""
                       aria-hidden
+                      // The echo is decoration — if its thumb fails, vanish
+                      // silently rather than show anything broken.
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = "none";
+                      }}
                       className="absolute inset-0 h-full w-full scale-110 object-cover opacity-30 blur-2xl"
                     />
                   )}
@@ -381,12 +444,14 @@ export function CommunityFeed({
                       className="relative max-h-full max-w-full"
                     />
                   ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={post.displayUrl}
-                      alt={post.caption ?? post.prompt ?? ""}
-                      className="relative max-h-full max-w-full object-contain"
-                    />
+                    <div className="relative flex h-full w-full items-center justify-center">
+                      <ResilientImage
+                        thumb={post.displayUrl}
+                        full={post.displayUrl}
+                        alt={post.caption ?? post.prompt ?? ""}
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
                   )}
 
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#08090c]/85 to-transparent" />
