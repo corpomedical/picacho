@@ -74,6 +74,8 @@ export function TryItWidget({
   // Trace finished — image + score visible.
   const [done, setDone] = useState(false);
   const timers = useRef<number[]>([]);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const autoPlayed = useRef(false);
 
   const clearTimers = () => {
     timers.current.forEach((id) => window.clearTimeout(id));
@@ -81,6 +83,30 @@ export function TryItWidget({
   };
   // Cleanup on unmount so a mid-play navigation can't fire stale setState.
   useEffect(() => clearTimers, []);
+
+  // Auto-play the first scene once the widget scrolls into view — an idle
+  // widget used to sit on an EMPTY dark stage until someone clicked a
+  // prompt, which read as a broken image (operator-reported, 2026-08-21:
+  // "Is this suppose to be an empty image?"). One-shot: after it has played
+  // once, only the visitor's own picks drive it.
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node || entries.length === 0) return;
+    const observer = new IntersectionObserver(
+      (obs) => {
+        if (autoPlayed.current) return;
+        if (obs.some((o) => o.isIntersecting)) {
+          autoPlayed.current = true;
+          pick(0);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.35 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entries.length]);
 
   function pick(i: number) {
     clearTimers();
@@ -105,7 +131,7 @@ export function TryItWidget({
   const entry = selected === null ? null : (entries[selected] ?? null);
 
   return (
-    <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)] sm:p-6">
+    <div ref={rootRef} className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)] sm:p-6">
       <div className="grid gap-6 sm:grid-cols-2 sm:gap-8">
         {/* Real prompts — the "pick a scene" list. */}
         <div>
