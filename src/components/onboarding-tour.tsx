@@ -564,23 +564,32 @@ export function OnboardingTour({
         </div>
 
         <div className="mt-4 flex items-center justify-between">
-          <div className="flex gap-1.5" aria-hidden="true">
-            {steps.map((_, i) => (
-              <span
-                key={i}
-                className="h-1.5 rounded-full transition-all duration-300 ease-out"
-                style={{
-                  // The current stop stretches into a short capsule rather
-                  // than only changing colour — motion the eye can follow
-                  // between steps, so progress is legible at a glance. The
-                  // active dot is the balloon's one spot of ochre: proof of
-                  // where you are, per the accent's reserved role.
-                  width: i === index ? 14 : 6,
-                  backgroundColor:
-                    i === index ? "var(--color-atelier-accent)" : "var(--color-atelier-rule)",
-                }}
-              />
-            ))}
+          {/* Progress: an explicit n/N counter (the longer tour outgrew
+              dots-only legibility — same pattern Google's coach marks use,
+              operator-requested 2026-08-21), with the capsule dots kept as a
+              bonus only while they stay glanceable. */}
+          <div className="flex items-center gap-2.5">
+            <span className="font-numeral text-[12px] font-semibold tabular-nums text-atelier-muted">
+              {index + 1}/{steps.length}
+            </span>
+            {steps.length <= 6 && (
+              <div className="flex gap-1.5" aria-hidden="true">
+                {steps.map((_, i) => (
+                  <span
+                    key={i}
+                    className="h-1.5 rounded-full transition-all duration-300 ease-out"
+                    style={{
+                      // The current stop stretches into a short capsule — motion
+                      // the eye can follow. The active dot is the balloon's one
+                      // spot of ochre, per the accent's reserved role.
+                      width: i === index ? 14 : 6,
+                      backgroundColor:
+                        i === index ? "var(--color-atelier-accent)" : "var(--color-atelier-rule)",
+                    }}
+                  />
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-4">
             {!isLast && (

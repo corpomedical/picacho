@@ -1201,7 +1201,7 @@ const en = {
     skip: "Skip",
     finish: "Get started",
     welcomeTitle: "Welcome to Picacho",
-    welcomeBody: "Quick 4-step look around before you dive in — takes about a minute.",
+    welcomeBody: "A quick guided look at everything you need — about two minutes, and you can leave anytime.",
     charactersTitle: "Characters",
     charactersBody:
       "Everything starts with a character — save their look, personality, and voice once here, and every generation stays consistent with it.",
@@ -1211,6 +1211,18 @@ const en = {
     multiAngleTitle: "Multi-angle & storyboard",
     multiAngleBody:
       "Tap here to reveal multi-angle mode (several camera angles from one prompt) and storyboard mode (set a start and end frame).",
+    characterSelectTitle: "Pick who's in the scene",
+    characterSelectBody:
+      "This chooses which character stars in your generation. It glows warm until someone is picked — send without one and you get a generic render instead of your character.",
+    promptTitle: "Describe it in plain words",
+    promptBody:
+      "No prompt engineering needed — write it like you'd tell a friend. Picacho drafts, reviews, generates, then scores the result against your character's photo.",
+    templatesTitle: "Start from a template",
+    templatesBody:
+      "Ready-made scenes — headshots, product shots, unboxings and more. Tap one and it lands in the composer prefilled, ready to tweak.",
+    communityTitle: "See what others make",
+    communityBody:
+      "Real renders shared by other users — hearts, views, and ideas worth borrowing. Share your own best work from any render's History page.",
     doneTitle: "You're all set",
     doneBody: "That's the tour. Describe what you want below to make your first generation.",
   },

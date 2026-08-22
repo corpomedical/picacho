@@ -665,7 +665,15 @@ export function AppSidebar({
             href={item.href}
             title={item.label}
             aria-label={item.label}
-            data-tour-id={item.href === "/app/character" ? "tour-characters" : undefined}
+            data-tour-id={
+              item.href === "/app/character"
+                ? "tour-characters"
+                : item.href === "/app/templates"
+                  ? "tour-templates"
+                  : item.href === "/app/community"
+                    ? "tour-community"
+                    : undefined
+            }
             className={cn(
               "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
               iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",

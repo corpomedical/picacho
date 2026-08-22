@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -2846,6 +2846,39 @@ function GenerateFormInner({
   // composer into that state a render ahead of OnboardingTour trying to
   // measure the target, the same way clicking "Create video" from the +
   // menu would.
+  // The tour's stops, in first-session order. `revealedByTour` marks the two
+  // composer targets the tour itself flips into existence (video mode) — they
+  // are exempt from the present-in-DOM filter below, which otherwise drops
+  // stops whose anchor doesn't exist in this layout (the sidebar links on
+  // phones and in the native shell), so the tour never spotlights thin air.
+  const ob = t.onboarding;
+  const allTourSteps: (TourStep & { revealedByTour?: boolean })[] = [
+    { targetId: null, title: ob.welcomeTitle, body: ob.welcomeBody },
+    { targetId: "tour-characters", title: ob.charactersTitle, body: ob.charactersBody },
+    { targetId: "tour-character-select", title: ob.characterSelectTitle, body: ob.characterSelectBody },
+    { targetId: "tour-prompt", title: ob.promptTitle, body: ob.promptBody },
+    { targetId: "tour-video-model", title: ob.providersTitle, body: ob.providersBody, revealedByTour: true },
+    { targetId: "tour-advanced-toggle", title: ob.multiAngleTitle, body: ob.multiAngleBody, revealedByTour: true },
+    { targetId: "tour-templates", title: ob.templatesTitle, body: ob.templatesBody },
+    { targetId: "tour-community", title: ob.communityTitle, body: ob.communityBody },
+    { targetId: null, title: ob.doneTitle, body: ob.doneBody },
+  ];
+  // Filtered once per tour open — a step list that mutated mid-tour would
+  // yank the current index out from under the person.
+  const tourSteps = useMemo(
+    () =>
+      tourActive
+        ? allTourSteps.filter(
+            (s) =>
+              s.targetId === null ||
+              s.revealedByTour ||
+              document.querySelector(`[data-tour-id="${s.targetId}"]`) !== null,
+          )
+        : allTourSteps,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [tourActive],
+  );
+
   useEffect(() => {
     // Never while a request is live: setContentType triggers the resetChat
     // effect, which would wipe the in-flight thread mid-render — same hazard
@@ -2853,12 +2886,16 @@ function GenerateFormInner({
     // `submitting` in the deps, the nudge still lands once the render ends
     // if the tour is somehow open through one.
     if (!tourActive || submitting) return;
-    const needsVideoMode = tourStepIndex === 2 || tourStepIndex === 3;
+    // Target-based, not index-based: the filtered step list shifts indexes
+    // per layout, so the old hardcoded `=== 2 || === 3` would reveal the
+    // composer on the wrong stop.
+    const target = tourSteps[tourStepIndex]?.targetId;
+    const needsVideoMode = target === "tour-video-model" || target === "tour-advanced-toggle";
     if (needsVideoMode) {
       setContentType("video");
       setCreationModeActive(true);
     }
-  }, [tourActive, tourStepIndex, submitting]);
+  }, [tourActive, tourStepIndex, submitting, tourSteps]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -3664,7 +3701,7 @@ function GenerateFormInner({
   const castSize = (currentCharacter ? 1 : 0) + companionCharacterIds.length;
   const characterPicker =
     characters.length > 0 ? (
-      <div ref={characterMenuRef} className="relative">
+      <div ref={characterMenuRef} data-tour-id="tour-character-select" className="relative">
         <button
           type="button"
           onClick={() => setCharacterMenuOpen((v) => !v)}
@@ -3899,15 +3936,6 @@ function GenerateFormInner({
   // behind creationModeActive) — the effect below flips the composer into
   // the right state a moment before OnboardingTour tries to measure that
   // step's target.
-  const ob = t.onboarding;
-  const TOUR_STEPS: TourStep[] = [
-    { targetId: null, title: ob.welcomeTitle, body: ob.welcomeBody },
-    { targetId: "tour-characters", title: ob.charactersTitle, body: ob.charactersBody },
-    { targetId: "tour-video-model", title: ob.providersTitle, body: ob.providersBody },
-    { targetId: "tour-advanced-toggle", title: ob.multiAngleTitle, body: ob.multiAngleBody },
-    { targetId: null, title: ob.doneTitle, body: ob.doneBody },
-  ];
-
   function finishTour() {
     setTourActive(false);
     setTourStepIndex(0);
@@ -3938,7 +3966,7 @@ function GenerateFormInner({
     <>
       {tourActive && (
         <OnboardingTour
-          steps={TOUR_STEPS}
+          steps={tourSteps}
           stepIndex={tourStepIndex}
           onNext={() => setTourStepIndex((i) => i + 1)}
           onFinish={finishTour}
@@ -4239,7 +4267,7 @@ function GenerateFormInner({
             theme, so the tint does too), deepening slightly on focus.
             There's deliberately NO overflow-hidden here, because the "+"
             menu opens outside this box's bounds. */}
-        <div className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
+        <div data-tour-id="tour-prompt" className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
           {pendingMultiAngle ? (
             <div className="space-y-3 p-4">
               <div>

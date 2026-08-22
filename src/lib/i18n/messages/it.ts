@@ -1131,7 +1131,7 @@ const it = {
     skip: "Salta",
     finish: "Inizia",
     welcomeTitle: "Benvenuto su Picacho",
-    welcomeBody: "Un rapido tour in 4 passaggi prima di iniziare — richiede circa un minuto.",
+    welcomeBody: "Un tour guidato di tutto l'essenziale — circa due minuti, e puoi uscire quando vuoi.",
     charactersTitle: "Personaggi",
     charactersBody:
       "Tutto parte da un personaggio — salva qui aspetto, personalità e voce una volta sola, e ogni generazione resterà coerente con esso.",
@@ -1141,6 +1141,18 @@ const it = {
     multiAngleTitle: "Multi-angolo e storyboard",
     multiAngleBody:
       "Tocca qui per rivelare la modalità multi-angolo (più angolazioni da un solo prompt) e la modalità storyboard (imposta un fotogramma iniziale e finale).",
+    characterSelectTitle: "Scegli chi c'è nella scena",
+    characterSelectBody:
+      "Qui scegli quale personaggio è il protagonista della generazione. Resta di un tono caldo finché non scegli qualcuno — inviando senza, ottieni un risultato generico invece del tuo personaggio.",
+    promptTitle: "Descrivilo con parole tue",
+    promptBody:
+      "Nessun prompt engineering — scrivilo come lo racconteresti a un amico. Picacho redige, rivede, genera e valuta il risultato rispetto alla foto del tuo personaggio.",
+    templatesTitle: "Parti da un modello",
+    templatesBody:
+      "Scene pronte — ritratti, foto prodotto, unboxing e altro. Toccane una e arriva nel compositore già precompilata, pronta da ritoccare.",
+    communityTitle: "Guarda cosa creano gli altri",
+    communityBody:
+      "Render reali condivisi dagli altri utenti — cuori, visualizzazioni e idee da cui prendere spunto. Condividi i tuoi migliori dalla pagina Cronologia di ogni render.",
     doneTitle: "Tutto pronto",
     doneBody: "Il tour finisce qui. Descrivi cosa vuoi qui sotto per fare la tua prima generazione.",
   },
