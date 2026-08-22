@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type Stripe from "stripe";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { stripe } from "@/lib/stripe/client";
 import { PLAN_PRICE_IDS, PLAN_PRICE_IDS_EUR } from "@/lib/stripe/plans";
@@ -203,7 +204,10 @@ export async function startPlanCheckout(
       metadata: { supabase_user_id: userData.user.id, plan: paidPlanId },
       ...(ui === "embedded"
         ? {
-            ui_mode: "embedded" as const,
+            // "embedded_page" is the 2026 API's name for what the docs long
+            // called embedded mode — the account's pinned version
+            // (2026-07-29.dahlia) rejects the old literal outright.
+            ui_mode: "embedded_page" as Stripe.Checkout.SessionCreateParams.UiMode,
             return_url: `${origin}/app/settings?tab=usage&saved=1`,
           }
         : {
@@ -289,7 +293,11 @@ export async function startCreditCheckout(
       // about.
       metadata: { supabase_user_id: userData.user.id, credit_pack: pack.id },
       ...(ui === "embedded"
-        ? { ui_mode: "embedded" as const, return_url: successTarget }
+        ? {
+            // Same 2026 rename as startPlanCheckout above.
+            ui_mode: "embedded_page" as Stripe.Checkout.SessionCreateParams.UiMode,
+            return_url: successTarget,
+          }
         : { success_url: successTarget, cancel_url: `${origin}${returnTo}` }),
     });
     return { url: session.url ?? null, clientSecret: session.client_secret ?? null, returnTo };
