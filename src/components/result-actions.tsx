@@ -269,7 +269,7 @@ export function ResultActions({
             aria-label={g.reportProblem}
             // Phase-1 popover idiom (see the sidebar settings menu): warm
             // surface, hairline rule, control radius, warm-tinted shadow.
-            className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
+            className="absolute bottom-full left-0 z-30 mb-2 w-64 rounded-control bg-atelier-surface/95 backdrop-blur-xl p-3 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]"
           >
             <p className="text-xs font-medium text-atelier-ink">{g.reportTitle}</p>
             <div className="mt-2 flex flex-wrap gap-1.5">

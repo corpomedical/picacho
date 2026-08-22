@@ -78,7 +78,7 @@ export function FeedbackLink({
           aria-label={title}
           // Floating surface, so it carries the popover shadow (the one
           // treatment sheets don't get) — same as the sidebar settings menu.
-          className="absolute bottom-full left-0 z-30 mb-2 w-72 rounded-control border border-atelier-rule bg-atelier-surface p-3 text-left shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]"
+          className="absolute bottom-full left-0 z-30 mb-2 w-72 rounded-control bg-atelier-surface/95 backdrop-blur-xl p-3 text-left shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]"
         >
           {sent ? (
             <p className="py-2 text-center text-xs font-medium text-atelier-ink">{sentLabel}</p>

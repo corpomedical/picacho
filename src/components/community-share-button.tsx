@@ -96,7 +96,7 @@ export function CommunityShareButton({
         {c.share}
       </button>
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-2 w-72 rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]">
+        <div className="absolute left-0 top-full z-30 mt-2 w-72 rounded-control bg-atelier-surface/95 backdrop-blur-xl p-3 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]">
           <p className="text-xs font-semibold text-atelier-ink">{c.confirmTitle}</p>
           <p className="mt-1 text-[11px] leading-relaxed text-atelier-muted">{c.confirmBody}</p>
           <input

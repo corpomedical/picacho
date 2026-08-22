@@ -4867,7 +4867,7 @@ function GenerateFormInner({
                     <div
                       role="menu"
                       className={cn(
-                        "absolute left-0 z-20 w-56 overflow-hidden rounded-control border border-atelier-rule bg-atelier-surface p-1.5 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]",
+                        "absolute left-0 z-20 w-56 overflow-hidden rounded-control bg-atelier-surface/95 backdrop-blur-xl p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]",
                         // Docked mode sits near the bottom of the viewport
                         // (sticky), so the menu opens upward there. Hero mode
                         // has open space below instead — opening upward in

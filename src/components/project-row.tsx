@@ -208,7 +208,7 @@ export function ProjectRow({
       </button>
 
       {menuOpen && (
-        <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-control border border-atelier-rule bg-atelier-surface p-1 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]">
+        <div className="absolute right-0 top-full z-30 mt-1 w-44 rounded-control bg-atelier-surface/95 backdrop-blur-xl p-1 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]">
           <MenuAction
             icon={StarIcon}
             label={project.is_starred ? p.unstar : p.star}

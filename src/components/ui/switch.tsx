@@ -2,14 +2,15 @@
 
 import { cn } from "@/lib/cn";
 
-// The app's one switch, born from a Frost regression (2026-08-21, operator
-// screenshots): the old inline toggles painted their knob with
-// bg-atelier-surface, which Frost made TRANSLUCENT — the OFF state rendered
-// as a white ghost melting into the glass. Lessons baked in here:
-//   * the knob is fixed white with a real shadow (never a theme surface),
-//   * the track is unmistakable in both states and both themes,
-//   * the state is written INSIDE the control (operator-requested), on the
-//     empty side of the knob, so on/off never needs guessing.
+// The app's one switch — version 2 (2026-08-21, after the operator called
+// the first fix out as still unreadable on a phone). Lessons now baked in
+// as HARD LITERALS, deliberately outside the theme tokens: v1 built its
+// track from ink-alpha over Frost's translucent surfaces, which stacked
+// into something too subtle at phone scale, and its 8px labels vanished.
+// This one is bigger (58×28), the OFF track is a solid gray with an inset
+// shade, ON is the ochre/amber accent, the knob is solid white with a real
+// drop shadow, and the state word is 9.5px extrabold — readable on a phone
+// without squinting. No theme token is used as paint anywhere in it.
 export function Switch({
   checked,
   onChange,
@@ -34,16 +35,18 @@ export function Switch({
       onClick={onChange}
       disabled={disabled}
       className={cn(
-        "relative h-6 w-12 flex-shrink-0 rounded-full transition-colors disabled:opacity-50",
-        checked ? "bg-atelier-accent" : "bg-atelier-ink/[0.18]",
+        "relative h-7 w-[58px] flex-shrink-0 rounded-full transition-colors disabled:opacity-50",
+        checked
+          ? "bg-atelier-accent shadow-[inset_0_1px_2px_rgba(0,0,0,0.15)]"
+          : "bg-[#d2d4da] shadow-[inset_0_1px_2px_rgba(35,37,45,0.12)] dark:bg-[#3d404b]",
       )}
     >
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-y-0 left-[7px] flex items-center text-[8px] font-bold uppercase tracking-wider transition-opacity",
+          "pointer-events-none absolute inset-y-0 left-[9px] flex items-center text-[9.5px] font-extrabold uppercase tracking-wider transition-opacity",
           // Light theme's ochre track carries white type; dark theme's amber
-          // track is light, so the type flips dark.
+          // accent is light, so the type flips dark there.
           "text-white dark:text-[#1a1c24]",
           checked ? "opacity-100" : "opacity-0",
         )}
@@ -53,7 +56,7 @@ export function Switch({
       <span
         aria-hidden
         className={cn(
-          "pointer-events-none absolute inset-y-0 right-[6px] flex items-center text-[8px] font-bold uppercase tracking-wider text-atelier-ink/55 transition-opacity",
+          "pointer-events-none absolute inset-y-0 right-[8px] flex items-center text-[9.5px] font-extrabold uppercase tracking-wider text-[#565a66] transition-opacity dark:text-[#b9bcc6]",
           checked ? "opacity-0" : "opacity-100",
         )}
       >
@@ -61,8 +64,8 @@ export function Switch({
       </span>
       <span
         className={cn(
-          "absolute top-0.5 h-5 w-5 rounded-full bg-[#ffffff] shadow-[0_1px_3px_rgba(0,0,0,0.3)] transition-transform",
-          checked ? "translate-x-[26px]" : "translate-x-0.5",
+          "absolute top-0.5 h-6 w-6 rounded-full bg-[#ffffff] shadow-[0_1px_4px_rgba(0,0,0,0.35)] transition-transform",
+          checked ? "translate-x-[32px]" : "translate-x-0.5",
         )}
       />
     </button>

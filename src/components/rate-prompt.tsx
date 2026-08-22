@@ -80,7 +80,7 @@ export function RatePrompt() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50 w-[min(21rem,calc(100vw-2.5rem))] rounded-control border border-atelier-rule bg-atelier-surface p-4 shadow-[0_24px_48px_-12px_rgba(33,29,18,0.28)]">
+    <div className="fixed bottom-5 right-5 z-50 w-[min(21rem,calc(100vw-2.5rem))] rounded-control bg-atelier-surface/95 backdrop-blur-xl p-4 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]">
       {thanks ? (
         <p className="py-2 text-center text-sm text-atelier-ink">{r.thanks}</p>
       ) : (
