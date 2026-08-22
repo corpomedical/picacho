@@ -952,7 +952,7 @@ const en = {
     tutorial: "Tutorial",
     // Referral card (give 5, get 5 — see supabase referrals.sql).
     inviteTitle: "Invite friends — you both get credits",
-    inviteBody: "Share your link. When someone signs up with it and creates their first render, you both get 5 bonus credits.",
+    inviteBody: "Share your link. When someone signs up with it and creates their first render, you both get 1 bonus credit.",
     inviteCopy: "Copy link",
     inviteCopied: "Copied",
     inviteShare: "Share",

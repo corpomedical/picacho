@@ -891,7 +891,7 @@ const es = {
   settings: {
     tutorial: "Tutorial",
     inviteTitle: "Invita a tus amigos — ambos recibís créditos",
-    inviteBody: "Comparte tu enlace. Cuando alguien se registre con él y cree su primer render, ambos recibís 5 créditos extra.",
+    inviteBody: "Comparte tu enlace. Cuando alguien se registre con él y cree su primer render, ambos recibís 1 crédito extra.",
     inviteCopy: "Copiar enlace",
     inviteCopied: "Copiado",
     inviteShare: "Compartir",
