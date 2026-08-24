@@ -3642,6 +3642,30 @@ function GenerateFormInner({
       .filter((a): a is PendingAttachment & { status: "ready"; url: string; path: string } => a.status === "ready" && Boolean(a.url) && Boolean(a.path))
       .map((a) => ({ path: a.path, url: a.url, name: a.name, type: a.type, size: a.size }));
 
+    // Kling O3's reference input rejects extreme aspect ratios AT THE
+    // PROVIDER — a 422 after credits are already reserved (2026-08-24
+    // incident: 3 credits burned on an ultra-wide frame). Measure the
+    // anchor image up front and fail free instead. A measurement failure
+    // never blocks the send — the provider stays the backstop.
+    if (contentType === "video" && videoModelId.startsWith("kling-o3")) {
+      const anchor = readyAttachments.find((a) => a.type.startsWith("image/"));
+      if (anchor) {
+        const aspectOk = await new Promise<boolean>((resolve) => {
+          const probe = new Image();
+          probe.onload = () => {
+            const ratio = probe.naturalWidth / Math.max(1, probe.naturalHeight);
+            resolve(ratio >= 0.4 && ratio <= 2.5);
+          };
+          probe.onerror = () => resolve(true);
+          probe.src = anchor.url;
+        });
+        if (!aspectOk) {
+          setError(g.referenceAspectError);
+          return;
+        }
+      }
+    }
+
     if (multiAngleMode && contentType === "video") {
       const trimmed = prompt.trim();
       if (!trimmed) {
@@ -4269,6 +4293,31 @@ function GenerateFormInner({
             theme, so the tint does too), deepening slightly on focus.
             There's deliberately NO overflow-hidden here, because the "+"
             menu opens outside this box's bounds. */}
+        {/* The Seedance 2.5 photoreal fence, surfaced BEFORE money moves:
+            2.5 is the illustrated lane and ByteDance hard-rejects photoreal
+            people (verified live 2026-08-21) — but nothing used to stop a
+            photo-referenced character from being sent there (2026-08-24
+            incident: 103 credits across three attempts). Warn, and offer
+            the one-tap fix. Not a hard block: illustrated characters with
+            reference images are legitimate on 2.5. */}
+        {contentType === "video" &&
+          videoModelId === "seedance" &&
+          (() => {
+            const warnCharacter = characters.find((c) => c.id === characterId);
+            if (!warnCharacter || warnCharacter.referencePhotos.length === 0) return null;
+            return (
+              <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[12px] bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 dark:text-amber-300">
+                <span className="min-w-0 flex-1">{formatMsg(g.seedance25Warn, { name: warnCharacter.name })}</span>
+                <button
+                  type="button"
+                  onClick={() => setVideoModelId("seedance-2")}
+                  className="flex-shrink-0 rounded-full bg-atelier-ink px-2.5 py-1 text-[11px] font-semibold text-atelier-paper transition-opacity hover:opacity-90"
+                >
+                  {g.seedance25Switch}
+                </button>
+              </div>
+            );
+          })()}
         <div data-tour-id="tour-prompt" className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
           {pendingMultiAngle ? (
             <div className="space-y-3 p-4">
