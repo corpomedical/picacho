@@ -4642,7 +4642,15 @@ function GenerateFormInner({
           if (!anchorAtt) return null;
           return (
             <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[12px] bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 dark:text-amber-300">
-              <span className="min-w-0 flex-1">{formatMsg(g.attachAnchorWarn, { name: anchorChar.name })}</span>
+              {/* Two variants (2026-08-24, bmazloum read the base copy next to
+                  the Outfit chip's caption as the app contradicting itself):
+                  when the character HAS saved outfit photos, the advice is
+                  "the chip already carries it", not "describe it in words". */}
+              <span className="min-w-0 flex-1">
+                {formatMsg(anchorChar.hasOutfit ? g.attachAnchorWarnOutfit : g.attachAnchorWarn, {
+                  name: anchorChar.name,
+                })}
+              </span>
               <button
                 type="button"
                 onClick={() => removeAttachment(anchorAtt.id)}
@@ -4682,7 +4690,7 @@ function GenerateFormInner({
                 {contentType === "image" ||
                 (videoAdvancedMode === "none" &&
                   (videoModelId === "seedance" || videoModelId === "seedance-2"))
-                  ? g.outfitAttachNote
+                  ? formatMsg(g.outfitAttachNote, { name: currentCharacter.name })
                   : g.outfitDescribeNote}
               </span>
             )}
