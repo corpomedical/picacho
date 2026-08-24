@@ -2384,6 +2384,7 @@ function GenerateFormInner({
   // input and survive; anything tied to the OLD character (a photo picked
   // from its gallery, its advanced video frames) still has to go.
   function resetChat(options?: { keepComposerInput?: boolean }) {
+    setComposerFolded(false);
     setItems([]);
     setLivePrompt(null);
     setLiveAttachments([]);
@@ -2409,6 +2410,13 @@ function GenerateFormInner({
   // indirection so the listener binds once but always calls the latest
   // resetChat; ignored mid-request for the same reason the New chat button
   // is disabled then — clearing the live bubble would orphan the render.
+  // The focused flow (operator-approved from a mock, 2026-08-24): on
+  // Generate the composer folds to a slim pull-up bar and the selector
+  // header compresses to picked-option chips — the freed space goes to the
+  // render. stageExpanded folds the takes rail away for a full-stage view.
+  const [composerFolded, setComposerFolded] = useState(false);
+  const [stageExpanded, setStageExpanded] = useState(false);
+
   // "Generate anyway" on a rules-block failure: a one-shot flag consumed by
   // the next submit (adds skip_brand_rules=1 — the server logs the send as
   // rules-suspended), plus a ref to the composer form so the button can
@@ -3300,6 +3308,8 @@ function GenerateFormInner({
     setStopping(false);
     // Their own send always re-engages the follow, wherever they'd scrolled.
     stickToBottomRef.current = true;
+    // The focused flow: sending folds the composer down to its pull-up bar.
+    setComposerFolded(true);
     setLivePrompt(submittedPrompt);
     setLiveAttachments(submittedAttachments);
     setLiveContentType(effectiveContentType);
@@ -4028,6 +4038,36 @@ function GenerateFormInner({
   const currentDurationCredits = currentVideoModel
     ? creditsForDuration(currentVideoModel, videoDurationSeconds)
     : 1;
+  // The stage-expand toggle (Google-style tailless corner brackets,
+  // operator-specified): folds the takes rail away so the render gets the
+  // full width. Lives in the header's model row, and in the compressed
+  // chip strip while the composer is folded.
+  const stageExpandButton = (
+    <button
+      type="button"
+      onClick={() => setStageExpanded((v) => !v)}
+      aria-pressed={stageExpanded}
+      aria-label={stageExpanded ? g.collapseStage : g.expandStage}
+      title={stageExpanded ? g.collapseStage : g.expandStage}
+      className={cn(
+        "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[8px] transition-colors",
+        stageExpanded
+          ? "bg-atelier-ink text-atelier-paper"
+          : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+      )}
+    >
+      {stageExpanded ? (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-3.5 w-3.5">
+          <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-3.5 w-3.5">
+          <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+        </svg>
+      )}
+    </button>
+  );
+
   const videoModelPicker =
     contentType === "video" && videoModels.length > 1 ? (
       <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="relative min-w-0 flex-1">
@@ -4216,6 +4256,39 @@ function GenerateFormInner({
 
       {!isHero && (
       <>
+      {/* The focused flow's compressed header: while the composer is folded,
+          the pickers become read-only chips stating exactly what's running —
+          tap one and the full composer returns. The expand control (Google-
+          style tailless corners) folds the takes rail for a full-stage view. */}
+      {composerFolded ? (
+        <div className="flex items-center gap-2 border-b border-atelier-rule/70 px-4 py-2.5">
+          <button
+            type="button"
+            onClick={() => setComposerFolded(false)}
+            className="flex min-w-0 items-center gap-1.5 rounded-full bg-atelier-ink/[0.045] px-3 py-1.5 text-xs font-medium text-atelier-ink transition-colors hover:bg-atelier-ink/[0.07]"
+          >
+            <span className="truncate">
+              {characters.find((c) => c.id === characterId)?.name ??
+                (contentType === "video" ? g.video : g.image)}
+            </span>
+            <ChevronDownIcon className="h-3 w-3 rotate-180 text-atelier-muted" />
+          </button>
+          {contentType === "video" && currentVideoModel && (
+            <button
+              type="button"
+              onClick={() => setComposerFolded(false)}
+              className="flex min-w-0 items-center gap-1.5 rounded-full bg-atelier-ink/[0.045] px-3 py-1.5 text-xs text-atelier-ink transition-colors hover:bg-atelier-ink/[0.07]"
+            >
+              <span className="truncate">
+                {currentVideoModel.name} · {videoDurationSeconds}s
+                {videoAspectRatio ? ` · ${videoAspectRatio}` : ""}
+              </span>
+              <ChevronDownIcon className="h-3 w-3 rotate-180 text-atelier-muted" />
+            </button>
+          )}
+          <div className="ml-auto">{stageExpandButton}</div>
+        </div>
+      ) : (
       <div className="space-y-3 border-b border-atelier-rule p-5">
         {hasAnyMessages && (
           <div className="flex justify-end">
@@ -4272,9 +4345,11 @@ function GenerateFormInner({
           <div className="flex items-center gap-2">
             {videoModelPicker}
             {videoDurationPicker}
+            <div className="ml-auto">{stageExpandButton}</div>
           </div>
         )}
       </div>
+      )}
 
       <div className="min-h-[280px] space-y-7 p-6">
         {!hasAnyMessages ? (
@@ -4452,6 +4527,23 @@ function GenerateFormInner({
           <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />
         ) : null}
 
+      {/* The fold: while collapsed, the whole composer is a slim pull-up
+          bar — top edge visible, shadow above it, freed space to the
+          render. Tapping it (or a header chip) restores the composer. */}
+      {composerFolded ? (
+        <button
+          type="button"
+          onClick={() => setComposerFolded(false)}
+          className="relative z-10 flex w-full flex-col items-center gap-0.5 rounded-b-[26px] bg-atelier-surface/90 py-2 shadow-[0_-12px_28px_-16px_rgba(20,22,30,0.3)] backdrop-blur-xl"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-atelier-ink/70">
+            <path d="m6 14 6-6 6 6" />
+          </svg>
+          <span className="text-[9px] font-medium uppercase tracking-widest text-atelier-muted">
+            {g.pullUpToEdit}
+          </span>
+        </button>
+      ) : (
       <form
         ref={composerFormRef}
         onSubmit={handleSubmit}
@@ -5594,6 +5686,7 @@ function GenerateFormInner({
           />
         </div>
       </form>
+      )}
       </div>
     </div>
     {/* The Takes rail — this session's finished turns as a filmstrip, fed
@@ -5604,7 +5697,7 @@ function GenerateFormInner({
         being revealed in the thread (liveResult), not when it's archived —
         so the rail never says "Rendering…" next to an already-visible
         result. */}
-    {takesRailEnabled && (
+    {takesRailEnabled && !stageExpanded && (
       <TakesRail
         items={items}
         inFlightPrompt={
