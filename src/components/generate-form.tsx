@@ -2995,9 +2995,32 @@ function GenerateFormInner({
     }
   }, [tourActive, tourStepIndex, submitting, tourSteps]);
 
+  // Stick-to-bottom (operator, 2026-08-24: the pane jumped on Generate and
+  // then fought the reader): the chat follows new content ONLY while the
+  // person is already at the bottom. Scrolling up disengages the follow —
+  // they stay exactly where they scrolled; returning to (near) the bottom
+  // re-engages it. Sending always re-engages: it's their own message.
+  const stickToBottomRef = useRef(true);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [items.length, revealedCount, livePrompt, liveMultiAngle]);
+    const scroller = document.querySelector<HTMLElement>("[data-app-scroll]");
+    if (!scroller) return;
+    const onScroll = () => {
+      const gap = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
+      stickToBottomRef.current = gap < 90;
+    };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    return () => scroller.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!stickToBottomRef.current) return;
+    // Drive the app's one real scroller directly rather than
+    // scrollIntoView, which can also move ANCESTOR scrollables and is what
+    // made the pane lurch around the hero→docked layout switch.
+    const scroller = document.querySelector<HTMLElement>("[data-app-scroll]");
+    if (scroller) scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+    else bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [items.length, revealedCount, livePrompt, liveMultiAngle, liveResult, liveProgress]);
 
   // Auto-grow the prompt field with its content: two visible lines at rest,
   // up to six lines tall, internal scroll beyond (the 144px cap is exactly
@@ -3266,6 +3289,8 @@ function GenerateFormInner({
     setError("");
     setSubmitting(true);
     setStopping(false);
+    // Their own send always re-engages the follow, wherever they'd scrolled.
+    stickToBottomRef.current = true;
     setLivePrompt(submittedPrompt);
     setLiveAttachments(submittedAttachments);
     setLiveContentType(effectiveContentType);
