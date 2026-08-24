@@ -129,6 +129,25 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
   const blocked = rulesBlockOf(attempts);
   if (blocked) return blocked;
 
+  // Queued (async) renders log provider errors as a step detail with an
+  // EMPTY issues array — the old issues-only checks below never saw them,
+  // so the UI fell back to a generic line while the provider's own words
+  // sat unread in the log (2026-08-24, operator: "Just says couldn't
+  // validate"). Pull the human sentence out of the error payload.
+  const lastAttempt = attempts[attempts.length - 1];
+  if (lastAttempt && (lastAttempt.issues?.length ?? 0) === 0) {
+    const errStep = [...(lastAttempt.steps ?? [])]
+      .reverse()
+      .find((s) => typeof s.detail === "string" && /\berror \(\d{3}\)/.test(s.detail));
+    if (errStep) {
+      const m =
+        errStep.detail.match(/"msg"\s*:\s*"([^"]+)"/) ??
+        errStep.detail.match(/"message"\s*:\s*"([^"]+)"/);
+      if (m) return m[1].slice(0, 220);
+      return errStep.detail.slice(0, 220);
+    }
+  }
+
   const last = attempts[attempts.length - 1];
   if (!last) return null;
 
@@ -1834,6 +1853,12 @@ function GenerateFormInner({
     attempts: number;
     reason: string | null;
     finalPrompt: string;
+    // The full attempt log behind a failure (fetched from the saved row for
+    // queued renders, whose poll outcome is only a one-liner) — drives the
+    // evidence text and the Generate-anyway / Retry-on-2.0 offers on the
+    // LIVE surface, not just in the reloaded thread.
+    attemptsLog: AttemptLog[] | null;
+    prompt: string;
   } | null>(null);
   const [revealedCount, setRevealedCount] = useState(0);
   // What the queued render is currently doing ("Rendering your video",
@@ -3375,6 +3400,7 @@ function GenerateFormInner({
     let succeeded = result.succeeded;
     let resultUrl = result.resultUrl;
     let queuedFailure: string | null = null;
+    let failedAttemptsLog: AttemptLog[] | null = null;
 
     if (result.pending) {
       setLiveProgress(result.progress ?? null);
@@ -3400,6 +3426,18 @@ function GenerateFormInner({
       } else if (outcome.state === "failed") {
         succeeded = false;
         queuedFailure = outcome.error;
+        // The poll outcome is a one-liner; the saved row carries the full
+        // attempt log — the provider's own words, and the evidence that
+        // gates the Generate-anyway / Retry-on-2.0 offers. Display-only
+        // enrichment: a fetch failure here must never change the outcome.
+        try {
+          const saved = await getGenerationThread(result.id);
+          if (saved && saved.kind === "single" && Array.isArray(saved.attempts)) {
+            failedAttemptsLog = saved.attempts;
+          }
+        } catch {
+          // keep the one-liner
+        }
       } else if (outcome.state === "cancelled") {
         // The server saw the stop request and cancelled the job on fal.ai.
         // Fall through to the shared stop handling immediately below.
@@ -3437,16 +3475,21 @@ function GenerateFormInner({
     // queuedFailure carries the real reason a queued render failed (fal.ai's
     // own error), which summarizeFailure can't know about — the attempt log
     // was written before the job was even submitted.
+    const bestAttempts = failedAttemptsLog ?? result.attempts;
     const failureReason = succeeded
       ? null
-      : (queuedFailure ?? summarizeFailure(result.attempts, g));
+      : ((failedAttemptsLog ? summarizeFailure(failedAttemptsLog, g) : null) ??
+        queuedFailure ??
+        summarizeFailure(result.attempts, g));
     setLiveResult({
       id: result.id,
       succeeded,
       resultUrl,
-      attempts: result.attempts.length,
+      attempts: bestAttempts.length,
       reason: failureReason,
       finalPrompt: result.finalPrompt,
+      attemptsLog: succeeded ? null : bestAttempts,
+      prompt: submittedPrompt,
     });
 
     if (shouldSpeak) {
@@ -4297,12 +4340,32 @@ function GenerateFormInner({
                             <ResultActions generationId={liveResult.id} copyText={liveResult.finalPrompt || livePrompt || ""} promotable={liveContentType === "image"} />
                           </>
                         ) : (
-                          <div className="mt-3 flex items-center gap-2">
-                            <Badge tone="danger">{g.couldntValidate}</Badge>
-                            <p className="text-xs text-atelier-muted">
-                              {liveResult.reason ??
-                                (liveResult.attempts === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: liveResult.attempts }))}
-                            </p>
+                          <div className="mt-3 space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Badge tone="danger">{g.couldntValidate}</Badge>
+                              <p className="text-xs text-atelier-muted">
+                                {liveResult.reason ??
+                                  (liveResult.attempts === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: liveResult.attempts }))}
+                              </p>
+                            </div>
+                            {liveResult.attemptsLog && liveResult.prompt && rulesBlockOf(liveResult.attemptsLog) && (
+                              <button
+                                type="button"
+                                onClick={() => generateAnyway(liveResult.prompt)}
+                                className="rounded-full border border-atelier-rule px-3 py-1.5 text-xs font-medium text-atelier-ink transition-colors hover:border-atelier-muted hover:bg-atelier-ink/5"
+                              >
+                                {g.generateAnyway}
+                              </button>
+                            )}
+                            {liveResult.attemptsLog && liveResult.prompt && seedanceLikenessBlockOf(liveResult.attemptsLog) && (
+                              <button
+                                type="button"
+                                onClick={() => retryOnSeedance2(liveResult.prompt)}
+                                className="rounded-full bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
+                              >
+                                {g.retryOnSeedance2}
+                              </button>
+                            )}
                           </div>
                         )}
                       </>
