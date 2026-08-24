@@ -819,9 +819,11 @@ export function AppSidebar({
                         )}
                       />
                       <span className="min-w-0 flex-1 truncate">{job.prompt_input}</span>
+                      {/* Same hover-capability fix as the character trash
+                          below — invisible controls don't exist on phones. */}
                       <DeleteGenerationButton
                         id={job.id}
-                        className="h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                        className="h-5 w-5 flex-shrink-0 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100"
                       />
                     </Link>
                   </li>
@@ -883,7 +885,11 @@ export function AppSidebar({
                       <DeleteCharacterButton
                         id={c.id}
                         name={c.name}
-                        className="h-5 w-5 flex-shrink-0 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                        // Visible by default; hover-revealed ONLY where hover
+                        // exists (2026-08-24, bmazloum: on a phone there is no
+                        // hover, so an opacity-0 control simply doesn't exist —
+                        // he couldn't delete anything).
+                        className="h-5 w-5 flex-shrink-0 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus:opacity-100"
                       />
                     </Link>
                   </li>

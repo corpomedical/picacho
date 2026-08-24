@@ -357,7 +357,7 @@ export function CharacterForm({
               <button
                 type="button"
                 onClick={() => setKeptImages(keptImages.filter((i) => i.path !== img.path))}
-                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border border-atelier-rule bg-atelier-surface/95 text-xs text-atelier-ink [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               >
                 ✕
               </button>
@@ -384,7 +384,7 @@ export function CharacterForm({
                   URL.revokeObjectURL(f.preview);
                   setNewFiles(newFiles.filter((_, i) => i !== idx));
                 }}
-                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border border-atelier-rule bg-atelier-surface/95 text-xs text-atelier-ink [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               >
                 ✕
               </button>
@@ -504,7 +504,7 @@ export function CharacterForm({
               <button
                 type="button"
                 onClick={() => setKeptOutfit(keptOutfit.filter((i) => i.path !== img.path))}
-                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border border-atelier-rule bg-atelier-surface/95 text-xs text-atelier-ink [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               >
                 ✕
               </button>
@@ -528,7 +528,7 @@ export function CharacterForm({
                   URL.revokeObjectURL(f.preview);
                   setNewOutfitFiles(newOutfitFiles.filter((_, i) => i !== idx));
                 }}
-                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
+                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full border border-atelier-rule bg-atelier-surface/95 text-xs text-atelier-ink [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               >
                 ✕
               </button>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
+import { DeleteCharacterButton } from "@/components/delete-character-button";
 
 export default async function CharacterListPage() {
   const { t } = await getServerMessages();
@@ -86,7 +87,7 @@ export default async function CharacterListPage() {
                   />
                 )}
               </div>
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-atelier-ink">{profile.name}</p>
                 <p className="truncate text-xs text-atelier-muted">
                   {profile.voice_tone_tags?.length
@@ -99,6 +100,17 @@ export default async function CharacterListPage() {
                     : c.noProject}
                 </p>
               </div>
+              {/* Deletion used to live only behind the sidebar rail's
+                  hover-revealed trash and the edit page's bottom link —
+                  invisible or buried on a phone (2026-08-24, bmazloum:
+                  "can't delete characters"). The list page is where people
+                  look for it, so it lives here too. Confirm-guarded, and the
+                  button stops the card's own navigation. */}
+              <DeleteCharacterButton
+                id={profile.id}
+                name={profile.name}
+                className="h-9 w-9 flex-shrink-0"
+              />
             </Link>
           ))}
         </div>
