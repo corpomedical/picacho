@@ -618,6 +618,7 @@ const pt = {
     dailyFreeNotice: "Usa a geração grátis de hoje",
     imageFirstHint: "Começando em Imagem — o jeito mais rápido de ver seu personagem. Mude para Vídeo quando quiser.",
     pickCharacterHint: "Escolha seu personagem para fixar o rosto dele — ou envie sem personagem para um resultado genérico.",
+    retryOnSeedance2: "Tentar no Seedance 2.0 — ele aceita pessoas fotorrealistas",
     generateAnyway: "Gerar mesmo assim — ignorar minhas regras desta vez",
     seedance25Warn: "O Seedance 2.5 recusa pessoas fotorrealistas — se {name} for fotorrealista, este render vai falhar e ainda usar créditos. Personagens fotorrealistas pertencem ao Seedance 2.0.",
     seedance25Switch: "Mudar para Seedance 2.0",

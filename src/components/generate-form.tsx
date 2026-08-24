@@ -108,6 +108,21 @@ function rulesBlockOf(attempts: AttemptLog[]): string | null {
   return step ? step.detail : null;
 }
 
+// True when the failure was Seedance 2.5's likeness fence rejecting a
+// photoreal reference — the one failure with a known-good detour (the same
+// request on Seedance 2.0, which accepts photoreal people; verified live
+// 2026-08-21). Gates the one-tap retry button.
+function seedanceLikenessBlockOf(attempts: AttemptLog[]): boolean {
+  const last = attempts[attempts.length - 1];
+  if (!last) return false;
+  return (last.steps ?? []).some(
+    (s) =>
+      typeof s.detail === "string" &&
+      s.detail.includes("Seedance 2.5") &&
+      /likeness|content_policy/i.test(s.detail),
+  );
+}
+
 function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): string | null {
   // The user's own rules blocking is its own story — the rule, the words
   // that triggered it, and the suggested rewording, verbatim from the log.
@@ -1294,12 +1309,16 @@ function SingleTurnBubble({
   turn,
   domId,
   onGenerateAnyway,
+  onRetrySeedance2,
 }: {
   turn: ChatTurn;
   domId?: string;
   // Offered only on rules-block failures: resubmits this turn's prompt with
   // the caller's own brand prohibitions suspended for that one send.
   onGenerateAnyway?: (turnPrompt: string) => void;
+  // Offered only on Seedance 2.5 likeness rejections: same prompt, same
+  // reference, on the model that accepts photoreal people.
+  onRetrySeedance2?: (turnPrompt: string) => void;
 }) {
   const { t } = useLocale();
   const g = t.generate;
@@ -1339,6 +1358,15 @@ function SingleTurnBubble({
                   className="rounded-full border border-atelier-rule px-3 py-1.5 text-xs font-medium text-atelier-ink transition-colors hover:border-atelier-muted hover:bg-atelier-ink/5"
                 >
                   {g.generateAnyway}
+                </button>
+              )}
+              {onRetrySeedance2 && turn.prompt && seedanceLikenessBlockOf(turn.attempts) && (
+                <button
+                  type="button"
+                  onClick={() => onRetrySeedance2(turn.prompt)}
+                  className="rounded-full bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
+                >
+                  {g.retryOnSeedance2}
                 </button>
               )}
             </div>
@@ -3696,6 +3724,18 @@ function GenerateFormInner({
     setTimeout(() => composerFormRef.current?.requestSubmit(), 40);
   }
 
+  // The likeness-fence detour: same prompt, same reference, on Seedance 2.0
+  // (which accepts photoreal people, at a cheaper rate). The rejected
+  // attempt already auto-refunded, so this is a clean fresh charge. The
+  // existing model-change effect re-clamps the duration to 2.0's ceiling
+  // before the deferred submit fires.
+  function retryOnSeedance2(turnPrompt: string) {
+    if (submitting) return;
+    setVideoModelId("seedance-2");
+    setPrompt(turnPrompt);
+    setTimeout(() => composerFormRef.current?.requestSubmit(), 80);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
@@ -4182,7 +4222,7 @@ function GenerateFormInner({
           <>
             {items.map((item) =>
               item.kind === "single" ? (
-                <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} onGenerateAnyway={generateAnyway} />
+                <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} onGenerateAnyway={generateAnyway} onRetrySeedance2={retryOnSeedance2} />
               ) : (
                 <MultiAngleTurnBubble key={item.groupId} item={item} domId={`take-${item.groupId}`} />
               ),
