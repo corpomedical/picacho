@@ -302,6 +302,20 @@ const REFUNDS: Record<FailureFault, boolean> = {
 // (kill switch off, row missing, or the daily cap reached) — callers that
 // report billing to a customer rely on this to avoid claiming "not charged"
 // when the credit was in fact kept.
+// True when the final attempt died on a provider 4xx — the provider REFUSED
+// the request (content policy, input validation, rate limit) rather than
+// failing partway through work it may bill for. The distinction is what
+// makes force-refunding safe: a refusal costs nothing; a mid-render death
+// might not. Matched against the exact step-detail format the providers
+// log ("fal.ai (Model) error (422): …").
+export function isProviderRejection(attempts: AttemptLog[]): boolean {
+  const last = attempts[attempts.length - 1];
+  if (!last) return false;
+  return (last.steps ?? []).some(
+    (s) => typeof s.detail === "string" && /\berror \(4\d\d\)/.test(s.detail),
+  );
+}
+
 export async function refundGenerationCosts(
   generationId: string,
   opts?: {
@@ -652,7 +666,17 @@ async function finish(
   // actually given back, and the notification below must not claim otherwise.
   let refunded = false;
   if (outcome.status === "failed" && outcome.fault && REFUNDS[outcome.fault]) {
-    refunded = await refundGenerationCosts(generationId);
+    // Provider REJECTIONS (4xx — the request was refused before anything
+    // generated: policy fences, input validation, rate limits) provably
+    // incurred zero provider cost, so they refund PAST the automatic_refunds
+    // switch, same as a brand-rules block. Only failures that may have
+    // actually consumed provider work stay behind the flag. (2026-08-24,
+    // operator: "if the user overrides the rulebook and the generation
+    // fails, the user is deducted tokens" — for rejection-class failures,
+    // no longer.)
+    refunded = await refundGenerationCosts(generationId, {
+      force: isProviderRejection(outcome.attempts),
+    });
   }
 
   // Auto-file provider/our-fault failures into the admin Reports queue with

@@ -17,6 +17,7 @@ import {
   advanceGeneration,
   reapStaleJobs,
   refundGenerationCosts,
+  isProviderRejection,
   type AdvanceResult,
 } from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
@@ -1281,12 +1282,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (!succeeded) {
     // The pipeline couldn't produce a passing result after its retries —
     // exactly the case the published promise covers. Give everything back.
-    // A block by the user's OWN rules is force-refunded past the
-    // automatic_refunds switch: it happens before any provider call, so it
-    // provably cost nothing — and the published listing promises "nothing
-    // is charged when a rule blocks" unconditionally (2026-08-24, after a
-    // live rules-block kept its 6-credit charge).
-    await refundGenerationCosts(placeholder.id, { force: Boolean(rulesBlock?.length) });
+    // Two failure classes are force-refunded past the automatic_refunds
+    // switch, both provably zero-provider-cost: a block by the user's OWN
+    // rules (happens before any provider call — and the published listing
+    // promises "nothing is charged when a rule blocks" unconditionally),
+    // and a provider REJECTION (4xx: the request was refused before
+    // anything generated — policy fences, input validation). Everything
+    // that may have consumed real provider work stays behind the flag.
+    await refundGenerationCosts(placeholder.id, {
+      force: Boolean(rulesBlock?.length) || isProviderRejection(attempts),
+    });
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }
 
