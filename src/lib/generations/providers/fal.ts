@@ -32,6 +32,17 @@ export type VideoGenerationOptions = {
   // ByteDance's cheaper with-video rate while we charge standard weights,
   // so continuation improves margin rather than costing it.
   continueFromVideoUrl?: string | null;
+  // Outfit-on-the-character (2026-08-24): a signed URL of the character's
+  // saved outfit photo — a clothing shot with NO person in it. Seedance-only:
+  // its reference-to-video takes several cited images, so the outfit rides as
+  // an extra @ImageN after the identity references. Every other endpoint here
+  // takes person references only (Kling's elements, image-to-video's start
+  // frame) — a clothing photo in those slots would BE the identity, the exact
+  // failure this feature exists to prevent — so the builders below simply
+  // ignore this field; those models get the outfit through the drafted
+  // prompt's description instead (see outfit_reference_description in
+  // pipeline.ts).
+  outfitImageUrl?: string | null;
   // Storyboard (Kling O3 Pro only): 2-6 shots for the endpoint's
   // multi_prompt, each with its own prompt and 1-15s duration — one
   // coherent multi-shot video out. Mutually exclusive with `prompt` on
@@ -304,13 +315,22 @@ async function buildVideoRequest(
     // 2026-08-21 (2.0).
     const references = anchorImages.length > 0 ? anchorImages : [];
     const continuation = options.continueFromVideoUrl ?? null;
+    // The outfit photo needs an identity reference beside it — alone it would
+    // be the only @Image and the model would treat the clothing as the
+    // subject — and the combined list has to stay inside the same 4-image
+    // budget anchorImages is sliced to. actions.ts already enforces both;
+    // the guard here is the provider-level backstop.
+    const outfit =
+      references.length > 0 && references.length < 4 ? (options.outfitImageUrl ?? null) : null;
     endpoint =
       modelId === "seedance"
         ? "bytedance/seedance-2.5/reference-to-video"
         : "bytedance/seedance-2.0/reference-to-video";
     // Citations have to appear in the PROMPT for the model to bind to them —
     // passing image_urls/video_urls alone does nothing. Continuation cites
-    // the prior clip as @Video1 alongside the identity's @Image1.
+    // the prior clip as @Video1 alongside the identity's @Image1; the outfit
+    // photo, when present, is appended after the identity references and
+    // cited by its own index.
     const citationLines = [
       continuation
         ? "The video continues directly from the final moment of @Video1 — same setting, same light, no cut back."
@@ -318,10 +338,13 @@ async function buildVideoRequest(
       references.length
         ? "The person in this video is @Image1 — match their face, hair, and features exactly, but do not copy the pose or framing of that photo."
         : null,
+      outfit
+        ? `@Image${references.length + 1} shows only an outfit laid out, never a person — the person wears exactly that outfit: reproduce its design, colours, logos, and stitching.`
+        : null,
     ].filter(Boolean);
     body = {
       prompt: citationLines.length ? `${prompt}\n\n${citationLines.join(" ")}` : prompt,
-      ...(references.length ? { image_urls: references } : {}),
+      ...(references.length ? { image_urls: [...references, ...(outfit ? [outfit] : [])] } : {}),
       ...(continuation ? { video_urls: [continuation] } : {}),
       // 480p is deliberately not offered — see video-models.ts.
       resolution: "720p",

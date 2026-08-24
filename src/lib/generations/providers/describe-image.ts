@@ -46,6 +46,67 @@ const MODE_RULES: Record<DescribeMode, string> = {
     "are, even if they look familiar; describe only what is visible.",
 };
 
+// Outfit-on-the-character (2026-08-24): turn a clothing photo — typically a
+// product shot or flat-lay with no person in it — into a precise garment spec.
+// Written ONCE when the character is saved and stored on the row
+// (character_profiles.outfit_description), then injected into prompt drafting
+// for models whose endpoints can't take a clothing reference photo (the Kling
+// family — their inputs are person references only). Same provider, same
+// URL-in contract, same null-on-any-failure behavior as the prompt describer
+// above: a vision hiccup degrades to "no description", never a failed save.
+export async function describeOutfitImage(imageUrl: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const res = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "This is a photo of clothing (often a product shot or flat-lay). Write a precise " +
+                    "spec of the outfit in 1 to 3 sentences of plain prose — no preamble, no markdown, " +
+                    "no bullet points. Cover: each garment's type and cut, exact colours, any visible " +
+                    "logos or printed text (transcribe wordmarks exactly as written), stitching and trim " +
+                    "details, fabric finish, and fit. Describe only the clothing — ignore any person, " +
+                    "background, or props, and never invent a brand or detail you cannot actually see.",
+                },
+                { type: "image_url", image_url: { url: imageUrl } },
+              ],
+            },
+          ],
+          max_completion_tokens: 2000,
+        }),
+      },
+      30_000,
+    );
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== "string") return null;
+    const cleaned = text.trim().replace(/^["']|["']$/g, "");
+    // Generous but bounded — this lands verbatim inside prompt drafting, where
+    // rule lines are capped at 1000 chars (see sanitizeRuleText in pipeline.ts).
+    return cleaned.length > 0 ? cleaned.slice(0, 600) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function describeImageAsPrompt(
   imageUrl: string,
   mode: DescribeMode,

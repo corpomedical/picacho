@@ -1225,6 +1225,9 @@ type CharacterOption = {
   name: string;
   referencePhotos: { path: string; url: string }[];
   voiceId: string | null;
+  // Saved outfit photos exist — shows the composer's Outfit chip. Optional so
+  // call sites that build this shape by hand (tests, older pages) stay valid.
+  hasOutfit?: boolean;
 };
 
 export type VideoModelOption = {
@@ -1980,6 +1983,15 @@ function GenerateFormInner({
       setStoryboardMode(false);
     }
   }, [storyboardMode, contentType, videoModelId]);
+
+  // Outfit chip (2026-08-24): on by default whenever the selected character
+  // has saved outfit photos; tapping it off is a one-generation choice that
+  // resets when the character changes. The server treats an absent field as
+  // on too, so older cached composers behave the same.
+  const [useOutfit, setUseOutfit] = useState(true);
+  useEffect(() => {
+    setUseOutfit(true);
+  }, [characterId]);
 
   const continueModelAppliedRef = useRef(false);
   useEffect(() => {
@@ -3331,6 +3343,7 @@ function GenerateFormInner({
     if (continueFromId && contentType === "video") {
       formData.set("continue_from_generation_id", continueFromId);
     }
+    formData.set("use_outfit", useOutfit ? "1" : "0");
     if (storyboardActive) {
       formData.set(
         "storyboard_shots",
@@ -4640,6 +4653,41 @@ function GenerateFormInner({
             </div>
           );
         })()}
+        {/* Outfit chip (2026-08-24, operator-approved mock): appears only when
+            the selected character has saved outfit photos. On by default —
+            tap toggles it off for one-off scenes. The caption is honest per
+            model: Seedance and image generations get the actual photo as a
+            cited reference; the Kling family's endpoints only take person
+            references, so there the stored description rides the prompt. */}
+        {currentCharacter?.hasOutfit && companionCharacterIds.length === 0 && !storyboardActive && (
+          <div className="mb-2.5 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setUseOutfit((v) => !v)}
+              aria-pressed={useOutfit}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
+                useOutfit
+                  ? "bg-atelier-accent/10 text-atelier-accent"
+                  : "bg-transparent text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]",
+              )}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0">
+                <path d="M20.4 6 16 4l-4 2.5L8 4 3.6 6l1.9 4.6 2-.7V20h9v-10l2 .6z" />
+              </svg>
+              {g.outfitChip}
+            </button>
+            {useOutfit && (
+              <span className="min-w-0 text-[11px] leading-snug text-atelier-muted">
+                {contentType === "image" ||
+                (videoAdvancedMode === "none" &&
+                  (videoModelId === "seedance" || videoModelId === "seedance-2"))
+                  ? g.outfitAttachNote
+                  : g.outfitDescribeNote}
+              </span>
+            )}
+          </div>
+        )}
         <div data-tour-id="tour-prompt" className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
           {pendingMultiAngle ? (
             <div className="space-y-3 p-4">

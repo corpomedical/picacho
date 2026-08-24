@@ -64,6 +64,15 @@ export async function generateImage(
   onFallback?: (note: string, finalModelName?: string) => void,
   // Shared across every attempt of one generation — see ProviderBudget.
   budget?: ProviderBudget,
+  // Outfit-on-the-character (2026-08-24): a clothing photo sent ALONGSIDE the
+  // single identity photo on the GPT image-edit path only. Deliberately its
+  // own argument rather than merged into referenceImageUrl: the array form
+  // means multi-character (one photo per person, blocks the Flux fallback),
+  // and the Flux paths are single-source image-to-image where a clothing
+  // photo would become the base image — the exact identity-destroying
+  // mistake this feature exists to prevent. Flux calls get the identity
+  // photo alone; the prompt's outfit description carries the garment there.
+  outfitImageUrl?: string | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -89,9 +98,16 @@ export async function generateImage(
     return persistRemoteImage(await generateImageWithFlux(prompt, referenceImageUrl));
   }
 
+  // Only the ordinary single-identity case can take the extra outfit image —
+  // callers already only set outfitImageUrl then, this is the local guard.
+  const openAiRefs =
+    outfitImageUrl && typeof referenceImageUrl === "string" && referenceImageUrl
+      ? [referenceImageUrl, outfitImageUrl]
+      : referenceImageUrl;
+
   try {
     chargeBudget(budget);
-    const base64 = await generateImageWithOpenAI(prompt, referenceImageUrl);
+    const base64 = await generateImageWithOpenAI(prompt, openAiRefs);
     return persistBase64(base64);
   } catch (err) {
     // OpenAI's safety classifier is aggressive about photorealistic people —
@@ -116,7 +132,7 @@ export async function generateImage(
       try {
         softenedPrompt = await softenPromptForSafety(prompt);
         chargeBudget(budget);
-        const base64 = await generateImageWithOpenAI(softenedPrompt, referenceImageUrl);
+        const base64 = await generateImageWithOpenAI(softenedPrompt, openAiRefs);
         onFallback?.(
           "OpenAI's safety filter rejected the wording — automatically softened it and retried on GPT Image 2, keeping the identity anchor.",
         );

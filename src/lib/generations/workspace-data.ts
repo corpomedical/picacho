@@ -16,6 +16,9 @@ export type CharacterOption = {
   name: string;
   referencePhotos: { path: string; url: string }[];
   voiceId: string | null;
+  // Whether saved outfit photos exist — drives the composer's Outfit chip.
+  // The photos themselves are resolved server-side at generation time.
+  hasOutfit: boolean;
 };
 
 export type VideoModelOption = {
@@ -68,7 +71,7 @@ export async function getGenerateWorkspaceData(
   // /app/character list bug).
   const { data: characters } = await supabase
     .from("character_profiles")
-    .select("id, name, reference_image_urls, voice_id")
+    .select("id, name, reference_image_urls, outfit_image_urls, voice_id")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -91,6 +94,7 @@ export async function getGenerateWorkspaceData(
       url: thumbUrl(mediaUrl("character-references", path), 320) ?? "",
     })),
     voiceId: (c.voice_id as string | null) ?? null,
+    hasOutfit: (((c.outfit_image_urls as string[] | null) ?? []).length > 0),
   }));
 
   const { data: videoModelSetting } = await supabase

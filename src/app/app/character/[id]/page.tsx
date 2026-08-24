@@ -35,15 +35,16 @@ export default async function EditCharacterPage({
   // would be the last thing you saw. Send people back to the list instead.
   if (!profile) redirect("/app/character");
 
+  const toTile = (path: string) => ({
+    path,
+    url: mediaUrl("character-references", path),
+    // Grid tiles only — the lightbox and everything the pipeline touches
+    // keep using `url` above.
+    thumbUrl: thumbUrl(mediaUrl("character-references", path), 320) ?? undefined,
+  });
   const [existingImages, { data: projects }, { data: voices }] = await Promise.all([
     // Stable capability URLs — cacheable, no per-photo storage round trip.
-    (profile.reference_image_urls ?? []).map((path: string) => ({
-      path,
-      url: mediaUrl("character-references", path),
-      // Grid tiles only — the lightbox and everything the pipeline touches
-      // keep using `url` above.
-      thumbUrl: thumbUrl(mediaUrl("character-references", path), 320) ?? undefined,
-    })),
+    (profile.reference_image_urls ?? []).map(toTile),
     supabase
       .from("projects")
       .select("id, name")
@@ -61,6 +62,7 @@ export default async function EditCharacterPage({
         userId={userData.user.id}
         initial={profile}
         existingImages={existingImages}
+        existingOutfitImages={(profile.outfit_image_urls ?? []).map(toTile)}
         errorMessage={error}
         projects={projects ?? []}
         voices={voices ?? []}

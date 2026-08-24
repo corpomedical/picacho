@@ -5,6 +5,7 @@ import { mediaUrl } from "@/lib/media/url";
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
+import { describeOutfitImage } from "@/lib/generations/providers/describe-image";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 import { getImageModel } from "@/lib/generations/providers/image-models";
@@ -32,6 +33,7 @@ const MAX_TAG_LENGTH = 60;
 const MAX_TRAIT_LENGTH = 500;
 const MAX_MOTION_STYLE_LENGTH = 500;
 const MAX_REFERENCE_IMAGES = 20;
+const MAX_OUTFIT_IMAGES = 2;
 
 // Client-supplied JSON fields (tags, image path lists) used to go straight
 // through JSON.parse — malformed input threw and surfaced as a 500 instead of
@@ -80,6 +82,13 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     return { error: "Couldn't read the reference photo list — refresh and try again." };
   }
   const referenceImagePaths = rawReferencePaths.filter((p) => p.startsWith(`${uid}/`));
+  // Outfit photos (2026-08-24): clothing shots, kept apart from the identity
+  // references above — same bucket, same own-folder ownership rule.
+  const rawOutfitPaths = parseStringArray(formData.get("outfit_image_paths"));
+  if (rawOutfitPaths === null) {
+    return { error: "Couldn't read the outfit photo list — refresh and try again." };
+  }
+  const outfitImagePaths = rawOutfitPaths.filter((p) => p.startsWith(`${uid}/`));
 
   const traits = {
     hair: (formData.get("trait_hair") as string)?.trim() || "",
@@ -110,6 +119,9 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   if (referenceImagePaths.length > MAX_REFERENCE_IMAGES) {
     return { error: `A character can have up to ${MAX_REFERENCE_IMAGES} reference photos.` };
   }
+  if (outfitImagePaths.length > MAX_OUTFIT_IMAGES) {
+    return { error: `A character can have up to ${MAX_OUTFIT_IMAGES} outfit photos.` };
+  }
 
   // project_id / voice_id arrive from the client and are written straight into
   // the row. The FK constraint doesn't enforce ownership and character_profiles
@@ -135,10 +147,44 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     if (!voice) return { error: "Couldn't find that voice." };
   }
 
+  // The outfit description is written ONCE, here at save time, and reused by
+  // every generation after — models whose endpoints can't take a clothing
+  // photo (the Kling family) get this text injected into drafting instead.
+  // Re-described only when the photo set actually changed; a vision failure
+  // stores null and the save still succeeds (Seedance/images still get the
+  // photo itself, and the Kling path just goes without).
+  let outfitDescription: string | null = null;
+  if (outfitImagePaths.length > 0) {
+    const { data: existingRow } = id
+      ? await supabase
+          .from("character_profiles")
+          .select("outfit_image_urls, outfit_description")
+          .eq("id", id)
+          .eq("user_id", uid)
+          .maybeSingle()
+      : { data: null };
+    const previousPaths = (existingRow?.outfit_image_urls as string[] | null) ?? [];
+    const unchanged =
+      previousPaths.length === outfitImagePaths.length &&
+      previousPaths.every((p, i) => p === outfitImagePaths[i]);
+    if (unchanged && existingRow?.outfit_description) {
+      outfitDescription = existingRow.outfit_description as string;
+    } else {
+      const { data: signed } = await supabase.storage
+        .from("character-references")
+        .createSignedUrl(outfitImagePaths[0], 60 * 10);
+      if (signed?.signedUrl) {
+        outfitDescription = await describeOutfitImage(signed.signedUrl);
+      }
+    }
+  }
+
   const row = {
     user_id: data.user.id,
     name,
     reference_image_urls: referenceImagePaths,
+    outfit_image_urls: outfitImagePaths,
+    outfit_description: outfitDescription,
     traits,
     motion_style: motionStyle,
     voice_tone_tags: tags,
@@ -443,7 +489,7 @@ export async function removeCharacterProfile(formData: FormData): Promise<{ erro
 
   const { data: existing } = await supabase
     .from("character_profiles")
-    .select("reference_image_urls")
+    .select("reference_image_urls, outfit_image_urls")
     .eq("id", id)
     .eq("user_id", data.user.id)
     .single();
@@ -459,7 +505,10 @@ export async function removeCharacterProfile(formData: FormData): Promise<{ erro
     return { error: "Couldn't delete this character — try again." };
   }
 
-  const paths = (existing?.reference_image_urls as string[] | null) ?? [];
+  const paths = [
+    ...(((existing?.reference_image_urls as string[] | null) ?? [])),
+    ...(((existing?.outfit_image_urls as string[] | null) ?? [])),
+  ];
   if (paths.length > 0) {
     await supabase.storage.from("character-references").remove(paths);
   }
@@ -482,7 +531,7 @@ export async function deleteCharacterProfile(formData: FormData) {
   // forever) with no way to find them later.
   const { data: existing } = await supabase
     .from("character_profiles")
-    .select("reference_image_urls")
+    .select("reference_image_urls, outfit_image_urls")
     .eq("id", id)
     .eq("user_id", data.user.id)
     .single();
@@ -497,7 +546,10 @@ export async function deleteCharacterProfile(formData: FormData) {
     redirect(`/app/character?error=${encodeURIComponent("Couldn't delete this character — try again.")}`);
   }
 
-  const paths = (existing?.reference_image_urls as string[] | null) ?? [];
+  const paths = [
+    ...(((existing?.reference_image_urls as string[] | null) ?? [])),
+    ...(((existing?.outfit_image_urls as string[] | null) ?? [])),
+  ];
   if (paths.length > 0) {
     await supabase.storage.from("character-references").remove(paths);
   }

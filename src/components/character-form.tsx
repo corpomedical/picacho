@@ -51,13 +51,15 @@ export function CharacterForm({
   userId,
   initial,
   existingImages = [],
+  existingOutfitImages = [],
   errorMessage,
   projects = [],
   voices = [],
 }: {
   userId: string;
-  initial?: Initial & { voice_id?: string | null };
+  initial?: Initial & { voice_id?: string | null; outfit_description?: string | null };
   existingImages?: ExistingImage[];
+  existingOutfitImages?: ExistingImage[];
   errorMessage?: string;
   projects?: ProjectOption[];
   voices?: VoiceOption[];
@@ -79,6 +81,10 @@ export function CharacterForm({
 
   const [keptImages, setKeptImages] = useState<ExistingImage[]>(existingImages);
   const [newFiles, setNewFiles] = useState<{ file: File; preview: string }[]>([]);
+  // Outfit photos (2026-08-24) — clothing shots, kept apart from the identity
+  // references above. Same bucket, own field, capped at 2.
+  const [keptOutfit, setKeptOutfit] = useState<ExistingImage[]>(existingOutfitImages);
+  const [newOutfitFiles, setNewOutfitFiles] = useState<{ file: File; preview: string }[]>([]);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
 
   // Every preview above is a URL.createObjectURL — each one pins its File's
@@ -90,8 +96,11 @@ export function CharacterForm({
   // cleanup closure can't see current state directly.
   const previewUrlsRef = useRef<string[]>([]);
   useEffect(() => {
-    previewUrlsRef.current = newFiles.map((f) => f.preview);
-  }, [newFiles]);
+    previewUrlsRef.current = [
+      ...newFiles.map((f) => f.preview),
+      ...newOutfitFiles.map((f) => f.preview),
+    ];
+  }, [newFiles, newOutfitFiles]);
   useEffect(() => {
     return () => {
       previewUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
@@ -101,6 +110,7 @@ export function CharacterForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(errorMessage ?? "");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const outfitFileInputRef = useRef<HTMLInputElement>(null);
 
   const [genPrompt, setGenPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -180,6 +190,17 @@ export function CharacterForm({
     ]);
   }
 
+  const totalOutfitImages = keptOutfit.length + newOutfitFiles.length;
+  function onOutfitFilesSelected(files: FileList | null) {
+    if (!files) return;
+    const remainingSlots = 2 - totalOutfitImages;
+    const picked = Array.from(files).slice(0, Math.max(remainingSlots, 0));
+    setNewOutfitFiles([
+      ...newOutfitFiles,
+      ...picked.map((file) => ({ file, preview: URL.createObjectURL(file) })),
+    ]);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
@@ -203,6 +224,19 @@ export function CharacterForm({
         uploadedPaths.push(path);
       }
 
+      // Outfit photos share the bucket; the "outfit-" name prefix is purely
+      // for humans reading the storage browser — the row's outfit_image_urls
+      // column is what actually separates them from identity references.
+      const uploadedOutfitPaths: string[] = [];
+      for (const { file } of newOutfitFiles) {
+        const path = `${userId}/outfit-${crypto.randomUUID()}-${file.name}`;
+        const { error: uploadError } = await supabase.storage
+          .from("character-references")
+          .upload(path, file);
+        if (uploadError) throw uploadError;
+        uploadedOutfitPaths.push(path);
+      }
+
       const formData = new FormData();
       if (initial?.id) formData.set("id", initial.id);
       formData.set("name", name);
@@ -217,6 +251,10 @@ export function CharacterForm({
       formData.set(
         "reference_image_paths",
         JSON.stringify([...keptImages.map((i) => i.path), ...uploadedPaths]),
+      );
+      formData.set(
+        "outfit_image_paths",
+        JSON.stringify([...keptOutfit.map((i) => i.path), ...uploadedOutfitPaths]),
       );
 
       const result = await saveCharacterProfile(formData);
@@ -435,6 +473,97 @@ export function CharacterForm({
             )}
           {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{genError}</p>}
         </div>
+      </section>
+
+      {/* Outfit photos (2026-08-24, from the bmazloum support case): clothing
+          shots finally get their own home, so product photos never end up in
+          the identity slots above — where a second person's photo (or a
+          flat-lay with no person at all) destroys character consistency. */}
+      <section className={SHEET}>
+        <h2 className={SHEET_TITLE}>{c.outfitSection}</h2>
+        <p className="mt-1 text-sm text-atelier-muted">{c.outfitSubtitle}</p>
+
+        <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
+          {keptOutfit.map((img) => (
+            <div key={img.path} className="group relative aspect-square overflow-hidden rounded-media bg-atelier-ink/5">
+              <button
+                type="button"
+                onClick={() => setLightboxUrl(img.url)}
+                aria-label={c.viewImage}
+                className="block h-full w-full cursor-zoom-in"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={img.thumbUrl ?? img.url}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-cover"
+                />
+              </button>
+              <button
+                type="button"
+                onClick={() => setKeptOutfit(keptOutfit.filter((i) => i.path !== img.path))}
+                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {newOutfitFiles.map((f, idx) => (
+            <div key={f.preview} className="group relative aspect-square overflow-hidden rounded-media bg-atelier-ink/5">
+              <button
+                type="button"
+                onClick={() => setLightboxUrl(f.preview)}
+                aria-label={c.viewImage}
+                className="block h-full w-full cursor-zoom-in"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={f.preview} alt="" className="h-full w-full object-cover" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (lightboxUrl === f.preview) setLightboxUrl(null);
+                  URL.revokeObjectURL(f.preview);
+                  setNewOutfitFiles(newOutfitFiles.filter((_, i) => i !== idx));
+                }}
+                className="absolute right-1 top-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 text-xs text-atelier-ink opacity-0 group-hover:opacity-100"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {totalOutfitImages < 2 && (
+            <button
+              type="button"
+              onClick={() => outfitFileInputRef.current?.click()}
+              className="flex aspect-square items-center justify-center rounded-media border border-dashed border-atelier-rule text-xs text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink"
+            >
+              {c.outfitAddImage}
+            </button>
+          )}
+        </div>
+        <input
+          ref={outfitFileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => onOutfitFilesSelected(e.target.files)}
+        />
+
+        {/* The stored auto-description, shown so the user can see what the
+            Kling-family models (which can't take a clothing photo) will be
+            told. Refreshes on save whenever the photo set changes. */}
+        {initial?.outfit_description && keptOutfit.length > 0 && newOutfitFiles.length === 0 && (
+          <div className="mt-3 flex items-start gap-2 rounded-control bg-atelier-ink/[0.045] px-3 py-2.5">
+            <span className="mt-0.5 flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
+              {c.outfitAutoLabel}
+            </span>
+            <p className="min-w-0 text-xs italic text-atelier-muted">{initial.outfit_description}</p>
+          </div>
+        )}
       </section>
 
       <section className={SHEET}>

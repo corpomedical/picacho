@@ -39,6 +39,14 @@ export type CharacterForPipeline = {
   traits: CharacterTraits;
   motion_style?: string | null;
   voice_tone_tags?: string[];
+  // Outfit-on-the-character (2026-08-24): the vision-written spec of the
+  // character's saved outfit photos (see describeOutfitImage). When set, it
+  // REPLACES traits.outfit in drafting — it's the precise version of the same
+  // fact — and stays a DEFAULT-tier trait (yields to the scene, never
+  // word-match-enforced). The caller only sets this when the outfit is ON for
+  // this generation; the outfit PHOTO rides separately via
+  // RealPipelineOptions.outfitImageUrl for the models that can take it.
+  outfit_reference_description?: string | null;
 };
 
 export type PipelineStepLog = {
@@ -115,7 +123,10 @@ function requiredElements(
 ): { label: string; value: string }[] {
   const elements: { label: string; value: string }[] = [];
   if (character.traits.hair) elements.push({ label: "hair", value: character.traits.hair });
-  if (character.traits.outfit) elements.push({ label: "outfit", value: character.traits.outfit });
+  // The vision-written outfit spec beats the hand-typed trait when both exist —
+  // same fact, precise version (exact colours, logos, stitching).
+  const outfitValue = character.outfit_reference_description || character.traits.outfit;
+  if (outfitValue) elements.push({ label: "outfit", value: outfitValue });
   if (character.traits.personality)
     elements.push({ label: "personality", value: character.traits.personality });
   if (character.traits.distinguishing_features)
@@ -213,8 +224,8 @@ function draft(userInput: string, character: CharacterForPipeline, omitMotion: b
     // this fallback goes to the image model with no drafting layer to add
     // nuance, and a raw personality word ("kincky") both reads poorly and
     // bait's safety classifiers (real incident, 2026-08-14).
-    character.traits.outfit &&
-      `Usually wears ${character.traits.outfit}, unless the scene calls for something else.`,
+    (character.outfit_reference_description || character.traits.outfit) &&
+      `Usually wears ${character.outfit_reference_description || character.traits.outfit}, unless the scene calls for something else.`,
     character.traits.distinguishing_features &&
       `Distinguishing features: ${character.traits.distinguishing_features}.`,
     !omitMotion && character.motion_style && `Motion style: ${character.motion_style}.`,
@@ -474,6 +485,16 @@ export type RealPipelineOptions = {
   // through to Seedance as a @Video1 reference (see fal.ts). Caller
   // validates ownership and model support.
   videoContinueFromUrl?: string | null;
+  // Outfit-on-the-character — a signed URL of the character's saved outfit
+  // photo (a clothing shot, no person in it). The caller only sets this for
+  // models whose endpoints genuinely take it — Seedance (cited as an extra
+  // @ImageN) and the GPT Image edit path (appended to the reference array
+  // with an instruction suffix) — and only when an identity anchor is also
+  // present, so a clothing photo can never BE the identity (the exact
+  // failure mode behind the 2026-08-24 support case). Models that can't take
+  // it still get the outfit via the character's
+  // outfit_reference_description in drafting.
+  outfitImageUrl?: string | null;
   // Storyboard — 2-6 user-written shots for Kling O3 Pro's multi_prompt
   // (see fal.ts). Present ⇒ the caller forced the final-prompt path, so
   // drafting never rewrites shot text.
@@ -1038,6 +1059,7 @@ export async function runRealPipeline(
             endImageUrl: options.videoEndImageUrl,
             characterAnchorImageUrl: options.videoCharacterAnchorUrl,
             continueFromVideoUrl: options.videoContinueFromUrl,
+            outfitImageUrl: options.outfitImageUrl,
             storyboardShots: options.videoStoryboardShots,
             generateNativeAudio: !usingSeparateDialoguePipeline,
             durationSeconds: options.videoDurationSeconds,
@@ -1115,11 +1137,27 @@ export async function runRealPipeline(
           if (!options.persistImage) throw new Error("Image persistence handler missing.");
           const imageModelId = options.imageModelId ?? "gpt-image";
           const usingMultiCharacterImages = (options.referenceImageUrls?.length ?? 0) >= 2;
+          // Outfit photo rides the GPT image-edit call as an extra reference
+          // beside the identity photo (single-character only — the multi-
+          // character array's order IS its meaning: one photo per person).
+          // Passed as its own argument, not merged into the array, so
+          // image.ts can keep its multi-character semantics and its Flux
+          // fallback (which is single-source and gets the identity photo
+          // alone). The suffix is deliberately non-positional — on a Flux
+          // fallback the outfit photo isn't sent, and the drafted prompt's
+          // outfit description carries the garment on its own. Appended
+          // after validate() ran, so it can't disturb the trait gate.
+          const outfitActive = Boolean(
+            options.outfitImageUrl && !usingMultiCharacterImages && options.referenceImageUrl,
+          );
+          const imagePrompt = outfitActive
+            ? `${reviewedPrompt}\n\nOne of the reference photos shows only an outfit laid out, with no person in it: dress the person in exactly that outfit, reproducing its design, colours, logos, and stitching. Every other reference photo is the person — match their face, hair, and identity exactly.`
+            : reviewedPrompt;
           let fallbackNote: string | null = null;
           let actualModelName: string | null = null;
           resultUrl = await generateImage(
             imageModelId,
-            reviewedPrompt,
+            imagePrompt,
             usingMultiCharacterImages ? options.referenceImageUrls! : options.referenceImageUrl,
             options.persistImage,
             (note, finalModelName) => {
@@ -1127,6 +1165,7 @@ export async function runRealPipeline(
               if (finalModelName) actualModelName = finalModelName;
             },
             imageBudget,
+            outfitActive ? options.outfitImageUrl : null,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Report the model that ACTUALLY produced the image. This used to

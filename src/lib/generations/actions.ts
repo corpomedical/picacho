@@ -849,6 +849,19 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
   }
 
+  // Outfit-on-the-character (2026-08-24): on unless the composer's chip
+  // explicitly said off — an absent field (older cached composer) keeps the
+  // saved outfit applying, since outfit photos only exist when the user
+  // deliberately added them. The vision-written description feeds DRAFTING
+  // here for every model; the outfit PHOTO itself is signed further down and
+  // attached only on the models whose endpoints can take it.
+  const useOutfit = formData.get("use_outfit") !== "0";
+  const characterOutfitPaths = ((character?.outfit_image_urls as string[] | null) ?? []).filter(
+    (p) => character && p.startsWith(`${character.user_id}/`),
+  );
+  const outfitActiveForCharacter =
+    useOutfit && !wantsMultiCharacter && characterOutfitPaths.length > 0;
+
   // The empty-name placeholder is what tells pipeline.ts "no character was
   // selected" — draft()/buildRulebook() there both special-case an empty
   // name rather than writing an awkward "Character: ." into the prompt.
@@ -858,6 +871,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         traits: character.traits ?? {},
         motion_style: character.motion_style,
         voice_tone_tags: character.voice_tone_tags ?? [],
+        outfit_reference_description: outfitActiveForCharacter
+          ? ((character.outfit_description as string | null) ?? null)
+          : null,
       }
     : { name: "", traits: {}, motion_style: null, voice_tone_tags: [] };
 
@@ -1135,6 +1151,31 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         return { error: "Storyboards and start/end frames can't combine — remove one." };
       }
 
+      // The outfit PHOTO attaches only where an endpoint genuinely takes a
+      // clothing reference — Seedance's cited image_urls and GPT Image's
+      // multi-image edit — and only beside an identity anchor, so a clothing
+      // shot can never BE the identity (the 2026-08-24 support case). Models
+      // outside this set still carry the outfit through the drafted prompt's
+      // description (see characterForPipeline above).
+      let outfitImageUrl: string | null = null;
+      if (outfitActiveForCharacter) {
+        const identityAnchor =
+          contentType === "image" ? referenceImageUrl : videoCharacterAnchorUrl;
+        const modelTakesOutfitPhoto =
+          contentType === "image"
+            ? imageModelId === "gpt-image"
+            : videoModelId === "seedance" || videoModelId === "seedance-2";
+        // Plain path only (no storyboard, no multi-image reference) — it
+        // matches what the composer's caption promises, and keeps Seedance's
+        // reference list inside its 4-image budget.
+        if (identityAnchor && modelTakesOutfitPhoto && !storyboardShots && !videoReferenceImageUrls) {
+          const { data: signedOutfit } = await supabase.storage
+            .from("character-references")
+            .createSignedUrl(characterOutfitPaths[0], 60 * 10);
+          outfitImageUrl = signedOutfit?.signedUrl ?? null;
+        }
+      }
+
       const result = await runRealPipeline(
         userInput,
         characterForPipeline,
@@ -1149,6 +1190,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoEndImageUrl,
           videoCharacterAnchorUrl,
           videoContinueFromUrl,
+          outfitImageUrl,
           videoStoryboardShots: storyboardShots,
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
           dialogueText: wantsDialogue ? dialogueText : undefined,
