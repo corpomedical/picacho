@@ -302,7 +302,18 @@ const REFUNDS: Record<FailureFault, boolean> = {
 // (kill switch off, row missing, or the daily cap reached) — callers that
 // report billing to a customer rely on this to avoid claiming "not charged"
 // when the credit was in fact kept.
-export async function refundGenerationCosts(generationId: string): Promise<boolean> {
+export async function refundGenerationCosts(
+  generationId: string,
+  opts?: {
+    // Bypasses the automatic_refunds master switch. Reserved for the ONE
+    // failure class with provably zero provider cost: the user's own brand
+    // rules blocking the prompt BEFORE any provider call (2026-08-24 —
+    // keeping those charges contradicted the published "nothing is charged
+    // when a rule blocks" promise, flag or no flag). Every other failure
+    // class stays behind the switch.
+    force?: boolean;
+  },
+): Promise<boolean> {
   const admin = createAdminClient();
 
   // Master switch (Admin > Feature flags > automatic_refunds), currently OFF.
@@ -323,7 +334,7 @@ export async function refundGenerationCosts(generationId: string): Promise<boole
     .eq("key", "automatic_refunds")
     .maybeSingle<{ enabled: boolean }>();
 
-  if (refundFlag?.enabled !== true) {
+  if (refundFlag?.enabled !== true && !opts?.force) {
     console.info("Automatic refunds are off; not refunding", { generationId });
     return false;
   }

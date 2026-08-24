@@ -675,6 +675,7 @@ const en = {
     dailyFreeNotice: "Uses today's free generation",
     imageFirstHint: "Starting on Image — the fastest way to see your character. Switch to Video anytime.",
     pickCharacterHint: "Pick your character to lock their face — or send without one for a generic render.",
+    generateAnyway: "Generate anyway — skip my rules this once",
     seedance25Warn: "Seedance 2.5 refuses photoreal people — if {name} is photoreal, this render will fail and still use credits. Photoreal characters belong on Seedance 2.0.",
     seedance25Switch: "Switch to Seedance 2.0",
     referenceAspectError: "That reference image is too extreme in shape for this model — its width-to-height needs to be between 0.4 and 2.5. Crop it closer to square and try again.",

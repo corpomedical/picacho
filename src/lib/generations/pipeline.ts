@@ -68,6 +68,13 @@ export type PipelineResult = {
   succeeded: boolean;
   finalPrompt: string;
   resultUrl: string | null;
+  // Set when the failure was the user's OWN brand rules blocking the prompt
+  // (never a provider or platform error): each entry names the rule, quotes
+  // the exact trigger words from the prompt, and carries the checker's
+  // rewording suggestion. Drives the actionable failure UI ("triggered
+  // by … — fix: …", plus Generate-anyway), and the always-free guarantee —
+  // a rules block happens before any provider cost exists.
+  rulesBlock?: { label: string; evidence: string; fix: string }[];
   // True only when a checkCancelled callback reported a stop request — lets
   // the caller (and eventually the UI) show "Stopped" instead of a generic
   // failure message.
@@ -500,6 +507,11 @@ export type RealPipelineOptions = {
   // reference-photo anchor (videoCharacterAnchorUrl/referenceImageUrl), not
   // the text prompt, so this doesn't leave generations un-anchored.
   skipRefinement?: boolean;
+  // One-send override of the caller's OWN brand prohibitions ("Generate
+  // anyway" on a rules-block failure). Only ever set by the owner about
+  // their own rules — this is agency over one's own rulebook, not a
+  // compliance bypass; the send is still logged as rules-suspended.
+  skipBrandProhibitions?: boolean;
   // Other DIFFERENT characters composited into this same generation
   // alongside the primary `character` parameter (see the multi-character
   // picker in generate-form.tsx). Fed into the draft/review rulebook below
@@ -548,6 +560,9 @@ export async function runRealPipeline(
 ): Promise<PipelineResult> {
   const attempts: AttemptLog[] = [];
   let finalPrompt = "";
+  // Filled per attempt when the user's own rules block; travels out on the
+  // result so the failure UI can show trigger + fix and offer the override.
+  let lastRulesBlock: { label: string; evidence: string; fix: string }[] = [];
   const hasCompanions = Boolean(options.companions?.length);
   // Empty name is the signal actions.ts uses for "no character selected"
   // (see the placeholder object it builds in that case) — everything below
@@ -874,15 +889,34 @@ export async function runRealPipeline(
     // AI rewrite is a personal speed preference, whereas a compliance rule
     // is the whole reason this feature exists — it must not be bypassable by
     // flipping a setting.
-    if (brandProhibitions.length > 0) {
-      // Semantic check first (Phase 2). Word matching is kept as the
-      // fallback for when the classifier can't be reached — weaker, but
-      // compliance must never fail open on a network blip.
+    if (brandProhibitions.length > 0 && options.skipBrandProhibitions) {
+      // Transparency over silence: the audit trail must show the rules were
+      // deliberately suspended for this send, not that checking was skipped.
+      steps.push({
+        step: "validate",
+        detail: `Brand rules suspended for this send by the account owner (${brandProhibitions.length} prohibition${brandProhibitions.length === 1 ? "" : "s"} not checked).`,
+      });
+    }
+    if (brandProhibitions.length > 0 && !options.skipBrandProhibitions) {
+      // Semantic check first (Phase 3 — with evidence). Word matching is
+      // kept as the fallback for when the classifier can't be reached —
+      // weaker, but compliance must never fail open on a network blip.
       const verdict = await classifyProhibitions(reviewedPrompt, brandProhibitions);
       const violated = verdict.checked
-        ? brandProhibitions.filter((r) => verdict.violatedIds.includes(r.id))
+        ? brandProhibitions.filter((r) => verdict.violations.some((v) => v.id === r.id))
         : brandProhibitions.filter((r) => isElementPresent(reviewedPrompt, r.value));
       const blocking = violated.filter((r) => r.severity === "block");
+      // The trigger words + suggested fix per blocking rule, for the
+      // actionable failure UI. Fallback-matched rules quote the matched
+      // rule text itself as best-effort evidence.
+      lastRulesBlock = blocking.map((r) => {
+        const v = verdict.violations.find((x) => x.id === r.id);
+        return {
+          label: r.label,
+          evidence: v?.evidence ?? r.value,
+          fix: v?.fix ?? "",
+        };
+      });
 
       if (!verdict.checked) {
         steps.push({
@@ -895,7 +929,14 @@ export async function runRealPipeline(
         steps.push({
           step: "validate",
           detail: blocking.length
-            ? `Blocked by brand rules: ${blocking.map((r) => r.label).join(", ")}.`
+            ? `Blocked by brand rules: ${blocking
+                .map((r) => {
+                  const v = verdict.violations.find((x) => x.id === r.id);
+                  return v
+                    ? `${r.label} (triggered by: "${v.evidence}"${v.fix ? ` — try: ${v.fix}` : ""})`
+                    : r.label;
+                })
+                .join("; ")}.`
             : `Brand rule warnings: ${violated.map((r) => r.label).join(", ")}.`,
         });
       } else if (verdict.checked) {
@@ -1201,5 +1242,11 @@ export async function runRealPipeline(
     }
   }
 
-  return { attempts, succeeded: false, finalPrompt, resultUrl: null };
+  return {
+    attempts,
+    succeeded: false,
+    finalPrompt,
+    resultUrl: null,
+    ...(lastRulesBlock.length > 0 ? { rulesBlock: lastRulesBlock } : {}),
+  };
 }

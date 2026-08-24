@@ -133,6 +133,10 @@ type RunResult =
       // locked phone.
       pending?: boolean;
       progress?: string;
+      // Present when the failure was the user's OWN brand rules blocking the
+      // prompt: rule label + the exact trigger words + a suggested fix —
+      // drives the actionable failure UI and the Generate-anyway override.
+      rulesBlock?: { label: string; evidence: string; fix: string }[];
     };
 
 // Long enough for a genuinely detailed request, short enough that a stray
@@ -969,6 +973,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   }
 
   let attempts: AttemptLog[] = [];
+  let rulesBlock: { label: string; evidence: string; fix: string }[] | null = null;
   let succeeded = false;
   let finalPrompt = "";
   let resultUrl: string | null = null;
@@ -1150,6 +1155,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoDurationSeconds: contentType === "video" ? videoDurationSeconds : undefined,
           videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
           skipRefinement,
+        skipBrandProhibitions: formData.get("skip_brand_rules") === "1",
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),
           // Video renders get queued and polled instead of awaited — see
@@ -1217,6 +1223,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       }
 
       ({ attempts, succeeded, finalPrompt, resultUrl } = result);
+      rulesBlock = result.rulesBlock ?? null;
     } else {
       const result = runPipeline(userInput, characterForPipeline, maxAttempts, contentType);
       ({ attempts, succeeded, finalPrompt, resultUrl } = result);
@@ -1274,7 +1281,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (!succeeded) {
     // The pipeline couldn't produce a passing result after its retries —
     // exactly the case the published promise covers. Give everything back.
-    await refundGenerationCosts(placeholder.id);
+    // A block by the user's OWN rules is force-refunded past the
+    // automatic_refunds switch: it happens before any provider call, so it
+    // provably cost nothing — and the published listing promises "nothing
+    // is charged when a rule blocks" unconditionally (2026-08-24, after a
+    // live rules-block kept its 6-credit charge).
+    await refundGenerationCosts(placeholder.id, { force: Boolean(rulesBlock?.length) });
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }
 
@@ -1353,6 +1365,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     finalPrompt,
     resultUrl,
     matchScore,
+    ...(rulesBlock && rulesBlock.length > 0 ? { rulesBlock } : {}),
   };
 }
 

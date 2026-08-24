@@ -95,7 +95,25 @@ function isLiveTurn(attempts: AttemptLog[]): boolean {
 // Takes the whole `generate` message table rather than individual label
 // params — it needs several localized strings (stopped, missing-traits) and
 // every caller already has `g` in hand from useLocale.
+// A failure caused by the user's OWN brand rules — the validate step logs
+// the rule, the exact trigger words, and the checker's suggested fix (see
+// pipeline.ts). Returns that full explanation, or null for any other
+// failure class. Also the gate for the "Generate anyway" override button.
+function rulesBlockOf(attempts: AttemptLog[]): string | null {
+  const last = attempts[attempts.length - 1];
+  if (!last) return null;
+  const step = [...(last.steps ?? [])]
+    .reverse()
+    .find((s) => typeof s.detail === "string" && s.detail.startsWith("Blocked by brand rules:"));
+  return step ? step.detail : null;
+}
+
 function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): string | null {
+  // The user's own rules blocking is its own story — the rule, the words
+  // that triggered it, and the suggested rewording, verbatim from the log.
+  const blocked = rulesBlockOf(attempts);
+  if (blocked) return blocked;
+
   const last = attempts[attempts.length - 1];
   if (!last) return null;
 
@@ -1272,7 +1290,17 @@ function historyItemToChatItem(item: ChatHistoryItem): ChatItem {
 // `domId` (optional) is the anchor the Takes rail scrolls to — a plain DOM
 // id, set only at the session-thread call site, plus scroll-mt so the jumped-
 // to turn lands with breathing room instead of glued to the container's top.
-function SingleTurnBubble({ turn, domId }: { turn: ChatTurn; domId?: string }) {
+function SingleTurnBubble({
+  turn,
+  domId,
+  onGenerateAnyway,
+}: {
+  turn: ChatTurn;
+  domId?: string;
+  // Offered only on rules-block failures: resubmits this turn's prompt with
+  // the caller's own brand prohibitions suspended for that one send.
+  onGenerateAnyway?: (turnPrompt: string) => void;
+}) {
   const { t } = useLocale();
   const g = t.generate;
   const live = isLiveTurn(turn.attempts);
@@ -1296,12 +1324,23 @@ function SingleTurnBubble({ turn, domId }: { turn: ChatTurn; domId?: string }) {
               <ResultActions generationId={turn.id} copyText={turn.finalPrompt || turn.prompt} promotable={turn.contentType === "image"} />
             </>
           ) : (
-            <div className="mt-3 flex items-center gap-2">
-              <Badge tone="danger">{g.couldntValidate}</Badge>
-              <p className="text-xs text-atelier-muted">
-                {summarizeFailure(turn.attempts, g) ??
-                  (turn.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: turn.attempts.length }))}
-              </p>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge tone="danger">{g.couldntValidate}</Badge>
+                <p className="text-xs text-atelier-muted">
+                  {summarizeFailure(turn.attempts, g) ??
+                    (turn.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: turn.attempts.length }))}
+                </p>
+              </div>
+              {onGenerateAnyway && turn.prompt && rulesBlockOf(turn.attempts) && (
+                <button
+                  type="button"
+                  onClick={() => onGenerateAnyway(turn.prompt)}
+                  className="rounded-full border border-atelier-rule px-3 py-1.5 text-xs font-medium text-atelier-ink transition-colors hover:border-atelier-muted hover:bg-atelier-ink/5"
+                >
+                  {g.generateAnyway}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -2317,6 +2356,12 @@ function GenerateFormInner({
   // indirection so the listener binds once but always calls the latest
   // resetChat; ignored mid-request for the same reason the New chat button
   // is disabled then — clearing the live bubble would orphan the render.
+  // "Generate anyway" on a rules-block failure: a one-shot flag consumed by
+  // the next submit (adds skip_brand_rules=1 — the server logs the send as
+  // rules-suspended), plus a ref to the composer form so the button can
+  // resubmit programmatically after restoring the blocked prompt.
+  const skipRulesOnceRef = useRef(false);
+  const composerFormRef = useRef<HTMLFormElement | null>(null);
   const resetChatRef = useRef(resetChat);
   const submittingRef = useRef(submitting);
   useEffect(() => {
@@ -3236,6 +3281,12 @@ function GenerateFormInner({
       formData.set("video_duration_seconds", String(videoDurationSeconds));
       if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
     }
+    if (skipRulesOnceRef.current) {
+      // One send only — the override never outlives the click that asked
+      // for it (the server logs the suspension in the pipeline trace).
+      formData.set("skip_brand_rules", "1");
+      skipRulesOnceRef.current = false;
+    }
     setDialogueText("");
 
     let result;
@@ -3634,6 +3685,16 @@ function GenerateFormInner({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // The rules-block override: restore the blocked prompt, arm the one-shot
+  // skip flag, and resubmit through the real form path (the timeout lets
+  // React flush the prompt state before requestSubmit reads it).
+  function generateAnyway(turnPrompt: string) {
+    if (submitting) return;
+    skipRulesOnceRef.current = true;
+    setPrompt(turnPrompt);
+    setTimeout(() => composerFormRef.current?.requestSubmit(), 40);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -4121,7 +4182,7 @@ function GenerateFormInner({
           <>
             {items.map((item) =>
               item.kind === "single" ? (
-                <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} />
+                <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} onGenerateAnyway={generateAnyway} />
               ) : (
                 <MultiAngleTurnBubble key={item.groupId} item={item} domId={`take-${item.groupId}`} />
               ),
@@ -4255,6 +4316,7 @@ function GenerateFormInner({
         ) : null}
 
       <form
+        ref={composerFormRef}
         onSubmit={handleSubmit}
         className={cn(
           // Borderless everywhere (operator, 2026-08-21 — GPT-style): the
