@@ -17,6 +17,13 @@ export const dynamic = "force-dynamic";
 
 const GUIDES = [
   {
+    href: "/guides/getting-started",
+    date: "August 2026",
+    title: "The Picacho course: first login to first video",
+    blurb:
+      "Nine short chapters, every step photographed on the live product — create a consistent character, generate images and videos that keep their face, and fix the few things that go wrong.",
+  },
+  {
     href: "/guides/ai-character-consistency",
     date: "August 2026",
     title: "AI character consistency: the practical guide",

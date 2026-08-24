@@ -63,6 +63,14 @@ export default async function AppHome() {
         <Link href="/app/character/new" className="mt-6" data-tour-id="tour-create-character">
           <button className="inline-flex items-center justify-center gap-2 rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90">{d.setupCharacterCta}</button>
         </Link>
+        {/* The course (2026-08-25): brand-new users get the strongest nudge —
+            they're standing at the exact step Chapter 2 teaches. */}
+        <Link
+          href="/guides/getting-started"
+          className="mt-4 text-xs text-atelier-muted underline decoration-atelier-rule underline-offset-4 transition-colors hover:text-atelier-ink"
+        >
+          {d.courseHeroLink}
+        </Link>
       </div>
     );
   }
@@ -115,6 +123,26 @@ export default async function AppHome() {
           </Link>
         ))}
       </div>
+
+      {/* The course card (2026-08-25) — shown while someone is still new
+          (fewer than 3 successful images on the wall). It sells the course
+          on its two honest hooks: real screenshots, and not wasting credits.
+          Disappears on its own once they're clearly up and running. */}
+      {(recent ?? []).length < 3 && (
+        <Link
+          href="/guides/getting-started"
+          className="flex items-center gap-4 rounded-control border border-atelier-accent/25 bg-atelier-accent/[0.06] p-4 transition-colors hover:border-atelier-accent/50"
+        >
+          <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-atelier-accent/15 text-atelier-accent">
+            <BookIcon className="h-5 w-5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-atelier-ink">{d.courseCardTitle}</span>
+            <span className="mt-0.5 block text-xs leading-snug text-atelier-muted">{d.courseCardBody}</span>
+          </span>
+          <span className="flex-shrink-0 text-xs font-semibold text-atelier-accent">{d.courseCardCta} →</span>
+        </Link>
+      )}
 
       {/* Characters strip. */}
       <section className="border-t border-atelier-rule pt-6">

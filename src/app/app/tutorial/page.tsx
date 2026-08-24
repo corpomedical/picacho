@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { Card } from "@/components/ui/card";
@@ -28,6 +29,15 @@ export default async function TutorialPage() {
       <div className="mb-8">
         <h1 className="text-lg font-semibold text-neutral-900">{tu.title}</h1>
         <p className="mt-1 text-sm text-neutral-500">{tu.subtitle}</p>
+        {/* Cross-link to the photographed course (2026-08-25) — this page
+            stays the never-stale i18n'd overview; the course is the deep
+            walkthrough with real screenshots. */}
+        <Link
+          href="/guides/getting-started"
+          className="mt-2 inline-block text-sm font-medium text-atelier-accent hover:underline"
+        >
+          {tu.courseLink}
+        </Link>
       </div>
 
       <div className="space-y-6">

@@ -871,6 +871,7 @@ const it = {
   },
   tutorial: {
     title: "Come usare Picacho",
+    courseLink: "Vuoi la guida completa con screenshot reali? Fai il corso →",
     subtitle: "Tutto: dal primo personaggio ai video, ai crediti e a come sistemare i risultati strani.",
     s1h: "L'idea di fondo",
     s1p1: "Picacho crea immagini e video dei tuoi personaggi — la stessa persona, ogni volta. Crei un personaggio una sola volta, con una foto e qualche tratto, e da lì in poi descrivi le scene con parole semplici.",
@@ -1067,6 +1068,10 @@ const it = {
     seeAll: "Vedi tutto",
     quickImage: "Crea un'immagine",
     quickVideo: "Crea un video",
+    courseHeroLink: "Nuovo qui? Fai il corso di 3 minuti — ogni passo fotografato.",
+    courseCardTitle: "Impara Picacho in 9 brevi capitoli",
+    courseCardBody: "Ogni passo fotografato nell'app reale: il volto del tuo personaggio in ogni fotogramma e il tuo primo video senza sprecare crediti.",
+    courseCardCta: "Inizia il corso",
     quickTutorial: "Come funziona",
     creditsTitle: "Crediti questo mese",
     creditsPurchased: "+{n} crediti acquistati",
