@@ -208,17 +208,23 @@ export function MediaActionBar({
     flash(what === "image" ? g.copied : g.linkCopied);
   }
 
-  function handleDownload() {
+  const downloadBusyRef = useRef(false);
+  async function handleDownload() {
+    // Same one-at-a-time guard as DownloadButton — the toast stack shows
+    // progress; this stops the five-copies stampede.
+    if (downloadBusyRef.current) return;
+    downloadBusyRef.current = true;
     const name = filename();
-    if (isNativeAppClient()) {
-      void downloadResultNative(url, name)
-        .then((handled) => {
-          if (!handled) return downloadResult(url, name).then(() => undefined);
-        })
-        .catch(() => downloadResult(url, name));
-      return;
+    try {
+      if (isNativeAppClient()) {
+        const handled = await downloadResultNative(url, name).catch(() => false);
+        if (!handled) await downloadResult(url, name);
+      } else {
+        await downloadResult(url, name);
+      }
+    } finally {
+      downloadBusyRef.current = false;
     }
-    void downloadResult(url, name);
   }
 
   async function handleDelete() {

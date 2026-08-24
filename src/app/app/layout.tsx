@@ -5,6 +5,7 @@ import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
 import { NativeTabBar } from "@/components/native-tab-bar";
 import { NativeQuickPill } from "@/components/native-quick-pill";
+import { DownloadToasts } from "@/components/download-toasts";
 import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
@@ -101,6 +102,7 @@ export default async function AppLayout({
         shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
       />
       {showRatePrompt && <RatePrompt />}
+      <DownloadToasts />
       {/* data-app-scroll: the app's one real scroller — the native quick
           pill watches its scrollTop to decide when to slide in. */}
       <div data-app-scroll className="min-w-0 flex-1 overflow-y-auto">

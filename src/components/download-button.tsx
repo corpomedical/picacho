@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
@@ -23,7 +24,23 @@ function DownloadIcon(props: React.SVGProps<SVGSVGElement>) {
 // cross-origin link just opens the file in a new tab in most browsers
 // instead of actually saving it. Falls back to that same "open in a new tab"
 // behavior only if the fetch itself fails for some reason.
+// Download progress toasts (see download-toasts.tsx, mounted in the app
+// layout): downloads gave NO feedback while the blob fetched — a big video
+// takes seconds, people clicked five times and got five files (operator,
+// 2026-08-24). Every path here announces start and finish over these
+// events; the toast stack renders them in the corner.
+export function announceDownload(kind: "image" | "video"): string {
+  const id = `dl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  window.dispatchEvent(new CustomEvent("picacho:download-start", { detail: { id, kind } }));
+  return id;
+}
+export function announceDownloadDone(id: string, ok: boolean) {
+  window.dispatchEvent(new CustomEvent("picacho:download-done", { detail: { id, ok } }));
+}
+
 export async function downloadResult(url: string, filename: string) {
+  const kind = filename.endsWith(".mp4") ? "video" : "image";
+  const toastId = announceDownload(kind);
   try {
     const res = await fetch(url);
     const blob = await res.blob();
@@ -35,7 +52,9 @@ export async function downloadResult(url: string, filename: string) {
     a.click();
     a.remove();
     URL.revokeObjectURL(objectUrl);
+    announceDownloadDone(toastId, true);
   } catch {
+    announceDownloadDone(toastId, false);
     window.open(url, "_blank");
   }
 }
@@ -51,8 +70,10 @@ export async function downloadResultNative(url: string, filename: string): Promi
   const fs = capPlugin("Filesystem");
   const share = capPlugin("Share");
   if (!fs?.writeFile || !share?.share) return false;
-  const res = await fetch(url);
-  const blob = await res.blob();
+  const toastId = announceDownload(filename.endsWith(".mp4") ? "video" : "image");
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(reader.error);
@@ -63,8 +84,13 @@ export async function downloadResultNative(url: string, filename: string): Promi
     reader.readAsDataURL(blob);
   });
   const written = await fs.writeFile({ path: filename, data: base64, directory: "CACHE" });
-  await share.share({ title: filename, files: [written.uri] });
-  return true;
+    await share.share({ title: filename, files: [written.uri] });
+    announceDownloadDone(toastId, true);
+    return true;
+  } catch (err) {
+    announceDownloadDone(toastId, false);
+    throw err;
+  }
 }
 
 export function DownloadButton({
@@ -75,24 +101,32 @@ export function DownloadButton({
   contentType: "image" | "video";
 }) {
   const { t } = useLocale();
+  // One download at a time per button: with no feedback, people clicked
+  // until five copies arrived (the toast stack is the feedback; this is
+  // the guard).
+  const [busy, setBusy] = useState(false);
   // The filename is built at click-time, not render-time — Date.now() (for
   // uniqueness) is an impure call, and React's rules disallow impure calls
   // during render since it can produce different output on a re-render.
-  function handleClick() {
+  async function handleClick() {
+    if (busy) return;
+    setBusy(true);
     const filename = `picacho-${contentType}-${Date.now()}.${contentType === "video" ? "mp4" : "png"}`;
-    if (isNativeAppClient()) {
-      void downloadResultNative(url, filename)
-        .then((handled) => {
-          if (!handled) return downloadResult(url, filename).then(() => undefined);
-        })
-        .catch(() => downloadResult(url, filename));
-      return;
+    try {
+      if (isNativeAppClient()) {
+        const handled = await downloadResultNative(url, filename).catch(() => false);
+        if (!handled) await downloadResult(url, filename);
+      } else {
+        await downloadResult(url, filename);
+      }
+    } finally {
+      setBusy(false);
     }
-    void downloadResult(url, filename);
   }
   return (
     <button
       type="button"
+      disabled={busy}
       onClick={handleClick}
       aria-label={t.generate.download}
       title={t.generate.download}

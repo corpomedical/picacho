@@ -187,6 +187,18 @@ export function CommunityFeed({
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Map<number, HTMLVideoElement>>(new Map());
   const openedRef = useRef(false);
+  // Instagram's sound contract (operator, 2026-08-24): the feed starts
+  // muted (autoplay demands it); unmuting applies to THIS and every next
+  // video until muted again. Tapping a video pauses/plays it. The ref
+  // mirrors the state for the observer's closure.
+  const [feedMuted, setFeedMuted] = useState(true);
+  const feedMutedRef = useRef(true);
+  useEffect(() => {
+    feedMutedRef.current = feedMuted;
+    videoRefs.current.forEach((v) => {
+      v.muted = feedMuted;
+    });
+  }, [feedMuted]);
 
   const feedOpen = feedIndex !== null;
 
@@ -250,7 +262,17 @@ export function CommunityFeed({
               setViewedIds((prev) => new Set(prev).add(post.id));
               void recordCommunityView(post.id);
             }
-            void video?.play().catch(() => {});
+            if (video) {
+              // Honour the sticky sound preference; if the browser refuses
+              // unmuted autoplay for this video, fall back to muted rather
+              // than a frozen frame — the person can tap the sound back on.
+              video.muted = feedMutedRef.current;
+              video.play().catch(() => {
+                video.muted = true;
+                setFeedMuted(true);
+                void video.play().catch(() => {});
+              });
+            }
           } else {
             video?.pause();
           }
@@ -437,13 +459,22 @@ export function CommunityFeed({
                   {post.contentType === "video" ? (
                     <video
                       ref={(el) => {
-                        if (el) videoRefs.current.set(i, el);
-                        else videoRefs.current.delete(i);
+                        if (el) {
+                          el.muted = feedMutedRef.current;
+                          videoRefs.current.set(i, el);
+                        } else videoRefs.current.delete(i);
                       }}
                       src={post.displayUrl}
                       muted
                       loop
                       playsInline
+                      onClick={(e) => {
+                        // Tap the video to pause/resume — the Instagram
+                        // gesture, no controls chrome needed.
+                        const v = e.currentTarget;
+                        if (v.paused) void v.play().catch(() => {});
+                        else v.pause();
+                      }}
                       className="relative max-h-full max-w-full"
                     />
                   ) : (
@@ -490,6 +521,27 @@ export function CommunityFeed({
                         {post.views + (viewedIds.has(post.id) ? 1 : 0)}
                       </span>
                     </div>
+                    {post.contentType === "video" && (
+                      <button
+                        type="button"
+                        onClick={() => setFeedMuted((v) => !v)}
+                        aria-pressed={feedMuted}
+                        aria-label={feedMuted ? c.unmuteLabel : c.muteLabel}
+                        className="flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec] backdrop-blur-md transition-transform active:scale-90"
+                      >
+                        {feedMuted ? (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                            <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+                            <path d="m23 9-6 6M17 9l6 6" />
+                          </svg>
+                        ) : (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                            <path d="M11 5 6 9H2v6h4l5 4V5Z" />
+                            <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" />
+                          </svg>
+                        )}
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => sharePost(post)}
