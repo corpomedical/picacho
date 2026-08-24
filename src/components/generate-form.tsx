@@ -3012,7 +3012,16 @@ function GenerateFormInner({
     return () => scroller.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Never on the initial render: a page that loads pre-scrolled hides the
+  // stats header (operator, 2026-08-24: "I can't see First try success and
+  // Avg. attempts"). The follow starts acting only once content CHANGES —
+  // a send, a reveal, a result.
+  const followArmedRef = useRef(false);
   useEffect(() => {
+    if (!followArmedRef.current) {
+      followArmedRef.current = true;
+      return;
+    }
     if (!stickToBottomRef.current) return;
     // Drive the app's one real scroller directly rather than
     // scrollIntoView, which can also move ANCESTOR scrollables and is what
