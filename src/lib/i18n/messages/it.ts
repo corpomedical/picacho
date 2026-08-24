@@ -624,6 +624,8 @@ const it = {
     downloadingImage: "Download della foto…",
     downloadDone: "Salvato",
     downloadFailed: "Download non riuscito — aperto in un'altra scheda",
+    attachAnchorWarn: "Questo allegato sostituirà la foto di riferimento del volto di {name} per questa generazione. Se mostra un outfit, un prodotto o una scena — non {name} — rimuovilo e descrivilo nel prompt, o potrebbe apparire un'altra persona.",
+    attachAnchorRemove: "Rimuovi foto",
     pullUpToEdit: "Tira su per modificare",
     expandStage: "Espandi vista",
     collapseStage: "Esci dalla vista espansa",

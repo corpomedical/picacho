@@ -624,6 +624,8 @@ const es = {
     downloadingImage: "Descargando foto…",
     downloadDone: "Guardado",
     downloadFailed: "Falló la descarga — abierto en otra pestaña",
+    attachAnchorWarn: "Este adjunto sustituirá la foto de referencia del rostro de {name} en esta generación. Si es una foto de ropa, producto o escenario — no de {name} — quítala y descríbela en el prompt, o podría aparecer otra persona.",
+    attachAnchorRemove: "Quitar foto",
     pullUpToEdit: "Desliza para editar",
     expandStage: "Ampliar vista",
     collapseStage: "Salir de la vista ampliada",

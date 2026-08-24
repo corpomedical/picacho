@@ -4609,6 +4609,37 @@ function GenerateFormInner({
               </div>
             );
           })()}
+        {/* Attachment-anchor fence (2026-08-24, the bmazloum case): an image
+            attached to the message REPLACES the character's saved face
+            reference (deliberate since 2026-08-08 — a close-up of the person
+            attached alongside the prompt was being ignored). Right call for
+            face photos, identity-destroying for outfit/product/scene photos:
+            an anchor with no face in it leaves the model inventing a new
+            person every run (match_score 17, "different character every
+            time"). Same informed-choice idiom as the 2.5 fence above —
+            warn + one-tap fix, never a hard block. */}
+        {(() => {
+          const anchorChar = characters.find((c) => c.id === characterId);
+          if (!anchorChar || anchorChar.referencePhotos.length === 0) return null;
+          if (companionCharacterIds.length > 0) return null;
+          if (contentType === "video" && videoAdvancedMode !== "none") return null;
+          const anchorAtt = pendingAttachments.find(
+            (a) => a.status === "ready" && a.type.startsWith("image/") && Boolean(a.url),
+          );
+          if (!anchorAtt) return null;
+          return (
+            <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[12px] bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 dark:text-amber-300">
+              <span className="min-w-0 flex-1">{formatMsg(g.attachAnchorWarn, { name: anchorChar.name })}</span>
+              <button
+                type="button"
+                onClick={() => removeAttachment(anchorAtt.id)}
+                className="flex-shrink-0 rounded-full bg-atelier-ink px-2.5 py-1 text-[11px] font-semibold text-atelier-paper transition-opacity hover:opacity-90"
+              >
+                {g.attachAnchorRemove}
+              </button>
+            </div>
+          );
+        })()}
         <div data-tour-id="tour-prompt" className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
           {pendingMultiAngle ? (
             <div className="space-y-3 p-4">

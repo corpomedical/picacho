@@ -681,6 +681,8 @@ const en = {
     downloadingImage: "Downloading photo…",
     downloadDone: "Saved",
     downloadFailed: "Download failed — opened in a new tab instead",
+    attachAnchorWarn: "This attachment will replace {name}'s saved face reference for this generation. If it's an outfit, product, or scene photo — not a photo of {name} — remove it and describe it in the prompt, or a different person may appear.",
+    attachAnchorRemove: "Remove photo",
     pullUpToEdit: "Pull up to edit",
     expandStage: "Expand view",
     collapseStage: "Exit expanded view",

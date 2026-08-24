@@ -624,6 +624,8 @@ const pt = {
     downloadingImage: "Baixando foto…",
     downloadDone: "Salvo",
     downloadFailed: "Falha no download — aberto em outra aba",
+    attachAnchorWarn: "Este anexo substituirá a foto de referência do rosto de {name} nesta geração. Se mostra uma roupa, produto ou cenário — não {name} — remova-o e descreva no prompt, ou outra pessoa pode aparecer.",
+    attachAnchorRemove: "Remover foto",
     pullUpToEdit: "Puxe para editar",
     expandStage: "Expandir visualização",
     collapseStage: "Sair da visualização expandida",
