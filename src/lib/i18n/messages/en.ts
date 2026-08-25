@@ -711,6 +711,8 @@ const en = {
     issueDialogueVoice: "Dialogue needs a character with a voice — assign one in Character settings, or clear the dialogue.",
     issueMultiPerson: "{model} renders one person at a time — pick Kling O3 Pro or Seedance for a cast.",
     issueActClear: "Clear",
+    roleScene: "Scene",
+    receiptScene: "Scene: described from your photo",
     pullUpToEdit: "Pull up to edit",
     expandStage: "Expand view",
     collapseStage: "Exit expanded view",

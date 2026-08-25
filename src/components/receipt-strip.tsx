@@ -37,8 +37,16 @@ function entryText(e: PlanEntry, g: Messages["generate"]): string | null {
               : g.receiptSrcSaved;
       return `${g.receiptFace}: ${src}`;
     }
-    case "outfit":
+    case "outfit": {
+      if (e.source === "attachment") {
+        return e.consumption === "native"
+          ? `${g.receiptOutfit}: ${g.receiptSrcAttachment}`
+          : `${g.receiptOutfit}: ${g.receiptSrcAttachment} — ${g.receiptUnused}`;
+      }
       return `${g.receiptOutfit}: ${e.consumption === "native" ? g.receiptAttached : g.receiptDescribed}`;
+    }
+    case "scene":
+      return g.receiptScene;
     case "continuation":
       return e.consumption === "native" ? g.receiptContinuation : `${g.receiptContinuation} — ${g.receiptUnused}`;
     case "dialogue":

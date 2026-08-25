@@ -46,6 +46,66 @@ const MODE_RULES: Record<DescribeMode, string> = {
     "are, even if they look familiar; describe only what is visible.",
 };
 
+// Attachment role classification (Send Receipt P2): one cheap look at an
+// uploaded photo to pre-pick its role chip — person → Face, clothing →
+// Outfit, place → Scene, anything else → the user decides. Advisory only:
+// the user's tap always wins, a null answer just leaves the chip on its
+// legacy default, and this must never gate the upload itself (it runs
+// after the chip is already usable).
+export type AttachmentClass = "person" | "clothing" | "scene" | "other";
+
+export async function classifyAttachmentImage(imageUrl: string): Promise<AttachmentClass | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const res = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Classify this photo with EXACTLY one word from this list and nothing else:\n" +
+                    "person — a human face or figure is clearly the subject\n" +
+                    "clothing — garments, shoes or accessories shown WITHOUT a person wearing them (product shots, flat-lays)\n" +
+                    "scene — a place: landscape, room, street, building, backdrop, with no person as the subject\n" +
+                    "other — anything else (objects, animals, text, abstract)",
+                },
+                { type: "image_url", image_url: { url: imageUrl } },
+              ],
+            },
+          ],
+          max_completion_tokens: 500,
+        }),
+      },
+      20_000,
+    );
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = String(data?.choices?.[0]?.message?.content ?? "").trim().toLowerCase();
+    if (text.includes("person")) return "person";
+    if (text.includes("clothing")) return "clothing";
+    if (text.includes("scene")) return "scene";
+    if (text.includes("other")) return "other";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Outfit-on-the-character (2026-08-24): turn a clothing photo — typically a
 // product shot or flat-lay with no person in it — into a precise garment spec.
 // Written ONCE when the character is saved and stored on the row

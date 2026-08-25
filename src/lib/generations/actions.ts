@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { resolveSendPlan } from "@/lib/generations/send-plan";
+import { describeImageAsPrompt } from "@/lib/generations/providers/describe-image";
 import { getOrigin } from "@/lib/origin";
 import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -356,10 +357,43 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // URLs (from uploadChatAttachment). Anything else — an absolute http(s) URL,
   // a cloud-metadata IP — is discarded here so it can never become a
   // server-side fetch target or get handed to a provider.
-  const attachmentReferenceUrl = (() => {
+  const legacyAttachmentUrl = (() => {
     const raw = (formData.get("attachment_reference_url") as string) || "";
     return raw.startsWith("/api/media/") ? raw : "";
   })();
+
+  // Attachment roles (Send Receipt P2). New composers send the full role
+  // list; when present it is EXHAUSTIVE — an outfit- or scene-role photo
+  // must never fall through to the legacy identity field. Old clients
+  // (including native shells that will emit the legacy field forever, per
+  // the permanent-adapter rule) send no roles: their attachment keeps the
+  // original identity contract unchanged. Same URL guard as the legacy
+  // field — anything not our own media URL is discarded.
+  type AttachmentRoleEntry = { url: string; role: "identity" | "outfit" | "scene" | "unused" };
+  const attachmentRoles: AttachmentRoleEntry[] | null = (() => {
+    const raw = formData.get("attachment_roles");
+    if (!raw) return null;
+    try {
+      const parsed: unknown = JSON.parse(String(raw));
+      if (!Array.isArray(parsed)) return null;
+      return parsed.filter(
+        (x): x is AttachmentRoleEntry =>
+          Boolean(x) &&
+          typeof (x as AttachmentRoleEntry).url === "string" &&
+          (x as AttachmentRoleEntry).url.startsWith("/api/media/") &&
+          !(x as AttachmentRoleEntry).url.includes("..") &&
+          ["identity", "outfit", "scene", "unused"].includes((x as AttachmentRoleEntry).role),
+      );
+    } catch {
+      return null;
+    }
+  })();
+
+  const attachmentReferenceUrl = attachmentRoles
+    ? (attachmentRoles.find((a) => a.role === "identity")?.url ?? "")
+    : legacyAttachmentUrl;
+  const outfitAttachmentUrl = attachmentRoles?.find((a) => a.role === "outfit")?.url ?? "";
+  const sceneAttachmentUrl = attachmentRoles?.find((a) => a.role === "scene")?.url ?? "";
 
   // Which of the character's OWN saved reference photos to anchor to —
   // from the picker in the composer, for characters with more than one
@@ -1159,7 +1193,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // outside this set still carry the outfit through the drafted prompt's
       // description (see characterForPipeline above).
       let outfitImageUrl: string | null = null;
-      if (outfitActiveForCharacter) {
+      {
         const identityAnchor =
           contentType === "image" ? referenceImageUrl : videoCharacterAnchorUrl;
         const modelTakesOutfitPhoto =
@@ -1169,11 +1203,38 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         // Plain path only (no storyboard, no multi-image reference) — it
         // matches what the composer's caption promises, and keeps Seedance's
         // reference list inside its 4-image budget.
-        if (identityAnchor && modelTakesOutfitPhoto && !storyboardShots && !videoReferenceImageUrls) {
-          const { data: signedOutfit } = await supabase.storage
-            .from("character-references")
-            .createSignedUrl(characterOutfitPaths[0], 60 * 10);
-          outfitImageUrl = signedOutfit?.signedUrl ?? null;
+        const plainPath = Boolean(identityAnchor) && !storyboardShots && !videoReferenceImageUrls;
+        if (plainPath && modelTakesOutfitPhoto) {
+          if (outfitAttachmentUrl) {
+            // A per-message outfit-role attachment (Send Receipt P2)
+            // outranks the character's saved outfit for this send.
+            outfitImageUrl = absolutizeMediaUrl(outfitAttachmentUrl, await getOrigin());
+          } else if (outfitActiveForCharacter) {
+            const { data: signedOutfit } = await supabase.storage
+              .from("character-references")
+              .createSignedUrl(characterOutfitPaths[0], 60 * 10);
+            outfitImageUrl = signedOutfit?.signedUrl ?? null;
+          }
+        }
+      }
+
+      // Scene-role attachment (Send Receipt P2): a photo of a PLACE is
+      // vision-described into the prompt — prompt text works on every
+      // model, which is what makes this lane universal. Best-effort: a
+      // describe failure just sends the prompt as typed (the strip said
+      // "described", and an undescribed scene photo costs nothing).
+      let promptForPipeline = userInput;
+      if (sceneAttachmentUrl && !wantsMultiCharacter) {
+        try {
+          const sceneDescription = await describeImageAsPrompt(
+            absolutizeMediaUrl(sceneAttachmentUrl, await getOrigin()),
+            "scene",
+          );
+          if (sceneDescription) {
+            promptForPipeline = `${userInput}\n\nSetting (from the attached scene photo): ${sceneDescription}`;
+          }
+        } catch {
+          // Send as typed.
         }
       }
 
@@ -1198,7 +1259,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
               }
             : null,
           companionsCount: companionCharacters.length,
-          attachments: attachmentReferenceUrl ? [{ id: "attachment", isImage: true }] : [],
+          attachments: attachmentRoles
+            ? attachmentRoles.map((a, i) => ({ id: String(i), isImage: true, role: a.role }))
+            : attachmentReferenceUrl
+              ? [{ id: "attachment", isImage: true }]
+              : [],
           anchorPhotoPicked: Boolean(requestedAnchorPhotoPath),
           advancedMode:
             referencePhotoPaths.length >= 2
@@ -1230,7 +1295,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       }
 
       const result = await runRealPipeline(
-        userInput,
+        promptForPipeline,
         characterForPipeline,
         {
           contentType,

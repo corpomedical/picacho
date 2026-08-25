@@ -233,6 +233,70 @@ describe("multi-person routing", () => {
   });
 });
 
+describe("attachment roles (P2 — the definitive intent capture)", () => {
+  it("a clothing-role attachment rides the outfit lane on Seedance, never the face slot", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "seedance-2",
+      attachments: [{ id: "a", isImage: true, role: "outfit" }],
+    });
+    expect(entry(plan, "identity")!.source).toBe("character-default");
+    const outfit = entry(plan, "outfit")!;
+    expect(outfit.source).toBe("attachment");
+    expect(outfit.consumption).toBe("native");
+  });
+
+  it("an outfit attachment on a person-only model drops VISIBLY (no stored description to fall back on)", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "kling-o3-pro",
+      attachments: [{ id: "a", isImage: true, role: "outfit" }],
+    });
+    expect(entry(plan, "outfit")!.consumption).toBe("dropped");
+    expect(entry(plan, "outfit")!.noteCode).toBe("OUTFIT_ATTACHMENT_UNSUPPORTED");
+  });
+
+  it("a scene-role attachment (the mountain lake) is described — and the face warning cannot exist", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      attachments: [{ id: "a", isImage: true, role: "scene" }],
+    });
+    expect(entry(plan, "scene")!.consumption).toBe("described");
+    expect(entry(plan, "identity")!.source).toBe("character-default");
+    expect(plan.entries.find((e) => e.noteCode === "REPLACES_SAVED_FACE")).toBeUndefined();
+  });
+
+  it("a per-message outfit attachment outranks the character's saved outfit", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "seedance-2",
+      character: { ...base.character!, hasOutfit: true, outfitOn: true },
+      attachments: [{ id: "a", isImage: true, role: "outfit" }],
+    });
+    const outfits = plan.entries.filter((e) => e.slot === "outfit");
+    expect(outfits).toHaveLength(1);
+    expect(outfits[0].source).toBe("attachment");
+  });
+
+  it("an explicit 'unused' role neither rides nor nags", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      attachments: [{ id: "a", isImage: true, role: "unused" }],
+    });
+    expect(entry(plan, "identity")!.source).toBe("character-default");
+    expect(plan.entries.find((e) => e.noteCode === "EXTRA_ATTACHMENT_UNUSED")).toBeUndefined();
+  });
+
+  it("a role-less attachment keeps the permanent legacy contract: identity, visibly replacing", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      attachments: [{ id: "a", isImage: true }],
+    });
+    expect(entry(plan, "identity")!.source).toBe("attachment");
+    expect(entry(plan, "identity")!.noteCode).toBe("REPLACES_SAVED_FACE");
+  });
+});
+
 describe("rules override visibility (generate-anyway drift family)", () => {
   it("an armed rules skip is a visible receipt entry, never a silent flag", () => {
     const plan = resolveSendPlan({ ...base, rulesSkipArmed: true });

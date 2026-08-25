@@ -33,8 +33,8 @@ import {
 } from "@/lib/voice/agent";
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
-import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
-import { resolveSendPlan, type PlanIssue } from "@/lib/generations/send-plan";
+import { uploadChatAttachment, deleteChatAttachment, classifyChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
+import { resolveSendPlan, type AttachmentRole, type PlanIssue } from "@/lib/generations/send-plan";
 import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
 import {
   compilePrompt,
@@ -826,6 +826,11 @@ type PendingAttachment = {
   // provider aspect-bound checks. Absent = unmeasured = never blocks.
   width?: number;
   height?: number;
+  // The photo's declared role (Send Receipt P2). undefined = the permanent
+  // legacy contract (identity). The classifier pre-picks; a user tap sets
+  // roleSetByUser so a late classification can never overturn a human.
+  role?: AttachmentRole;
+  roleSetByUser?: boolean;
 };
 
 function formatBytes(bytes: number): string {
@@ -1175,10 +1180,29 @@ function VoiceSessionCard({
   );
 }
 
-function PendingAttachmentChip({ attachment, onRemove }: { attachment: PendingAttachment; onRemove: () => void }) {
+function PendingAttachmentChip({
+  attachment,
+  onRemove,
+  onRoleTap,
+}: {
+  attachment: PendingAttachment;
+  onRemove: () => void;
+  // Present only for ready images (Send Receipt P2): taps cycle the role.
+  onRoleTap?: () => void;
+}) {
   const { t } = useLocale();
+  const g = t.generate;
   const isImage = attachment.type.startsWith("image/");
   const isVideo = attachment.type.startsWith("video/");
+  const roleLabel = !isImage
+    ? null
+    : attachment.role === "outfit"
+      ? g.receiptOutfit
+      : attachment.role === "scene"
+        ? g.roleScene
+        : attachment.role === "unused"
+          ? g.receiptUnused
+          : g.receiptFace;
 
   return (
     <div className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-media border border-atelier-rule bg-atelier-paper">
@@ -1209,12 +1233,29 @@ function PendingAttachmentChip({ attachment, onRemove }: { attachment: PendingAt
         </div>
       )}
 
+      {/* Role badge (Send Receipt P2): what this photo IS to the next send.
+          Tap to cycle Face → Outfit → Scene → Not used. The vision
+          classifier pre-picks it; a tap always wins. */}
+      {roleLabel && attachment.status === "ready" && onRoleTap && (
+        <button
+          type="button"
+          onClick={onRoleTap}
+          className={cn(
+            "absolute inset-x-0.5 bottom-0.5 truncate rounded-[7px] px-1 py-0.5 text-center text-[8.5px] font-semibold leading-tight",
+            attachment.role === "unused"
+              ? "bg-neutral-950/55 text-[#faf8f3]/70"
+              : "bg-neutral-950/70 text-[#faf8f3]",
+          )}
+        >
+          {roleLabel}
+        </button>
+      )}
       <button
         type="button"
         onClick={onRemove}
         title={t.generate.removeAttachment}
         aria-label={t.generate.removeAttachment}
-        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-950/70 text-[#faf8f3] opacity-0 transition-opacity group-hover:opacity-100"
+        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-950/70 text-[#faf8f3] opacity-0 transition-opacity group-hover:opacity-100 [@media(hover:none)]:opacity-100"
       >
         <XIcon className="h-2.5 w-2.5" />
       </button>
@@ -2633,7 +2674,9 @@ function GenerateFormInner({
     selectedAngles.forEach((id) => formData.append("angle", id));
     // Same attachment/anchor-photo priority as the single-generation path
     // above — see the comments there.
-    const anchorAttachment = attachments.find((a) => a.type.startsWith("image/"));
+    const anchorAttachment = attachments.find(
+      (a) => a.type.startsWith("image/") && (a.role === undefined || a.role === "identity"),
+    );
     if (anchorAttachment) {
       formData.set("attachment_reference_url", anchorAttachment.url);
     } else if (anchorPhotoPath) {
@@ -2818,6 +2861,28 @@ function GenerateFormInner({
             prev.map((a) => {
               if (a.id !== id) return a;
               if (result.error !== null) return { ...a, status: "error", error: result.error };
+              // Pre-pick the role off-thread (Send Receipt P2): the chip is
+              // already usable; when the classifier lands it only fills a
+              // role no human has touched. person keeps the legacy identity
+              // default (undefined) — an upload never OCCUPIES a non-face
+              // role without either the classifier or the user saying so.
+              if (result.attachment!.type?.startsWith("image/") ?? a.type.startsWith("image/")) {
+                const attachmentId = a.id;
+                const fd = new FormData();
+                fd.set("url", result.attachment!.url);
+                void classifyChatAttachment(fd).then((res) => {
+                  const cls = res.classification;
+                  if (!cls || cls === "person" || cls === "other") return;
+                  const role: AttachmentRole = cls === "clothing" ? "outfit" : "scene";
+                  setPendingAttachments((prev) =>
+                    prev.map((p) =>
+                      p.id === attachmentId && !p.roleSetByUser && p.role === undefined
+                        ? { ...p, role }
+                        : p,
+                    ),
+                  );
+                });
+              }
               return {
                 ...a,
                 status: "ready",
@@ -2844,6 +2909,21 @@ function GenerateFormInner({
           setError(message);
         });
     });
+  }
+
+  // Tap-to-cycle on the chip's role badge: Face -> Outfit -> Scene -> Not
+  // used -> Face. A human tap is final (roleSetByUser) — classification can
+  // never overturn it.
+  function cycleAttachmentRole(id: string) {
+    const order: (AttachmentRole | undefined)[] = [undefined, "outfit", "scene", "unused"];
+    setPendingAttachments((prev) =>
+      prev.map((a) => {
+        if (a.id !== id) return a;
+        const idx = order.indexOf(a.role === "identity" ? undefined : a.role);
+        const next = order[(idx + 1) % order.length];
+        return { ...a, role: next, roleSetByUser: true };
+      }),
+    );
   }
 
   function removeAttachment(id: string) {
@@ -3339,6 +3419,7 @@ function GenerateFormInner({
           isImage: a.type.startsWith("image/"),
           width: a.width,
           height: a.height,
+          role: a.role,
         })),
       anchorPhotoPicked: Boolean(anchorPhotoPath),
       advancedMode: contentType === "video" ? videoAdvancedMode : ("none" as const),
@@ -3482,6 +3563,16 @@ function GenerateFormInner({
       formData.set("continue_from_generation_id", continueFromId);
     }
     formData.set("use_outfit", useOutfit ? "1" : "0");
+    // Send Receipt P2: the full role list for every ready image attachment.
+    // New servers route by this; old servers ignore it and use the legacy
+    // anchor field above — role capture and role routing shipped together,
+    // so the UI can never promise a role the server won't honor.
+    const roleList = submittedAttachments
+      .filter((a) => a.type.startsWith("image/"))
+      .map((a) => ({ url: a.url, role: a.role ?? "identity" }));
+    if (roleList.length > 0) {
+      formData.set("attachment_roles", JSON.stringify(roleList));
+    }
     if (storyboardActive) {
       formData.set(
         "storyboard_shots",
@@ -3504,7 +3595,9 @@ function GenerateFormInner({
       // character's saved default — real report, 2026-08-08: a video kept
       // anchoring to the character's default reference photo and ignoring a
       // close-up shot attached alongside the prompt in the same message.
-      const anchorAttachment = submittedAttachments.find((a) => a.type.startsWith("image/"));
+      const anchorAttachment = submittedAttachments.find(
+        (a) => a.type.startsWith("image/") && (a.role === undefined || a.role === "identity"),
+      );
       if (anchorAttachment) {
         formData.set("attachment_reference_url", anchorAttachment.url);
       } else if (anchorPhotoPath) {
@@ -3994,7 +4087,7 @@ function GenerateFormInner({
 
     const readyAttachments = pendingAttachments
       .filter((a): a is PendingAttachment & { status: "ready"; url: string; path: string } => a.status === "ready" && Boolean(a.url) && Boolean(a.path))
-      .map((a) => ({ path: a.path, url: a.url, name: a.name, type: a.type, size: a.size }));
+      .map((a) => ({ path: a.path, url: a.url, name: a.name, type: a.type, size: a.size, role: a.role }));
 
     // The Kling O3 aspect pre-flight now lives in the Send Receipt resolver
     // (REF_ASPECT_OUT_OF_RANGE, from server-measured upload dimensions) —
@@ -4755,45 +4848,13 @@ function GenerateFormInner({
             strip (SEEDANCE25_PHOTOREAL warn row with the one-tap switch),
             computed by the same resolver the server parity-checks — the
             ad-hoc banner that used to sit here was deleted in P1. */}
-        {/* Attachment-anchor fence (2026-08-24, the bmazloum case): an image
-            attached to the message REPLACES the character's saved face
-            reference (deliberate since 2026-08-08 — a close-up of the person
-            attached alongside the prompt was being ignored). Right call for
-            face photos, identity-destroying for outfit/product/scene photos:
-            an anchor with no face in it leaves the model inventing a new
-            person every run (match_score 17, "different character every
-            time"). Same informed-choice idiom as the 2.5 fence above —
-            warn + one-tap fix, never a hard block. */}
-        {(() => {
-          const anchorChar = characters.find((c) => c.id === characterId);
-          if (!anchorChar || anchorChar.referencePhotos.length === 0) return null;
-          if (companionCharacterIds.length > 0) return null;
-          if (contentType === "video" && videoAdvancedMode !== "none") return null;
-          const anchorAtt = pendingAttachments.find(
-            (a) => a.status === "ready" && a.type.startsWith("image/") && Boolean(a.url),
-          );
-          if (!anchorAtt) return null;
-          return (
-            <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[12px] bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 dark:text-amber-300">
-              {/* Two variants (2026-08-24, bmazloum read the base copy next to
-                  the Outfit chip's caption as the app contradicting itself):
-                  when the character HAS saved outfit photos, the advice is
-                  "the chip already carries it", not "describe it in words". */}
-              <span className="min-w-0 flex-1">
-                {formatMsg(anchorChar.hasOutfit ? g.attachAnchorWarnOutfit : g.attachAnchorWarn, {
-                  name: anchorChar.name,
-                })}
-              </span>
-              <button
-                type="button"
-                onClick={() => removeAttachment(anchorAtt.id)}
-                className="flex-shrink-0 rounded-full bg-atelier-ink px-2.5 py-1 text-[11px] font-semibold text-atelier-paper transition-opacity hover:opacity-90"
-              >
-                {g.attachAnchorRemove}
-              </button>
-            </div>
-          );
-        })()}
+        {/* The attachment-anchor amber fence (2026-08-24) was retired in
+            Send Receipt P2: attachments now carry ROLES (Face / Outfit /
+            Scene / Not used, classifier-pre-picked, tap to change), so an
+            outfit or scenery photo can no longer ambiguously occupy the
+            face slot — the confusion the fence lectured about is
+            inexpressible. The receipt strip's inventory line still names
+            the face source on every send. */}
         {/* Outfit chip (2026-08-24, operator-approved mock): appears only when
             the selected character has saved outfit photos. On by default —
             tap toggles it off for one-off scenes. The caption is honest per
@@ -4903,7 +4964,7 @@ function GenerateFormInner({
               {pendingAttachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 px-3 pt-3">
                   {pendingAttachments.map((att) => (
-                    <PendingAttachmentChip key={att.id} attachment={att} onRemove={() => removeAttachment(att.id)} />
+                    <PendingAttachmentChip key={att.id} attachment={att} onRemove={() => removeAttachment(att.id)} onRoleTap={() => cycleAttachmentRole(att.id)} />
                   ))}
                 </div>
               )}

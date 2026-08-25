@@ -654,6 +654,8 @@ const pt = {
     issueDialogueVoice: "O diálogo precisa de um personagem com voz — atribua uma nas configurações do personagem ou apague o diálogo.",
     issueMultiPerson: "{model} gera uma pessoa por vez — escolha Kling O3 Pro ou Seedance para um elenco.",
     issueActClear: "Remover",
+    roleScene: "Cenário",
+    receiptScene: "Cenário: descrito a partir da sua foto",
     pullUpToEdit: "Puxe para editar",
     expandStage: "Expandir visualização",
     collapseStage: "Sair da visualização expandida",

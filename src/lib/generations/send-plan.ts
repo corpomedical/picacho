@@ -268,7 +268,8 @@ export type PlanNoteCode =
   | "EXTRA_ATTACHMENT_UNUSED"
   | "OUTFIT_DESCRIBED_ONLY"
   | "GENERIC_PERSON"
-  | "OUTFIT_BUDGET_DROPPED";
+  | "OUTFIT_BUDGET_DROPPED"
+  | "OUTFIT_ATTACHMENT_UNSUPPORTED";
 
 export type IssueCode =
   | "NEEDS_REFERENCE_PHOTO"
@@ -306,7 +307,16 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   const character = input.character;
   const characterName = character?.name ?? "";
   const hasSavedPhotos = (character?.referencePhotoCount ?? 0) > 0;
-  const firstImageAttachment = input.attachments.find((a) => a.isImage);
+  // Roles (P2): an attachment occupies the identity slot only when its role
+  // says so — or when it carries no role at all, which is the permanent
+  // legacy contract (old native shells, pre-classification sends). Outfit
+  // and scene roles route to their own lanes; "unused" is an explicit
+  // opt-out that never rides and never nags.
+  const firstImageAttachment = input.attachments.find(
+    (a) => a.isImage && (a.role === undefined || a.role === "identity"),
+  );
+  const outfitAttachment = input.attachments.find((a) => a.isImage && a.role === "outfit");
+  const sceneAttachment = input.attachments.find((a) => a.isImage && a.role === "scene");
   const advanced = input.contentType === "video" ? input.advancedMode : "none";
   const isMulti = input.companionsCount > 0;
 
@@ -380,8 +390,12 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
     }
   }
 
-  // Extra attachments beyond the first image are decorative today — say so.
-  const extraCount = input.attachments.filter((a) => a !== firstImageAttachment).length;
+  // Attachments that neither carry a consuming role nor were explicitly
+  // opted out are decorative — say so instead of pretending.
+  const consumed = new Set([firstImageAttachment, outfitAttachment, sceneAttachment]);
+  const extraCount = input.attachments.filter(
+    (a) => !consumed.has(a) && a.role !== "unused",
+  ).length;
   if (extraCount > 0) {
     entries.push({
       slot: "identity",
@@ -393,11 +407,24 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   }
 
   // --- outfit --------------------------------------------------------------
-  if (character?.hasOutfit && character.outfitOn && !isMulti && advanced === "none") {
-    const identityPresent = entries.some(
-      (e) => e.slot === "identity" && e.consumption === "native",
-    );
-    const nativeLane = Boolean(caps?.outfitImage) && identityPresent && !input.storyboardShotsActive;
+  // A per-message outfit attachment outranks the character's saved outfit
+  // for this send. It only rides on models whose endpoints take an extra
+  // clothing image (there is no stored description to fall back on for a
+  // one-off attachment) — elsewhere it drops VISIBLY.
+  const identityPresent = () =>
+    entries.some((e) => e.slot === "identity" && e.consumption === "native");
+  if (outfitAttachment && !isMulti && advanced === "none") {
+    const nativeLane =
+      Boolean(caps?.outfitImage) && identityPresent() && !input.storyboardShotsActive;
+    entries.push({
+      slot: "outfit",
+      source: "attachment",
+      consumption: nativeLane ? "native" : "dropped",
+      noteCode: nativeLane ? undefined : "OUTFIT_ATTACHMENT_UNSUPPORTED",
+    });
+  } else if (character?.hasOutfit && character.outfitOn && !isMulti && advanced === "none") {
+    const nativeLane =
+      Boolean(caps?.outfitImage) && identityPresent() && !input.storyboardShotsActive;
     entries.push({
       slot: "outfit",
       source: "character-outfit",
@@ -405,6 +432,13 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
       noteCode: nativeLane ? undefined : "OUTFIT_DESCRIBED_ONLY",
       label: characterName,
     });
+  }
+
+  // --- scene ---------------------------------------------------------------
+  // A scene-role photo is vision-described into the prompt server-side —
+  // prompt text works on every model, so this lane is universal.
+  if (sceneAttachment && advanced === "none") {
+    entries.push({ slot: "scene", source: "attachment", consumption: "described" });
   }
 
   // --- continuation --------------------------------------------------------
