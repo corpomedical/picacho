@@ -34,6 +34,8 @@ import {
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
+import { resolveSendPlan } from "@/lib/generations/send-plan";
+import { ReceiptStrip } from "@/components/receipt-strip";
 import {
   compilePrompt,
   deleteSavedPrompt,
@@ -4566,6 +4568,52 @@ function GenerateFormInner({
         ) : approachingLimit && !isHero ? (
           <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />
         ) : null}
+
+      {/* The Send Receipt (P0, read-only): the one line that inventories
+          what the next send actually is — deliberately OUTSIDE the fold
+          ternary below, so nothing armed can hide behind the pull-up bar
+          (ghost dialogue, stale continuations, dropped attachments). Its
+          content comes from resolveSendPlan, the single source of truth
+          the server re-checks through the same module. */}
+      {!isHero && (
+        <ReceiptStrip
+          plan={resolveSendPlan({
+            contentType,
+            modelId: contentType === "video" ? videoModelId : "gpt-image",
+            character: currentCharacter
+              ? {
+                  name: currentCharacter.name,
+                  referencePhotoCount: referencePhotos.length,
+                  hasOutfit: Boolean(currentCharacter.hasOutfit),
+                  outfitOn: useOutfit,
+                  photoreal: null,
+                }
+              : null,
+            companionsCount: companionCharacterIds.length,
+            attachments: pendingAttachments
+              .filter((a) => a.status === "ready")
+              .map((a) => ({ id: a.id, isImage: a.type.startsWith("image/") })),
+            anchorPhotoPicked: Boolean(anchorPhotoPath),
+            advancedMode: contentType === "video" ? videoAdvancedMode : "none",
+            multiRefCount: multiRefPaths.length,
+            storyboardStart: Boolean(storyboardStartPath),
+            storyboardEnd: Boolean(storyboardEndPath),
+            storyboardShotsActive: storyboardActive,
+            continueFromId,
+            dialogueText,
+            dialogueVoiceAssigned: Boolean(currentCharacter?.voiceId),
+            durationSeconds: videoDurationSeconds,
+            aspect: videoAspectRatio,
+            rulesSkipArmed: skipRulesOnceRef.current,
+          })}
+          headline={
+            contentType === "video"
+              ? `${currentVideoModel?.name ?? g.video} · ${videoDurationSeconds}s${videoAspectRatio ? ` · ${videoAspectRatio}` : ""}`
+              : g.image
+          }
+          g={g}
+        />
+      )}
 
       {/* The fold: while collapsed, the whole composer is a slim pull-up
           bar — top edge visible, shadow above it, freed space to the

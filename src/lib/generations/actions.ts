@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { resolveSendPlan } from "@/lib/generations/send-plan";
 import { getOrigin } from "@/lib/origin";
 import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -1174,6 +1175,58 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             .createSignedUrl(characterOutfitPaths[0], 60 * 10);
           outfitImageUrl = signedOutfit?.signedUrl ?? null;
         }
+      }
+
+      // Send-plan parity check (P0, log-only): re-resolve this send through
+      // the same pure module the composer's receipt strip renders from, and
+      // log the verdict. Divergence between what this logs and what the
+      // code below actually does is exactly the split-brain the redesign
+      // exists to kill — these logs are how we prove parity before the
+      // resolver becomes authoritative. Guarded so a resolver bug can never
+      // cost anyone a render.
+      try {
+        const serverPlan = resolveSendPlan({
+          contentType,
+          modelId: contentType === "video" ? videoModelId : imageModelId,
+          character: character
+            ? {
+                name: character.name as string,
+                referencePhotoCount: ((character.reference_image_urls as string[] | null) ?? []).length,
+                hasOutfit: characterOutfitPaths.length > 0,
+                outfitOn: useOutfit,
+                photoreal: null,
+              }
+            : null,
+          companionsCount: companionCharacters.length,
+          attachments: attachmentReferenceUrl ? [{ id: "attachment", isImage: true }] : [],
+          anchorPhotoPicked: Boolean(requestedAnchorPhotoPath),
+          advancedMode:
+            referencePhotoPaths.length >= 2
+              ? "multiref"
+              : storyboardStartPath || storyboardEndPath
+                ? "storyboard"
+                : "none",
+          multiRefCount: referencePhotoPaths.length,
+          storyboardStart: Boolean(storyboardStartPath),
+          storyboardEnd: Boolean(storyboardEndPath),
+          storyboardShotsActive: Boolean(storyboardShots),
+          continueFromId: continueFromGenerationId || null,
+          dialogueText: wantsDialogue ? dialogueText : "",
+          dialogueVoiceAssigned: Boolean(dialogueVoiceId),
+          durationSeconds: videoDurationSeconds,
+          aspect: videoAspectRatio,
+          rulesSkipArmed: formData.get("skip_brand_rules") === "1",
+        });
+        console.log(
+          "[send-plan]",
+          JSON.stringify({
+            gen: placeholder.id,
+            entries: serverPlan.entries.map((e) => `${e.slot}:${e.source}:${e.consumption}${e.noteCode ? `:${e.noteCode}` : ""}`),
+            issues: serverPlan.issues.map((i) => `${i.severity}:${i.code}`),
+          }),
+        );
+      } catch (planErr) {
+        console.warn("[send-plan] resolver parity check failed:", planErr);
       }
 
       const result = await runRealPipeline(

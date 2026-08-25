@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "check:hooks": "node scripts/check-hook-order.mjs",
-    "verify": "tsc --noEmit && next lint && node scripts/check-hook-order.mjs"
+    "verify": "tsc --noEmit && next lint && node scripts/check-hook-order.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.0",
@@ -42,6 +43,7 @@
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.0",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
   }
 }
