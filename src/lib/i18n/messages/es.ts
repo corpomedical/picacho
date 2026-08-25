@@ -659,6 +659,7 @@ const es = {
     roleProp: "Elemento",
     receiptProp: "Elemento: igualado desde tu foto",
     receiptPropDescribed: "Elemento: descrito a partir de tu foto",
+    roleDetecting: "Detectando…",
     pullUpToEdit: "Desliza para editar",
     expandStage: "Ampliar vista",
     collapseStage: "Salir de la vista ampliada",

@@ -659,6 +659,7 @@ const it = {
     roleProp: "Elemento",
     receiptProp: "Elemento: replicato dalla tua foto",
     receiptPropDescribed: "Elemento: descritto dalla tua foto",
+    roleDetecting: "Rilevamento…",
     pullUpToEdit: "Tira su per modificare",
     expandStage: "Espandi vista",
     collapseStage: "Esci dalla vista espansa",

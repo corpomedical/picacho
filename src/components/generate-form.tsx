@@ -831,6 +831,11 @@ type PendingAttachment = {
   // roleSetByUser so a late classification can never overturn a human.
   role?: AttachmentRole;
   roleSetByUser?: boolean;
+  // True while the vision classifier is deciding this image's role — the
+  // badge shows "Detecting…" instead of asserting "Face" during the round
+  // trip (operator, 2026-08-25: a confident wrong badge during the window
+  // read as "auto-detect doesn't work").
+  classifying?: boolean;
 };
 
 function formatBytes(bytes: number): string {
@@ -1194,17 +1199,21 @@ function PendingAttachmentChip({
   const g = t.generate;
   const isImage = attachment.type.startsWith("image/");
   const isVideo = attachment.type.startsWith("video/");
+  const detecting =
+    Boolean(attachment.classifying) && !attachment.roleSetByUser && attachment.role === undefined;
   const roleLabel = !isImage
     ? null
-    : attachment.role === "outfit"
-      ? g.receiptOutfit
-      : attachment.role === "scene"
-        ? g.roleScene
-        : attachment.role === "prop"
-          ? g.roleProp
-          : attachment.role === "unused"
-            ? g.receiptUnused
-            : g.receiptFace;
+    : detecting
+      ? g.roleDetecting
+      : attachment.role === "outfit"
+        ? g.receiptOutfit
+        : attachment.role === "scene"
+          ? g.roleScene
+          : attachment.role === "prop"
+            ? g.roleProp
+            : attachment.role === "unused"
+              ? g.receiptUnused
+              : g.receiptFace;
 
   return (
     <div className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-media border border-atelier-rule bg-atelier-paper">
@@ -1244,9 +1253,11 @@ function PendingAttachmentChip({
           onClick={onRoleTap}
           className={cn(
             "absolute inset-x-0.5 bottom-0.5 truncate rounded-[7px] px-1 py-0.5 text-center text-[8.5px] font-semibold leading-tight",
-            attachment.role === "unused"
-              ? "bg-neutral-950/55 text-[#faf8f3]/70"
-              : "bg-neutral-950/70 text-[#faf8f3]",
+            detecting
+              ? "animate-pulse bg-neutral-950/55 text-[#faf8f3]/80"
+              : attachment.role === "unused"
+                ? "bg-neutral-950/55 text-[#faf8f3]/70"
+                : "bg-neutral-950/70 text-[#faf8f3]",
           )}
         >
           {roleLabel}
@@ -2897,27 +2908,40 @@ function GenerateFormInner({
           // an upload never OCCUPIES a non-face role without either the
           // classifier or the user saying so.
           if (result.error === null && result.attachment!.type.startsWith("image/")) {
+            setPendingAttachments((prev) =>
+              prev.map((p) => (p.id === id ? { ...p, classifying: true } : p)),
+            );
             const fd = new FormData();
             fd.set("url", result.attachment!.url);
             void classifyChatAttachment(fd)
               .then((res) => {
                 const cls = res.classification;
-                if (!cls || cls === "person" || cls === "other") return;
-                const role: AttachmentRole =
+                const role: AttachmentRole | undefined =
                   cls === "clothing"
                     ? "outfit"
                     : cls === "scene"
                       ? "scene"
-                      : "prop"; // animal, vehicle, object — a THING that appears
+                      : cls === "animal" || cls === "vehicle" || cls === "object"
+                        ? "prop"
+                        : undefined; // person / other / null keep the Face default
                 setPendingAttachments((prev) =>
                   prev.map((p) =>
-                    p.id === id && !p.roleSetByUser && p.role === undefined ? { ...p, role } : p,
+                    p.id === id
+                      ? {
+                          ...p,
+                          classifying: false,
+                          ...(role && !p.roleSetByUser && p.role === undefined ? { role } : {}),
+                        }
+                      : p,
                   ),
                 );
               })
               .catch(() => {
-                // Classification is advisory — a failed call just leaves
-                // the chip on its default role.
+                // Classification is advisory — a failed call just settles
+                // the badge on its default role.
+                setPendingAttachments((prev) =>
+                  prev.map((p) => (p.id === id ? { ...p, classifying: false } : p)),
+                );
               });
           }
         })

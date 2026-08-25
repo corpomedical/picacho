@@ -716,6 +716,7 @@ const en = {
     roleProp: "Prop",
     receiptProp: "Prop: matched from your photo",
     receiptPropDescribed: "Prop: described from your photo",
+    roleDetecting: "Detecting…",
     pullUpToEdit: "Pull up to edit",
     expandStage: "Expand view",
     collapseStage: "Exit expanded view",
