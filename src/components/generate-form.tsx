@@ -2681,6 +2681,13 @@ function GenerateFormInner({
     selectedAngles.forEach((id) => formData.append("angle", id));
     // Same attachment/anchor-photo priority as the single-generation path
     // above — see the comments there.
+    const multiAngleRoles = attachments
+      .filter((a) => a.type.startsWith("image/"))
+      .map((a) => ({ url: a.url, role: a.role ?? "identity" }));
+    if (multiAngleRoles.length > 0) {
+      formData.set("attachment_roles", JSON.stringify(multiAngleRoles));
+    }
+    formData.set("payload_version", "2");
     const anchorAttachment = attachments.find(
       (a) => a.type.startsWith("image/") && (a.role === undefined || a.role === "identity"),
     );
@@ -3580,6 +3587,9 @@ function GenerateFormInner({
     if (roleList.length > 0) {
       formData.set("attachment_roles", JSON.stringify(roleList));
     }
+    // Send Receipt P4: this payload speaks the versioned contract. Old
+    // native shells never send this and keep the legacy semantics forever.
+    formData.set("payload_version", "2");
     if (storyboardActive) {
       formData.set(
         "storyboard_shots",

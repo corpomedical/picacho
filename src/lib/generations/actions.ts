@@ -1805,7 +1805,29 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // Same attachment/anchor-photo priority as runGeneration — see the
   // comments there. Same SSRF guard too: only our own /api/media URLs are
   // accepted; anything else is discarded before it can reach a provider.
+  // Role-aware since Send Receipt P4: when the composer sends the roles
+  // list, only an identity-role photo may anchor — an outfit or scene photo
+  // frozen into a multi-angle confirm can never become the face.
   const attachmentReferenceUrl = (() => {
+    const rolesRaw = formData.get("attachment_roles");
+    if (rolesRaw) {
+      try {
+        const parsed: unknown = JSON.parse(String(rolesRaw));
+        if (Array.isArray(parsed)) {
+          const identity = parsed.find(
+            (x) =>
+              x &&
+              typeof (x as { url?: unknown }).url === "string" &&
+              ((x as { url: string }).url).startsWith("/api/media/") &&
+              !((x as { url: string }).url).includes("..") &&
+              (x as { role?: unknown }).role === "identity",
+          ) as { url: string } | undefined;
+          return identity?.url ?? "";
+        }
+      } catch {
+        // Malformed roles — fall through to the legacy field.
+      }
+    }
     const raw = (formData.get("attachment_reference_url") as string) || "";
     return raw.startsWith("/api/media/") ? raw : "";
   })();

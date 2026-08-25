@@ -1,3 +1,4 @@
+import { resolveSendPlan } from "@/lib/generations/send-plan";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { runRealPipeline } from "@/lib/generations/pipeline";
 import {
@@ -185,6 +186,46 @@ export async function runApiImageGeneration(params: {
         .from("character-references")
         .createSignedUrl(firstPhoto, 60 * 10);
       referenceImageUrl = signed?.signedUrl ?? null;
+    }
+
+    // Send-plan parity (Send Receipt P4): the public API is a side door into
+    // generation, so it runs the same resolver log-only pass as the web
+    // composer — every generation surface answers to one source of truth.
+    try {
+      const apiPlan = resolveSendPlan({
+        contentType: "image",
+        modelId: "gpt-image",
+        character: character
+          ? {
+              name: character.name,
+              referencePhotoCount: (character.reference_image_urls ?? []).length,
+              hasOutfit: false,
+              outfitOn: false,
+              photoreal: null,
+            }
+          : null,
+        companionsCount: 0,
+        attachments: [],
+        anchorPhotoPicked: false,
+        advancedMode: "none",
+        multiRefCount: 0,
+        storyboardStart: false,
+        storyboardEnd: false,
+        storyboardShotsActive: false,
+        continueFromId: null,
+        dialogueText: "",
+        dialogueVoiceAssigned: false,
+        rulesSkipArmed: false,
+      });
+      console.log(
+        "[send-plan:api]",
+        JSON.stringify({
+          entries: apiPlan.entries.map((e) => `${e.slot}:${e.source}:${e.consumption}`),
+          issues: apiPlan.issues.map((i) => `${i.severity}:${i.code}`),
+        }),
+      );
+    } catch {
+      // Parity logging must never cost an API caller a render.
     }
 
     const result = await runRealPipeline(
