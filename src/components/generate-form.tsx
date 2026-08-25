@@ -1960,6 +1960,17 @@ function GenerateFormInner({
   const [continueFromId, setContinueFromId] = useState<string | null>(() =>
     searchParams.get("continue"),
   );
+  // ?continue is consumed into state once and then STRIPPED from the URL —
+  // exactly like ?resume further down. It used to stay in the address bar
+  // forever, so any later remount of the composer (hard reload, PWA
+  // re-open, navigating back to /app/generate) silently re-armed the
+  // continuation chip and re-steered the model. Operator repro, 2026-08-25:
+  // mid-image-generation the composer "turned to continue previous video".
+  useEffect(() => {
+    if (!searchParams.get("continue")) return;
+    router.replace("/app/generate", { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Storyboard (Kling O3 Pro multi_prompt): the shot list replaces the
   // textarea while on. State lives here so switching the toggle off and on
   // again keeps the drafted shots. Auto-off when the model leaves O3 Pro —
@@ -1996,6 +2007,14 @@ function GenerateFormInner({
   const continueModelAppliedRef = useRef(false);
   useEffect(() => {
     if (!continueFromId) return;
+    // Continuation is a video concept: switching the composer to images
+    // clears it outright rather than leaving a ghost chip armed to
+    // resurface on a later flip back to video (same operator repro as the
+    // URL strip above — no state may outlive the mode it belongs to).
+    if (contentType !== "video") {
+      setContinueFromId(null);
+      return;
+    }
     if (videoModelId === "seedance" || videoModelId === "seedance-2") {
       continueModelAppliedRef.current = true;
       return;
@@ -2005,7 +2024,7 @@ function GenerateFormInner({
     } else {
       setContinueFromId(null);
     }
-  }, [continueFromId, videoModelId]);
+  }, [continueFromId, videoModelId, contentType]);
   const [videoModelMenuOpen, setVideoModelMenuOpen] = useState(false);
   const videoModelMenuRef = useRef<HTMLDivElement>(null);
 
