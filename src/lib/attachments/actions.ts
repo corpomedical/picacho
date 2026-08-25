@@ -134,6 +134,11 @@ export async function classifyChatAttachment(
   const classification = await classifyAttachmentImage(
     absolutizeMediaUrl(rawUrl, await getOrigin()),
   );
+  if (!classification) {
+    // Advisory feature, but a silent null is undebuggable from the field —
+    // this line is what turns "it's not autodetecting" into a diagnosis.
+    console.warn("[classify] null classification for", rawUrl.slice(0, 100));
+  }
   return { error: null, classification };
 }
 

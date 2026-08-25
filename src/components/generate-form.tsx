@@ -2877,33 +2877,6 @@ function GenerateFormInner({
             prev.map((a) => {
               if (a.id !== id) return a;
               if (result.error !== null) return { ...a, status: "error", error: result.error };
-              // Pre-pick the role off-thread (Send Receipt P2): the chip is
-              // already usable; when the classifier lands it only fills a
-              // role no human has touched. person keeps the legacy identity
-              // default (undefined) — an upload never OCCUPIES a non-face
-              // role without either the classifier or the user saying so.
-              if (result.attachment!.type?.startsWith("image/") ?? a.type.startsWith("image/")) {
-                const attachmentId = a.id;
-                const fd = new FormData();
-                fd.set("url", result.attachment!.url);
-                void classifyChatAttachment(fd).then((res) => {
-                  const cls = res.classification;
-                  if (!cls || cls === "person" || cls === "other") return;
-                  const role: AttachmentRole =
-                    cls === "clothing"
-                      ? "outfit"
-                      : cls === "scene"
-                        ? "scene"
-                        : "prop"; // animal, vehicle, object — a THING that appears
-                  setPendingAttachments((prev) =>
-                    prev.map((p) =>
-                      p.id === attachmentId && !p.roleSetByUser && p.role === undefined
-                        ? { ...p, role }
-                        : p,
-                    ),
-                  );
-                });
-              }
               return {
                 ...a,
                 status: "ready",
@@ -2915,6 +2888,38 @@ function GenerateFormInner({
             }),
           );
           if (result.error !== null) setError(result.error);
+          // Pre-pick the role (Send Receipt P2): fired AFTER the state
+          // update, never from inside the updater — updaters must stay pure
+          // (StrictMode double-invokes them; a fetch inside one fires
+          // twice in dev and is a silent code smell in prod). The chip is
+          // already usable; when the classifier lands it only fills a role
+          // no human has touched. person keeps the legacy Face default —
+          // an upload never OCCUPIES a non-face role without either the
+          // classifier or the user saying so.
+          if (result.error === null && result.attachment!.type.startsWith("image/")) {
+            const fd = new FormData();
+            fd.set("url", result.attachment!.url);
+            void classifyChatAttachment(fd)
+              .then((res) => {
+                const cls = res.classification;
+                if (!cls || cls === "person" || cls === "other") return;
+                const role: AttachmentRole =
+                  cls === "clothing"
+                    ? "outfit"
+                    : cls === "scene"
+                      ? "scene"
+                      : "prop"; // animal, vehicle, object — a THING that appears
+                setPendingAttachments((prev) =>
+                  prev.map((p) =>
+                    p.id === id && !p.roleSetByUser && p.role === undefined ? { ...p, role } : p,
+                  ),
+                );
+              })
+              .catch(() => {
+                // Classification is advisory — a failed call just leaves
+                // the chip on its default role.
+              });
+          }
         })
         .catch(() => {
           // A rejected promise here (vs. the function's own { error } return

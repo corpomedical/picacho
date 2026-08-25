@@ -90,7 +90,12 @@ export async function classifyAttachmentImage(imageUrl: string): Promise<Attachm
               ],
             },
           ],
-          max_completion_tokens: 500,
+          // Same generous ceiling as every vision call here: gpt-5.4-mini
+          // spends completion tokens on internal reasoning BEFORE the visible
+          // text — a tight cap returns an EMPTY answer, not a shorter one
+          // (the exact silent failure that broke role auto-detection,
+          // operator report 2026-08-25).
+          max_completion_tokens: 2000,
         }),
       },
       20_000,
@@ -151,7 +156,12 @@ export async function classifyRenderStyle(
               ],
             },
           ],
-          max_completion_tokens: 400,
+          // Same generous ceiling as every vision call here: gpt-5.4-mini
+          // spends completion tokens on internal reasoning BEFORE the visible
+          // text — a tight cap returns an EMPTY answer, not a shorter one
+          // (the exact silent failure that broke role auto-detection,
+          // operator report 2026-08-25).
+          max_completion_tokens: 2000,
         }),
       },
       20_000,
@@ -200,7 +210,12 @@ export async function describeSubjectImage(imageUrl: string): Promise<string | n
               ],
             },
           ],
-          max_completion_tokens: 1200,
+          // Same generous ceiling as every vision call here: gpt-5.4-mini
+          // spends completion tokens on internal reasoning BEFORE the visible
+          // text — a tight cap returns an EMPTY answer, not a shorter one
+          // (the exact silent failure that broke role auto-detection,
+          // operator report 2026-08-25).
+          max_completion_tokens: 2000,
         }),
       },
       30_000,
