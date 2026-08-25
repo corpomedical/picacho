@@ -642,6 +642,7 @@ const en = {
     notifyFailedTitle: "Generation didn't pass",
     // The insufficient-credits strip attached above the composer.
     insufficientCredits: "{model} at {seconds}s needs {needed} credits — you have {available}.",
+    insufficientCreditsImage: "This image needs {needed} credit — you have {available}.",
     addCreditsCta: "Add {n} credits",
     dismissBanner: "Dismiss",
     // Queued-render progress labels — what a long multi-angle render is
@@ -665,6 +666,8 @@ const en = {
     takesRendering: "Rendering…",
     takesAngles: "{n} angles",
     uploadFailedFile: "{name} couldn't be uploaded — it may be too large or the connection dropped.",
+    anotherShotLoadFailed: "Couldn't load that shot to reuse — open it from History and try again.",
+    anotherShotAttachFailed: "Couldn't attach the previous shot — attach it manually, or try again from History.",
     uploadPhotoFailed: "Couldn't upload that photo.",
     resultMissing: "The result was missing: {issues}.",
     // The /app/generate page header and its reliability stat tiles.
@@ -801,6 +804,7 @@ const en = {
     pipelineLog: "Pipeline log",
     promoteCta: "Use as reference photo",
     continueClipCta: "Continue this clip",
+    anotherShotCta: "Another shot on this set",
     promoteDone: "Added to the character's reference photos.",
     attemptLabel: "Attempt {n}",
     didntPassSuffix: "— didn't pass",

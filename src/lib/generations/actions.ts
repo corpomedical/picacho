@@ -2783,6 +2783,34 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
   };
 }
 
+// "Another shot on this set" (2026-08-26): hands the composer what it needs
+// to prefill from a finished image — the original prompt and a stable media
+// URL for the result. Read-only and session-scoped like getGenerationThread
+// above; every eligibility rule is re-checked here rather than trusted from
+// the link, so a stale or hand-edited ?anothershot id degrades to null (the
+// composer shows a plain "couldn't load" error) instead of a wrong prefill.
+export async function getAnotherShotSource(
+  generationId: string,
+): Promise<{ prompt: string; resultUrl: string } | null> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user || !generationId) return null;
+
+  const { data: row } = await supabase
+    .from("generations")
+    .select("id, prompt_input, content_type, status, result_url")
+    .eq("id", generationId)
+    .eq("user_id", userData.user.id)
+    .single();
+  if (!row) return null;
+  if (row.content_type !== "image" || row.status !== "succeeded") return null;
+
+  const url = toMediaUrl(row.result_url as string | null);
+  if (!isRenderableUrl(url)) return null;
+
+  return { prompt: (row.prompt_input as string | null) ?? "", resultUrl: url as string };
+}
+
 export async function getReliabilityStats(_userId: string) {
   // Derive the account from the verified session rather than trusting the
   // argument — this only ever shows the caller their own dashboard.

@@ -14,9 +14,14 @@ import {
   requestMultiAngleGenerationCancel,
   discardStoppedGeneration,
   getGenerationThread,
+  getAnotherShotSource,
   type HistoryTurn,
   type ChatHistoryItem,
 } from "@/lib/generations/actions";
+import {
+  buildAnotherShotPrompt,
+  trimUnfilledAnotherShotScaffold,
+} from "@/lib/generations/another-shot";
 import { synthesizeVoice } from "@/lib/voice/actions";
 import { parseVoiceCommand } from "@/lib/voice/commands";
 import { recommendCreditPack } from "@/lib/stripe/credit-packs";
@@ -891,12 +896,18 @@ function InsufficientCreditsBanner({
   available,
   modelName,
   seconds,
+  kind,
   allowExternalPurchase,
 }: {
   needed: number;
   available: number;
   modelName: string;
   seconds: number;
+  // Which message template to use. Image mode has no user-facing model name
+  // or duration — "{model} at {seconds}s" printed the VIDEO picker's
+  // selection over an image send (caught 2026-08-26 during the Another-shot
+  // E2E: composer in Image mode, strip claiming "Kling O3 Pro at 5s").
+  kind: "image" | "video";
   // US-only, server-decided (lib/native/external-purchase): the app may
   // show a link OUT to website checkout at the exact moment someone is
   // short on credits. False everywhere else — the banner stays a plain
@@ -959,7 +970,9 @@ function InsufficientCreditsBanner({
           )}
         >
           <p className="flex-1">
-        {formatMsg(g.insufficientCredits, { model: modelName, seconds, needed, available })}{" "}
+        {kind === "image"
+          ? formatMsg(g.insufficientCreditsImage, { needed, available })
+          : formatMsg(g.insufficientCredits, { model: modelName, seconds, needed, available })}{" "}
         {/* An inline underlined action, matching the usage strip's link. A
             filled button here reads as an interruption; this reads as the
             next thing you might do. */}
@@ -2637,7 +2650,9 @@ function GenerateFormInner({
     userStoppedRef.current = false;
 
     const formData = new FormData();
-    formData.set("prompt", mPrompt);
+    // Same unfilled-scaffold strip as submitPrompt — the multi-angle prompt
+    // comes from the same textarea and can carry the same dangling suffix.
+    formData.set("prompt", trimUnfilledAnotherShotScaffold(mPrompt));
     formData.set("character_id", characterId);
     formData.set("angle_group_id", groupId);
     formData.set("video_model_id", videoModelId);
@@ -2918,6 +2933,77 @@ function GenerateFormInner({
     // Deliberately empty deps — a one-time "arrived from History" action,
     // not something that should re-run if characterId/contentType change
     // later from the user's own in-app picks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // "Another shot on this set" (?anothershot=<generationId>, from an image's
+  // History page — it arrives together with ?resume above, so the original
+  // chat loads alongside the prefill). Prefills the composer with the
+  // finished image attached as a neutral scene reference plus the original
+  // prompt scaffolded for a new camera angle. Deliberately COMPOSES the
+  // existing manual flow instead of adding a lane: the image is re-uploaded
+  // through uploadChatAttachment, so the resulting attachment is exactly
+  // what a person attaching the downloaded file would produce — same chip,
+  // same roles payload, same per-model receipt honesty, same removal path.
+  // Every failure is loud (chip error state + composer error line); no
+  // failure here can turn into a wrong send.
+  useEffect(() => {
+    const shotId = searchParams.get("anothershot");
+    if (!shotId) return;
+    router.replace("/app/generate", { scroll: false });
+    let cancelled = false;
+    (async () => {
+      const source = await getAnotherShotSource(shotId);
+      if (cancelled) return;
+      if (!source) {
+        setError(g.anotherShotLoadFailed);
+        return;
+      }
+      setPrompt(buildAnotherShotPrompt(source.prompt));
+      setComposerFolded(false);
+      const id = crypto.randomUUID();
+      setPendingAttachments((prev) => [
+        ...prev,
+        { id, name: "previous-shot.png", type: "image/png", size: 0, status: "uploading" },
+      ]);
+      try {
+        const res = await fetch(source.resultUrl);
+        if (!res.ok) throw new Error(String(res.status));
+        const blob = await res.blob();
+        const file = new File([blob], "previous-shot.png", { type: blob.type || "image/png" });
+        const formData = new FormData();
+        formData.set("file", file);
+        const result = await uploadChatAttachment(formData);
+        if (cancelled) return;
+        setPendingAttachments((prev) =>
+          prev.map((a) => {
+            if (a.id !== id) return a;
+            if (result.error !== null) return { ...a, status: "error", error: result.error };
+            return {
+              ...a,
+              status: "ready",
+              url: result.attachment!.url,
+              path: result.attachment!.path,
+              width: result.attachment!.width,
+              height: result.attachment!.height,
+            };
+          }),
+        );
+        if (result.error !== null) setError(result.error);
+      } catch {
+        if (cancelled) return;
+        setPendingAttachments((prev) =>
+          prev.map((a) =>
+            a.id === id ? { ...a, status: "error", error: g.anotherShotAttachFailed } : a,
+          ),
+        );
+        setError(g.anotherShotAttachFailed);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // One-time "arrived from History" action, same contract as ?resume above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -3434,7 +3520,10 @@ function GenerateFormInner({
       characterIdOverride?: string;
     },
   ) {
-    const submittedPrompt = rawPrompt.trim();
+    // A prefilled "Another shot" scaffold the person never filled in would
+    // read to the model as an unanswered question — strip it (deterministic
+    // suffix surgery, no-op on every other prompt; see another-shot.ts).
+    const submittedPrompt = trimUnfilledAnotherShotScaffold(rawPrompt.trim());
     const submittedAttachments = opts?.attachments ?? [];
     const effectiveContentType = opts?.contentTypeOverride ?? contentType;
     const effectiveCharacterId = opts?.characterIdOverride ?? characterId;
@@ -4706,17 +4795,29 @@ function GenerateFormInner({
             two stacked banners on top of the composer is one too many.
             Deliberately NOT gated on approachingLimit — someone with plenty of
             allowance can still be short for a 51-credit 30s clip. */}
-        {!isHero && cannotAfford && selectedVideoModel ? (
+        {/* Image sends with the free daily slot available are NOT short —
+            the server takes the free slot, and the footer pill says so
+            ("Uses today's free generation · image"). Showing the red
+            shortfall over that pill was a live contradiction (caught
+            2026-08-26). Video mode is left exactly as it was: whether the
+            free slot covers a given VIDEO model is a server-side rule this
+            strip doesn't know, so it keeps warning there. */}
+        {!isHero &&
+        cannotAfford &&
+        !(contentType === "image" && dailyFreeAvailable) &&
+        selectedVideoModel ? (
           <InsufficientCreditsBanner
-            // Remounts when the model or duration changes, so dismissing the
-            // strip suspends it for THAT selection rather than silencing a
-            // different, larger shortfall the person hasn't seen yet.
-            key={`${selectedVideoModel.id}-${videoDurationSeconds}`}
+            // Remounts when the selection changes, so dismissing the strip
+            // suspends it for THAT selection rather than silencing a
+            // different, larger shortfall the person hasn't seen yet. Image
+            // mode is its own selection for the same reason.
+            key={contentType === "image" ? "image" : `${selectedVideoModel.id}-${videoDurationSeconds}`}
             needed={selectedCreditCost}
             available={creditsAvailable}
             allowExternalPurchase={allowExternalPurchase}
             modelName={selectedVideoModel.name}
             seconds={videoDurationSeconds}
+            kind={contentType === "image" ? "image" : "video"}
           />
         ) : approachingLimit && !isHero ? (
           <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />

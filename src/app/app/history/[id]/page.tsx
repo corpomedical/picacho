@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
 import { angleSortIndex } from "@/lib/generations/angles";
+import { isAnotherShotEligible } from "@/lib/generations/another-shot";
 import { AngleResultViewer } from "@/components/angle-result-viewer";
 import { StillRendering } from "@/components/still-rendering";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
@@ -181,6 +182,21 @@ export default async function HistoryDetailPage({
                   </Button>
                 </Link>
               )}
+            {/* "Another shot on this set" (2026-08-26): the image sibling of
+                the clip continuation above — prefills the composer with this
+                result attached as a scene reference (the shipped neutral
+                reference lane) plus the original prompt scaffolded for a new
+                angle. Carries character/type/resume so the composer opens on
+                the same chat, exactly like "Continue chat". */}
+            {isOwner && isAnotherShotEligible(generation) && (
+              <Link
+                href={`/app/generate?${generation.character_profile_id ? `character=${encodeURIComponent(generation.character_profile_id)}&` : ""}type=image&resume=${encodeURIComponent(generation.id)}&anothershot=${encodeURIComponent(generation.id)}`}
+              >
+                <Button variant="secondary" size="sm">
+                  {h.anotherShotCta}
+                </Button>
+              </Link>
+            )}
             {canShareToCommunity && (
               <CommunityShareButton generationId={generation.id} initialShared={sharedToCommunity} />
             )}
