@@ -3422,6 +3422,12 @@ function GenerateFormInner({
       setLivePrompt(null);
       setLiveAttachments([]);
       setSubmitting(false);
+      // The submit folded the composer; a rejected send must unfold it, or
+      // the error AND the restored prompt render inside the hidden area and
+      // the whole thing reads as a dead click (operator repro, 2026-08-25:
+      // continuation send without a character — "it seemed it glitched and
+      // nothing registered" until Pull up to edit).
+      setComposerFolded(false);
       if (shouldSpeak) speak(formatMsg(g.speakError, { error: message }));
       if (stale) setTimeout(() => window.location.reload(), 1800);
       return;
@@ -3447,6 +3453,8 @@ function GenerateFormInner({
       setLivePrompt(null);
       setLiveAttachments([]);
       setSubmitting(false);
+      // Same unfold-on-rejection as the network-failure path above.
+      setComposerFolded(false);
       if (shouldSpeak) speak(formatMsg(g.speakError, { error: result.error }));
       return;
     }
