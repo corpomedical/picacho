@@ -10,6 +10,12 @@ export type ChatAttachment = {
   name: string;
   type: string;
   size: number;
+  // Pixel dimensions, measured server-side at upload for images (Send
+  // Receipt P1). Lets the resolver check provider aspect bounds without the
+  // old client-side Image() probe race. Absent on videos or if measuring
+  // fails — absence never blocks anything.
+  width?: number;
+  height?: number;
 };
 
 type UploadResult = { error: string | null; attachment?: ChatAttachment };
@@ -54,6 +60,25 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
   const path = `${data.user.id}/${crypto.randomUUID()}-${safeName}`;
 
+  // Measure images while the bytes are in hand. EXIF orientations 5-8 are
+  // 90°-rotated: swap so the dimensions describe the photo as DISPLAYED —
+  // that's the shape the provider aspect checks care about.
+  let width: number | undefined;
+  let height: number | undefined;
+  if (file.type.startsWith("image/")) {
+    try {
+      const sharp = (await import("sharp")).default;
+      const meta = await sharp(bytes).metadata();
+      if (meta.width && meta.height) {
+        const swapped = (meta.orientation ?? 1) >= 5;
+        width = swapped ? meta.height : meta.width;
+        height = swapped ? meta.width : meta.height;
+      }
+    } catch {
+      // Unmeasurable image — dims stay absent, nothing blocks.
+    }
+  }
+
   const { error: uploadError } = await supabase.storage
     .from("chat-attachments")
     .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
@@ -70,6 +95,8 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
       name: file.name,
       type: file.type,
       size: file.size,
+      width,
+      height,
     },
   };
 }

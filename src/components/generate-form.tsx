@@ -34,8 +34,8 @@ import {
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
-import { resolveSendPlan } from "@/lib/generations/send-plan";
-import { ReceiptStrip } from "@/components/receipt-strip";
+import { resolveSendPlan, type PlanIssue } from "@/lib/generations/send-plan";
+import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
 import {
   compilePrompt,
   deleteSavedPrompt,
@@ -822,6 +822,10 @@ type PendingAttachment = {
   url?: string;
   path?: string;
   error?: string;
+  // Measured server-side at upload (Send Receipt P1) — feeds the resolver's
+  // provider aspect-bound checks. Absent = unmeasured = never blocks.
+  width?: number;
+  height?: number;
 };
 
 function formatBytes(bytes: number): string {
@@ -2596,6 +2600,17 @@ function GenerateFormInner({
       return;
     }
 
+    // Multi-angle carries neither dialogue nor continuation, so only the
+    // verdicts that actually apply to its payload may block it (a
+    // false-positive from an inapplicable rule must never stop a send).
+    const planBlock = planBlockError(
+      new Set(["REF_ASPECT_OUT_OF_RANGE", "NEEDS_REFERENCE_PHOTO", "MODEL_CANNOT_MULTI_PERSON"]),
+    );
+    if (planBlock) {
+      setError(planBlock);
+      return;
+    }
+
     const { prompt: mPrompt, attachments } = pendingMultiAngle;
     requestNotificationPermission();
     setSubmitting(true);
@@ -2803,7 +2818,14 @@ function GenerateFormInner({
             prev.map((a) => {
               if (a.id !== id) return a;
               if (result.error !== null) return { ...a, status: "error", error: result.error };
-              return { ...a, status: "ready", url: result.attachment!.url, path: result.attachment!.path };
+              return {
+                ...a,
+                status: "ready",
+                url: result.attachment!.url,
+                path: result.attachment!.path,
+                width: result.attachment!.width,
+                height: result.attachment!.height,
+              };
             }),
           );
           if (result.error !== null) setError(result.error);
@@ -3292,6 +3314,92 @@ function GenerateFormInner({
     }
   }
 
+  // ---- Send Receipt plumbing (P0 read-only strip, P1 issues) ------------
+  // One snapshot builder feeds the strip, the submit-time soft-block, and
+  // (through the same pure module) the server's parity check — the single
+  // source of truth the redesign exists to establish.
+  function buildSendPlanInput() {
+    return {
+      contentType,
+      modelId: contentType === "video" ? videoModelId : "gpt-image",
+      character: currentCharacter
+        ? {
+            name: currentCharacter.name,
+            referencePhotoCount: referencePhotos.length,
+            hasOutfit: Boolean(currentCharacter.hasOutfit),
+            outfitOn: useOutfit,
+            photoreal: null,
+          }
+        : null,
+      companionsCount: companionCharacterIds.length,
+      attachments: pendingAttachments
+        .filter((a) => a.status === "ready")
+        .map((a) => ({
+          id: a.id,
+          isImage: a.type.startsWith("image/"),
+          width: a.width,
+          height: a.height,
+        })),
+      anchorPhotoPicked: Boolean(anchorPhotoPath),
+      advancedMode: contentType === "video" ? videoAdvancedMode : ("none" as const),
+      multiRefCount: multiRefPaths.length,
+      storyboardStart: Boolean(storyboardStartPath),
+      storyboardEnd: Boolean(storyboardEndPath),
+      storyboardShotsActive: storyboardActive,
+      continueFromId,
+      dialogueText,
+      dialogueVoiceAssigned: Boolean(currentCharacter?.voiceId),
+      durationSeconds: videoDurationSeconds,
+      aspect: videoAspectRatio,
+      rulesSkipArmed: skipRulesOnceRef.current,
+    };
+  }
+
+  // A function, not a const: currentVideoModel is declared further down the
+  // component, and every caller here runs at event/render time when it's
+  // long initialized.
+  function sendPlanModelName(): string {
+    return contentType === "video" ? (currentVideoModel?.name ?? videoModelId) : g.image;
+  }
+
+  // Submit-time soft-block: a blocking issue turns the send click into the
+  // same message the strip's red row shows — no fold, no server call, no
+  // credits. Deliberately NOT a disabled button (a resolver false-positive
+  // must never brick the composer; the server stays the backstop).
+  function planBlockError(onlyCodes?: ReadonlySet<string>): string | null {
+    const plan = resolveSendPlan(buildSendPlanInput());
+    const block = plan.issues.find(
+      (i) => i.severity === "block" && (!onlyCodes || onlyCodes.has(i.code)),
+    );
+    return block ? issueMessage(block, g, sendPlanModelName()) : null;
+  }
+
+  // One-tap remedies for the strip's issue rows.
+  function handlePlanAction(issue: PlanIssue) {
+    switch (issue.action) {
+      case "switch-seedance-2":
+        setVideoModelId("seedance-2");
+        return;
+      case "clear-continuation":
+        setContinueFromId(null);
+        return;
+      case "clear-dialogue":
+        setDialogueText("");
+        return;
+      case "remove-attachment": {
+        const img = pendingAttachments.find(
+          (a) => a.status === "ready" && a.type.startsWith("image/"),
+        );
+        if (img) removeAttachment(img.id);
+        return;
+      }
+      case "pick-character":
+        setComposerFolded(false);
+        setCharacterMenuOpen(true);
+        return;
+    }
+  }
+
   async function submitPrompt(
     rawPrompt: string,
     opts?: {
@@ -3329,6 +3437,15 @@ function GenerateFormInner({
     }
     if (isMultiCharacter && castMemberMissingPhoto) {
       setError(formatMsg(g.multiCharacterNeedsPhoto, { name: castMemberMissingPhoto.name }));
+      return;
+    }
+
+    // Send Receipt soft-block (P1): the resolver's blocking verdicts stop
+    // the send here — before the fold, before the server, before credits —
+    // with exactly the message the strip's red row shows.
+    const planBlock = planBlockError();
+    if (planBlock) {
+      setError(planBlock);
       return;
     }
 
@@ -3850,7 +3967,11 @@ function GenerateFormInner({
     if (submitting) return;
     skipRulesOnceRef.current = true;
     setPrompt(turnPrompt);
-    setTimeout(() => composerFormRef.current?.requestSubmit(), 40);
+    // Unfold first: while collapsed, the <form> is UNMOUNTED (the fold
+    // ternary), so requestSubmit on a null ref was a silent dead click —
+    // latent catalog entry generate-anyway-dead-while-folded, closed in P1.
+    setComposerFolded(false);
+    setTimeout(() => composerFormRef.current?.requestSubmit(), 80);
   }
 
   // The likeness-fence detour: same prompt, same reference, on Seedance 2.0
@@ -3862,6 +3983,9 @@ function GenerateFormInner({
     if (submitting) return;
     setVideoModelId("seedance-2");
     setPrompt(turnPrompt);
+    // Same unfold-before-submit as generateAnyway above — the folded form
+    // doesn't exist to receive requestSubmit.
+    setComposerFolded(false);
     setTimeout(() => composerFormRef.current?.requestSubmit(), 80);
   }
 
@@ -3872,29 +3996,10 @@ function GenerateFormInner({
       .filter((a): a is PendingAttachment & { status: "ready"; url: string; path: string } => a.status === "ready" && Boolean(a.url) && Boolean(a.path))
       .map((a) => ({ path: a.path, url: a.url, name: a.name, type: a.type, size: a.size }));
 
-    // Kling O3's reference input rejects extreme aspect ratios AT THE
-    // PROVIDER — a 422 after credits are already reserved (2026-08-24
-    // incident: 3 credits burned on an ultra-wide frame). Measure the
-    // anchor image up front and fail free instead. A measurement failure
-    // never blocks the send — the provider stays the backstop.
-    if (contentType === "video" && videoModelId.startsWith("kling-o3")) {
-      const anchor = readyAttachments.find((a) => a.type.startsWith("image/"));
-      if (anchor) {
-        const aspectOk = await new Promise<boolean>((resolve) => {
-          const probe = new Image();
-          probe.onload = () => {
-            const ratio = probe.naturalWidth / Math.max(1, probe.naturalHeight);
-            resolve(ratio >= 0.4 && ratio <= 2.5);
-          };
-          probe.onerror = () => resolve(true);
-          probe.src = anchor.url;
-        });
-        if (!aspectOk) {
-          setError(g.referenceAspectError);
-          return;
-        }
-      }
-    }
+    // The Kling O3 aspect pre-flight now lives in the Send Receipt resolver
+    // (REF_ASPECT_OUT_OF_RANGE, from server-measured upload dimensions) —
+    // the old client-side Image() probe is gone. Same protection, one
+    // consistent surface, and the strip shows the verdict before the click.
 
     if (multiAngleMode && contentType === "video") {
       const trimmed = prompt.trim();
@@ -4577,41 +4682,15 @@ function GenerateFormInner({
           the server re-checks through the same module. */}
       {!isHero && (
         <ReceiptStrip
-          plan={resolveSendPlan({
-            contentType,
-            modelId: contentType === "video" ? videoModelId : "gpt-image",
-            character: currentCharacter
-              ? {
-                  name: currentCharacter.name,
-                  referencePhotoCount: referencePhotos.length,
-                  hasOutfit: Boolean(currentCharacter.hasOutfit),
-                  outfitOn: useOutfit,
-                  photoreal: null,
-                }
-              : null,
-            companionsCount: companionCharacterIds.length,
-            attachments: pendingAttachments
-              .filter((a) => a.status === "ready")
-              .map((a) => ({ id: a.id, isImage: a.type.startsWith("image/") })),
-            anchorPhotoPicked: Boolean(anchorPhotoPath),
-            advancedMode: contentType === "video" ? videoAdvancedMode : "none",
-            multiRefCount: multiRefPaths.length,
-            storyboardStart: Boolean(storyboardStartPath),
-            storyboardEnd: Boolean(storyboardEndPath),
-            storyboardShotsActive: storyboardActive,
-            continueFromId,
-            dialogueText,
-            dialogueVoiceAssigned: Boolean(currentCharacter?.voiceId),
-            durationSeconds: videoDurationSeconds,
-            aspect: videoAspectRatio,
-            rulesSkipArmed: skipRulesOnceRef.current,
-          })}
+          plan={resolveSendPlan(buildSendPlanInput())}
           headline={
             contentType === "video"
               ? `${currentVideoModel?.name ?? g.video} · ${videoDurationSeconds}s${videoAspectRatio ? ` · ${videoAspectRatio}` : ""}`
               : g.image
           }
           g={g}
+          modelName={sendPlanModelName()}
+          onAction={handlePlanAction}
         />
       )}
 
@@ -4672,31 +4751,10 @@ function GenerateFormInner({
             theme, so the tint does too), deepening slightly on focus.
             There's deliberately NO overflow-hidden here, because the "+"
             menu opens outside this box's bounds. */}
-        {/* The Seedance 2.5 photoreal fence, surfaced BEFORE money moves:
-            2.5 is the illustrated lane and ByteDance hard-rejects photoreal
-            people (verified live 2026-08-21) — but nothing used to stop a
-            photo-referenced character from being sent there (2026-08-24
-            incident: 103 credits across three attempts). Warn, and offer
-            the one-tap fix. Not a hard block: illustrated characters with
-            reference images are legitimate on 2.5. */}
-        {contentType === "video" &&
-          videoModelId === "seedance" &&
-          (() => {
-            const warnCharacter = characters.find((c) => c.id === characterId);
-            if (!warnCharacter || warnCharacter.referencePhotos.length === 0) return null;
-            return (
-              <div className="mb-2.5 flex flex-wrap items-center gap-2 rounded-[12px] bg-amber-500/10 px-3 py-2 text-[11.5px] leading-snug text-amber-800 dark:text-amber-300">
-                <span className="min-w-0 flex-1">{formatMsg(g.seedance25Warn, { name: warnCharacter.name })}</span>
-                <button
-                  type="button"
-                  onClick={() => setVideoModelId("seedance-2")}
-                  className="flex-shrink-0 rounded-full bg-atelier-ink px-2.5 py-1 text-[11px] font-semibold text-atelier-paper transition-opacity hover:opacity-90"
-                >
-                  {g.seedance25Switch}
-                </button>
-              </div>
-            );
-          })()}
+        {/* The Seedance 2.5 photoreal fence now lives in the Send Receipt
+            strip (SEEDANCE25_PHOTOREAL warn row with the one-tap switch),
+            computed by the same resolver the server parity-checks — the
+            ad-hoc banner that used to sit here was deleted in P1. */}
         {/* Attachment-anchor fence (2026-08-24, the bmazloum case): an image
             attached to the message REPLACES the character's saved face
             reference (deliberate since 2026-08-08 — a close-up of the person
