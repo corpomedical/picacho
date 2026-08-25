@@ -19,6 +19,9 @@ export type CharacterOption = {
   // Whether saved outfit photos exist — drives the composer's Outfit chip.
   // The photos themselves are resolved server-side at generation time.
   hasOutfit: boolean;
+  // Render style for the Seedance lane rule (Send Receipt P3):
+  // true = photoreal, false = illustrated, null = unknown (heuristic rules).
+  photoreal: boolean | null;
 };
 
 export type VideoModelOption = {
@@ -71,7 +74,7 @@ export async function getGenerateWorkspaceData(
   // /app/character list bug).
   const { data: characters } = await supabase
     .from("character_profiles")
-    .select("id, name, reference_image_urls, outfit_image_urls, voice_id")
+    .select("id, name, reference_image_urls, outfit_image_urls, voice_id, render_style")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -95,6 +98,8 @@ export async function getGenerateWorkspaceData(
     })),
     voiceId: (c.voice_id as string | null) ?? null,
     hasOutfit: (((c.outfit_image_urls as string[] | null) ?? []).length > 0),
+    photoreal:
+      c.render_style === "photoreal" ? true : c.render_style === "illustrated" ? false : null,
   }));
 
   const { data: videoModelSetting } = await supabase

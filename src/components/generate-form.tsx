@@ -1275,6 +1275,8 @@ type CharacterOption = {
   // Saved outfit photos exist — shows the composer's Outfit chip. Optional so
   // call sites that build this shape by hand (tests, older pages) stay valid.
   hasOutfit?: boolean;
+  // true = photoreal, false = illustrated, null/undefined = unknown.
+  photoreal?: boolean | null;
 };
 
 export type VideoModelOption = {
@@ -2499,7 +2501,12 @@ function GenerateFormInner({
   // the next submit (adds skip_brand_rules=1 — the server logs the send as
   // rules-suspended), plus a ref to the composer form so the button can
   // resubmit programmatically after restoring the blocked prompt.
-  const skipRulesOnceRef = useRef(false);
+  // Bound rules override (Send Receipt P3): holds the EXACT prompt the
+  // "Generate anyway" click granted an override for — consumed only by a
+  // byte-identical send and cleared either way, so the old boolean one-shot
+  // flag's drift (arming whatever send happened to come next) is
+  // structurally impossible.
+  const skipRulesForPromptRef = useRef<string | null>(null);
   const composerFormRef = useRef<HTMLFormElement | null>(null);
   const resetChatRef = useRef(resetChat);
   const submittingRef = useRef(submitting);
@@ -3408,7 +3415,7 @@ function GenerateFormInner({
             referencePhotoCount: referencePhotos.length,
             hasOutfit: Boolean(currentCharacter.hasOutfit),
             outfitOn: useOutfit,
-            photoreal: null,
+            photoreal: currentCharacter.photoreal ?? null,
           }
         : null,
       companionsCount: companionCharacterIds.length,
@@ -3432,7 +3439,7 @@ function GenerateFormInner({
       dialogueVoiceAssigned: Boolean(currentCharacter?.voiceId),
       durationSeconds: videoDurationSeconds,
       aspect: videoAspectRatio,
-      rulesSkipArmed: skipRulesOnceRef.current,
+      rulesSkipArmed: skipRulesForPromptRef.current !== null && skipRulesForPromptRef.current === prompt.trim(),
     };
   }
 
@@ -3622,11 +3629,15 @@ function GenerateFormInner({
       formData.set("video_duration_seconds", String(videoDurationSeconds));
       if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
     }
-    if (skipRulesOnceRef.current) {
-      // One send only — the override never outlives the click that asked
-      // for it (the server logs the suspension in the pipeline trace).
-      formData.set("skip_brand_rules", "1");
-      skipRulesOnceRef.current = false;
+    if (skipRulesForPromptRef.current !== null) {
+      const boundPrompt = skipRulesForPromptRef.current;
+      // One shot, bound: cleared no matter what, applied only when the send
+      // is byte-identical to the prompt the override was granted for (the
+      // server logs the suspension in the pipeline trace).
+      skipRulesForPromptRef.current = null;
+      if (boundPrompt === submittedPrompt) {
+        formData.set("skip_brand_rules", "1");
+      }
     }
     setDialogueText("");
 
@@ -4058,7 +4069,12 @@ function GenerateFormInner({
   // React flush the prompt state before requestSubmit reads it).
   function generateAnyway(turnPrompt: string) {
     if (submitting) return;
-    skipRulesOnceRef.current = true;
+    // Bound intent (Send Receipt P3): the override is granted for THIS
+    // exact prompt, not for whatever the composer happens to send next —
+    // submitPrompt honors it only on a byte-identical prompt and clears it
+    // either way, so the old one-shot flag can never drift to an unrelated
+    // send (latent catalog entry: rules-skip drift).
+    skipRulesForPromptRef.current = turnPrompt.trim();
     setPrompt(turnPrompt);
     // Unfold first: while collapsed, the <form> is UNMOUNTED (the fold
     // ternary), so requestSubmit on a null ref was a silent dead click —

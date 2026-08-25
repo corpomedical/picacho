@@ -106,6 +106,62 @@ export async function classifyAttachmentImage(imageUrl: string): Promise<Attachm
   }
 }
 
+// Character render style (Send Receipt P3): is this character a photoreal
+// human or an illustrated/mascot design? Decides which Seedance lane fits —
+// ByteDance's 2.5 rejects photoreal people outright. One look at the
+// primary reference photo when the photo set changes; null on any doubt or
+// failure, which keeps the heuristic fallback in charge.
+export async function classifyRenderStyle(
+  imageUrl: string,
+): Promise<"photoreal" | "illustrated" | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const res = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Answer with EXACTLY one word: is the person or character in this image " +
+                    "'photoreal' (a photographic or photorealistic human) or 'illustrated' " +
+                    "(drawn, animated, 3D-cartoon, mascot, anime, or otherwise clearly not a " +
+                    "photograph of a real-looking human)?",
+                },
+                { type: "image_url", image_url: { url: imageUrl } },
+              ],
+            },
+          ],
+          max_completion_tokens: 400,
+        }),
+      },
+      20_000,
+    );
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = String(data?.choices?.[0]?.message?.content ?? "").trim().toLowerCase();
+    if (text.includes("photoreal")) return "photoreal";
+    if (text.includes("illustrated")) return "illustrated";
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Outfit-on-the-character (2026-08-24): turn a clothing photo — typically a
 // product shot or flat-lay with no person in it — into a precise garment spec.
 // Written ONCE when the character is saved and stored on the row

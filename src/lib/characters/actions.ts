@@ -5,7 +5,7 @@ import { mediaUrl } from "@/lib/media/url";
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
-import { describeOutfitImage } from "@/lib/generations/providers/describe-image";
+import { describeOutfitImage, classifyRenderStyle } from "@/lib/generations/providers/describe-image";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 import { getImageModel } from "@/lib/generations/providers/image-models";
@@ -153,16 +153,17 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   // Re-described only when the photo set actually changed; a vision failure
   // stores null and the save still succeeds (Seedance/images still get the
   // photo itself, and the Kling path just goes without).
+  const { data: existingRow } = id
+    ? await supabase
+        .from("character_profiles")
+        .select("outfit_image_urls, outfit_description, reference_image_urls, render_style")
+        .eq("id", id)
+        .eq("user_id", uid)
+        .maybeSingle()
+    : { data: null };
+
   let outfitDescription: string | null = null;
   if (outfitImagePaths.length > 0) {
-    const { data: existingRow } = id
-      ? await supabase
-          .from("character_profiles")
-          .select("outfit_image_urls, outfit_description")
-          .eq("id", id)
-          .eq("user_id", uid)
-          .maybeSingle()
-      : { data: null };
     const previousPaths = (existingRow?.outfit_image_urls as string[] | null) ?? [];
     const unchanged =
       previousPaths.length === outfitImagePaths.length &&
@@ -179,12 +180,36 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     }
   }
 
+  // Render style (Send Receipt P3): photoreal vs illustrated, decided by one
+  // vision look at the primary reference photo whenever the photo set
+  // changes. Null on failure — the composer's 2.5 lane rule then falls back
+  // to its heuristic, so this can only ever ADD precision, never lose
+  // coverage. Same graceful-degradation contract as the outfit description.
+  let renderStyle: string | null = (existingRow?.render_style as string | null) ?? null;
+  if (referenceImagePaths.length === 0) {
+    renderStyle = null;
+  } else {
+    const previousRefs = (existingRow?.reference_image_urls as string[] | null) ?? [];
+    const refsChanged =
+      previousRefs.length !== referenceImagePaths.length ||
+      !previousRefs.every((p, i) => p === referenceImagePaths[i]);
+    if (refsChanged || renderStyle === null) {
+      const { data: signedRef } = await supabase.storage
+        .from("character-references")
+        .createSignedUrl(referenceImagePaths[0], 60 * 10);
+      if (signedRef?.signedUrl) {
+        renderStyle = await classifyRenderStyle(signedRef.signedUrl);
+      }
+    }
+  }
+
   const row = {
     user_id: data.user.id,
     name,
     reference_image_urls: referenceImagePaths,
     outfit_image_urls: outfitImagePaths,
     outfit_description: outfitDescription,
+    render_style: renderStyle,
     traits,
     motion_style: motionStyle,
     voice_tone_tags: tags,
