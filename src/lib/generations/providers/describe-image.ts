@@ -52,7 +52,7 @@ const MODE_RULES: Record<DescribeMode, string> = {
 // the user's tap always wins, a null answer just leaves the chip on its
 // legacy default, and this must never gate the upload itself (it runs
 // after the chip is already usable).
-export type AttachmentClass = "person" | "clothing" | "scene" | "other";
+export type AttachmentClass = "person" | "clothing" | "scene" | "animal" | "vehicle" | "object" | "other";
 
 export async function classifyAttachmentImage(imageUrl: string): Promise<AttachmentClass | null> {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -81,7 +81,10 @@ export async function classifyAttachmentImage(imageUrl: string): Promise<Attachm
                     "person — a human face or figure is clearly the subject\n" +
                     "clothing — garments, shoes or accessories shown WITHOUT a person wearing them (product shots, flat-lays)\n" +
                     "scene — a place: landscape, room, street, building, backdrop, with no person as the subject\n" +
-                    "other — anything else (objects, animals, text, abstract)",
+                    "animal — an animal is the subject\n" +
+                    "vehicle — a car, bike, boat, aircraft or similar is the subject\n" +
+                    "object — a distinct thing or product is the subject (not clothing)\n" +
+                    "other — anything else (text, abstract, unclear)",
                 },
                 { type: "image_url", image_url: { url: imageUrl } },
               ],
@@ -99,6 +102,9 @@ export async function classifyAttachmentImage(imageUrl: string): Promise<Attachm
     if (text.includes("person")) return "person";
     if (text.includes("clothing")) return "clothing";
     if (text.includes("scene")) return "scene";
+    if (text.includes("animal")) return "animal";
+    if (text.includes("vehicle")) return "vehicle";
+    if (text.includes("object")) return "object";
     if (text.includes("other")) return "other";
     return null;
   } catch {
@@ -157,6 +163,55 @@ export async function classifyRenderStyle(
     if (text.includes("photoreal")) return "photoreal";
     if (text.includes("illustrated")) return "illustrated";
     return null;
+  } catch {
+    return null;
+  }
+}
+
+// Prop description (Send Receipt P5): a short spec of the THING in a
+// prop-role photo — a specific dog, car, product — for models that can't
+// take the photo itself. Same null-on-failure contract as everything here.
+export async function describeSubjectImage(imageUrl: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const res = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Describe the main subject of this photo in 1-2 sentences of plain prose so an " +
+                    "image generator could reproduce it faithfully: what it is, breed/make/model if " +
+                    "identifiable, exact colours and markings, size and distinctive details. Describe " +
+                    "only the subject — ignore background and people. No preamble, no markdown.",
+                },
+                { type: "image_url", image_url: { url: imageUrl } },
+              ],
+            },
+          ],
+          max_completion_tokens: 1200,
+        }),
+      },
+      30_000,
+    );
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== "string") return null;
+    const cleaned = text.trim().replace(/^["']|["']$/g, "");
+    return cleaned.length > 0 ? cleaned.slice(0, 500) : null;
   } catch {
     return null;
   }

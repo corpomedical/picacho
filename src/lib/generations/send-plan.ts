@@ -185,8 +185,9 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
 // Input snapshot
 // ---------------------------------------------------------------------------
 
-/** A future attachment role (P2). P0 attachments carry no role yet. */
-export type AttachmentRole = "identity" | "outfit" | "scene" | "unused";
+/** Attachment roles (P2; "prop" added P5 — animals, vehicles, products,
+ * any thing that should appear in the render). */
+export type AttachmentRole = "identity" | "outfit" | "scene" | "prop" | "unused";
 
 export type ResolveInput = {
   contentType: "image" | "video";
@@ -231,6 +232,7 @@ export type PlanSlot =
   | "identity"
   | "outfit"
   | "scene"
+  | "prop"
   | "continuation"
   | "frames"
   | "cast"
@@ -317,6 +319,7 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   );
   const outfitAttachment = input.attachments.find((a) => a.isImage && a.role === "outfit");
   const sceneAttachment = input.attachments.find((a) => a.isImage && a.role === "scene");
+  const propAttachment = input.attachments.find((a) => a.isImage && a.role === "prop");
   const advanced = input.contentType === "video" ? input.advancedMode : "none";
   const isMulti = input.companionsCount > 0;
 
@@ -392,7 +395,7 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
 
   // Attachments that neither carry a consuming role nor were explicitly
   // opted out are decorative — say so instead of pretending.
-  const consumed = new Set([firstImageAttachment, outfitAttachment, sceneAttachment]);
+  const consumed = new Set([firstImageAttachment, outfitAttachment, sceneAttachment, propAttachment]);
   const extraCount = input.attachments.filter(
     (a) => !consumed.has(a) && a.role !== "unused",
   ).length;
@@ -439,6 +442,21 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   // prompt text works on every model, so this lane is universal.
   if (sceneAttachment && advanced === "none") {
     entries.push({ slot: "scene", source: "attachment", consumption: "described" });
+  }
+
+  // --- prop ----------------------------------------------------------------
+  // A prop-role photo (dog, car, product — any THING that should appear):
+  // on cited-image models the actual photo rides beside the identity refs —
+  // YOUR dog, not "a dog" — and elsewhere it is vision-described into the
+  // prompt, so the lane always delivers something.
+  if (propAttachment && !isMulti && advanced === "none") {
+    const nativeLane =
+      Boolean(caps?.outfitImage) && identityPresent() && !input.storyboardShotsActive;
+    entries.push({
+      slot: "prop",
+      source: "attachment",
+      consumption: nativeLane ? "native" : "described",
+    });
   }
 
   // --- continuation --------------------------------------------------------

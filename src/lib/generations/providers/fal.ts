@@ -43,6 +43,10 @@ export type VideoGenerationOptions = {
   // prompt's description instead (see outfit_reference_description in
   // pipeline.ts).
   outfitImageUrl?: string | null;
+  // Prop-role attachment (Send Receipt P5): a THING that should appear —
+  // Seedance-only, cited as its own @ImageN after identity and outfit, same
+  // mechanics and same 4-image budget as the outfit lane.
+  propImageUrl?: string | null;
   // Storyboard (Kling O3 Pro only): 2-6 shots for the endpoint's
   // multi_prompt, each with its own prompt and 1-15s duration — one
   // coherent multi-shot video out. Mutually exclusive with `prompt` on
@@ -322,6 +326,10 @@ async function buildVideoRequest(
     // the guard here is the provider-level backstop.
     const outfit =
       references.length > 0 && references.length < 4 ? (options.outfitImageUrl ?? null) : null;
+    const prop =
+      references.length > 0 && references.length + (outfit ? 1 : 0) < 4
+        ? (options.propImageUrl ?? null)
+        : null;
     endpoint =
       modelId === "seedance"
         ? "bytedance/seedance-2.5/reference-to-video"
@@ -341,10 +349,15 @@ async function buildVideoRequest(
       outfit
         ? `@Image${references.length + 1} shows only an outfit laid out, never a person — the person wears exactly that outfit: reproduce its design, colours, logos, and stitching.`
         : null,
+      prop
+        ? `@Image${references.length + (outfit ? 1 : 0) + 1} shows a subject (an animal, vehicle, or object) that appears in the video — match its appearance exactly.`
+        : null,
     ].filter(Boolean);
     body = {
       prompt: citationLines.length ? `${prompt}\n\n${citationLines.join(" ")}` : prompt,
-      ...(references.length ? { image_urls: [...references, ...(outfit ? [outfit] : [])] } : {}),
+      ...(references.length
+        ? { image_urls: [...references, ...(outfit ? [outfit] : []), ...(prop ? [prop] : [])] }
+        : {}),
       ...(continuation ? { video_urls: [continuation] } : {}),
       // 480p is deliberately not offered — see video-models.ts.
       resolution: "720p",

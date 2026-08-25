@@ -47,6 +47,8 @@ function entryText(e: PlanEntry, g: Messages["generate"]): string | null {
     }
     case "scene":
       return g.receiptScene;
+    case "prop":
+      return e.consumption === "native" ? g.receiptProp : g.receiptPropDescribed;
     case "continuation":
       return e.consumption === "native" ? g.receiptContinuation : `${g.receiptContinuation} — ${g.receiptUnused}`;
     case "dialogue":

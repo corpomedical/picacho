@@ -1200,9 +1200,11 @@ function PendingAttachmentChip({
       ? g.receiptOutfit
       : attachment.role === "scene"
         ? g.roleScene
-        : attachment.role === "unused"
-          ? g.receiptUnused
-          : g.receiptFace;
+        : attachment.role === "prop"
+          ? g.roleProp
+          : attachment.role === "unused"
+            ? g.receiptUnused
+            : g.receiptFace;
 
   return (
     <div className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-media border border-atelier-rule bg-atelier-paper">
@@ -2887,7 +2889,12 @@ function GenerateFormInner({
                 void classifyChatAttachment(fd).then((res) => {
                   const cls = res.classification;
                   if (!cls || cls === "person" || cls === "other") return;
-                  const role: AttachmentRole = cls === "clothing" ? "outfit" : "scene";
+                  const role: AttachmentRole =
+                    cls === "clothing"
+                      ? "outfit"
+                      : cls === "scene"
+                        ? "scene"
+                        : "prop"; // animal, vehicle, object — a THING that appears
                   setPendingAttachments((prev) =>
                     prev.map((p) =>
                       p.id === attachmentId && !p.roleSetByUser && p.role === undefined
@@ -2929,7 +2936,7 @@ function GenerateFormInner({
   // used -> Face. A human tap is final (roleSetByUser) — classification can
   // never overturn it.
   function cycleAttachmentRole(id: string) {
-    const order: (AttachmentRole | undefined)[] = [undefined, "outfit", "scene", "unused"];
+    const order: (AttachmentRole | undefined)[] = [undefined, "outfit", "scene", "prop", "unused"];
     setPendingAttachments((prev) =>
       prev.map((a) => {
         if (a.id !== id) return a;

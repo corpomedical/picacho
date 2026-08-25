@@ -73,6 +73,9 @@ export async function generateImage(
   // mistake this feature exists to prevent. Flux calls get the identity
   // photo alone; the prompt's outfit description carries the garment there.
   outfitImageUrl?: string | null,
+  // Prop-role photo (Send Receipt P5) — same GPT-only extra-image contract
+  // as the outfit image above; Flux fallbacks stay single-source.
+  propImageUrl?: string | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -101,8 +104,12 @@ export async function generateImage(
   // Only the ordinary single-identity case can take the extra outfit image —
   // callers already only set outfitImageUrl then, this is the local guard.
   const openAiRefs =
-    outfitImageUrl && typeof referenceImageUrl === "string" && referenceImageUrl
-      ? [referenceImageUrl, outfitImageUrl]
+    (outfitImageUrl || propImageUrl) && typeof referenceImageUrl === "string" && referenceImageUrl
+      ? [
+          referenceImageUrl,
+          ...(outfitImageUrl ? [outfitImageUrl] : []),
+          ...(propImageUrl ? [propImageUrl] : []),
+        ]
       : referenceImageUrl;
 
   try {

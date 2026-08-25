@@ -18,7 +18,7 @@ export type ChatAttachment = {
   height?: number;
   // Declared role (Send Receipt P2) — set client-side on the composer chip,
   // rides through submit plumbing. undefined = legacy identity contract.
-  role?: "identity" | "outfit" | "scene" | "unused";
+  role?: "identity" | "outfit" | "scene" | "prop" | "unused";
 };
 
 type UploadResult = { error: string | null; attachment?: ChatAttachment };
@@ -112,7 +112,7 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
 // call shares the upload rate-limit scope since it's 1:1 with uploads.
 export async function classifyChatAttachment(
   formData: FormData,
-): Promise<{ error: string | null; classification?: "person" | "clothing" | "scene" | "other" | null }> {
+): Promise<{ error: string | null; classification?: "person" | "clothing" | "scene" | "animal" | "vehicle" | "object" | "other" | null }> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) return { error: "Your session expired — please log in again." };

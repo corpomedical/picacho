@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { resolveSendPlan } from "@/lib/generations/send-plan";
-import { describeImageAsPrompt } from "@/lib/generations/providers/describe-image";
+import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
 import { getOrigin } from "@/lib/origin";
 import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -369,7 +369,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // the permanent-adapter rule) send no roles: their attachment keeps the
   // original identity contract unchanged. Same URL guard as the legacy
   // field — anything not our own media URL is discarded.
-  type AttachmentRoleEntry = { url: string; role: "identity" | "outfit" | "scene" | "unused" };
+  type AttachmentRoleEntry = { url: string; role: "identity" | "outfit" | "scene" | "prop" | "unused" };
   const attachmentRoles: AttachmentRoleEntry[] | null = (() => {
     const raw = formData.get("attachment_roles");
     if (!raw) return null;
@@ -382,7 +382,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           typeof (x as AttachmentRoleEntry).url === "string" &&
           (x as AttachmentRoleEntry).url.startsWith("/api/media/") &&
           !(x as AttachmentRoleEntry).url.includes("..") &&
-          ["identity", "outfit", "scene", "unused"].includes((x as AttachmentRoleEntry).role),
+          ["identity", "outfit", "scene", "prop", "unused"].includes((x as AttachmentRoleEntry).role),
       );
     } catch {
       return null;
@@ -394,6 +394,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     : legacyAttachmentUrl;
   const outfitAttachmentUrl = attachmentRoles?.find((a) => a.role === "outfit")?.url ?? "";
   const sceneAttachmentUrl = attachmentRoles?.find((a) => a.role === "scene")?.url ?? "";
+  const propAttachmentUrl = attachmentRoles?.find((a) => a.role === "prop")?.url ?? "";
 
   // Which of the character's OWN saved reference photos to anchor to —
   // from the picker in the composer, for characters with more than one
@@ -1223,7 +1224,33 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // model, which is what makes this lane universal. Best-effort: a
       // describe failure just sends the prompt as typed (the strip said
       // "described", and an undescribed scene photo costs nothing).
+      // Prop-role attachment (Send Receipt P5): on cited-image models the
+      // photo itself rides beside the identity refs (YOUR dog, not "a dog");
+      // elsewhere a short subject spec is written into the prompt. Both
+      // lanes best-effort — a vision hiccup never blocks the render.
+      let propImageUrl: string | null = null;
+      let propDescription: string | null = null;
+      if (propAttachmentUrl && !wantsMultiCharacter && !storyboardShots && !videoReferenceImageUrls) {
+        const propTakesPhoto =
+          contentType === "image"
+            ? imageModelId === "gpt-image"
+            : videoModelId === "seedance" || videoModelId === "seedance-2";
+        const absoluteProp = absolutizeMediaUrl(propAttachmentUrl, await getOrigin());
+        if (propTakesPhoto) {
+          propImageUrl = absoluteProp;
+        } else {
+          try {
+            propDescription = await describeSubjectImage(absoluteProp);
+          } catch {
+            // Send without it.
+          }
+        }
+      }
+
       let promptForPipeline = userInput;
+      if (propDescription) {
+        promptForPipeline = `${promptForPipeline}\n\nAlso in the scene (from an attached photo, match it faithfully): ${propDescription}`;
+      }
       if (sceneAttachmentUrl && !wantsMultiCharacter) {
         try {
           const sceneDescription = await describeImageAsPrompt(
@@ -1231,7 +1258,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             "scene",
           );
           if (sceneDescription) {
-            promptForPipeline = `${userInput}\n\nSetting (from the attached scene photo): ${sceneDescription}`;
+            promptForPipeline = `${promptForPipeline}\n\nSetting (from the attached scene photo): ${sceneDescription}`;
           }
         } catch {
           // Send as typed.
@@ -1309,6 +1336,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoCharacterAnchorUrl,
           videoContinueFromUrl,
           outfitImageUrl,
+          propImageUrl,
           videoStoryboardShots: storyboardShots,
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
           dialogueText: wantsDialogue ? dialogueText : undefined,

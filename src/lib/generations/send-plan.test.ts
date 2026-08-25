@@ -297,6 +297,35 @@ describe("attachment roles (P2 — the definitive intent capture)", () => {
   });
 });
 
+describe("prop role (P5 — animals, vehicles, products)", () => {
+  it("a prop photo rides natively on cited-image models — YOUR dog, not 'a dog'", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "seedance-2",
+      attachments: [{ id: "a", isImage: true, role: "prop" }],
+    });
+    expect(entry(plan, "prop")!.consumption).toBe("native");
+    expect(entry(plan, "identity")!.source).toBe("character-default");
+  });
+
+  it("a prop photo on a person-only model degrades to a description, never to silence", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "kling-o3-pro",
+      attachments: [{ id: "a", isImage: true, role: "prop" }],
+    });
+    expect(entry(plan, "prop")!.consumption).toBe("described");
+  });
+
+  it("prop never touches the face slot", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      attachments: [{ id: "a", isImage: true, role: "prop" }],
+    });
+    expect(plan.entries.find((e) => e.noteCode === "REPLACES_SAVED_FACE")).toBeUndefined();
+  });
+});
+
 describe("rules override visibility (generate-anyway drift family)", () => {
   it("an armed rules skip is a visible receipt entry, never a silent flag", () => {
     const plan = resolveSendPlan({ ...base, rulesSkipArmed: true });

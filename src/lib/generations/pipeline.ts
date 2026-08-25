@@ -495,6 +495,12 @@ export type RealPipelineOptions = {
   // it still get the outfit via the character's
   // outfit_reference_description in drafting.
   outfitImageUrl?: string | null;
+  // Prop-role attachment (Send Receipt P5): a photo of a THING that should
+  // appear in the render — dog, car, product. Same lane mechanics as the
+  // outfit image: cited extra image on Seedance, extra edit image on GPT;
+  // the caller only sets it for those models (a described fallback rides in
+  // the prompt elsewhere).
+  propImageUrl?: string | null;
   // Storyboard — 2-6 user-written shots for Kling O3 Pro's multi_prompt
   // (see fal.ts). Present ⇒ the caller forced the final-prompt path, so
   // drafting never rewrites shot text.
@@ -1060,6 +1066,7 @@ export async function runRealPipeline(
             characterAnchorImageUrl: options.videoCharacterAnchorUrl,
             continueFromVideoUrl: options.videoContinueFromUrl,
             outfitImageUrl: options.outfitImageUrl,
+            propImageUrl: options.propImageUrl,
             storyboardShots: options.videoStoryboardShots,
             generateNativeAudio: !usingSeparateDialoguePipeline,
             durationSeconds: options.videoDurationSeconds,
@@ -1150,9 +1157,19 @@ export async function runRealPipeline(
           const outfitActive = Boolean(
             options.outfitImageUrl && !usingMultiCharacterImages && options.referenceImageUrl,
           );
-          const imagePrompt = outfitActive
-            ? `${reviewedPrompt}\n\nOne of the reference photos shows only an outfit laid out, with no person in it: dress the person in exactly that outfit, reproducing its design, colours, logos, and stitching. Every other reference photo is the person — match their face, hair, and identity exactly.`
-            : reviewedPrompt;
+          const propActive = Boolean(
+            options.propImageUrl && !usingMultiCharacterImages && options.referenceImageUrl,
+          );
+          let imagePrompt = reviewedPrompt;
+          if (outfitActive) {
+            imagePrompt += `\n\nOne of the reference photos shows only an outfit laid out, with no person in it: dress the person in exactly that outfit, reproducing its design, colours, logos, and stitching.`;
+          }
+          if (propActive) {
+            imagePrompt += `\n\nOne of the reference photos shows a subject (an animal, vehicle, or object): include exactly that subject in the picture, matching its appearance faithfully.`;
+          }
+          if (outfitActive || propActive) {
+            imagePrompt += `\n\nEvery other reference photo is the person — match their face, hair, and identity exactly.`;
+          }
           let fallbackNote: string | null = null;
           let actualModelName: string | null = null;
           resultUrl = await generateImage(
@@ -1166,6 +1183,7 @@ export async function runRealPipeline(
             },
             imageBudget,
             outfitActive ? options.outfitImageUrl : null,
+            propActive ? options.propImageUrl : null,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Report the model that ACTUALLY produced the image. This used to
