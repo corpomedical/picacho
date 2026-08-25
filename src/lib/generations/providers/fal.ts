@@ -350,7 +350,7 @@ async function buildVideoRequest(
         ? `@Image${references.length + 1} shows only an outfit laid out, never a person — the person wears exactly that outfit: reproduce its design, colours, logos, and stitching.`
         : null,
       prop
-        ? `@Image${references.length + (outfit ? 1 : 0) + 1} shows a subject (an animal, vehicle, or object) that appears in the video — match its appearance exactly.`
+        ? `@Image${references.length + (outfit ? 1 : 0) + 1} is an image the user attached — the prompt above says how to use it; match its contents faithfully.`
         : null,
     ].filter(Boolean);
     body = {

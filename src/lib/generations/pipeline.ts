@@ -1165,7 +1165,7 @@ export async function runRealPipeline(
             imagePrompt += `\n\nOne of the reference photos shows only an outfit laid out, with no person in it: dress the person in exactly that outfit, reproducing its design, colours, logos, and stitching.`;
           }
           if (propActive) {
-            imagePrompt += `\n\nOne of the reference photos shows a subject (an animal, vehicle, or object): include exactly that subject in the picture, matching its appearance faithfully.`;
+            imagePrompt += `\n\nOne of the reference photos is an image the user attached — the prompt says how to use it; match its contents faithfully.`;
           }
           if (outfitActive || propActive) {
             imagePrompt += `\n\nEvery other reference photo is the person — match their face, hair, and identity exactly.`;

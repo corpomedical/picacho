@@ -660,6 +660,8 @@ const pt = {
     receiptProp: "Elemento: igualado a partir da sua foto",
     receiptPropDescribed: "Elemento: descrito a partir da sua foto",
     roleDetecting: "Detectando…",
+    receiptReference: "Imagem anexada: enviada com o seu prompt",
+    receiptReferenceDescribed: "Imagem anexada: descrita no seu prompt",
     pullUpToEdit: "Puxe para editar",
     expandStage: "Expandir visualização",
     collapseStage: "Sair da visualização expandida",

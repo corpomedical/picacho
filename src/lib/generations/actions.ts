@@ -369,7 +369,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // the permanent-adapter rule) send no roles: their attachment keeps the
   // original identity contract unchanged. Same URL guard as the legacy
   // field — anything not our own media URL is discarded.
-  type AttachmentRoleEntry = { url: string; role: "identity" | "outfit" | "scene" | "prop" | "unused" };
+  type AttachmentRoleEntry = { url: string; role: "reference" | "identity" | "outfit" | "scene" | "prop" | "unused" };
   const attachmentRoles: AttachmentRoleEntry[] | null = (() => {
     const raw = formData.get("attachment_roles");
     if (!raw) return null;
@@ -382,7 +382,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           typeof (x as AttachmentRoleEntry).url === "string" &&
           (x as AttachmentRoleEntry).url.startsWith("/api/media/") &&
           !(x as AttachmentRoleEntry).url.includes("..") &&
-          ["identity", "outfit", "scene", "prop", "unused"].includes((x as AttachmentRoleEntry).role),
+          ["reference", "identity", "outfit", "scene", "prop", "unused"].includes((x as AttachmentRoleEntry).role),
       );
     } catch {
       return null;
@@ -395,6 +395,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const outfitAttachmentUrl = attachmentRoles?.find((a) => a.role === "outfit")?.url ?? "";
   const sceneAttachmentUrl = attachmentRoles?.find((a) => a.role === "scene")?.url ?? "";
   const propAttachmentUrl = attachmentRoles?.find((a) => a.role === "prop")?.url ?? "";
+  // The current client contract (2026-08-25): ONE neutral role. The image
+  // rides to the model where an extra image is possible, and the USER'S
+  // PROMPT says what it's for; identity never comes from it.
+  const referenceAttachmentUrl = attachmentRoles?.find((a) => a.role === "reference")?.url ?? "";
 
   // Which of the character's OWN saved reference photos to anchor to —
   // from the picker in the composer, for characters with more than one
@@ -1230,17 +1234,20 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // lanes best-effort — a vision hiccup never blocks the render.
       let propImageUrl: string | null = null;
       let propDescription: string | null = null;
-      if (propAttachmentUrl && !wantsMultiCharacter && !storyboardShots && !videoReferenceImageUrls) {
+      const neutralUrl = referenceAttachmentUrl || propAttachmentUrl;
+      if (neutralUrl && !wantsMultiCharacter && !storyboardShots && !videoReferenceImageUrls) {
         const propTakesPhoto =
           contentType === "image"
             ? imageModelId === "gpt-image"
             : videoModelId === "seedance" || videoModelId === "seedance-2";
-        const absoluteProp = absolutizeMediaUrl(propAttachmentUrl, await getOrigin());
+        const absoluteProp = absolutizeMediaUrl(neutralUrl, await getOrigin());
         if (propTakesPhoto) {
           propImageUrl = absoluteProp;
         } else {
           try {
-            propDescription = await describeSubjectImage(absoluteProp);
+            propDescription = referenceAttachmentUrl
+              ? await describeImageAsPrompt(absoluteProp, "standalone")
+              : await describeSubjectImage(absoluteProp);
           } catch {
             // Send without it.
           }
@@ -1249,7 +1256,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
       let promptForPipeline = userInput;
       if (propDescription) {
-        promptForPipeline = `${promptForPipeline}\n\nAlso in the scene (from an attached photo, match it faithfully): ${propDescription}`;
+        promptForPipeline = `${promptForPipeline}\n\nThe user attached an image; its contents (use as the prompt above describes): ${propDescription}`;
       }
       if (sceneAttachmentUrl && !wantsMultiCharacter) {
         try {

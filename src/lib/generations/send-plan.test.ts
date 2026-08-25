@@ -326,6 +326,35 @@ describe("prop role (P5 — animals, vehicles, products)", () => {
   });
 });
 
+describe("neutral reference contract (2026-08-25 — the prompt says what the image is for)", () => {
+  it("a reference attachment rides natively on extra-image models, prompt-driven", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "seedance-2",
+      attachments: [{ id: "a", isImage: true, role: "reference" }],
+    });
+    expect(entry(plan, "reference")!.consumption).toBe("native");
+  });
+
+  it("a reference attachment degrades to a prompt description elsewhere — never silence", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "kling-o3-pro",
+      attachments: [{ id: "a", isImage: true, role: "reference" }],
+    });
+    expect(entry(plan, "reference")!.consumption).toBe("described");
+  });
+
+  it("a reference attachment NEVER touches the face slot — the logo can't become a face", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      attachments: [{ id: "a", isImage: true, role: "reference" }],
+    });
+    expect(entry(plan, "identity")!.source).toBe("character-default");
+    expect(plan.entries.find((e) => e.noteCode === "REPLACES_SAVED_FACE")).toBeUndefined();
+  });
+});
+
 describe("rules override visibility (generate-anyway drift family)", () => {
   it("an armed rules skip is a visible receipt entry, never a silent flag", () => {
     const plan = resolveSendPlan({ ...base, rulesSkipArmed: true });

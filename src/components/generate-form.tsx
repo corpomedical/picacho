@@ -33,7 +33,7 @@ import {
 } from "@/lib/voice/agent";
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
-import { uploadChatAttachment, deleteChatAttachment, classifyChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
+import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import { resolveSendPlan, type AttachmentRole, type PlanIssue } from "@/lib/generations/send-plan";
 import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
 import {
@@ -826,16 +826,6 @@ type PendingAttachment = {
   // provider aspect-bound checks. Absent = unmeasured = never blocks.
   width?: number;
   height?: number;
-  // The photo's declared role (Send Receipt P2). undefined = the permanent
-  // legacy contract (identity). The classifier pre-picks; a user tap sets
-  // roleSetByUser so a late classification can never overturn a human.
-  role?: AttachmentRole;
-  roleSetByUser?: boolean;
-  // True while the vision classifier is deciding this image's role — the
-  // badge shows "Detecting…" instead of asserting "Face" during the round
-  // trip (operator, 2026-08-25: a confident wrong badge during the window
-  // read as "auto-detect doesn't work").
-  classifying?: boolean;
 };
 
 function formatBytes(bytes: number): string {
@@ -1188,32 +1178,13 @@ function VoiceSessionCard({
 function PendingAttachmentChip({
   attachment,
   onRemove,
-  onRoleTap,
 }: {
   attachment: PendingAttachment;
   onRemove: () => void;
-  // Present only for ready images (Send Receipt P2): taps cycle the role.
-  onRoleTap?: () => void;
 }) {
   const { t } = useLocale();
-  const g = t.generate;
   const isImage = attachment.type.startsWith("image/");
   const isVideo = attachment.type.startsWith("video/");
-  const detecting =
-    Boolean(attachment.classifying) && !attachment.roleSetByUser && attachment.role === undefined;
-  const roleLabel = !isImage
-    ? null
-    : detecting
-      ? g.roleDetecting
-      : attachment.role === "outfit"
-        ? g.receiptOutfit
-        : attachment.role === "scene"
-          ? g.roleScene
-          : attachment.role === "prop"
-            ? g.roleProp
-            : attachment.role === "unused"
-              ? g.receiptUnused
-              : g.receiptFace;
 
   return (
     <div className="group relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-media border border-atelier-rule bg-atelier-paper">
@@ -1244,25 +1215,6 @@ function PendingAttachmentChip({
         </div>
       )}
 
-      {/* Role badge (Send Receipt P2): what this photo IS to the next send.
-          Tap to cycle Face → Outfit → Scene → Not used. The vision
-          classifier pre-picks it; a tap always wins. */}
-      {roleLabel && attachment.status === "ready" && onRoleTap && (
-        <button
-          type="button"
-          onClick={onRoleTap}
-          className={cn(
-            "absolute inset-x-0.5 bottom-0.5 truncate rounded-[7px] px-1 py-0.5 text-center text-[8.5px] font-semibold leading-tight",
-            detecting
-              ? "animate-pulse bg-neutral-950/55 text-[#faf8f3]/80"
-              : attachment.role === "unused"
-                ? "bg-neutral-950/55 text-[#faf8f3]/70"
-                : "bg-neutral-950/70 text-[#faf8f3]",
-          )}
-        >
-          {roleLabel}
-        </button>
-      )}
       <button
         type="button"
         onClick={onRemove}
@@ -2696,17 +2648,12 @@ function GenerateFormInner({
     // above — see the comments there.
     const multiAngleRoles = attachments
       .filter((a) => a.type.startsWith("image/"))
-      .map((a) => ({ url: a.url, role: a.role ?? "identity" }));
+      .map((a) => ({ url: a.url, role: "reference" }));
     if (multiAngleRoles.length > 0) {
       formData.set("attachment_roles", JSON.stringify(multiAngleRoles));
     }
     formData.set("payload_version", "2");
-    const anchorAttachment = attachments.find(
-      (a) => a.type.startsWith("image/") && (a.role === undefined || a.role === "identity"),
-    );
-    if (anchorAttachment) {
-      formData.set("attachment_reference_url", anchorAttachment.url);
-    } else if (anchorPhotoPath) {
+    if (anchorPhotoPath) {
       formData.set("anchor_photo_path", anchorPhotoPath);
     }
 
@@ -2899,51 +2846,6 @@ function GenerateFormInner({
             }),
           );
           if (result.error !== null) setError(result.error);
-          // Pre-pick the role (Send Receipt P2): fired AFTER the state
-          // update, never from inside the updater — updaters must stay pure
-          // (StrictMode double-invokes them; a fetch inside one fires
-          // twice in dev and is a silent code smell in prod). The chip is
-          // already usable; when the classifier lands it only fills a role
-          // no human has touched. person keeps the legacy Face default —
-          // an upload never OCCUPIES a non-face role without either the
-          // classifier or the user saying so.
-          if (result.error === null && result.attachment!.type.startsWith("image/")) {
-            setPendingAttachments((prev) =>
-              prev.map((p) => (p.id === id ? { ...p, classifying: true } : p)),
-            );
-            const fd = new FormData();
-            fd.set("url", result.attachment!.url);
-            void classifyChatAttachment(fd)
-              .then((res) => {
-                const cls = res.classification;
-                const role: AttachmentRole | undefined =
-                  cls === "clothing"
-                    ? "outfit"
-                    : cls === "scene"
-                      ? "scene"
-                      : cls === "animal" || cls === "vehicle" || cls === "object"
-                        ? "prop"
-                        : undefined; // person / other / null keep the Face default
-                setPendingAttachments((prev) =>
-                  prev.map((p) =>
-                    p.id === id
-                      ? {
-                          ...p,
-                          classifying: false,
-                          ...(role && !p.roleSetByUser && p.role === undefined ? { role } : {}),
-                        }
-                      : p,
-                  ),
-                );
-              })
-              .catch(() => {
-                // Classification is advisory — a failed call just settles
-                // the badge on its default role.
-                setPendingAttachments((prev) =>
-                  prev.map((p) => (p.id === id ? { ...p, classifying: false } : p)),
-                );
-              });
-          }
         })
         .catch(() => {
           // A rejected promise here (vs. the function's own { error } return
@@ -2959,21 +2861,6 @@ function GenerateFormInner({
           setError(message);
         });
     });
-  }
-
-  // Tap-to-cycle on the chip's role badge: Face -> Outfit -> Scene -> Not
-  // used -> Face. A human tap is final (roleSetByUser) — classification can
-  // never overturn it.
-  function cycleAttachmentRole(id: string) {
-    const order: (AttachmentRole | undefined)[] = [undefined, "outfit", "scene", "prop", "unused"];
-    setPendingAttachments((prev) =>
-      prev.map((a) => {
-        if (a.id !== id) return a;
-        const idx = order.indexOf(a.role === "identity" ? undefined : a.role);
-        const next = order[(idx + 1) % order.length];
-        return { ...a, role: next, roleSetByUser: true };
-      }),
-    );
   }
 
   function removeAttachment(id: string) {
@@ -3469,7 +3356,10 @@ function GenerateFormInner({
           isImage: a.type.startsWith("image/"),
           width: a.width,
           height: a.height,
-          role: a.role,
+          // The current contract (operator, 2026-08-25): attachments are
+          // neutral references — the prompt says what they're for, and
+          // identity never comes from them.
+          role: "reference" as const,
         })),
       anchorPhotoPicked: Boolean(anchorPhotoPath),
       advancedMode: contentType === "video" ? videoAdvancedMode : ("none" as const),
@@ -3617,9 +3507,13 @@ function GenerateFormInner({
     // New servers route by this; old servers ignore it and use the legacy
     // anchor field above — role capture and role routing shipped together,
     // so the UI can never promise a role the server won't honor.
+    // Every image attachment is a neutral reference (operator decision,
+    // 2026-08-25: no classifier, no role badges — the prompt says what the
+    // image is for). The exhaustive roles list still guarantees an
+    // attachment can never fall through to the legacy face-override field.
     const roleList = submittedAttachments
       .filter((a) => a.type.startsWith("image/"))
-      .map((a) => ({ url: a.url, role: a.role ?? "identity" }));
+      .map((a) => ({ url: a.url, role: "reference" }));
     if (roleList.length > 0) {
       formData.set("attachment_roles", JSON.stringify(roleList));
     }
@@ -3648,12 +3542,11 @@ function GenerateFormInner({
       // character's saved default — real report, 2026-08-08: a video kept
       // anchoring to the character's default reference photo and ignoring a
       // close-up shot attached alongside the prompt in the same message.
-      const anchorAttachment = submittedAttachments.find(
-        (a) => a.type.startsWith("image/") && (a.role === undefined || a.role === "identity"),
-      );
-      if (anchorAttachment) {
-        formData.set("attachment_reference_url", anchorAttachment.url);
-      } else if (anchorPhotoPath) {
+      // The face-override field is no longer sent by this client — identity
+      // comes from the character (or the gallery pick below); attachments
+      // ride as neutral references in attachment_roles. Old native shells
+      // still send the legacy field and keep the old contract server-side.
+      if (anchorPhotoPath) {
         // A photo picked from the character's OWN gallery (see the picker
         // above the composer) — a step down from an attachment in priority
         // (that's a fresh, one-off photo for this message), but still ahead
@@ -4149,7 +4042,7 @@ function GenerateFormInner({
 
     const readyAttachments = pendingAttachments
       .filter((a): a is PendingAttachment & { status: "ready"; url: string; path: string } => a.status === "ready" && Boolean(a.url) && Boolean(a.path))
-      .map((a) => ({ path: a.path, url: a.url, name: a.name, type: a.type, size: a.size, role: a.role }));
+      .map((a) => ({ path: a.path, url: a.url, name: a.name, type: a.type, size: a.size }));
 
     // The Kling O3 aspect pre-flight now lives in the Send Receipt resolver
     // (REF_ASPECT_OUT_OF_RANGE, from server-measured upload dimensions) —
@@ -5029,7 +4922,7 @@ function GenerateFormInner({
               {pendingAttachments.length > 0 && (
                 <div className="flex flex-wrap gap-2 px-3 pt-3">
                   {pendingAttachments.map((att) => (
-                    <PendingAttachmentChip key={att.id} attachment={att} onRemove={() => removeAttachment(att.id)} onRoleTap={() => cycleAttachmentRole(att.id)} />
+                    <PendingAttachmentChip key={att.id} attachment={att} onRemove={() => removeAttachment(att.id)} />
                   ))}
                 </div>
               )}

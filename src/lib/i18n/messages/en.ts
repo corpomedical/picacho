@@ -717,6 +717,8 @@ const en = {
     receiptProp: "Prop: matched from your photo",
     receiptPropDescribed: "Prop: described from your photo",
     roleDetecting: "Detecting…",
+    receiptReference: "Attached image: sent with your prompt",
+    receiptReferenceDescribed: "Attached image: described into your prompt",
     pullUpToEdit: "Pull up to edit",
     expandStage: "Expand view",
     collapseStage: "Exit expanded view",

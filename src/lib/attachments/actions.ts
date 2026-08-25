@@ -104,44 +104,6 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
   };
 }
 
-// Role pre-pick for an uploaded image (Send Receipt P2): classifies the
-// photo so the composer can default its role chip — person → Face,
-// clothing → Outfit, scene → Scene. Fired by the client AFTER the chip is
-// ready; a failure or null just leaves the chip on its default. Only our
-// own media URLs are ever fetched (same guard as promptFromImage), and the
-// call shares the upload rate-limit scope since it's 1:1 with uploads.
-export async function classifyChatAttachment(
-  formData: FormData,
-): Promise<{ error: string | null; classification?: "person" | "clothing" | "scene" | "animal" | "vehicle" | "object" | "other" | null }> {
-  const supabase = await createClient();
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) return { error: "Your session expired — please log in again." };
-
-  const rawUrl = String(formData.get("url") ?? "").trim();
-  if (!rawUrl.startsWith("/api/media/") || rawUrl.includes("..") || rawUrl.includes("\\")) {
-    return { error: "That image can't be read." };
-  }
-
-  if (
-    await rateLimited(data.user.id, "upload", UPLOAD_RATE_WINDOW_SECONDS, UPLOAD_RATE_MAX_PER_WINDOW)
-  ) {
-    return { error: null, classification: null };
-  }
-
-  const { classifyAttachmentImage } = await import("@/lib/generations/providers/describe-image");
-  const { absolutizeMediaUrl } = await import("@/lib/media/url");
-  const { getOrigin } = await import("@/lib/origin");
-  const classification = await classifyAttachmentImage(
-    absolutizeMediaUrl(rawUrl, await getOrigin()),
-  );
-  if (!classification) {
-    // Advisory feature, but a silent null is undebuggable from the field —
-    // this line is what turns "it's not autodetecting" into a diagnosis.
-    console.warn("[classify] null classification for", rawUrl.slice(0, 100));
-  }
-  return { error: null, classification };
-}
-
 export async function deleteChatAttachment(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();

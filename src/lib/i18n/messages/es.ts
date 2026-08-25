@@ -660,6 +660,8 @@ const es = {
     receiptProp: "Elemento: igualado desde tu foto",
     receiptPropDescribed: "Elemento: descrito a partir de tu foto",
     roleDetecting: "Detectando…",
+    receiptReference: "Imagen adjunta: enviada con tu prompt",
+    receiptReferenceDescribed: "Imagen adjunta: descrita en tu prompt",
     pullUpToEdit: "Desliza para editar",
     expandStage: "Ampliar vista",
     collapseStage: "Salir de la vista ampliada",

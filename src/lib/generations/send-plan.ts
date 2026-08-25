@@ -185,9 +185,12 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
 // Input snapshot
 // ---------------------------------------------------------------------------
 
-/** Attachment roles (P2; "prop" added P5 — animals, vehicles, products,
- * any thing that should appear in the render). */
-export type AttachmentRole = "identity" | "outfit" | "scene" | "prop" | "unused";
+/** Attachment roles. Since 2026-08-25 ("discard the classifier" decision)
+ * new clients send exactly ONE role: "reference" — the attachment rides to
+ * the model neutrally and the USER'S PROMPT says what it's for. The older
+ * explicit roles remain accepted from transitional clients, and role
+ * undefined is the permanent legacy contract (identity/face override). */
+export type AttachmentRole = "reference" | "identity" | "outfit" | "scene" | "prop" | "unused";
 
 export type ResolveInput = {
   contentType: "image" | "video";
@@ -233,6 +236,7 @@ export type PlanSlot =
   | "outfit"
   | "scene"
   | "prop"
+  | "reference"
   | "continuation"
   | "frames"
   | "cast"
@@ -320,6 +324,7 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   const outfitAttachment = input.attachments.find((a) => a.isImage && a.role === "outfit");
   const sceneAttachment = input.attachments.find((a) => a.isImage && a.role === "scene");
   const propAttachment = input.attachments.find((a) => a.isImage && a.role === "prop");
+  const referenceAttachment = input.attachments.find((a) => a.isImage && a.role === "reference");
   const advanced = input.contentType === "video" ? input.advancedMode : "none";
   const isMulti = input.companionsCount > 0;
 
@@ -395,7 +400,13 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
 
   // Attachments that neither carry a consuming role nor were explicitly
   // opted out are decorative — say so instead of pretending.
-  const consumed = new Set([firstImageAttachment, outfitAttachment, sceneAttachment, propAttachment]);
+  const consumed = new Set([
+    firstImageAttachment,
+    outfitAttachment,
+    sceneAttachment,
+    propAttachment,
+    referenceAttachment,
+  ]);
   const extraCount = input.attachments.filter(
     (a) => !consumed.has(a) && a.role !== "unused",
   ).length;
@@ -442,6 +453,21 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   // prompt text works on every model, so this lane is universal.
   if (sceneAttachment && advanced === "none") {
     entries.push({ slot: "scene", source: "attachment", consumption: "described" });
+  }
+
+  // --- neutral reference ---------------------------------------------------
+  // The current contract: the attachment goes to the model as-is where the
+  // model can take an extra image (cited on Seedance, extra edit image on
+  // GPT), and is vision-described into the prompt elsewhere — in BOTH cases
+  // the user's own prompt says what to do with it. Identity always comes
+  // from the character, never from a reference attachment.
+  if (referenceAttachment && advanced === "none") {
+    const nativeLane = Boolean(caps?.outfitImage) && !input.storyboardShotsActive;
+    entries.push({
+      slot: "reference",
+      source: "attachment",
+      consumption: nativeLane ? "native" : "described",
+    });
   }
 
   // --- prop ----------------------------------------------------------------

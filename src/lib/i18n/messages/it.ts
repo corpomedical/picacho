@@ -660,6 +660,8 @@ const it = {
     receiptProp: "Elemento: replicato dalla tua foto",
     receiptPropDescribed: "Elemento: descritto dalla tua foto",
     roleDetecting: "Rilevamento…",
+    receiptReference: "Immagine allegata: inviata con il tuo prompt",
+    receiptReferenceDescribed: "Immagine allegata: descritta nel tuo prompt",
     pullUpToEdit: "Tira su per modificare",
     expandStage: "Espandi vista",
     collapseStage: "Esci dalla vista espansa",
