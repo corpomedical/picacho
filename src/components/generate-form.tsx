@@ -4822,6 +4822,9 @@ function GenerateFormInner({
           g={g}
           modelName={sendPlanModelName()}
           onAction={handlePlanAction}
+          showIssues={
+            prompt.trim().length > 0 || pendingAttachments.length > 0 || Boolean(characterId)
+          }
         />
       )}
 

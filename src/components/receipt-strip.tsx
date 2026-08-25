@@ -114,12 +114,19 @@ export function ReceiptStrip({
   g,
   modelName,
   onAction,
+  showIssues,
 }: {
   plan: SendPlan;
   headline: string;
   g: Messages["generate"];
   modelName: string;
   onAction: (issue: PlanIssue) => void;
+  // Issue rows wait for engagement (operator, 2026-08-25: a red block about
+  // the empty default state greeted people the moment they opened Generate).
+  // The caller flips this once anything is typed, attached, or picked; the
+  // submit-time soft-block protects regardless, so hiding rows pre-
+  // engagement costs no safety.
+  showIssues: boolean;
 }) {
   const parts = plan.entries
     .map((e) => entryText(e, g))
@@ -135,7 +142,7 @@ export function ReceiptStrip({
           </span>
         ))}
       </div>
-      {plan.issues.map((issue) => (
+      {showIssues && plan.issues.map((issue) => (
         <div
           key={issue.code}
           className={cn(
