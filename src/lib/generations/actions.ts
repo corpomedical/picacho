@@ -644,10 +644,18 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // here against whatever the admin has the account's image model set to,
   // rather than silently generating with only one of the selected characters
   // actually represented.
-  if (wantsMultiCharacter && contentType === "image" && imageModelId !== "gpt-image") {
+  // Both image lanes composite multiple characters now — GPT's multi-image
+  // edit always did, and FLUX.2 Pro's /edit joined it 2026-08-26. The guard
+  // remains for any future lane that can't.
+  if (
+    wantsMultiCharacter &&
+    contentType === "image" &&
+    imageModelId !== "gpt-image" &&
+    imageModelId !== "flux"
+  ) {
     return {
       error:
-        "Combining multiple characters in one image needs GPT Image 2 as the image model — " +
+        "Combining multiple characters in one image needs GPT Image 2 or Flux 2 Pro as the image model — " +
         "ask an admin to switch it in Admin > AI Providers, or remove the extra characters.",
     };
   }
@@ -1216,7 +1224,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           contentType === "image" ? referenceImageUrl : videoCharacterAnchorUrl;
         const modelTakesOutfitPhoto =
           contentType === "image"
-            ? imageModelId === "gpt-image"
+            ? imageModelId === "gpt-image" || imageModelId === "flux"
             : videoModelId === "seedance" || videoModelId === "seedance-2";
         // Plain path only (no storyboard, no multi-image reference) — it
         // matches what the composer's caption promises, and keeps Seedance's
@@ -1251,7 +1259,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       if (neutralUrl && !wantsMultiCharacter && !storyboardShots && !videoReferenceImageUrls) {
         const propTakesPhoto =
           contentType === "image"
-            ? imageModelId === "gpt-image"
+            ? imageModelId === "gpt-image" || imageModelId === "flux"
             : videoModelId === "seedance" || videoModelId === "seedance-2";
         const absoluteProp = absolutizeMediaUrl(neutralUrl, await getOrigin());
         if (propTakesPhoto) {

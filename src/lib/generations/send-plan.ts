@@ -168,14 +168,16 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     aspectControl: "none",
     photorealPolicy: "accepts",
   },
+  // FLUX.2 Pro since 2026-08-26 — /edit takes a reference ARRAY like the
+  // GPT lane, so the receipt tells the same story on both image models.
   flux: {
     kind: "image",
-    identity: { max: 1, mechanism: "first-frame", required: false },
-    outfitImage: false,
+    identity: { max: 1, mechanism: "edit-source", required: false },
+    outfitImage: true,
     continuation: false,
     startEndFrames: false,
     storyboard: false,
-    multiPerson: false,
+    multiPerson: true,
     aspectControl: "none",
     photorealPolicy: "accepts",
   },

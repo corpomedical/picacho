@@ -45,11 +45,10 @@ function chargeBudget(budget: ProviderBudget | undefined): void {
 // persistBase64 handler); fal.ai/Flux returns a hosted URL directly.
 //
 // referenceImageUrl accepts either a single URL (the ordinary one-character
-// case, unchanged) or an array (multi-character mode — one photo per
-// selected character). Only OpenAI's GPT Image 2 path actually supports the
-// array form; the caller (actions.ts) is responsible for never routing a
-// multi-character request to Flux in the first place, but generateImageWithFlux
-// throws a clear error itself as a backstop if that ever happens anyway.
+// case) or an array (multi-character mode — one photo per selected
+// character). Since the FLUX.2 Pro upgrade (2026-08-26) BOTH providers
+// accept the array form — /edit takes up to ten reference images — so
+// multi-character no longer needs to be blocked from the fal lane.
 export async function generateImage(
   modelId: string,
   prompt: string,
@@ -64,17 +63,13 @@ export async function generateImage(
   onFallback?: (note: string, finalModelName?: string) => void,
   // Shared across every attempt of one generation — see ProviderBudget.
   budget?: ProviderBudget,
-  // Outfit-on-the-character (2026-08-24): a clothing photo sent ALONGSIDE the
-  // single identity photo on the GPT image-edit path only. Deliberately its
-  // own argument rather than merged into referenceImageUrl: the array form
-  // means multi-character (one photo per person, blocks the Flux fallback),
-  // and the Flux paths are single-source image-to-image where a clothing
-  // photo would become the base image — the exact identity-destroying
-  // mistake this feature exists to prevent. Flux calls get the identity
-  // photo alone; the prompt's outfit description carries the garment there.
+  // Outfit-on-the-character (2026-08-24): a clothing photo sent ALONGSIDE
+  // the single identity photo. Its own argument (not merged into
+  // referenceImageUrl) so the array form keeps meaning multi-character.
+  // Since FLUX.2 (2026-08-26) both providers receive it — see combinedRefs.
   outfitImageUrl?: string | null,
-  // Prop-role photo (Send Receipt P5) — same GPT-only extra-image contract
-  // as the outfit image above; Flux fallbacks stay single-source.
+  // Prop-role photo (Send Receipt P5) — same extra-image contract as the
+  // outfit photo, both providers.
   propImageUrl?: string | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
@@ -96,14 +91,13 @@ export async function generateImage(
     }
   }
 
-  if (model.provider === "fal") {
-    chargeBudget(budget);
-    return persistRemoteImage(await generateImageWithFlux(prompt, referenceImageUrl));
-  }
-
-  // Only the ordinary single-identity case can take the extra outfit image —
-  // callers already only set outfitImageUrl then, this is the local guard.
-  const openAiRefs =
+  // One combined reference array for BOTH providers (2026-08-26): identity
+  // first, then outfit, then prop. GPT's multi-image edit always worked
+  // this way; FLUX.2 Pro's /edit now takes the same array (up to ten), so
+  // the fallback carries the exact references the primary attempt carried
+  // — the prompt's instruction suffixes about each photo stay true across
+  // the lane switch.
+  const combinedRefs =
     (outfitImageUrl || propImageUrl) && typeof referenceImageUrl === "string" && referenceImageUrl
       ? [
           referenceImageUrl,
@@ -111,6 +105,13 @@ export async function generateImage(
           ...(propImageUrl ? [propImageUrl] : []),
         ]
       : referenceImageUrl;
+
+  if (model.provider === "fal") {
+    chargeBudget(budget);
+    return persistRemoteImage(await generateImageWithFlux(prompt, combinedRefs));
+  }
+
+  const openAiRefs = combinedRefs;
 
   try {
     chargeBudget(budget);
@@ -126,7 +127,6 @@ export async function generateImage(
     // Only for the safety case: an auth error, an outage, or a rate limit
     // says nothing about whether a different model would do better, and
     // silently double-spending on those would be wrong.
-    const multiCharacter = Array.isArray(referenceImageUrl) && referenceImageUrl.length >= 2;
     if (!(err instanceof ImageSafetyRejection)) throw err;
 
     // First recovery: soften the wording and retry on GPT itself. This keeps
@@ -160,18 +160,21 @@ export async function generateImage(
       }
     }
 
-    if (!multiCharacter && process.env.FAL_KEY) {
+    if (process.env.FAL_KEY) {
+      // FLUX.2 Pro edit takes the same combined reference array as GPT —
+      // identity anchoring survives the lane switch now (the v1 fallback
+      // repainted the person: the real "0% match" report). Multi-character
+      // is included since 2026-08-26: /edit accepts several people, so the
+      // old no-fallback throw is gone.
       onFallback?.(
-        "OpenAI's safety filter rejected the prompt — generated with Flux instead. Identity match is weaker than GPT Image 2's anchored mode.",
-        "Flux",
+        "OpenAI's safety filter rejected the prompt — generated with Flux 2 Pro instead, carrying the same reference photos.",
+        "Flux 2 Pro",
       );
       chargeBudget(budget);
       return persistRemoteImage(
-        await generateImageWithFlux(softenedPrompt ?? prompt, referenceImageUrl),
+        await generateImageWithFlux(softenedPrompt ?? prompt, openAiRefs),
       );
     }
-    // Multi-character compositing has no Flux equivalent (its image-to-image
-    // endpoint takes a single source), so there's nothing to fall back to.
     throw err;
   }
 }

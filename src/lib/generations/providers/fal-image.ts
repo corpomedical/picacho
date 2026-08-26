@@ -31,25 +31,23 @@ export async function generateImageWithFlux(
     );
   }
 
-  // Flux's image-to-image endpoint here (fal-ai/flux/dev/image-to-image)
-  // only ever accepts one source image to edit/vary — it has no equivalent
-  // of OpenAI's multi-image edit for compositing several distinct
-  // characters into one picture. actions.ts already blocks this combination
-  // before spending a generation attempt (see the imageModelId check in
-  // runGeneration); this is a backstop in case this function is ever called
-  // directly with 2+ URLs some other way.
-  if (Array.isArray(referenceImageUrl) && referenceImageUrl.length >= 2) {
-    throw new Error(
-      "Flux can't combine multiple different characters into one image — switch the image model to GPT Image 2.",
-    );
-  }
-  const singleReferenceUrl = Array.isArray(referenceImageUrl) ? referenceImageUrl[0] : referenceImageUrl;
+  // FLUX.2 Pro (2026-08-26): the /edit endpoint takes image_urls — up to
+  // ten reference images — so the whole reference array (identity, outfit,
+  // prop, or several characters) rides exactly like the GPT edit lane. The
+  // v1 code here took ONE image_url it then repainted, which is why the
+  // old fallback lost faces and multi-character had to be blocked upstream.
+  const referenceUrls = (Array.isArray(referenceImageUrl)
+    ? referenceImageUrl
+    : referenceImageUrl
+      ? [referenceImageUrl]
+      : []
+  ).filter(Boolean);
 
   const model = getImageModel("flux");
   if (model.provider !== "fal") throw new Error("Flux model config is misconfigured.");
 
-  const endpoint = singleReferenceUrl ? model.falImageToImage : model.falTextToImage;
-  const body = singleReferenceUrl ? { prompt, image_url: singleReferenceUrl } : { prompt };
+  const endpoint = referenceUrls.length ? model.falImageToImage : model.falTextToImage;
+  const body = referenceUrls.length ? { prompt, image_urls: referenceUrls } : { prompt };
 
   const res = await fetchWithTimeout(
     `https://fal.run/${endpoint}`,
