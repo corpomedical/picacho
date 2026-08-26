@@ -704,7 +704,6 @@ const en = {
     receiptSrcPick: "picked photo",
     receiptSrcSaved: "saved photo",
     receiptGenericPerson: "generic person",
-    receiptFaceNeeded: "pick a character",
     receiptAttached: "photo attached",
     receiptDescribed: "described in words",
     receiptUnused: "not used",

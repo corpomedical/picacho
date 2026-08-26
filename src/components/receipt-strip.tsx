@@ -24,11 +24,13 @@ function entryText(e: PlanEntry, g: Messages["generate"]): string | null {
         }
         return `${g.receiptFace}: ${g.receiptSrcAttachment} — ${g.receiptUnused}`;
       }
-      if (e.consumption === "absent") {
-        return e.noteCode === "NEEDS_CHARACTER"
-          ? `${g.receiptFace}: ${g.receiptFaceNeeded}`
-          : `${g.receiptFace}: ${g.receiptGenericPerson}`;
-      }
+      // No face source = no line (operator, 2026-08-26, third pass on this
+      // area: with no character picked the line was uniform noise on every
+      // model — the "Select character" pill above already owns that story,
+      // and the engagement-gated NEEDS_REFERENCE_PHOTO row still blocks
+      // where a character is required). The line exists only when it can
+      // name a real source.
+      if (e.consumption === "absent") return null;
       const src =
         e.source === "attachment"
           ? e.noteCode === "REPLACES_SAVED_FACE"
@@ -141,8 +143,10 @@ export function ReceiptStrip({
   const parts = plan.entries
     .map((e) => entryText(e, g))
     .filter((s): s is string => Boolean(s));
+  const visibleIssues = showIssues ? plan.issues : [];
+  if (parts.length === 0 && visibleIssues.length === 0 && !headline) return null;
   return (
-    <div className="-mt-1.5 mb-1.5 space-y-1 px-4">
+    <div className="-mt-1.5 space-y-1 px-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-snug text-atelier-muted">
         {headline && <span className="font-medium text-atelier-ink/70">{headline}</span>}
         {parts.map((p, i) => (
@@ -152,7 +156,7 @@ export function ReceiptStrip({
           </span>
         ))}
       </div>
-      {showIssues && plan.issues.map((issue) => (
+      {visibleIssues.map((issue) => (
         <div
           key={issue.code}
           className={cn(
