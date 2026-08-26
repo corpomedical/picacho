@@ -119,7 +119,11 @@ export function ReceiptStrip({
   showIssues,
 }: {
   plan: SendPlan;
-  headline: string;
+  // Optional since 2026-08-26: the strip now sits directly below the model
+  // selector, which already names the model and duration — repeating them
+  // here was the clutter the operator flagged. Absent headline = entries
+  // render alone, first one without a leading separator.
+  headline?: string | null;
   g: Messages["generate"];
   modelName: string;
   onAction: (issue: PlanIssue) => void;
@@ -136,10 +140,10 @@ export function ReceiptStrip({
   return (
     <div className="mb-1.5 space-y-1 px-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-snug text-atelier-muted">
-        <span className="font-medium text-atelier-ink/70">{headline}</span>
+        {headline && <span className="font-medium text-atelier-ink/70">{headline}</span>}
         {parts.map((p, i) => (
           <span key={i} className="flex items-center gap-2">
-            <span aria-hidden className="text-atelier-muted/50">·</span>
+            {(headline || i > 0) && <span aria-hidden className="text-atelier-muted/50">·</span>}
             {p}
           </span>
         ))}

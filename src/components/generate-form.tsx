@@ -4403,6 +4403,19 @@ function GenerateFormInner({
       </div>
     ) : null;
 
+  // One resolve per render, shared by the receipt strip below the model
+  // selector (2026-08-26 declutter: the strip moved from its own floating
+  // row into the picker header; see the mount for the visibility rules).
+  const sendPlanNow = resolveSendPlan(buildSendPlanInput());
+  const receiptEngaged =
+    prompt.trim().length > 0 || pendingAttachments.length > 0 || Boolean(characterId);
+  // Image mode carries no baseline line at all (operator: not relevant
+  // there) — the strip appears only when it has something real to say: an
+  // attachment riding the send, or an engagement-gated warning.
+  const showImageReceipt =
+    contentType === "image" &&
+    (pendingAttachments.length > 0 || (receiptEngaged && sendPlanNow.issues.length > 0));
+
   // First-login walkthrough (or a replay via ?tour=1 from the sidebar's
   // settings menu — see the effect above that strips that param). Steps are
   // controlled (stepIndex lives here, not inside OnboardingTour) because two
@@ -4580,6 +4593,24 @@ function GenerateFormInner({
             {videoDurationPicker}
             <div className="ml-auto">{stageExpandButton}</div>
           </div>
+        )}
+        {/* Send Receipt, tucked directly under the model selector (operator,
+            2026-08-26: the floating placement read as banner clutter). Video
+            drops the model+duration headline — the picker above already says
+            it — leaving only the substance (face source, attachments, and
+            engagement-gated warnings). Image mode renders nothing unless
+            there is substance (see showImageReceipt). Inside the fold is a
+            deliberate trade: a send always requires the composer open, so
+            the line is still seen before anything rides. */}
+        {!isHero && (contentType === "video" || showImageReceipt) && (
+          <ReceiptStrip
+            plan={sendPlanNow}
+            headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
+            g={g}
+            modelName={sendPlanModelName()}
+            onAction={handlePlanAction}
+            showIssues={receiptEngaged}
+          />
         )}
       </div>
       )}
@@ -4772,28 +4803,6 @@ function GenerateFormInner({
           <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />
         ) : null}
 
-      {/* The Send Receipt (P0, read-only): the one line that inventories
-          what the next send actually is — deliberately OUTSIDE the fold
-          ternary below, so nothing armed can hide behind the pull-up bar
-          (ghost dialogue, stale continuations, dropped attachments). Its
-          content comes from resolveSendPlan, the single source of truth
-          the server re-checks through the same module. */}
-      {!isHero && (
-        <ReceiptStrip
-          plan={resolveSendPlan(buildSendPlanInput())}
-          headline={
-            contentType === "video"
-              ? `${currentVideoModel?.name ?? g.video} · ${videoDurationSeconds}s${videoAspectRatio ? ` · ${videoAspectRatio}` : ""}`
-              : g.image
-          }
-          g={g}
-          modelName={sendPlanModelName()}
-          onAction={handlePlanAction}
-          showIssues={
-            prompt.trim().length > 0 || pendingAttachments.length > 0 || Boolean(characterId)
-          }
-        />
-      )}
 
       {/* The fold: while collapsed, the whole composer is a slim pull-up
           bar — top edge visible, shadow above it, freed space to the
