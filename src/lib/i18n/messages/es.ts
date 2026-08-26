@@ -610,6 +610,8 @@ const es = {
     takesRendering: "Renderizando…",
     takesAngles: "{n} ángulos",
     uploadFailedFile: "No se pudo subir {name} — puede que sea demasiado grande o que la conexión haya fallado.",
+    cinemaPresetNote: "Las instrucciones probadas de cámara y estilo del preset acompañan tu prompt.",
+    cinemaPresetLabels: { "crash-zoom": "Zoom brusco", "dolly-35mm": "Dolly-in 35mm", "handheld-chase": "Cámara al hombro", "orbit": "Órbita", "crane-reveal": "Grúa descendente", "aerial-pullback": "Retirada aérea", "low-hero": "Ángulo héroe", "bullet-time": "Bullet time", "slowmo-glamour": "Cámara lenta", "noir": "Cine negro", "film-80s": "Cine años 80", "golden-hour": "Hora dorada", "horror": "Terror", "neon-rain": "Lluvia neón", "storybook": "Cuento", "documentary": "Documental", "epic-fantasy": "Fantasía épica", "western-sunset": "Western", "dream-haze": "Sueño", },
     uploadPhotoFailed: "No se pudo subir esa foto.",
     resultMissing: "Al resultado le faltaba: {issues}.",
     pageTitle: "Generar",

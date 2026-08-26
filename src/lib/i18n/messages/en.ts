@@ -666,6 +666,8 @@ const en = {
     takesRendering: "Rendering…",
     takesAngles: "{n} angles",
     uploadFailedFile: "{name} couldn't be uploaded — it may be too large or the connection dropped.",
+    cinemaPresetNote: "The preset's tested camera and look instructions ride along with your prompt.",
+    cinemaPresetLabels: { "crash-zoom": "Crash zoom", "dolly-35mm": "35mm dolly-in", "handheld-chase": "Handheld chase", "orbit": "Orbit", "crane-reveal": "Crane reveal", "aerial-pullback": "Aerial pull-back", "low-hero": "Hero angle", "bullet-time": "Bullet time", "slowmo-glamour": "Slow motion", "noir": "Film noir", "film-80s": "'80s film", "golden-hour": "Golden hour", "horror": "Horror", "neon-rain": "Neon rain", "storybook": "Storybook", "documentary": "Documentary", "epic-fantasy": "Epic fantasy", "western-sunset": "Western", "dream-haze": "Dream", },
     uploadPhotoFailed: "Couldn't upload that photo.",
     resultMissing: "The result was missing: {issues}.",
     // The /app/generate page header and its reliability stat tiles.

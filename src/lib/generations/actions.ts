@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
+import { getCinemaPreset } from "@/lib/generations/cinema-presets";
 import { getOrigin } from "@/lib/origin";
 import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -896,6 +897,18 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // here for every model; the outfit PHOTO itself is signed further down and
   // attached only on the models whose endpoints can take it.
   const useOutfit = formData.get("use_outfit") !== "0";
+  // Cinema preset (2026-08-26): resolved from id to its fixed, pre-proven
+  // block HERE — the pipeline only ever sees our own tested text, never a
+  // client-supplied string. Gated to the lane the matrix proved (Seedance
+  // video, plain sends); anywhere else — and any unknown or stale id — is
+  // a silent no-op, so an old client can never lose a render over it.
+  const cinemaPresetIdRaw = String(formData.get("cinema_preset_id") ?? "").trim();
+  const cinemaPresetBlock =
+    cinemaPresetIdRaw &&
+    contentType === "video" &&
+    (videoModelId === "seedance" || videoModelId === "seedance-2")
+      ? (getCinemaPreset(cinemaPresetIdRaw)?.block ?? null)
+      : null;
   const characterOutfitPaths = ((character?.outfit_image_urls as string[] | null) ?? []).filter(
     (p) => character && p.startsWith(`${character.user_id}/`),
   );
@@ -1344,6 +1357,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoContinueFromUrl,
           outfitImageUrl,
           propImageUrl,
+          cinemaPresetBlock: storyboardShots ? null : cinemaPresetBlock,
           videoStoryboardShots: storyboardShots,
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
           dialogueText: wantsDialogue ? dialogueText : undefined,

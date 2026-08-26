@@ -35,6 +35,7 @@ import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import { resolveSendPlan, type AttachmentRole, type PlanIssue } from "@/lib/generations/send-plan";
+import { CINEMA_PRESETS } from "@/lib/generations/cinema-presets";
 import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
 import {
   compilePrompt,
@@ -2026,6 +2027,15 @@ function GenerateFormInner({
     setUseOutfit(true);
   }, [characterId]);
 
+  // Cinema preset (2026-08-26): one tap adds a proven camera move or film
+  // look — a fixed prompt block from cinema-presets.ts, applied server-side
+  // after drafting so the tested text rides verbatim. Only offered on the
+  // lane the validation matrix proved (Seedance video, plain sends), and
+  // leaving that lane clears the pick — same no-ghost-state rule as the
+  // continuation chip. Sticky across sends on purpose, like the outfit
+  // chip: a person shooting a preset series shouldn't re-pick every time.
+  const [cinemaPresetId, setCinemaPresetId] = useState<string | null>(null);
+
   const continueModelAppliedRef = useRef(false);
   useEffect(() => {
     if (!continueFromId) return;
@@ -2104,6 +2114,17 @@ function GenerateFormInner({
   const [videoAspectRatio, setVideoAspectRatio] = useState<"16:9" | "9:16" | null>(null);
 
   const [videoAdvancedMode, setVideoAdvancedMode] = useState<"none" | "storyboard" | "multiref">("none");
+  // Placed after videoAdvancedMode/videoModelId exist (declaration order —
+  // the same TDZ trap sendPlanModelName hit). Availability mirrors the
+  // server gate in actions.ts exactly; the effect clears a pick the moment
+  // the composer leaves the proven lane.
+  const cinemaPresetsAvailable =
+    contentType === "video" &&
+    videoAdvancedMode === "none" &&
+    (videoModelId === "seedance" || videoModelId === "seedance-2");
+  useEffect(() => {
+    if (cinemaPresetId && !cinemaPresetsAvailable) setCinemaPresetId(null);
+  }, [cinemaPresetId, cinemaPresetsAvailable]);
   const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false);
   const [storyboardStartPath, setStoryboardStartPath] = useState<string | null>(null);
   const [storyboardEndPath, setStoryboardEndPath] = useState<string | null>(null);
@@ -3512,6 +3533,9 @@ function GenerateFormInner({
       formData.set("continue_from_generation_id", continueFromId);
     }
     formData.set("use_outfit", useOutfit ? "1" : "0");
+    if (cinemaPresetId && cinemaPresetsAvailable) {
+      formData.set("cinema_preset_id", cinemaPresetId);
+    }
     // Send Receipt P2: the full role list for every ready image attachment.
     // New servers route by this; old servers ignore it and use the legacy
     // anchor field above — role capture and role routing shipped together,
@@ -4866,6 +4890,59 @@ function GenerateFormInner({
                   ? formatMsg(g.outfitAttachNote, { name: currentCharacter.name })
                   : g.outfitDescribeNote}
               </span>
+            )}
+          </div>
+        )}
+        {/* Cinema presets (2026-08-26): proven camera moves and film looks.
+            Every thumbnail IS that preset's own proof render from the
+            validation matrix — nothing unproven gets a chip. Tap toggles;
+            the selected block is applied server-side after drafting. */}
+        {cinemaPresetsAvailable && (
+          <div className="mb-2.5">
+            <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+              {CINEMA_PRESETS.map((p) => {
+                const selected = cinemaPresetId === p.id;
+                const label =
+                  (g.cinemaPresetLabels as Record<string, string>)[p.id] ?? p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setCinemaPresetId(selected ? null : p.id)}
+                    aria-pressed={selected}
+                    title={label}
+                    className="group flex flex-shrink-0 flex-col items-center gap-1"
+                  >
+                    <span
+                      className={cn(
+                        "block h-11 w-[74px] overflow-hidden rounded-[10px] transition-shadow",
+                        selected
+                          ? "shadow-[0_0_0_2px_var(--color-atelier-accent)]"
+                          : "shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] group-hover:shadow-[0_0_0_1.5px_var(--color-atelier-muted)]",
+                      )}
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/presets/${p.id}.jpg`}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                    </span>
+                    <span
+                      className={cn(
+                        "max-w-[78px] truncate text-[10.5px] leading-tight",
+                        selected ? "font-medium text-atelier-accent" : "text-atelier-muted",
+                      )}
+                    >
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            {cinemaPresetId && (
+              <p className="mt-1 text-[11px] leading-snug text-atelier-muted">{g.cinemaPresetNote}</p>
             )}
           </div>
         )}

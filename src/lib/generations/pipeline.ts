@@ -501,6 +501,11 @@ export type RealPipelineOptions = {
   // the caller only sets it for those models (a described fallback rides in
   // the prompt elsewhere).
   propImageUrl?: string | null;
+  // Cinema preset (2026-08-26): a fixed, pre-proven prompt block, resolved
+  // by the caller from cinema-presets.ts (never raw user text). Appended to
+  // the final prompt AFTER draft/review — see the apply site below — so the
+  // exact text the validation matrix proved is the exact text that rides.
+  cinemaPresetBlock?: string | null;
   // Storyboard — 2-6 user-written shots for Kling O3 Pro's multi_prompt
   // (see fal.ts). Present ⇒ the caller forced the final-prompt path, so
   // drafting never rewrites shot text.
@@ -993,6 +998,20 @@ export async function runRealPipeline(
         finalPrompt = reviewedPrompt;
         continue;
       }
+    }
+
+    // Cinema preset (2026-08-26): the caller resolved a preset id to its
+    // fixed, pre-proven block (cinema-presets.ts). Appended HERE — after
+    // draft/review and every validation gate, immediately before the
+    // provider call — so it rides verbatim whether or not this account
+    // drafts its prompts. The validation matrix fired exactly this text
+    // with no rewrite in between; a paraphrase of "crash zoom, f/1.4,
+    // halation" is not the thing that was proven. Reassigning
+    // reviewedPrompt (rather than a local) is deliberate: compiledPrompt
+    // in the attempt log below must show what actually rode.
+    if (options.cinemaPresetBlock && options.contentType === "video") {
+      reviewedPrompt = `${reviewedPrompt}\n\n${options.cinemaPresetBlock}`;
+      steps.push({ step: "generate", detail: "Cinema preset applied to the final prompt." });
     }
 
     // Draft/review are quick; generate (especially video) is the slow, costly
