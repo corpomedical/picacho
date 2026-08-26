@@ -140,8 +140,13 @@ export async function generateImage(
         softenedPrompt = await softenPromptForSafety(prompt);
         chargeBudget(budget);
         const base64 = await generateImageWithOpenAI(softenedPrompt, openAiRefs);
+        // The softened text is included because it's otherwise invisible:
+        // the pipeline log shows the ORIGINAL prompt, so when a softened
+        // render ignores an instruction there is no way to tell whether the
+        // rewrite dropped it (2026-08-26: a "new camera angle" render went
+        // through softening, leaving exactly that question unanswerable).
         onFallback?.(
-          "OpenAI's safety filter rejected the wording — automatically softened it and retried on GPT Image 2, keeping the identity anchor.",
+          `OpenAI's safety filter rejected the wording — automatically softened it and retried on GPT Image 2, keeping the identity anchor. Softened prompt: "${softenedPrompt.slice(0, 300)}"`,
         );
         return persistBase64(base64);
       } catch (softenErr) {

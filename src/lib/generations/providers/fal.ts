@@ -350,7 +350,11 @@ async function buildVideoRequest(
         ? `@Image${references.length + 1} shows only an outfit laid out, never a person — the person wears exactly that outfit: reproduce its design, colours, logos, and stitching.`
         : null,
       prop
-        ? `@Image${references.length + (outfit ? 1 : 0) + 1} is an image the user attached — the prompt above says how to use it; match its contents faithfully.`
+        ? // Mirrors the identity line above: anchor to the image without
+          // copying its composition. "match its contents faithfully" (the old
+          // ending) made "same set, new angle" prompts return near-copies of
+          // the attached shot — 2026-08-26 incident, see pipeline.ts.
+          `@Image${references.length + (outfit ? 1 : 0) + 1} is an image the user attached — the prompt above says how to use it; do not copy its framing or composition unless the prompt asks for that.`
         : null,
     ].filter(Boolean);
     body = {

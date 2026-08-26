@@ -11,8 +11,16 @@
 // English on purpose, like every prompt suffix the server composes: the
 // scaffold is text FOR THE MODEL, not UI copy. It lands in the user's
 // textarea so they can see and edit exactly what will be sent.
+//
+// Rewritten 2026-08-26 after the launch-night incident: the first wording
+// ("Keep the exact same location, set and lighting as the attached image —
+// new camera angle: ") lost to the attached image's visual prior on the GPT
+// edit path — both of the operator's renders came back as near-copies of
+// the source composition. Edit models need the preserve/change split stated
+// operationally: name what to rebuild (the set) and explicitly forbid the
+// default failure (repeating the framing).
 export const ANOTHER_SHOT_SUFFIX =
-  "\n\nKeep the exact same location, set and lighting as the attached image — new camera angle: ";
+  "\n\nThe attached image is the previous shot of this scene. Rebuild the exact same location, set, lighting and wardrobe, but shoot from a different camera position — do not repeat the previous shot's framing. New camera angle: ";
 
 // The suffix without surrounding whitespace — what an untouched scaffold
 // ends with after trimming, whether or not the original prompt was empty.

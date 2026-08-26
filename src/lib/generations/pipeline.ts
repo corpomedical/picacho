@@ -1165,7 +1165,18 @@ export async function runRealPipeline(
             imagePrompt += `\n\nOne of the reference photos shows only an outfit laid out, with no person in it: dress the person in exactly that outfit, reproducing its design, colours, logos, and stitching.`;
           }
           if (propActive) {
-            imagePrompt += `\n\nOne of the reference photos is an image the user attached — the prompt says how to use it; match its contents faithfully.`;
+            // "match its contents faithfully" used to end this line — and on
+            // the GPT edit path that clause plus the image's own visual prior
+            // beat any transformative instruction in the prompt. Real
+            // incident, 2026-08-26 ("Another shot on this set" launch): the
+            // previous render was attached with "keep the same location — new
+            // camera angle: from the court", and both renders came back as
+            // near-copies of the source composition. The line now defers to
+            // the prompt entirely and forbids the one default failure mode
+            // (composition copying) unless the prompt asks for it — same
+            // pattern as the identity citation's "do not copy the pose or
+            // framing" in fal.ts.
+            imagePrompt += `\n\nOne of the reference photos is an image the user attached — the prompt says how to use it. Follow the prompt's instructions about it, and do not copy its framing or composition unless the prompt asks for that.`;
           }
           if (outfitActive || propActive) {
             imagePrompt += `\n\nEvery other reference photo is the person — match their face, hair, and identity exactly.`;
