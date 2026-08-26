@@ -597,24 +597,34 @@ export function AppSidebar({
         <Link
           href="/app/generate"
           title="Picacho"
-          className={cn("flex items-center gap-1", iconOnly && "justify-center")}
+          // overflow-hidden + a nowrap, fixed-width wordmark below turn the
+          // collapse/expand into a clean slide-reveal — without them the
+          // 200px wordmark reflowed inside the still-animating 56px rail
+          // (operator, 2026-08-26: 'weird transition ... between the P logo
+          // and the Full logo').
+          className={cn("flex items-center gap-1 overflow-hidden", iconOnly && "justify-center")}
         >
           {iconOnly ? (
             // The wordmark is too wide to read as a small square icon, so
-            // the collapsed rail shows the brand icon — the wordmark's own
-            // P with its ochre underline (same mark as the app icon), not
-            // a plain CSS letter (operator, 2026-08-26).
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src="/brand-icon.png"
-              alt="Picacho"
-              className="h-6 w-6 flex-shrink-0 rounded-full"
-            />
-          ) : (
+            // the collapsed rail shows the wordmark's own P with its ochre
+            // underline — transparent, no badge disc (operator, 2026-08-26:
+            // 'Remove the black circle'). Light/dark pair, same swap
+            // mechanism as the Logo component.
             <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/brand-icon.png" alt="Picacho" className="h-6 w-6 flex-shrink-0 dark:hidden" />
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/brand-icon-dark.png"
+                alt="Picacho"
+                className="hidden h-6 w-6 flex-shrink-0 dark:block"
+              />
+            </>
+          ) : (
+            <span className="flex flex-shrink-0 items-center gap-1 whitespace-nowrap">
               <Logo className="h-6" />
               <EarlyAccessBadge />
-            </>
+            </span>
           )}
         </Link>
         <button
