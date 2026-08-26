@@ -14,14 +14,9 @@ import {
   requestMultiAngleGenerationCancel,
   discardStoppedGeneration,
   getGenerationThread,
-  getAnotherShotSource,
   type HistoryTurn,
   type ChatHistoryItem,
 } from "@/lib/generations/actions";
-import {
-  buildAnotherShotPrompt,
-  trimUnfilledAnotherShotScaffold,
-} from "@/lib/generations/another-shot";
 import { synthesizeVoice } from "@/lib/voice/actions";
 import { parseVoiceCommand } from "@/lib/voice/commands";
 import { recommendCreditPack } from "@/lib/stripe/credit-packs";
@@ -2650,9 +2645,7 @@ function GenerateFormInner({
     userStoppedRef.current = false;
 
     const formData = new FormData();
-    // Same unfilled-scaffold strip as submitPrompt — the multi-angle prompt
-    // comes from the same textarea and can carry the same dangling suffix.
-    formData.set("prompt", trimUnfilledAnotherShotScaffold(mPrompt));
+    formData.set("prompt", mPrompt);
     formData.set("character_id", characterId);
     formData.set("angle_group_id", groupId);
     formData.set("video_model_id", videoModelId);
@@ -2936,76 +2929,6 @@ function GenerateFormInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // "Another shot on this set" (?anothershot=<generationId>, from an image's
-  // History page — it arrives together with ?resume above, so the original
-  // chat loads alongside the prefill). Prefills the composer with the
-  // finished image attached as a neutral scene reference plus the original
-  // prompt scaffolded for a new camera angle. Deliberately COMPOSES the
-  // existing manual flow instead of adding a lane: the image is re-uploaded
-  // through uploadChatAttachment, so the resulting attachment is exactly
-  // what a person attaching the downloaded file would produce — same chip,
-  // same roles payload, same per-model receipt honesty, same removal path.
-  // Every failure is loud (chip error state + composer error line); no
-  // failure here can turn into a wrong send.
-  useEffect(() => {
-    const shotId = searchParams.get("anothershot");
-    if (!shotId) return;
-    router.replace("/app/generate", { scroll: false });
-    let cancelled = false;
-    (async () => {
-      const source = await getAnotherShotSource(shotId);
-      if (cancelled) return;
-      if (!source) {
-        setError(g.anotherShotLoadFailed);
-        return;
-      }
-      setPrompt(buildAnotherShotPrompt(source.prompt, source.sceneNotes));
-      setComposerFolded(false);
-      const id = crypto.randomUUID();
-      setPendingAttachments((prev) => [
-        ...prev,
-        { id, name: "previous-shot.png", type: "image/png", size: 0, status: "uploading" },
-      ]);
-      try {
-        const res = await fetch(source.resultUrl);
-        if (!res.ok) throw new Error(String(res.status));
-        const blob = await res.blob();
-        const file = new File([blob], "previous-shot.png", { type: blob.type || "image/png" });
-        const formData = new FormData();
-        formData.set("file", file);
-        const result = await uploadChatAttachment(formData);
-        if (cancelled) return;
-        setPendingAttachments((prev) =>
-          prev.map((a) => {
-            if (a.id !== id) return a;
-            if (result.error !== null) return { ...a, status: "error", error: result.error };
-            return {
-              ...a,
-              status: "ready",
-              url: result.attachment!.url,
-              path: result.attachment!.path,
-              width: result.attachment!.width,
-              height: result.attachment!.height,
-            };
-          }),
-        );
-        if (result.error !== null) setError(result.error);
-      } catch {
-        if (cancelled) return;
-        setPendingAttachments((prev) =>
-          prev.map((a) =>
-            a.id === id ? { ...a, status: "error", error: g.anotherShotAttachFailed } : a,
-          ),
-        );
-        setError(g.anotherShotAttachFailed);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // One-time "arrived from History" action, same contract as ?resume above.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // First-login walkthrough — auto-starts from the startOnboarding prop
   // (only ever true from /app/page.tsx, see its comment) or replayed later
@@ -3520,10 +3443,7 @@ function GenerateFormInner({
       characterIdOverride?: string;
     },
   ) {
-    // A prefilled "Another shot" scaffold the person never filled in would
-    // read to the model as an unanswered question — strip it (deterministic
-    // suffix surgery, no-op on every other prompt; see another-shot.ts).
-    const submittedPrompt = trimUnfilledAnotherShotScaffold(rawPrompt.trim());
+    const submittedPrompt = rawPrompt.trim();
     const submittedAttachments = opts?.attachments ?? [];
     const effectiveContentType = opts?.contentTypeOverride ?? contentType;
     const effectiveCharacterId = opts?.characterIdOverride ?? characterId;
