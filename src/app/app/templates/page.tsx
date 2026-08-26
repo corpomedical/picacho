@@ -44,8 +44,22 @@ export default async function TemplatesPage() {
                 <Link
                   key={tpl.id}
                   href={`/app/generate?prompt=${encodeURIComponent(tpl.prompt)}&type=${tpl.contentType}`}
-                  className="group flex flex-col rounded-control border border-atelier-rule bg-atelier-surface p-5 shadow-[0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)] transition-[border-color,box-shadow] hover:border-atelier-muted/50 hover:shadow-[0_1px_2px_rgba(33,29,22,0.05),0_20px_48px_-20px_rgba(33,29,22,0.2)]"
+                  className="group flex flex-col overflow-hidden rounded-control border border-atelier-rule bg-atelier-surface shadow-[0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)] transition-[border-color,box-shadow] hover:border-atelier-muted/50 hover:shadow-[0_1px_2px_rgba(33,29,22,0.05),0_20px_48px_-20px_rgba(33,29,22,0.2)]"
                 >
+                  {/* Sample render (2026-08-26): a real generation of this
+                      exact template prompt with the brand character — same
+                      proof-not-promise rule as the composer's cinema
+                      presets. Files in public/templates/<id>.jpg. */}
+                  <span className="block aspect-video w-full overflow-hidden bg-atelier-ink/5">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`/templates/${tpl.id}.jpg`}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                    />
+                  </span>
+                  <div className="flex flex-1 flex-col p-5">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-atelier-ink">{tpl.title}</h3>
                     <TypeBadge label={tpl.contentType === "video" ? t.generate.video : t.generate.image} />
@@ -57,6 +71,7 @@ export default async function TemplatesPage() {
                   <span className="mt-3 text-xs font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2 group-hover:decoration-atelier-accent">
                     {tp.use}
                   </span>
+                  </div>
                 </Link>
               ))}
             </div>
