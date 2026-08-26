@@ -601,10 +601,15 @@ export function AppSidebar({
         >
           {iconOnly ? (
             // The wordmark is too wide to read as a small square icon, so
-            // the collapsed rail keeps the compact "P" badge instead.
-            <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-[11px] font-semibold text-atelier-paper">
-              P
-            </span>
+            // the collapsed rail shows the brand icon — the wordmark's own
+            // P with its ochre underline (same mark as the app icon), not
+            // a plain CSS letter (operator, 2026-08-26).
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src="/brand-icon.png"
+              alt="Picacho"
+              className="h-6 w-6 flex-shrink-0 rounded-full"
+            />
           ) : (
             <>
               <Logo className="h-6" />
