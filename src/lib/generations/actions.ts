@@ -2,7 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { resolveSendPlan } from "@/lib/generations/send-plan";
-import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
+import {
+  describeImageAsPrompt,
+  describeSubjectImage,
+  describeSceneForReshoot,
+} from "@/lib/generations/providers/describe-image";
 import { getOrigin } from "@/lib/origin";
 import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -2791,7 +2795,7 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
 // composer shows a plain "couldn't load" error) instead of a wrong prefill.
 export async function getAnotherShotSource(
   generationId: string,
-): Promise<{ prompt: string; resultUrl: string } | null> {
+): Promise<{ prompt: string; resultUrl: string; sceneNotes: string | null } | null> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user || !generationId) return null;
@@ -2808,7 +2812,22 @@ export async function getAnotherShotSource(
   const url = toMediaUrl(row.result_url as string | null);
   if (!isRenderableUrl(url)) return null;
 
-  return { prompt: (row.prompt_input as string | null) ?? "", resultUrl: url as string };
+  // Continuity notes, described from the source render at tap time
+  // (2026-08-26, launch-night lesson): the camera can only move freely if
+  // the SET and WARDROBE are pinned in words — the first live renders moved
+  // the camera and re-rolled the outfit every time, because the base prompt
+  // said only "a stylish designer top". The description lands in the user's
+  // editable textarea, so the send stays fully visible text. Best-effort:
+  // null (no key, timeout, refusal) degrades to the plain scaffold.
+  const sceneNotes = await describeSceneForReshoot(
+    absolutizeMediaUrl(url as string, await getOrigin()),
+  );
+
+  return {
+    prompt: (row.prompt_input as string | null) ?? "",
+    resultUrl: url as string,
+    sceneNotes,
+  };
 }
 
 export async function getReliabilityStats(_userId: string) {

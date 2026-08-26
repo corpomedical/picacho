@@ -5,41 +5,50 @@
 // over the already-shipped neutral reference lane — the attachment rides
 // exactly like a manually attached photo (same upload action, same roles
 // payload, same per-model receipt honesty), so it adds zero new pipeline
-// behavior and zero new AI calls. This module holds the pure, unit-tested
-// pieces; the composer effect and the History button consume them.
+// behavior. This module holds the pure, unit-tested pieces; the composer
+// effect and the History button consume them.
+//
+// Launch-night revision (same day): the first scaffold moved nothing — the
+// reference suffix's "match its contents faithfully" beat it — and the
+// second moved the camera but re-rolled the wardrobe every render and once
+// lost the set, because the base prompt described the outfit vaguely
+// ("a stylish designer top") and pixels don't survive reframing. The
+// scaffold now carries CONTINUITY NOTES described from the source render
+// at tap time (describeSceneForReshoot): set and wardrobe pinned as
+// concrete text inside the user's editable prompt. Photos own the person,
+// prompt owns the scene — so the scene goes into the prompt, precisely.
 
 // English on purpose, like every prompt suffix the server composes: the
 // scaffold is text FOR THE MODEL, not UI copy. It lands in the user's
 // textarea so they can see and edit exactly what will be sent.
-//
-// Rewritten 2026-08-26 after the launch-night incident: the first wording
-// ("Keep the exact same location, set and lighting as the attached image —
-// new camera angle: ") lost to the attached image's visual prior on the GPT
-// edit path — both of the operator's renders came back as near-copies of
-// the source composition. Edit models need the preserve/change split stated
-// operationally: name what to rebuild (the set) and explicitly forbid the
-// default failure (repeating the framing).
-export const ANOTHER_SHOT_SUFFIX =
-  "\n\nThe attached image is the previous shot of this scene. Rebuild the exact same location, set, lighting and wardrobe, but shoot from a different camera position — do not repeat the previous shot's framing. New camera angle: ";
+export const ANOTHER_SHOT_ANGLE_TAIL = "New camera angle: ";
 
-// The suffix without surrounding whitespace — what an untouched scaffold
-// ends with after trimming, whether or not the original prompt was empty.
-const SUFFIX_CORE = ANOTHER_SHOT_SUFFIX.trim();
+const INTRO = "The attached image is the previous shot of this scene.";
+const MOVE_CAMERA =
+  "Shoot from a different camera position — do not repeat the previous shot's framing.";
 
-export function buildAnotherShotPrompt(originalPrompt: string): string {
+export function buildAnotherShotPrompt(
+  originalPrompt: string,
+  sceneNotes?: string | null,
+): string {
   const base = originalPrompt.trim();
-  return base ? base + ANOTHER_SHOT_SUFFIX : ANOTHER_SHOT_SUFFIX.trimStart();
+  const notes = sceneNotes?.trim();
+  const scaffold = notes
+    ? `${INTRO} Rebuild the same set and wardrobe exactly:\n${notes}\n${MOVE_CAMERA} ${ANOTHER_SHOT_ANGLE_TAIL}`
+    : `${INTRO} Rebuild the exact same location, set, lighting and wardrobe, but shoot from a different camera position — do not repeat the previous shot's framing. ${ANOTHER_SHOT_ANGLE_TAIL}`;
+  return base ? `${base}\n\n${scaffold}` : scaffold;
 }
 
-// If the person sends without filling in the angle, the dangling
-// "— new camera angle: " would read to the model as an unanswered question.
-// Strip the whole scaffold in that case and send the base prompt alone —
-// deterministic string surgery, no guessing. A filled-in scaffold (anything
-// typed after the colon) no longer ends with the core and passes untouched.
+// If the person sends without filling in the angle, only the dangling
+// "New camera angle:" phrase is stripped — the rebuild-the-set instruction
+// above it is complete and useful on its own (a same-set re-render with a
+// free camera), so it stays. Deterministic string surgery, no guessing; a
+// filled-in angle no longer ends with the phrase and passes untouched.
 export function trimUnfilledAnotherShotScaffold(prompt: string): string {
+  const tail = ANOTHER_SHOT_ANGLE_TAIL.trim();
   const trimmed = prompt.trimEnd();
-  if (!trimmed.endsWith(SUFFIX_CORE)) return prompt;
-  return trimmed.slice(0, trimmed.length - SUFFIX_CORE.length).trimEnd();
+  if (!trimmed.endsWith(tail)) return prompt;
+  return trimmed.slice(0, trimmed.length - tail.length).trimEnd();
 }
 
 // Which results get the button. Mirrors the video "Continue this clip"

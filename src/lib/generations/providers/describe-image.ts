@@ -161,6 +161,68 @@ export async function describeSubjectImage(imageUrl: string): Promise<string | n
   }
 }
 
+// "Another shot on this set" (2026-08-26, launch-night lesson): pin the
+// scene in TEXT before re-shooting it. The first live renders moved the
+// camera but re-rolled the wardrobe every time and once lost the set — the
+// base prompt said only "a stylish designer top", so each render resolved
+// that freedom differently. Pixels can't survive reframing; precise words
+// can ("photos own the person, prompt owns the scene"). Called once at
+// prefill time on the source render; the description lands in the user's
+// editable prompt, so what rides the send is still fully visible text.
+// Null on any failure — the prefill degrades to the plain scaffold.
+export async function describeSceneForReshoot(imageUrl: string): Promise<string | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const res = await fetchWithTimeout(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({
+          model,
+          messages: [
+            {
+              role: "user",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "This film still will be re-shot from a different camera angle. Write the " +
+                    "continuity notes another image generator needs to rebuild it: (1) 'Set: ' — " +
+                    "the location, set dressing and lighting in concrete visual facts; (2) " +
+                    "'Wardrobe: ' — the person's exact clothing, colours, fabrics, jewellery and " +
+                    "accessories. Two lines, at most ~45 words each. Facts only — no camera or " +
+                    "framing notes, no prose fluff, no markdown, no preamble.",
+                },
+                { type: "image_url", image_url: { url: imageUrl } },
+              ],
+            },
+          ],
+          // Same generous ceiling as every vision call here: gpt-5.4-mini
+          // spends completion tokens on internal reasoning BEFORE the visible
+          // text — a tight cap returns an EMPTY answer, not a shorter one
+          // (the exact silent failure that broke role auto-detection,
+          // operator report 2026-08-25).
+          max_completion_tokens: 2000,
+        }),
+      },
+      30_000,
+    );
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== "string") return null;
+    const cleaned = text.trim().replace(/^["']|["']$/g, "");
+    return cleaned.length > 0 ? cleaned.slice(0, 700) : null;
+  } catch {
+    return null;
+  }
+}
+
 // Outfit-on-the-character (2026-08-24): turn a clothing photo — typically a
 // product shot or flat-lay with no person in it — into a precise garment spec.
 // Written ONCE when the character is saved and stored on the row

@@ -2959,7 +2959,7 @@ function GenerateFormInner({
         setError(g.anotherShotLoadFailed);
         return;
       }
-      setPrompt(buildAnotherShotPrompt(source.prompt));
+      setPrompt(buildAnotherShotPrompt(source.prompt, source.sceneNotes));
       setComposerFolded(false);
       const id = crypto.randomUUID();
       setPendingAttachments((prev) => [
