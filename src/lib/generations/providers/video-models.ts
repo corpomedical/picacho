@@ -417,3 +417,9 @@ export function pricingAudit(): {
   }
   return losses;
 }
+
+// Composer cleanup (2026-08-26, operator-approved): the picker leads with
+// three curated lanes with plain jobs; everything else sits behind a
+// "More models" expander. Curation only — nothing is removed from the
+// catalog, and the server accepts every id exactly as before.
+export const FEATURED_VIDEO_MODEL_IDS = ["seedance-2", "kling-o3-pro", "veo"] as const;

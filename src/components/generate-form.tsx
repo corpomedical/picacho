@@ -48,7 +48,6 @@ import {
   type SavedPrompt,
 } from "@/lib/prompts/actions";
 import { setHasCompletedOnboarding } from "@/lib/profile/actions";
-import { VoiceRecorderButton } from "@/components/voice-recorder-button";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
 import { NEW_CHAT_EVENT } from "@/components/native-quick-pill";
@@ -62,6 +61,7 @@ import {
 } from "@/lib/generations/pipeline";
 import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "@/lib/generations/angles";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
+import { FEATURED_VIDEO_MODEL_IDS } from "@/lib/generations/providers/video-models";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages";
@@ -2076,6 +2076,8 @@ function GenerateFormInner({
     }
   }, [continueFromId, videoModelId, contentType]);
   const [videoModelMenuOpen, setVideoModelMenuOpen] = useState(false);
+  // "More models" expander inside the picker (composer cleanup case 1).
+  const [modelMenuShowAll, setModelMenuShowAll] = useState(false);
   const videoModelMenuRef = useRef<HTMLDivElement>(null);
 
   // Clip length — each model has its own real set of valid durations (see
@@ -3440,7 +3442,7 @@ function GenerateFormInner({
     const block = plan.issues.find(
       (i) => i.severity === "block" && (!onlyCodes || onlyCodes.has(i.code)),
     );
-    return block ? issueMessage(block, g, sendPlanModelName()) : null;
+    return block ? issueMessage(block, g, sendPlanModelName(), pendingAttachments.length > 0) : null;
   }
 
   // One-tap remedies for the strip's issue rows.
@@ -4319,7 +4321,10 @@ function GenerateFormInner({
       <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="relative min-w-0 flex-1">
         <button
           type="button"
-          onClick={() => setVideoModelMenuOpen((v) => !v)}
+          onClick={() => {
+            setModelMenuShowAll(false);
+            setVideoModelMenuOpen((v) => !v);
+          }}
           disabled={locked}
           aria-haspopup="listbox"
           aria-expanded={videoModelMenuOpen}
@@ -4348,7 +4353,24 @@ function GenerateFormInner({
             role="listbox"
             className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[260px] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
-            {videoModels.map((m) => {
+            {(() => {
+              const featuredIds = FEATURED_VIDEO_MODEL_IDS as readonly string[];
+              const featured = videoModels.filter((m) => featuredIds.includes(m.id));
+              const rest = videoModels.filter((m) => !featuredIds.includes(m.id));
+              // Auto-expand when the current selection lives in the long
+              // tail — a picker that hides the checkmark teaches nothing.
+              const showAll = modelMenuShowAll || featured.length === 0 || rest.some((m) => m.id === videoModelId);
+              const shown = showAll ? [...featured, ...rest] : featured;
+              // Plain-language jobs for the three lanes; the long tail
+              // keeps each model's own description.
+              const jobs: Record<string, string> = {
+                "seedance-2": g.modelJobSeedance2,
+                "kling-o3-pro": g.modelJobKlingO3Pro,
+                veo: g.modelJobVeo,
+              };
+              return (
+                <>
+                  {shown.map((m) => {
               const listCredits = creditsForDuration(m, m.defaultDurationSeconds);
               return (
                 <button
@@ -4376,10 +4398,23 @@ function GenerateFormInner({
                     )}
                     {m.id === videoModelId && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-ink" />}
                   </span>
-                  <span className="text-xs text-atelier-muted">{m.description}</span>
+                  <span className="text-xs text-atelier-muted">{jobs[m.id] ?? m.description}</span>
                 </button>
               );
             })}
+                  {!showAll && rest.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setModelMenuShowAll(true)}
+                      className="mt-1 flex w-full items-center gap-1.5 rounded-control border-t border-atelier-rule/70 px-2.5 py-2 text-left text-xs text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                    >
+                      <ChevronDownIcon className="h-3 w-3 flex-shrink-0" />
+                      {formatMsg(g.moreModels, { n: rest.length })}
+                    </button>
+                  )}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -4428,6 +4463,15 @@ function GenerateFormInner({
   const showImageReceipt =
     contentType === "image" &&
     (pendingAttachments.length > 0 || (receiptEngaged && sendPlanNow.issues.length > 0));
+  // Composer cleanup (2026-08-26). freeTierClient mirrors the server's
+  // isFreeTierAccount (actions.ts): these accounts are silently pinned to
+  // the free lane server-side, so a credit-shortfall warning is a false
+  // alarm for them — the send costs no credits. blockingFenceVisible feeds
+  // the one-voice rule: while a red fence is on screen, the credit banners
+  // stay quiet ("you can't run this" already owns the moment).
+  const freeTierClient = dailyFreeAvailable && purchasedCredits === 0;
+  const blockingFenceVisible =
+    receiptEngaged && sendPlanNow.issues.some((i) => i.severity === "block");
 
   // First-login walkthrough (or a replay via ?tour=1 from the sidebar's
   // settings menu — see the effect above that strips that param). Steps are
@@ -4797,7 +4841,8 @@ function GenerateFormInner({
             strip doesn't know, so it keeps warning there. */}
         {!isHero &&
         cannotAfford &&
-        !(contentType === "image" && dailyFreeAvailable) &&
+        !freeTierClient &&
+        !blockingFenceVisible &&
         selectedVideoModel ? (
           <InsufficientCreditsBanner
             // Remounts when the selection changes, so dismissing the strip
@@ -5254,7 +5299,9 @@ function GenerateFormInner({
               </>
               )}
 
-              {contentType === "video" && currentCharacter?.voiceId && (
+              {contentType === "video" &&
+                currentCharacter?.voiceId &&
+                (advancedOpen || dialogueText.trim().length > 0) && (
                 <div className="border-t border-atelier-rule/70 px-3.5 py-2.5">
                   <input
                     value={dialogueText}
@@ -5940,7 +5987,7 @@ function GenerateFormInner({
                     </>
                   )}
 
-                  {contentType === "video" && (
+                  {advancedOpen && contentType === "video" && (
                     <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-atelier-rule p-1">
                       <button
                         type="button"
@@ -5985,28 +6032,11 @@ function GenerateFormInner({
                       wiring), so on a phone they were dead controls whose
                       only effect was overflowing the toolbar strip
                       (operator-reported, 2026-08-20). */}
-                  {voiceModeEnabled && !nativeClient && (
-                  <button
-                    type="button"
-                    onClick={voiceSessionActive ? stopVoiceSession : startVoiceSession}
-                    disabled={submitting}
-                    title={voiceSessionActive ? g.voiceOnTitle : g.voiceOffTitle}
-                    aria-label={voiceSessionActive ? g.voiceOnTitle : g.voiceOffTitle}
-                    aria-pressed={voiceSessionActive}
-                    className={cn(
-                      "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                      voiceSessionActive
-                        ? "bg-atelier-ink text-atelier-paper"
-                        : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                    )}
-                  >
-                    <VoiceIcon className="h-4 w-4" />
-                  </button>
-                  )}
-
-                  {!nativeClient && (
-                    <VoiceRecorderButton onTranscript={handleVoiceTranscript} disabled={submitting} size="md" />
-                  )}
+                  {/* Voice controls left the composer row (composer
+                      cleanup case 5, 2026-08-26). The conversational agent
+                      stays flag-gated machinery behind lib/voice/enabled;
+                      dictation lives in the keyboard's own mic. The
+                      sidebar's voice search is untouched. */}
                   </div>
 
                   {submitting ? (
@@ -6042,7 +6072,6 @@ function GenerateFormInner({
                   and the two first-session nudges. Renders nothing for
                   established paid accounts. */}
               {(dailyFreeAvailable ||
-                (!characterId && characters.length > 0) ||
                 (!hasGeneratedBefore && contentType === "image")) &&
                 !submitting && (
                   <div className="space-y-1 px-4 pb-2.5">
@@ -6053,17 +6082,19 @@ function GenerateFormInner({
                         {contentType === "video"
                           ? `${videoDurationSeconds}s ${g.video.toLowerCase()}`
                           : g.image.toLowerCase()}
+                        {/* Free sends are pinned server-side to the free
+                            lane whatever the picker says (actions.ts) —
+                            say so instead of letting the render surprise. */}
+                        {freeTierClient && contentType === "video" && videoModelId !== "kling" && (
+                          <>
+                            {" · "}
+                            {formatMsg(g.freePinnedNote, {
+                              model: videoModels.find((m) => m.id === "kling")?.name ?? "Kling 1.6",
+                            })}
+                          </>
+                        )}
                       </p>
                     )}
-                    {/* Hidden on required-identity models: the hint's "or
-                        send without one for a generic render" clause is a
-                        lie there — the receipt's "Face: pick a character"
-                        line owns that story (2026-08-26). */}
-                    {!characterId &&
-                      characters.length > 0 &&
-                      !sendPlanNow.issues.some((i) => i.code === "NEEDS_REFERENCE_PHOTO") && (
-                        <p className="text-[11px] text-atelier-muted">{g.pickCharacterHint}</p>
-                      )}
                     {!hasGeneratedBefore && contentType === "image" && (
                       <p className="text-[11px] text-atelier-muted">{g.imageFirstHint}</p>
                     )}

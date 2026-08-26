@@ -80,10 +80,15 @@ export function issueMessage(
   issue: PlanIssue,
   g: Messages["generate"],
   modelName: string,
+  // Composer cleanup case 3 (2026-08-26): when an image attachment is riding
+  // the send, the characterless fence must acknowledge it — the old copy
+  // ignored the upload entirely, which read as the system not seeing it.
+  hasAttachmentRiding?: boolean,
 ): string {
   const name = issue.params?.name || "";
   switch (issue.code) {
     case "NEEDS_REFERENCE_PHOTO":
+      if (!name && hasAttachmentRiding) return g.issueNeedsCharacterWithAttachment;
       return name
         ? formatMsg(g.issueNeedsReference, { model: modelName, name })
         : formatMsg(g.issueNeedsCharacter, { model: modelName });
@@ -144,6 +149,9 @@ export function ReceiptStrip({
     .map((e) => entryText(e, g))
     .filter((s): s is string => Boolean(s));
   const visibleIssues = showIssues ? plan.issues : [];
+  const hasAttachmentRiding = plan.entries.some(
+    (e) => e.slot === "reference" || e.slot === "prop" || e.slot === "scene",
+  );
   if (parts.length === 0 && visibleIssues.length === 0 && !headline) return null;
   return (
     <div className="-mt-1.5 space-y-1 px-4">
@@ -166,7 +174,7 @@ export function ReceiptStrip({
               : "bg-amber-500/10 text-amber-800 dark:text-amber-300",
           )}
         >
-          <span className="min-w-0 flex-1">{issueMessage(issue, g, modelName)}</span>
+          <span className="min-w-0 flex-1">{issueMessage(issue, g, modelName, hasAttachmentRiding)}</span>
           {issue.action && (
             <button
               type="button"
