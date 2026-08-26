@@ -274,6 +274,7 @@ export type PlanNoteCode =
   | "EXTRA_ATTACHMENT_UNUSED"
   | "OUTFIT_DESCRIBED_ONLY"
   | "GENERIC_PERSON"
+  | "NEEDS_CHARACTER"
   | "OUTFIT_BUDGET_DROPPED"
   | "OUTFIT_ATTACHMENT_UNSUPPORTED";
 
@@ -384,7 +385,12 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
         slot: "identity",
         source: "none",
         consumption: "absent",
-        noteCode: "GENERIC_PERSON",
+        // Two different truths (operator, 2026-08-26: "clicking through the
+        // AI models, they all say Face: generic person"): on a model that
+        // can genuinely render a generic person, say that; on a model whose
+        // identity input is REQUIRED, a generic send is impossible and the
+        // line must say what's actually needed instead.
+        noteCode: caps?.identity.required ? "NEEDS_CHARACTER" : "GENERIC_PERSON",
         label: characterName || undefined,
       });
       if (caps?.identity.required) {

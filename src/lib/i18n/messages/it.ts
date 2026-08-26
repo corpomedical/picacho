@@ -647,6 +647,7 @@ const it = {
     receiptSrcPick: "foto scelta",
     receiptSrcSaved: "foto salvata",
     receiptGenericPerson: "persona generica",
+    receiptFaceNeeded: "scegli un personaggio",
     receiptAttached: "foto allegata",
     receiptDescribed: "descritto a parole",
     receiptUnused: "non usata",

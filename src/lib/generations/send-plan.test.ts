@@ -64,6 +64,9 @@ describe("identity priority ladder (today's real semantics, made visible)", () =
   it("characterless send on a reference-requiring model blocks before credits", () => {
     const plan = resolveSendPlan({ ...base, character: null });
     expect(entry(plan, "identity")!.consumption).toBe("absent");
+    // The receipt line must NOT claim "generic person" here — this model
+    // can't do one (operator, 2026-08-26).
+    expect(entry(plan, "identity")!.noteCode).toBe("NEEDS_CHARACTER");
     expect(issue(plan, "NEEDS_REFERENCE_PHOTO")?.severity).toBe("block");
   });
 

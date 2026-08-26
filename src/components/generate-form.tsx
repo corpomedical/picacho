@@ -6055,9 +6055,15 @@ function GenerateFormInner({
                           : g.image.toLowerCase()}
                       </p>
                     )}
-                    {!characterId && characters.length > 0 && (
-                      <p className="text-[11px] text-atelier-muted">{g.pickCharacterHint}</p>
-                    )}
+                    {/* Hidden on required-identity models: the hint's "or
+                        send without one for a generic render" clause is a
+                        lie there — the receipt's "Face: pick a character"
+                        line owns that story (2026-08-26). */}
+                    {!characterId &&
+                      characters.length > 0 &&
+                      !sendPlanNow.issues.some((i) => i.code === "NEEDS_REFERENCE_PHOTO") && (
+                        <p className="text-[11px] text-atelier-muted">{g.pickCharacterHint}</p>
+                      )}
                     {!hasGeneratedBefore && contentType === "image" && (
                       <p className="text-[11px] text-atelier-muted">{g.imageFirstHint}</p>
                     )}

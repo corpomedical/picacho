@@ -24,7 +24,11 @@ function entryText(e: PlanEntry, g: Messages["generate"]): string | null {
         }
         return `${g.receiptFace}: ${g.receiptSrcAttachment} — ${g.receiptUnused}`;
       }
-      if (e.consumption === "absent") return `${g.receiptFace}: ${g.receiptGenericPerson}`;
+      if (e.consumption === "absent") {
+        return e.noteCode === "NEEDS_CHARACTER"
+          ? `${g.receiptFace}: ${g.receiptFaceNeeded}`
+          : `${g.receiptFace}: ${g.receiptGenericPerson}`;
+      }
       const src =
         e.source === "attachment"
           ? e.noteCode === "REPLACES_SAVED_FACE"
@@ -138,7 +142,7 @@ export function ReceiptStrip({
     .map((e) => entryText(e, g))
     .filter((s): s is string => Boolean(s));
   return (
-    <div className="mb-1.5 space-y-1 px-4">
+    <div className="-mt-1.5 mb-1.5 space-y-1 px-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-snug text-atelier-muted">
         {headline && <span className="font-medium text-atelier-ink/70">{headline}</span>}
         {parts.map((p, i) => (
