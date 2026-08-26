@@ -611,6 +611,7 @@ const it = {
     takesAngles: "{n} angolazioni",
     uploadFailedFile: "Impossibile caricare {name} — forse è troppo grande o la connessione è caduta.",
     cinemaPresetNote: "Le istruzioni testate di camera e stile del preset viaggiano con il tuo prompt.",
+    cinemaPresetsButton: "Preset",
     cinemaPresetLabels: { "crash-zoom": "Crash zoom", "dolly-35mm": "Dolly-in 35mm", "handheld-chase": "Camera a mano", "orbit": "Orbita", "crane-reveal": "Gru discendente", "aerial-pullback": "Arretramento aereo", "low-hero": "Angolo eroe", "bullet-time": "Bullet time", "slowmo-glamour": "Slow motion", "noir": "Noir", "film-80s": "Anni '80", "golden-hour": "Ora d'oro", "horror": "Horror", "neon-rain": "Pioggia neon", "storybook": "Fiaba", "documentary": "Documentario", "epic-fantasy": "Fantasy epico", "western-sunset": "Western", "dream-haze": "Sogno", },
     uploadPhotoFailed: "Impossibile caricare quella foto.",
     resultMissing: "Nel risultato mancava: {issues}.",

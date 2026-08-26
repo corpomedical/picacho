@@ -2035,6 +2035,11 @@ function GenerateFormInner({
   // continuation chip. Sticky across sends on purpose, like the outfit
   // chip: a person shooting a preset series shouldn't re-pick every time.
   const [cinemaPresetId, setCinemaPresetId] = useState<string | null>(null);
+  // Collapsed by default (operator, 2026-08-26: presets must not appear
+  // uninvited) — a "Presets" button reveals the row. One honesty rule: an
+  // ARMED preset is never invisible — with the row closed, the button
+  // itself carries the selected preset's name in the accent state.
+  const [presetRowOpen, setPresetRowOpen] = useState(false);
 
   const continueModelAppliedRef = useRef(false);
   useEffect(() => {
@@ -4899,7 +4904,28 @@ function GenerateFormInner({
             the selected block is applied server-side after drafting. */}
         {cinemaPresetsAvailable && (
           <div className="mb-2.5">
-            <div className="flex items-center gap-2.5 overflow-x-auto pb-1">
+            <button
+              type="button"
+              onClick={() => setPresetRowOpen((v) => !v)}
+              aria-expanded={presetRowOpen}
+              className={cn(
+                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
+                cinemaPresetId
+                  ? "bg-atelier-accent/10 text-atelier-accent"
+                  : "bg-transparent text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]",
+              )}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0">
+                <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+                <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
+                <path d="m8 7.2 2.5-3.7M13 6.5l2.5-3.7" />
+              </svg>
+              {cinemaPresetId
+                ? ((g.cinemaPresetLabels as Record<string, string>)[cinemaPresetId] ?? cinemaPresetId)
+                : g.cinemaPresetsButton}
+            </button>
+            {presetRowOpen && (
+              <div className="mt-2 flex items-center gap-2.5 overflow-x-auto pb-1">
               {CINEMA_PRESETS.map((p) => {
                 const selected = cinemaPresetId === p.id;
                 const label =
@@ -4940,8 +4966,24 @@ function GenerateFormInner({
                   </button>
                 );
               })}
-            </div>
-            {cinemaPresetId && (
+              </div>
+            )}
+            {/* Choosing = watching (operator, 2026-08-26): the armed
+                preset's own proof clip plays inline — a 480p H.264 preview
+                of the exact validation render behind its thumbnail. key
+                remounts the element so switching chips restarts playback. */}
+            {presetRowOpen && cinemaPresetId && (
+              <video
+                key={cinemaPresetId}
+                src={`/presets/${cinemaPresetId}.mp4`}
+                autoPlay
+                muted
+                loop
+                playsInline
+                className="mt-2 w-full max-w-md rounded-[12px] shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]"
+              />
+            )}
+            {presetRowOpen && cinemaPresetId && (
               <p className="mt-1 text-[11px] leading-snug text-atelier-muted">{g.cinemaPresetNote}</p>
             )}
           </div>
