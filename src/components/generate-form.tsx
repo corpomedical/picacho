@@ -33,6 +33,7 @@ import {
 } from "@/lib/voice/agent";
 import { startListening } from "@/lib/voice/speech-recognition";
 import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
+import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import { resolveSendPlan, type AttachmentRole, type PlanIssue } from "@/lib/generations/send-plan";
 import { CINEMA_PRESETS } from "@/lib/generations/cinema-presets";
@@ -2040,6 +2041,18 @@ function GenerateFormInner({
   // ARMED preset is never invisible — with the row closed, the button
   // itself carries the selected preset's name in the accent state.
   const [presetRowOpen, setPresetRowOpen] = useState(false);
+  // Hover preview (operator, 2026-08-26: the inline player was clutter —
+  // "pops you the video, same as when you hover over any button"). Pointer
+  // devices get a tooltip-style popover playing the proof clip; touch
+  // devices keep tap-to-arm with thumbnails. Rendered position: fixed so it
+  // escapes the row's overflow-x clipping; anchored to the hovered chip's
+  // rect, flipped below when the chip sits near the viewport top.
+  const [presetPreview, setPresetPreview] = useState<{
+    id: string;
+    left: number;
+    topY: number;
+    bottomY: number;
+  } | null>(null);
 
   const continueModelAppliedRef = useRef(false);
   useEffect(() => {
@@ -4934,7 +4947,10 @@ function GenerateFormInner({
                 : g.cinemaPresetsButton}
             </button>
             {presetRowOpen && (
-              <div className="mt-2 flex items-center gap-2.5 overflow-x-auto pb-1">
+              <div
+                className="mt-2 flex items-center gap-2.5 overflow-x-auto pb-1"
+                onScroll={() => setPresetPreview(null)}
+              >
               {CINEMA_PRESETS.map((p) => {
                 const selected = cinemaPresetId === p.id;
                 const label =
@@ -4944,8 +4960,20 @@ function GenerateFormInner({
                     key={p.id}
                     type="button"
                     onClick={() => setCinemaPresetId(selected ? null : p.id)}
+                    // onMouseMove too, not just enter: the row can shift
+                    // (selection pin, note line) between enter and paint,
+                    // and a cached rect then points at yesterday's layout —
+                    // the live refresh keeps the tooltip glued to the chip.
+                    onMouseEnter={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      setPresetPreview({ id: p.id, left: r.left + r.width / 2, topY: r.top, bottomY: r.bottom });
+                    }}
+                    onMouseMove={(e) => {
+                      const r = e.currentTarget.getBoundingClientRect();
+                      setPresetPreview({ id: p.id, left: r.left + r.width / 2, topY: r.top, bottomY: r.bottom });
+                    }}
+                    onMouseLeave={() => setPresetPreview(null)}
                     aria-pressed={selected}
-                    title={label}
                     className="group flex flex-shrink-0 flex-col items-center gap-1"
                   >
                     <span
@@ -4977,20 +5005,34 @@ function GenerateFormInner({
               })}
               </div>
             )}
-            {/* Choosing = watching (operator, 2026-08-26): the armed
-                preset's own proof clip plays inline — a 480p H.264 preview
-                of the exact validation render behind its thumbnail. key
-                remounts the element so switching chips restarts playback. */}
-            {presetRowOpen && cinemaPresetId && (
-              <video
-                key={cinemaPresetId}
-                src={`/presets/${cinemaPresetId}.mp4`}
-                autoPlay
-                muted
-                loop
-                playsInline
-                className="mt-2 w-full max-w-md rounded-[12px] shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]"
-              />
+            {/* Hover tooltip preview: the hovered chip's proof clip — the
+                exact validation render behind its thumbnail — floating above
+                the chip like a rich tooltip. pointer-events-none so it can
+                never steal the hover it depends on. */}
+            {presetRowOpen && presetPreview && createPortal(
+              <div
+                className="pointer-events-none fixed z-40"
+                style={
+                  presetPreview.topY < 240
+                    ? { left: presetPreview.left, top: presetPreview.bottomY + 8, transform: "translateX(-50%)" }
+                    : { left: presetPreview.left, top: presetPreview.topY - 8, transform: "translate(-50%, -100%)" }
+                }
+              >
+                <video
+                  key={presetPreview.id}
+                  src={`/presets/${presetPreview.id}.mp4`}
+                  autoPlay
+                  muted
+                  loop
+                  playsInline
+                  className="aspect-video w-64 rounded-[12px] bg-black shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.35)]"
+                />
+              </div>,
+              // Portalled to <body> on purpose: the composer's frosted
+              // ancestors (backdrop-filter / transforms) hijack position:
+              // fixed into ancestor-relative coordinates — the tooltip
+              // rendered offset and below until it escaped the subtree.
+              document.body,
             )}
             {presetRowOpen && cinemaPresetId && (
               <p className="mt-1 text-[11px] leading-snug text-atelier-muted">{g.cinemaPresetNote}</p>
