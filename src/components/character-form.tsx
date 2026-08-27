@@ -1,5 +1,6 @@
 "use client";
 
+import { PERSPECTIVE_SHOTS } from "@/lib/characters/perspectives";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -115,6 +116,14 @@ export function CharacterForm({
   const [genPrompt, setGenPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState("");
+  // Perspective (2026-08-27): the one-tap reference sheet. `done` collects
+  // finished shot ids for the progress chips; `current` names the shot
+  // rendering right now; a run stops (keeping what landed) on first error.
+  const [perspective, setPerspective] = useState<{
+    running: boolean;
+    current: string | null;
+    done: string[];
+  }>({ running: false, current: null, done: [] });
 
   const totalImages = keptImages.length + newFiles.length;
 
@@ -170,6 +179,59 @@ export function CharacterForm({
     setKeptImages((prev) => [...prev, { path: result.path, url: result.url }]);
     setGenPrompt("");
     setGenerating(false);
+  }
+
+  async function handleGeneratePerspectives() {
+    setGenError("");
+    if (keptImages.length === 0) {
+      // Perspective RENDERS the same person from new angles — with no saved
+      // photo there is no person to anchor to, and four unanchored renders
+      // would be four strangers (the exact bug the anchor exists to stop).
+      setGenError(c.perspectiveNeedsPhoto);
+      return;
+    }
+    const slots = 5 - totalImages;
+    if (slots <= 0) {
+      setGenError(c.maxImages);
+      return;
+    }
+
+    setPerspective({ running: true, current: null, done: [] });
+    // Every shot anchors to the photos that existed BEFORE the run — the
+    // user's chosen source of truth — never to the shots the run itself
+    // just added, so a drifted early shot can't compound into later ones.
+    const anchorPathsJson = JSON.stringify(keptImages.map((i) => i.path));
+
+    for (const shot of PERSPECTIVE_SHOTS.slice(0, slots)) {
+      setPerspective((prev) => ({ ...prev, current: shot.id }));
+      const formData = new FormData();
+      formData.set("prompt", shot.prompt);
+      formData.set("anchor_paths", anchorPathsJson);
+      formData.set("trait_hair", hair);
+      formData.set("trait_outfit", outfit);
+      formData.set("trait_distinguishing_features", distinguishing);
+
+      let result;
+      try {
+        result = await generateReferenceImage(formData);
+      } catch (err) {
+        console.error("generateReferenceImage (perspective) failed:", err);
+        setGenError(c.connectionError);
+        setPerspective((prev) => ({ ...prev, running: false, current: null }));
+        return;
+      }
+      if (result.error !== null) {
+        // Stop, keep what landed — each finished shot is a real reference
+        // photo whatever happened after it (allowance ran out, provider
+        // hiccup). The error line says why the set is partial.
+        setGenError(result.error);
+        setPerspective((prev) => ({ ...prev, running: false, current: null }));
+        return;
+      }
+      setKeptImages((prev) => [...prev, { path: result.path, url: result.url }]);
+      setPerspective((prev) => ({ ...prev, done: [...prev.done, shot.id] }));
+    }
+    setPerspective((prev) => ({ ...prev, running: false, current: null }));
   }
 
   function addTag() {
@@ -471,6 +533,52 @@ export function CharacterForm({
                  would have shown if it were clickable. */
               <p className="mt-1.5 text-xs text-atelier-muted">{c.maxImages}</p>
             )}
+
+          {/* Perspective (2026-08-27): the one-tap reference sheet — front,
+              three-quarter, profile, full-body — through the same generate
+              action as the box above, one allowance unit per photo. Chips
+              double as live progress during a run. */}
+          <div className="mt-3 border-t border-atelier-rule/60 pt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleGeneratePerspectives}
+                disabled={perspective.running || generating || totalImages >= 5}
+                className="flex flex-shrink-0 items-center gap-1.5 rounded-control border border-atelier-rule px-4 py-2 text-sm text-atelier-ink transition-colors hover:border-atelier-muted hover:bg-atelier-ink/5 disabled:opacity-50"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" className="h-4 w-4">
+                  <path d="M12 2 3 7v10l9 5 9-5V7z" />
+                  <path d="M3 7l9 5 9-5M12 12v10" />
+                </svg>
+                {perspective.running ? c.perspectiveRunning : c.perspectiveButton}
+              </button>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {PERSPECTIVE_SHOTS.map((shot) => {
+                  const label =
+                    (c.perspectiveShots as Record<string, string>)[shot.id] ?? shot.id;
+                  const done = perspective.done.includes(shot.id);
+                  const active = perspective.current === shot.id;
+                  return (
+                    <span
+                      key={shot.id}
+                      className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                        done
+                          ? "bg-atelier-accent/10 text-atelier-accent"
+                          : active
+                            ? "animate-pulse bg-atelier-ink/10 text-atelier-ink"
+                            : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]"
+                      }`}
+                    >
+                      {done ? "✓ " : ""}
+                      {label}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+            <p className="mt-1.5 text-xs text-atelier-muted">{c.perspectiveHint}</p>
+          </div>
+
           {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{genError}</p>}
         </div>
       </section>
