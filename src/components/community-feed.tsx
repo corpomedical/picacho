@@ -403,8 +403,12 @@ export function CommunityFeed({
                 />
               )}
               {post.contentType === "video" && (
-                <span className="absolute right-2 top-2 text-[#f5f1e9] drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">
-                  <PlayIcon className="h-4 w-4" />
+                /* The video marker (operator: "videos must have an icon that
+                   shows it's a video"). The previous bare 16px glyph vanished
+                   on bright footage — a scrim disc guarantees contrast on any
+                   frame, the way every video grid on earth marks its clips. */
+                <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-[#17150f]/60 text-[#f5f1e9] backdrop-blur-[2px]">
+                  <PlayIcon className="ml-0.5 h-3.5 w-3.5" />
                 </span>
               )}
               {isHidden && (

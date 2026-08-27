@@ -648,3 +648,26 @@ export async function suspendModel(formData: FormData): Promise<void> {
   revalidatePath("/admin/providers");
   redirect("/admin/providers");
 }
+
+// Community moderation (operator: "I need a moderation area for it") — the
+// hide/unhide toggle from /admin/moderation. Rides the "Admins moderate
+// posts" RLS policy with the admin's own session, same as the in-feed
+// control; hiding is the moderation verb on purpose (reversible, keeps the
+// sharer's row intact) — deletion stays the owner's own act.
+export async function setCommunityPostModeration(formData: FormData) {
+  const { supabase } = await requireAdmin();
+  const postId = formData.get("post_id") as string;
+  const hide = formData.get("hide") === "1";
+
+  const { error } = await supabase
+    .from("community_posts")
+    .update({ hidden_at: hide ? new Date().toISOString() : null })
+    .eq("id", postId);
+
+  if (error) {
+    redirect(`/admin/moderation?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/admin/moderation");
+  revalidatePath("/app/community");
+}
