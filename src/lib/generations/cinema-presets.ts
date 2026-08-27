@@ -298,6 +298,28 @@ export function isProvenPreset(p: CinemaPreset): boolean {
   return p.proven !== false;
 }
 
+// Stacking (2026-08-27, operator: "You cant select Camera, lighting and
+// looks at the same time"): one preset PER CATEGORY may ride together — a
+// camera move and a lighting look are orthogonal film decisions, while two
+// camera moves would fight each other, so the dedupe keeps the first id
+// seen per category. Blocks join in a fixed craft order (camera, then
+// light/look, then FX) regardless of arming order, so the compiled prompt
+// is deterministic. Unknown, stale, and unproven ids drop out silently —
+// same no-op contract applyCinemaPreset always had.
+const CATEGORY_ORDER: CinemaPresetCategory[] = ["move", "look", "fx"];
+
+export function resolvePresetBlocks(ids: string[]): string | null {
+  const byCategory = new Map<CinemaPresetCategory, CinemaPreset>();
+  for (const id of ids) {
+    const preset = getCinemaPreset(id.trim());
+    if (preset && !byCategory.has(preset.category)) byCategory.set(preset.category, preset);
+  }
+  if (byCategory.size === 0) return null;
+  return CATEGORY_ORDER.filter((c) => byCategory.has(c))
+    .map((c) => byCategory.get(c)!.block)
+    .join("\n\n");
+}
+
 // Server-side application (actions.ts): the block rides AFTER the user's
 // prompt, separated by a blank line — same position the validation matrix
 // fired it in. Unknown/empty ids are a no-op, never an error: a stale

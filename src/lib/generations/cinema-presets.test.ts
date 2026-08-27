@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CINEMA_PRESETS, getCinemaPreset, applyCinemaPreset, isProvenPreset } from "./cinema-presets";
+import { CINEMA_PRESETS, getCinemaPreset, applyCinemaPreset, isProvenPreset, resolvePresetBlocks } from "./cinema-presets";
 
 // Structural pins for the preset catalog. The QUALITY of each block is
 // proven by its validation render (see the module comment) — what tests can
@@ -66,5 +66,27 @@ describe("applyCinemaPreset", () => {
     // dolly-zoom was cut in validation (the vertigo warp never visibly
     // happened) — it must stay gone until a render proves it.
     expect(getCinemaPreset("dolly-zoom")).toBeNull();
+  });
+});
+
+describe("resolvePresetBlocks (stacking)", () => {
+  const move = CINEMA_PRESETS.find((p) => p.category === "move" && isProvenPreset(p))!;
+  const move2 = CINEMA_PRESETS.filter((p) => p.category === "move" && isProvenPreset(p))[1]!;
+  const look = CINEMA_PRESETS.find((p) => p.category === "look" && isProvenPreset(p))!;
+
+  it("stacks one preset per category in fixed craft order (camera before light)", () => {
+    // Arming order must not matter — look-then-move still compiles move first.
+    expect(resolvePresetBlocks([look.id, move.id])).toBe(`${move.block}\n\n${look.block}`);
+  });
+
+  it("two of the same category: first id wins, no doubled block", () => {
+    expect(resolvePresetBlocks([move.id, move2.id])).toBe(move.block);
+  });
+
+  it("unknown and unproven ids drop out silently", () => {
+    const draft = CINEMA_PRESETS.find((p) => !isProvenPreset(p));
+    const ids = ["no-such-preset", ...(draft ? [draft.id] : []), look.id];
+    expect(resolvePresetBlocks(ids)).toBe(look.block);
+    expect(resolvePresetBlocks(["nothing", "here"])).toBeNull();
   });
 });

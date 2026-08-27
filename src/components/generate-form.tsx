@@ -2035,7 +2035,13 @@ function GenerateFormInner({
   // leaving that lane clears the pick — same no-ghost-state rule as the
   // continuation chip. Sticky across sends on purpose, like the outfit
   // chip: a person shooting a preset series shouldn't re-pick every time.
-  const [cinemaPresetId, setCinemaPresetId] = useState<string | null>(null);
+  // One armed preset PER CATEGORY (2026-08-27, operator: "You cant select
+  // Camera, lighting and looks at the same time") — a camera move and a
+  // light/look stack; two of the same category replace each other.
+  const [cinemaPresetIds, setCinemaPresetIds] = useState<Partial<Record<CinemaPresetCategory, string>>>({});
+  const armedPresetIds = (["move", "look", "fx"] as const)
+    .map((c) => cinemaPresetIds[c])
+    .filter((id): id is string => Boolean(id));
   // Collapsed by default (operator, 2026-08-26: presets must not appear
   // uninvited) — a "Presets" button reveals the row. One honesty rule: an
   // ARMED preset is never invisible — with the row closed, the button
@@ -2148,8 +2154,8 @@ function GenerateFormInner({
     videoAdvancedMode === "none" &&
     (videoModelId === "seedance" || videoModelId === "seedance-2");
   useEffect(() => {
-    if (cinemaPresetId && !cinemaPresetsAvailable) setCinemaPresetId(null);
-  }, [cinemaPresetId, cinemaPresetsAvailable]);
+    if (armedPresetIds.length > 0 && !cinemaPresetsAvailable) setCinemaPresetIds({});
+  }, [armedPresetIds.length, cinemaPresetsAvailable]);
   const [advancedPanelOpen, setAdvancedPanelOpen] = useState(false);
   const [storyboardStartPath, setStoryboardStartPath] = useState<string | null>(null);
   const [storyboardEndPath, setStoryboardEndPath] = useState<string | null>(null);
@@ -3558,8 +3564,8 @@ function GenerateFormInner({
       formData.set("continue_from_generation_id", continueFromId);
     }
     formData.set("use_outfit", useOutfit ? "1" : "0");
-    if (cinemaPresetId && cinemaPresetsAvailable) {
-      formData.set("cinema_preset_id", cinemaPresetId);
+    if (armedPresetIds.length > 0 && cinemaPresetsAvailable) {
+      formData.set("cinema_preset_id", armedPresetIds.join(","));
     }
     // Send Receipt P2: the full role list for every ready image attachment.
     // New servers route by this; old servers ignore it and use the legacy
@@ -4982,7 +4988,7 @@ function GenerateFormInner({
               aria-expanded={presetRowOpen}
               className={cn(
                 "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
-                cinemaPresetId
+                armedPresetIds.length > 0
                   ? "bg-atelier-accent/10 text-atelier-accent"
                   : "bg-transparent text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]",
               )}
@@ -4992,8 +4998,10 @@ function GenerateFormInner({
                 <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
                 <path d="m8 7.2 2.5-3.7M13 6.5l2.5-3.7" />
               </svg>
-              {cinemaPresetId
-                ? ((g.cinemaPresetLabels as Record<string, string>)[cinemaPresetId] ?? cinemaPresetId)
+              {armedPresetIds.length > 0
+                ? armedPresetIds
+                    .map((id) => (g.cinemaPresetLabels as Record<string, string>)[id] ?? id)
+                    .join(" + ")
                 : g.cinemaPresetsButton}
             </button>
             {presetRowOpen && (() => {
@@ -5034,14 +5042,16 @@ function GenerateFormInner({
                     onScroll={() => setPresetPreview(null)}
                   >
                   {provenPresets.filter((p) => p.category === activeTab).map((p) => {
-                const selected = cinemaPresetId === p.id;
+                const selected = cinemaPresetIds[p.category] === p.id;
                 const label =
                   (g.cinemaPresetLabels as Record<string, string>)[p.id] ?? p.id;
                 return (
                   <button
                     key={p.id}
                     type="button"
-                    onClick={() => setCinemaPresetId(selected ? null : p.id)}
+                    onClick={() =>
+                      setCinemaPresetIds((prev) => ({ ...prev, [p.category]: selected ? undefined : p.id }))
+                    }
                     // onMouseMove too, not just enter: the row can shift
                     // (selection pin, note line) between enter and paint,
                     // and a cached rect then points at yesterday's layout —
@@ -5118,7 +5128,7 @@ function GenerateFormInner({
               // rendered offset and below until it escaped the subtree.
               document.body,
             )}
-            {presetRowOpen && cinemaPresetId && (
+            {presetRowOpen && armedPresetIds.length > 0 && (
               <p className="mt-1 text-[11px] leading-snug text-atelier-muted">{g.cinemaPresetNote}</p>
             )}
           </div>

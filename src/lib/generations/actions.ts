@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
-import { getCinemaPreset } from "@/lib/generations/cinema-presets";
+import { resolvePresetBlocks } from "@/lib/generations/cinema-presets";
 import { getOrigin } from "@/lib/origin";
 import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
@@ -910,12 +910,15 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // client-supplied string. Gated to the lane the matrix proved (Seedance
   // video, plain sends); anywhere else — and any unknown or stale id — is
   // a silent no-op, so an old client can never lose a render over it.
+  // Comma-separated since stacking (one per category, resolved and ordered
+  // by resolvePresetBlocks — the pipeline still receives ONE joined block of
+  // our own tested text).
   const cinemaPresetIdRaw = String(formData.get("cinema_preset_id") ?? "").trim();
   const cinemaPresetBlock =
     cinemaPresetIdRaw &&
     contentType === "video" &&
     (videoModelId === "seedance" || videoModelId === "seedance-2")
-      ? (getCinemaPreset(cinemaPresetIdRaw)?.block ?? null)
+      ? resolvePresetBlocks(cinemaPresetIdRaw.split(","))
       : null;
   const characterOutfitPaths = ((character?.outfit_image_urls as string[] | null) ?? []).filter(
     (p) => character && p.startsWith(`${character.user_id}/`),
