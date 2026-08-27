@@ -132,6 +132,59 @@ export function CharacterForm({
 
   const totalImages = keptImages.length + newFiles.length;
 
+  // What the ROW already holds. Starts as the photos the page loaded with;
+  // grows when a generated photo auto-persists (result.saved). Anything in
+  // the form beyond this baseline is unsaved work the guards below protect.
+  const persistedPathsRef = useRef<string[]>(existingImages.map((i) => i.path));
+
+  // The Save button is real but forgettable (2026-08-27, operator lost a
+  // Perspective run to it): generated photos now persist themselves, and
+  // everything that still legitimately needs Save — renames, traits, photo
+  // removals, fresh uploads — gets a leave guard instead of silent loss.
+  const dirty =
+    !submitting &&
+    (name !== (initial?.name ?? "") ||
+      projectId !== (initial?.project_id ?? "") ||
+      hair !== (initial?.traits?.hair ?? "") ||
+      outfit !== (initial?.traits?.outfit ?? "") ||
+      personality !== (initial?.traits?.personality ?? "") ||
+      distinguishing !== (initial?.traits?.distinguishing_features ?? "") ||
+      motionStyle !== (initial?.motion_style ?? "") ||
+      voiceId !== (initial?.voice_id ?? "") ||
+      JSON.stringify(tags) !== JSON.stringify(initial?.voice_tone_tags ?? []) ||
+      newFiles.length > 0 ||
+      newOutfitFiles.length > 0 ||
+      JSON.stringify(keptImages.map((i) => i.path)) !== JSON.stringify(persistedPathsRef.current) ||
+      JSON.stringify(keptOutfit.map((i) => i.path)) !==
+        JSON.stringify(existingOutfitImages.map((i) => i.path)));
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    // In-app navigations never hit beforeunload, so a capture-phase click
+    // guard covers the sidebar, tab bar and every other internal link.
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = (e.target as Element | null)?.closest?.("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || !href.startsWith("/") || href.startsWith("//")) return;
+      if (!window.confirm(c.unsavedLeaveConfirm)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [dirty, c.unsavedLeaveConfirm]);
+
   async function handleGenerateReference() {
     setGenError("");
     if (!genPrompt.trim()) {
@@ -154,6 +207,9 @@ export function CharacterForm({
     formData.set("trait_hair", hair);
     formData.set("trait_outfit", outfit);
     formData.set("trait_distinguishing_features", distinguishing);
+    // Editing an existing character: the action appends the photo to the
+    // row itself, so it can never be lost to an unpressed Save.
+    if (initial?.id) formData.set("character_id", initial.id);
 
     // This call itself (not just what it returns) can fail — on a weak
     // mobile connection the fetch Next.js makes to invoke the server action
@@ -181,6 +237,7 @@ export function CharacterForm({
       return;
     }
 
+    if (result.saved) persistedPathsRef.current = [...persistedPathsRef.current, result.path];
     setKeptImages((prev) => [...prev, { path: result.path, url: result.url }]);
     setGenPrompt("");
     setGenerating(false);
@@ -215,6 +272,9 @@ export function CharacterForm({
       formData.set("trait_hair", hair);
       formData.set("trait_outfit", outfit);
       formData.set("trait_distinguishing_features", distinguishing);
+      // The Perspective set persists shot by shot on an existing character —
+      // the exact run the operator lost to the unpressed Save button.
+      if (initial?.id) formData.set("character_id", initial.id);
 
       let result;
       try {
@@ -233,6 +293,7 @@ export function CharacterForm({
         setPerspective((prev) => ({ ...prev, running: false, current: null }));
         return;
       }
+      if (result.saved) persistedPathsRef.current = [...persistedPathsRef.current, result.path];
       setKeptImages((prev) => [...prev, { path: result.path, url: result.url }]);
       setPerspective((prev) => ({ ...prev, done: [...prev.done, shot.id] }));
     }

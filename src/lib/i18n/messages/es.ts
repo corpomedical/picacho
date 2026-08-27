@@ -866,6 +866,7 @@ const es = {
     perspectiveRunning: "Generando el set…",
     perspectiveHint: "Un toque los genera de frente, tres cuartos, perfil y cuerpo entero — hasta 4 fotos de referencia, una del límite cada una.",
     perspectiveNeedsPhoto: "Añade o genera primero una foto clara — Perspectiva crea todos los ángulos a partir de ella.",
+    unsavedLeaveConfirm: "Tienes cambios sin guardar — ¿salir sin guardar? (Las fotos generadas ya están guardadas.)",
     perspectiveShots: { front: "Frente", "three-quarter": "Tres cuartos", profile: "Perfil", "full-body": "Cuerpo entero" },
     maxImages: "Máximo 5 imágenes de referencia — elimina una primero.",
     giveName: "Ponle un nombre a tu personaje.",

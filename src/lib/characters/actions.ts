@@ -244,7 +244,7 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
 
 type GenerateReferenceResult =
   | { error: string }
-  | { error: null; path: string; url: string };
+  | { error: null; path: string; url: string; saved: boolean };
 
 // Lets a user bootstrap a character's first reference photo from a text
 // description instead of only uploading their own — same image pipeline
@@ -474,11 +474,49 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
     const previewUrl = mediaUrl("character-references", path);
 
+    // Auto-persist (2026-08-27, operator lost a full Perspective set to the
+    // unpressed Save button): when the form names an EXISTING character,
+    // append the photo to its row right here. A photo that cost an
+    // allowance must never depend on a later Save click to survive — the
+    // renders were sitting orphaned in storage while the row knew nothing.
+    // Creation mode passes no id (there is no row yet), and Save keeps
+    // owning everything else: name, traits, ordering, removals. Best-effort
+    // on purpose: if the append fails the photo still returns to the form
+    // and the old Save path persists it.
+    let saved = false;
+    const characterId = ((formData.get("character_id") as string | null) ?? "").trim();
+    if (characterId) {
+      const { data: row } = await supabase
+        .from("character_profiles")
+        .select("id, reference_image_urls")
+        .eq("id", characterId)
+        .eq("user_id", data.user.id)
+        .maybeSingle();
+      const existing = (row?.reference_image_urls as string[] | null) ?? [];
+      if (row && existing.length < 5 && !existing.includes(path)) {
+        const { error: appendError } = await supabase
+          .from("character_profiles")
+          .update({
+            reference_image_urls: [...existing, path],
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", characterId)
+          .eq("user_id", data.user.id);
+        if (appendError) {
+          console.error("auto-persist of generated reference failed:", appendError.message);
+        } else {
+          saved = true;
+          revalidatePath("/app/character");
+          revalidatePath(`/app/character/${characterId}`);
+        }
+      }
+    }
+
     // Nothing to record here: the free try / monthly slot was already
     // reserved atomically before the provider call. (Admins reserve nothing —
     // they're exempt from the cap, so logging their generations would only
     // add noise to a table whose sole purpose is counting against it.)
-    return { error: null, path, url: previewUrl };
+    return { error: null, path, url: previewUrl, saved };
   } catch (err) {
     // A safety-filter rejection, provider error, or failed upload lands here —
     // refund the up-front reservation so a failed attempt never burns a free

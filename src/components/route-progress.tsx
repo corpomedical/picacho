@@ -38,7 +38,12 @@ export function RouteProgress() {
       if (anchor.hasAttribute("download")) return;
       const [destPath] = href.split(/[?#]/);
       if (destPath === window.location.pathname && href.includes("#")) return;
-      setPending(true);
+      // Deferred a tick: a later capture listener may still cancel this
+      // navigation (the character form's unsaved-changes guard does) — the
+      // flag is only trustworthy after every handler has run.
+      setTimeout(() => {
+        if (!e.defaultPrevented) setPending(true);
+      }, 0);
     }
     document.addEventListener("click", onClick, true);
     return () => document.removeEventListener("click", onClick, true);

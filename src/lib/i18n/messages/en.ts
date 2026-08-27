@@ -926,6 +926,7 @@ const en = {
     perspectiveRunning: "Rendering the set…",
     perspectiveHint: "One tap renders them front, three-quarter, profile and full-body — up to 4 reference photos, one allowance each.",
     perspectiveNeedsPhoto: "Add or generate one clear photo first — Perspective builds every angle from it.",
+    unsavedLeaveConfirm: "You have unsaved changes — leave without saving? (Generated photos are already saved.)",
     perspectiveShots: { front: "Front", "three-quarter": "Three-quarter", profile: "Profile", "full-body": "Full body" },
     maxImages: "Max 5 reference images — remove one first.",
     giveName: "Give your character a name.",
