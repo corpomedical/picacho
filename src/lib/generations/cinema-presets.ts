@@ -17,7 +17,7 @@
 // blocks are not. Never put a living artist's or director's name in a
 // block — looks are described in craft terms (lenses, light, grade).
 
-export type CinemaPresetCategory = "move" | "look";
+export type CinemaPresetCategory = "move" | "look" | "fx";
 
 export type CinemaPreset = {
   id: string;
@@ -25,6 +25,13 @@ export type CinemaPreset = {
   // The tested, model-facing text. Byte-identical to what the validation
   // matrix fired. Change it and it must be re-proven before shipping.
   block: string;
+  // Absent = true (every original entry shipped proven). `proven: false`
+  // marks a DRAFTED block awaiting its validation render (2026-08-27, FX +
+  // lighting approved with fal balance low — "add it and we test later"):
+  // invisible in the composer, refused by getCinemaPreset, exempt from the
+  // thumbnail test. Validation day flips it true, adds the proof assets,
+  // and nothing else changes.
+  proven?: boolean;
 };
 
 export const CINEMA_PRESETS: CinemaPreset[] = [
@@ -144,10 +151,151 @@ export const CINEMA_PRESETS: CinemaPreset[] = [
     block:
       "Dream sequence: soft diffusion blooming around every highlight, milky haze, gently overexposed whites, floating drifting camera, pastel wash, the softness of a half-remembered memory.",
   },
+  // ——— Lighting (drafted 2026-08-27, operator-approved; PENDING VALIDATION —
+  // proven: false keeps every entry invisible until its proof render) ———
+  {
+    id: "candlelight",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: the scene is lit only by warm candlelight — a soft flickering key from below-left, deep amber tones, gentle shadow dance on the walls, intimate and quiet. The face stays clearly lit by the flame's glow.",
+  },
+  {
+    id: "window-light",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: soft directional daylight from one large window to the side — gentle falloff across the face, airy natural shadows, calm morning stillness, honest documentary-portrait light.",
+  },
+  {
+    id: "rembrandt",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: classic Rembrandt portrait light — a single warm key high to one side forming the small triangle of light on the shadow cheek, deep soft background, painterly chiaroscuro, timeless studio portrait.",
+  },
+  {
+    id: "blue-hour",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: blue hour just after sunset — cool ambient dusk sky as the base, warm practical lights glowing in the background, soft cyan-and-amber contrast on the face, quiet cinematic melancholy.",
+  },
+  {
+    id: "hard-sun",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: hard direct noon sunlight — crisp dark shadows with sharp edges, squint-bright highlights, saturated sky, bold fashion-editorial contrast. The face stays clearly visible in the sun.",
+  },
+  {
+    id: "ring-light",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: modern beauty ring light straight on — even, shadowless glow on the face with the signature circular catchlight in both eyes, clean vlogger-studio look, flattering and bright.",
+  },
+  {
+    id: "backlit-silhouette",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: strong backlight rims the subject in glowing edge light, face lifted just out of full silhouette by a faint soft fill — hair haloed, atmosphere hazy, dramatic and cinematic. Features stay recognizable.",
+  },
+  {
+    id: "studio-softbox",
+    category: "look",
+    proven: false,
+    block:
+      "Lighting: clean commercial studio lighting — large softbox key with gentle wraparound, subtle rim light, seamless backdrop softly graded, polished premium-campaign finish.",
+  },
+
+  // ——— FX (drafted 2026-08-27 from the approved proposal; PENDING
+  // VALIDATION — every block stages the effect AROUND the character and
+  // explicitly protects the face; face-morph effects are excluded by
+  // design) ———
+  {
+    id: "fx-explosion",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: the subject walks slowly toward the camera with a calm, unbothered expression while a massive practical explosion erupts in the background behind them — a rolling orange fireball with debris and a dust shockwave. They never look back. Slow motion, embers drifting past the lens, warm rim light from the blast. The face stays clearly visible and unchanged.",
+  },
+  {
+    id: "fx-smoke-reveal",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: dense gray smoke fills the frame; the subject steps forward out of the smoke into a clean shaft of light, sharpening into full focus as the haze parts around their shoulders. Fine particles drift in the beam. The face emerges fully lit and unmistakable.",
+  },
+  {
+    id: "fx-lightning",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: under a dark storm sky, jagged lightning bolts strike the ground behind the subject, each flash throwing hard white light across their face while wind pulls at their hair and clothes. They stand their ground, steady, facing the camera. Rain stays a fine mist; the face stays sharply visible in every flash.",
+  },
+  {
+    id: "fx-glitch-teleport",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: the subject stands facing the camera; their outline briefly fractures into digital glitch slices and RGB-split shards that scatter sideways, then instantly reassemble into the same person one step closer to the lens. The face is fully intact and identical before and after; the distortion lasts only an instant.",
+  },
+  {
+    id: "fx-rain-burst",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: a sudden heavy downpour begins mid-shot — slow-motion raindrops streak and splash around the subject, backlit so every drop glows, while they tilt their face slightly up into the rain. Wet hair, glistening skin, cinematic teal-and-amber light. The face stays clearly visible through the rain.",
+  },
+  {
+    id: "fx-fire-aura",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: thin ribbons of stylized flame ignite along the subject's outline — shoulders, arms, silhouette — like a rising aura of energy, while they look into the camera with quiet intensity. The flames stay strictly outside the silhouette: no fire on the face or skin, no burning; the face remains perfectly clear and unharmed.",
+  },
+  {
+    id: "fx-levitation",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: the subject rises slowly and weightlessly a meter off the ground, arms relaxed, hair and clothing drifting as if underwater, small pebbles and dust floating up around them. The camera tilts up slightly to follow. Serene expression, face toward the lens the whole time.",
+  },
+  {
+    id: "fx-confetti",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: confetti cannons fire from both sides just off-frame — thousands of colorful paper pieces and gold streamers burst across the scene in slow motion while the subject laughs and raises their arms in celebration. Bright festive key light; confetti drifts between subject and camera without covering the face.",
+  },
+  {
+    id: "fx-time-freeze",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: everything in the scene freezes mid-motion — passers-by locked mid-stride, a splash suspended in the air, papers hanging — while the subject alone keeps walking naturally through the frozen world, glancing around at it. Smooth lateral tracking shot. The face stays clear and recognizable throughout.",
+  },
+  {
+    id: "fx-product-reveal",
+    category: "fx",
+    proven: false,
+    block:
+      "FX: the subject raises the product into frame at chest height and presents it to the camera as a soft sweep of golden light passes across it; gentle push-in on the product, then focus returns to the subject's confident smile. Clean studio backdrop, premium commercial lighting. Product label readable, face clearly visible.",
+  },
 ];
 
 export function getCinemaPreset(id: string): CinemaPreset | null {
-  return CINEMA_PRESETS.find((p) => p.id === id) ?? null;
+  // Unproven drafts are invisible to the product: the composer never shows
+  // them and a crafted/stale id resolving here gets the same null a deleted
+  // preset gets — the send proceeds with no block, never with untested text.
+  const preset = CINEMA_PRESETS.find((p) => p.id === id) ?? null;
+  return preset && preset.proven !== false ? preset : null;
+}
+
+export function isProvenPreset(p: CinemaPreset): boolean {
+  return p.proven !== false;
 }
 
 // Server-side application (actions.ts): the block rides AFTER the user's

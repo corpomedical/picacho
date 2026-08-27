@@ -36,7 +36,7 @@ import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-fa
 import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import { resolveSendPlan, type AttachmentRole, type PlanIssue } from "@/lib/generations/send-plan";
-import { CINEMA_PRESETS } from "@/lib/generations/cinema-presets";
+import { CINEMA_PRESETS, isProvenPreset, type CinemaPresetCategory } from "@/lib/generations/cinema-presets";
 import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
 import {
   compilePrompt,
@@ -2041,6 +2041,11 @@ function GenerateFormInner({
   // ARMED preset is never invisible — with the row closed, the button
   // itself carries the selected preset's name in the accent state.
   const [presetRowOpen, setPresetRowOpen] = useState(false);
+  // Category tab inside the presets row (2026-08-27: lighting joined "look",
+  // FX arrived as its own category). Tabs render only for categories that
+  // hold at least one PROVEN preset — FX stays entirely invisible until its
+  // validation matrix runs and flips blocks proven.
+  const [presetTab, setPresetTab] = useState<CinemaPresetCategory>("move");
   // Hover preview (operator, 2026-08-26: the inline player was clutter —
   // "pops you the video, same as when you hover over any button"). Pointer
   // devices get a tooltip-style popover playing the proof clip; touch
@@ -4991,12 +4996,44 @@ function GenerateFormInner({
                 ? ((g.cinemaPresetLabels as Record<string, string>)[cinemaPresetId] ?? cinemaPresetId)
                 : g.cinemaPresetsButton}
             </button>
-            {presetRowOpen && (
-              <div
-                className="mt-2 flex items-center gap-2.5 overflow-x-auto pb-1"
-                onScroll={() => setPresetPreview(null)}
-              >
-              {CINEMA_PRESETS.map((p) => {
+            {presetRowOpen && (() => {
+              const provenPresets = CINEMA_PRESETS.filter(isProvenPreset);
+              const tabs = (["move", "look", "fx"] as const).filter((cat) =>
+                provenPresets.some((p) => p.category === cat),
+              );
+              const activeTab = tabs.includes(presetTab) ? presetTab : tabs[0];
+              const tabLabels: Record<CinemaPresetCategory, string> = {
+                move: g.presetTabCamera,
+                look: g.presetTabLight,
+                fx: g.presetTabFx,
+              };
+              return (
+                <>
+                  {tabs.length > 1 && (
+                    <div className="mt-2 flex items-center gap-1">
+                      {tabs.map((cat) => (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => setPresetTab(cat)}
+                          aria-pressed={activeTab === cat}
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-[10.5px] font-medium transition-colors",
+                            activeTab === cat
+                              ? "bg-atelier-ink text-atelier-paper"
+                              : "text-atelier-muted hover:text-atelier-ink",
+                          )}
+                        >
+                          {tabLabels[cat]}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <div
+                    className="mt-2 flex items-center gap-2.5 overflow-x-auto pb-1"
+                    onScroll={() => setPresetPreview(null)}
+                  >
+                  {provenPresets.filter((p) => p.category === activeTab).map((p) => {
                 const selected = cinemaPresetId === p.id;
                 const label =
                   (g.cinemaPresetLabels as Record<string, string>)[p.id] ?? p.id;
@@ -5048,8 +5085,10 @@ function GenerateFormInner({
                   </button>
                 );
               })}
-              </div>
-            )}
+                  </div>
+                </>
+              );
+            })()}
             {/* Hover tooltip preview: the hovered chip's proof clip — the
                 exact validation render behind its thumbnail — floating above
                 the chip like a rich tooltip. pointer-events-none so it can

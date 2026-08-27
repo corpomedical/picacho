@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CINEMA_PRESETS, getCinemaPreset, applyCinemaPreset } from "./cinema-presets";
+import { CINEMA_PRESETS, getCinemaPreset, applyCinemaPreset, isProvenPreset } from "./cinema-presets";
 
 // Structural pins for the preset catalog. The QUALITY of each block is
 // proven by its validation render (see the module comment) — what tests can
@@ -18,16 +18,28 @@ describe("CINEMA_PRESETS catalog", () => {
     for (const p of CINEMA_PRESETS) {
       expect(p.block.length).toBeGreaterThan(60);
       expect(p.block.length).toBeLessThan(500);
-      expect(["move", "look"]).toContain(p.category);
+      expect(["move", "look", "fx"]).toContain(p.category);
       // Blocks are single-purpose instructions, never templates.
       expect(p.block).not.toContain("{");
     }
   });
 
-  it("each shipped preset has its proof-render thumbnail checked in", async () => {
+  it("each PROVEN preset has its proof-render thumbnail checked in", async () => {
     const fs = await import("node:fs");
-    for (const p of CINEMA_PRESETS) {
+    for (const p of CINEMA_PRESETS.filter(isProvenPreset)) {
       expect(fs.existsSync(`public/presets/${p.id}.jpg`), `missing thumbnail for ${p.id}`).toBe(true);
+    }
+  });
+
+  it("unproven drafts are invisible to the product until validated", () => {
+    const drafts = CINEMA_PRESETS.filter((p) => !isProvenPreset(p));
+    // The 2026-08-27 batch ships drafted-but-unvalidated (fal balance low —
+    // "add it and we test later"). If this list is empty, the validation
+    // ran: delete this assertion block, keep the gating ones below.
+    for (const p of drafts) {
+      // Server refuses to arm them — a crafted id gets a no-op, not a block.
+      expect(getCinemaPreset(p.id)).toBeNull();
+      expect(applyCinemaPreset("Eva at the beach", p.id)).toBe("Eva at the beach");
     }
   });
 });
