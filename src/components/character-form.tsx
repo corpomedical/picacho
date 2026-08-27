@@ -56,6 +56,7 @@ export function CharacterForm({
   errorMessage,
   projects = [],
   voices = [],
+  recentRenders,
 }: {
   userId: string;
   initial?: Initial & { voice_id?: string | null; outfit_description?: string | null };
@@ -64,6 +65,10 @@ export function CharacterForm({
   errorMessage?: string;
   projects?: ProjectOption[];
   voices?: VoiceOption[];
+  // "In action" (2026-08-27 redesign, case 4): this character's recent
+  // succeeded image renders, queried by the edit page. Empty array = show
+  // the first-shot nudge; undefined/new-character = no strip at all.
+  recentRenders?: { id: string; url: string; score: number | null }[];
 }) {
   const { t } = useLocale();
   const c = t.character;
@@ -351,6 +356,97 @@ export function CharacterForm({
   return (
     <div className="mx-auto max-w-2xl space-y-6">
     <form onSubmit={handleSubmit} className="space-y-6">
+      {initial?.id && (
+        /* Profile hero (2026-08-27 redesign, case 2): meet the character
+           first, edit second. Portrait, live name, the lock meter, and the
+           two actions that matter. The meter lives HERE in edit mode; the
+           in-section copy of it below renders only during creation. */
+        <div className="flex items-stretch gap-5">
+          <span className="block h-40 w-32 flex-none overflow-hidden rounded-[16px] bg-atelier-ink/5">
+            {keptImages[0] ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={keptImages[0].url} alt="" className="h-full w-full object-cover" />
+            ) : (
+              <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-atelier-ink to-[#3a3f4c] font-display text-4xl font-semibold text-atelier-paper/60">
+                {name?.[0]?.toUpperCase() ?? "?"}
+              </span>
+            )}
+          </span>
+          <div className="min-w-0 flex-1 py-1">
+            <p className="truncate font-display text-2xl font-semibold text-atelier-ink">{name || "—"}</p>
+            <span aria-hidden className="mt-2.5 flex items-center gap-1">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span
+                  key={i}
+                  className={
+                    i < totalImages
+                      ? "h-1.5 w-6 rounded-full bg-atelier-accent"
+                      : "h-1.5 w-6 rounded-full bg-atelier-rule"
+                  }
+                />
+              ))}
+            </span>
+            <p className="mt-1 text-xs text-atelier-muted">
+              {totalImages <= 1 ? c.lockTipOne : totalImages <= 3 ? c.lockTipFew : c.lockTipMax}
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Link
+                href={`/app/generate?character=${encodeURIComponent(initial.id)}`}
+                className="rounded-full bg-atelier-ink px-4 py-2 text-xs font-semibold text-atelier-paper transition-opacity hover:opacity-90"
+              >
+                {formatMsg(c.heroGenerateWith, { name: name || "…" })}
+              </Link>
+              <button
+                type="button"
+                onClick={handleGeneratePerspectives}
+                disabled={perspective.running || generating || totalImages >= 5 || keptImages.length === 0}
+                className="rounded-full px-4 py-2 text-xs font-medium text-atelier-ink shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] transition-colors hover:bg-atelier-ink/5 disabled:opacity-50"
+              >
+                {perspective.running ? c.perspectiveRunning : `◇ ${c.perspectiveButton}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {initial?.id && recentRenders && (
+        /* "In action" (case 4): the receipts. Consistency is the product's
+           pitch; the profile shows the character actually holding up. */
+        <div>
+          <div className="flex items-center justify-between">
+            <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
+              {c.inActionTitle}
+            </h2>
+            {recentRenders.length > 0 && (
+              <Link href="/app/history" className="text-[11px] text-atelier-muted underline underline-offset-2 hover:text-atelier-ink">
+                {c.inActionViewAll}
+              </Link>
+            )}
+          </div>
+          {recentRenders.length === 0 ? (
+            <p className="mt-2 text-sm text-atelier-muted">{c.inActionEmpty}</p>
+          ) : (
+            <div className="mt-2 grid grid-cols-4 gap-2.5 sm:grid-cols-6 lg:grid-cols-8">
+              {recentRenders.map((r) => (
+                <Link
+                  key={r.id}
+                  href={`/app/history/${r.id}`}
+                  className="group relative block aspect-square overflow-hidden rounded-[10px] bg-atelier-ink/5"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={r.url} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]" />
+                  {r.score !== null && (
+                    <span className="absolute bottom-1 right-1 rounded-full bg-black/55 px-1.5 py-0.5 font-numeral text-[9.5px] tabular-nums text-white">
+                      {r.score}%
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <section className={SHEET}>
         <h2 className={SHEET_TITLE}>{c.basics}</h2>
         <div className="mt-4">
@@ -469,7 +565,7 @@ export function CharacterForm({
             find it in a blog. Coach it right where the photos live. The
             meter is count-based (we can't classify pose from pixels); the
             tip supplies the variety advice. */}
-        {totalImages > 0 && (
+        {totalImages > 0 && !initial?.id && (
           <div className="mt-3">
             <div className="flex items-center gap-2.5">
               <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">

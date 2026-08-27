@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { mediaUrl, thumbUrl } from "@/lib/media/url";
+import { mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -53,14 +53,33 @@ export default async function EditCharacterPage({
     supabase.from("voice_presets").select("id, label, description").order("sort_order", { ascending: true }),
   ]);
 
+  // "In action" (2026-08-27 redesign, case 4): the character's recent
+  // succeeded image renders with their identity scores — the receipts of
+  // the consistency promise, shown on the profile.
+  const { data: recentRows } = await supabase
+    .from("generations")
+    .select("id, result_url, match_score")
+    .eq("user_id", userData.user.id)
+    .eq("character_profile_id", id)
+    .eq("content_type", "image")
+    .eq("status", "succeeded")
+    .not("result_url", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(8);
+  const recentRenders = (recentRows ?? [])
+    .map((r) => ({
+      id: r.id as string,
+      url: thumbUrl(toMediaUrl(r.result_url as string) ?? "", 320) ?? "",
+      score: (r.match_score ?? null) as number | null,
+    }))
+    .filter((r) => r.url);
+
   return (
     <div>
-      <h1 className="mx-auto mb-6 max-w-2xl text-lg font-semibold text-atelier-ink">
-        {t.character.editTitle}
-      </h1>
       <CharacterForm
         userId={userData.user.id}
         initial={profile}
+        recentRenders={recentRenders}
         existingImages={existingImages}
         existingOutfitImages={(profile.outfit_image_urls ?? []).map(toTile)}
         errorMessage={error}
