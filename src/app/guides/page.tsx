@@ -17,6 +17,20 @@ export const dynamic = "force-dynamic";
 
 const GUIDES = [
   {
+    href: "/guides/ai-camera-movements",
+    date: "August 2026",
+    title: "AI camera movements: the director's cheat sheet",
+    blurb:
+      "Nine movements that actually work — crash zoom, dolly-in, orbit, bullet time and more — each shown as a real generated clip with the exact wording that produces it.",
+  },
+  {
+    href: "/guides/seedance-2",
+    date: "August 2026",
+    title: "Seedance 2.0: the practical guide",
+    blurb:
+      "Identity references vs first frames, the 2.5 photoreal rejection trap, exact outfit matching from a clothing photo, and real per-second economics — all verified in production.",
+  },
+  {
     href: "/guides/getting-started",
     date: "August 2026",
     title: "The Picacho course: first login to first video",

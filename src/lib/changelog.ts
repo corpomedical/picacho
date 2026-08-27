@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.8.2",
+    build: 11,
+    date: "2026-08-28",
+    title: "The search engines get something to chew on",
+    items: [
+      "The Search Console audit ('our performance is embarrassing') found the machine healthy but starving: clean metadata, working sitemap, indexation underway — and a total of two real content pages feeding it. Three fixes shipped: the nine-chapter course finally joined the sitemap it had been missing from since it shipped, and two new guides doubled the content surface — 'AI camera movements: the director's cheat sheet', where every one of the nine movements plays as the real validation clip that earned its preset (an asset no recycled listicle can match), and 'Seedance 2.0: the practical guide', the model-name query practitioners actually search, written from production-verified behavior: the identity-reference contract, the 2.5 photoreal rejection trap, the exact-outfit clothing-photo trick, and honest per-second economics.",
+    ],
+  },
+  {
     version: "1.8.1",
     build: 10,
     date: "2026-08-27",

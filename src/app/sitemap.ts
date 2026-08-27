@@ -27,6 +27,8 @@ const PUBLIC_ROUTES = [
   // Guides — the SEO content section (English-only bodies for now).
   "/guides",
   "/guides/ai-character-consistency",
+  "/guides/ai-camera-movements",
+  "/guides/seedance-2",
   // The nine-chapter photographed course — the deepest content page on the
   // site, forgotten here when it shipped (2026-08-25) because this list is
   // maintained by hand. If guides keep growing, generate this from the
