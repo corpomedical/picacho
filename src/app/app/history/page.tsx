@@ -6,6 +6,7 @@ import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { getServerMessages } from "@/lib/i18n/server";
+import { QuietVideo } from "@/components/quiet-video";
 import { formatMsg } from "@/lib/i18n/format";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { ContinueChatButton } from "@/components/continue-chat-button";
@@ -303,7 +304,7 @@ export default async function HistoryPage({
                       <img src={g.thumb} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <>
-                        <video
+                        <QuietVideo
                           // The #t media fragment makes Chromium actually
                           // paint that frame as the standing image. Desktop
                           // Chrome paints frame 0 from bare metadata anyway;

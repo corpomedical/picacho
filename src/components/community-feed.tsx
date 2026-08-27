@@ -462,7 +462,8 @@ export function CommunityFeed({
                     />
                   )}
                   {post.contentType === "video" ? (
-                    <video
+                    <QuietVideo
+                      pending="spinner"
                       ref={(el) => {
                         if (el) {
                           el.muted = feedMutedRef.current;

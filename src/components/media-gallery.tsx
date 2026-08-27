@@ -208,7 +208,8 @@ export function MediaGallery({
         }}
       >
         {viewerIsVideo ? (
-          <video
+          <QuietVideo
+            pending="spinner"
             src={viewerUrl}
             controls
             autoPlay

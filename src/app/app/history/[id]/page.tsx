@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { QuietVideo } from "@/components/quiet-video";
 import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
@@ -286,7 +287,8 @@ export default async function HistoryDetailPage({
                     </div>
                   ) : (
                     <div className="relative mt-3 overflow-hidden rounded-media bg-atelier-stage p-2">
-                      <video
+                      <QuietVideo
+                        pending="spinner"
                         src={generation.result_url}
                         controls
                         aria-label={generation.prompt_input}
