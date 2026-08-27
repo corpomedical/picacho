@@ -63,6 +63,11 @@ export default async function EditCharacterPage({
     .eq("character_profile_id", id)
     .eq("content_type", "image")
     .eq("status", "succeeded")
+    // deleteGeneration soft-deletes the ROW but hard-deletes the FILE, so a
+    // deleted render still matches every other clause here — and its media
+    // URL 404s. Shipping without this filter put broken tiles on the strip
+    // the first day (operator: "some pictures are not loading").
+    .is("deleted_at", null)
     .not("result_url", "is", null)
     .order("created_at", { ascending: false })
     .limit(8);

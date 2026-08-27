@@ -74,6 +74,9 @@ async function getFeaturedItems(): Promise<FeaturedItem[]> {
       )
       .eq("status", "succeeded")
       .not("featured_at", "is", null)
+      // Deleting a render removes its FILE but soft-deletes its row — a
+      // featured-then-deleted render would 404 on the public gallery.
+      .is("deleted_at", null)
       // The v1 content-rights re-check (see the header comment): the inner
       // join on the owner's profile drops any row not owned by an admin.
       .eq("profiles.role", "admin")

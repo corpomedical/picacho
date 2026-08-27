@@ -40,6 +40,9 @@ export default async function AppLayout({
       .from("generations")
       .select("id, prompt_input, status, content_type")
       .eq("user_id", data.user.id)
+      // Rows are soft-deleted (the ledger keeps counting them); the jobs
+      // menu is a user-facing surface, so deleted work must not linger here.
+      .is("deleted_at", null)
       .order("created_at", { ascending: false })
       .limit(6),
     supabase

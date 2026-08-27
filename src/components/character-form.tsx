@@ -434,7 +434,18 @@ export function CharacterForm({
                   className="group relative block aspect-square overflow-hidden rounded-[10px] bg-atelier-ink/5"
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={r.url} alt="" loading="lazy" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]" />
+                  <img
+                    src={r.url}
+                    alt=""
+                    loading="lazy"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
+                    // A receipt that can't paint isn't a receipt. Old rows can
+                    // hold externally-hosted URLs (pre-persist era) that rot —
+                    // drop the whole tile rather than show a broken image.
+                    onError={(e) => {
+                      (e.currentTarget.closest("a") as HTMLElement | null)?.style.setProperty("display", "none");
+                    }}
+                  />
                   {r.score !== null && (
                     <span className="absolute bottom-1 right-1 rounded-full bg-black/55 px-1.5 py-0.5 font-numeral text-[9.5px] tabular-nums text-white">
                       {r.score}%

@@ -87,6 +87,9 @@ export default async function HistoryDetailPage({
         .from("generations")
         .select("id, angle, status, result_url, pipeline_log, feedback, created_at")
         .eq("angle_group_id", generation.angle_group_id)
+        // Siblings can be individually deleted; their files are gone even
+        // though the soft-deleted rows still carry this group id.
+        .is("deleted_at", null)
         .order("created_at", { ascending: true })
     : { data: null };
 
