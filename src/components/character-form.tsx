@@ -135,7 +135,9 @@ export function CharacterForm({
   // What the ROW already holds. Starts as the photos the page loaded with;
   // grows when a generated photo auto-persists (result.saved). Anything in
   // the form beyond this baseline is unsaved work the guards below protect.
-  const persistedPathsRef = useRef<string[]>(existingImages.map((i) => i.path));
+  const [persistedPaths, setPersistedPaths] = useState<string[]>(() =>
+    existingImages.map((i) => i.path),
+  );
 
   // The Save button is real but forgettable (2026-08-27, operator lost a
   // Perspective run to it): generated photos now persist themselves, and
@@ -154,7 +156,7 @@ export function CharacterForm({
       JSON.stringify(tags) !== JSON.stringify(initial?.voice_tone_tags ?? []) ||
       newFiles.length > 0 ||
       newOutfitFiles.length > 0 ||
-      JSON.stringify(keptImages.map((i) => i.path)) !== JSON.stringify(persistedPathsRef.current) ||
+      JSON.stringify(keptImages.map((i) => i.path)) !== JSON.stringify(persistedPaths) ||
       JSON.stringify(keptOutfit.map((i) => i.path)) !==
         JSON.stringify(existingOutfitImages.map((i) => i.path)));
 
@@ -237,7 +239,7 @@ export function CharacterForm({
       return;
     }
 
-    if (result.saved) persistedPathsRef.current = [...persistedPathsRef.current, result.path];
+    if (result.saved) setPersistedPaths((prev) => [...prev, result.path]);
     setKeptImages((prev) => [...prev, { path: result.path, url: result.url }]);
     setGenPrompt("");
     setGenerating(false);
@@ -293,7 +295,7 @@ export function CharacterForm({
         setPerspective((prev) => ({ ...prev, running: false, current: null }));
         return;
       }
-      if (result.saved) persistedPathsRef.current = [...persistedPathsRef.current, result.path];
+      if (result.saved) setPersistedPaths((prev) => [...prev, result.path]);
       setKeptImages((prev) => [...prev, { path: result.path, url: result.url }]);
       setPerspective((prev) => ({ ...prev, done: [...prev.done, shot.id] }));
     }
