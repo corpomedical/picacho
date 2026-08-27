@@ -27,6 +27,11 @@ const PUBLIC_ROUTES = [
   // Guides — the SEO content section (English-only bodies for now).
   "/guides",
   "/guides/ai-character-consistency",
+  // The nine-chapter photographed course — the deepest content page on the
+  // site, forgotten here when it shipped (2026-08-25) because this list is
+  // maintained by hand. If guides keep growing, generate this from the
+  // guides directory instead.
+  "/guides/getting-started",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
