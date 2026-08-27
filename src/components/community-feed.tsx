@@ -11,6 +11,7 @@ import {
 import { REPORT_REASONS, type ReportReason } from "@/lib/generations/report-constants";
 import { formatMsg } from "@/lib/i18n/format";
 import { cn } from "@/lib/cn";
+import { QuietVideo } from "@/components/quiet-video";
 
 // Community, social-media shaped (operator-directed 2026-08-22, from a
 // mocked design he approved: "Start building, I love it!!"):
@@ -387,7 +388,7 @@ export function CommunityFeed({
               )}
             >
               {post.contentType === "video" ? (
-                <video
+                <QuietVideo
                   src={`${post.displayUrl}#t=0.1`}
                   muted
                   playsInline

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { QuietVideo } from "@/components/quiet-video";
 import { useEffect, useState, type SVGProps } from "react";
 import { Badge } from "@/components/ui/badge";
 import { LocalDate } from "@/components/local-date";
@@ -113,7 +114,7 @@ export function MediaGallery({
               className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
             />
           ) : (
-            <video
+            <QuietVideo
               // #t fragment: paints the first frame in Android WebView
               // too — see history/page.tsx.
               src={`${item.result_url!}#t=0.1`}

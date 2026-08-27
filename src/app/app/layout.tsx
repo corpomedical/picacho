@@ -6,6 +6,7 @@ import { NativePush } from "@/components/native-push";
 import { Suspense } from "react";
 import { NativeTabBar } from "@/components/native-tab-bar";
 import { RouteProgress } from "@/components/route-progress";
+import { ScrollReset } from "@/components/scroll-reset";
 import { NativeQuickPill } from "@/components/native-quick-pill";
 import { DownloadToasts } from "@/components/download-toasts";
 import { createClient } from "@/lib/supabase/server";
@@ -108,6 +109,7 @@ export default async function AppLayout({
       <Suspense fallback={null}>
         <RouteProgress />
       </Suspense>
+      <ScrollReset />
       <NativeTabBar />
       <NativeQuickPill
         shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}
