@@ -173,7 +173,7 @@ export function MediaGallery({
         // Darkroom stage tile ground — mounted slides on paper, seamless in
         // the dark theme.
         const tileClass =
-          "group relative aspect-square overflow-hidden rounded-media border border-[#eae6dc]/10 bg-atelier-stage text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent";
+          "cv-auto group relative aspect-square overflow-hidden rounded-media border border-[#eae6dc]/10 bg-atelier-stage text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent";
 
         return hasRealMedia ? (
           <button

@@ -3,7 +3,9 @@ import type { PlanId } from "@/lib/plans";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
+import { Suspense } from "react";
 import { NativeTabBar } from "@/components/native-tab-bar";
+import { RouteProgress } from "@/components/route-progress";
 import { NativeQuickPill } from "@/components/native-quick-pill";
 import { DownloadToasts } from "@/components/download-toasts";
 import { createClient } from "@/lib/supabase/server";
@@ -100,6 +102,12 @@ export default async function AppLayout({
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}
       <NativePush />
+      {/* Instant navigation acknowledgment — the ochre sliver along the top
+          edge while a tapped route is still loading. Suspense because the
+          component reads useSearchParams. */}
+      <Suspense fallback={null}>
+        <RouteProgress />
+      </Suspense>
       <NativeTabBar />
       <NativeQuickPill
         shareUrl={profile?.username ? `https://picacho.ai/r/${profile.username}` : undefined}

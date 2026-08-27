@@ -52,6 +52,17 @@ function PhotosIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function CommunityIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3 20a6 6 0 0 1 12 0" />
+      <path d="M16 6.5a3 3 0 0 1 0 6" />
+      <path d="M21 20a5.5 5.5 0 0 0-4-5.3" />
+    </svg>
+  );
+}
+
 function ClockIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -79,17 +90,27 @@ export function NativeTabBar() {
   const [isNative, setIsNative] = useState(false);
   useEffect(() => setIsNative(isNativeAppClient()), []);
 
+  // Optimistic active state (2026-08-27, operator: on slow network a tap
+  // feels frozen): the tapped tab lights up the INSTANT it's touched, not
+  // when the route finishes loading. Cleared as soon as the pathname really
+  // changes — until then the highlight itself is the "order taken" signal,
+  // alongside the top progress bar.
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  useEffect(() => setPendingHref(null), [pathname]);
+
   if (!isNative) return null;
 
-  // Five tabs — the stated ceiling above. Media earned the fifth slot the
-  // hard way: with the sidebar hidden there was NO route to media from
-  // inside the shell at all (operator-reported, 2026-08-21). It lands on
-  // /app/media, the unified grid; extraMatch keeps the tab lit on the
+  // Six tabs — one over the stated five-tab comfort ceiling, accepted with
+  // eyes open (operator, 2026-08-27: "add the community icon on the menu
+  // below"): Community is the growth surface and deserves a thumb slot.
+  // Media earned its slot the hard way earlier (with the sidebar hidden
+  // there was NO route to it at all); extraMatch keeps that tab lit on the
   // standalone Images/Videos pages too.
   const tabs = [
     { href: "/app/generate", label: t.nav.generate, icon: BoltIcon },
     { href: "/app/character", label: t.nav.characters, icon: UserIcon },
     { href: "/app/media", label: t.nav.media, icon: PhotosIcon, extraMatch: ["/app/images", "/app/videos"] },
+    { href: "/app/community", label: t.nav.community, icon: CommunityIcon },
     { href: "/app/history", label: t.nav.history, icon: ClockIcon },
     { href: "/app/settings", label: t.nav.settings, icon: GearIcon },
   ] as { href: string; label: string; icon: typeof BoltIcon; extraMatch?: string[] }[];
@@ -105,18 +126,21 @@ export function NativeTabBar() {
         // startsWith, not equality: /app/character/new should still light the
         // Characters tab. /app/generate is matched exactly as well as by
         // prefix so the composer counts from either entry point.
-        const active =
+        const routeActive =
           pathname === tab.href ||
           pathname.startsWith(`${tab.href}/`) ||
           (tab.extraMatch ?? []).some(
             (m) => pathname === m || pathname.startsWith(`${m}/`),
           );
+        // While a tap is in flight, the tapped tab owns the highlight.
+        const active = pendingHref ? pendingHref === tab.href : routeActive;
         const Icon = tab.icon;
         return (
           <Link
             key={tab.href}
             href={tab.href}
-            aria-current={active ? "page" : undefined}
+            aria-current={routeActive ? "page" : undefined}
+            onClick={() => setPendingHref(tab.href)}
             className={cn(
               "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors",
               active

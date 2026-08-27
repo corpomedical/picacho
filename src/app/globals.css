@@ -388,3 +388,72 @@ html.native-app [data-app-content] {
 html.native-app main.min-h-screen {
   min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
 }
+
+/* --------------------------------------------------------------------------
+ * Perceived-speed pass (2026-08-27, operator: "if the internet is slow,
+ * whatever you click feels frozen"). Three layers: instant tap feedback
+ * (no gray tap flash, no double-tap-zoom hesitation), a scanning shimmer
+ * for every route skeleton (the banking-app "mockup being scanned" look —
+ * a light band sweeping across the ghost layout, replacing the static
+ * pulse), and cheaper long-list scrolling. The sheen is a token so it
+ * reads as warm light on paper in the light theme and a faint glint on
+ * dark surfaces instead of a gray flash. */
+:root {
+  --skeleton-sheen: rgba(255, 255, 255, 0.55);
+}
+.dark {
+  --skeleton-sheen: rgba(255, 255, 255, 0.07);
+}
+@keyframes skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--skeleton-sheen), transparent);
+  animation: skeleton-sweep 1.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer::after {
+    animation: none;
+  }
+}
+
+/* The tap itself must acknowledge instantly: kill the WebView's gray
+ * highlight rectangle and the double-tap-zoom wait on controls. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+a,
+[role="button"] {
+  touch-action: manipulation;
+}
+
+/* Long grids (media, community, history) stop paying render cost for
+ * offscreen tiles — the single biggest scroll-smoothness win a WebView
+ * can get from CSS alone. Applied per-surface via this utility. */
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 300px;
+}
+
+/* Route-change progress bar: an ochre sliver sweeping under the status
+ * bar from the moment a navigation is requested until the new route
+ * paints. Driven by components/route-progress.tsx. */
+@keyframes route-progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}

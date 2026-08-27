@@ -7,7 +7,7 @@ import { cn } from "@/lib/cn";
 // dependency) so they can render instantly, before anything else loads.
 export function Skeleton({ className }: { className?: string }) {
   // Warm rule-toned pulse, not gray — a skeleton is unprinted paper.
-  return <div className={cn("animate-pulse rounded-control bg-atelier-rule/50", className)} />;
+  return <div className={cn("skeleton-shimmer rounded-control bg-atelier-rule/50", className)} />;
 }
 
 export function SkeletonPage({

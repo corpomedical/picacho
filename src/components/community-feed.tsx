@@ -382,7 +382,7 @@ export function CommunityFeed({
               aria-label={post.caption ?? post.prompt ?? "Community post"}
               className={cn(
                 "group relative overflow-hidden bg-atelier-stage text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-atelier-accent",
-                featured ? "col-span-2 row-span-2" : "aspect-square",
+                featured ? "col-span-2 row-span-2" : "cv-auto aspect-square",
                 isHidden && "opacity-50",
               )}
             >

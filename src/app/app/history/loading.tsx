@@ -7,17 +7,17 @@
 export default function Loading() {
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="h-6 w-40 animate-pulse rounded-control bg-atelier-ink/10" />
-      <div className="mt-6 h-28 animate-pulse rounded-control border border-atelier-rule bg-atelier-surface" />
+      <div className="h-6 w-40 skeleton-shimmer rounded-control bg-atelier-ink/10" />
+      <div className="mt-6 h-28 skeleton-shimmer rounded-control border border-atelier-rule bg-atelier-surface" />
       <div className="mt-6 flex gap-2">
-        <div className="h-8 w-44 animate-pulse rounded-full border border-atelier-rule bg-atelier-surface" />
-        <div className="h-8 w-44 animate-pulse rounded-full border border-atelier-rule bg-atelier-surface" />
+        <div className="h-8 w-44 skeleton-shimmer rounded-full border border-atelier-rule bg-atelier-surface" />
+        <div className="h-8 w-44 skeleton-shimmer rounded-full border border-atelier-rule bg-atelier-surface" />
       </div>
       <div className="mt-4 space-y-3">
         {Array.from({ length: 5 }).map((_, i) => (
           <div
             key={i}
-            className="flex animate-pulse items-center gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-3"
+            className="flex skeleton-shimmer items-center gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-3"
           >
             <div className="h-16 w-16 flex-shrink-0 rounded-media bg-atelier-stage" />
             <div className="min-w-0 flex-1 space-y-2">

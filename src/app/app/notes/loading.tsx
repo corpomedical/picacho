@@ -1,7 +1,7 @@
 // Warm atelier pulse — same shape as ui/Skeleton, tinted with the rule token
 // so the placeholder reads as paper, not gray, and flips with the theme.
 function Shimmer({ className }: { className?: string }) {
-  return <div className={`animate-pulse rounded-control bg-atelier-rule/50 ${className ?? ""}`} />;
+  return <div className={`skeleton-shimmer rounded-control bg-atelier-rule/50 ${className ?? ""}`} />;
 }
 
 export default function Loading() {
