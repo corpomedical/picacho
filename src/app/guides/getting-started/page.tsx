@@ -19,6 +19,14 @@ import { MarketingFooter } from "@/components/marketing/footer";
 // course's three identity rules are the distilled lessons of real support
 // cases — same person in every reference, clothes in Outfit never in
 // References, traits must describe the photos.
+//
+// Reshot 2026-08-27 after the composer/character redesign wave: cast wall,
+// character profile page (Perspective + In action), receipt strip under the
+// model row, featured-models menu with "More models", cinema Presets with
+// hover previews, Templates with sample pictures, Enhance/Describe chips.
+// Every replaced screenshot recaptured live on the same course-demo
+// account; the café render in ch3 is a fresh real generation from that
+// session (its free daily slot).
 export const metadata: Metadata = {
   title: "The Picacho Course: First Login to First Video",
   description:
@@ -108,7 +116,8 @@ const CHAPTERS: Chapter[] = [
         title: "Start a new character",
         body: (
           <>
-            Click <b>New character</b> in the top-right corner.
+            Your characters live on a wall of portrait cards. Click <b>New character</b> in the
+            top-right corner — or the dashed <b>+ New character</b> card, same thing.
           </>
         ),
       },
@@ -218,9 +227,32 @@ const CHAPTERS: Chapter[] = [
         body: (
           <>
             You land in <b>Generate</b> with Maya selected. The prompt box is where the next chapter
-            begins — and note the line under it: your first generation each day is free.
+            begins — and note the small print under it: your first generation each day is free.
           </>
         ),
+      },
+      {
+        shot: { src: "ch2-10-character-page" },
+        title: "Your character's own page",
+        body: (
+          <>
+            Open Maya from the wall any time: her page shows the portrait, the lock-strength meter,
+            and her recent renders with their match scores under <b>In action</b> — the receipts of
+            the consistency promise. <b>Generate with Maya</b> jumps straight to a composer with her
+            selected.
+          </>
+        ),
+        callout: {
+          kind: "tip",
+          text: (
+            <>
+              The <b>Perspective</b> button is the fast way to a strong lock: one tap renders her
+              front, three-quarter, profile and full-body reference photos — the exact angles the
+              meter asks for — instead of prompting each one by hand. Each photo uses one of your
+              free AI-photo allowances.
+            </>
+          ),
+        },
       },
     ],
   },
@@ -264,7 +296,9 @@ const CHAPTERS: Chapter[] = [
           text: (
             <>
               <b>The photos own the person — the prompt owns the scene.</b> Spend your words on
-              place, action, light and mood, and identity stays locked.
+              place, action, light and mood, and identity stays locked. Short on words? The{" "}
+              <b>Enhance</b> chip next to send rewrites your prompt into a richer version you
+              approve before anything is spent.
             </>
           ),
         },
@@ -279,30 +313,44 @@ const CHAPTERS: Chapter[] = [
         title: "Watch Picacho work",
         body: (
           <>
-            Three steps happen in the open: <b>Draft</b> — AI rewrites your prompt with the
-            character&apos;s rulebook folded in; <b>Validate</b> — checks nothing about your
-            character was lost; <b>Generate</b> — the image model renders, anchored to Maya&apos;s
-            photo.
+            The pipeline card narrates while it works, in three steps: <b>Draft</b> — AI rewrites
+            your prompt with the character&apos;s rulebook folded in; <b>Validate</b> — checks
+            nothing about your character was lost; <b>Generate</b> — the image model renders,
+            anchored to Maya&apos;s photo.
           </>
         ),
       },
       {
-        shot: { src: "ch3-05-result" },
+        shot: { src: "ch3-05-result", h: 840 },
         title: "The result",
         body: (
           <>
             About half a minute later the image lands in the chat — same face as the reference
-            photo, new scene. It also appears in the Takes rail on the right and in History.
+            photo, new scene — and the finished card keeps the whole story: the exact drafted
+            prompt, the validation, and which model rendered it. It also appears in the Takes rail
+            on the right and in History.
           </>
         ),
       },
       {
-        shot: { src: "ch3-06-download" },
+        shot: { src: "ch3-06-download", h: 720 },
         title: "Save it",
         body: (
           <>
             Hover the image and click the <b>download</b> button in its corner. On the phone app the
             same button opens the share sheet — save to Photos, send to WhatsApp, anywhere.
+          </>
+        ),
+      },
+      {
+        shot: { src: "ch3-07-templates" },
+        title: "Want a head start? Templates",
+        body: (
+          <>
+            The <b>Templates</b> page in the sidebar is a gallery of ready-made scenes — LinkedIn
+            headshot, magazine cover, product shots, seasonal cards — each with a sample picture of
+            what it produces. Tap <b>Use template</b>, tweak the words in [brackets], and send. Your
+            character, their scene.
           </>
         ),
       },
@@ -329,13 +377,15 @@ const CHAPTERS: Chapter[] = [
         title: "Choose your model — the honest guide",
         body: (
           <>
-            Click the model row to see all of them with real prices. In short: <b>Kling 1.6</b> is
-            the budget pick. <b>Kling O3 Pro (reference)</b> anchors to your character&apos;s photo
-            without copying its pose — the identity workhorse. <b>Seedance 2.0</b> is the one whose
-            renders can match a saved outfit <i>exactly</i> (it accepts the outfit photo itself —
-            see Chapter 2) and it goes up to 15 seconds. <b>Seedance 2.5</b> is for illustrated and
-            mascot characters only. <b>Veo 3.1</b> is the premium pick for maximum quality with
-            audio.
+            Click the model row: three featured picks come first, each with its one-line truth.{" "}
+            <b>Kling O3 Pro (reference)</b> — the strongest face lock, anchors to your
+            character&apos;s photo without copying its pose. <b>Seedance 2.0</b> — the best
+            all-rounder: it&apos;s the one whose renders can match a saved outfit <i>exactly</i>{" "}
+            (it accepts the outfit photo itself — see Chapter 2), it powers the camera Presets
+            below, and it goes up to 30 seconds. <b>Veo 3.1</b> — the premium pick, with audio, and
+            the one that needs no character at all. <b>More models</b> unfolds the rest: budget{" "}
+            <b>Kling 1.6</b>, <b>Kling 2.5 Turbo Pro</b>, <b>Kling O3</b> with native audio, and{" "}
+            <b>Seedance 2.5</b> — illustrated and mascot characters only.
           </>
         ),
         callout: {
@@ -344,19 +394,22 @@ const CHAPTERS: Chapter[] = [
             <>
               If your character wears a specific real outfit, render on <b>Seedance 2.0</b>. On the
               Kling family the outfit rides as a written description — colors and logos land, exact
-              stitching isn&apos;t guaranteed. The small caption under the Outfit chip always tells
-              you which mode you&apos;re in.
+              stitching isn&apos;t guaranteed. The receipt line under the model row always tells you
+              which mode you&apos;re in.
             </>
           ),
         },
       },
       {
+        shot: { src: "ch4-03-advanced" },
         title: "Duration and shape",
         body: (
           <>
-            Pick the clip length (each model shows its own options — Seedance goes to 30s) and the
-            aspect ratio with the frame icons: landscape for YouTube, portrait for Reels and TikTok.
-            Then describe the scene and send, exactly like an image.
+            Pick the clip length on the model row (each model shows its own options — Seedance goes
+            to 30s). For the aspect ratio, click the small <b>chevron</b> next to send: the advanced
+            row unfolds with the frame shapes — landscape for YouTube, portrait for Reels and TikTok
+            — and a line for spoken dialogue. Then describe the scene and send, exactly like an
+            image.
           </>
         ),
         callout: {
@@ -364,8 +417,30 @@ const CHAPTERS: Chapter[] = [
           text: (
             <>
               Videos cost credits (the price chip on the model row is per clip). Your daily free
-              generation covers one render a day — after that you&apos;ll need a plan or a credit
-              pack from Settings.
+              generation covers one render a day — and on the free tier it runs on <b>Kling 1.6</b>,
+              whatever is selected; the note under the composer says so before you send. After that
+              you&apos;ll need a plan or a credit pack from Settings.
+            </>
+          ),
+        },
+      },
+      {
+        shot: { src: "ch4-04-presets" },
+        title: "Cinema presets",
+        body: (
+          <>
+            On Seedance, a <b>Presets</b> button appears above the prompt: nineteen proven camera
+            moves — crash zoom, dolly-in, orbit, crane reveal, bullet time and more. Point at any
+            chip and it plays the actual clip that move produced, so you choose with your eyes. Tap
+            to arm it, and the move rides along with whatever scene you describe.
+          </>
+        ),
+        callout: {
+          kind: "tip",
+          text: (
+            <>
+              Every preset thumbnail is a real render, not an illustration — what you see on the
+              chip is what the move does.
             </>
           ),
         },
@@ -375,27 +450,29 @@ const CHAPTERS: Chapter[] = [
   {
     id: "attachments",
     title: "Attaching photos — what it really does",
-    lede: "The + button lets you attach a photo to a message. Powerful — and specific: an attached photo becomes the FACE for that generation.",
+    lede: "The + button lets you attach a photo to a message. What that photo will DO depends on the model — so Picacho tells you, in writing, before you send.",
     steps: [
       {
-        shot: { src: "ch5-01-attach-fence" },
-        title: "The face slot",
+        shot: { src: "ch5-01-attach-receipt" },
+        title: "Read the receipt",
         body: (
           <>
-            When a character is selected and you attach an image, Picacho warns you before anything
-            is spent: the attachment will be used as the character&apos;s <b>face</b> for this
-            generation, replacing the saved reference. That&apos;s perfect when it&apos;s a fresh
-            photo of the same person — a new angle, better light.
+            The small line under the model row is the <b>receipt</b> for your next send. Attach a
+            photo and it says exactly what will happen — here, on Kling O3 Pro:{" "}
+            <i>Face: saved photo · Attached image: described into your prompt</i>. Maya&apos;s face
+            stays anchored to her saved reference, and the attachment becomes scene direction. On
+            other models the same attachment can ride as the literal reference image — the receipt
+            always says which, before anything is spent. An orange <b>Describe image</b> chip can
+            turn the photo into written scene words for you.
           </>
         ),
         callout: {
           kind: "warn",
           text: (
             <>
-              If the photo is an <b>outfit, product, or scene</b> — not the person&apos;s face —
-              click <b>Remove photo</b>. Outfit photos belong in the character&apos;s Outfit section
-              (Chapter 2), where they can never blur who the character is. A clothing photo left in
-              the face slot means a different person appears.
+              One thing an attachment should never be: the character&apos;s <b>clothes</b>. Outfit
+              photos belong in the character&apos;s Outfit section (Chapter 2), where they can never
+              blur who the character is.
             </>
           ),
         },
@@ -544,9 +621,9 @@ const CHAPTERS: Chapter[] = [
         body: (
           <>
             Picacho warns <i>before</i> credits move, not after. Pick Seedance 2.5 with a photoreal
-            character and you&apos;ll see this banner with a one-tap switch to the right model.
-            Attach a photo that would replace your character&apos;s face, and the amber warning from
-            Chapter 5 appears with a one-tap remove.
+            character and you&apos;ll see this banner with a one-tap switch to the right model. And
+            the receipt line from Chapter 5 narrates every send — what anchors the face, what an
+            attachment will do — so nothing about a render is a surprise.
           </>
         ),
         callout: {

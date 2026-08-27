@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.8.1",
+    build: 10,
+    date: "2026-08-27",
+    title: "Launch-eve housekeeping — deleted renders stop haunting, and the course catches up with the product it teaches",
+    items: [
+      "Deleted renders stopped haunting the app: deleting a render keeps its ledger row but removes the file, and four surfaces were still listing those ghost rows as images that could never load — the new In-action strip on character profiles (the reported bug: broken squares on the operator's own characters), the jobs menu in the top bar, the public gallery, and the old shot-group strip in History. All four now skip deleted work, and strip tiles additionally remove themselves if an image ever fails to paint — a receipt that can't paint isn't a receipt.",
+      "The Picacho Course was reshot and rewritten against the redesigned product — fifteen screenshots recaptured live on the same demo account, and the café render in chapter 3 is a fresh real generation from that session. New lessons for everything that shipped since it was written: the character wall and the character's own page (with the one-tap Perspective reference sheet and the In-action receipts), the cinema Presets row with its hover previews, the Templates gallery with sample pictures, the Enhance chip, the featured-models menu with its one-line truths, and — the deepest rewrite — chapter 5, which now teaches the receipt line itself: attach a photo and Picacho states in writing what it will do on the selected model before anything is spent. The free-tier disclosure ('runs on Kling 1.6') is taught where it appears.",
+      "Google Play: the organization verification cleared ('account in good standing') — the production release submitted Aug 21 is now genuinely in Google's review queue, with the launch playbook armed for the moment it flips live.",
+    ],
+  },
+  {
     version: "1.8.0",
     build: 9,
     date: "2026-08-26",
