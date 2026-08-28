@@ -4172,7 +4172,7 @@ function GenerateFormInner({
   const castSize = (currentCharacter ? 1 : 0) + companionCharacterIds.length;
   const characterPicker =
     characters.length > 0 ? (
-      <div ref={characterMenuRef} data-tour-id="tour-character-select" className="relative">
+      <div ref={characterMenuRef} data-tour-id="tour-character-select" className="min-w-0">
         <button
           type="button"
           onClick={() => setCharacterMenuOpen((v) => !v)}
@@ -4180,9 +4180,11 @@ function GenerateFormInner({
           aria-haspopup="listbox"
           aria-expanded={characterMenuOpen}
           className={cn(
-            // Borderless soft chip — same recipe as the input box (operator,
-            // 2026-08-21: "apply the same to Select Character").
-            "flex w-full items-center gap-2.5 rounded-full py-1.5 pl-1.5 pr-3.5 text-left transition-colors disabled:opacity-50",
+            // Casting Bar segment (2026-08-28, operator-approved direction
+            // 1 round 3): the pill became one segment of the shared bar —
+            // content-width, transparent until open/hover, the bar behind
+            // it carries the shape.
+            "flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-left transition-colors disabled:opacity-50",
             characterMenuOpen
               ? "bg-atelier-ink/[0.08]"
               : !characterId
@@ -4192,7 +4194,7 @@ function GenerateFormInner({
                   // character-less render without realising). Still never
                   // auto-picks — that rule stands.
                   "bg-atelier-accent/[0.09] hover:bg-atelier-accent/[0.14]"
-                : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
+                : "hover:bg-atelier-ink/[0.06]",
           )}
         >
           {isMultiCharacter ? (
@@ -4230,7 +4232,7 @@ function GenerateFormInner({
           )}
           <span
             className={cn(
-              "min-w-0 flex-1 truncate text-sm",
+              "min-w-0 max-w-[5.5rem] truncate text-sm sm:max-w-[10rem]",
               currentCharacter ? "text-atelier-ink" : "text-atelier-muted",
             )}
           >
@@ -4255,7 +4257,7 @@ function GenerateFormInner({
           <div
             role="listbox"
             aria-multiselectable="true"
-            className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[280px] rounded-[16px] bg-atelier-surface p-2.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+            className="absolute left-0 right-0 top-full z-20 mt-2 rounded-[16px] bg-atelier-surface p-2.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
             <div className="flex gap-2.5 overflow-x-auto pb-1">
               {characters.map((c) => {
@@ -4385,7 +4387,7 @@ function GenerateFormInner({
 
   const videoModelPicker =
     contentType === "video" && videoModels.length > 1 ? (
-      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="relative min-w-0 flex-1">
+      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="min-w-0 flex-1">
         <button
           type="button"
           onClick={() => {
@@ -4397,13 +4399,16 @@ function GenerateFormInner({
           aria-expanded={videoModelMenuOpen}
           className={cn(
             // Borderless soft chip — matches the character select above.
-            "flex w-full items-center gap-2 rounded-full py-1.5 pl-3 pr-3.5 text-left transition-colors disabled:opacity-50",
-            videoModelMenuOpen ? "bg-atelier-ink/[0.08]" : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
+            "flex w-full min-w-0 items-center gap-1.5 rounded-full py-1 pl-2 pr-2 text-left transition-colors disabled:opacity-50 sm:gap-2 sm:pl-2.5 sm:pr-2.5",
+            videoModelMenuOpen ? "bg-atelier-ink/[0.08]" : "hover:bg-atelier-ink/[0.06]",
           )}
         >
-          <span className="min-w-0 flex-1 truncate text-sm text-atelier-ink">{currentVideoModel?.name}</span>
+          <span className="min-w-[52px] flex-1 truncate text-sm font-medium text-atelier-ink">{currentVideoModel?.name}</span>
           {currentDurationCredits > 1 && (
-            <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
+            // Hidden on phone widths: the bar can't fit name + price +
+            // durations there, and the price still lives in the menu rows,
+            // the duration tooltips, and the credit strip before send.
+            <span className="hidden flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent sm:inline-flex">
               {formatMsg(g.creditsEach, { n: currentDurationCredits })}
             </span>
           )}
@@ -4418,8 +4423,35 @@ function GenerateFormInner({
         {videoModelMenuOpen && (
           <div
             role="listbox"
-            className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[260px] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+            className="absolute left-0 right-0 top-full z-20 mt-2 overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
+            {/* Phone widths: the duration chips live here instead of the
+                bar (the bar can't fit name + durations at 390px — the
+                mock's stated trade: one extra tap for the rare duration
+                change on small screens). */}
+            {currentVideoModel && currentVideoModel.durations.length > 1 && (
+              <div className="mb-1 flex items-center gap-1 border-b border-atelier-rule/70 px-1 pb-1.5 pt-0.5 sm:hidden">
+                {currentVideoModel.durations.map((d) => (
+                  <button
+                    key={d.seconds}
+                    type="button"
+                    onClick={() => setVideoDurationSeconds(d.seconds)}
+                    aria-pressed={videoDurationSeconds === d.seconds}
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                      videoDurationSeconds === d.seconds
+                        ? "bg-atelier-ink text-atelier-paper"
+                        : "text-atelier-muted hover:text-atelier-ink",
+                    )}
+                  >
+                    {formatMsg(g.durationSecondsShort, { n: d.seconds })}
+                  </button>
+                ))}
+                <span className="ml-auto pr-1 font-numeral text-[11px] tabular-nums text-atelier-accent">
+                  {formatMsg(g.creditsEach, { n: currentDurationCredits })}
+                </span>
+              </div>
+            )}
             {(() => {
               const featuredIds = FEATURED_VIDEO_MODEL_IDS as readonly string[];
               const featured = videoModels.filter((m) => featuredIds.includes(m.id));
@@ -4498,7 +4530,7 @@ function GenerateFormInner({
     // Hidden while a storyboard is on: per-shot durations rule there, and a
     // dead global picker would just invite a click that does nothing.
     contentType === "video" && !storyboardActive && currentVideoModel && currentVideoModel.durations.length > 1 ? (
-      <div className="flex flex-shrink-0 items-center gap-1 rounded-full border border-atelier-rule p-1">
+      <div className="hidden flex-shrink-0 items-center gap-0.5 rounded-full p-0.5 sm:flex">
         {currentVideoModel.durations.map((d) => (
           <button
             key={d.seconds}
@@ -4508,7 +4540,7 @@ function GenerateFormInner({
             aria-pressed={videoDurationSeconds === d.seconds}
             title={formatMsg(g.durationCredits, { n: d.creditWeight })}
             className={cn(
-              "rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+              "rounded-full px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 sm:px-2.5",
               videoDurationSeconds === d.seconds
                 ? "bg-atelier-ink text-atelier-paper"
                 : "text-atelier-muted hover:text-atelier-ink",
@@ -4675,7 +4707,21 @@ function GenerateFormInner({
           </div>
         )}
 
-        {characterPicker}
+        {/* The Casting Bar (2026-08-28): character segment | model segment
+            | durations | stage expand — one pill instead of two stacked
+            rows. The wrapper is the positioning context, so both sheets
+            drop bar-wide beneath it. */}
+        <div className="relative">
+          <div className="flex items-center gap-1 rounded-full bg-atelier-ink/[0.045] p-1">
+            {characterPicker}
+            {videoModelPicker && <span aria-hidden className="h-5 w-px flex-shrink-0 bg-atelier-rule" />}
+            {videoModelPicker}
+            {videoDurationPicker}
+            {(videoModelPicker || videoDurationPicker) && (
+              <span className="flex-shrink-0 pr-1">{stageExpandButton}</span>
+            )}
+          </div>
+        </div>
         {referencePhotos.length > 1 && videoAdvancedMode === "none" && !isMultiCharacter && (
           <div>
             <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
@@ -4712,13 +4758,6 @@ function GenerateFormInner({
           <p className="text-xs text-red-500">
             {formatMsg(g.multiCharacterNeedsPhoto, { name: castMemberMissingPhoto.name })}
           </p>
-        )}
-        {(videoModelPicker || videoDurationPicker) && (
-          <div className="flex items-center gap-2">
-            {videoModelPicker}
-            {videoDurationPicker}
-            <div className="ml-auto">{stageExpandButton}</div>
-          </div>
         )}
         {/* Send Receipt, tucked directly under the model selector (operator,
             2026-08-26: the floating placement read as banner clutter). Video

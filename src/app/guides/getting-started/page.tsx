@@ -367,8 +367,8 @@ const CHAPTERS: Chapter[] = [
         body: (
           <>
             From the dashboard choose <b>Create a video</b>, or switch inside the composer — the
-            model row appears under the character selector, with the price per clip and the duration
-            choices.
+            model joins your character in the bar at the top, with the price per clip and the
+            duration choices riding alongside.
           </>
         ),
       },
@@ -405,8 +405,8 @@ const CHAPTERS: Chapter[] = [
         title: "Duration and shape",
         body: (
           <>
-            Pick the clip length on the model row (each model shows its own options — Seedance goes
-            to 30s). For the aspect ratio, click the small <b>chevron</b> next to send: the advanced
+            Pick the clip length right on the bar (each model shows its own options — Seedance goes
+            to 30s; on the phone the chips sit at the top of the model menu). For the aspect ratio, click the small <b>chevron</b> next to send: the advanced
             row unfolds with the frame shapes — landscape for YouTube, portrait for Reels and TikTok
             — and a line for spoken dialogue. Then describe the scene and send, exactly like an
             image.
