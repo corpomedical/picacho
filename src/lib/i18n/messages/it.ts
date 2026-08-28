@@ -632,6 +632,7 @@ const it = {
     cinemaPresetsButton: "Preset",
     cinemaPresetLabels: { "crash-zoom": "Crash zoom", "dolly-35mm": "Dolly-in 35mm", "handheld-chase": "Camera a mano", "orbit": "Orbita", "crane-reveal": "Gru discendente", "aerial-pullback": "Arretramento aereo", "low-hero": "Angolo eroe", "bullet-time": "Bullet time", "slowmo-glamour": "Slow motion", "noir": "Noir", "film-80s": "Anni '80", "golden-hour": "Ora d'oro", "horror": "Horror", "neon-rain": "Pioggia neon", "storybook": "Fiaba", "documentary": "Documentario", "epic-fantasy": "Fantasy epico", "western-sunset": "Western", "dream-haze": "Sogno",  "candlelight": "Lume di candela", "window-light": "Luce di finestra", "rembrandt": "Rembrandt", "blue-hour": "Ora blu", "hard-sun": "Sole duro", "ring-light": "Ring light", "backlit-silhouette": "Controluce", "studio-softbox": "Studio softbox", "fx-explosion": "Esplosione", "fx-smoke-reveal": "Fumo", "fx-lightning": "Fulmini", "fx-glitch-teleport": "Teletrasporto glitch", "fx-rain-burst": "Pioggia", "fx-fire-aura": "Aura di fuoco", "fx-levitation": "Levitazione", "fx-confetti": "Coriandoli", "fx-time-freeze": "Tempo fermo", "fx-product-reveal": "Prodotto", },
     presetTabCamera: "Camera", presetTabLight: "Luce e stili", presetTabFx: "FX",
+    castNew: "Nuovo personaggio", castManage: "Gestisci cast →",
     uploadPhotoFailed: "Impossibile caricare quella foto.",
     resultMissing: "Nel risultato mancava: {issues}.",
     pageTitle: "Genera",

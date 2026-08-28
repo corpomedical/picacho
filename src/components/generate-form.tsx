@@ -1242,6 +1242,12 @@ function PendingAttachmentChip({
 // forwarded here from the sidebar's global voice command), which requires
 // useSearchParams — that hook needs a Suspense boundary around it, so the
 // actual logic lives in GenerateFormInner and this just wraps it.
+// Which video models have a REAL render still checked in as their card
+// thumbnail (public/models/<id>.jpg — each pulled from that model's own
+// production output). Models absent here render a monogram tile in the
+// picker; add the file + the id when a real render exists.
+const MODEL_STILL_IDS = new Set(["seedance-2", "kling-o3-pro", "kling-o3", "kling"]);
+
 type CharacterOption = {
   id: string;
   name: string;
@@ -4197,16 +4203,32 @@ function GenerateFormInner({
         >
           {isMultiCharacter ? (
             <span className="flex flex-shrink-0 -space-x-2">
-              {[currentCharacter, ...companionCharacters].filter(Boolean).slice(0, 3).map((c, i) => (
-                <span
-                  key={c!.id}
-                  className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-atelier-paper bg-atelier-ink/10 text-xs font-medium text-atelier-muted"
-                  style={{ zIndex: 3 - i }}
-                >
-                  {c!.name?.[0]?.toUpperCase() ?? "?"}
-                </span>
-              ))}
+              {[currentCharacter, ...companionCharacters].filter(Boolean).slice(0, 3).map((c, i) => {
+                const ph = c!.referencePhotos[0]?.url;
+                const t = ph?.startsWith("/api/media/") ? `${ph}${ph.includes("?") ? "&" : "?"}w=320` : ph;
+                return t ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={c!.id} src={t} alt="" style={{ zIndex: 3 - i }} className="h-7 w-7 rounded-full border-2 border-atelier-paper bg-atelier-ink/10 object-cover" />
+                ) : (
+                  <span
+                    key={c!.id}
+                    className="flex h-7 w-7 items-center justify-center rounded-full border-2 border-atelier-paper bg-atelier-ink/10 text-xs font-medium text-atelier-muted"
+                    style={{ zIndex: 3 - i }}
+                  >
+                    {c!.name?.[0]?.toUpperCase() ?? "?"}
+                  </span>
+                );
+              })}
             </span>
+          ) : currentCharacter?.referencePhotos[0]?.url ? (
+            // The pill wears the character's real face, not an initial —
+            // same photo the casting sheet leads with.
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={(() => { const ph = currentCharacter.referencePhotos[0].url; return ph.startsWith("/api/media/") ? `${ph}${ph.includes("?") ? "&" : "?"}w=320` : ph; })()}
+              alt=""
+              className="h-7 w-7 flex-shrink-0 rounded-full bg-atelier-ink/10 object-cover"
+            />
           ) : (
             <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-xs font-medium text-atelier-muted">
               {currentCharacter?.name?.[0]?.toUpperCase() ?? "?"}
@@ -4231,45 +4253,85 @@ function GenerateFormInner({
         </button>
 
         {characterMenuOpen && (
+          /* The Casting Sheet (2026-08-28, operator-approved direction 1):
+             the text list becomes the cast wall in miniature — portrait
+             cards with the photo, name and lock meter, ochre ring + check
+             for selection, the dashed New card, and a Manage link. Same
+             semantics as before: tap toggles, first pick is primary, cap 4. */
           <div
             role="listbox"
             aria-multiselectable="true"
-            className="absolute left-0 top-full z-20 mt-1.5 max-h-72 w-full min-w-[240px] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+            className="absolute left-0 top-full z-20 mt-1.5 w-full min-w-[280px] rounded-[16px] bg-atelier-surface p-2.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
-            {characters.map((c) => {
-              const selected = c.id === characterId || companionCharacterIds.includes(c.id);
-              const disabled = !selected && castSize >= 4;
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  role="option"
-                  aria-selected={selected}
-                  disabled={disabled}
-                  onClick={() => toggleCompanionCharacter(c.id)}
-                  className={cn(
-                    "flex w-full items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors disabled:cursor-not-allowed disabled:opacity-40",
-                    selected ? "bg-atelier-ink/5 text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]" : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                  )}
-                >
-                  <span
+            <div className="flex gap-2.5 overflow-x-auto pb-1">
+              {characters.map((c) => {
+                const selected = c.id === characterId || companionCharacterIds.includes(c.id);
+                const disabled = !selected && castSize >= 4;
+                const photo = c.referencePhotos[0]?.url;
+                const photoThumb = photo?.startsWith("/api/media/")
+                  ? `${photo}${photo.includes("?") ? "&" : "?"}w=320`
+                  : photo;
+                const lockBars = Math.min(c.referencePhotos.length, 5);
+                return (
+                  <button
+                    key={c.id}
+                    type="button"
+                    role="option"
+                    aria-selected={selected}
+                    disabled={disabled}
+                    onClick={() => toggleCompanionCharacter(c.id)}
                     className={cn(
-                      "flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[5px] border transition-colors",
-                      selected ? "border-atelier-ink bg-atelier-ink" : "border-atelier-rule bg-transparent",
+                      "group relative w-[92px] flex-shrink-0 overflow-hidden rounded-[13px] text-left transition-shadow disabled:cursor-not-allowed disabled:opacity-40",
+                      selected
+                        ? "shadow-[0_0_0_2px_var(--color-atelier-accent),0_0_0_5px_var(--color-atelier-accent-soft,rgba(180,90,40,0.15))]"
+                        : "shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:shadow-[0_0_0_1.5px_var(--color-atelier-muted)]",
                     )}
                   >
-                    {selected && <CheckIcon className="h-2.5 w-2.5 text-atelier-paper" />}
-                  </span>
-                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink/10 text-[11px] font-medium text-atelier-muted">
-                    {c.name?.[0]?.toUpperCase() ?? "?"}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                  {c.id === characterId && <span className="text-[10px] text-atelier-muted/70">{g.primaryCharacter}</span>}
-                </button>
-              );
-            })}
-            <div className="mt-1 border-t border-atelier-rule/70 px-2.5 pt-2 text-[11px] leading-snug text-atelier-muted/80">
-              {castSize >= 4 ? g.multiCharacterCapReached : g.multiCharacterHint}
+                    {photoThumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={photoThumb} alt="" loading="lazy" className="h-[116px] w-full bg-atelier-stage object-cover" />
+                    ) : (
+                      <span className="flex h-[116px] w-full items-end justify-center bg-gradient-to-br from-atelier-ink/30 to-atelier-ink/70 pb-2 text-3xl font-semibold text-atelier-paper/90">
+                        {c.name?.[0]?.toUpperCase() ?? "?"}
+                      </span>
+                    )}
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17150f]/85 to-transparent px-2 pb-1.5 pt-6">
+                      <span className="block truncate text-[11px] font-semibold text-[#f5f1e9]">{c.name}</span>
+                      <span className="mt-0.5 flex gap-[2.5px]">
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <span
+                            key={i}
+                            className={cn("h-[3px] flex-1 rounded-full", i < lockBars ? "bg-[#e0a468]" : "bg-white/25")}
+                          />
+                        ))}
+                      </span>
+                    </span>
+                    {selected && (
+                      <span className="absolute right-1.5 top-1.5 flex h-[17px] w-[17px] items-center justify-center rounded-full bg-atelier-accent text-atelier-paper">
+                        <CheckIcon className="h-2.5 w-2.5" />
+                      </span>
+                    )}
+                    {isMultiCharacter && c.id === characterId && (
+                      <span className="absolute left-1.5 top-1.5 rounded-full bg-[#17150f]/70 px-1.5 py-0.5 text-[9px] font-semibold text-[#f5f1e9]">
+                        {g.primaryCharacter}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              <Link
+                href="/app/character/new"
+                className="flex h-[116px] w-[92px] flex-shrink-0 flex-col items-center justify-center gap-1 self-start rounded-[13px] border-[1.5px] border-dashed border-atelier-rule text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink"
+              >
+                <span className="text-lg font-medium leading-none">+</span>
+                <span className="px-1 text-center text-[10px] leading-tight">{g.castNew}</span>
+              </Link>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-3 border-t border-atelier-rule/70 px-1 pt-2 text-[11px] leading-snug text-atelier-muted/80">
+              <span>{castSize >= 4 ? g.multiCharacterCapReached : g.multiCharacterHint}</span>
+              <Link href="/app/character" className="flex-shrink-0 font-medium text-atelier-accent hover:underline">
+                {g.castManage}
+              </Link>
             </div>
           </div>
         )}
@@ -4394,22 +4456,36 @@ function GenerateFormInner({
                     setVideoModelMenuOpen(false);
                   }}
                   className={cn(
-                    "flex w-full flex-col gap-0.5 rounded-control px-2.5 py-2 text-left transition-colors",
+                    "flex w-full items-center gap-2.5 rounded-[12px] px-2 py-1.5 text-left transition-colors",
                     m.id === videoModelId
-                      ? "bg-atelier-ink/5 text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                      ? "bg-atelier-accent/[0.08] text-atelier-ink shadow-[inset_0_0_0_1.5px_var(--color-atelier-accent)]"
                       : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                   )}
                 >
-                  <span className="flex items-center gap-2 text-sm">
-                    <span className="min-w-0 flex-1 truncate">{m.name}</span>
-                    {listCredits > 1 && (
-                      <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
-                        {formatMsg(g.creditsEach, { n: listCredits })}
-                      </span>
-                    )}
-                    {m.id === videoModelId && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-ink" />}
+                  {/* Casting-sheet model cards (2026-08-28): the still is a
+                      REAL render from that model (public/models/<id>.jpg,
+                      pulled from production history) — models without one
+                      yet wear a quiet monogram tile, never a borrowed clip. */}
+                  {MODEL_STILL_IDS.has(m.id) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={`/models/${m.id}.jpg`} alt="" loading="lazy" className="h-10 w-16 flex-shrink-0 rounded-[8px] bg-atelier-stage object-cover" />
+                  ) : (
+                    <span className="flex h-10 w-16 flex-shrink-0 items-center justify-center rounded-[8px] bg-gradient-to-br from-atelier-ink/60 to-atelier-ink/90 text-sm font-semibold text-atelier-paper/80">
+                      {m.name?.[0] ?? "?"}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-2 text-sm font-medium">
+                      <span className="min-w-0 flex-1 truncate">{m.name}</span>
+                      {listCredits > 1 && (
+                        <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent">
+                          {formatMsg(g.creditsEach, { n: listCredits })}
+                        </span>
+                      )}
+                      {m.id === videoModelId && <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-accent" />}
+                    </span>
+                    <span className="block truncate text-xs text-atelier-muted">{jobs[m.id] ?? m.description}</span>
                   </span>
-                  <span className="text-xs text-atelier-muted">{jobs[m.id] ?? m.description}</span>
                 </button>
               );
             })}

@@ -688,6 +688,7 @@ const en = {
     cinemaPresetsButton: "Presets",
     cinemaPresetLabels: { "crash-zoom": "Crash zoom", "dolly-35mm": "35mm dolly-in", "handheld-chase": "Handheld chase", "orbit": "Orbit", "crane-reveal": "Crane reveal", "aerial-pullback": "Aerial pull-back", "low-hero": "Hero angle", "bullet-time": "Bullet time", "slowmo-glamour": "Slow motion", "noir": "Film noir", "film-80s": "'80s film", "golden-hour": "Golden hour", "horror": "Horror", "neon-rain": "Neon rain", "storybook": "Storybook", "documentary": "Documentary", "epic-fantasy": "Epic fantasy", "western-sunset": "Western", "dream-haze": "Dream",  "candlelight": "Candlelight", "window-light": "Window light", "rembrandt": "Rembrandt", "blue-hour": "Blue hour", "hard-sun": "Hard sun", "ring-light": "Ring light", "backlit-silhouette": "Backlit", "studio-softbox": "Studio softbox", "fx-explosion": "Explosion walk", "fx-smoke-reveal": "Smoke reveal", "fx-lightning": "Lightning", "fx-glitch-teleport": "Glitch teleport", "fx-rain-burst": "Rain burst", "fx-fire-aura": "Fire aura", "fx-levitation": "Levitation", "fx-confetti": "Confetti", "fx-time-freeze": "Time freeze", "fx-product-reveal": "Product reveal", },
     presetTabCamera: "Camera", presetTabLight: "Light & looks", presetTabFx: "FX",
+    castNew: "New character", castManage: "Manage cast →",
     uploadPhotoFailed: "Couldn't upload that photo.",
     resultMissing: "The result was missing: {issues}.",
     // The /app/generate page header and its reliability stat tiles.
