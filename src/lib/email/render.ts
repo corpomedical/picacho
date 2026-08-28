@@ -127,6 +127,7 @@ ${bodyHtml}
     </div>
     <div style="padding:18px 4px 0;font-size:12px;line-height:1.6;color:#a3a3a3;">
       <p style="margin:0;">Sent by Picacho &mdash; the same character, in every single frame. <a href="https://picacho.io" style="color:#a3a3a3;">picacho.io</a></p>
+      <p style="margin:4px 0 0;">Get the Android app on <a href="https://play.google.com/store/apps/details?id=ai.picacho.app" style="color:#a3a3a3;">Google Play</a>.</p>
       <p style="margin:4px 0 0;">Don&#39;t want these emails? <a href="${escapeHtml(unsubscribeUrl)}" style="color:#a3a3a3;">Unsubscribe</a>.</p>
     </div>
   </div>

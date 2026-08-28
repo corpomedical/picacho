@@ -17,16 +17,20 @@ import { cn } from "@/lib/cn";
 //    a "grab your phone" card with the address, or generic menu
 //    instructions on Android browsers that hid the event.
 //
-// The badges are deliberately Picacho-branded rather than App Store /
-// Google Play artwork: Picacho isn't in the stores (that's the pitch — no
-// 30% cut), and wearing their badges would be both false and against both
-// companies' brand rules.
+// 2026-08-28, launch day: the Android app went LIVE on Google Play, so the
+// Android path now links straight to the store listing and wears the
+// official "Get it on Google Play" badge (self-hosted, unmodified, per
+// Google's badge guidelines — the artwork may only be used when linking to
+// the listing, which is exactly what it does). The Apple side stays the
+// Picacho-branded PWA flow until an App Store build exists.
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>;
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 };
 
 type ModalKind = "ios" | "android" | "desktop" | null;
+
+const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=ai.picacho.app";
 
 function useInstallFlow() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null);
@@ -60,18 +64,18 @@ function useInstallFlow() {
       else if (installEvent) await installEvent.prompt();
       else setModal("desktop");
     },
-    async openAndroid() {
-      if (installEvent) await installEvent.prompt();
-      else if (isAndroid) setModal("android");
-      else setModal("desktop");
+    openAndroid() {
+      // Straight to the Play listing — on Android the store app intercepts,
+      // elsewhere the web listing opens in a new tab.
+      window.open(PLAY_STORE_URL, "_blank", "noopener");
     },
     // Platform-agnostic entry point (the header button, which isn't
     // per-platform): real dialog if we have one, otherwise the card that
     // matches the device.
     async openAny() {
-      if (installEvent) await installEvent.prompt();
+      if (isAndroid) window.open(PLAY_STORE_URL, "_blank", "noopener");
+      else if (installEvent) await installEvent.prompt();
       else if (isIos) setModal("ios");
-      else if (isAndroid) setModal("android");
       else setModal("desktop");
     },
   };
@@ -103,15 +107,19 @@ export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer
             </span>
           </span>
         </button>
-        <button type="button" onClick={flow.openAndroid} className={badgeClass}>
-          <AndroidIcon className={variant === "hero" ? "h-[22px] w-[22px]" : "h-4 w-4"} />
-          <span className="leading-tight">
-            <span className="block text-[9px] uppercase tracking-wider opacity-70">{m.installOn}</span>
-            <span className={cn("block font-semibold", variant === "hero" ? "text-sm" : "text-xs")}>
-              {m.android}
-            </span>
-          </span>
-        </button>
+        <a
+          href={PLAY_STORE_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex transition-transform hover:-translate-y-px"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/google-play-badge.png"
+            alt="Get it on Google Play"
+            className={variant === "hero" ? "h-[42px] w-auto" : "h-[34px] w-auto"}
+          />
+        </a>
       </div>
       {variant === "hero" && <p className="mt-2.5 text-[11px] text-slate-400">{m.note}</p>}
 
@@ -230,10 +238,3 @@ function AppleIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-function AndroidIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M7.2 8.4h9.6c.66 0 1.2.54 1.2 1.2v7.2a1.8 1.8 0 0 1-1.8 1.8h-.6v2.1a1.05 1.05 0 1 1-2.1 0v-2.1h-3v2.1a1.05 1.05 0 1 1-2.1 0v-2.1h-.6A1.8 1.8 0 0 1 6 16.8V9.6c0-.66.54-1.2 1.2-1.2zM4.05 9.3c.58 0 1.05.47 1.05 1.05v4.5a1.05 1.05 0 1 1-2.1 0v-4.5c0-.58.47-1.05 1.05-1.05zm15.9 0c.58 0 1.05.47 1.05 1.05v4.5a1.05 1.05 0 1 1-2.1 0v-4.5c0-.58.47-1.05 1.05-1.05zM15.7 3.55l.9-1.35a.45.45 0 0 0-.75-.5l-.93 1.4a6.6 6.6 0 0 0-5.84 0l-.93-1.4a.45.45 0 0 0-.75.5l.9 1.35A5.4 5.4 0 0 0 6 7.8h12a5.4 5.4 0 0 0-2.3-4.25zM9.6 6.3a.6.6 0 1 1 0-1.2.6.6 0 0 1 0 1.2zm4.8 0a.6.6 0 1 1 0-1.2.6.6 0 0 1 0 1.2z" />
-    </svg>
-  );
-}
