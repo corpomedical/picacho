@@ -348,6 +348,24 @@ const en = {
           "You'd rather pay per keeper — failed generations never use your credits.",
         ],
       },
+      higgsfield: {
+        heroSubtitle: "Higgsfield is a huge multi-model creative suite: Cinema Studio camera presets, viral effects, the Soul photo model, and Kling, Seedance, Sora and Veo under one roof, with unlimited-generation windows on its bigger plans. Picacho is built for something narrower — one character kept consistent across every render, with every output scored against the identity photo. Here's the honest breakdown.",
+        cellIdentity: "Soul ID — a trained character identity, used across a suite of 80+ creative tools and third-party models.",
+        cellFormat: "A multi-model creative playground: camera presets, viral effect presets, talking avatars (Speak), and a large third-party model roster.",
+        cellEntry: "Free tier: limited use. Starter $15/mo (billed annually) with 200 credits — without Seedance 2.0/2.5 access. Plus $49/mo ($39 annual) with 1,000 credits unlocks the full model lineup. Ultra $129/mo ($99 annual) with 3,000 credits.",
+        cellCost: "By their own plan math, 1,000 credits ≈ 44 Seedance 2.0 videos on Plus — about $0.89–1.11 per clip; unlimited windows apply to selected models, on the website only, with dynamic speed adjustment in busy periods.",
+        cellWatermark: "Not advertised on the pricing page (as of August 2026).",
+        chooseThem: [
+          "You want one subscription with everything: Sora, Veo, Kling, Wan and more, plus a huge library of effects and camera presets to explore.",
+          "You generate in volume and can exploit the unlimited-generation windows on Plus and Ultra.",
+          "You work stylized: the Soul photo model's aesthetic presets are a genuine strength at a very low credit cost.",
+        ],
+        choosePicacho: [
+          "Your character is the product: saved once with references and rules, engineered into every prompt, consistent across models.",
+          "You want the identity verified, not assumed — every render scored against the identity photo, number printed under the result.",
+          "You'd rather pay per keeper — failed renders refund automatically instead of consuming a monthly credit allotment.",
+        ],
+      },
       heygen: {
         heroSubtitle: "HeyGen is a mature avatar platform: photo avatars and digital twins that present your script to camera, with lipsync in 175 languages. Picacho is built for something different — characters that act across cinematic scenes, with every output scored against the identity photo. Here's the honest breakdown.",
         cellIdentity: "An avatar presenter — a photo avatar or digital twin that delivers your script to camera.",

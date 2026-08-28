@@ -24,6 +24,7 @@ const PUBLIC_ROUTES = [
   "/compare/hedra",
   "/compare/renoise",
   "/compare/imagineart",
+  "/compare/higgsfield",
   // Guides — the SEO content section (English-only bodies for now).
   "/guides",
   "/guides/ai-character-consistency",

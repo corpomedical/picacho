@@ -311,6 +311,24 @@ const it = {
           "Preferisci pagare solo ciò che tieni — le generazioni fallite non consumano mai i tuoi crediti.",
         ],
       },
+      higgsfield: {
+        heroSubtitle: "Higgsfield è un'enorme suite creativa multi-modello: preset camera di Cinema Studio, effetti virali, il modello fotografico Soul e Kling, Seedance, Sora e Veo sotto lo stesso tetto, con finestre di generazione illimitata sui piani maggiori. Picacho è costruito per qualcosa di più stretto — un personaggio coerente in ogni render, con ogni risultato valutato contro la foto identità. Ecco il confronto onesto.",
+        cellIdentity: "Soul ID — un'identità di personaggio addestrata, usata in una suite di oltre 80 strumenti e modelli di terze parti.",
+        cellFormat: "Un parco giochi creativo multi-modello: preset camera, effetti virali, avatar parlanti (Speak) e un ampio roster di modelli di terze parti.",
+        cellEntry: "Livello gratuito: uso limitato. Starter $15/mese (fatturato annualmente) con 200 crediti — senza accesso a Seedance 2.0/2.5. Plus $49/mese ($39 annuale) con 1.000 crediti sblocca l'intero catalogo. Ultra $129/mese ($99 annuale) con 3.000 crediti.",
+        cellCost: "Secondo la loro stessa aritmetica, 1.000 crediti ≈ 44 video Seedance 2.0 su Plus — circa $0,89–1,11 a clip; l'illimitato vale per modelli selezionati, solo sul sito, con regolazione dinamica della velocità nei picchi.",
+        cellWatermark: "Non dichiarato nella pagina prezzi (ad agosto 2026).",
+        chooseThem: [
+          "Vuoi un solo abbonamento con tutto: Sora, Veo, Kling, Wan e altro, più un'enorme libreria di effetti e preset camera.",
+          "Generi in volume e puoi sfruttare le finestre di generazione illimitata di Plus e Ultra.",
+          "Lavori in stile: i preset estetici del modello Soul sono una forza reale a un costo per credito molto basso.",
+        ],
+        choosePicacho: [
+          "Il tuo personaggio è il prodotto: salvato una volta con riferimenti e regole, integrato in ogni prompt, coerente tra i modelli.",
+          "Vuoi l'identità verificata, non presunta — ogni render valutato contro la foto identità, col numero stampato sotto il risultato.",
+          "Preferisci pagare per ciò che tieni — i render falliti si rimborsano da soli invece di consumare un plafond mensile.",
+        ],
+      },
       heygen: {
         heroSubtitle: "HeyGen è una piattaforma di avatar matura: avatar fotografici e gemelli digitali che presentano il tuo copione in camera, con sincronizzazione labiale in 175 lingue. Picacho è fatto per qualcosa di diverso: personaggi che recitano in scene cinematografiche, con ogni risultato valutato rispetto alla foto identità. Ecco il confronto onesto.",
         cellIdentity: "Un avatar presentatore — un avatar fotografico o un gemello digitale che legge il tuo copione in camera.",

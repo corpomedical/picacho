@@ -50,6 +50,11 @@ const COMPETITORS = {
     pricingUrl: "https://www.imagine.art/pricing",
     pricingLabel: "imagine.art/pricing",
   },
+  higgsfield: {
+    name: "Higgsfield",
+    pricingUrl: "https://higgsfield.ai/pricing",
+    pricingLabel: "higgsfield.ai/pricing",
+  },
 } as const;
 
 export type CompetitorId = keyof typeof COMPETITORS;
