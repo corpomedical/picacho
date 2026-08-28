@@ -1242,12 +1242,6 @@ function PendingAttachmentChip({
 // forwarded here from the sidebar's global voice command), which requires
 // useSearchParams — that hook needs a Suspense boundary around it, so the
 // actual logic lives in GenerateFormInner and this just wraps it.
-// Which video models have a REAL render still checked in as their card
-// thumbnail (public/models/<id>.jpg — each pulled from that model's own
-// production output). Models absent here render a monogram tile in the
-// picker; add the file + the id when a real render exists.
-const MODEL_STILL_IDS = new Set(["seedance-2", "kling-o3-pro", "kling-o3", "kling"]);
-
 type CharacterOption = {
   id: string;
   name: string;
@@ -4462,18 +4456,6 @@ function GenerateFormInner({
                       : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                   )}
                 >
-                  {/* Casting-sheet model cards (2026-08-28): the still is a
-                      REAL render from that model (public/models/<id>.jpg,
-                      pulled from production history) — models without one
-                      yet wear a quiet monogram tile, never a borrowed clip. */}
-                  {MODEL_STILL_IDS.has(m.id) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={`/models/${m.id}.jpg`} alt="" loading="lazy" className="h-10 w-16 flex-shrink-0 rounded-[8px] bg-atelier-stage object-cover" />
-                  ) : (
-                    <span className="flex h-10 w-16 flex-shrink-0 items-center justify-center rounded-[8px] bg-gradient-to-br from-atelier-ink/60 to-atelier-ink/90 text-sm font-semibold text-atelier-paper/80">
-                      {m.name?.[0] ?? "?"}
-                    </span>
-                  )}
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-2 text-sm font-medium">
                       <span className="min-w-0 flex-1 truncate">{m.name}</span>
