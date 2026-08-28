@@ -19,9 +19,34 @@ const MAX_REPORTS_PER_LOAD = 5;
 let reportCount = 0;
 const seenMessages = new Set<string>();
 
+// Errors that mean "this tab is running a build the server no longer
+// serves" — Next's client router throws these when a deploy replaced the
+// bundle mid-session (2026-08-28: auto-filed from /app/templates during a
+// push-heavy afternoon; the operator's own stale tab). Not a bug in the
+// page — the fix IS a reload, so do that instead of filing a report. The
+// sessionStorage guard stops a reload loop if a reload somehow doesn't
+// clear it.
+const STALE_BUILD_SIGNATURES = [
+  "An unexpected response was received from the server",
+  "Failed to fetch RSC payload",
+  "Failed to find Server Action",
+];
+
 export function AppErrorReporter() {
   useEffect(() => {
     function handle(message: string, context: string) {
+      if (STALE_BUILD_SIGNATURES.some((sig) => message.includes(sig))) {
+        const KEY = "picacho-stale-build-reload";
+        let last = 0;
+        try { last = Number(sessionStorage.getItem(KEY)) || 0; } catch { /* blocked storage */ }
+        if (Date.now() - last > 30_000) {
+          try { sessionStorage.setItem(KEY, String(Date.now())); } catch { /* blocked storage */ }
+          window.location.reload();
+          return;
+        }
+        // Reloaded under 30s ago and it's STILL throwing — that's a real
+        // problem, not skew; fall through and file it.
+      }
       if (reportCount >= MAX_REPORTS_PER_LOAD) return;
       const key = `${message}::${context}`;
       if (seenMessages.has(key)) return;
