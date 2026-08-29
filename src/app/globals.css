@@ -241,6 +241,28 @@ html.native-app body {
   padding-right: env(safe-area-inset-right);
 }
 
+/* While the app shell is mounted, the DOCUMENT must not scroll at all.
+   Without this, body's safe-area padding plus the shell's full-viewport
+   height made the document ~inset-sum taller than the viewport (76px on a
+   Pixel 7; more under a notch), leaving TWO scrollers on every app page:
+   a parasitic document scroll and the real pane. Android never carries
+   fling momentum across a scroller boundary, so a swipe that engaged the
+   document moved those few dozen pixels and STOPPED DEAD — the reported
+   "dashboard takes two swipes, moves and stops" (operator, 2026-08-29;
+   root-caused and fix verified live on the emulator via CDP: document
+   scrollable 76px -> 0, pane fling momentum intact). html/body pin to
+   100% so the shell's h-full equals viewport minus the safe-area padding
+   — the shell no longer pokes below the fold the way h-screen did.
+   Browsers without :has() (pre-2022) simply keep the old behavior. */
+html:has([data-app-scroll]) {
+  height: 100%;
+  overflow: hidden;
+}
+html:has([data-app-scroll]) body {
+  height: 100%;
+  overflow: hidden;
+}
+
 html.native-app {
   /* No rubber-band overscroll on the document. Inner scrollers keep theirs,
      so lists still feel right — it's the PAGE bouncing and revealing a blank

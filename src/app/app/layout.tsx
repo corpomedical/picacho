@@ -83,8 +83,14 @@ export default async function AppLayout({
   const showRatePrompt =
     (successfulGenerations ?? 0) >= 3 && !profile?.rating_prompted_at;
 
+  // h-full, not h-screen: html/body are pinned to 100% while this shell is
+  // mounted (globals.css, the :has([data-app-scroll]) rule), so 100% here is
+  // the viewport MINUS body's safe-area padding — the shell fits exactly and
+  // the document has nothing left to scroll. h-screen was 100vh, which
+  // overflowed the padded body by the inset sum and gave every app page a
+  // second, momentum-killing document scroller (the two-swipe dashboard).
   return (
-    <div className="frost-ground flex h-screen overflow-hidden">
+    <div className="frost-ground flex h-full overflow-hidden">
       <AppErrorReporter />
       {/* Times how long this person actually uses the app — see the
           component for why it only beats while the tab is visible. */}
