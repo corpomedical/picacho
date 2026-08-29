@@ -3,6 +3,7 @@ import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
+import { buildImageReferences } from "@/lib/generations/providers/image-references";
 
 // A hard ceiling on PAID calls for one generation, counted across every
 // retry, fallback and soften-and-try-again inside it.
@@ -97,14 +98,11 @@ export async function generateImage(
   // the fallback carries the exact references the primary attempt carried
   // — the prompt's instruction suffixes about each photo stay true across
   // the lane switch.
-  const combinedRefs =
-    (outfitImageUrl || propImageUrl) && typeof referenceImageUrl === "string" && referenceImageUrl
-      ? [
-          referenceImageUrl,
-          ...(outfitImageUrl ? [outfitImageUrl] : []),
-          ...(propImageUrl ? [propImageUrl] : []),
-        ]
-      : referenceImageUrl;
+  const combinedRefs = buildImageReferences({
+    identity: referenceImageUrl,
+    outfit: outfitImageUrl,
+    prop: propImageUrl,
+  });
 
   if (model.provider === "fal") {
     chargeBudget(budget);

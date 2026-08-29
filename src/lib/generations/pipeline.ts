@@ -501,6 +501,15 @@ export type RealPipelineOptions = {
   // the caller only sets it for those models (a described fallback rides in
   // the prompt elsewhere).
   propImageUrl?: string | null;
+  // Does this send carry a user-attached reference photo? (2026-08-29, from
+  // the first outside bug report: "I sent an image with the background that
+  // I wanted it to use. But it didn't use it. It only used the prompt.")
+  // The drafter is text-only — it never sees attachments — so on a request
+  // like "…with this background" it happily INVENTED a background, and the
+  // image model then had a photo in one hand and a prompt describing a
+  // different scene in the other. It followed the prompt. Telling the
+  // drafter a photo is riding along is what stops it filling that gap.
+  hasAttachedReference?: boolean;
   // Cinema preset (2026-08-26): a fixed, pre-proven prompt block, resolved
   // by the caller from cinema-presets.ts (never raw user text). Appended to
   // the final prompt AFTER draft/review — see the apply site below — so the
@@ -771,6 +780,21 @@ export async function runRealPipeline(
             `it for this one generation:\n` +
             `${fullRulebook}\n\n` +
             `User request: ${userInput}` +
+            // Deixis guard: "this background", "the uploaded photo", "this
+            // person" all point at something the drafter cannot see. Left
+            // unwarned it substitutes an invention, which then OUTVOTES the
+            // real photo at the image model (the citation text tells the
+            // model to follow the prompt for framing).
+            (options.hasAttachedReference
+              ? `\n\nIMPORTANT: the user has ATTACHED a reference photo that rides with this ` +
+                `prompt to the image model. Phrases like "this background", "this photo", ` +
+                `"the uploaded image" or "this person" refer to that attachment — you cannot ` +
+                `see it. Never invent or describe details of whatever the attachment supplies ` +
+                `(setting, architecture, lighting, or a specific person's appearance). Refer ` +
+                `to it plainly instead — e.g. "in the setting shown in the attached photo" — ` +
+                `and spend your words only on what the user actually described: the subjects, ` +
+                `their clothing, their action, and the mood.`
+              : "") +
             castInstruction +
             ((): string => {
               // Split retry feedback by what actually happened. A violated
@@ -1176,9 +1200,12 @@ export async function runRealPipeline(
           const outfitActive = Boolean(
             options.outfitImageUrl && !usingMultiCharacterImages && options.referenceImageUrl,
           );
-          const propActive = Boolean(
-            options.propImageUrl && !usingMultiCharacterImages && options.referenceImageUrl,
-          );
+          // NOT gated on referenceImageUrl (fixed 2026-08-29, first outside
+          // bug report): an attached photo is the user's own reference and
+          // stands on its own — someone with no character who attaches a
+          // background is the exact case that broke. Only the multi-character
+          // array still blocks it (that array's order IS its meaning).
+          const propActive = Boolean(options.propImageUrl && !usingMultiCharacterImages);
           let imagePrompt = reviewedPrompt;
           if (outfitActive) {
             imagePrompt += `\n\nOne of the reference photos shows only an outfit laid out, with no person in it: dress the person in exactly that outfit, reproducing its design, colours, logos, and stitching.`;
@@ -1197,7 +1224,10 @@ export async function runRealPipeline(
             // framing" in fal.ts.
             imagePrompt += `\n\nOne of the reference photos is an image the user attached — the prompt says how to use it. Follow the prompt's instructions about it, and do not copy its framing or composition unless the prompt asks for that.`;
           }
-          if (outfitActive || propActive) {
+          // Only true when an identity photo is actually in the array —
+          // with no character selected the attachment is the ONLY reference,
+          // and calling it "the person" would be a lie the model acts on.
+          if ((outfitActive || propActive) && options.referenceImageUrl) {
             imagePrompt += `\n\nEvery other reference photo is the person — match their face, hair, and identity exactly.`;
           }
           let fallbackNote: string | null = null;

@@ -1368,6 +1368,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoContinueFromUrl,
           outfitImageUrl,
           propImageUrl,
+          // True whenever the user's own photo rides with this send in ANY
+          // role — the drafter must then stop inventing what that photo
+          // supplies (2026-08-29 user report: attached background ignored).
+          hasAttachedReference: Boolean(
+            propImageUrl || attachmentReferenceUrl || sceneAttachmentUrl || outfitAttachmentUrl || propAttachmentUrl,
+          ),
           cinemaPresetBlock: storyboardShots ? null : cinemaPresetBlock,
           videoStoryboardShots: storyboardShots,
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
