@@ -1,5 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+    The launcher icon, for API 26+ (every device this app supports in
+    practice; minSdk 24 falls back to the legacy rasters in mipmap-<dpi>).
+
+    <monochrome> was MISSING until 2026-08-29, and that is the defect worth
+    naming. Since Android 13, a user who turns on themed icons gets every
+    icon re-rendered from this layer, tinted to their wallpaper. An app that
+    does not supply one leaves the launcher to improvise from the colour
+    layers instead — and launchers improvise differently from each other and,
+    on several of them, differently between light and dark. That is the
+    shape of the operator's report: the icon "zoomed in and offset" in one
+    theme and correct in the other, with our own resources byte-identical
+    across both (verified: every mipmap-night-* file matches its light
+    counterpart exactly, and an instrumented build proved BOTH themes resolve
+    to this adaptive icon, not the legacy rasters).
+
+    Honest status: this was NOT reproduced on the Pixel 7 emulator, where the
+    icon measures pixel-identical in both themes (ring 159x159, mark 62x78 at
+    the same offset). The missing monochrome layer is the one real, verifiable
+    gap found, and supplying it replaces launcher improvisation with a
+    silhouette we control — which is the permanent fix whether or not that
+    improvisation is the operator's exact trigger.
+
+    The monochrome art is generated from the SAME source and at the SAME
+    geometry as the colour foreground (mipmap-*/ic_launcher_monochrome.png,
+    the foreground's own alpha channel), so a launcher switching between
+    treatments cannot move or resize the mark — which is precisely the
+    "offset" half of the complaint.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
     <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+    <monochrome android:drawable="@mipmap/ic_launcher_monochrome"/>
 </adaptive-icon>

@@ -18,7 +18,18 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 7
+        versionCode 8
+        // 8 = launcher-icon correctness (2026-08-29): adds the <monochrome>
+        // layer the adaptive icon never had, so Android 13+ themed icons
+        // render a silhouette WE control instead of leaving each launcher to
+        // improvise from the colour layers (the improvisation differs between
+        // launchers and, on some, between light and dark — the reported
+        // "zoomed in and offset in normal mode"). Also deletes the five
+        // mipmap-night-* directories, which held byte-identical copies of the
+        // light rasters and only added ambiguity to icon resolution, and the
+        // dead Android Studio template vector. Numbered 8 rather than 7
+        // because 7 may already be uploaded; a skipped code is harmless, a
+        // reused one is rejected.
         // 7 = the ANIMATED launch icon (2026-08-29, same day): versionCode 6
         // painted the splash field white but left windowSplashScreenAnimatedIcon
         // unset, so Android kept falling back to the static launcher icon and
