@@ -6,6 +6,7 @@ import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
 import { PageViewTracker } from "@/components/page-view-tracker";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { NativeChrome, SPLASH_HIDE_SCRIPT } from "@/components/native-chrome";
+import { NativeIntro } from "@/components/native-intro";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
@@ -118,8 +119,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const locale = await getLocale();
-  // Native-app detection (UA marker), used to gate the splash-dismiss
-  // script below to the app shell so the website never ships it.
+  // Native-app detection (UA marker), gating the splash-dismiss script and
+  // the brand-hold intro to the app shell so the website ships neither.
   const native = await isNativeApp();
   // Per-request CSP nonce, minted by middleware.ts. Our hand-written inline
   // script below must carry it or the browser refuses to run it under the
@@ -150,6 +151,7 @@ export default async function RootLayout({
         <ThemeProvider>
           <LocaleProvider initialLocale={locale}>
             <NativeChrome />
+            {native && <NativeIntro />}
             <PageViewTracker />
             {children}
             <CookieConsentBanner />

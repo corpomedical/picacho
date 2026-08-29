@@ -349,13 +349,83 @@ html.native-app [data-app-content] {
   padding-top: 1.5rem;
 }
 
-/* The splash-to-app intro (NativeIntro, a 1.4s animated wordmark sheet)
- * lived here until 2026-08-29. It was built to cover hydration jank in the
- * pre-skeleton era; once the splash started dismissing at first paint, the
- * intro WAS the startup delay — a second centered logo the operator could
- * not tell apart from the frozen splash icon it replaced ("the app icon
- * still takes too long to disappear"). The app now opens straight into the
- * real page, skeletons streaming, like every native app he compared it to. */
+/* Splash-to-app brand hold (see NativeIntro — the HBO Max pattern, rebuilt
+ * 2026-08-29 from the operator's filmed reference). The native splash is a
+ * static wordmark on white (night: #0d0c0b); this sheet opens as that same
+ * field so the hand-off is a single cut, then the dots below the wordmark
+ * pulse — motion is the entire point: it is what separates "loading" from
+ * "crashed" while the app hydrates underneath. The component dissolves the
+ * sheet the moment hydration lands; the 8s failsafe animation on the sheet
+ * itself guarantees it ends invisible even if hydration never runs, and
+ * pointer-events: none means it can never trap a tap. Colors are the splash
+ * asset's exact backgrounds, NOT theme tokens — the seam with the native
+ * splash is the constraint. */
+.native-intro {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  background: #ffffff;
+  pointer-events: none;
+  animation: native-intro-dissolve 450ms ease-out 8s forwards;
+}
+.dark .native-intro {
+  background: #0d0c0b;
+}
+.native-intro img {
+  width: min(42vw, 340px);
+}
+.native-intro-dots {
+  display: flex;
+  gap: 9px;
+}
+.native-intro-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #b45a28;
+  opacity: 0.25;
+  animation: native-intro-pulse 1.05s ease-in-out infinite;
+}
+.native-intro-dots span:nth-child(2) {
+  animation-delay: 0.175s;
+}
+.native-intro-dots span:nth-child(3) {
+  animation-delay: 0.35s;
+}
+@keyframes native-intro-pulse {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: scale(1);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+/* The leave class replaces the failsafe timing with "now". */
+.native-intro-leave {
+  animation: native-intro-dissolve 350ms ease-out forwards;
+}
+@keyframes native-intro-dissolve {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .native-intro-dots span {
+    animation: none;
+    opacity: 0.6;
+  }
+}
 
 /* Short full-viewport pages (login, signup, forgot-password) scrolled by
  * exactly the safe-area amount in the shell: body carries the inset padding
