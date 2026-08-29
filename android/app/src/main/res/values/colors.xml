@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The launch screen's field color. Must match BOTH the splash
+         drawable's background and the web intro sheet (.native-intro in
+         globals.css) so tap -> system splash -> splash drawable -> intro is
+         one continuous surface. Night variant in values-night/colors.xml. -->
+    <color name="splash_background">#FFFFFF</color>
+</resources>

@@ -17,6 +17,12 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- Android 12+ renders its own system splash (centered app icon)
+             before the drawable below ever shows; painting its window field
+             the same color as the wordmark splash and the web intro keeps
+             the whole launch one continuous surface (2026-08-29, the
+             branded-splash pass — versionCode 6). -->
+        <item name="windowSplashScreenBackground">@color/splash_background</item>
         <item name="android:background">@drawable/splash</item>
     </style>
 </resources>

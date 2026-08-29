@@ -79,7 +79,16 @@ const config = {
       // front of the very error page explaining the problem (reproduced
       // live on the emulator, 2026-08-29: any page that never calls hide()
       // wears the icon indefinitely and swallows every touch).
-      launchAutoHide: false,
+      //
+      // autoHide true + 8s duration is the NATIVE backstop for the one
+      // remaining hang case (site unreachable AND the error path failing):
+      // the web hide always lands first in normal operation, and nothing
+      // can hold the splash past 8s. As of versionCode 6 the splash
+      // drawable is the wordmark-on-white brand field (night variant
+      // included), the same frame the web intro opens with — the launch is
+      // one continuous surface instead of an icon in a circle.
+      launchAutoHide: true,
+      launchShowDuration: 8000,
       backgroundColor: "#ffffff",
       showSpinner: false,
     },

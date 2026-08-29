@@ -5,6 +5,8 @@ import { submitFeedback, dismissRatingPrompt } from "@/lib/feedback/actions";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import { cn } from "@/lib/cn";
+import { isNativeAppClient } from "@/lib/native/platform";
+import { capPlugin } from "@/lib/native/bridge";
 
 // Deliberately a corner card, not a modal. A modal that blocks the screen to
 // ask for a favour, right after someone finally got a result they wanted, is
@@ -77,6 +79,14 @@ export function RatePrompt() {
     // Left up briefly so the thank-you is actually read, rather than the
     // card vanishing the instant they click.
     setTimeout(() => setClosed(true), 2200);
+    // In the Android app, a happy rating is the one moment worth asking for
+    // a public one: Google's own in-app review sheet (versionCode 6+ ships
+    // the plugin; older shells and the web no-op on the optional chain).
+    // Fire-and-forget — Play decides whether to actually show it (it
+    // quota-limits), and a rejection must never disturb the thank-you.
+    if (chosen >= 4 && isNativeAppClient()) {
+      void Promise.resolve(capPlugin("InAppReview")?.requestReview?.()).catch(() => {});
+    }
   }
 
   return (

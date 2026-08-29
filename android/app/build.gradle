@@ -18,7 +18,13 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 5
+        versionCode 6
+        // 6 = the branded-launch build (2026-08-29): splash drawable becomes
+        // the wordmark-on-white brand field (night variant included, system
+        // splash window painted to match), 8s native auto-hide backstop so
+        // the splash can never hang, the offline fallback page that
+        // dismisses the splash, and the Play in-app review plugin (fires
+        // after a 4-5 star rating in the app's own feedback card).
         // 5 = unified /app/media library ships with it (web-side, but the
         // operator wanted a numbered build to test against), 2026-08-21.
         // Tracks CURRENT_VERSION in src/lib/changelog.ts. Bump versionCode
@@ -26,7 +32,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.4.0"
+        versionName "1.8.3"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

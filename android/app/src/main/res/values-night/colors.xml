@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark-mode launch field — matches drawable-night splashes and
+         .dark .native-intro (#0d0c0b). -->
+    <color name="splash_background">#0D0C0B</color>
+</resources>
