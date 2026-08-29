@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { NATIVE_COOKIE, userAgentIsNativeApp } from "@/lib/native/platform";
+import { isSignedOutAppNavigation } from "@/lib/auth/signed-out-nav";
 
 // ---------------------------------------------------------------------------
 // Content-Security-Policy — built here, per request, because it carries a
@@ -102,6 +103,36 @@ export async function middleware(request: NextRequest) {
     const redirect = NextResponse.redirect(url);
     redirect.cookies.set(NATIVE_COOKIE, "1", { path: "/", sameSite: "lax" });
     return redirect;
+  }
+
+  // Signed-out /app navigations bounce to /login HERE, at the edge, instead
+  // of inside the render.
+  //
+  // /app's auth guard lives behind the root layout's Suspense boundary, so a
+  // request with no session returns HTTP 200 carrying a streamed
+  // "NEXT_REDIRECT;replace;/login" directive (verified live: 20,873 bytes,
+  // status 200). The phone therefore had to download that HTML, download the
+  // whole JS bundle and hydrate React before it could even ASK for /login —
+  // an entire download-and-hydrate cycle spent inside the Android app's
+  // frozen launch icon on every first install and every signed-out open.
+  //
+  // The condition is deliberately the narrowest possible one: NO Supabase
+  // auth cookie exists at all. It is never a judgement about whether a token
+  // is valid or expired — a request that carries any sb-* cookie falls
+  // through to the normal path and is authenticated exactly as before, so
+  // this cannot log anyone out or shortcut a real session. GET only, so a
+  // server action POST is never rewritten into a redirect.
+  if (
+    isSignedOutAppNavigation(
+      request.method,
+      request.nextUrl.pathname,
+      request.cookies.getAll().map((c) => c.name),
+    )
+  ) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    loginUrl.search = "";
+    return NextResponse.redirect(loginUrl);
   }
 
   // Nonce first, on the REQUEST headers, before updateSession builds the

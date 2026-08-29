@@ -30,11 +30,41 @@ export async function updateSession(request: NextRequest) {
     },
   );
 
-  // Refresh the auth token if needed. Do not remove — required so
-  // Server Components can read a valid session.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Establish who this is — and refresh the auth token if needed. Do not
+  // remove the call: it is what keeps Server Components able to read a valid
+  // session, because @supabase/ssr sets autoRefreshToken:false on the server
+  // and middleware is the only place that persists a rotated token.
+  //
+  // getClaims(), NOT getUser(), and the difference is worth a paragraph.
+  // Middleware executes at the Vercel edge PoP nearest the phone, not in the
+  // iad1 function region beside the database — proved by the x-vercel-id
+  // header, which carries only a PoP segment on a middleware-returned
+  // redirect but a PoP::region pair on a rendered page. So every network
+  // call middleware makes is a CROSS-REGION round trip: one Supabase auth
+  // call measured 207-328ms from Europe. getUser() made that call on every
+  // single authenticated request, and it sat inside the Android app's frozen
+  // launch icon on every cold start (operator, 2026-08-29: "it's still
+  // taking too long for the icon to disappear").
+  //
+  // getClaims() reaches the same identity without it: it still goes through
+  // getSession()/__loadSession — so an expired token is still refreshed and
+  // still persisted through the cookie handlers above, unchanged — and then
+  // verifies the JWT's signature LOCALLY with WebCrypto against a JWKS that
+  // is fetched once per isolate and cached. This project's tokens are
+  // asymmetric (verified: the live access token's header is
+  // {"alg":"ES256","kid":...}), which is what makes local verification
+  // possible; on a symmetric token auth-js falls back to getUser() by itself,
+  // so this is safe by construction rather than by assumption.
+  //
+  // The honest security trade: getUser() asks the auth server "is this
+  // session still live?", so a ban or global sign-out takes effect on the
+  // next request. getClaims() trusts a validly-signed token until it expires
+  // (one hour). Revocation is not left unguarded — the suspension check
+  // below is a real server round trip against profiles.status on every
+  // authenticated /app request, which is this product's actual revocation
+  // mechanism.
+  const { data: claimsData } = await supabase.auth.getClaims();
+  const userId = claimsData?.claims?.sub;
 
   // Enforce account suspension on every authenticated /app request. The
   // suspended flag lives in profiles.status; it used to be set by the admin
@@ -46,11 +76,11 @@ export async function updateSession(request: NextRequest) {
   // generate action, not just page views. The DB read only happens for
   // logged-in users on /app paths, so it adds nothing to public/marketing
   // traffic.
-  if (user && request.nextUrl.pathname.startsWith("/app")) {
+  if (userId && request.nextUrl.pathname.startsWith("/app")) {
     const { data: profile } = await supabase
       .from("profiles")
       .select("status")
-      .eq("id", user.id)
+      .eq("id", userId)
       .maybeSingle();
 
     if (profile?.status === "suspended") {
