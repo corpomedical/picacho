@@ -50,6 +50,28 @@ const nextConfig: NextConfig = {
   // is allowed to do.
   async headers() {
     return [
+      // Media in public/ is served with NO Cache-Control today, so it falls
+      // back to Next's default and browsers re-validate constantly — the
+      // homepage's own hero clips are re-checked on every visit.
+      //
+      // Deliberately NOT `immutable`, and deliberately not a year: files in
+      // public/ are served at a STABLE path with no content hash (unlike
+      // /_next/static, which Next fingerprints and may cache forever). An
+      // immutable year on a stable path means a replaced hero clip or a
+      // re-encoded preset would be invisible to anyone who had already
+      // loaded it, with no way to bust it short of renaming the file. A week
+      // of freshness plus a month of stale-while-revalidate gives ~all of
+      // the benefit: repeat visitors serve from disk instantly, and a
+      // changed file propagates on its own within a week.
+      {
+        source: "/:path((?:presets|templates|course|models|studio)/.*|.*\\.mp4)",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=604800, stale-while-revalidate=2592000",
+          },
+        ],
+      },
       {
         source: "/:path*",
         headers: [

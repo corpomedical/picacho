@@ -745,6 +745,11 @@ export default async function GettingStartedCourse() {
                     alt={step.title}
                     width={1440}
                     height={step.shot.h ?? 900}
+                    // Without `sizes`, next/image assumes the image spans the
+                    // viewport and serves a ~1920px variant into a column that
+                    // is never wider than the article's 672px — several times
+                    // the bytes needed, 32 times over on this page.
+                    sizes="(max-width: 768px) 100vw, 672px"
                     className="mt-5 w-full rounded-2xl border border-neutral-200 shadow-[0_2px_12px_rgba(0,0,0,0.06)]"
                   />
                 )}
