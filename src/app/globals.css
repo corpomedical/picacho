@@ -349,58 +349,13 @@ html.native-app [data-app-content] {
   padding-top: 1.5rem;
 }
 
-/* Splash-to-app intro (see NativeIntro). The native splash screen is a
- * static wordmark centered on white (night variant: #0d0c0b); this overlay
- * opens as that same frame, lets the mark take one quiet breath, then
- * dissolves to reveal the app. Colors are the splash asset's exact
- * background colors, NOT theme tokens — the seam with the native splash is
- * the constraint here. Pure CSS with `forwards` fill on purpose: even if
- * hydration never runs, the sheet ends invisible, and it never intercepts
- * input (pointer-events: none throughout). */
-.native-intro {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #ffffff;
-  pointer-events: none;
-  animation: native-intro-dissolve 450ms ease-out 950ms forwards;
-}
-.dark .native-intro {
-  background: #0d0c0b;
-}
-.native-intro img {
-  width: min(42vw, 340px);
-  animation: native-intro-breathe 950ms ease-in-out;
-}
-@keyframes native-intro-breathe {
-  0% {
-    transform: scale(1);
-  }
-  45% {
-    transform: scale(1.02);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-@keyframes native-intro-dissolve {
-  from {
-    opacity: 1;
-    transform: scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: scale(1.035);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .native-intro {
-    display: none;
-  }
-}
+/* The splash-to-app intro (NativeIntro, a 1.4s animated wordmark sheet)
+ * lived here until 2026-08-29. It was built to cover hydration jank in the
+ * pre-skeleton era; once the splash started dismissing at first paint, the
+ * intro WAS the startup delay — a second centered logo the operator could
+ * not tell apart from the frozen splash icon it replaced ("the app icon
+ * still takes too long to disappear"). The app now opens straight into the
+ * real page, skeletons streaming, like every native app he compared it to. */
 
 /* Short full-viewport pages (login, signup, forgot-password) scrolled by
  * exactly the safe-area amount in the shell: body carries the inset padding

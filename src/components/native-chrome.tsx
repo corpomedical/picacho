@@ -23,9 +23,10 @@ import { capPlugin } from "@/lib/native/bridge";
 //    frozen launch icon on mobile networks, reported as "people think the
 //    app crashed" (operator, 2026-08-29). The hide now lives in
 //    SPLASH_HIDE_SCRIPT below, inlined into <head> by the root layout, so
-//    it fires on the FIRST PAINTED FRAME — which on app pages is the
-//    NativeIntro sheet, the animated continuation designed to take over
-//    from exactly this moment.
+//    it fires on the FIRST PAINTED FRAME — the real page, server-rendered,
+//    skeletons streaming. (An animated wordmark intro used to take over
+//    here; it was cut the same day — a second centered logo just read as
+//    the splash icon lingering.)
 //
 // 3. Status bar color: Android paints its own default strip behind the
 //    punch-hole/status area, which sat visibly grey against the paper page
