@@ -25,8 +25,45 @@ export function isRawProviderError(message: string): boolean {
   return RAW_PROVIDER_ERROR_PREFIX.test(message) || LOOKS_LIKE_JSON_BLOB.test(message);
 }
 
+// The two failure shapes a NON-CODER actually hit (2026-08-29, operator,
+// after reading a real user's failure screen: "For a normal everyday user
+// that has no idea with coding, the msg was unclear"). What she saw was our
+// own budget-exhausted sentence — "This request already used its 3
+// generation attempts without producing a usable image" — developer-speak
+// that passed the raw-dump filter because we wrote it. Worse, it REPLACED
+// the useful cause: the real story ("Invalid image file", her photo was
+// unreadable) sat in attempts 1–2, and the summary only ever read the last
+// attempt — the same last-attempt blindness the refund rule had.
+//
+// So failures are now CLASSIFIED across every attempt, and the one cause a
+// user can actually fix themselves (the attached photo couldn't be read)
+// beats every generic line. The attachment patterns are gated on
+// isRawProviderError so a prompt that merely contains the words "invalid
+// image" can never trigger the wrong message.
+const ATTACHMENT_REJECTED = /invalid image|unsupported image|please check your image|image_parse/i;
+const BUDGET_EXHAUSTED = /already used its \d+ generation attempts/;
+
+export type KnownFailureKind = "attachment" | "attempts";
+
+export function classifyFailureDetails(details: Array<string | undefined>): KnownFailureKind | null {
+  const all = details.filter((d): d is string => typeof d === "string");
+  if (all.some((d) => isRawProviderError(d) && ATTACHMENT_REJECTED.test(d))) return "attachment";
+  if (all.some((d) => BUDGET_EXHAUSTED.test(d))) return "attempts";
+  return null;
+}
+
+// For step-list rendering: the budget sentence is ours (not a raw dump), so
+// the isRawProviderError gate lets it through — surfaces swap it for a
+// localized line with this check instead.
+export function isBudgetExhaustedDetail(message: string): boolean {
+  return BUDGET_EXHAUSTED.test(message);
+}
+
 export function toUserFacingError(message: string): string {
   if (isRawProviderError(message)) {
+    if (ATTACHMENT_REJECTED.test(message)) {
+      return "We couldn't read the photo you attached, so nothing was generated. A regular photo (JPG or PNG) works best — try re-saving or re-taking it, then send it again.";
+    }
     return "Something went wrong generating that. Please try again in a moment.";
   }
   return message;

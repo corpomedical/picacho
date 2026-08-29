@@ -32,7 +32,12 @@ import {
   type AgentStep,
 } from "@/lib/voice/agent";
 import { startListening } from "@/lib/voice/speech-recognition";
-import { toUserFacingError, isRawProviderError } from "@/lib/generations/user-facing-error";
+import {
+  toUserFacingError,
+  isRawProviderError,
+  classifyFailureDetails,
+  isBudgetExhaustedDetail,
+} from "@/lib/generations/user-facing-error";
 import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import { resolveSendPlan, type AttachmentRole, type PlanIssue } from "@/lib/generations/send-plan";
@@ -138,8 +143,20 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
   // so the UI fell back to a generic line while the provider's own words
   // sat unread in the log (2026-08-24, operator: "Just says couldn't
   // validate"). Pull the human sentence out of the error payload.
+  // Classify across EVERY attempt, not just the last one. The real cause of
+  // a failure often lives in attempt 1 while the last attempt holds only the
+  // budget-exhausted stub (2026-08-29: a user's photo was rejected twice,
+  // and the summary showed her the developer sentence about "generation
+  // attempts" instead of the one thing she could fix — the photo).
+  // Checked after the rules-block story (more specific) and skipped for
+  // user-initiated stops below (a cancelled run isn't a failure).
+  const failureKind = classifyFailureDetails(
+    attempts.flatMap((a) => (a.steps ?? []).map((s) => s.detail)),
+  );
+
   const lastAttempt = attempts[attempts.length - 1];
   if (lastAttempt && (lastAttempt.issues?.length ?? 0) === 0) {
+    if (failureKind === "attachment") return g.failAttachmentUnreadable;
     const errStep = [...(lastAttempt.steps ?? [])]
       .reverse()
       .find((s) => typeof s.detail === "string" && /\berror \(\d{3}\)/.test(s.detail));
@@ -147,8 +164,10 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
       const m =
         errStep.detail.match(/"msg"\s*:\s*"([^"]+)"/) ??
         errStep.detail.match(/"message"\s*:\s*"([^"]+)"/);
-      if (m) return m[1].slice(0, 220);
-      return errStep.detail.slice(0, 220);
+      // Extracted provider sentences pass through toUserFacingError too —
+      // the no-match branch used to return a raw dump slice verbatim.
+      if (m) return toUserFacingError(m[1]).slice(0, 220);
+      return toUserFacingError(errStep.detail).slice(0, 220);
     }
   }
 
@@ -161,6 +180,9 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
   // surface a stale reason left over from an earlier attempt.
   if (last.issues.includes("cancelled")) return g.stoppedByUser;
 
+  // The one cause the user can fix themselves wins over everything generic.
+  if (failureKind === "attachment") return g.failAttachmentUnreadable;
+
   if (last.issues.includes("provider_error")) {
     const errorStep = [...last.steps]
       .reverse()
@@ -168,7 +190,10 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
         (s) =>
           (s.step === "generate" || s.step === "review" || s.step === "draft") &&
           !s.detail.startsWith("Generated") &&
-          !s.detail.startsWith("Mock "),
+          !s.detail.startsWith("Mock ") &&
+          // The budget stub isn't a cause, it's a stop sign — skipping it
+          // here lets the friendly all-attempts line below take over.
+          !isBudgetExhaustedDetail(s.detail),
       );
     if (errorStep) {
       // Provider errors usually come back as raw JSON — pull out just the
@@ -180,6 +205,9 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
       const short = (jsonMatch?.[1] ?? errorStep.detail.split("\n")[0]).trim();
       return toUserFacingError(short).slice(0, 280);
     }
+    // No informative error step in the last attempt (it held only the
+    // budget stub, or nothing) — say what happened in human words.
+    if (failureKind === "attempts") return g.failAllAttempts;
   }
 
   const traitIssues = last.issues.filter((i) => i !== "provider_error");
@@ -424,7 +452,11 @@ function PipelineTrace({
                     gets the friendly line; the full text is preserved in
                     pipeline_log for the history page (admin view) and
                     /admin/reports. */}
-                {isRawProviderError(item.step.detail) ? g.stepFailedGeneric : item.step.detail}
+                {isRawProviderError(item.step.detail)
+                  ? g.stepFailedGeneric
+                  : isBudgetExhaustedDetail(item.step.detail)
+                    ? g.stepAllAttemptsUsed
+                    : item.step.detail}
               </p>
             </div>
           </li>

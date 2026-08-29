@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
-import { isRawProviderError } from "@/lib/generations/user-facing-error";
+import { isRawProviderError, isBudgetExhaustedDetail } from "@/lib/generations/user-facing-error";
 import { angleSortIndex } from "@/lib/generations/angles";
 import { AngleResultViewer } from "@/components/angle-result-viewer";
 import { StillRendering } from "@/components/still-rendering";
@@ -120,7 +120,9 @@ export default async function HistoryDetailPage({
       steps: attempt.steps.map((step) =>
         isRawProviderError(step.detail)
           ? { ...step, detail: t.generate.stepFailedGeneric }
-          : step,
+          : isBudgetExhaustedDetail(step.detail)
+            ? { ...step, detail: t.generate.stepAllAttemptsUsed }
+            : step,
       ),
     }));
 
