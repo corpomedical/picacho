@@ -165,8 +165,23 @@ export const VIDEO_MODELS = [
     // The PHOTOREAL Seedance. ByteDance's 2.5 endpoints reject reference
     // images that look like real people ("content_policy_violation /
     // partner_validation_failed" — verified live 2026-08-21 on both the
-    // reference and image-to-video endpoints); 2.0 predates that policy
-    // tightening and accepts the same faces (verified the same day,
+    // reference and image-to-video endpoints).
+    //
+    // RE-VERIFIED 2026-08-29, prompted by a competitor demo doing exactly
+    // this (Lovart + Seedance 2.5, camera angles from the creator's own
+    // video). Still blocked on fal, and now known to be blocked for BOTH
+    // input kinds: image_urls AND video_urls come back with the same
+    // partner_validation_failed. Two things worth remembering before anyone
+    // re-litigates this: rejections are FREE (balance unchanged across three
+    // test submissions), and fal reports the queue job as COMPLETED with the
+    // policy error in the RESPONSE BODY — status alone will fool you.
+    //
+    // It is an ACCESS TIER, not a model limit: ByteDance's own Volcengine
+    // Ark allows real-person references after per-user facial verification
+    // and portrait authorisation, and only for that user's OWN likeness —
+    // which is why a solo creator can demo it and why it does not fit a
+    // product whose users upload characters and other people's photos.
+    // 2.0 predates the tightening and accepts the same faces (verified
     // end-to-end, with a generated clip). Same identity-reference contract
     // as 2.5 — image_urls cited as @Image1, schema is a compatible superset
     // (aspect_ratio, generate_audio, duration 4-15) — so fal.ts reuses one
