@@ -17,12 +17,31 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <!-- Android 12+ renders its own system splash (centered app icon)
-             before the drawable below ever shows; painting its window field
-             the same color as the wordmark splash and the web intro keeps
-             the whole launch one continuous surface (2026-08-29, the
-             branded-splash pass — versionCode 6). -->
+        <!-- The launch field. Matches the web intro sheet exactly, so the
+             system splash and the page that replaces it are one surface
+             (versionCode 6). -->
         <item name="windowSplashScreenBackground">@color/splash_background</item>
+
+        <!-- THE ONE THAT MATTERS (versionCode 7). Unset, this attribute
+             defaults to @null and Android falls back to android:icon — which
+             is why versionCode 5 and 6 both showed a motionless launcher icon
+             for the entire cold start. Naming an ANIMATED drawable here is
+             what turns the mandatory launch phase from "frozen, looks
+             crashed" into "moving, looks like it's working".
+
+             Deliberately the androidx attr with NO android: prefix: the
+             core-splashscreen theme forwards it to the platform attribute on
+             API 31+ (verified in the .aar's values-v31.xml) AND uses it for
+             the compat starting window below that, so one line covers every
+             API level this app supports. -->
+        <item name="windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <!-- Required to be > 0 whenever the icon is animated. Metadata for
+             the platform, not a timer: it does not lengthen or shorten how
+             long the splash stays up. -->
+        <item name="windowSplashScreenAnimationDuration">1000</item>
+
+        <!-- Pre-Android-12 starting window. Kept for API 24-30, where the
+             system splash above does not exist. -->
         <item name="android:background">@drawable/splash</item>
     </style>
 </resources>

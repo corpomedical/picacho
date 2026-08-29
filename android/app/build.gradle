@@ -18,7 +18,14 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
+        versionCode 7
+        // 7 = the ANIMATED launch icon (2026-08-29, same day): versionCode 6
+        // painted the splash field white but left windowSplashScreenAnimatedIcon
+        // unset, so Android kept falling back to the static launcher icon and
+        // the operator saw no change at all. The wordmark splash.png that 6
+        // shipped was drawn under the system splash and never visible on any
+        // supported API. 7 sets the attribute to a looping animation-list of
+        // the P with its ochre rule wiping beneath it, per theme.
         // 6 = the branded-launch build (2026-08-29): splash drawable becomes
         // the wordmark-on-white brand field (night variant included, system
         // splash window painted to match), 8s native auto-hide backstop so

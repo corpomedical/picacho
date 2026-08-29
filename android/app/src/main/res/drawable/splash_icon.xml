@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The launch screen's animated icon (versionCode 7).
+
+    WHY THIS EXISTS: Android 12+ draws its own system splash over everything
+    else at launch, and it renders whatever `windowSplashScreenAnimatedIcon`
+    names. The platform's default for that attribute is literally @null
+    (android-36 themes.xml), in which case it falls back to android:icon — so
+    for versionCode 5 and 6 the user stared at the plain launcher icon, a
+    motionless P-in-a-circle, for as long as the WebView took to paint. That
+    is the whole of the operator's complaint ("it's still taking too long for
+    the icon to disappear"); the wordmark splash.png shipped in versionCode 6
+    was drawn underneath the system splash and was never visible on any
+    supported device.
+
+    The fix is motion, not speed. A still frame reads as a crash no matter how
+    brief; a moving one reads as working no matter how long (the operator's own
+    HBO Max reference holds a brand screen for 5+ seconds and feels premium).
+    So the mandatory phase now animates: the Picacho P, with its ochre rule
+    wiping in and out beneath it as a progress cue, in the brand's own colours.
+
+    Frames are per-theme by directory — drawable-nodpi (dark P on the white
+    field) and drawable-night-nodpi (white P on #0D0C0B) — so the icon follows
+    the same light/dark field the theme paints and the handoff to the web
+    intro is seamless.
+
+    14 frames x 70ms = a 980ms loop. android:oneshot="false" keeps it running
+    for the whole launch, however long that is. Note the paired theme item
+    windowSplashScreenAnimationDuration must be > 0 whenever this icon is
+    animated (androidx core-splashscreen requires it); it is metadata for the
+    platform, NOT a timer — it neither extends nor shortens the splash.
+-->
+<animation-list xmlns:android="http://schemas.android.com/apk/res/android"
+    android:oneshot="false">
+    <item android:drawable="@drawable/splash_icon_00" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_01" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_02" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_03" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_04" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_05" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_06" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_07" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_08" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_09" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_10" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_11" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_12" android:duration="70" />
+    <item android:drawable="@drawable/splash_icon_13" android:duration="70" />
+</animation-list>
