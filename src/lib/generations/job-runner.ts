@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { isProviderRejection } from "@/lib/generations/refund-rules";
 import { createAdminClient } from "@/lib/supabase/server";
 import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import {
@@ -308,14 +309,8 @@ const REFUNDS: Record<FailureFault, boolean> = {
 // makes force-refunding safe: a refusal costs nothing; a mid-render death
 // might not. Matched against the exact step-detail format the providers
 // log ("fal.ai (Model) error (422): …").
-export function isProviderRejection(attempts: AttemptLog[]): boolean {
-  const last = attempts[attempts.length - 1];
-  if (!last) return false;
-  return (last.steps ?? []).some(
-    (s) => typeof s.detail === "string" && /\berror \(4\d\d\)/.test(s.detail),
-  );
-}
-
+// Re-exported for existing importers; also used locally below.
+export { isProviderRejection };
 export async function refundGenerationCosts(
   generationId: string,
   opts?: {

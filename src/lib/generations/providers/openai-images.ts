@@ -55,6 +55,54 @@ async function fetchAsBlob(url: string): Promise<Blob> {
   return res.blob();
 }
 
+// Every reference image is NORMALIZED before it is sent, because what
+// arrives from a phone is not what the filename claims.
+//
+// 2026-08-29, first outside bug report, second act: a user's attached
+// background failed three attempts with OpenAI's "Invalid image file or
+// mode for image 1". Two faults stacked. (a) The filename was hardcoded
+// "reference.png" while her bytes were JPEG — /images/edits validates the
+// declared name against the bytes; it had never bitten because every
+// reference before then really was one of our own generated .png files.
+// (b) Her file was not even a plain JPEG: sharp reports format MPO — the
+// multi-picture container Android cameras and WhatsApp emit, image/jpeg by
+// mime, .jpg by name, and unreadable to the endpoint.
+//
+// So mapping the extension is not enough; the bytes themselves have to be
+// made ordinary. sharp (already a dependency — the media route resizes with
+// it) re-encodes to a plain PNG when the image has transparency (a logo on
+// alpha must not be flattened to black) and to a plain JPEG otherwise,
+// honouring EXIF rotation and capping the long edge at 2048px — well inside
+// the endpoint's limits and far more than a 1024px render can use.
+// Best-effort by design: if sharp cannot read it at all, the original bytes
+// go out under a correctly-derived name and the provider decides.
+const OPENAI_IMAGE_EXTENSIONS: Record<string, string> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
+async function asOpenAiImage(blob: Blob, index: number): Promise<{ blob: Blob; filename: string }> {
+  try {
+    const { default: sharp } = await import("sharp");
+    const input = Buffer.from(await blob.arrayBuffer());
+    const pipeline = sharp(input, { limitInputPixels: 50_000_000 })
+      .rotate()
+      .resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true });
+    const { hasAlpha } = await sharp(input, { limitInputPixels: 50_000_000 }).metadata();
+    const out = hasAlpha
+      ? { buf: await pipeline.png().toBuffer(), type: "image/png", ext: "png" }
+      : { buf: await pipeline.jpeg({ quality: 92 }).toBuffer(), type: "image/jpeg", ext: "jpg" };
+    return {
+      blob: new Blob([new Uint8Array(out.buf)], { type: out.type }),
+      filename: `reference-${index}.${out.ext}`,
+    };
+  } catch {
+    const ext = OPENAI_IMAGE_EXTENSIONS[blob.type] ?? "png";
+    return { blob, filename: `reference-${index}.${ext}` };
+  }
+}
+
 export async function generateImageWithOpenAI(
   prompt: string,
   referenceImageUrl?: string | string[] | null,
@@ -85,13 +133,16 @@ export async function generateImageWithOpenAI(
     // instead of editing just one, which is exactly what multi-character
     // generations need.
     const imageBlobs = await Promise.all(referenceUrls.map((url) => fetchAsBlob(url)));
+    // Name each file by what it ACTUALLY is (and transcode what OpenAI
+    // can't read) — see asOpenAiImage.
+    const images = await Promise.all(imageBlobs.map((b, i) => asOpenAiImage(b, i)));
     const form = new FormData();
     form.set("model", "gpt-image-2");
     form.set("prompt", prompt);
-    if (imageBlobs.length === 1) {
-      form.set("image", imageBlobs[0], "reference.png");
+    if (images.length === 1) {
+      form.set("image", images[0].blob, images[0].filename);
     } else {
-      imageBlobs.forEach((blob, i) => form.append("image[]", blob, `reference-${i}.png`));
+      images.forEach((img) => form.append("image[]", img.blob, img.filename));
     }
 
     res = await fetchWithTimeout(
