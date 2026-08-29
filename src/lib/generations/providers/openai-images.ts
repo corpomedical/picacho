@@ -76,6 +76,13 @@ async function fetchAsBlob(url: string): Promise<Blob> {
 // the endpoint's limits and far more than a 1024px render can use.
 // Best-effort by design: if sharp cannot read it at all, the original bytes
 // go out under a correctly-derived name and the provider decides.
+//
+// Known to land in that fallback: HEIC. The prebuilt libvips ships no HEVC
+// decoder (patent-encumbered; verified 2026-08-29 — decode fails with
+// "heif: Decoder plugin" even though sharp.format.heif advertises the
+// container; AVIF round-trips fine). Real exposure is small (iOS Safari
+// converts photo-library picks to JPEG on upload) and the failure is now
+// graceful: the provider rejects, which refunds and auto-reports.
 const OPENAI_IMAGE_EXTENSIONS: Record<string, string> = {
   "image/png": "png",
   "image/jpeg": "jpg",
