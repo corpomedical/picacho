@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { headers } from "next/headers";
 import { Archivo } from "next/font/google";
 import "./globals.css";
@@ -142,6 +143,16 @@ export default async function RootLayout({
             frame instead of after hydration — see SPLASH_HIDE_SCRIPT in
             native-chrome.tsx for the why. */}
         {native && <script nonce={nonce} dangerouslySetInnerHTML={{ __html: SPLASH_HIDE_SCRIPT }} />}
+        {/* The brand hold's wordmark should be on screen the instant the
+            sheet paints — start fetching it alongside the head instead of
+            after the body arrives. Media-split so each theme preloads only
+            the mark it will show. */}
+        {native && (
+          <>
+            <link rel="preload" as="image" href="/logo.png" media="(prefers-color-scheme: light)" />
+            <link rel="preload" as="image" href="/logo-dark.png" media="(prefers-color-scheme: dark)" />
+          </>
+        )}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}
@@ -153,7 +164,35 @@ export default async function RootLayout({
             <NativeChrome />
             {native && <NativeIntro />}
             <PageViewTracker />
-            {children}
+            {/* In the app shell, the route's server work must not hold up
+                the first flush: the head, the brand hold above and this
+                boundary stream in the FIRST network roundtrip, the splash
+                dismisses onto the already-pulsing intro, and the app
+                layout's Supabase queries resolve underneath it. Without
+                this, byte one waited on every query — 0.7-1.5s of extra
+                frozen launch icon measured from a fiber connection, more
+                on a phone. Web keeps the plain path: no intro sheet exists
+                there to cover the fallback, and the browser has its own
+                loading UI. */}
+            {native ? (
+              <Suspense fallback={null}>
+                {children}
+                {/* Arrives only when the whole boundary has resolved — the
+                    signal NativeIntro waits for before dissolving, so the
+                    hold can never lift onto the empty fallback while the
+                    route is still streaming. The script executes the moment
+                    the content chunk parses (execution can't be confused
+                    with the payload's serialized copy of a marker string);
+                    the span is the same signal for querySelector. */}
+                <span data-stream-landed hidden />
+                <script
+                  nonce={nonce}
+                  dangerouslySetInnerHTML={{ __html: "window.__picachoStreamLanded=true" }}
+                />
+              </Suspense>
+            ) : (
+              children
+            )}
             <CookieConsentBanner />
           </LocaleProvider>
         </ThemeProvider>

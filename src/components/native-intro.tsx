@@ -41,12 +41,27 @@ export function NativeIntro() {
       setPhase("done");
       return;
     }
-    // This effect running IS the readiness signal: React has hydrated and
-    // the app underneath is interactive. Two frames let that first real
-    // frame paint under the sheet, then the dissolve starts.
-    const raf = requestAnimationFrame(() =>
-      requestAnimationFrame(() => setPhase("leaving")),
-    );
+    // Ready means BOTH: this effect has run (React hydrated, app
+    // interactive) AND the streamed route content has actually landed —
+    // signaled by the root layout's Suspense boundary tail (an inline
+    // script sets the global as its chunk parses; the marker span backs it
+    // up), so on a slow connection the hold keeps pulsing over the stream
+    // instead of dissolving onto the empty fallback. Polling by frame is
+    // fine: the 8s CSS failsafe bounds the worst case.
+    let raf = 0;
+    const landed = () =>
+      (window as { __picachoStreamLanded?: boolean }).__picachoStreamLanded === true ||
+      Boolean(document.querySelector("[data-stream-landed]"));
+    const check = () => {
+      if (landed()) {
+        // One extra frame so the landed content paints under the sheet
+        // before the dissolve exposes it.
+        raf = requestAnimationFrame(() => setPhase("leaving"));
+      } else {
+        raf = requestAnimationFrame(check);
+      }
+    };
+    raf = requestAnimationFrame(check);
     return () => cancelAnimationFrame(raf);
   }, []);
 
