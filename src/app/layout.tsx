@@ -5,7 +5,7 @@ import "./globals.css";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
 import { PageViewTracker } from "@/components/page-view-tracker";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
-import { NativeChrome } from "@/components/native-chrome";
+import { NativeChrome, SPLASH_HIDE_SCRIPT } from "@/components/native-chrome";
 import { NativeIntro } from "@/components/native-intro";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
@@ -138,6 +138,10 @@ export default async function RootLayout({
         {/* Runs before hydration so the right theme applies on first paint
             instead of flashing light and then switching to dark. */}
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        {/* App shell only: dismisses the native splash on the first painted
+            frame (the NativeIntro sheet) instead of after hydration — see
+            SPLASH_HIDE_SCRIPT in native-chrome.tsx for the why. */}
+        {native && <script nonce={nonce} dangerouslySetInnerHTML={{ __html: SPLASH_HIDE_SCRIPT }} />}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(ORGANIZATION_JSON_LD) }}

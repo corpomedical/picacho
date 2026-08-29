@@ -26,6 +26,7 @@ export const RELEASES: Release[] = [
     title: "The announcement wears the badge",
     items: [
       "Announcement emails learned their one allowed image: the official 'Get it on Google Play' badge. The email dialect stays deliberately tiny — bold, italics, links, and now a badge tag that drops in the store artwork already linked to the listing; no other image can ever ride into an inbox from a template. The launch announcement to existing users goes out wearing it.",
+      "The Android app stops freezing on its launch icon (operator: 'people think the app crashed'). The splash screen used to wait for the whole app engine to download and start before dismissing — seconds of motionless icon on a phone connection. It now dismisses on the first painted frame, handing over to the animated logo intro that was always meant to take that baton, so the open feels immediate. Bonus fix found while reproducing it: with no internet at all, the splash used to stay up forever in front of the 'Can't reach Picacho' page — the offline screen now dismisses it too (that part rides in the next app update).",
     ],
   },
   {

@@ -22,3 +22,11 @@
   <p>Picacho needs the internet to generate. Your work in progress is saved and will be here when you're back.</p>
   <button onclick="location.href='https://picacho.ai/app'">Try again</button>
 </main>
+<script>
+  // The splash is dismissed by a script the LIVE SITE serves (see
+  // SPLASH_HIDE_SCRIPT in native-chrome.tsx) — which on an offline cold
+  // start never arrives, leaving the launch icon up forever in front of
+  // this very page. Hide it here too. Ships with the next AAB, since this
+  // file is bundled into the shell.
+  try { window.Capacitor && window.Capacitor.Plugins.SplashScreen.hide(); } catch (e) {}
+</script>

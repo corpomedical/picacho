@@ -68,9 +68,17 @@ const config = {
 
   plugins: {
     SplashScreen: {
-      // Short, and dismissed manually once the first paint lands — a fixed
-      // multi-second splash is the most common reason a wrapper app feels
-      // slower than the website it wraps.
+      // Dismissed manually at the FIRST PAINTED FRAME by SPLASH_HIDE_SCRIPT
+      // (native-chrome.tsx), which the live site inlines into <head> for
+      // native user agents — NOT by the app bundle, which arrives seconds
+      // later on mobile networks. That was the launch-week bug: the hide
+      // lived in a React effect, so the icon sat frozen through JS download
+      // and hydration and read as a hang ("people think the app crashed").
+      // The offline fallback (public/native/index.html) hides it too —
+      // without that, a no-network cold start kept the splash up forever in
+      // front of the very error page explaining the problem (reproduced
+      // live on the emulator, 2026-08-29: any page that never calls hide()
+      // wears the icon indefinitely and swallows every touch).
       launchAutoHide: false,
       backgroundColor: "#ffffff",
       showSpinner: false,
