@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.8.3",
+    build: 12,
+    date: "2026-08-29",
+    title: "The announcement wears the badge",
+    items: [
+      "Announcement emails learned their one allowed image: the official 'Get it on Google Play' badge. The email dialect stays deliberately tiny — bold, italics, links, and now a badge tag that drops in the store artwork already linked to the listing; no other image can ever ride into an inbox from a template. The launch announcement to existing users goes out wearing it.",
+    ],
+  },
+  {
     version: "1.8.2",
     build: 11,
     date: "2026-08-28",

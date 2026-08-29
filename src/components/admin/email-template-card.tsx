@@ -58,8 +58,10 @@ export function TemplateVariablesLegend() {
         single line break becomes one. <code className="font-mono text-[11px]">&lt;b&gt;</code>,{" "}
         <code className="font-mono text-[11px]">&lt;i&gt;</code> and{" "}
         <code className="font-mono text-[11px]">&lt;a href=&quot;https://…&quot;&gt;</code> are
-        allowed — every other tag is stripped. The Picacho header, footer and unsubscribe link are
-        added automatically.
+        allowed — every other tag is stripped.{" "}
+        <code className="font-mono text-[11px]">&lt;playbadge&gt;</code> on its own line drops in
+        the official &quot;Get it on Google Play&quot; badge, already linked to the store listing.
+        The Picacho header, footer and unsubscribe link are added automatically.
       </p>
     </div>
   );

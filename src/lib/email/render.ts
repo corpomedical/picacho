@@ -55,6 +55,19 @@ function substitute(text: string, vars: TemplateVars, escapeValues: boolean): st
   });
 }
 
+// The one image the dialect can produce: the official "Get it on Google
+// Play" badge, self-hosted and unmodified, linking to the listing — the only
+// use Google's badge rules allow, and the only markup <playbadge> can ever
+// emit. A dedicated tag rather than an <img> allowlist entry on purpose: no
+// admin-typed URL may ever become an image request in someone's inbox, so
+// the whole block is this constant and nothing from the template survives
+// into it. Absolute URLs because email renders nowhere near our origin.
+// 155×60 keeps the 646×250 artwork's exact ratio and stays crisp on retina;
+// the alt text keeps the CTA readable when a client blocks remote images.
+const PLAY_BADGE_HTML =
+  '<a href="https://play.google.com/store/apps/details?id=ai.picacho.app" style="display:inline-block;">' +
+  '<img src="https://picacho.ai/google-play-badge.png" alt="Get it on Google Play" width="155" height="60" style="display:block;border:0;"></a>';
+
 // The body dialect's entire tag allowlist. Returns the normalized safe tag,
 // or null for anything unrecognized (which the sanitizer then STRIPS — a
 // pasted <div style=...> disappears rather than showing up as escaped
@@ -68,6 +81,9 @@ function matchSafeTag(tag: string): string | null {
   const simple = tag.match(/^<(\/?)(b|i|p)>$/i);
   if (simple) return `<${simple[1]}${simple[2].toLowerCase()}>`;
   if (/^<br\s*\/?>$/i.test(tag)) return "<br>";
+  // Attributes disqualify it — <playbadge onclick=…> strips like any
+  // unknown tag instead of reaching the constant.
+  if (/^<playbadge\s*\/?>$/i.test(tag)) return PLAY_BADGE_HTML;
   const link = tag.match(/^<a\s+href="(https?:\/\/[^"\s]+)"\s*>$/i);
   if (link) return `<a href="${escapeHtml(link[1])}" style="color:#a84e24;">`;
   if (/^<\/a>$/i.test(tag)) return "</a>";
