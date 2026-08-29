@@ -18,7 +18,18 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 8
+        versionCode 9
+        // 9 = the launcher icon's P scaled to the size it should always have
+        // been (2026-08-30, operator: "the P stays Big in dark mode and normal
+        // mode. I wanted the smaller P icon that was on dark mode"). Adaptive
+        // icons show only the CENTRAL 72dp of the 108dp canvas — a built-in
+        // 1.5x magnification — and this foreground was authored as if the whole
+        // canvas were visible, so the glyph rendered at 61.5% of the visible
+        // circle against the legacy raster's 40.6%. That mismatch WAS the
+        // original bug: before 8, dark mode fell back to the legacy raster
+        // (small P) while light mode used the adaptive icon (big P). Deleting
+        // the night rasters in 8 made both big; this scales the artwork by
+        // 0.661 so both are small, matching what he had in dark mode.
         // 8 = launcher-icon correctness (2026-08-29): adds the <monochrome>
         // layer the adaptive icon never had, so Android 13+ themed icons
         // render a silhouette WE control instead of leaving each launcher to
