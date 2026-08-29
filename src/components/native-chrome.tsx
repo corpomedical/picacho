@@ -78,9 +78,31 @@ export function NativeChrome() {
     const paintBars = () => {
       const dark = document.documentElement.classList.contains("dark");
       // Style.Light = light BACKGROUND (dark icons), Style.Dark the reverse.
+      // This one still works everywhere: the plugin implements it with
+      // WindowInsetsControllerCompat.setAppearanceLightStatusBars, which
+      // edge-to-edge did not deprecate.
       void statusBar?.setStyle?.({ style: dark ? "DARK" : "LIGHT" });
-      // Frost: match the gradient's origin corner (--frost-top), not the old
-      // paper constants — a mismatched strip reads as a webview seam.
+      // setBackgroundColor is a NO-OP on Android 15+ and kept only for 14 and
+      // below. Not an oversight — the plugin refuses it by design: with
+      // targetSdk 36 its own shouldSetStatusBarColor() returns false on any
+      // API above 34 (StatusBar.java), because Android 15 enforced
+      // edge-to-edge and deprecated Window.setStatusBarColor outright.
+      //
+      // The strip behind the status bar is painted by CSS instead, and always
+      // was on modern devices: html.native-app carries background-color
+      // var(--frost-top) (globals.css) while body holds the safe-area
+      // padding, so the app's own surface shows through a transparent system
+      // bar. That is the edge-to-edge-correct mechanism and it is what the
+      // operator's 2026-08-21 "unify the color" fix is actually riding on.
+      //
+      // Play's release dashboard flags "deprecated APIs for edge-to-edge" on
+      // this build. Verified 2026-08-30: none of it is ours — our res/ and
+      // manifest contain no statusBarColor, navigationBarColor,
+      // windowLightStatusBar or fitsSystemWindows — the references live in
+      // @capacitor/status-bar, which is already at its latest version
+      // (8.0.3). It is a recommendation, not a blocker, and the only way to
+      // clear it is a plugin release or dropping the plugin, which would cost
+      // setStyle above. Revisit on the next Capacitor bump.
       void statusBar?.setBackgroundColor?.({ color: dark ? "#1a1c24" : "#eef1f8" });
     };
     paintBars();
