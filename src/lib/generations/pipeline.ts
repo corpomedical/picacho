@@ -786,14 +786,15 @@ export async function runRealPipeline(
             // real photo at the image model (the citation text tells the
             // model to follow the prompt for framing).
             (options.hasAttachedReference
-              ? `\n\nIMPORTANT: the user has ATTACHED a reference photo that rides with this ` +
-                `prompt to the image model. Phrases like "this background", "this photo", ` +
-                `"the uploaded image" or "this person" refer to that attachment — you cannot ` +
-                `see it. Never invent or describe details of whatever the attachment supplies ` +
-                `(setting, architecture, lighting, or a specific person's appearance). Refer ` +
-                `to it plainly instead — e.g. "in the setting shown in the attached photo" — ` +
-                `and spend your words only on what the user actually described: the subjects, ` +
-                `their clothing, their action, and the mood.`
+              ? `\n\nIMPORTANT: the user has ATTACHED a reference photo, and that photo is ` +
+                `sent to the image model together with this prompt. Phrases like "this ` +
+                `background", "this photo" or "the uploaded image" refer to that attachment — ` +
+                `you cannot see it. Do not invent or describe the CONTENTS the attachment ` +
+                `supplies (its setting, architecture, or lighting); refer to it plainly ` +
+                `instead — e.g. "in the setting shown in the attached photo" — and spend your ` +
+                `words on what the user actually described: the subjects, their clothing, ` +
+                `their action, and the mood. Everything the character rulebook above requires ` +
+                `still belongs in the prompt exactly as usual.`
               : "") +
             castInstruction +
             ((): string => {

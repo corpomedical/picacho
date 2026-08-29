@@ -1368,12 +1368,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoContinueFromUrl,
           outfitImageUrl,
           propImageUrl,
-          // True whenever the user's own photo rides with this send in ANY
-          // role — the drafter must then stop inventing what that photo
-          // supplies (2026-08-29 user report: attached background ignored).
-          hasAttachedReference: Boolean(
-            propImageUrl || attachmentReferenceUrl || sceneAttachmentUrl || outfitAttachmentUrl || propAttachmentUrl,
-          ),
+          // ONLY when the photo ITSELF rides to the model (propImageUrl).
+          // Deliberately not set for the described-attachment lanes (models
+          // that can't take an extra image, and the scene role): there the
+          // image's description is already appended to the prompt text
+          // above, and warning the drafter off "describing what the
+          // attachment supplies" would make it drop that description —
+          // reintroducing the very bug this fixes, one lane over.
+          hasAttachedReference: Boolean(propImageUrl),
           cinemaPresetBlock: storyboardShots ? null : cinemaPresetBlock,
           videoStoryboardShots: storyboardShots,
           companions: wantsMultiCharacter ? companionsForPipeline : undefined,
