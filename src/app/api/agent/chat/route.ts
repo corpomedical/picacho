@@ -13,6 +13,7 @@ import {
 } from "@/lib/agent/prices";
 import { PLAN_CHAT_UNIT_LIMITS, FREE_CHAT_UNIT_LIMIT, type PlanId } from "@/lib/plans";
 import { monthlyWindowStart } from "@/lib/generations/core";
+import { classifyTurnFailure, unitsForFailedTurn, type TurnFailure } from "@/lib/agent/failures";
 import { rateLimited } from "@/lib/rate-limit";
 
 // The project-aware chat agent (2026-08-30).
@@ -147,7 +148,7 @@ export async function POST(request: NextRequest) {
   // the worst case is a charge nobody can explain.
   async function settle(
     usage: TurnUsage | null,
-    outcome: "ok" | "failed",
+    failure: TurnFailure | null,
     deliveredText: boolean,
   ) {
     if (usage) {
@@ -165,20 +166,20 @@ export async function POST(request: NextRequest) {
         .eq("id", reservationId);
       return;
     }
-    // No usage came back. If nothing reached the person either, this was our
-    // failure and they get charged a single unit — tokens may still have been
-    // spent, so it is not free, but an outage must not eat an allowance.
-    //
-    // If text DID reach them and usage did not, the reservation stands. That
-    // is the abuse-resistant direction: otherwise a client could take a full
-    // answer, drop the connection before the usage frame, and pay one unit
-    // for every turn.
-    if (!deliveredText) {
-      await admin
-        .from("agent_usage")
-        .update({ mode: outcome, units: 1 })
-        .eq("id", reservationId);
-    }
+    // No usage came back. If text DID still reach them, the reservation
+    // stands: otherwise a client could take a full answer, drop the
+    // connection before the usage frame, and pay next to nothing every turn.
+    if (deliveredText) return;
+    // Nothing reached them, so this failed on our side. What it costs them
+    // depends on whether the request ever got as far as the model — a
+    // rejected one spends no tokens and must be free. See lib/agent/failures.
+    await admin
+      .from("agent_usage")
+      .update({
+        mode: failure === "provider_unavailable" ? "unavailable" : "failed",
+        units: unitsForFailedTurn(failure ?? "transient"),
+      })
+      .eq("id", reservationId);
   }
 
   const ctx = await buildAgentContext(supabase, user.id, body?.characterId ?? null);
@@ -252,7 +253,7 @@ export async function POST(request: NextRequest) {
       };
 
       let usage: TurnUsage | null = null;
-      let outcome: "ok" | "failed" = "failed";
+      let failure: TurnFailure | null = null;
       try {
         try {
           usage = await runTurn(true);
@@ -272,17 +273,27 @@ export async function POST(request: NextRequest) {
           console.error("agent-chat: retrying without tuning params —", message.slice(0, 200));
           usage = await runTurn(false);
         }
-        outcome = "ok";
         send("done", { units: unitsForTurn(usage), mode: effectiveMode });
       } catch (err) {
-        console.error("agent-chat failed:", err);
-        send("error", { error: "That didn't go through. Try again." });
+        const status = (err as { status?: number })?.status;
+        failure = classifyTurnFailure(status, err instanceof Error ? err.message : String(err));
+        console.error(`agent-chat failed (${failure}, status ${status ?? "none"}):`, err);
+        send("error", {
+          // Two different sentences on purpose. "Try again" is an
+          // instruction, and when the cause is a spend cap or a dead key it
+          // is an instruction to keep walking into a wall — so the message
+          // only invites a retry when a retry could actually work.
+          error:
+            failure === "provider_unavailable"
+              ? "Chat is unavailable right now. Nothing was charged."
+              : "That didn't go through. Try again.",
+        });
       } finally {
         // Accounting runs on every path, and its own failure is logged
         // rather than thrown: a broken update must not also break the
         // response the person is reading.
         try {
-          await settle(usage, outcome, deliveredText);
+          await settle(usage, failure, deliveredText);
         } catch (settleError) {
           console.error("agent-chat: settle failed", settleError);
         }

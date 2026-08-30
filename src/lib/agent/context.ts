@@ -102,7 +102,7 @@ export async function buildAgentContext(
   userId: string,
   characterId: string | null,
 ): Promise<AgentContext> {
-  const [{ data: characters }, { data: rules }, { data: recent }] = await Promise.all([
+  const [charactersResult, rulesResult, recentResult] = await Promise.all([
     supabase
       .from("character_profiles")
       .select("id, name, traits, motion_style, render_style, reference_image_urls")
@@ -125,6 +125,28 @@ export async function buildAgentContext(
       .order("created_at", { ascending: false })
       .limit(15),
   ]);
+
+  // Logged, not ignored. Every one of these three queries degrades to an
+  // empty section — the agent simply answers without knowing about the
+  // person's cast, their rules, or their renders — and it answers
+  // confidently either way. That is the worst failure this feature has: it
+  // looks exactly like a working one, bills exactly like a working one, and
+  // the only symptom is advice that has quietly stopped being about you.
+  // A dropped column in the select is enough to cause it (PostgREST rejects
+  // the whole query with 42703), so it must at least reach the logs.
+  for (const [name, result] of [
+    ["characters", charactersResult],
+    ["brand rules", rulesResult],
+    ["recent renders", recentResult],
+  ] as const) {
+    if (result.error) {
+      console.error(`agent-context: ${name} unavailable —`, result.error.message);
+    }
+  }
+
+  const characters = charactersResult.data;
+  const rules = rulesResult.data;
+  const recent = recentResult.data;
 
   const chars = characters ?? [];
   const current = characterId ? chars.find((c) => c.id === characterId) : null;
