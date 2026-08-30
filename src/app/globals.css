@@ -506,26 +506,81 @@ a,
 }
 
 /* The Smarter moment (2026-08-31, operator: "some graphics when turning
- * chosing smart"). Six spark particles burst out of the effort control the
- * instant Smarter is chosen — a one-off flourish for the deliberate act of
- * picking the expensive setting, not an ambient effect. Each particle rides
- * its own --spark-x/--spark-y direction; the pill itself gives one soft
- * ochre breath. Both are gated behind motion-reduce at the call site. */
+ * chosing smart", then "The animation of smarter you can do better").
+ * Three layers, all fired by the one deliberate act of picking the
+ * expensive setting, never ambient:
+ *   1. the word pops with a spring overshoot (smarter-pop),
+ *   2. eight particles — a mix of four-point stars and dots — burst out on
+ *      individual vectors, rotating as they fly (spark-burst),
+ *   3. a soft ring dilates and dissolves around the control (spark-ring).
+ * While a Smarter answer is being worked out, the word carries a moving
+ * sheen (smarter-shimmer) instead of a crude opacity pulse — light moving
+ * across the label reads as "thinking", a blink reads as "broken".
+ * Reduced-motion callers get none of it at the call sites, and the shimmer
+ * class degrades itself below. */
 @keyframes spark-burst {
   0% {
-    transform: translate(0, 0) scale(0.4);
+    transform: translate(0, 0) scale(0.3) rotate(0deg);
+    opacity: 1;
+  }
+  70% {
     opacity: 1;
   }
   100% {
-    transform: translate(var(--spark-x), var(--spark-y)) scale(1);
+    transform: translate(var(--spark-x), var(--spark-y)) scale(var(--spark-scale, 1))
+      rotate(120deg);
     opacity: 0;
   }
 }
-@keyframes smarter-breath {
+@keyframes smarter-pop {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-atelier-accent) 45%, transparent);
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.22);
+  }
+  65% {
+    transform: scale(0.94);
   }
   100% {
-    box-shadow: 0 0 0 9px transparent;
+    transform: scale(1);
+  }
+}
+@keyframes spark-ring {
+  0% {
+    transform: scale(0.45);
+    opacity: 0.55;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+@keyframes smarter-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+.spark-star {
+  clip-path: polygon(50% 0, 63% 37%, 100% 50%, 63% 63%, 50% 100%, 37% 63%, 0 50%, 37% 37%);
+}
+.smarter-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-atelier-accent) 20%,
+    color-mix(in srgb, var(--color-atelier-accent) 35%, white) 50%,
+    var(--color-atelier-accent) 80%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: smarter-shimmer 1.1s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .smarter-shimmer {
+    animation: none;
+    background-image: none;
+    color: var(--color-atelier-accent);
   }
 }

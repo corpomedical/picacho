@@ -1387,17 +1387,21 @@ type MultiAngleChatItem = {
   angles: MultiAngleClip[];
 };
 
-// Where each of the effort control's six burst particles flies. Precomputed
-// (cos/sin of 60-degree steps, ~14px radius, slight vertical bias upward so
-// the burst reads as a spark rather than a splash) because Math.random in
-// render would replay differently on every re-render.
-const SPARK_DIRECTIONS = [
-  { x: "14px", y: "-4px" },
-  { x: "8px", y: "-13px" },
-  { x: "-5px", y: "-14px" },
-  { x: "-14px", y: "-3px" },
-  { x: "-9px", y: "10px" },
-  { x: "10px", y: "11px" },
+// The effort control's burst, precomputed particle by particle — Math.random
+// in render would replay differently on every re-render. Eight particles on
+// uneven vectors (a slight upward bias so it reads as a spark, not a
+// splash), alternating four-point stars and dots, two sizes, two distances,
+// staggered starts. The unevenness is the craft: a perfectly radial burst of
+// identical dots reads as a diagram of an explosion rather than one.
+const SPARK_PARTICLES = [
+  { x: "18px", y: "-6px", size: "h-[5px] w-[5px]", star: true, delay: 0, scale: "1.1" },
+  { x: "10px", y: "-16px", size: "h-1 w-1", star: false, delay: 40, scale: "0.9" },
+  { x: "-2px", y: "-19px", size: "h-[5px] w-[5px]", star: true, delay: 90, scale: "1.2" },
+  { x: "-13px", y: "-12px", size: "h-[3px] w-[3px]", star: false, delay: 20, scale: "0.8" },
+  { x: "-19px", y: "-1px", size: "h-1 w-1", star: true, delay: 70, scale: "1" },
+  { x: "-11px", y: "11px", size: "h-[3px] w-[3px]", star: false, delay: 110, scale: "0.85" },
+  { x: "6px", y: "14px", size: "h-1 w-1", star: true, delay: 55, scale: "0.95" },
+  { x: "16px", y: "8px", size: "h-[3px] w-[3px]", star: false, delay: 130, scale: "0.8" },
 ] as const;
 
 // Where the assistant on/off choice is remembered. Versioned in the name so
@@ -6939,7 +6943,7 @@ function GenerateFormInner({
                   only saturated pixel while idle is the knob when lit.
                   Hidden entirely when the feature flag is off. */}
               {chatAgentEnabled && (
-                <div className="mt-1.5 flex items-center gap-3 px-3.5">
+                <div className="mt-1.5 flex items-center gap-2 px-3.5">
                   <button
                     type="button"
                     role="switch"
@@ -6983,7 +6987,7 @@ function GenerateFormInner({
                   {assistantOn && (
                     <>
                       <span aria-hidden className="h-3.5 w-px flex-shrink-0 bg-atelier-rule" />
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setAgentEffort("faster")}
@@ -7013,41 +7017,69 @@ function GenerateFormInner({
                           aria-pressed={agentEffort === "smarter"}
                           title={chatSmarterAvailable ? g.effortSmarterHint : g.effortSmarterPaid}
                           className={cn(
-                            "relative flex items-center gap-1 rounded-full text-[11px] font-medium transition-colors disabled:opacity-50",
+                            "relative flex items-center rounded-full text-[11px] font-medium transition-colors disabled:opacity-50",
                             agentEffort === "smarter"
-                              ? "px-1.5 text-atelier-accent motion-safe:[animation:smarter-breath_0.7s_ease-out_1]"
+                              ? "px-1.5 text-atelier-accent"
                               : "text-atelier-muted/70 hover:text-atelier-ink",
-                            // The requested graphics, part two: while a
-                            // Smarter answer is being worked out, the word
-                            // itself pulses — movement that means "the
-                            // expensive one is running", never decoration.
-                            agentEffort === "smarter" &&
-                              asking &&
-                              "animate-pulse motion-reduce:animate-none",
                           )}
                         >
-                          {agentEffort === "smarter" && (
-                            <SparkIcon className="h-3 w-3 flex-shrink-0" />
-                          )}
-                          {g.effortSmarter}
-                          {/* The burst: six ochre particles, remounted on
-                              every pick via the key so it replays each
-                              time. pointer-events-none so a spark never
-                              eats the tap that made it. */}
+                          {/* The pop: keyed on the burst counter so every
+                              pick replays it — a spring overshoot on the
+                              icon and word together, transform-origin at
+                              the left so it grows out of the strip rather
+                              than jumping off it. */}
+                          <span
+                            key={sparkBurstKey}
+                            className={cn(
+                              "flex origin-left items-center gap-1",
+                              sparkBurstKey > 0 &&
+                                agentEffort === "smarter" &&
+                                "motion-safe:[animation:smarter-pop_0.5s_cubic-bezier(0.34,1.56,0.64,1)_1]",
+                            )}
+                          >
+                            {agentEffort === "smarter" && (
+                              <SparkIcon className="h-3 w-3 flex-shrink-0" />
+                            )}
+                            {/* The shimmer: while a Smarter answer is being
+                                worked out, a sheen travels across the word.
+                                Light moving over the label reads as
+                                thinking; the old opacity pulse read as a
+                                fault. Degrades to a steady accent under
+                                reduced motion — see globals.css. */}
+                            <span
+                              className={
+                                agentEffort === "smarter" && asking ? "smarter-shimmer" : undefined
+                              }
+                            >
+                              {g.effortSmarter}
+                            </span>
+                          </span>
+                          {/* The burst and the ring, remounted on every pick
+                              via the key so they replay each time.
+                              pointer-events-none so a spark never eats the
+                              tap that made it. */}
                           {sparkBurstKey > 0 && agentEffort === "smarter" && (
                             <span
-                              key={sparkBurstKey}
+                              key={`burst-${sparkBurstKey}`}
                               aria-hidden
                               className="pointer-events-none absolute inset-0 hidden motion-safe:block"
                             >
-                              {SPARK_DIRECTIONS.map((d, i) => (
+                              <span className="absolute inset-0 rounded-full border border-atelier-accent/50 [animation:spark-ring_0.5s_ease-out_forwards]" />
+                              {SPARK_PARTICLES.map((d, i) => (
                                 <span
                                   key={i}
-                                  className="absolute left-1/2 top-1/2 h-1 w-1 rounded-full bg-atelier-accent [animation:spark-burst_0.55s_ease-out_forwards]"
+                                  className={cn(
+                                    "absolute left-1/2 top-1/2 bg-atelier-accent [animation:spark-burst_0.6s_ease-out_forwards]",
+                                    d.size,
+                                    d.star ? "spark-star" : "rounded-full",
+                                  )}
                                   style={{
                                     "--spark-x": d.x,
                                     "--spark-y": d.y,
-                                    animationDelay: `${i * 25}ms`,
+                                    "--spark-scale": d.scale,
+                                    animationDelay: `${d.delay}ms`,
+                                    opacity: 0,
+                                    animationFillMode: "both",
                                   } as React.CSSProperties}
                                 />
                               ))}
@@ -7082,22 +7114,19 @@ function GenerateFormInner({
             {pendingMultiAngle ? g.reviewAngles : g.uploading}
           </p>
         )}
-        {/* A plain <div>, not <p> — FeedbackLink's popover renders its own
-            <p> tags, and a <p> can't legally contain another <p> (or
-            anything else that's block-level). Browsers silently auto-close
-            the outer <p> the moment they hit one, which desyncs the DOM
-            from what React rendered and throws a hydration error. Visually
-            identical either way — this line never relied on <p>-specific
-            behavior. */}
-        <div
-          className={cn(
-            "text-xs text-atelier-muted/80",
-            // mt-1 whenever any status line renders above (multi-angle
-            // review, upload progress, or the safe-to-close note), mt-3
-            // when this sits alone under the composer.
-            pendingMultiAngle || isUploading || liveProgress !== null ? "mt-1" : "mt-3",
-          )}
-        >
+      </form>
+      )}
+      {/* The AI disclaimer lives OUTSIDE the card (operator, 2026-08-31:
+          "move Picacho is AI and can make mistakes outside the box. Let the
+          UI stay clean") — centered on the page background under the
+          composer, the way Claude's own line sits. A plain <div>, not <p>:
+          FeedbackLink's popover renders its own <p> tags, and a <p> can't
+          legally contain another <p> — browsers silently auto-close the
+          outer one, desyncing the DOM from React and throwing a hydration
+          error. Rendered only alongside the form: a folded composer keeps
+          its pull-up tab clean. */}
+      {!composerFolded && (
+        <div className="mt-2.5 text-center text-[11px] text-atelier-muted/70">
           {t.common.aiDisclaimer}{" "}
           <FeedbackLink
             label={t.common.aiDisclaimerFeedbackCta}
@@ -7108,7 +7137,6 @@ function GenerateFormInner({
             sentLabel={t.common.feedbackSent}
           />
         </div>
-      </form>
       )}
       </div>
     </div>
