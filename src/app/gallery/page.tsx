@@ -7,6 +7,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
+import { localeAlternates } from "@/lib/i18n/metadata";
 
 // The public "Made with Picacho" gallery: real featured renders, anonymous-
 // readable. Rows get here ONLY through the admin Feature toggle
@@ -22,12 +23,19 @@ import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 // result link are just "Picacho". Static English metadata, matching the
 // convention on the other marketing pages (the visible page copy is fully
 // localized via marketing.gallery).
-export const metadata: Metadata = {
+// generateMetadata rather than a static object (2026-08-30): the canonical
+// depends on which locale URL is being served, and the hreflang set must be
+// emitted on all four. The static canonical this replaces would have pinned
+// every locale to the English page — the standard way to make Google discard
+// the translations as duplicates.
+export async function generateMetadata(): Promise<Metadata> {
+  return {
   title: "Gallery",
   description:
     "Real renders made with Picacho — AI character images and video, generated, validated, and identity-scored by the same pipeline every plan gets. Every score shown is a real measurement.",
-  alternates: { canonical: "/gallery" },
-};
+    alternates: await localeAlternates("/gallery"),
+  };
+}
 
 // Always render fresh, never serve a CDN-cached copy. These marketing/legal
 // pages were getting stuck: after a deploy, one hostname (picacho.ai) kept

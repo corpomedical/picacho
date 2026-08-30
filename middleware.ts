@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { NATIVE_COOKIE, userAgentIsNativeApp } from "@/lib/native/platform";
 import { isSignedOutAppNavigation } from "@/lib/auth/signed-out-nav";
+import { LOCALE_HEADER, matchLocalePrefix } from "@/lib/i18n/routing";
+import { LOCALE_COOKIE } from "@/lib/i18n/locales";
 
 // ---------------------------------------------------------------------------
 // Content-Security-Policy — built here, per request, because it carries a
@@ -94,8 +96,14 @@ export async function middleware(request: NextRequest) {
   // signed out). Browsers are unaffected; the app can still reach the
   // homepage through in-app links if it ever needs to — only the entry
   // navigation is rerouted.
+  // Locale-prefixed marketing URL? null for EVERYTHING else — /app/**,
+  // /api/**, every auth route, /guides, and every bare English URL take the
+  // identical path they took before this existed. Resolved up here because
+  // the native-entry check below needs to see through the prefix.
+  const localeRoute = matchLocalePrefix(request.nextUrl.pathname);
+
   if (
-    request.nextUrl.pathname === "/" &&
+    (localeRoute?.basePath ?? request.nextUrl.pathname) === "/" &&
     userAgentIsNativeApp(request.headers.get("user-agent"))
   ) {
     const url = request.nextUrl.clone();
@@ -142,6 +150,14 @@ export async function middleware(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = buildCsp(nonce);
   request.headers.set("x-nonce", nonce);
+  // Locale travels to the Server Component exactly like the nonce above:
+  // set on the REQUEST headers, forwarded by updateSession's
+  // NextResponse.next({ request }), read back with headers() in
+  // getLocale(). Deleted unconditionally first — this header decides both
+  // the rendered language and the canonical tag, so a client must never be
+  // able to supply its own.
+  request.headers.delete(LOCALE_HEADER);
+  if (localeRoute) request.headers.set(LOCALE_HEADER, localeRoute.locale);
   request.headers.set("content-security-policy", csp);
 
   // Auth/session logic is unchanged and still runs on exactly the same
@@ -168,6 +184,32 @@ export async function middleware(request: NextRequest) {
   // set on updateSession's redirect responses (suspension bounce) — harmless
   // there, correct everywhere else.
   response.headers.set("content-security-policy", csp);
+
+  // Serve the prefixed URL from the existing page, in the requested
+  // language. The rewrite is internal: the browser keeps /es/pricing, which
+  // is the whole point — that URL is what Google indexes.
+  //
+  // `{ request }`, never a fresh Headers(): Next drops every upstream
+  // request header absent from the override manifest, so the rewrite has to
+  // carry the WHOLE incoming set — the sb-* auth cookies, the user-agent
+  // that userAgentIsNativeApp reads, x-nonce, the CSP request header Next
+  // uses to stamp its bootstrap scripts, and LOCALE_HEADER above.
+  //
+  // Only on a 200: updateSession can return a redirect (the suspension
+  // bounce), and rewriting that would swallow it.
+  if (localeRoute && response.status === 200) {
+    const url = request.nextUrl.clone();
+    url.pathname = localeRoute.basePath;
+    const rewrite = NextResponse.rewrite(url, { request });
+    response.headers.forEach((value, key) => rewrite.headers.set(key, value));
+    response.cookies.getAll().forEach((c) => rewrite.cookies.set(c));
+    // Arriving from a search result should make the whole session Spanish,
+    // not leave someone one page deep in it. This is also the reverse
+    // direction of the no-redirect rule: we never move people onto a
+    // prefixed URL, but once they are on one we remember it.
+    rewrite.cookies.set(LOCALE_COOKIE, localeRoute.locale, { path: "/", sameSite: "lax" });
+    return rewrite;
+  }
 
   return response;
 }

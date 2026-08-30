@@ -13,6 +13,23 @@ import { TryItWidget } from "@/components/marketing/try-it-widget";
 import { HeroReel } from "@/components/marketing/hero-reel";
 import { getShowcaseProof } from "@/lib/showcase";
 
+import type { Metadata } from "next";
+import { localeAlternates } from "@/lib/i18n/metadata";
+
+// The homepage had NO metadata export at all, so it inherited the root
+// layout's `alternates: { canonical: "/" }` — which meant /es, /pt and /it
+// would every one of them have declared the ENGLISH homepage as their
+// canonical, telling Google to drop all three. This is the one page where
+// the change is an addition rather than a conversion.
+//
+// Only `alternates` is set: title, description and openGraph keep inheriting
+// from the root layout exactly as before. Next does NOT deep-merge
+// openGraph, so setting any of it here would silently wipe the layout's
+// siteName and images.
+export async function generateMetadata(): Promise<Metadata> {
+  return { alternates: await localeAlternates("/") };
+}
+
 // SoftwareApplication structured data, homepage-only (unlike the Organization
 // block in the root layout, this describes the product itself, which only
 // makes sense to attach where the product is actually being introduced).

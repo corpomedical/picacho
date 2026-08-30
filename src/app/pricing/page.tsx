@@ -5,18 +5,33 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
+import { localeAlternates } from "@/lib/i18n/metadata";
 import { isNativeApp } from "@/lib/native/server";
 
 // Renders as "Pricing | Picacho" via the title.template set in the root
 // layout. Without this the tab title and search-result link for this page
 // were just "Picacho" — identical to every other page, so Google had no
 // signal this was the page to rank for pricing-related searches.
-export const metadata: Metadata = {
-  title: "Pricing",
-  description:
-    "Simple, transparent pricing for consistent AI character photos and videos. Compare plans and find the right fit, from casual creators to studios.",
-  alternates: { canonical: "/pricing" },
-};
+// generateMetadata rather than a static object (2026-08-30): the canonical
+// now depends on which locale URL is being served — /pricing vs /es/pricing —
+// and the hreflang set has to be emitted on all four. The static
+// `alternates: { canonical: "/pricing" }` this replaces would have pinned
+// every locale's canonical to the English page, which is the standard way to
+// make Google discard the translations as duplicates.
+//
+// Title and description stay English for now: the localized <html lang> and
+// body are what make the page indexable in its language, and inventing
+// translated SEO strings without them being reviewed would be worse than
+// leaving these until they are. Localize them by moving these two strings
+// into the message files.
+export async function generateMetadata(): Promise<Metadata> {
+  return {
+    title: "Pricing",
+    description:
+      "Simple, transparent pricing for consistent AI character photos and videos. Compare plans and find the right fit, from casual creators to studios.",
+    alternates: await localeAlternates("/pricing"),
+  };
+}
 
 // Always render fresh, never serve a CDN-cached copy. These marketing/legal
 // pages were getting stuck: after a deploy, one hostname (picacho.ai) kept

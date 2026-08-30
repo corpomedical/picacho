@@ -4,12 +4,20 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { getServerMessages } from "@/lib/i18n/server";
 import contentPolicyDoc from "@/lib/i18n/legal/content-policy";
 import { cn } from "@/lib/cn";
+import { localeAlternates } from "@/lib/i18n/metadata";
 
-export const metadata: Metadata = {
+// generateMetadata rather than a static object (2026-08-30): the canonical
+// depends on which locale URL is being served, and the hreflang set must be
+// emitted on all four. The static canonical this replaces would have pinned
+// every locale to the English page — the standard way to make Google discard
+// the translations as duplicates.
+export async function generateMetadata(): Promise<Metadata> {
+  return {
   title: "Content Policy",
   description: "What's allowed and not allowed to be generated on Picacho.",
-  alternates: { canonical: "/content-policy" },
-};
+    alternates: await localeAlternates("/content-policy"),
+  };
+}
 
 // Always render fresh, never serve a CDN-cached copy. These marketing/legal
 // pages were getting stuck: after a deploy, one hostname (picacho.ai) kept
