@@ -1131,7 +1131,7 @@ const es = {
       name: "Elite",
       badge: "",
       features: [
-        "1000 créditos ≈ 1000 vídeos estándar o 500 premium / mes",
+        "600 créditos ≈ 600 vídeos estándar o 300 premium / mes",
         "Todo lo de Studio",
         "Acceso a la API — genera desde tu propio software",
       ],

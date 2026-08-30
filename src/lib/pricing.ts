@@ -85,13 +85,19 @@ export const PRICING_TIERS = [
   },
   {
     id: "elite",
-    annualPrice: 424,
+    // 424 -> 399 (15% -> 20% off) on 2026-08-30, alongside the credit cut in
+    // PLAN_LIMITS. A bigger advertised discount that costs LESS of the margin
+    // it comes out of: at 1000 credits 15% consumed 94% of gross margin; at
+    // 600 credits 20% consumes 40%. Annual has no Stripe price id of its own
+    // — checkout-core builds it inline as annualPrice * 12 — so this number
+    // is the only place the annual price lives.
+    annualPrice: 399,
     name: "Elite",
     price: 499,
-    credits: 1000,
+    credits: 600,
     highlight: false,
     features: [
-      "1000 credits / month ≈ 1000 standard videos, or 500 premium ones",
+      "600 credits / month ≈ 600 standard videos, or 300 premium ones",
       "Everything in Studio",
       // "Priority rendering queue" and "Early access to new models and
       // features" were removed 2026-08-30: neither has any implementation.

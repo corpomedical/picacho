@@ -1131,7 +1131,7 @@ const pt = {
       name: "Elite",
       badge: "",
       features: [
-        "1000 créditos ≈ 1000 vídeos padrão ou 500 premium / mês",
+        "600 créditos ≈ 600 vídeos padrão ou 300 premium / mês",
         "Tudo do Studio",
         "Acesso à API — gere a partir do seu próprio software",
       ],

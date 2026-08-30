@@ -24,7 +24,24 @@ export const PLAN_LIMITS = {
   starter: 30,
   growth: 140,
   studio: 550,
-  elite: 1000,
+  // Cut 1000 -> 600 on 2026-08-30. The old figure cost $339.60/month in
+  // provider spend against $404.66 of net revenue at full price, so the
+  // ENTIRE gross margin on Elite was $65 — and the 15% annual discount gave
+  // away $60.86 of it, which is why Elite annual was earning 1.2%. At 1000
+  // credits no discount worked: even 0% off only reached 16.1%, and 20% off
+  // was margin-NEGATIVE. The allowance was the broken part, not the discount.
+  //
+  // 600 puts monthly at 49.6% and annual (now 20% off) at 37.0%, and lets the
+  // ADVERTISED discount go up rather than down — 20% costs 40% of margin at
+  // this allowance where 15% cost 94% at the old one.
+  //
+  // Existing subscribers keep the Stripe price they signed up on, and this
+  // limit applies the moment it deploys — so unlike the 2026-08-19 increase,
+  // this one REDUCES what a live subscription grants. There are no Elite
+  // subscribers today (checked 2026-08-30), which is why it can be done as a
+  // straight change rather than a grandfathering exercise. If that is ever
+  // untrue again, grandfather before touching this number.
+  elite: 600,
 } as const;
 
 export const PLAN_LABELS = {

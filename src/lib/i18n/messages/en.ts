@@ -1201,7 +1201,7 @@ const en = {
       name: "Elite",
       badge: "",
       features: [
-        "1000 credits ≈ 1000 standard videos or 500 premium ones / month",
+        "600 credits ≈ 600 standard videos or 300 premium ones / month",
         "Everything in Studio",
         "API access — generate from your own software",
       ],
