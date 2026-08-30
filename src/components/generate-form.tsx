@@ -42,6 +42,7 @@ import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import type { AgentMode } from "@/lib/agent/prices";
 import { parseSseFrames } from "@/lib/agent/sse";
+import { classifyMessage } from "@/lib/agent/intent";
 import {
   CHARACTERLESS_MODEL_IDS,
   MODEL_CAPABILITIES,
@@ -1386,6 +1387,23 @@ type MultiAngleChatItem = {
   angles: MultiAngleClip[];
 };
 
+// Where each of the effort control's six burst particles flies. Precomputed
+// (cos/sin of 60-degree steps, ~14px radius, slight vertical bias upward so
+// the burst reads as a spark rather than a splash) because Math.random in
+// render would replay differently on every re-render.
+const SPARK_DIRECTIONS = [
+  { x: "14px", y: "-4px" },
+  { x: "8px", y: "-13px" },
+  { x: "-5px", y: "-14px" },
+  { x: "-14px", y: "-3px" },
+  { x: "-9px", y: "10px" },
+  { x: "10px", y: "11px" },
+] as const;
+
+// Where the assistant on/off choice is remembered. Versioned in the name so
+// a future change of meaning cannot silently inherit an old value.
+const ASSISTANT_PREF_KEY = "picacho.assistant.v1";
+
 // An Ask turn: a question and the assistant's answer, living in the SAME
 // transcript as the renders rather than in a side panel.
 //
@@ -1407,6 +1425,14 @@ type AskChatItem = {
   answer: string;
   createdAt: string;
   failed?: boolean;
+  /**
+   * Set when the question had a shot inside it ("can you make Eva walk
+   * through a market"). Becomes a "Render this" chip under the answer, which
+   * puts those words back in the composer — it never sends. The Send Receipt
+   * still gets to speak before any credit moves, which is the entire reason
+   * the chip fills the box instead of pressing the button.
+   */
+  renderablePrompt?: string | null;
 };
 
 type ChatItem = ({ kind: "single" } & ChatTurn) | MultiAngleChatItem | AskChatItem;
@@ -1580,7 +1606,17 @@ function MultiAngleTurnBubble({ item, domId }: { item: MultiAngleChatItem; domId
 // renderer in this app, and adding one for this would mean shipping a parser
 // that runs on model output. The house rules ask for plain prose instead, so
 // what arrives is what shows.
-function AskTurnBubble({ item }: { item: AskChatItem }) {
+function AskTurnBubble({
+  item,
+  onRenderThis,
+}: {
+  item: AskChatItem;
+  // Puts the recovered shot back in the composer. It deliberately does NOT
+  // send: the Send Receipt is what stands between a person and a credit, and
+  // a chip that skipped it would be spending money on a sentence a
+  // classifier reconstructed.
+  onRenderThis?: (prompt: string) => void;
+}) {
   const { t } = useLocale();
   const g = t.generate;
   return (
@@ -1605,6 +1641,16 @@ function AskTurnBubble({ item }: { item: AskChatItem }) {
           >
             {item.answer}
           </p>
+          {!item.failed && item.renderablePrompt && onRenderThis && (
+            <button
+              type="button"
+              onClick={() => onRenderThis(item.renderablePrompt!)}
+              className="mt-3 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] transition-colors hover:bg-atelier-accent/10"
+            >
+              <SendIcon className="h-3 w-3 flex-shrink-0" />
+              {g.renderThis}
+            </button>
+          )}
           {!item.failed && (
             <p className="mt-3 text-[11px] leading-snug text-atelier-muted/80">{g.askDisclaimer}</p>
           )}
@@ -2024,16 +2070,81 @@ function GenerateFormInner({
 
   const [items, setItems] = useState<ChatItem[]>([]);
 
-  // Ask mode (2026-08-30). The composer has two things it can do with a
-  // sentence: render it, or answer it. `composerMode` picks which, and it is
-  // the ONLY switch — everything else about the composer (the character, the
-  // model, the attachments) stays exactly where it was, so switching to Ask
-  // and back does not cost the person their setup.
+  // The assistant (2026-08-31). ONE switch, not a mode.
   //
-  // Defaults to "render" and is reset to "render" by resetChat: the composer
-  // that opens is the one that makes things.
-  const [composerMode, setComposerMode] = useState<"render" | "ask">("render");
+  // The first version of this shipped a Render | Ask segmented control and
+  // the operator was right to reject it: it made you declare which thing you
+  // were doing before you did it, which is the opposite of a conversation.
+  // Now there is a single on/off, and while it is on the composer reads each
+  // message and decides for itself — see lib/agent/intent.ts for the rule and
+  // for why it is deliberately biased towards answering.
+  //
+  // OFF IS EXACTLY WHAT THIS APP WAS BEFORE. No classifier runs, no token is
+  // spent, every send renders. Someone who turns it off has said they do not
+  // want to be second-guessed, and that has to be honoured literally.
+  //
+  // Defaults off — it costs money — but the choice is remembered, so nobody
+  // has to switch it on twice. resetChat deliberately does NOT reset it: a
+  // new thread is not a reason to change a preference.
+  const [assistantOn, setAssistantOn] = useState(false);
   const [agentEffort, setAgentEffort] = useState<AgentMode>("faster");
+  // Increments on every deliberate pick of Smarter; keys the particle burst
+  // so it replays each time rather than only on the first.
+  const [sparkBurstKey, setSparkBurstKey] = useState(0);
+  // Read after mount, never during render: localStorage does not exist on the
+  // server, and seeding state from it directly is the classic hydration
+  // mismatch. Wrapped because a browser set to block site data throws on
+  // access rather than returning null.
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(ASSISTANT_PREF_KEY) === "1") setAssistantOn(true);
+    } catch {
+      // Storage unavailable — the assistant simply stays off, which is the
+      // safe default anyway.
+    }
+  }, []);
+
+  // What pressing Send would do RIGHT NOW, given what is in the box. Drives
+  // the button's label so the person can see which of the two things is
+  // about to happen before they commit to it — the classifier is a guess,
+  // and a guess about someone's money should be visible while it is still
+  // free to change.
+  //
+  // A function rather than a derived const because it reads `prompt`, which
+  // is declared further down: hoisting keeps this readable without a
+  // temporal-dead-zone trap.
+  function sendIntent(): "render" | "ask" {
+    if (!chatAgentEnabled || !assistantOn) return "render";
+    return classifyMessage(prompt).intent;
+  }
+
+  // Drops text into the composer and puts the cursor in it. Used by the
+  // "Render this" chip: one tap gets you to a staged send with the receipt
+  // in front of you, which is one tap fewer than retyping and one gate more
+  // than sending on your behalf.
+  function fillComposer(text: string) {
+    setPrompt(text);
+    setError("");
+    requestAnimationFrame(() => {
+      const box = promptTextareaRef.current;
+      if (!box) return;
+      box.focus();
+      box.setSelectionRange(text.length, text.length);
+    });
+  }
+
+  function toggleAssistant() {
+    setAssistantOn((was) => {
+      const next = !was;
+      try {
+        window.localStorage.setItem(ASSISTANT_PREF_KEY, next ? "1" : "0");
+      } catch {
+        // Not being able to remember the choice is not a reason to refuse it.
+      }
+      return next;
+    });
+    setError("");
+  }
   const [liveAsk, setLiveAsk] = useState<{ question: string; answer: string } | null>(null);
   const [asking, setAsking] = useState(false);
   // Aborts the in-flight stream when the person hits Stop or starts a new
@@ -2720,7 +2831,6 @@ function GenerateFormInner({
     askAbortRef.current = null;
     setLiveAsk(null);
     setAsking(false);
-    setComposerMode("render");
     setSelectedAngles(DEFAULT_ANGLE_IDS);
     clearAdvancedVideo();
     setAnchorPhotoPath(null);
@@ -4345,7 +4455,7 @@ function GenerateFormInner({
   // Every failure lands as a bubble marked `failed`, never as a silently
   // dropped turn: the question stays on screen with the reason underneath, so
   // nobody is left wondering whether they actually pressed send.
-  async function askAgent(question: string) {
+  async function askAgent(question: string, renderablePrompt: string | null = null) {
     const trimmed = question.trim();
     if (!trimmed || asking) return;
 
@@ -4443,7 +4553,10 @@ function GenerateFormInner({
         question: trimmed,
         answer: failed ? failure : answer,
         createdAt: new Date().toISOString(),
-        ...(failed ? { failed: true } : {}),
+        // Only offered on an answer that actually arrived — a chip under a
+        // failure message would be asking someone to spend a credit on the
+        // back of an error.
+        ...(failed ? { failed: true } : { renderablePrompt }),
       },
     ]);
     setLiveAsk(null);
@@ -4453,13 +4566,21 @@ function GenerateFormInner({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    // Ask short-circuits everything below it. None of the render pre-flight
-    // — attachments, angles, storyboards, the receipt — applies to a
-    // question, and running any of it would be a way to block a question on
-    // a render's rules.
-    if (composerMode === "ask") {
-      await askAgent(prompt);
-      return;
+    // With the assistant on, the message is read before anything else
+    // happens — see lib/agent/intent.ts. A question short-circuits every
+    // render pre-flight below (attachments, angles, storyboards, the
+    // receipt), because none of it applies to a sentence nobody is going to
+    // render, and running it would only let a render's rules block a
+    // question.
+    //
+    // With the assistant OFF nothing is classified at all and this whole
+    // branch is skipped: off means off.
+    if (assistantOn) {
+      const reading = classifyMessage(prompt);
+      if (reading.intent === "ask") {
+        await askAgent(prompt, reading.renderablePrompt);
+        return;
+      }
     }
 
     const readyAttachments = pendingAttachments
@@ -5207,7 +5328,7 @@ function GenerateFormInner({
             there is substance (see showImageReceipt). Inside the fold is a
             deliberate trade: a send always requires the composer open, so
             the line is still seen before anything rides. */}
-        {!isHero && composerMode === "render" && (contentType === "video" || showImageReceipt) && (
+        {!isHero && (contentType === "video" || showImageReceipt) && (
           <ReceiptStrip
             plan={sendPlanNow}
             headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
@@ -5243,7 +5364,7 @@ function GenerateFormInner({
           <>
             {items.map((item) =>
               item.kind === "ask" ? (
-                <AskTurnBubble key={item.id} item={item} />
+                <AskTurnBubble key={item.id} item={item} onRenderThis={fillComposer} />
               ) : item.kind === "single" ? (
                 <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} onGenerateAnyway={generateAnyway} onRetrySeedance2={retryOnSeedance2} />
               ) : (
@@ -5882,7 +6003,7 @@ function GenerateFormInner({
                   }
                 }}
                 placeholder={
-                  composerMode === "ask"
+                  assistantOn
                     ? g.askPlaceholder
                     : contentType === "video"
                       ? g.videoPlaceholder
@@ -6391,91 +6512,6 @@ function GenerateFormInner({
                       strip, same pattern as the admin nav's mobile fix, so it
                       scrolls internally instead of pushing Send off-screen —
                       Send/Stop stays outside it, always visible. */}
-                  {/* Render | Ask (2026-08-30). Deliberately OUTSIDE the
-                      scrollable chip strip below and flex-shrink-0: it is
-                      the one control that changes what Send does, and a mode
-                      switch that can scroll out of view is a mode you can
-                      get stuck in. Hidden entirely when the feature flag is
-                      off — see chatAgentEnabled. */}
-                  {chatAgentEnabled && (
-                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5">
-                      {(["render", "ask"] as const).map((value) => {
-                        const active = composerMode === value;
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => {
-                              setComposerMode(value);
-                              setError("");
-                            }}
-                            disabled={submitting || asking}
-                            aria-pressed={active}
-                            title={value === "render" ? g.modeRenderHint : g.modeAskHint}
-                            className={cn(
-                              "flex h-7 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold transition-colors disabled:opacity-50",
-                              active
-                                ? "bg-atelier-surface text-atelier-ink shadow-[0_1px_2px_rgba(33,29,22,0.08)]"
-                                : "text-atelier-muted hover:text-atelier-ink",
-                            )}
-                          >
-                            {value === "render" ? (
-                              <SendIcon className="h-3 w-3" />
-                            ) : (
-                              <SparkIcon className="h-3 w-3" />
-                            )}
-                            <span className="hidden sm:inline">
-                              {value === "render" ? g.modeRender : g.modeAsk}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  {composerMode === "ask" ? (
-                  <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
-                    {/* Effort. Two settings, and the difference between them
-                        is real money — Smarter thinks longer and reads more,
-                        so it costs several times a Faster answer and draws
-                        several times as much from the monthly chat
-                        allowance. Faster is the default for that reason, and
-                        the label says which is which rather than pretending
-                        they are the same button in two colours. */}
-                    <span className="flex-shrink-0 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-                      {g.effortLabel}
-                    </span>
-                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5">
-                      {(["faster", "smarter"] as const).map((value) => {
-                        const active = agentEffort === value;
-                        return (
-                          <button
-                            key={value}
-                            type="button"
-                            onClick={() => setAgentEffort(value)}
-                            disabled={asking || (value === "smarter" && !chatSmarterAvailable)}
-                            aria-pressed={active}
-                            title={
-                              value === "faster"
-                                ? g.effortFasterHint
-                                : chatSmarterAvailable
-                                  ? g.effortSmarterHint
-                                  : g.effortSmarterPaid
-                            }
-                            className={cn(
-                              "flex h-7 flex-shrink-0 items-center rounded-full px-3 text-[11px] font-semibold transition-colors disabled:opacity-50",
-                              active
-                                ? "bg-atelier-surface text-atelier-ink shadow-[0_1px_2px_rgba(33,29,22,0.08)]"
-                                : "text-atelier-muted hover:text-atelier-ink",
-                            )}
-                          >
-                            {value === "faster" ? g.effortFaster : g.effortSmarter}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  ) : (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
                   {/* Prompt Studio. Only appears once there's something to
                       enhance — an empty composer has nothing to improve, and
@@ -6775,7 +6811,6 @@ function GenerateFormInner({
                       dictation lives in the keyboard's own mic. The
                       sidebar's voice search is untouched. */}
                   </div>
-                  )}
 
                   {asking ? (
                     // Stop for a streaming answer. Separate from the render
@@ -6805,22 +6840,55 @@ function GenerateFormInner({
                     <button
                       type="submit"
                       disabled={
-                        composerMode === "ask"
+                        sendIntent() === "ask"
                           ? !prompt.trim()
                           : isUploading ||
                             (storyboardActive
                               ? !storyboardReady
                               : !prompt.trim() && pendingAttachments.length === 0)
                       }
-                      title={composerMode === "ask" ? g.askSend : g.send}
-                      aria-label={composerMode === "ask" ? g.askSend : g.send}
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-30"
+                      title={sendIntent() === "ask" ? g.askSend : g.send}
+                      aria-label={sendIntent() === "ask" ? g.askSend : g.send}
+                      className={cn(
+                        "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-paper transition-colors disabled:opacity-30",
+                        // The send button is the classifier made visible:
+                        // ink arrow = this renders, ochre spark = this asks.
+                        // The verdict shows in the one place the eye already
+                        // goes before committing, so no separate indicator
+                        // is needed anywhere else.
+                        sendIntent() === "ask"
+                          ? "bg-atelier-accent hover:bg-atelier-accent/90"
+                          : "bg-atelier-ink hover:bg-atelier-ink/90",
+                      )}
                     >
-                      <SendIcon className="h-4 w-4" />
+                      {sendIntent() === "ask" ? (
+                        <SparkIcon className="h-4 w-4" />
+                      ) : (
+                        <SendIcon className="h-4 w-4" />
+                      )}
                     </button>
                   )}
                 </div>
               </div>
+              {/* Typed a question with the assistant switched off. Sending
+                  it would render the question — a credit spent on a sentence
+                  nobody wanted a picture of. One quiet line, only while the
+                  text actually reads as a question, and it turns the switch
+                  on rather than lecturing about it. */}
+              {chatAgentEnabled && !assistantOn && !submitting &&
+                prompt.trim().length > 8 &&
+                classifyMessage(prompt).intent === "ask" && (
+                  <div className="px-4 pb-2.5">
+                    <button
+                      type="button"
+                      onClick={toggleAssistant}
+                      className="flex items-start gap-1.5 text-left text-[11px] leading-snug text-atelier-muted transition-colors hover:text-atelier-ink"
+                    >
+                      <SparkIcon className="mt-px h-3 w-3 flex-shrink-0 text-atelier-accent" />
+                      <span>{g.assistantOffQuestion}</span>
+                    </button>
+                  </div>
+                )}
               {/* Guardrail footer (2026-08-21 incident): what a send spends,
                   and the two first-session nudges. Renders nothing for
                   established paid accounts. */}
@@ -6856,6 +6924,141 @@ function GenerateFormInner({
             </>
           )}
         </div>
+
+              {/* The assistant strip (2026-08-31, third design after two
+                  operator rejections — the brief that stuck: "something
+                  more like C, but more subtle and very well
+                  engineeringly placed").
+                  One quiet line tucked directly under the input chip,
+                  inside the card — where the metadata already lives, above
+                  the "Picacho is AI" note. Not a floating pill below the
+                  card, and not another occupant of the control row: the row
+                  keeps its 2026-08-09 overflow contract untouched and
+                  nothing new competes with Send.
+                  Everything here is 11px and muted until it is ON; the
+                  only saturated pixel while idle is the knob when lit.
+                  Hidden entirely when the feature flag is off. */}
+              {chatAgentEnabled && (
+                <div className="mt-1.5 flex items-center gap-3 px-3.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={assistantOn}
+                    onClick={toggleAssistant}
+                    disabled={submitting || asking}
+                    title={assistantOn ? g.assistantOnHint : g.assistantOffHint}
+                    className="flex h-6 flex-shrink-0 items-center gap-1.5 rounded-full disabled:opacity-50"
+                  >
+                    {/* Track and knob, sized to the strip: 26x14 with a
+                        10px knob sliding 12px. Unmistakably a switch,
+                        small enough to be furniture. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "relative h-3.5 w-[26px] flex-shrink-0 rounded-full transition-colors duration-200",
+                        assistantOn ? "bg-atelier-accent" : "bg-atelier-ink/15",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute left-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-atelier-paper shadow-[0_1px_2px_rgba(33,29,22,0.25)] transition-transform duration-200 motion-reduce:transition-none",
+                          assistantOn && "translate-x-3",
+                        )}
+                      />
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[11px] font-medium transition-colors",
+                        assistantOn ? "text-atelier-ink" : "text-atelier-muted",
+                      )}
+                    >
+                      {g.assistant}
+                    </span>
+                  </button>
+
+                  {/* Effort, as two words rather than two buttons-that-
+                      look-like-buttons: the active one is ink, the idle
+                      one is barely there. Exists only while the assistant
+                      does. */}
+                  {assistantOn && (
+                    <>
+                      <span aria-hidden className="h-3.5 w-px flex-shrink-0 bg-atelier-rule" />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAgentEffort("faster")}
+                          disabled={asking}
+                          aria-pressed={agentEffort === "faster"}
+                          title={g.effortFasterHint}
+                          className={cn(
+                            "text-[11px] font-medium transition-colors disabled:opacity-50",
+                            agentEffort === "faster"
+                              ? "text-atelier-ink"
+                              : "text-atelier-muted/70 hover:text-atelier-ink",
+                          )}
+                        >
+                          {g.effortFaster}
+                        </button>
+                        <span aria-hidden className="text-[10px] text-atelier-muted/40">·</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (!chatSmarterAvailable) return;
+                            setAgentEffort((v) => {
+                              if (v !== "smarter") setSparkBurstKey((k) => k + 1);
+                              return "smarter";
+                            });
+                          }}
+                          disabled={asking || !chatSmarterAvailable}
+                          aria-pressed={agentEffort === "smarter"}
+                          title={chatSmarterAvailable ? g.effortSmarterHint : g.effortSmarterPaid}
+                          className={cn(
+                            "relative flex items-center gap-1 rounded-full text-[11px] font-medium transition-colors disabled:opacity-50",
+                            agentEffort === "smarter"
+                              ? "px-1.5 text-atelier-accent motion-safe:[animation:smarter-breath_0.7s_ease-out_1]"
+                              : "text-atelier-muted/70 hover:text-atelier-ink",
+                            // The requested graphics, part two: while a
+                            // Smarter answer is being worked out, the word
+                            // itself pulses — movement that means "the
+                            // expensive one is running", never decoration.
+                            agentEffort === "smarter" &&
+                              asking &&
+                              "animate-pulse motion-reduce:animate-none",
+                          )}
+                        >
+                          {agentEffort === "smarter" && (
+                            <SparkIcon className="h-3 w-3 flex-shrink-0" />
+                          )}
+                          {g.effortSmarter}
+                          {/* The burst: six ochre particles, remounted on
+                              every pick via the key so it replays each
+                              time. pointer-events-none so a spark never
+                              eats the tap that made it. */}
+                          {sparkBurstKey > 0 && agentEffort === "smarter" && (
+                            <span
+                              key={sparkBurstKey}
+                              aria-hidden
+                              className="pointer-events-none absolute inset-0 hidden motion-safe:block"
+                            >
+                              {SPARK_DIRECTIONS.map((d, i) => (
+                                <span
+                                  key={i}
+                                  className="absolute left-1/2 top-1/2 h-1 w-1 rounded-full bg-atelier-accent [animation:spark-burst_0.55s_ease-out_forwards]"
+                                  style={{
+                                    "--spark-x": d.x,
+                                    "--spark-y": d.y,
+                                    animationDelay: `${i * 25}ms`,
+                                  } as React.CSSProperties}
+                                />
+                              ))}
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
 
         {/* "You can leave" reassurance, only while it's actually true:
             liveProgress is set on exactly the paths where a render is queued
