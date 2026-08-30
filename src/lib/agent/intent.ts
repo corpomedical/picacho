@@ -49,6 +49,38 @@ const QUESTION_OPENERS = [
   "is", "are", "was", "were", "am", "has", "have", "had", "may", "might",
   "any", "anything", "explain", "tell", "compare", "suggest", "recommend",
   "advise", "help",
+  // Conversational openers that carry no question mark and no question word.
+  // Every one of these was a real miss found in review (2026-08-31).
+  "wondering", "curious", "thoughts", "unsure",
+];
+
+// Multi-word openers, tested after the filler strip below. Kept separate from
+// the single words because "i wonder" must match while a bare "i" must not —
+// "i" opens plenty of legitimate shot descriptions.
+const QUESTION_PHRASE_OPENERS = [
+  "i wonder", "i am wondering", "i'm wondering", "i was wondering",
+  "not sure", "no idea", "i need help", "need help", "any idea", "any chance",
+  "just curious", "quick question", "one question", "a question",
+];
+
+// Leading noise that is not part of the question and must not hide it.
+//
+// THE HOLE THIS CLOSES (found in review, 2026-08-31, and it was the expensive
+// direction — the one this module exists to prevent). The opener test only
+// ever looked at the FIRST token, so a single polite or filler word in front
+// of a question made the entire list miss, and with no question mark the
+// message fell through to "render" and spent a credit on a video of the
+// sentence. "explain why my score is low" asked; "please explain why my score
+// is low" rendered. Same sentence, one word of manners, opposite outcome and
+// a real charge.
+//
+// Deliberately an explicit list rather than "skip the first word": a generic
+// skip would eat the subject of real prompts ("Eva walks through a market"
+// would become "walks through a market").
+const LEADING_FILLER = [
+  "please", "so", "ok", "okay", "hmm", "hey", "hi", "also", "and", "but",
+  "just", "actually", "sorry", "um", "uh", "well", "right", "then", "now",
+  "quick question", "one more thing", "btw", "by the way",
 ];
 
 // Phrases that address a person rather than describe a picture. These catch
@@ -79,9 +111,13 @@ const RENDER_WRAPPERS = [
 // when what is left actually asks for one — otherwise "can you explain the
 // scoring" would come back with a chip offering to render "explain the
 // scoring", which is nonsense that costs a credit.
+// NOTE the absence of "do". It used to be here AND in QUESTION_OPENERS, which
+// meant the one chip it could produce ("can you do a wide shot of Eva") came
+// back reading as a question again, so that chip could never render — it just
+// asked the same thing twice. Every other verb here round-trips to "render".
 const RENDER_VERBS = [
   "make", "create", "generate", "render", "shoot", "film", "show", "draw",
-  "put", "give me", "do", "animate", "build",
+  "put", "give me", "animate", "build",
 ];
 
 function normalise(text: string): string {
@@ -106,10 +142,25 @@ export function classifyMessage(text: string): IntentReading {
 
   if (!lower) return { intent: "render", renderablePrompt: null };
 
+  // Peel leading filler before testing openers, repeatedly — "ok so why did
+  // that fail" carries two. Bounded to three passes so no list of fillers can
+  // turn this into a loop.
+  let probe = lower;
+  for (let pass = 0; pass < 3; pass++) {
+    const stripped = LEADING_FILLER.find((f) => startsWithWord(probe, f));
+    if (!stripped) break;
+    const rest = probe.slice(stripped.length).trim().replace(/^[,:]\s*/, "");
+    // Never strip away the entire message: "please" on its own is small talk,
+    // not an empty render.
+    if (!rest) break;
+    probe = rest;
+  }
+
   const asks =
     raw.includes("?") ||
     SMALL_TALK.includes(lower.replace(/[.!]+$/, "")) ||
-    QUESTION_OPENERS.some((w) => startsWithWord(lower, w)) ||
+    QUESTION_OPENERS.some((w) => startsWithWord(probe, w)) ||
+    QUESTION_PHRASE_OPENERS.some((w) => startsWithWord(probe, w)) ||
     ADDRESSED_PHRASES.some((p) => lower.includes(p));
 
   if (!asks) return { intent: "render", renderablePrompt: null };

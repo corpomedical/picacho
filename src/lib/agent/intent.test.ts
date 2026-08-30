@@ -114,3 +114,77 @@ describe("edge cases", () => {
     expect(renders("EVA IN A MARKET")).toBe(true);
   });
 });
+
+describe("leading filler must not hide a question (review 2026-08-31)", () => {
+  // Every string here was verified to RENDER before the fix — each one a
+  // credit spent on a video of the sentence. This is the expensive
+  // direction, so it gets the most tests in the file.
+  const wereRendering = [
+    "please explain why my last render scored so low",
+    "so how do i improve the score",
+    "hmm why did that fail",
+    "ok so which one is cheaper",
+    "not sure which model to use for a 10 second clip",
+    "wondering how to get a better match score",
+    "just curious what elements means",
+    "i need help picking a model",
+    "i wonder if kling is better than seedance",
+    "thoughts on seedance vs kling",
+  ];
+  for (const t of wereRendering) {
+    it(`asks: "${t}"`, () => {
+      expect(classifyMessage(t).intent).toBe("ask");
+    });
+  }
+
+  it("peels more than one filler word", () => {
+    expect(asks("ok so why did that fail")).toBe(true);
+    expect(asks("well actually how much does this cost")).toBe(true);
+  });
+
+  it("does not let the filler strip eat a real prompt's subject", () => {
+    // The reason the strip is an explicit list and not "drop the first word".
+    expect(renders("Eva walks through a market")).toBe(true);
+    expect(renders("Adam turns to face the camera")).toBe(true);
+    expect(renders("just Eva, backlit, no crowd")).toBe(true);
+    expect(renders("now the camera pulls back")).toBe(true);
+  });
+
+  it("still treats a bare politeness word as small talk, not an empty render", () => {
+    expect(asks("please")).toBe(true);
+  });
+});
+
+describe("the Render this chip round-trips (review 2026-08-31)", () => {
+  it("produces text that actually renders", () => {
+    // "do" used to sit in both QUESTION_OPENERS and RENDER_VERBS, so this
+    // chip offered a prompt that re-classified as a question — it could
+    // never render, it just asked the same thing again.
+    const reading = classifyMessage("can you do a wide shot of Eva in the rain");
+    if (reading.renderablePrompt) {
+      expect(classifyMessage(reading.renderablePrompt).intent).toBe("render");
+    }
+  });
+
+  it("sends a politely-prefixed instruction straight to the renderer", () => {
+    // "please create a close-up" needs no chip and no detour: with the
+    // filler stripped it is simply an instruction, so it renders directly.
+    expect(renders("please create a close-up of her hands")).toBe(true);
+    expect(renders("please make Eva turn to camera")).toBe(true);
+  });
+
+  it("every chip it can offer classifies as a render", () => {
+    const wrapped = [
+      "can you make Eva walk through a market",
+      "could you show Adam on the bridge",
+      "would you generate a wide shot at dusk",
+      "can you animate the camera pushing in",
+      "could you render Blodie at the window",
+    ];
+    for (const w of wrapped) {
+      const chip = classifyMessage(w).renderablePrompt;
+      expect(chip, `no chip for "${w}"`).toBeTruthy();
+      expect(classifyMessage(chip!).intent, `chip "${chip}" did not render`).toBe("render");
+    }
+  });
+});

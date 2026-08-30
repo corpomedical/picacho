@@ -185,6 +185,14 @@ export async function POST(request: NextRequest) {
   const ctx = await buildAgentContext(supabase, user.id, body?.characterId ?? null);
   const client = new Anthropic();
 
+  // Carries a Stop, or a closed tab, all the way to Anthropic.
+  //
+  // Before this, aborting the browser fetch cancelled nothing upstream: the
+  // completion ran to the end and we paid for every token of an answer
+  // nobody would ever read. The client's Stop button looked like it saved
+  // money and did the opposite.
+  const upstream = new AbortController();
+
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
@@ -247,7 +255,7 @@ export async function POST(request: NextRequest) {
           // right default for a batch job and the wrong one for someone
           // watching a cursor blink. Ninety seconds is well past the longest
           // a 4,000-token answer takes.
-          { timeout: 90_000, maxRetries: 1 },
+          { timeout: 90_000, maxRetries: 1, signal: upstream.signal },
         );
 
         for await (const event of result) {
@@ -287,6 +295,15 @@ export async function POST(request: NextRequest) {
         }
         send("done", { units: unitsForTurn(usage), mode: effectiveMode });
       } catch (err) {
+        // A stop we asked for is not a failure and must not be reported as
+        // one — there is nobody left reading the stream anyway. The
+        // reservation stands: tokens were spent up to the moment we pulled
+        // the plug, and a cancelled call returns no usage report, so the
+        // safe direction is to have charged.
+        if (upstream.signal.aborted) {
+          console.info("agent-chat: cancelled by the client mid-stream");
+          return;
+        }
         const status = (err as { status?: number })?.status;
         failure = classifyTurnFailure(status, err instanceof Error ? err.message : String(err));
         console.error(`agent-chat failed (${failure}, status ${status ?? "none"}):`, err);
@@ -311,6 +328,11 @@ export async function POST(request: NextRequest) {
         }
         if (!closed) controller.close();
       }
+    },
+    // Fired when the person presses Stop, navigates away, or closes the tab —
+    // the platform cancels the response body and this is where that lands.
+    cancel() {
+      upstream.abort();
     },
   });
 

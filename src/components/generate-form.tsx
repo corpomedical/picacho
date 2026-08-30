@@ -1675,7 +1675,14 @@ function AskLiveBubble({ question, answer }: { question: string; answer: string 
   return (
     <div className="space-y-3">
       <UserBubble prompt={question} />
-      <div className="flex justify-start">
+      {/* role="status" + aria-live="polite" so a screen reader is actually
+          told the answer arrived. Without it the send was silent: focus never
+          moves, the text streams into a plain <p>, and nothing announces —
+          a blind user pressed Ask and heard nothing at all. On the LIVE
+          bubble only; on archived turns it would re-announce the whole
+          thread every re-render. aria-atomic="false" so it reads the text as
+          it arrives rather than restarting the sentence on every token. */}
+      <div className="flex justify-start" role="status" aria-live="polite" aria-atomic="false">
         <div className="max-w-[90%] rounded-[18px] rounded-bl-[6px] border-l-2 border-l-atelier-accent/50 bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
           <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
             <SparkIcon className="h-3 w-3 text-atelier-accent" />
@@ -1798,7 +1805,10 @@ function TakesRail({ items, inFlightPrompt }: { items: ChatItem[]; inFlightPromp
         <h2 className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
           {g.takesTitle}
         </h2>
-        <p className="font-numeral text-sm font-semibold tabular-nums text-atelier-ink">{items.length}</p>
+        {/* takes.length, not items.length: ask turns are conversation and the
+            filmstrip below already excludes them — the header was counting
+            things the list refused to show. */}
+        <p className="font-numeral text-sm font-semibold tabular-nums text-atelier-ink">{takes.length}</p>
       </div>
 
       {takes.length === 0 && inFlightPrompt === null ? (
@@ -2101,12 +2111,16 @@ function GenerateFormInner({
   // access rather than returning null.
   useEffect(() => {
     try {
-      if (window.localStorage.getItem(ASSISTANT_PREF_KEY) === "1") setAssistantOn(true);
+      // Guarded on the flag: a preference saved while the feature was live
+      // must not outlive it being switched off.
+      if (chatAgentEnabled && window.localStorage.getItem(ASSISTANT_PREF_KEY) === "1") {
+        setAssistantOn(true);
+      }
     } catch {
       // Storage unavailable — the assistant simply stays off, which is the
       // safe default anyway.
     }
-  }, []);
+  }, [chatAgentEnabled]);
 
   // What pressing Send would do RIGHT NOW, given what is in the box. Drives
   // the button's label so the person can see which of the two things is
@@ -2118,7 +2132,21 @@ function GenerateFormInner({
   // is declared further down: hoisting keeps this readable without a
   // temporal-dead-zone trap.
   function sendIntent(): "render" | "ask" {
+    // chatAgentEnabled FIRST, and it is the reason this is the only place
+    // allowed to answer this question. Review found handleSubmit asking
+    // `assistantOn` on its own, which meant the AGENT_CHAT_DISABLED kill
+    // switch stopped the UI without stopping the BEHAVIOUR: a person who had
+    // switched the assistant on before the flag went off kept getting their
+    // sends diverted to a route that now 403s, losing the typed prompt every
+    // time, with no control left on screen to turn it back off.
     if (!chatAgentEnabled || !assistantOn) return "render";
+    // Storyboard and multi-angle own the composer while they are armed: the
+    // shot list or the angle picker has replaced the box, and `prompt` is
+    // deliberately kept alive underneath it. Classifying that stale text
+    // would let a question mark left in it divert an explicit Generate into
+    // a chat turn — and skip the storyboardReady / character guards on the
+    // way past.
+    if (storyboardActive || multiAngleMode) return "render";
     return classifyMessage(prompt).intent;
   }
 
@@ -4579,12 +4607,13 @@ function GenerateFormInner({
     //
     // With the assistant OFF nothing is classified at all and this whole
     // branch is skipped: off means off.
-    if (assistantOn) {
-      const reading = classifyMessage(prompt);
-      if (reading.intent === "ask") {
-        await askAgent(prompt, reading.renderablePrompt);
-        return;
-      }
+    // ONE authority for this question — see sendIntent. The button's label,
+    // the receipt's silence and this branch must never be able to disagree:
+    // when they did, the button promised a render and the submit delivered a
+    // chat turn.
+    if (sendIntent() === "ask") {
+      await askAgent(prompt, classifyMessage(prompt).renderablePrompt);
+      return;
     }
 
     const readyAttachments = pendingAttachments
@@ -6034,7 +6063,7 @@ function GenerateFormInner({
                   }
                 }}
                 placeholder={
-                  assistantOn
+                  chatAgentEnabled && assistantOn
                     ? g.askPlaceholder
                     : contentType === "video"
                       ? g.videoPlaceholder
@@ -6972,9 +7001,16 @@ function GenerateFormInner({
                   nothing new competes with Send.
                   Everything here is 11px and muted until it is ON; the
                   only saturated pixel while idle is the knob when lit.
-                  Hidden entirely when the feature flag is off. */}
+                  Hidden entirely when the feature flag is off.
+                  flex-wrap + min-w-0 on the row is not decoration: this
+                  repo has shipped horizontal page overflow twice from a
+                  non-wrapping composer row (2026-08-09 icon strip,
+                  2026-08-30 reference-photo strip). At Android's larger
+                  system font scales this row outgrows a 320px screen, and
+                  without wrapping it would push the whole PAGE sideways
+                  again. */}
               {chatAgentEnabled && (
-                <div className="mt-1.5 flex items-center gap-2 px-3.5">
+                <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5">
                   <button
                     type="button"
                     role="switch"
@@ -7026,7 +7062,10 @@ function GenerateFormInner({
                           aria-pressed={agentEffort === "faster"}
                           title={g.effortFasterHint}
                           className={cn(
-                            "text-[11px] font-medium transition-colors disabled:opacity-50",
+                            // -my-1.5 py-1.5 keeps the strip the same height
+                            // while giving a finger something to hit — bare
+                            // 11px text was a 17px-tall target.
+                            "-my-1.5 rounded-full px-1 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50",
                             agentEffort === "faster"
                               ? "text-atelier-ink"
                               : "text-atelier-muted/70 hover:text-atelier-ink",
@@ -7038,17 +7077,26 @@ function GenerateFormInner({
                         <button
                           type="button"
                           onClick={() => {
-                            if (!chatSmarterAvailable) return;
+                            // Not disabled, deliberately. A disabled button
+                            // dispatches no events, so its `title` is
+                            // unreachable on a touch screen — in the phone
+                            // shell a free account got a dead control and no
+                            // way to find out why. Tapping now says so.
+                            if (!chatSmarterAvailable) {
+                              setError(g.effortSmarterPaid);
+                              return;
+                            }
                             setAgentEffort((v) => {
                               if (v !== "smarter") setSparkBurstKey((k) => k + 1);
                               return "smarter";
                             });
                           }}
-                          disabled={asking || !chatSmarterAvailable}
+                          disabled={asking}
+                          aria-disabled={!chatSmarterAvailable}
                           aria-pressed={agentEffort === "smarter"}
                           title={chatSmarterAvailable ? g.effortSmarterHint : g.effortSmarterPaid}
                           className={cn(
-                            "relative flex items-center rounded-full text-[11px] font-medium transition-colors disabled:opacity-50",
+                            "relative -my-1.5 flex items-center rounded-full px-1 py-1.5 text-[11px] font-medium transition-colors disabled:opacity-50",
                             agentEffort === "smarter"
                               ? "px-1.5 text-atelier-accent"
                               : "text-atelier-muted/70 hover:text-atelier-ink",
@@ -7157,7 +7205,14 @@ function GenerateFormInner({
           error. Rendered only alongside the form: a folded composer keeps
           its pull-up tab clean. */}
       {!composerFolded && (
-        <div className="mt-2.5 text-center text-[11px] text-atelier-muted/70">
+        <div className="mt-2.5 text-center">
+          {/* Its own ground. Sitting in the sticky wrapper with a transparent
+              background meant the scrolling thread passed straight behind
+              these words. Paper rather than surface, and inline-block so the
+              tint hugs the sentence: it stays visibly OFF the card, which is
+              where the operator asked for it, without chat text sliding
+              underneath. */}
+          <span className="inline-block rounded-full bg-atelier-paper/85 px-3 py-1 text-[11px] text-atelier-muted/70 backdrop-blur-sm">
           {t.common.aiDisclaimer}{" "}
           <FeedbackLink
             label={t.common.aiDisclaimerFeedbackCta}
@@ -7167,6 +7222,7 @@ function GenerateFormInner({
             sendingLabel={t.common.feedbackSending}
             sentLabel={t.common.feedbackSent}
           />
+          </span>
         </div>
       )}
       </div>
