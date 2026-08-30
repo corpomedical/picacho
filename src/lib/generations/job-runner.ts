@@ -5,12 +5,14 @@ import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import {
   cancelQueuedJob,
   checkQueuedJob,
+  extractVideoFrame,
   fetchQueuedAudioUrl,
   fetchQueuedVideoUrl,
   submitLipSyncJob,
   submitSpeechJob,
   type QueuedJob,
 } from "@/lib/generations/providers/fal";
+import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
 import type { AttemptLog } from "@/lib/generations/pipeline";
@@ -754,9 +756,13 @@ async function finish(
   // here — poll, webhook or reaper.
   const { data: gen } = await admin
     .from("generations")
-    .select("video_model_id, content_type")
+    .select("video_model_id, content_type, character_profile_id")
     .eq("id", generationId)
-    .maybeSingle<{ video_model_id: string | null; content_type: string | null }>();
+    .maybeSingle<{
+      video_model_id: string | null;
+      content_type: string | null;
+      character_profile_id: string | null;
+    }>();
 
   const modelId = gen?.video_model_id ?? "";
   const kind = (gen?.content_type === "image" ? "image" : "video") as "video" | "image";
@@ -770,6 +776,84 @@ async function finish(
       const lastDetail =
         outcome.attempts[outcome.attempts.length - 1]?.steps.slice(-1)[0]?.detail ?? "Generation failed.";
       await recordModelFailure(modelId, kind, lastDetail, userId);
+    }
+  }
+
+  // Identity-score the finished VIDEO (2026-08-30).
+  //
+  // Until today this ran for images only (actions.ts, `contentType ===
+  // "image"`), so every video ever produced — the majority of spend, and the
+  // whole "the same face, in every single frame" claim — carried no score at
+  // all. finish() is the right home for it because it is the single choke
+  // point every video path converges on: the poll loop, the fal webhook, and
+  // the stale-job reaper all land here.
+  //
+  // Strictly best-effort, and that is load-bearing rather than lazy: the row
+  // above is already terminal and the render is already paid for. Nothing in
+  // this block may throw, refuse, or re-transition — a scorer outage must
+  // cost an unscored row, never a lost generation. Same contract the image
+  // lane has always had.
+  //
+  // NOT a gate. The score is recorded, not enforced: it does not withhold
+  // the video, does not trigger a re-render, and does not change what was
+  // charged. Making it a gate means deciding what happens to someone's
+  // credit when the retry also misses, which is a product decision and a
+  // billing change, not a scoring change. Recording it first is what makes
+  // that decision answerable with data instead of opinion.
+  if (outcome.status === "succeeded" && kind === "video" && gen?.character_profile_id) {
+    try {
+      const { data: character } = await admin
+        .from("character_profiles")
+        .select("reference_image_urls, traits")
+        .eq("id", gen.character_profile_id)
+        .maybeSingle<{
+          reference_image_urls: string[] | null;
+          traits: { hair?: string; distinguishing_features?: string } | null;
+        }>();
+
+      // Photo #1 is the identity anchor, matching the image lane exactly —
+      // scoring against a different photo than the one the product calls
+      // "the identity photo" would make the two numbers incomparable.
+      const identityPath = character?.reference_image_urls?.[0];
+      if (identityPath) {
+        const [{ data: signedIdentity }, frameUrl] = await Promise.all([
+          admin.storage.from("character-references").createSignedUrl(identityPath, 600),
+          extractVideoFrame(outcome.resultUrl),
+        ]);
+        if (signedIdentity?.signedUrl && frameUrl) {
+          const traitSummary = [
+            character?.traits?.hair ? `hair: ${character.traits.hair}` : null,
+            character?.traits?.distinguishing_features
+              ? `distinguishing features: ${character.traits.distinguishing_features}`
+              : null,
+          ]
+            .filter(Boolean)
+            .join("; ");
+
+          const verdict = await scoreIdentityMatch(frameUrl, signedIdentity.signedUrl, traitSummary);
+          if (verdict) {
+            // `unusable` is deliberately NOT acted on here, unlike the image
+            // lane which auto-fails and refunds a blank frame. On video it
+            // would be reading one still and condemning a whole clip on it —
+            // a mid-clip cut to black is a real thing a prompt can ask for.
+            // Recorded in the notes so it is visible without being acted on.
+            const { error: scoreError } = await admin
+              .from("generations")
+              .update({
+                match_score: verdict.score,
+                match_notes: verdict.unusable
+                  ? `${verdict.notes || "Scored from the middle frame."} (Frame read as blank or unusable.)`.slice(0, 500)
+                  : verdict.notes || null,
+              })
+              .eq("id", generationId);
+            if (scoreError) {
+              console.warn("Couldn't save video identity score:", scoreError.message);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Video identity scoring failed; the render is unaffected.", err);
     }
   }
 

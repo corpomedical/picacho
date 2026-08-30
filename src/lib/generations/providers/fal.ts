@@ -1,5 +1,6 @@
 import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { canExtractFrameFrom, IDENTITY_FRAME_TYPE } from "@/lib/generations/providers/frame-url";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 
 // Generate step — sends the compiled prompt to the selected video model on
@@ -100,6 +101,7 @@ const KLING_ELEMENTS_ENDPOINT = "fal-ai/kling-video/v1.6/standard/elements";
 const KLING_STORYBOARD_ENDPOINT = "fal-ai/kling-video/v2.1/pro/image-to-video";
 const KLING_O3_STANDARD_ENDPOINT = "fal-ai/kling-video/o3/standard/image-to-video";
 const REFRAME_ENDPOINT = "fal-ai/image-editing/reframe";
+const EXTRACT_FRAME_ENDPOINT = "fal-ai/ffmpeg-api/extract-frame";
 
 const DEFAULT_DURATION_SECONDS = 5;
 const DEFAULT_ASPECT_RATIO: VideoAspectRatio = "16:9";
@@ -157,6 +159,55 @@ async function reframeImage(
   const url = data.images?.[0]?.url;
   if (!url) throw new Error("fal.ai (reframe) response didn't include an image URL.");
   return url;
+}
+
+// Pulls ONE still out of a finished video so the identity scorer — which
+// only takes images — can be pointed at a clip (2026-08-30).
+//
+// Which frame, and why the URL is checked first, both live in frame-url.ts
+// with their reasoning and their tests. The short version: MIDDLE frame,
+// because several lanes pass the identity photo in as frame one.
+//
+// Best-effort by contract: every caller treats null as "unscored", exactly
+// as the image lane already treats a scorer hiccup. A frame we cannot pull
+// must never affect a render someone paid for.
+//
+// Cost is negligible — fal bills this at $0.0002 per second of input, so a
+// 5s clip is $0.001, about a third of one percent of the cheapest render.
+export async function extractVideoFrame(videoUrl: string): Promise<string | null> {
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) return null;
+  if (!canExtractFrameFrom(videoUrl)) return null;
+  try {
+    const res = await fetchWithTimeout(
+      `https://fal.run/${EXTRACT_FRAME_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Key ${apiKey}`,
+        },
+        body: JSON.stringify({ video_url: videoUrl, frame_type: IDENTITY_FRAME_TYPE }),
+      },
+      // Deliberately tight. This runs inside finish(), which the fal webhook
+      // and the poll loop both await, so the ceiling here is latency added
+      // to every completed video. A frame grab that hasn't returned in 25s
+      // is not worth making someone wait for.
+      25_000,
+    );
+    if (!res.ok) {
+      console.warn("Frame extraction failed; video will stay unscored.", {
+        status: res.status,
+        body: (await res.text()).slice(0, 300),
+      });
+      return null;
+    }
+    const data = (await res.json()) as { images?: { url?: string }[] };
+    return data.images?.[0]?.url ?? null;
+  } catch (err) {
+    console.warn("Frame extraction threw; video will stay unscored.", err);
+    return null;
+  }
 }
 
 // Confirmed directly against fal.ai's docs, 2026-08-07 (O3 Pro reference

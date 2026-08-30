@@ -36,8 +36,8 @@ export const PRICING_TIERS = [
     features: [
       "12 credits / month — about 12 standard clips or images",
       "Unlimited character profiles",
-      "Full draft → review → validate pipeline",
-      "Failed generations never use your credits",
+      "Your character's rulebook compiled into every prompt",
+      "Blocked or refused requests never use your credits",
     ],
   },
   {
@@ -50,8 +50,8 @@ export const PRICING_TIERS = [
     features: [
       "30 credits / month ≈ 30 standard videos, or 15 premium ones",
       "Unlimited character profiles",
-      "Full draft → review → validate pipeline",
-      "Failed generations never use your credits",
+      "Your character's rulebook compiled into every prompt",
+      "Blocked or refused requests never use your credits",
     ],
   },
   {
@@ -65,8 +65,8 @@ export const PRICING_TIERS = [
     features: [
       "140 credits / month ≈ 140 standard videos, or 70 premium ones",
       "Unlimited character profiles",
-      "Full draft → review → validate pipeline",
-      "Failed generations never use your credits",
+      "Your character's rulebook compiled into every prompt",
+      "Blocked or refused requests never use your credits",
     ],
   },
   {
@@ -93,8 +93,20 @@ export const PRICING_TIERS = [
     features: [
       "1000 credits / month ≈ 1000 standard videos, or 500 premium ones",
       "Everything in Studio",
-      "Priority rendering queue",
-      "Early access to new models and features",
+      // "Priority rendering queue" and "Early access to new models and
+      // features" were removed 2026-08-30: neither has any implementation.
+      // There is no server-side render queue to prioritise (advanceGeneration
+      // is driven by the requesting browser; claim_job_advance is a
+      // concurrency mutex, not a scheduler), and feature_flags are global
+      // booleans with no per-plan or per-user cohort. Do not re-add either
+      // line until the mechanism behind it exists — a paid bullet with no
+      // implementation is the one claim on this page with legal exposure.
+      //
+      // Elite's other genuine, unadvertised delta is unlimited prompt
+      // assists (PLAN_PROMPT_ASSIST_LIMITS.elite === Infinity). Deliberately
+      // NOT listed here: that endpoint has no rate limit, so advertising it
+      // invites the exact scripted abuse plans.ts:108 warns about. Add it
+      // once the limiter is in place.
       "API access — generate from your own software",
     ],
   },

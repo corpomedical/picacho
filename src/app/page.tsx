@@ -470,7 +470,12 @@ export default async function Home({
               }))}
               labels={{
                 pick: m.tryItPick,
-                steps: [m.tryItStepDraft, m.tryItStepReview, m.tryItStepValidate, m.tryItStepScore],
+                // Draft → Validate → Generate → Score, in the order the
+                // pipeline actually runs them. Was Draft → Review → Validate
+                // → Score until 2026-08-30; the second-model review step was
+                // removed in characters v2 (see pipeline.ts) and the chip
+                // outlived it.
+                steps: [m.tryItStepDraft, m.tryItStepValidate, m.tryItStepGenerate, m.tryItStepScore],
                 match: m.scoreBandMatch,
                 matchTitle: t.generate.identityMatch,
                 passed: m.scoreBandPassed,

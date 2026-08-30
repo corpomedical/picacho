@@ -4760,7 +4760,21 @@ function GenerateFormInner({
               {g.anchorPhotoLabel}
             </p>
             <p className="mt-0.5 text-[11px] leading-snug text-atelier-muted/80">{g.anchorPhotoHint}</p>
-            <div className="mt-1.5 flex gap-1.5">
+            {/* Reported 2026-08-30 with a screenshot: on a character with
+                eight saved photos this strip pushed the whole PAGE wider
+                than the phone, so the composer card ran off the right edge
+                and every heading on the screen ("Generate", "REFERENCE
+                PHOTO", "Picacho is AI…") sat clipped on the left. Eight
+                48px thumbs plus gaps is ~426px of flex-shrink-0 children
+                with nothing allowed to shrink and nothing clipping the
+                overflow, so the document itself grew a horizontal scroll.
+                Same class as the 2026-08-09 icon-strip incident below, and
+                the same fix: min-w-0 + overflow-x-auto so the strip scrolls
+                INSIDE itself. overscroll-x-contain matters more here than
+                usual — this app deliberately keeps one scroller per gesture
+                (the two-swipe fix), and without it a flick that runs out of
+                photos would chain straight back to the page. */}
+            <div className="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto overscroll-x-contain pb-1">
               {referencePhotos.map((p, i) => {
                 const selected = anchorPhotoPath ? anchorPhotoPath === p.path : i === 0;
                 return (

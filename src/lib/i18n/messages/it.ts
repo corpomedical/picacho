@@ -112,14 +112,14 @@ const it = {
       engineVoice: "Voce",
       engineScript: "Prompt",
       engineNote: "Una sola identità, mantenuta su ogni motore.",
-      stat1: "92%",
-      stat1Caption: "di somiglianza media, misurata da un modello di visione su ogni immagine",
+      stat1: "0–100",
+      stat1Caption: "punteggio di somiglianza, stampato sotto ogni immagine che generi con un personaggio",
       stat2: "3",
-      stat2Caption: "tentativi automatici prima di considerare fallita una generazione — la maggior parte dei problemi non ti raggiunge",
+      stat2Caption: "tentativi sul tuo prompt prima di considerare fallita una generazione — la maggior parte dei problemi non ti raggiunge",
       stat3: "1 foto",
       stat3Caption: "è tutto ciò che serve per ancorare un personaggio su immagini e video",
       scoreBandTitle: "Ogni immagine ha un punteggio. E tu vedi il numero.",
-      scoreBandBody: "La maggior parte degli strumenti spera che il volto si mantenga. Picacho verifica: un modello di visione confronta ogni risultato con la foto identità del personaggio e stampa il punteggio sotto l'immagine.",
+      scoreBandBody: "La maggior parte degli strumenti spera che il volto si mantenga. Picacho verifica: un modello di visione confronta ogni immagine con la foto identità del personaggio e stampa il punteggio sotto l'immagine.",
       scoreBandMatch: "Somiglianza d'identità",
       scoreBandPassed: "Superato al tentativo",
       heroTitle: "La stessa faccia, in ogni singolo",
@@ -133,7 +133,7 @@ const it = {
       step2Title: "Scriviamo e revisioniamo il prompt",
       step2Detail: "I tratti e le regole fisse del tuo personaggio vengono inseriti automaticamente.",
       step3Title: "Generiamo, poi validiamo",
-      step3Detail: "Ogni risultato viene valutato rispetto alla foto identità del tuo personaggio prima di arrivare a te.",
+      step3Detail: "Il tuo prompt viene verificato sul regolamento prima di generare, e ogni immagine viene valutata rispetto alla foto identità del personaggio dopo.",
       step4Title: "Vedi solo il risultato buono",
       step4Detail: "I tentativi falliti vengono ripetuti automaticamente, fino a un limite — senza che tu te ne accorga.",
       pricingHeading: "Prezzi",
@@ -150,9 +150,9 @@ const it = {
       mockupCheckMotion: "Lo stile di movimento corrisponde",
       mockupPassedBadge: "Superato · tentativo 1",
       mockupHiddenAttempts: "2 tentativi falliti — nascosti",
-      diffModelsTitle: "Due modelli IA, un solo prompt",
+      diffModelsTitle: "Il tuo regolamento, integrato",
       diffModelsDetail:
-        "Un modello scrive la bozza del tuo prompt, un secondo la rivede confrontandola con il regolamento del personaggio — individuando ciò che un solo passaggio lascerebbe sfuggire, prima ancora che la generazione inizi.",
+        "I tratti salvati e le regole di brand del tuo personaggio vengono integrati automaticamente in ogni prompt, poi verificati — e riparati — prima di spendere un solo credito.",
       diffFormatsTitle: "Un personaggio, ogni formato",
       diffFormatsDetail:
         "Riusa lo stesso personaggio in immagini, video multi-angolazione, scene con altri personaggi e dialoghi parlati — tutto fedele allo stesso aspetto.",
@@ -162,7 +162,7 @@ const it = {
       heroFreeTrialNote: "Una generazione gratuita ogni giorno — senza carta di credito.",
       showcaseEyebrow: "Risultato reale",
       showcaseTitle: "Questo è un risultato reale di Picacho",
-      showcaseSubtitle: "Redatto, revisionato, generato e validato automaticamente — senza modifiche manuali.",
+      showcaseSubtitle: "Redatto, validato, generato e valutato automaticamente — senza modifiche manuali.",
       showcaseBadge: "Generato da Picacho",
       showcasePlay: "Riproduci",
       showcasePause: "Pausa",
@@ -173,7 +173,7 @@ const it = {
       tryItSubtitle: "Prompt reali, render reali, punteggi reali — presi direttamente dalla cronologia di un personaggio Picacho.",
       tryItPick: "Scegli una scena",
       tryItStepDraft: "Bozza",
-      tryItStepReview: "Revisione",
+      tryItStepGenerate: "Generazione",
       tryItStepValidate: "Validazione",
       tryItStepScore: "Punteggio",
       tryItRealNote: "Un render reale di questa stessa pipeline — generato una volta, con un punteggio del {score}%, mostrato all'istante.",
@@ -198,7 +198,7 @@ const it = {
     pricing: {
       title: "Prezzi semplici, a crediti",
       subtitle:
-        "Ogni piano include la pipeline completa — bozza, revisione, generazione, validazione e nuovi tentativi automatici. Un video o un'immagine standard costa un credito; i modelli premium ne costano qualcuno in più. Ogni account include una generazione gratuita al giorno, senza carta di credito.",
+        "Ogni piano include la pipeline completa — bozza, validazione, generazione e nuovi tentativi automatici. Un video o un'immagine standard costa un credito; i modelli premium ne costano qualcuno in più. Ogni account include una generazione gratuita al giorno, senza carta di credito.",
       overageNote:
         "I crediti si rinnovano a ogni ciclo di fatturazione. Serve di più? Passa a un piano superiore quando vuoi, oppure acquista un pacchetto di crediti una tantum.",
       getStarted: "Inizia",
@@ -216,11 +216,11 @@ const it = {
       faq: [
         {
           q: "Cosa conta come una generazione?",
-          a: "Un'immagine o un clip video finito che supera la validazione e arriva a te. Dietro le quinte possiamo redigere, revisionare e riprovare più volte: è incluso. I clip più lunghi e i modelli video premium possono consumare più di un credito; il costo esatto è sempre mostrato prima della conferma.",
+          a: "Un'immagine o un clip video finito che supera la validazione e arriva a te. Dietro le quinte possiamo redigere, validare e riprovare più volte: è incluso. I clip più lunghi e i modelli video premium possono consumare più di un credito; il costo esatto è sempre mostrato prima della conferma.",
         },
         {
           q: "Le generazioni fallite consumano la mia quota?",
-          a: "No. Se la pipeline non riesce a produrre un risultato valido, quel tentativo non conta sulle tue generazioni mensili.",
+          a: "Se blocchiamo la richiesta, o un provider la rifiuta prima del rendering, non conta mai sulle tue generazioni mensili. Se un render fallisce dopo essere partito, scrivici: lo esaminiamo e ti riaccreditiamo il credito se la colpa era nostra.",
         },
         {
           q: "C'è una prova gratuita?",
@@ -254,8 +254,8 @@ const it = {
       notCompared: "Non verificato per questo confronto — consulta il loro sito per i dettagli aggiornati.",
       picIdentity: "Un'identità persistente ancorata alla tua foto di riferimento — lo stesso personaggio mantenuto attraverso scene, formati e modelli.",
       picFormat: "Immagini e video di personaggi basati su scene: riprese d'azione, inquadrature multi-angolo, scene con più personaggi e dialoghi con sincronizzazione labiale.",
-      picScoring: "Un modello di visione confronta ogni risultato con la foto identità, e il punteggio di somiglianza è stampato sotto il risultato.",
-      picFailures: "Le generazioni fallite non consumano mai i tuoi crediti — i tentativi vengono validati e ritentati prima che un risultato arrivi a te.",
+      picScoring: "Un modello di visione confronta ogni immagine con la foto identità, e il punteggio di somiglianza è stampato sotto l'immagine.",
+      picFailures: "Le richieste bloccate o rifiutate non consumano mai i tuoi crediti, e ogni prompt viene verificato sul tuo regolamento prima di spendere qualcosa.",
       picEntry: "Una generazione gratuita ogni giorno, senza carta. Piani a pagamento da $9/mese (Basic, 12 crediti) a $499/mese (Elite, 1.000 crediti) — ai visitatori UE vengono addebitate le stesse cifre in euro.",
       picCost: "Un clip standard da 5 secondi costa 1 credito — circa $0.50–0.75 a seconda del piano. I modelli premium costano di più; il costo esatto è sempre mostrato prima della conferma.",
       picWatermark: "Nessun watermark su nessun piano, prova gratuita inclusa.",
@@ -264,7 +264,7 @@ const it = {
       choosePicachoTitle: "Scegli Picacho se…",
       creditsNote: "I “crediti” non sono unità confrontabili tra prodotti — ogni piattaforma definisce i propri. Confronta piuttosto il costo di un clip finito.",
       proofTitle: "La differenza, in un solo badge",
-      proofBody: "La maggior parte degli strumenti ti chiede di fidarti che il volto si sia mantenuto. Picacho verifica: un modello di visione confronta ogni risultato con la foto identità del tuo personaggio e stampa il punteggio, prima che il tuo pubblico lo veda.",
+      proofBody: "La maggior parte degli strumenti ti chiede di fidarti che il volto si sia mantenuto. Picacho verifica: un modello di visione confronta ogni immagine con la foto identità del tuo personaggio e stampa il punteggio, prima che il tuo pubblico lo veda.",
       ctaTitle: "Provalo con il tuo personaggio",
       ctaSubtitle: "Configura un personaggio una volta e guardalo mantenere la stessa identità tra le scene — una generazione gratuita ogni giorno, senza carta di credito.",
       ctaSignup: "Inizia",
@@ -276,7 +276,7 @@ const it = {
       footnoteNotAdvertised: "“Non pubblicizzato” significa che non abbiamo trovato quella funzione dichiarata su quella pagina al momento della verifica — il prodotto potrebbe comunque offrire qualcosa di simile.",
       trademarkNote: "{name} è un marchio del rispettivo proprietario. Picacho è un prodotto indipendente e non è affiliato, sponsorizzato o approvato da {name}.",
       renoise: {
-        heroSubtitle: "Renoise è una canvas multimodello: modelli di frontiera per immagini, video e audio sotto lo stesso tetto, con prezzi al secondo e un flusso manuale di ancoraggio del personaggio — generi, scegli il risultato migliore e lo ricolleghi come riferimento inquadratura per inquadratura. Picacho è costruito per altro: il personaggio è un oggetto salvato con tratti e regole, integrato automaticamente in ogni prompt e valutato su ogni risultato. Ecco il confronto onesto.",
+        heroSubtitle: "Renoise è una canvas multimodello: modelli di frontiera per immagini, video e audio sotto lo stesso tetto, con prezzi al secondo e un flusso manuale di ancoraggio del personaggio — generi, scegli il risultato migliore e lo ricolleghi come riferimento inquadratura per inquadratura. Picacho è costruito per altro: il personaggio è un oggetto salvato con tratti e regole, integrato automaticamente in ogni prompt e con ogni immagine valutata. Ecco il confronto onesto.",
         cellIdentity: "Un flusso di riferimenti — blocchi un risultato generato e lo ricolleghi tu stesso a ogni inquadratura, cambiando modello lungo il percorso.",
         cellFormat: "Una canvas multimodello: Seedance 2.5/2.0, Kling 3.0 Omni, GPT Image 2, Midjourney V8.2 e altri, più modelli audio e una chat-agente (beta).",
         cellEntry: "A pagamento: Starter $20/mese (1.200 crediti, ≈60 video Seedance 2.0), Standard $60/mese (3.600), Advanced $200/mese (14.000 + bonus). Le promo del primo periodo variano.",
@@ -289,12 +289,12 @@ const it = {
         ],
         choosePicacho: [
           "Preferisci salvare il personaggio una volta — tratti, regole, riferimenti — e vederlo applicato automaticamente, invece di ricollegarlo a mano a ogni inquadratura.",
-          "Vuoi l'ancoraggio misurato, non presunto: un modello di visione valuta ogni risultato contro la foto identità e mostra il numero.",
-          "Preferisci pagare solo ciò che tieni — le generazioni fallite non consumano mai i tuoi crediti.",
+          "Vuoi l'ancoraggio misurato, non presunto: un modello di visione valuta ogni immagine contro la foto identità e mostra il numero.",
+          "Preferisci non pagare per una richiesta che un provider ha rifiutato in partenza.",
         ],
       },
       imagineart: {
-        heroSubtitle: "ImagineArt è una suite creativa ampia: modelli di immagini, video e chat in un unico spazio, con livelli a generazione illimitata e consistenza del personaggio basata su riferimenti costruita attorno a Seedance. Picacho è costruito per altro: un'identità salvata, integrata in ogni prompt e valutata su ogni risultato, privata di default su ogni piano. Ecco il confronto onesto.",
+        heroSubtitle: "ImagineArt è una suite creativa ampia: modelli di immagini, video e chat in un unico spazio, con livelli a generazione illimitata e consistenza del personaggio basata su riferimenti costruita attorno a Seedance. Picacho è costruito per altro: un'identità salvata, integrata in ogni prompt e con ogni immagine valutata, privata di default su ogni piano. Ecco il confronto onesto.",
         cellIdentity: "Consistenza basata su riferimenti — alleghi un'immagine di riferimento (o un fotogramma iniziale) per tenere stabile il personaggio tra i clip.",
         cellFormat: "Una suite creativa completa: molti modelli di immagini e video, accesso a chat LLM e livelli con modelli illimitati su Ultimate e Creator.",
         cellEntry: "Esiste un livello gratuito. A pagamento (fatturazione annuale): Basic $13/mese (3K crediti, ≈97 video — le immagini sono pubbliche su Basic), Standard $30/mese (8K, privato), Ultimate $55/mese (16K), Creator $350/mese (100K).",
@@ -307,12 +307,12 @@ const it = {
         ],
         choosePicacho: [
           "Il tuo lavoro deve restare privato su ogni piano — il livello Basic di ImagineArt rende pubbliche le immagini; Picacho mai.",
-          "Vuoi l'identità verificata, non presunta: ogni risultato valutato contro la foto di riferimento, numero in vista.",
-          "Preferisci pagare solo ciò che tieni — le generazioni fallite non consumano mai i tuoi crediti.",
+          "Vuoi l'identità verificata, non presunta: ogni immagine valutata contro la foto di riferimento, numero in vista.",
+          "Preferisci non pagare per una richiesta che un provider ha rifiutato in partenza.",
         ],
       },
       higgsfield: {
-        heroSubtitle: "Higgsfield è un'enorme suite creativa multi-modello: preset camera di Cinema Studio, effetti virali, il modello fotografico Soul e Kling, Seedance, Sora e Veo sotto lo stesso tetto, con finestre di generazione illimitata sui piani maggiori. Picacho è costruito per qualcosa di più stretto — un personaggio coerente in ogni render, con ogni risultato valutato contro la foto identità. Ecco il confronto onesto.",
+        heroSubtitle: "Higgsfield è un'enorme suite creativa multi-modello: preset camera di Cinema Studio, effetti virali, il modello fotografico Soul e Kling, Seedance, Sora e Veo sotto lo stesso tetto, con finestre di generazione illimitata sui piani maggiori. Picacho è costruito per qualcosa di più stretto — un personaggio coerente in ogni render, con ogni immagine valutata contro la foto identità. Ecco il confronto onesto.",
         cellIdentity: "Soul ID — un'identità di personaggio addestrata, usata in una suite di oltre 80 strumenti e modelli di terze parti.",
         cellFormat: "Un parco giochi creativo multi-modello: preset camera, effetti virali, avatar parlanti (Speak) e un ampio roster di modelli di terze parti.",
         cellEntry: "Livello gratuito: uso limitato. Starter $15/mese (fatturato annualmente) con 200 crediti — senza accesso a Seedance 2.0/2.5. Plus $49/mese ($39 annuale) con 1.000 crediti sblocca l'intero catalogo. Ultra $129/mese ($99 annuale) con 3.000 crediti.",
@@ -330,7 +330,7 @@ const it = {
         ],
       },
       heygen: {
-        heroSubtitle: "HeyGen è una piattaforma di avatar matura: avatar fotografici e gemelli digitali che presentano il tuo copione in camera, con sincronizzazione labiale in 175 lingue. Picacho è fatto per qualcosa di diverso: personaggi che recitano in scene cinematografiche, con ogni risultato valutato rispetto alla foto identità. Ecco il confronto onesto.",
+        heroSubtitle: "HeyGen è una piattaforma di avatar matura: avatar fotografici e gemelli digitali che presentano il tuo copione in camera, con sincronizzazione labiale in 175 lingue. Picacho è fatto per qualcosa di diverso: personaggi che recitano in scene cinematografiche, con ogni immagine valutata rispetto alla foto identità. Ecco il confronto onesto.",
         cellIdentity: "Un avatar presentatore — un avatar fotografico o un gemello digitale che legge il tuo copione in camera.",
         cellFormat: "Video parlato in stile presentatore, con voce sincronizzata in 175 lingue.",
         cellEntry: "Gratis: 3 video al mese. A pagamento: Creator $29/mese (600 crediti), Pro $49/mese (1.000), Business $149/mese (1.500, +$20 per posto extra).",
@@ -343,12 +343,12 @@ const it = {
         ],
         choosePicacho: [
           "Il tuo personaggio deve recitare, non presentare — scene, movimento e dialoghi, oltre il mezzobusto parlante.",
-          "Vuoi l'identità verificata, non presunta: ogni risultato valutato rispetto alla foto di riferimento, con il numero in vista.",
-          "Preferisci pagare solo ciò che tieni — le generazioni fallite non consumano mai i tuoi crediti.",
+          "Vuoi l'identità verificata, non presunta: ogni immagine valutata rispetto alla foto di riferimento, con il numero in vista.",
+          "Preferisci non pagare per una richiesta che un provider ha rifiutato in partenza.",
         ],
       },
       hedra: {
-        heroSubtitle: "Il modello Character-3 di Hedra anima un'immagine trasformandola in un clip di personaggio parlante, a un prezzo per clip eccellente. Picacho è fatto per qualcosa di diverso: un'identità mantenuta attraverso molte scene e modelli di frontiera, con ogni risultato valutato rispetto ad essa. Ecco il confronto onesto.",
+        heroSubtitle: "Il modello Character-3 di Hedra anima un'immagine trasformandola in un clip di personaggio parlante, a un prezzo per clip eccellente. Picacho è fatto per qualcosa di diverso: un'identità mantenuta attraverso molte scene e modelli di frontiera, con ogni immagine valutata rispetto ad essa. Ecco il confronto onesto.",
         cellIdentity: "Un'immagine di personaggio che prende vita — Character-3 anima una foto in un clip parlante.",
         cellFormat: "Clip di personaggi parlanti, incentrati su Character-3, il modello proprietario di Hedra.",
         cellEntry: "Livello gratuito disponibile (con watermark). A pagamento: Basic $15/mese (1.500 crediti), Creator $30/mese (5.400), Professional $75/mese (14.400) — e i pacchetti di crediti non scadono mai.",
@@ -362,7 +362,7 @@ const it = {
         choosePicacho: [
           "Un personaggio deve restare riconoscibilmente sé stesso attraverso molte scene e formati — senza ri-ancorarlo immagine per immagine.",
           "Vuoi modelli di frontiera — Kling O3 Pro, Veo 3.1, Seedance 2.5 — dietro un'unica pipeline d'identità, con regole di brand applicate prima di generare qualsiasi cosa.",
-          "Vuoi ogni risultato valutato rispetto alla foto identità, e generazioni fallite che non costano nulla.",
+          "Vuoi ogni immagine valutata rispetto alla foto identità, e richieste rifiutate che non costano nulla.",
         ],
       },
     },
@@ -949,7 +949,7 @@ const it = {
     subtitle: "Tutto: dal primo personaggio ai video, ai crediti e a come sistemare i risultati strani.",
     s1h: "L'idea di fondo",
     s1p1: "Picacho crea immagini e video dei tuoi personaggi — la stessa persona, ogni volta. Crei un personaggio una sola volta, con una foto e qualche tratto, e da lì in poi descrivi le scene con parole semplici.",
-    s1p2: "Ogni generazione è ancorata alla foto identità del personaggio, così il volto resta lo stesso. Un punteggio di somiglianza sotto ogni risultato ti dice quanto ha tenuto.",
+    s1p2: "Ogni generazione è ancorata alla foto identità del personaggio, così il volto resta lo stesso. Un punteggio di somiglianza sotto ogni immagine ti dice quanto ha tenuto.",
     s2h: "Passo 1 — Crea il tuo personaggio",
     s2p1: "Dagli un nome e aggiungi foto. La prima foto della galleria è la Foto identità — l'ancora da cui parte ogni generazione. Funziona meglio una foto nitida, ben illuminata e frontale.",
     s2p2: "I tratti sono di due tipi. Quelli d'identità (capelli, segni distintivi) sono sempre applicati — rendono il personaggio chi è. Abbigliamento e personalità sono predefiniti: valgono quando la scena non dice altro, e si fanno da parte quando lo dice. Una riunione di lavoro implica abiti formali, anche se l'outfit salvato è casual.",
@@ -1062,9 +1062,9 @@ const it = {
     newShort: "+ Nuovo",
     noneYet: "Ancora nessuno.",
     aiGeneration: "Generazione IA",
-    skipRefinementLabel: "Salta bozza e revisione IA",
+    skipRefinementLabel: "Salta la bozza IA",
     skipRefinementHelp:
-      "Invia il tuo prompt direttamente al generatore, saltando i passaggi di bozza con Claude e revisione con OpenAI. Più veloce ed economico, ma perde la rifinitura extra di quei passaggi.",
+      "Invia il tuo prompt direttamente al generatore, saltando il passaggio di bozza con Claude. Più veloce ed economico, ma perde la rifinitura extra di quei passaggi.",
     emailPreferences: "Preferenze email",
     marketingEmailsLabel: "Novità e offerte sul prodotto",
     marketingEmailsHelp:
@@ -1089,8 +1089,8 @@ const it = {
       features: [
         "12 crediti ≈ 12 video o immagini standard / mese",
         "Profili personaggio illimitati",
-        "Pipeline completa bozza → revisione → convalida",
-        "Le generazioni fallite non consumano mai i tuoi crediti",
+        "Il regolamento del personaggio integrato in ogni prompt",
+        "Le richieste bloccate o rifiutate non consumano mai i tuoi crediti",
       ],
     },
     starter: {
@@ -1099,8 +1099,8 @@ const it = {
       features: [
         "30 crediti ≈ 30 video standard o 15 premium / mese",
         "Profili personaggio illimitati",
-        "Pipeline completa bozza → revisione → convalida",
-        "Le generazioni fallite non consumano mai i tuoi crediti",
+        "Il regolamento del personaggio integrato in ogni prompt",
+        "Le richieste bloccate o rifiutate non consumano mai i tuoi crediti",
       ],
     },
     growth: {
@@ -1109,8 +1109,8 @@ const it = {
       features: [
         "140 crediti ≈ 140 video standard o 70 premium / mese",
         "Profili personaggio illimitati",
-        "Pipeline completa bozza → revisione → convalida",
-        "Le generazioni fallite non consumano mai i tuoi crediti",
+        "Il regolamento del personaggio integrato in ogni prompt",
+        "Le richieste bloccate o rifiutate non consumano mai i tuoi crediti",
       ],
     },
     studio: {
@@ -1129,8 +1129,6 @@ const it = {
       features: [
         "1000 crediti ≈ 1000 video standard o 500 premium / mese",
         "Tutto ciò che include Studio",
-        "Coda di rendering prioritaria",
-        "Accesso anticipato a nuovi modelli e funzioni",
         "Accesso API — genera dal tuo software",
       ],
     },

@@ -386,18 +386,38 @@ export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].so
 // job is keeping weights proportional across models so a minute of Veo costs
 // the user proportionally more allowance than a minute of Kling.
 //
-// It is emphatically NOT what a credit sells for. Plans work out at roughly
-// $1.80-2.15 per credit (see lib/pricing.ts), so gross margin is around 85%.
-// Confusing the two led to a real mistake on 2026-08-11 — Veo was declared
-// "sold at a loss" and repriced on that basis, when it was earning about 85%.
-// If you find yourself comparing a credit weight against this number and
-// calling the difference margin, that is the same error.
+// It is emphatically NOT what a credit sells for. Plans work out at $0.499
+// (Elite) to $0.75 (Basic) per credit — see lib/pricing.ts.
+//
+// CORRECTED 2026-08-30. This comment used to say "roughly $1.80-2.15 per
+// credit, so gross margin is around 85%". That was true until the 2026-08-19
+// restructure multiplied every tier's allowance 3-4x at unchanged prices,
+// which cut the realized rate to the range above — the 85% figure outlived
+// it by eleven days and was wrong by about 3x. It sat directly over
+// pricingAudit(), so it was also the number anyone reading this file would
+// have quoted.
+//
+// Measured against production on 2026-08-30: 1.132 provider attempts per
+// generation (the pricing model had assumed 1.57 — the 2026-08-10 pipeline
+// fixes worked and nobody re-measured). All-in, a credit costs about
+// $0.28 provider + $0.02 drafting, x1.132 = ~$0.34. Net of 21% VAT and
+// Stripe fees, real gross margin is roughly 42% on Basic, 33% Starter,
+// 25% Growth, 23% Studio, 16% Elite — and about 1% on Elite ANNUAL, which
+// needs a pricing decision rather than a comment. Re-measure after any
+// change to retry behavior; do not let this paragraph go stale again.
+//
+// Confusing cost basis with margin led to a real mistake on 2026-08-11 —
+// Veo was declared "sold at a loss" and repriced on that basis. If you find
+// yourself comparing a credit weight against this number and calling the
+// difference margin, that is the same error.
 export const COST_BASIS_USD_PER_CREDIT = 0.28;
 
 // Options whose credit weight is out of step with what they actually cost.
 //
-// NOT a profitability check — every model here is comfortably profitable at
-// current plan prices. This catches weights that have drifted relative to
+// NOT a profitability check — every model here is profitable at current
+// monthly plan prices (see the margin note above; Elite ANNUAL is the one
+// row that is not comfortably so). This catches weights that have drifted
+// relative to
 // provider cost, which shows up as one model quietly consuming less of
 // someone's allowance per dollar of spend than another. That matters when a
 // provider changes its prices and a weight isn't updated to match.

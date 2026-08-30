@@ -39,7 +39,7 @@ const terms: Record<Locale, LegalDoc> = {
         heading: "Subscription & billing",
         paragraphs: [
           "Subscriptions are billed monthly and processed by our payment provider, Stripe. Plan pricing and monthly generation allowances are described on the Pricing page. Your allowance resets at the start of each billing period; unused generations do not roll over. You can cancel at any time from Settings — cancelling stops the next renewal, and you keep full access and any remaining generations until the end of the period you've paid for.",
-          "Failed generations never consume your allowance: only results that pass validation and are delivered to you count. If this is your first subscription and you have used fewer than 5 generations, you may request a full refund within 7 days of purchase by contacting support. Beyond that, payments are non-refundable except where a refund is required by applicable law.",
+          "Requests blocked by your own brand rules, and requests a provider refuses before any rendering begins, never consume your allowance. If a generation fails after rendering has begun, contact support: we will review it and restore the credit where the fault was ours. If this is your first subscription and you have used fewer than 5 generations, you may request a full refund within 7 days of purchase by contacting support. Beyond that, payments are non-refundable except where a refund is required by applicable law.",
         ],
       },
       {
@@ -107,7 +107,7 @@ const terms: Record<Locale, LegalDoc> = {
         heading: "Suscripción y facturación",
         paragraphs: [
           "Las suscripciones se facturan mensualmente y las procesa nuestro proveedor de pagos, Stripe. Los precios de los planes y las cuotas mensuales de generación se describen en la página de Precios. Tu cuota se restablece al inicio de cada período de facturación; las generaciones no utilizadas no se acumulan. Puedes cancelar en cualquier momento desde Ajustes: la cancelación detiene la próxima renovación y conservas el acceso completo y las generaciones restantes hasta el final del período pagado.",
-          "Las generaciones fallidas nunca consumen tu cuota: solo cuentan los resultados que superan la validación y te son entregados. Si es tu primera suscripción y has usado menos de 5 generaciones, puedes solicitar el reembolso completo dentro de los 7 días posteriores a la compra contactando con soporte. Más allá de eso, los pagos no son reembolsables salvo que la ley aplicable exija un reembolso.",
+          "Las solicitudes bloqueadas por tus propias reglas de marca, y las que un proveedor rechaza antes de que empiece cualquier renderizado, nunca consumen tu cuota. Si una generación falla una vez iniciado el renderizado, contacta con soporte: lo revisaremos y te devolveremos el crédito si el fallo fue nuestro. Si es tu primera suscripción y has usado menos de 5 generaciones, puedes solicitar el reembolso completo dentro de los 7 días posteriores a la compra contactando con soporte. Más allá de eso, los pagos no son reembolsables salvo que la ley aplicable exija un reembolso.",
         ],
       },
       {
@@ -176,7 +176,7 @@ const terms: Record<Locale, LegalDoc> = {
         heading: "Assinatura e cobrança",
         paragraphs: [
           "As assinaturas são cobradas mensalmente e processadas pelo nosso provedor de pagamentos, a Stripe. Os preços dos planos e as cotas mensais de geração estão descritos na página de Preços. Sua cota é renovada no início de cada período de cobrança; gerações não utilizadas não são acumuladas. Você pode cancelar a qualquer momento em Configurações — o cancelamento interrompe a próxima renovação e você mantém o acesso completo e as gerações restantes até o fim do período pago.",
-          "Gerações com falha nunca consomem sua cota: apenas resultados que passam na validação e são entregues a você contam. Se for sua primeira assinatura e você tiver usado menos de 5 gerações, pode solicitar o reembolso integral em até 7 dias após a compra entrando em contato com o suporte. Além disso, os pagamentos não são reembolsáveis, exceto quando a lei aplicável exigir.",
+          "Solicitações bloqueadas pelas suas próprias regras de marca, e as que um provedor recusa antes de qualquer renderização começar, nunca consomem sua cota. Se uma geração falhar depois de iniciada a renderização, entre em contato com o suporte: vamos revisar e devolver o crédito se a falha foi nossa. Se for sua primeira assinatura e você tiver usado menos de 5 gerações, pode solicitar o reembolso integral em até 7 dias após a compra entrando em contato com o suporte. Além disso, os pagamentos não são reembolsáveis, exceto quando a lei aplicável exigir.",
         ],
       },
       {
@@ -246,7 +246,7 @@ const terms: Record<Locale, LegalDoc> = {
         heading: "Abbonamento e fatturazione",
         paragraphs: [
           "Gli abbonamenti sono fatturati mensilmente ed elaborati dal nostro fornitore di pagamenti, Stripe. I prezzi dei piani e le quote mensili di generazione sono descritti nella pagina Prezzi. La tua quota si azzera all'inizio di ogni ciclo di fatturazione; le generazioni non utilizzate non si accumulano. Puoi disdire in qualsiasi momento dalle Impostazioni: la disdetta interrompe il rinnovo successivo e mantieni l'accesso completo e le generazioni rimanenti fino alla fine del periodo pagato.",
-          "Le generazioni fallite non consumano mai la tua quota: contano solo i risultati che superano la validazione e ti vengono consegnati. Se è il tuo primo abbonamento e hai usato meno di 5 generazioni, puoi richiedere il rimborso completo entro 7 giorni dall'acquisto contattando il supporto. Oltre a ciò, i pagamenti non sono rimborsabili salvo quando un rimborso sia richiesto dalla legge applicabile.",
+          "Le richieste bloccate dalle tue stesse regole di brand, e quelle che un provider rifiuta prima che inizi qualsiasi rendering, non consumano mai la tua quota. Se una generazione fallisce dopo l'inizio del rendering, contatta il supporto: la esamineremo e ti riaccrediteremo il credito se la colpa era nostra. Se è il tuo primo abbonamento e hai usato meno di 5 generazioni, puoi richiedere il rimborso completo entro 7 giorni dall'acquisto contattando il supporto. Oltre a ciò, i pagamenti non sono rimborsabili salvo quando un rimborso sia richiesto dalla legge applicabile.",
         ],
       },
       {

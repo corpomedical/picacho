@@ -989,6 +989,27 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       result_url: null,
       pipeline_log: [],
       video_model_id: contentType === "video" ? videoModelId : null,
+      // The model that rendered this, for BOTH content types (2026-08-30).
+      // video_model_id stays exactly as it was so existing reporting is
+      // untouched; model_id is the column you can actually GROUP BY.
+      //
+      // Why it had to exist: images were the only content type that got an
+      // identity score, and images recorded no model anywhere — there was no
+      // image model column at all. Video recorded a model and was never
+      // scored. So the score and the model sat on opposite sides of a divide
+      // nothing crossed, and "which model holds this character's face best"
+      // was unanswerable from this table in either direction.
+      //
+      // Safe before the column exists: reserve_generation builds its row with
+      // jsonb_populate_record, which silently drops keys that match no
+      // column. If pending-2026-08-30/identity-scoring.sql hasn't run yet this
+      // is a no-op rather than a failed insert.
+      //
+      // Records the SELECTED model. The image lane can fall back GPT → FLUX
+      // on a safety rejection and the pipeline reports that only as a display
+      // name in the step log, so pipeline_log stays the tiebreaker for those
+      // rows until the pipeline returns the id it actually used.
+      model_id: contentType === "video" ? videoModelId : imageModelId,
       video_duration_seconds: contentType === "video" ? videoDurationSeconds : null,
       video_aspect_ratio: contentType === "video" ? videoAspectRatio : null,
       credits_used: creditWeight,
@@ -2136,6 +2157,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       angle_group_id: groupId,
       angle: angleId,
       video_model_id: videoModelId,
+      // Same column, same reason as the single-render path above — multi-angle
+      // is where per-model fidelity comparison is most useful, since every
+      // angle in a group shares one compiled scene and differs only by camera.
+      model_id: videoModelId,
       video_duration_seconds: videoDurationSeconds,
       video_aspect_ratio: videoAspectRatio,
       credits_used: creditWeight,
