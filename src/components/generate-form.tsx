@@ -40,7 +40,12 @@ import {
 } from "@/lib/generations/user-facing-error";
 import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
-import { resolveSendPlan, type AttachmentRole, type PlanIssue } from "@/lib/generations/send-plan";
+import {
+  MODEL_CAPABILITIES,
+  resolveSendPlan,
+  type AttachmentRole,
+  type PlanIssue,
+} from "@/lib/generations/send-plan";
 import { CINEMA_PRESETS, isProvenPreset, type CinemaPresetCategory } from "@/lib/generations/cinema-presets";
 import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
 import {
@@ -4239,6 +4244,17 @@ function GenerateFormInner({
   // rather than collapsing into a static "already picked" chip, or there'd
   // be no way to actually select that one character.
   const castSize = (currentCharacter ? 1 : 0) + companionCharacterIds.length;
+  // Does the CURRENT model actually need a character? Read from the same
+  // capability table the server uses (identity.required), so the chip and
+  // the send agree: models whose fal endpoint starts from a reference frame
+  // — kling-o3, kling-2.5, kling-o3-pro, seedance, seedance-2 — genuinely
+  // cannot run without one, and send-plan raises a blocking
+  // NEEDS_REFERENCE_PHOTO for them. Kling 1.6 and Veo can render a generic
+  // person, so an empty character selector there is a choice, not an error.
+  const selectedModelNeedsCharacter =
+    contentType === "video" &&
+    Boolean(MODEL_CAPABILITIES[videoModelId as keyof typeof MODEL_CAPABILITIES]?.identity.required);
+
   const characterPicker =
     characters.length > 0 ? (
       <div ref={characterMenuRef} data-tour-id="tour-character-select" className="min-w-0">
@@ -4256,12 +4272,23 @@ function GenerateFormInner({
             "flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-left transition-colors disabled:opacity-50",
             characterMenuOpen
               ? "bg-atelier-ink/[0.08]"
-              : !characterId
-                ? // Nothing picked yet: warm the chip so the empty selector
-                  // can't be overlooked (the 2026-08-21 incident: a new user
-                  // created a character, never selected it, and sent a
-                  // character-less render without realising). Still never
-                  // auto-picks — that rule stands.
+              : !characterId && selectedModelNeedsCharacter
+                ? // Nothing picked yet AND this model cannot render without
+                  // one: warm the chip so the empty selector can't be
+                  // overlooked (the 2026-08-21 incident: a new user created a
+                  // character, never selected it, and sent a character-less
+                  // render without realising). Still never auto-picks — that
+                  // rule stands.
+                  //
+                  // Narrowed to requiring models 2026-08-30 (operator: "you
+                  // have the option to not select character, so the character
+                  // dropdown must not be highlighted in red"). It used to
+                  // warm on EVERY model, which made a legitimate choice look
+                  // like a mistake: Kling 1.6 and Veo both render a generic
+                  // person perfectly well without a character, and Veo is the
+                  // lane the composer actively recommends for exactly that.
+                  // An alarm that fires when nothing is wrong is an alarm
+                  // people learn to ignore on the models where it matters.
                   "bg-atelier-accent/[0.09] hover:bg-atelier-accent/[0.14]"
                 : "hover:bg-atelier-ink/[0.06]",
           )}

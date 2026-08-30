@@ -5,7 +5,7 @@
 // in a later phase, the test changes IN THE SAME COMMIT, never silently.
 
 import { describe, expect, it } from "vitest";
-import { resolveSendPlan, type ResolveInput } from "./send-plan";
+import { MODEL_CAPABILITIES, resolveSendPlan, type ResolveInput } from "./send-plan";
 
 const base: ResolveInput = {
   contentType: "video",
@@ -396,5 +396,35 @@ describe("Veo identity", () => {
   it("lets an attached photo override the saved face, same as every other lane", () => {
     const plan = resolveSendPlan({ ...veo, attachments: [{ id: "a", isImage: true }] });
     expect(entry(plan, "identity")!.source).toBe("attachment");
+  });
+});
+
+// Which models genuinely need a character (2026-08-30). The composer warms
+// the character chip when nothing is picked, and it used to do that on EVERY
+// model — which made a legitimate choice look like a mistake on the two
+// lanes that render a generic person perfectly well. The chip now reads
+// identity.required from this table, so these flags are UI behaviour, not
+// just documentation.
+describe("identity.required — what the character chip warns about", () => {
+  it("requires a character on every lane that starts from a reference frame", () => {
+    // These endpoints are image-to-video or reference-to-video: without a
+    // photo there is nothing to start from, and send-plan blocks the send.
+    for (const id of ["kling-2.5", "kling-o3", "kling-o3-pro", "seedance", "seedance-2"] as const) {
+      expect(MODEL_CAPABILITIES[id].identity.required).toBe(true);
+      const plan = resolveSendPlan({ ...base, modelId: id, character: null });
+      expect(issue(plan, "NEEDS_REFERENCE_PHOTO")?.severity).toBe("block");
+    }
+  });
+
+  it("REGRESSION: Kling 1.6 and Veo do NOT require one, and must not warn", () => {
+    // Both render a generic person, and Veo is the lane the composer
+    // actively recommends when nobody is cast. An alarm that fires when
+    // nothing is wrong is one people learn to ignore where it matters.
+    for (const id of ["kling", "veo"] as const) {
+      expect(MODEL_CAPABILITIES[id].identity.required).toBe(false);
+      const plan = resolveSendPlan({ ...base, modelId: id, character: null });
+      expect(issue(plan, "NEEDS_REFERENCE_PHOTO")).toBeUndefined();
+      expect(entry(plan, "identity")!.noteCode).toBe("GENERIC_PERSON");
+    }
   });
 });
