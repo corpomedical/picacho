@@ -42,6 +42,7 @@ import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import {
   CHARACTERLESS_MODEL_IDS,
+  MODEL_CAPABILITIES,
   resolveSendPlan,
   type AttachmentRole,
   type PlanIssue,
@@ -4257,6 +4258,30 @@ function GenerateFormInner({
   const warnOnEmptyCharacter =
     contentType !== "video" || !CHARACTERLESS_MODEL_IDS.includes(videoModelId);
 
+  // Does this model use exactly ONE identity photo?
+  //
+  // Decides whether the "which photo should this match?" picker is worth
+  // showing at all. Since baseline multi-reference (2026-08-30) the elements
+  // and citation lanes receive the character's whole gallery — up to four
+  // photos — so asking someone to choose one is asking a question the send
+  // no longer has an answer for: all of them ride, and the pick only
+  // reorders which leads. On a single-reference lane the choice is real and
+  // consequential, because that one photo IS the render's identity (and on
+  // the first-frame models, its opening shot).
+  //
+  //   kling, kling-o3-pro, seedance, seedance-2  max 4  -> no picker
+  //   kling-o3, kling-2.5, veo                   max 1  -> picker
+  //
+  // Images always show it: both image lanes (gpt-image, flux) take exactly
+  // one source image, and the composer does not know which of the two is
+  // active — an admin setting picks that — so 1 is the right constant here
+  // rather than a lookup that could only ever return 1.
+  const identityImageSlots =
+    contentType === "video"
+      ? (MODEL_CAPABILITIES[videoModelId as keyof typeof MODEL_CAPABILITIES]?.identity.max ?? 1)
+      : 1;
+  const anchorPhotoPickerRelevant = identityImageSlots <= 1;
+
   const characterPicker =
     characters.length > 0 ? (
       <div ref={characterMenuRef} data-tour-id="tour-character-select" className="min-w-0">
@@ -4837,7 +4862,10 @@ function GenerateFormInner({
             )}
           </div>
         </div>
-        {referencePhotos.length > 1 && videoAdvancedMode === "none" && !isMultiCharacter && (
+        {referencePhotos.length > 1 &&
+          anchorPhotoPickerRelevant &&
+          videoAdvancedMode === "none" &&
+          !isMultiCharacter && (
           <div>
             <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
               {g.anchorPhotoLabel}

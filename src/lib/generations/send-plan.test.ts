@@ -444,3 +444,30 @@ describe("CHARACTERLESS_MODEL_IDS — where an empty character chip is normal", 
     expect(CHARACTERLESS_MODEL_IDS).not.toContain("kling");
   });
 });
+
+// identity.max also drives whether the composer shows the "which photo
+// should this match?" picker (2026-08-30). Since baseline multi-reference
+// the four-slot lanes receive the whole gallery, so choosing one is asking a
+// question the send no longer has an answer for; on a single-slot lane that
+// one photo IS the render's identity and the choice is real.
+describe("identity.max — how many photos actually ride", () => {
+  it("gives four slots to the elements and citation lanes, so no photo pick is needed", () => {
+    for (const id of ["kling", "kling-o3-pro", "seedance", "seedance-2"] as const) {
+      expect(MODEL_CAPABILITIES[id].identity.max).toBe(4);
+    }
+  });
+
+  it("gives ONE slot to the first-frame lanes and Veo, where the pick matters", () => {
+    // On these the chosen photo is the render's whole identity — and on the
+    // first-frame pair it is also the opening shot of the clip.
+    for (const id of ["kling-o3", "kling-2.5", "veo"] as const) {
+      expect(MODEL_CAPABILITIES[id].identity.max).toBe(1);
+    }
+  });
+
+  it("gives ONE slot to both image lanes, which take a single source image", () => {
+    for (const id of ["gpt-image", "flux"] as const) {
+      expect(MODEL_CAPABILITIES[id].identity.max).toBe(1);
+    }
+  });
+});
