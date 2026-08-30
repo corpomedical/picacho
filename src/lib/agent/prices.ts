@@ -63,21 +63,32 @@ export function unitsForTurn(usage: TurnUsage): number {
 // RESERVED against the allowance before the call runs. The turn is settled
 // afterwards at its real cost, so these are ceilings, not prices.
 //
-// Derived, not guessed. The input side is the same for both modes: the two
-// system blocks (~1k tokens) plus the project context (~2.5k on a busy
-// account: twelve characters, thirty rules, fifteen renders) plus twelve
-// turns of history capped at 2,000 characters each (~6k) — call it 9,500
-// tokens, and price it as a cache WRITE at 1.25x, which is the expensive
-// first turn of a conversation:
+// MEASURED 2026-08-31, first live runs against a real account (three
+// characters, nineteen brand rules, fifteen renders):
 //
-//   input  9,500 tok x $5/Mtok x 1.25  = $0.059
-//   faster output 1,500 tok x $25/Mtok = $0.038  ->  $0.097  ->  5 units
-//   smarter output 4,000 tok x $25/Mtok = $0.100 ->  $0.159  ->  8 units
+//   faster, cold  input 16 fresh + 2,602 written + 1,206 read, output 98
+//                 -> $0.019 -> 1 unit
+//   faster, warm  input 125 fresh + 3,808 read, output 153
+//                 -> $0.006 -> 1 unit
+//   smarter       input 22 fresh + 2,602 written + 1,206 read, output 790
+//                 (477 of them thinking) -> $0.037 -> 2 units
 //
-// One unit of headroom each, because max_tokens is the only hard stop and
-// the context sizes above are estimates. If a real turn ever settles above
-// these, it is charged what it cost — the ceiling governs the reservation,
-// not the bill.
+// So a real turn is 1-2 units. The ceilings below are deliberately well
+// above that, because a ceiling has to cover the worst case rather than the
+// observed one: max_tokens is the only hard stop, and an answer that runs
+// all the way to it costs $0.038 (faster) or $0.100 (smarter) in output
+// alone, plus input.
+//
+// An EARLIER version of this comment derived 5 and 8 from an assumed 9,500
+// fresh input tokens per turn. That assumption is now known to be wrong by
+// about 4x — with three cache breakpoints almost the entire prompt is a
+// cache read at a tenth of the price. The numbers stayed; the reasoning is
+// replaced with what was actually observed.
+//
+// The cost of being generous here is a tail: someone with 40 of 45 units
+// spent cannot START a Smarter turn (40 + 10 > 45) even though it would
+// settle at 2. Worth revisiting once agent_usage has real distribution in
+// it, and not before — guessing twice is how the first version got here.
 export const MAX_UNITS_PER_TURN = { faster: 6, smarter: 10 } as const;
 
 export type AgentMode = "faster" | "smarter";

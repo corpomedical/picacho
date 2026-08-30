@@ -16,6 +16,16 @@
 //   - A spend limit YOU set returns 400 invalid_request_error, message
 //     beginning "You have reached your specified API usage limits" (or
 //     "...specified workspace API usage limits").
+//   - An EMPTY PREPAID BALANCE also returns 400 invalid_request_error:
+//     "Your credit balance is too low to access the Anthropic API. Please go
+//     to Plans & Billing to upgrade or purchase credits." That one is not
+//     from the docs — it is OBSERVED, from the first live call this feature
+//     ever made (2026-08-30, request_id req_011CeZboWuqw5nv28LfcqxHA). The
+//     first draft of this classifier matched only the documented spend-limit
+//     wording, so it would have read a flat-empty account as a transient
+//     blip and charged a unit for every retry into it — which is the exact
+//     failure this classifier exists to prevent, found by running it rather
+//     than by reasoning about it.
 //   - The account TIER's own monthly cap returns 429 rate_limit_error with
 //     details.error_code = "enforced_spend_limit_reached" and no retry-after.
 //   - A missing, revoked or expired key returns 401 authentication_error.
@@ -31,7 +41,9 @@ export type TurnFailure =
 
 export function classifyTurnFailure(status: number | undefined, message: string): TurnFailure {
   if (status === 401 || status === 403) return "provider_unavailable";
-  if (status === 400 && /usage limits?/i.test(message)) return "provider_unavailable";
+  if (status === 400 && /usage limits?|credit balance is too low/i.test(message)) {
+    return "provider_unavailable";
+  }
   if (status === 429 && /enforced_spend_limit_reached/i.test(message)) return "provider_unavailable";
   // A 404 naming a model is a bad model id in our own code, not the person's
   // doing, and no amount of retrying fixes it.

@@ -12,6 +12,17 @@ describe("classifyTurnFailure", () => {
     ).toBe("provider_unavailable");
   });
 
+  it("reads an empty prepaid balance as ours", () => {
+    // Verbatim from the live API, 2026-08-30, request_id
+    // req_011CeZboWuqw5nv28LfcqxHA — observed, not paraphrased.
+    expect(
+      classifyTurnFailure(
+        400,
+        "Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.",
+      ),
+    ).toBe("provider_unavailable");
+  });
+
   it("still treats an ordinary 400 as worth retrying", () => {
     // Otherwise a genuinely malformed request would be silently written off as
     // a billing problem and never investigated.

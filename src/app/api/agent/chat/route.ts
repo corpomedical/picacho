@@ -221,13 +221,25 @@ export async function POST(request: NextRequest) {
                   output_config: { effort: effectiveMode === "smarter" ? "high" : "low" },
                 }
               : {}),
-            // Cache order is load-bearing — see lib/agent/context.ts. Both
-            // system blocks are byte-stable across requests; everything that
-            // varies lives in messages, after the breakpoints.
+            // Cache order is load-bearing — see lib/agent/context.ts. The
+            // first two blocks are byte-stable across every request; the
+            // third varies per person.
+            //
+            // THE THIRD BREAKPOINT IS THERE ON MEASUREMENT, not on theory.
+            // The first live run of this feature (2026-08-30) reported
+            // input_tokens 2,618 with only 1,206 cached, because the project
+            // block sat after the last breakpoint and was re-sent fresh
+            // every turn. It varies per PERSON, but within one conversation
+            // it is usually byte-identical — nothing changes it unless they
+            // render, rename a character or edit a rule mid-chat. Caching it
+            // makes the common case (several questions in a row) roughly
+            // halve in input cost, and the uncommon case pays a 1.25x write
+            // on that block alone while the two blocks above it still hit.
+            // Never worse overall, often much better.
             system: [
               { type: "text" as const, text: ctx.houseRules, cache_control: { type: "ephemeral" as const } },
               { type: "text" as const, text: ctx.modelCatalogue, cache_control: { type: "ephemeral" as const } },
-              { type: "text" as const, text: ctx.project },
+              { type: "text" as const, text: ctx.project, cache_control: { type: "ephemeral" as const } },
             ],
             messages: history,
           },

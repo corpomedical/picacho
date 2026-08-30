@@ -193,6 +193,12 @@ export const FREE_PROMPT_ASSIST_LIMIT = 10;
 // be a fraction of it, and agent_usage.cost_usd exists so these can be
 // re-cut against evidence instead of arithmetic.
 //
+// What that buys, MEASURED 2026-08-31 (see lib/agent/prices.ts for the raw
+// numbers): a Faster turn settles at 1 unit and a Smarter turn at 2. So the
+// allowances are roughly 25 questions free, 45 on Basic, 95 on Starter, 400
+// on Growth, 1,500 on Studio and 2,500 on Elite — halve those if someone
+// runs entirely on Smarter.
+//
 // ELITE IS CAPPED, and that is a deliberate departure from
 // PLAN_PROMPT_ASSIST_LIMITS above, where elite is POSITIVE_INFINITY. The
 // reason is the warning already written there: an assist "writes no
