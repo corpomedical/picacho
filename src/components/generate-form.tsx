@@ -67,6 +67,11 @@ import {
 import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "@/lib/generations/angles";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
 import { FEATURED_VIDEO_MODEL_IDS } from "@/lib/generations/providers/video-models";
+import {
+  resolutionCreditWeight,
+  videoResolutionOffers,
+  type VideoResolution,
+} from "@/lib/generations/providers/video-resolution";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages";
@@ -2146,12 +2151,33 @@ function GenerateFormInner({
   // finding out you can't afford something AFTER pressing generate is the
   // worst moment to learn it, and it's the moment people give up rather than
   // top up.
+  const [videoResolutionWanted, setVideoResolutionWanted] = useState<VideoResolution | null>(null);
+  const resolutionOffers = contentType === "video" ? videoResolutionOffers(videoModelId) : [];
+  // DERIVED, not synced. An earlier pass cleared the pick from an effect when
+  // the composer left a model that offers it; deriving instead means a stale
+  // pick can never ride along to an endpoint with no resolution parameter,
+  // costs no cascading render, and has the nicer behaviour — switch to Kling
+  // and back to Veo and the choice is still there.
+  const videoResolution =
+    videoResolutionWanted && resolutionOffers.some((o) => o.value === videoResolutionWanted)
+      ? videoResolutionWanted
+      : null;
+
   const selectedVideoModel = videoModels.find((m) => m.id === videoModelId);
+  // Base duration weight, then the resolution override when one applies.
+  // The person must see 4K's real price BEFORE sending — a paid resolution
+  // whose cost only appears on the receipt is exactly the kind of claim this
+  // codebase has spent the week removing.
+  const baseDurationCredits =
+    contentType === "video" && selectedVideoModel
+      ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
+      : 1;
   const selectedCreditCost =
     contentType === "video" && storyboardActive
       ? storyboardCredits
-      : contentType === "video" && selectedVideoModel
-        ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
+      : contentType === "video"
+        ? (resolutionCreditWeight(videoModelId, videoResolution, videoDurationSeconds) ??
+          baseDurationCredits)
         : 1;
   const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
   const cannotAfford = selectedCreditCost > creditsAvailable;
@@ -2175,6 +2201,15 @@ function GenerateFormInner({
   // is just the explicit-intent half of that fix. An explicit prompt mention
   // always wins over whichever icon is selected here, even if one is.
   const [videoAspectRatio, setVideoAspectRatio] = useState<"16:9" | "9:16" | null>(null);
+
+  // Optional free resolution upgrade (2026-08-30). Veo 3.1 bills 720p and
+  // 1080p identically ("$0.40 with audio for 720p or 1080p", fal's own
+  // pricing line) but both its endpoints default to 720p, so every Veo
+  // render was taking the lower resolution at the higher-resolution price.
+  // Offered ONLY where it is genuinely free — freeHighResolution() in
+  // video-models.ts is the single source of truth and the server re-checks
+  // it, so this control can never make a generation cost more. 4K is
+  // deliberately absent: it bills 1.5x and would need a real credit weight.
 
   const [videoAdvancedMode, setVideoAdvancedMode] = useState<"none" | "storyboard" | "multiref">("none");
   // Placed after videoAdvancedMode/videoModelId exist (declaration order —
@@ -2735,6 +2770,7 @@ function GenerateFormInner({
     formData.set("video_model_id", videoModelId);
     formData.set("video_duration_seconds", String(videoDurationSeconds));
     if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
+    if (videoResolution) formData.set("video_resolution", videoResolution);
     selectedAngles.forEach((id) => formData.append("angle", id));
     // Same attachment/anchor-photo priority as the single-generation path
     // above — see the comments there.
@@ -3663,6 +3699,7 @@ function GenerateFormInner({
       formData.set("video_model_id", videoModelId);
       formData.set("video_duration_seconds", String(videoDurationSeconds));
       if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
+      if (videoResolution) formData.set("video_resolution", videoResolution);
     }
     if (skipRulesForPromptRef.current !== null) {
       const boundPrompt = skipRulesForPromptRef.current;
@@ -6213,6 +6250,62 @@ function GenerateFormInner({
                       >
                         <PortraitIcon className="h-4 w-4" />
                       </button>
+                    </div>
+                  )}
+
+                  {/* Free resolution upgrade. Only rendered when the selected
+                      model genuinely bills the higher resolution at its
+                      default rate (freeHighResolution) — today that is Veo
+                      3.1 alone, whose endpoints default to 720p while
+                      charging the 720p-or-1080p price either way. Written as
+                      a plain toggle rather than a picker because there is
+                      exactly one honest option: 4K bills 1.5x and belongs
+                      behind a real credit weight, not a free switch. */}
+                  {advancedOpen && resolutionOffers.length > 0 && (
+                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-atelier-rule p-1">
+                      {resolutionOffers.map((offer) => {
+                        const total = resolutionCreditWeight(
+                          videoModelId,
+                          offer.value,
+                          videoDurationSeconds,
+                        );
+                        const extra = total === null ? 0 : Math.max(0, total - baseDurationCredits);
+                        const active = videoResolution === offer.value;
+                        return (
+                          <button
+                            key={offer.value}
+                            type="button"
+                            onClick={() =>
+                              setVideoResolutionWanted((prev) =>
+                                prev === offer.value ? null : offer.value,
+                              )
+                            }
+                            disabled={submitting}
+                            title={
+                              extra > 0
+                                ? formatMsg(g.resolutionCostTitle, {
+                                    res: offer.value.toUpperCase(),
+                                    n: extra,
+                                  })
+                                : formatMsg(g.resolutionFreeTitle, { res: offer.value })
+                            }
+                            aria-pressed={active}
+                            className={cn(
+                              "flex h-7 flex-shrink-0 items-center gap-1 rounded-full px-2.5 text-[11px] font-semibold tracking-wide transition-colors disabled:opacity-50",
+                              active
+                                ? "bg-atelier-accent/12 text-atelier-accent"
+                                : "text-atelier-muted hover:text-atelier-ink",
+                            )}
+                          >
+                            {offer.value.toUpperCase()}
+                            {extra > 0 && (
+                              <span className={cn("text-[10px]", active ? "" : "opacity-70")}>
+                                +{extra}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
 

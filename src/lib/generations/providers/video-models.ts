@@ -317,6 +317,7 @@ export function isValidDuration(model: VideoModel, seconds: number): boolean {
   return model.durations.some((d) => d.seconds === seconds);
 }
 
+
 // Adding spoken dialogue to a video runs two extra paid steps that a silent
 // video never touches: ElevenLabs speech synthesis, then a Sync Labs lipsync
 // pass that re-renders the whole clip. Until 2026-08-10 both were free to
@@ -363,6 +364,7 @@ export function defaultCreditCost(model: VideoModel): number {
 // 2-credit model and every trial request would silently stop matching the
 // gate, bricking the free tier for all new signups. Computed from the
 // catalog, the gate follows the model choice automatically.
+import { videoResolutionOffers } from "@/lib/generations/providers/video-resolution";
 import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 export const FREE_TIER_GENERATION_CREDITS = defaultCreditCost(
   getVideoModel(FREE_TIER_VIDEO_MODEL_ID),
@@ -432,21 +434,45 @@ export function pricingAudit(): {
   allowanceValueUsd: number;
   costUsd: number;
 }[] {
-  const losses = [];
+  const losses: {
+    modelId: string;
+    name: string;
+    seconds: number;
+    credits: number;
+    allowanceValueUsd: number;
+    costUsd: number;
+  }[] = [];
+  const check = (
+    modelId: string,
+    name: string,
+    seconds: number,
+    credits: number,
+    costUsd: number,
+  ) => {
+    const allowanceValueUsd = credits * COST_BASIS_USD_PER_CREDIT;
+    // Half a cent of tolerance for floating point, not for genuine losses.
+    if (allowanceValueUsd + 0.005 < costUsd) {
+      losses.push({ modelId, name, seconds, credits, allowanceValueUsd, costUsd });
+    }
+  };
   for (const model of VIDEO_MODELS) {
     for (const d of model.durations) {
-      const allowanceValueUsd = d.creditWeight * COST_BASIS_USD_PER_CREDIT;
-      const costUsd = model.costPerSecondUsd * d.seconds;
-      // Half a cent of tolerance for floating point, not for genuine losses.
-      if (allowanceValueUsd + 0.005 < costUsd) {
-        losses.push({
-          modelId: model.id,
-          name: model.name,
-          seconds: d.seconds,
-          credits: d.creditWeight,
-          allowanceValueUsd,
-          costUsd,
-        });
+      check(model.id, model.name, d.seconds, d.creditWeight, model.costPerSecondUsd * d.seconds);
+    }
+    // Priced resolutions are the most expensive options in the catalogue and
+    // need the same drift check — an unaudited 4K row is exactly where a
+    // provider price rise would go unnoticed (2026-08-30).
+    for (const offer of videoResolutionOffers(model.id)) {
+      if (!offer.weights || !offer.costPerSecondUsd) continue;
+      for (const [secondsKey, credits] of Object.entries(offer.weights)) {
+        const seconds = Number(secondsKey);
+        check(
+          model.id,
+          `${model.name} (${offer.value.toUpperCase()})`,
+          seconds,
+          credits,
+          offer.costPerSecondUsd * seconds,
+        );
       }
     }
   }

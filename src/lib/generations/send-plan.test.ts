@@ -364,3 +364,37 @@ describe("rules override visibility (generate-anyway drift family)", () => {
     expect(entry(plan, "rulesOverride")).toBeDefined();
   });
 });
+
+// Veo identity (2026-08-30). Veo used to be the one model in the catalogue
+// that structurally could not hold a face — capability row { max: 0,
+// mechanism: "none" }, every render blind text-to-video, receipt honestly
+// reading "generic person". That was never a Veo limitation: fal-ai/veo3.1
+// is text-to-video only, but fal-ai/veo3.1/image-to-video takes an image_url
+// at the SAME per-second price ($0.40/s with audio at 720p/1080p, quoted
+// from fal 2026-08-30). fal.ts now routes to the sibling whenever a
+// character photo exists. This block had ZERO coverage before today, which
+// is why flipping the capability row broke nothing and warned nobody.
+describe("Veo identity", () => {
+  const veo: ResolveInput = { ...base, modelId: "veo" };
+
+  it("uses the character's saved photo instead of describing them in adjectives", () => {
+    const plan = resolveSendPlan(veo);
+    expect(entry(plan, "identity")!.source).toBe("character-default");
+    expect(entry(plan, "identity")!.consumption).toBe("native");
+  });
+
+  it("still renders a generic person when nobody is cast, and does not block", () => {
+    // The characterless Veo lane is the one the composer recommends when no
+    // character is selected — it must keep working, and keep its full
+    // compositional freedom on the text-to-video endpoint.
+    const plan = resolveSendPlan({ ...veo, character: null });
+    expect(entry(plan, "identity")!.noteCode).toBe("GENERIC_PERSON");
+    expect(issue(plan, "NEEDS_REFERENCE_PHOTO")).toBeUndefined();
+    expect(plan.issues.filter((i) => i.severity === "block")).toHaveLength(0);
+  });
+
+  it("lets an attached photo override the saved face, same as every other lane", () => {
+    const plan = resolveSendPlan({ ...veo, attachments: [{ id: "a", isImage: true }] });
+    expect(entry(plan, "identity")!.source).toBe("attachment");
+  });
+});

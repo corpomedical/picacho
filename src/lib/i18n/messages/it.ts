@@ -584,6 +584,8 @@ const it = {
     storyboardRemoveShot: "Rimuovi inquadratura",
     storyboardCost: "{seconds}s · {credits} crediti",
     storyboardNeedsPrompts: "Scrivi una riga per ogni inquadratura prima di inviare.",
+    resolutionFreeTitle: "Genera a {res} — stesso prezzo su questo modello, non costa nulla in più",
+    resolutionCostTitle: "Genera a {res} — {n} crediti in più, perché il provider lo fa pagare di più",
     aspectWideTitle: "Panoramico (16:9) — sovrascritto se il prompt indica un rapporto specifico",
     aspectTallTitle: "Verticale (9:16) — sovrascritto se il prompt indica un rapporto specifico",
     reviewAngles: "Rivedi le angolazioni, poi conferma per generare.",

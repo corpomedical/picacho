@@ -1,6 +1,7 @@
 import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { canExtractFrameFrom, IDENTITY_FRAME_TYPE } from "@/lib/generations/providers/frame-url";
+import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 
 // Generate step — sends the compiled prompt to the selected video model on
@@ -80,6 +81,13 @@ export type VideoGenerationOptions = {
   // in actions.ts (prompt text > composer icon pick > 16:9 default) before
   // it gets here. Defaults to 16:9 if omitted.
   aspectRatio?: VideoAspectRatio | null;
+  // An explicit output resolution, when the person asked for one. Only ever
+  // set to a resolution the provider bills at the SAME rate as its default
+  // (see freeHighResolution in video-models.ts) — resolveVideoResolution has
+  // already rejected anything else server-side. null/undefined means send no
+  // resolution parameter at all, leaving the endpoint on its own default,
+  // which is what every render did before this existed.
+  resolution?: VideoResolution | null;
 };
 
 // Confirmed directly against fal.ai's published API docs (not guessed):
@@ -630,6 +638,50 @@ async function buildVideoRequest(
         "motionless opening shot, subject standing still facing camera",
     };
     label = anchorImages.length > 1 ? "Kling (multi-image reference)" : "Kling (character reference)";
+  } else if (modelId === "veo" && options.characterAnchorImageUrl) {
+    // VEO GETS A FACE (2026-08-30).
+    //
+    // Until today Veo was the one model in the catalogue that structurally
+    // could not honour "the same face in every single frame": its capability
+    // row read mechanism "none", max 0, and every Veo render went out as
+    // blind text-to-video with the character described only in adjectives.
+    // That is not a Veo limitation — it is which ENDPOINT we were calling.
+    // fal-ai/veo3.1 is text-to-video only (schema confirmed 2026-08-30: no
+    // image_url, no reference images, no ingredients), but the sibling
+    // fal-ai/veo3.1/image-to-video takes an image_url.
+    //
+    // Same price, verbatim from fal's own page 2026-08-30: "For every second
+    // of video you generate you will be charged $0.20 without audio or $0.40
+    // with audio for 720p or 1080p." Identical to the text-to-video rate the
+    // credit weights were already built on, so no weight changes and no
+    // pricingAudit drift.
+    //
+    // Mechanism note, and it is a real trade: image-to-video means the photo
+    // becomes the OPENING FRAME, exactly like Kling O3 and 2.5. Veo stops
+    // inventing a stranger, but it also opens on that photo's pose and
+    // framing. That is why this only fires when a character photo exists —
+    // a characterless Veo render still takes the text-to-video branch below
+    // and keeps its full compositional freedom, which is precisely what the
+    // composer recommends Veo for when nobody is cast.
+    //
+    // Only ONE image: this endpoint takes a single image_url and no
+    // reference array (schema confirmed), which is why baselineIdentityReferences
+    // returns [] for veo and the multi-photo path never reaches here.
+    endpoint = "fal-ai/veo3.1/image-to-video";
+    body = {
+      prompt,
+      image_url: options.characterAnchorImageUrl,
+      aspect_ratio: resolvedAspectRatio,
+      duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+      generate_audio: options.generateNativeAudio ?? true,
+      // Same price at 720p and 1080p on this endpoint, so this is free
+      // quality when asked for. Omitted entirely when not asked for, which
+      // leaves fal on its 720p default.
+      ...(options.resolution ? { resolution: options.resolution } : {}),
+    };
+    label = options.resolution
+      ? `Veo 3.1 (character reference, ${options.resolution})`
+      : "Veo 3.1 (character reference)";
   } else {
     // No character photo available at all (character has none saved) —
     // falls back to blind text-to-video, same as before this fix existed.
@@ -652,8 +704,12 @@ async function buildVideoRequest(
       // pipeline.ts). Kling 1.6 text-to-video, the only other model that can
       // land in this branch, has no such parameter, so it's Veo-only.
       ...(modelId === "veo" ? { generate_audio: options.generateNativeAudio ?? true } : {}),
+      // Veo-only, same free-1080p reasoning as the image-to-video branch
+      // above. Kling 1.6 text-to-video is the only other model that lands
+      // here and has no resolution parameter, so this stays gated on veo.
+      ...(modelId === "veo" && options.resolution ? { resolution: options.resolution } : {}),
     };
-    label = model.name;
+    label = modelId === "veo" && options.resolution ? `${model.name} (${options.resolution})` : model.name;
   }
 
   return { endpoint, body, label };

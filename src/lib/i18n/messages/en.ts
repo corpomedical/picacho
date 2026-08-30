@@ -630,6 +630,8 @@ const en = {
     storyboardRemoveShot: "Remove shot",
     storyboardCost: "{seconds}s · {credits} credits",
     storyboardNeedsPrompts: "Give every shot a line before sending.",
+    resolutionFreeTitle: "Render this at {res} — same price on this model, so it costs you nothing extra",
+    resolutionCostTitle: "Render this at {res} — {n} extra credits, because the provider charges more for it",
     aspectWideTitle: "Widescreen (16:9) — overridden if your prompt names a specific aspect ratio",
     aspectTallTitle: "Vertical (9:16) — overridden if your prompt names a specific aspect ratio",
     reviewAngles: "Review the angles, then confirm to generate.",

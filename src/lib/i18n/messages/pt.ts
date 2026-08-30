@@ -584,6 +584,8 @@ const pt = {
     storyboardRemoveShot: "Remover plano",
     storyboardCost: "{seconds}s · {credits} créditos",
     storyboardNeedsPrompts: "Escreva uma linha para cada plano antes de enviar.",
+    resolutionFreeTitle: "Renderizar em {res} — mesmo preço neste modelo, não custa nada a mais",
+    resolutionCostTitle: "Renderizar em {res} — {n} créditos a mais, porque o provedor cobra mais por isso",
     aspectWideTitle: "Panorâmico (16:9) — substituído se o seu prompt indicar uma proporção específica",
     aspectTallTitle: "Vertical (9:16) — substituído se o seu prompt indicar uma proporção específica",
     reviewAngles: "Revise os ângulos e confirme para gerar.",

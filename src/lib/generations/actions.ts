@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { resolveSendPlan } from "@/lib/generations/send-plan";
+import { baselineIdentityReferences, resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
 import { resolvePresetBlocks } from "@/lib/generations/cinema-presets";
 import { getOrigin } from "@/lib/origin";
@@ -58,6 +58,10 @@ import {
   VIDEO_MODELS,
   VIDEO_MODELS_BY_PRICE,
 } from "@/lib/generations/providers/video-models";
+import {
+  resolutionCreditWeight,
+  resolveVideoResolution,
+} from "@/lib/generations/providers/video-resolution";
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
@@ -776,6 +780,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const promptAspectRatio = contentType === "video" ? detectAspectRatioFromPrompt(userInput) : null;
   const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
 
+  // Optional free resolution upgrade (2026-08-30). Validated against the
+  // FINAL model further down, once the circuit breaker and any server-side
+  // pin have had their say — asking for 1080p on Veo and being rerouted to
+  // Kling must not smuggle a resolution parameter into an endpoint that has
+  // none. Only ever resolves to a resolution the provider bills at the same
+  // rate as its default, so this cannot change what a generation costs.
+  const requestedResolution = (formData.get("video_resolution") as string) || "";
+
   // Circuit breaker, checked BEFORE any credit is spent or any provider call
   // is made. A model that has failed three times in a row (across at least two
   // accounts) is out of service, and rather than turning the person away we
@@ -822,6 +834,30 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     creditWeight =
       getDurationCreditWeight(substitutedModel, videoDurationSeconds) +
       (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0);
+  }
+
+  // Resolution, priced (2026-08-30). Resolved HERE, deliberately after the
+  // circuit breaker has had its say, against the model that will actually
+  // render — so a 4K request on Veo that gets failed over to Kling neither
+  // charges the 4K surcharge nor sends a parameter Kling has never heard of.
+  //
+  // resolutionCreditWeight returns the TOTAL weight for the duration at that
+  // resolution, or null when the resolution costs nothing extra (1080p on
+  // Veo) or is not offered at all — in which case the duration weight
+  // computed above stands untouched. The dialogue surcharge rides on top of
+  // whichever base applies, exactly as before.
+  const videoResolution =
+    contentType === "video" ? resolveVideoResolution(videoModelId, requestedResolution) : null;
+  if (videoResolution && !storyboardShots) {
+    const resolutionWeight = resolutionCreditWeight(
+      videoModelId,
+      videoResolution,
+      videoDurationSeconds,
+    );
+    if (resolutionWeight !== null) {
+      creditWeight =
+        resolutionWeight + (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0);
+    }
   }
 
   // A model whose fal endpoint starts from a frame (image/reference-to-video)
@@ -1183,6 +1219,69 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         } else {
           referenceImageUrls = resolvedUrls;
         }
+      } else if (
+        // BASELINE MULTI-REFERENCE (2026-08-30). Every render used to send
+        // the model exactly ONE photo — see the anchor resolution above,
+        // which picks reference_image_urls[0] (or the one the person tapped)
+        // and stops. Meanwhile buildVideoRequest has always been built to
+        // take four: `referenceImageUrls.slice(0, 4)` in fal.ts, falling
+        // through to a single-element array only because nothing ever
+        // populated the plural field on an ordinary send.
+        //
+        // So a character with eight saved photos, on a model that accepts
+        // four identity references, was being described to that model by
+        // one photo. The extra photos were sitting in the row, already
+        // signed-URL-able, already paid for. This is the cheapest identity
+        // accuracy available anywhere in the product: no new provider, no
+        // new credential, no per-render cost on the Kling elements lane.
+        //
+        // Gated on the capability matrix rather than a model-id list so it
+        // can never drift from what each endpoint actually accepts:
+        //   - kling / kling-o3-pro  -> "elements", max 4  ✓ helped
+        //   - seedance / seedance-2 -> "citation", max 4   ✓ helped
+        //   - kling-o3 / kling-2.5  -> "first-frame", max 1 ✗ skipped:
+        //     the photo IS frame one, so a second photo has nowhere to go
+        //   - veo                   -> mechanism "none"     ✗ skipped
+        //
+        // Deliberately does NOT fire when the person attached a photo to
+        // this message: that attachment is their intent for this one render
+        // and stays the sole reference, exactly as before.
+        //
+        // This is the baseline "look like the character" behaviour the
+        // comment above says every plan should get — not the Studio-gated
+        // multi-photo EXTRA, which is the user hand-picking specific photos
+        // and pairing them with storyboard frames, and which stays gated.
+        contentType === "video" &&
+        !attachmentReferenceUrl &&
+        !wantsAdvancedVideoOptions &&
+        baselineIdentityReferences(
+          videoModelId,
+          (character?.reference_image_urls ?? []) as string[],
+          requestedAnchorPhotoPath,
+        ).length >= 2
+      ) {
+        // Which photos, in which order — decided by the capability matrix in
+        // send-plan.ts (tested there), so this can never drift from what the
+        // endpoint actually accepts.
+        const ordered = baselineIdentityReferences(
+          videoModelId,
+          (character?.reference_image_urls ?? []) as string[],
+          requestedAnchorPhotoPath,
+        );
+        const signed = await Promise.all(
+          ordered.map(async (path) => {
+            const { data } = await supabase.storage
+              .from("character-references")
+              .createSignedUrl(path, 60 * 10);
+            return data?.signedUrl ?? null;
+          }),
+        );
+        const usable = signed.filter((u): u is string => Boolean(u));
+        // A sign failure on one photo just drops that photo. Below two there
+        // is nothing multi-reference about the send, so fall back to the
+        // single-anchor path that was already resolved above rather than
+        // sending a one-element array down a different code path.
+        if (usable.length >= 2) videoReferenceImageUrls = usable;
       } else if (wantsAdvancedVideoOptions) {
         if (referencePhotoPaths.length >= 2) {
           const signedUrls = await Promise.all(
@@ -1404,6 +1503,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,
           videoDurationSeconds: contentType === "video" ? videoDurationSeconds : undefined,
           videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
+          videoResolution,
           skipRefinement,
         skipBrandProhibitions: formData.get("skip_brand_rules") === "1",
           brandRules: await loadBrandRules(supabase, userData.user!.id),
@@ -1989,6 +2089,8 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     requestedAspectRatio === "16:9" || requestedAspectRatio === "9:16" ? requestedAspectRatio : null;
   const promptAspectRatio = detectAspectRatioFromPrompt(userInput);
   const videoAspectRatio: VideoAspectRatio = promptAspectRatio ?? iconAspectRatio ?? "16:9";
+  // Validated against the FINAL model below, after the circuit breaker.
+  const requestedResolution = (formData.get("video_resolution") as string) || "";
 
   // Same circuit breaker as single generation — a model out of service must
   // not be reachable through multi-angle either, which would otherwise submit
@@ -2008,6 +2110,21 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       videoDurationSeconds = getDefaultDurationSeconds(substitutedModel);
     }
     creditWeight = getDurationCreditWeight(substitutedModel, videoDurationSeconds);
+  }
+
+  // Resolution, priced — same contract as runGeneration, and it matters MORE
+  // here: every angle is charged and saved at creditWeight, so a resolution
+  // surcharge that went unpriced would be undercharged once per angle, and
+  // one resolved against the pre-substitution model would send a parameter
+  // the new endpoint has never heard of, N times over.
+  const videoResolution = resolveVideoResolution(videoModelId, requestedResolution);
+  if (videoResolution) {
+    const resolutionWeight = resolutionCreditWeight(
+      videoModelId,
+      videoResolution,
+      videoDurationSeconds,
+    );
+    if (resolutionWeight !== null) creditWeight = resolutionWeight;
   }
 
   // Any frame-starting model (image/reference-to-video), checked on the
@@ -2278,6 +2395,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           videoCharacterAnchorUrl,
           videoDurationSeconds,
           videoAspectRatio,
+          videoResolution,
           skipRefinement,
           brandRules: angleBrandRules,
           compileOnly: true,

@@ -22,6 +22,7 @@ import {
 } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
+import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
 import type { BrandRule } from "@/lib/brand-rules/types";
 import { classifyProhibitions } from "@/lib/brand-rules/classify";
 
@@ -535,6 +536,10 @@ export type RealPipelineOptions = {
   // for this; fal.ts works around that by reframing the reference photo
   // itself before the request goes out.
   videoAspectRatio?: VideoAspectRatio | null;
+  // A free higher resolution the person explicitly asked for. Already
+  // validated server-side against the selected model (resolveVideoResolution
+  // in video-models.ts) — this layer just carries it.
+  videoResolution?: VideoResolution | null;
   // Account-level brand/compliance rules (see lib/brand-rules). Resolved by
   // the caller so this stays a pure function of its inputs. Absent or empty
   // means the pipeline behaves exactly as it did before the feature existed.
@@ -1115,6 +1120,7 @@ export async function runRealPipeline(
             generateNativeAudio: !usingSeparateDialoguePipeline,
             durationSeconds: options.videoDurationSeconds,
             aspectRatio: options.videoAspectRatio,
+            resolution: options.videoResolution ?? null,
           };
           const modeNote = usingMultiRef
             ? " (multi-image reference)"

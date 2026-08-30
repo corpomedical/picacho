@@ -148,7 +148,22 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
   },
   veo: {
     kind: "video",
-    identity: { max: 0, mechanism: "none", required: false },
+    // Changed 2026-08-30. This row used to read { max: 0, mechanism: "none" }
+    // — Veo was the one model in the catalogue that structurally could not
+    // hold a face, and the send receipt correctly said "generic person" on
+    // every Veo render. That was never a Veo limitation: fal-ai/veo3.1 is
+    // text-to-video only, but fal-ai/veo3.1/image-to-video takes an
+    // image_url, at the SAME per-second price. fal.ts now routes to the
+    // sibling endpoint whenever a character photo exists.
+    //
+    // max 1, not 4: that endpoint takes one image_url and has no reference
+    // array (schema confirmed 2026-08-30), which is also why
+    // baselineIdentityReferences declines Veo and the multi-photo path never
+    // reaches it. mechanism "first-frame" because the photo opens the clip,
+    // same real trade as Kling O3 and 2.5. required false because a
+    // characterless Veo render still takes the text-to-video branch and
+    // keeps its full compositional freedom.
+    identity: { max: 1, mechanism: "first-frame", required: false },
     outfitImage: false,
     continuation: false,
     startEndFrames: false,
@@ -182,6 +197,46 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     photorealPolicy: "accepts",
   },
 };
+
+// Baseline multi-reference (2026-08-30).
+//
+// Every ordinary render used to hand the model exactly ONE photo, because
+// actions.ts resolved a single anchor (reference_image_urls[0], or the one
+// the person tapped) and nothing ever populated the plural field outside the
+// Studio-gated advanced panel. buildVideoRequest in fal.ts has always been
+// written to take four — `referenceImageUrls.slice(0, 4)` — so a character
+// with eight saved photos was being described to a four-reference model by
+// one of them.
+//
+// This decides, from the capability matrix rather than a hand-kept model
+// list, which sends should carry the character's whole gallery:
+//
+//   kling, kling-o3-pro   "elements"    max 4  -> yes
+//   seedance, seedance-2  "citation"    max 4  -> yes
+//   kling-o3, kling-2.5   "first-frame" max 1  -> NO. The photo IS frame
+//                                                 one; a second has nowhere
+//                                                 to go and would silently
+//                                                 replace the composition.
+//   veo                   "none"        max 0  -> NO. Receives no image.
+//   gpt-image, flux       "edit-source" max 1  -> NO. One source image.
+//
+// The preferred photo always leads, so the model's primary identity signal
+// is byte-identical to what it was before this existed and the extra photos
+// can only ADD. Returns [] when multi-reference does not apply, which the
+// caller reads as "keep the single-anchor path exactly as it was".
+export function baselineIdentityReferences(
+  modelId: string,
+  gallery: readonly string[],
+  preferredPath?: string | null,
+): string[] {
+  const caps = MODEL_CAPABILITIES[modelId as VideoModelId | ImageModelId];
+  const max = caps?.identity.max ?? 0;
+  if (max <= 1) return [];
+  const clean = gallery.filter((p): p is string => Boolean(p));
+  if (clean.length < 2) return [];
+  const primary = preferredPath && clean.includes(preferredPath) ? preferredPath : clean[0];
+  return [primary, ...clean.filter((p) => p !== primary)].slice(0, max);
+}
 
 // ---------------------------------------------------------------------------
 // Input snapshot
