@@ -36,3 +36,29 @@ export function isProviderRejection(attempts: RefundAttempt[]): boolean {
   if (all.some((d) => COMPLETED_RENDER.test(d))) return false;
   return all.some((d) => REJECTION_4XX.test(d));
 }
+
+// Acknowledged policy warnings (2026-08-30).
+//
+// Picacho predicts the Seedance 2.5 likeness refusal BEFORE anything is spent
+// — see SEEDANCE25_PHOTOREAL in send-plan.ts — and offers the one-tap switch
+// to a model that accepts photoreal people. When someone reads that and
+// chooses to send anyway, the refusal stops being something that happened TO
+// them and becomes something they opted into, so it no longer force-refunds
+// past the automatic_refunds switch.
+//
+// This is a deliberately narrow exception to the "a provider refusal costs
+// nothing, so charging for it is indefensible" rule above. It applies ONLY
+// when three things are true at once: the warning was shown, the person acted
+// on it by sending anyway, and the send is the exact one they were warned
+// about. The marker is written by actions.ts at submit time and is bound to
+// that single generation.
+//
+// Kept as a pipeline-log marker rather than a column on purpose: the whole
+// refund decision already reads the attempt log, the log is what the person
+// can see under their own render, and a schema change for one boolean would
+// have to be deployed before the code that writes it.
+export const ACKNOWLEDGED_WARNING_MARKER = "[acknowledged-policy-warning]";
+
+export function acknowledgedPolicyWarning(attempts: RefundAttempt[]): boolean {
+  return details(attempts).some((d) => d.includes(ACKNOWLEDGED_WARNING_MARKER));
+}

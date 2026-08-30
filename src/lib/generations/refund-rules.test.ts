@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isProviderRejection } from "./refund-rules";
+import {
+  ACKNOWLEDGED_WARNING_MARKER,
+  acknowledgedPolicyWarning,
+  isProviderRejection,
+} from "./refund-rules";
 
 // Incident replay — the 2026-08-29 report. Each case is a real pipeline log
 // shape; the first is the one that charged a user for work no provider did.
@@ -43,5 +47,45 @@ describe("isProviderRejection", () => {
     expect(isProviderRejection([])).toBe(false);
     expect(isProviderRejection([{}])).toBe(false);
     expect(isProviderRejection([{ steps: [{ step: "generate", detail: undefined }] }])).toBe(false);
+  });
+});
+
+// Acknowledged policy warnings (2026-08-30). Picacho predicts the Seedance 2.5
+// likeness refusal before anything is spent and offers the switch that works.
+// Sending anyway turns the refusal from something that happened TO someone
+// into something they chose, and the credit stands.
+describe("acknowledgedPolicyWarning", () => {
+  const ack = {
+    steps: [{ step: "draft", detail: `${ACKNOWLEDGED_WARNING_MARKER} Sent after the warning.` }],
+  };
+  const refusal = {
+    steps: [{ step: "generate", detail: "fal.ai (Seedance 2.5) error (422): content_policy_violation" }],
+  };
+
+  it("detects the marker anywhere in the attempt log", () => {
+    expect(acknowledgedPolicyWarning([ack, refusal])).toBe(true);
+    expect(acknowledgedPolicyWarning([ack])).toBe(true);
+  });
+
+  it("is false for an ordinary refusal nobody was warned about", () => {
+    // The default and by far the common case: an unwarned refusal costs the
+    // provider nothing, so charging for it stays indefensible.
+    expect(acknowledgedPolicyWarning([refusal])).toBe(false);
+    expect(acknowledgedPolicyWarning([])).toBe(false);
+  });
+
+  it("REGRESSION: acknowledging does not itself make something a rejection", () => {
+    // The two rules are independent and BOTH must hold for a credit to be
+    // kept. Acknowledging a warning and then hitting an unrelated failure
+    // must not quietly become a chargeable event.
+    expect(isProviderRejection([ack])).toBe(false);
+  });
+
+  it("the combination the refund sites actually evaluate", () => {
+    // force = isProviderRejection && !acknowledged
+    const forced = (a: Parameters<typeof isProviderRejection>[0]) =>
+      isProviderRejection(a) && !acknowledgedPolicyWarning(a);
+    expect(forced([refusal])).toBe(true); // unwarned refusal -> refund
+    expect(forced([ack, refusal])).toBe(false); // warned, sent anyway -> charged
   });
 });

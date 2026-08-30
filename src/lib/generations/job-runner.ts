@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { isProviderRejection } from "@/lib/generations/refund-rules";
+import { acknowledgedPolicyWarning, isProviderRejection } from "@/lib/generations/refund-rules";
 import { createAdminClient } from "@/lib/supabase/server";
 import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import {
@@ -672,7 +672,13 @@ async function finish(
     // fails, the user is deducted tokens" — for rejection-class failures,
     // no longer.)
     refunded = await refundGenerationCosts(generationId, {
-      force: isProviderRejection(outcome.attempts),
+      // Same narrow exception as the inline path: a refusal the person was
+      // warned about and sent anyway keeps its credit. The push notification
+      // below reads `refunded`, so it will correctly stop promising the
+      // credits came back.
+      force:
+        isProviderRejection(outcome.attempts) &&
+        !acknowledgedPolicyWarning(outcome.attempts),
     });
   }
 

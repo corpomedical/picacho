@@ -3706,6 +3706,22 @@ function GenerateFormInner({
       formData.set("video_duration_seconds", String(videoDurationSeconds));
       if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
       if (videoResolution) formData.set("video_resolution", videoResolution);
+      // Sent with the provider-policy warning showing: record the choice so a
+      // refusal keeps its credit instead of force-refunding (see
+      // acknowledgedPolicyWarning in refund-rules.ts).
+      //
+      // Resolved HERE from the same pure resolver the strip renders from,
+      // rather than read from a value declared further down the component —
+      // this file has been bitten by declaration order before, and a flag
+      // that decides whether someone is charged is the last place to rely on
+      // a closure capturing a binding in time.
+      if (
+        resolveSendPlan(buildSendPlanInput()).issues.some(
+          (i) => i.code === "SEEDANCE25_PHOTOREAL",
+        )
+      ) {
+        formData.set("acknowledge_policy_warning", "1");
+      }
     }
     if (skipRulesForPromptRef.current !== null) {
       const boundPrompt = skipRulesForPromptRef.current;

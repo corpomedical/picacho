@@ -37,7 +37,7 @@ export const PRICING_TIERS = [
       "12 credits / month — about 12 standard clips or images",
       "Unlimited character profiles",
       "Your character's rulebook compiled into every prompt",
-      "Blocked or refused requests never use your credits",
+      "Refused requests don't use your credits — unless you send past a warning",
     ],
   },
   {
@@ -51,7 +51,7 @@ export const PRICING_TIERS = [
       "30 credits / month ≈ 30 standard videos, or 15 premium ones",
       "Unlimited character profiles",
       "Your character's rulebook compiled into every prompt",
-      "Blocked or refused requests never use your credits",
+      "Refused requests don't use your credits — unless you send past a warning",
     ],
   },
   {
@@ -66,7 +66,7 @@ export const PRICING_TIERS = [
       "140 credits / month ≈ 140 standard videos, or 70 premium ones",
       "Unlimited character profiles",
       "Your character's rulebook compiled into every prompt",
-      "Blocked or refused requests never use your credits",
+      "Refused requests don't use your credits — unless you send past a warning",
     ],
   },
   {

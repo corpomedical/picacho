@@ -4,6 +4,7 @@ import { toggleFeatureFlag, setVideoModel, setImageModel, restoreModel, suspendM
 import { getAllModelHealth } from "@/lib/generations/model-health";
 import { VIDEO_MODELS, pricingAudit, COST_BASIS_USD_PER_CREDIT } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
+import { reconcileFalLedger } from "@/lib/generations/providers/fal-ledger";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -37,6 +38,11 @@ export default async function AdminProvidersPage({
   // still blocking or merely awaiting its trial retry depends on the current
   // time, and reading the clock during render isn't pure.
   const healthById = await getAllModelHealth();
+
+  // fal's own billing ledger. Best-effort: returns ok:false rather than
+  // throwing, so an undocumented provider endpoint moving can never take the
+  // admin page down with it.
+  const ledger = await reconcileFalLedger(30);
 
   const activeModel = modelSetting?.value ?? "kling";
   const activeImageModel = imageModelSetting?.value ?? "gpt-image";
@@ -194,6 +200,91 @@ export default async function AdminProvidersPage({
           reviews because the weights looked reasonable and nobody multiplied
           them out. This makes that arithmetic visible instead of trusting
           that someone remembers to do it. */}
+      {/* Provider billing reconciliation (2026-08-30).
+          Answers one question, from fal's own ledger rather than from our
+          pipeline log: has a FAILED render ever actually cost money? Our
+          refund policy force-refunds provider rejections on the assumption
+          they consume nothing, and fal's FAQ only guarantees that for 5xx —
+          a 422 "may still be charged if a runner spent GPU time before the
+          error was detected". So the assumption is checked here instead of
+          trusted, and it surfaces the day it stops being true. */}
+      <Card className={cn("mt-6", ledger.ok && ledger.billedFailures.length > 0 && "border-red-300")}>
+        <h2 className="text-sm font-semibold text-neutral-900">Provider billing reconciliation</h2>
+        {!ledger.ok ? (
+          <p className="mt-1 text-sm text-neutral-500">
+            Couldn&apos;t read fal&apos;s request ledger{ledger.error ? ` — ${ledger.error}` : ""}. This
+            panel is informational; nothing about generation depends on it.
+          </p>
+        ) : (
+          <>
+            <p className="mt-1 text-sm text-neutral-500">
+              Every request fal has on record for the last {ledger.windowDays} days, and what it
+              billed. A failed render should carry no billable units — that is the assumption the
+              automatic refund of provider rejections rests on.
+            </p>
+            <div className="mt-4 grid gap-4 sm:grid-cols-4">
+              <div>
+                <p className="text-xl font-semibold text-neutral-900">{ledger.total}</p>
+                <p className="text-xs text-neutral-500">requests on record</p>
+              </div>
+              <div>
+                <p className="text-xl font-semibold text-neutral-900">{ledger.failed}</p>
+                <p className="text-xs text-neutral-500">failed (4xx/5xx)</p>
+              </div>
+              <div>
+                <p
+                  className={cn(
+                    "text-xl font-semibold",
+                    ledger.billedFailures.length > 0 ? "text-red-600" : "text-emerald-700",
+                  )}
+                >
+                  {ledger.billedFailures.length}
+                </p>
+                <p className="text-xs text-neutral-500">failures we were BILLED for</p>
+              </div>
+              <div>
+                <p className="text-xl font-semibold text-neutral-900">
+                  {ledger.billableUnitsOnSuccess.toFixed(2)}
+                </p>
+                <p className="text-xs text-neutral-500">billable units on successes</p>
+              </div>
+            </div>
+
+            {ledger.billedFailures.length > 0 ? (
+              <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3">
+                <p className="text-sm font-semibold text-red-700">
+                  A provider charged us for work that failed. The refund rule assumes this cannot
+                  happen — check it before refunding any more rejections automatically.
+                </p>
+                <div className="mt-2 space-y-1">
+                  {ledger.billedFailures.slice(0, 10).map((r) => (
+                    <p key={r.request_id} className="text-xs text-red-800">
+                      {r.status_code} · {r.endpoint} · {r.billable_units} units · {r.started_at}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-emerald-700">
+                No failed request in this window carried a billable unit
+                {ledger.failuresByEndpoint.length > 0
+                  ? ` — including ${ledger.failuresByEndpoint
+                      .map((f) => `${f.count}x ${f.endpoint}`)
+                      .join(", ")}.`
+                  : "."}
+              </p>
+            )}
+            {ledger.oldest && (
+              <p className="mt-3 text-xs text-neutral-400">
+                Ledger covers {new Date(ledger.oldest).toLocaleDateString()} to{" "}
+                {ledger.newest ? new Date(ledger.newest).toLocaleDateString() : "now"}. Read live
+                from fal on each page load.
+              </p>
+            )}
+          </>
+        )}
+      </Card>
+
       {pricingAudit().length > 0 && (
         <Card className="mt-6 border-amber-200">
           <h2 className="text-sm font-semibold text-amber-700">Credit weights out of step with cost</h2>

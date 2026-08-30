@@ -25,6 +25,7 @@ import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
 import type { BrandRule } from "@/lib/brand-rules/types";
 import { classifyProhibitions } from "@/lib/brand-rules/classify";
+import { ACKNOWLEDGED_WARNING_MARKER } from "@/lib/generations/refund-rules";
 
 export type ContentType = "video" | "image";
 
@@ -558,6 +559,13 @@ export type RealPipelineOptions = {
   // their own rules — this is agency over one's own rulebook, not a
   // compliance bypass; the send is still logged as rules-suspended.
   skipBrandProhibitions?: boolean;
+  // The person was shown a provider-policy warning for this exact send and
+  // chose to continue. Recorded as a step in the attempt log so it travels
+  // with the generation — including into a QUEUED video's resume state, which
+  // is how it reaches job-runner's finish() long after this request is gone.
+  // Read there by acknowledgedPolicyWarning() to decide whether a provider
+  // refusal still force-refunds. See refund-rules.ts.
+  policyWarningAcknowledged?: boolean;
   // Other DIFFERENT characters composited into this same generation
   // alongside the primary `character` parameter (see the multi-character
   // picker in generate-form.tsx). Fed into the draft/review rulebook below
@@ -728,6 +736,12 @@ export async function runRealPipeline(
     }
 
     const steps: PipelineStepLog[] = [];
+    if (options.policyWarningAcknowledged) {
+      steps.push({
+        step: "draft",
+        detail: `${ACKNOWLEDGED_WARNING_MARKER} Sent after the provider-policy warning was shown and dismissed.`,
+      });
+    }
     const previousIssues = attempts[attempts.length - 1]?.issues ?? [];
     // Recomputed fresh every attempt from that attempt's own draft response —
     // see splitOverrides. Declared here (not inside the try block) so the

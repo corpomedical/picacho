@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { acknowledgedPolicyWarning } from "@/lib/generations/refund-rules";
 import { baselineIdentityReferences, resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
 import { resolvePresetBlocks } from "@/lib/generations/cinema-presets";
@@ -788,6 +789,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // rate as its default, so this cannot change what a generation costs.
   const requestedResolution = (formData.get("video_resolution") as string) || "";
 
+  // Did the person send this AFTER being shown the policy warning?
+  //
+  // The composer arms this one-shot, bound to the exact prompt it was shown
+  // for (same discipline as skip_brand_rules), so it can never leak to a
+  // different send. Its only effect is on the refund decision: a provider
+  // refusal normally force-refunds past the automatic_refunds switch because
+  // it provably cost nothing, but a refusal someone was warned about and
+  // chose anyway is a decision, not an accident, and keeps its credit.
+  const policyWarningAcknowledged = formData.get("acknowledge_policy_warning") === "1";
+
   // Circuit breaker, checked BEFORE any credit is spent or any provider call
   // is made. A model that has failed three times in a row (across at least two
   // accounts) is out of service, and rather than turning the person away we
@@ -1506,6 +1517,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoResolution,
           skipRefinement,
         skipBrandProhibitions: formData.get("skip_brand_rules") === "1",
+          policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),
           // Video renders get queued and polled instead of awaited — see
@@ -1639,7 +1651,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     // anything generated — policy fences, input validation). Everything
     // that may have consumed real provider work stays behind the flag.
     await refundGenerationCosts(placeholder.id, {
-      force: Boolean(rulesBlock?.length) || isProviderRejection(attempts),
+      // ...unless the person was warned this exact send would be refused and
+      // chose to send it anyway (2026-08-30). Then the refusal is a decision
+      // they made with the reason in front of them, not something that
+      // happened to them, and the credit stands.
+      force:
+        Boolean(rulesBlock?.length) ||
+        (isProviderRejection(attempts) && !acknowledgedPolicyWarning(attempts)),
     });
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }

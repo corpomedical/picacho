@@ -105,6 +105,21 @@ export function issueMessage(
   }
 }
 
+// The "why does this happen?" copy behind each warning that has one.
+//
+// Only provider-POLICY issues get an explainer: those are the ones where the
+// refusal comes from someone else's rulebook, and where a person could
+// reasonably conclude Picacho is the one saying no. Mechanical issues (a
+// missing voice, an out-of-range photo) explain themselves in the message.
+function issueExplainer(issue: PlanIssue, g: Messages["generate"]): string | null {
+  switch (issue.code) {
+    case "SEEDANCE25_PHOTOREAL":
+      return g.seedance25Why;
+    default:
+      return null;
+  }
+}
+
 function actionLabel(issue: PlanIssue, g: Messages["generate"]): string | null {
   switch (issue.action) {
     case "switch-seedance-2":
@@ -174,7 +189,26 @@ export function ReceiptStrip({
               : "bg-amber-500/10 text-amber-800 dark:text-amber-300",
           )}
         >
-          <span className="min-w-0 flex-1">{issueMessage(issue, g, modelName, hasAttachmentRiding)}</span>
+          <span className="min-w-0 flex-1">
+            {issueMessage(issue, g, modelName, hasAttachmentRiding)}
+            {/* "Why does this happen?" — the warning tells you the render will
+                be refused; without this it reads as Picacho refusing it. It is
+                the provider's rule, verified with live requests, and people
+                are entitled to know whose rule they are hitting before they
+                decide to spend a credit on it. Kept as a <details> rather
+                than a tooltip so it works on a phone, where there is no
+                hover. */}
+            {issueExplainer(issue, g) && (
+              <details className="mt-1.5">
+                <summary className="cursor-pointer list-none text-[11px] font-semibold underline decoration-dotted underline-offset-2 opacity-80 hover:opacity-100">
+                  {g.issueWhyLabel}
+                </summary>
+                <p className="mt-1.5 max-w-[46ch] text-[11px] leading-relaxed opacity-90">
+                  {issueExplainer(issue, g)}
+                </p>
+              </details>
+            )}
+          </span>
           {issue.action && (
             <button
               type="button"
