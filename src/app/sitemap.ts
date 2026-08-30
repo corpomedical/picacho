@@ -28,6 +28,10 @@ const PUBLIC_ROUTES = [
   "/compare/imagineart",
   "/compare/higgsfield",
   // Guides — the SEO content section (English-only bodies for now).
+  // The free identity checker — a marketing page that exists to rank, and
+  // the only one a stranger can USE before signing up. English-only for now,
+  // so no locale alternates (see LOCALIZED_PATHS).
+  "/tools/identity-check",
   "/guides",
   "/guides/ai-character-consistency",
   "/guides/ai-camera-movements",
