@@ -414,6 +414,32 @@ export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].so
 // difference margin, that is the same error.
 export const COST_BASIS_USD_PER_CREDIT = 0.28;
 
+// The most expensive SINGLE render this catalogue can produce, in provider
+// dollars (2026-08-30).
+//
+// Used to turn an abstract fal balance into a sentence that means something:
+// a balance below this number cannot complete the priciest render the product
+// offers, so someone WILL hit a failure that is our fault rather than theirs.
+// Derived from the catalogue instead of hardcoded so it follows the models —
+// today the answer is Seedance 2.5 at 30 seconds, and it should keep being
+// whatever the answer actually is.
+//
+// Includes priced resolutions: Veo at 4K bills $0.60/sec against $0.40, and a
+// ceiling that ignored that would understate the worst case.
+export function maxSingleRenderCostUsd(): number {
+  let worst = 0;
+  for (const model of VIDEO_MODELS) {
+    const longest = Math.max(...model.durations.map((d) => d.seconds));
+    worst = Math.max(worst, model.costPerSecondUsd * longest);
+    for (const offer of videoResolutionOffers(model.id)) {
+      if (offer.costPerSecondUsd) {
+        worst = Math.max(worst, offer.costPerSecondUsd * longest);
+      }
+    }
+  }
+  return worst;
+}
+
 // Options whose credit weight is out of step with what they actually cost.
 //
 // NOT a profitability check — every model here is profitable at current

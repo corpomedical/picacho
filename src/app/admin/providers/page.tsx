@@ -2,9 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { toggleFeatureFlag, setVideoModel, setImageModel, restoreModel, suspendModel } from "@/lib/admin/actions";
 import { getAllModelHealth } from "@/lib/generations/model-health";
-import { VIDEO_MODELS, pricingAudit, COST_BASIS_USD_PER_CREDIT } from "@/lib/generations/providers/video-models";
+import {
+  VIDEO_MODELS,
+  pricingAudit,
+  maxSingleRenderCostUsd,
+  COST_BASIS_USD_PER_CREDIT,
+} from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
-import { reconcileFalLedger } from "@/lib/generations/providers/fal-ledger";
+import { getFalBalance, reconcileFalLedger } from "@/lib/generations/providers/fal-ledger";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,7 +47,16 @@ export default async function AdminProvidersPage({
   // fal's own billing ledger. Best-effort: returns ok:false rather than
   // throwing, so an undocumented provider endpoint moving can never take the
   // admin page down with it.
-  const ledger = await reconcileFalLedger(30);
+  const [ledger, balance] = await Promise.all([reconcileFalLedger(30), getFalBalance()]);
+
+  // The balance only means something next to what a render costs. Below the
+  // priciest single render in the catalogue, someone WILL hit a failure that
+  // is our fault rather than theirs — that is the line worth alarming on, and
+  // it is derived from the catalogue so it follows the models instead of
+  // going stale as a hardcoded figure.
+  const worstRenderUsd = maxSingleRenderCostUsd();
+  const balanceCritical = balance.ok && balance.balanceUsd < worstRenderUsd;
+  const balanceLow = balance.ok && !balanceCritical && balance.balanceUsd < worstRenderUsd * 10;
 
   const activeModel = modelSetting?.value ?? "kling";
   const activeImageModel = imageModelSetting?.value ?? "gpt-image";
@@ -200,6 +214,47 @@ export default async function AdminProvidersPage({
           reviews because the weights looked reasonable and nobody multiplied
           them out. This makes that arithmetic visible instead of trusting
           that someone remembers to do it. */}
+      {/* fal balance (2026-08-30). The number that actually constrains the
+          product: when it runs out every render fails at once, and it reads
+          as a product outage rather than an unpaid bill. Read through an
+          Admin-scope key (FAL_ADMIN_KEY) because the ordinary render key is
+          not permitted on fal's billing endpoint. */}
+      <Card className={cn("mt-6", balanceCritical && "border-red-300", balanceLow && "border-amber-200")}>
+        <h2 className="text-sm font-semibold text-neutral-900">fal balance</h2>
+        {!balance.ok ? (
+          <p className="mt-1 text-sm text-neutral-500">
+            Couldn&apos;t read the balance — {balance.error} Renders are unaffected; this panel is
+            informational.
+          </p>
+        ) : (
+          <>
+            <div className="mt-2 flex flex-wrap items-baseline gap-3">
+              <p className={cn("text-3xl font-semibold", balanceCritical ? "text-red-600" : balanceLow ? "text-amber-700" : "text-neutral-900")}>
+                ${balance.balanceUsd.toFixed(2)}
+              </p>
+              <span className="text-sm text-neutral-500">{balance.currency} remaining at fal</span>
+            </div>
+            <p className="mt-2 text-sm text-neutral-600">
+              About{" "}
+              <span className="font-medium">{Math.floor(balance.balanceUsd / COST_BASIS_USD_PER_CREDIT)}</span>{" "}
+              credits of generation at the ${COST_BASIS_USD_PER_CREDIT.toFixed(2)} cost basis. The
+              priciest single render this catalogue can produce costs ${worstRenderUsd.toFixed(2)}.
+            </p>
+            {balanceCritical && (
+              <p className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
+                Below the cost of one full-length render. Someone will hit a failure that is ours,
+                not theirs. Top up before that happens.
+              </p>
+            )}
+            {balanceLow && (
+              <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Running low — under ten full-length renders of headroom.
+              </p>
+            )}
+          </>
+        )}
+      </Card>
+
       {/* Provider billing reconciliation (2026-08-30).
           Answers one question, from fal's own ledger rather than from our
           pipeline log: has a FAILED render ever actually cost money? Our

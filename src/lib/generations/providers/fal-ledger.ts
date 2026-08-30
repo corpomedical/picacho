@@ -149,3 +149,48 @@ export async function reconcileFalLedger(windowDays = 30): Promise<LedgerReconci
       .sort((a, b) => b.count - a.count),
   };
 }
+
+export type FalBalance =
+  | { ok: true; balanceUsd: number; currency: string }
+  | { ok: false; error: string };
+
+/**
+ * The account's remaining fal credit (2026-08-30).
+ *
+ * Needs an ADMIN-scope key — the ordinary FAL_KEY returns 403 "not permitted"
+ * here (verified). Kept in a separate env var rather than upgrading FAL_KEY
+ * because admin scope also covers CLI operations and serverless deployment,
+ * and the render path has no business holding that.
+ *
+ * `expand=credits` is what adds the balance; without it the response is just
+ * the username. The FOCUS billing report on the sibling endpoint would give a
+ * spend breakdown, but it is gated: verified 2026-08-30, this account gets
+ * 403 "FOCUS reports require additional permissions."
+ */
+export async function getFalBalance(): Promise<FalBalance> {
+  const key = process.env.FAL_ADMIN_KEY;
+  if (!key) return { ok: false, error: "FAL_ADMIN_KEY is not set." };
+  try {
+    const res = await fetch("https://api.fal.ai/v1/account/billing?expand=credits", {
+      headers: { authorization: `Key ${key}` },
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return {
+        ok: false,
+        error:
+          res.status === 403
+            ? "FAL_ADMIN_KEY is not Admin scope (fal returned 403)."
+            : `fal billing returned ${res.status}`,
+      };
+    }
+    const body = (await res.json()) as {
+      credits?: { current_balance?: number; currency?: string };
+    };
+    const balance = body.credits?.current_balance;
+    if (typeof balance !== "number") return { ok: false, error: "No balance in fal's response." };
+    return { ok: true, balanceUsd: balance, currency: body.credits?.currency ?? "USD" };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "fal billing unreachable" };
+  }
+}
