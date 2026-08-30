@@ -5104,8 +5104,35 @@ function GenerateFormInner({
   // selector (2026-08-26 declutter: the strip moved from its own floating
   // row into the picker header; see the mount for the visibility rules).
   const sendPlanNow = resolveSendPlan(buildSendPlanInput());
+
+  // Is the next send going to be ANSWERED rather than rendered? Resolved
+  // once per render and shared, rather than re-classifying at each call site.
+  const willAsk = sendIntent() === "ask";
+
+  // THE ONE-VOICE RULE, EXTENDED (operator-reported, 2026-08-31: with the
+  // assistant on, typing a question at Kling popped "pick a character").
+  //
+  // The whole render pre-flight — the Send Receipt, the blocking fences, the
+  // credit warnings — exists to describe what a SEND is about to do. When
+  // the assistant is on and what you have typed reads as a question, the
+  // send is not a render, so every one of those has stopped being true.
+  // Demanding a character for a sentence nobody is going to render is the
+  // composer arguing with itself: the send button has already turned into an
+  // ochre spark saying "this will be answered", while the strip underneath
+  // insists you fix a render you never asked for.
+  //
+  // This file already had the principle, one line down — "while a red fence
+  // is on screen, the credit banners stay quiet ('you can't run this'
+  // already owns the moment)". Same idea: while the composer is about to
+  // answer, the render fences stay quiet.
+  //
+  // Note this gates on the LIVE reading, not on the switch: with the
+  // assistant on and a shot in the box, the receipt behaves exactly as it
+  // always has, character requirement and all. An empty box still reads as
+  // "render", so the baseline receipt keeps greeting you unchanged.
   const receiptEngaged =
-    prompt.trim().length > 0 || pendingAttachments.length > 0 || Boolean(characterId);
+    !willAsk &&
+    (prompt.trim().length > 0 || pendingAttachments.length > 0 || Boolean(characterId));
   // Image mode carries no baseline line at all (operator: not relevant
   // there) — the strip appears only when it has something real to say: an
   // attachment riding the send, or an engagement-gated warning.
@@ -6844,15 +6871,15 @@ function GenerateFormInner({
                     <button
                       type="submit"
                       disabled={
-                        sendIntent() === "ask"
+                        willAsk
                           ? !prompt.trim()
                           : isUploading ||
                             (storyboardActive
                               ? !storyboardReady
                               : !prompt.trim() && pendingAttachments.length === 0)
                       }
-                      title={sendIntent() === "ask" ? g.askSend : g.send}
-                      aria-label={sendIntent() === "ask" ? g.askSend : g.send}
+                      title={willAsk ? g.askSend : g.send}
+                      aria-label={willAsk ? g.askSend : g.send}
                       className={cn(
                         "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-paper transition-colors disabled:opacity-30",
                         // The send button is the classifier made visible:
@@ -6860,12 +6887,12 @@ function GenerateFormInner({
                         // The verdict shows in the one place the eye already
                         // goes before committing, so no separate indicator
                         // is needed anywhere else.
-                        sendIntent() === "ask"
+                        willAsk
                           ? "bg-atelier-accent hover:bg-atelier-accent/90"
                           : "bg-atelier-ink hover:bg-atelier-ink/90",
                       )}
                     >
-                      {sendIntent() === "ask" ? (
+                      {willAsk ? (
                         <SparkIcon className="h-4 w-4" />
                       ) : (
                         <SendIcon className="h-4 w-4" />
@@ -6896,7 +6923,11 @@ function GenerateFormInner({
               {/* Guardrail footer (2026-08-21 incident): what a send spends,
                   and the two first-session nudges. Renders nothing for
                   established paid accounts. */}
-              {(dailyFreeAvailable ||
+              {/* Same rule as the receipt above: "uses today's free
+                  generation" is a promise about a render, and a question
+                  spends no generation. */}
+              {!willAsk &&
+                (dailyFreeAvailable ||
                 (!hasGeneratedBefore && contentType === "image")) &&
                 !submitting && (
                   <div className="space-y-1 px-4 pb-2.5">
