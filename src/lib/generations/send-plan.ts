@@ -238,6 +238,21 @@ export function baselineIdentityReferences(
   return [primary, ...clean.filter((p) => p !== primary)].slice(0, max);
 }
 
+// The lane the product presents as "no character needed" (2026-08-30).
+//
+// Deliberately NOT derived from identity.required. Kling 1.6 also renders a
+// generic person perfectly well (required: false), but an unpicked character
+// there is still far more likely to be an oversight than a choice — that is
+// the 2026-08-21 incident, where someone created a character, never selected
+// it, and sent a character-less render without realising. Veo is different
+// because the composer actively recommends it as the way to render without a
+// character, so an empty selector there is the intended state.
+//
+// A positioning decision, in other words, not a capability — which is why it
+// lives as its own list instead of being inferred from the table above.
+// Consumed by the composer to decide whether to warm the character chip.
+export const CHARACTERLESS_MODEL_IDS: readonly string[] = ["veo"];
+
 // ---------------------------------------------------------------------------
 // Input snapshot
 // ---------------------------------------------------------------------------

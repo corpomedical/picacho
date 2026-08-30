@@ -41,7 +41,7 @@ import {
 import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
 import {
-  MODEL_CAPABILITIES,
+  CHARACTERLESS_MODEL_IDS,
   resolveSendPlan,
   type AttachmentRole,
   type PlanIssue,
@@ -4244,16 +4244,18 @@ function GenerateFormInner({
   // rather than collapsing into a static "already picked" chip, or there'd
   // be no way to actually select that one character.
   const castSize = (currentCharacter ? 1 : 0) + companionCharacterIds.length;
-  // Does the CURRENT model actually need a character? Read from the same
-  // capability table the server uses (identity.required), so the chip and
-  // the send agree: models whose fal endpoint starts from a reference frame
-  // — kling-o3, kling-2.5, kling-o3-pro, seedance, seedance-2 — genuinely
-  // cannot run without one, and send-plan raises a blocking
-  // NEEDS_REFERENCE_PHOTO for them. Kling 1.6 and Veo can render a generic
-  // person, so an empty character selector there is a choice, not an error.
-  const selectedModelNeedsCharacter =
-    contentType === "video" &&
-    Boolean(MODEL_CAPABILITIES[videoModelId as keyof typeof MODEL_CAPABILITIES]?.identity.required);
+  // Should an empty character selector be flagged on this model?
+  //
+  // Everywhere EXCEPT the designated characterless lane. Not keyed on
+  // identity.required on purpose (operator, 2026-08-30: "the no tint only
+  // applies on Veo, not the rest"): Kling 1.6 can technically render a
+  // generic person, but an unpicked character there is still much more
+  // likely to be an oversight than an intention — the 2026-08-21 incident
+  // this nudge was added for. Veo is the one lane the composer recommends
+  // for rendering without a character, so an empty selector there is the
+  // intended state rather than a mistake.
+  const warnOnEmptyCharacter =
+    contentType !== "video" || !CHARACTERLESS_MODEL_IDS.includes(videoModelId);
 
   const characterPicker =
     characters.length > 0 ? (
@@ -4272,7 +4274,7 @@ function GenerateFormInner({
             "flex min-w-0 items-center gap-2 rounded-full py-1 pl-1 pr-2.5 text-left transition-colors disabled:opacity-50",
             characterMenuOpen
               ? "bg-atelier-ink/[0.08]"
-              : !characterId && selectedModelNeedsCharacter
+              : !characterId && warnOnEmptyCharacter
                 ? // Nothing picked yet AND this model cannot render without
                   // one: warm the chip so the empty selector can't be
                   // overlooked (the 2026-08-21 incident: a new user created a

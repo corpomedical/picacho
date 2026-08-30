@@ -5,7 +5,12 @@
 // in a later phase, the test changes IN THE SAME COMMIT, never silently.
 
 import { describe, expect, it } from "vitest";
-import { MODEL_CAPABILITIES, resolveSendPlan, type ResolveInput } from "./send-plan";
+import {
+  CHARACTERLESS_MODEL_IDS,
+  MODEL_CAPABILITIES,
+  resolveSendPlan,
+  type ResolveInput,
+} from "./send-plan";
 
 const base: ResolveInput = {
   contentType: "video",
@@ -399,12 +404,10 @@ describe("Veo identity", () => {
   });
 });
 
-// Which models genuinely need a character (2026-08-30). The composer warms
-// the character chip when nothing is picked, and it used to do that on EVERY
-// model — which made a legitimate choice look like a mistake on the two
-// lanes that render a generic person perfectly well. The chip now reads
-// identity.required from this table, so these flags are UI behaviour, not
-// just documentation.
+// Which models genuinely need a character (2026-08-30). identity.required is
+// what BLOCKS a send; the composer's chip tint is a separate, deliberately
+// narrower rule (CHARACTERLESS_MODEL_IDS — Veo only). Both are asserted so
+// neither drifts.
 describe("identity.required — what the character chip warns about", () => {
   it("requires a character on every lane that starts from a reference frame", () => {
     // These endpoints are image-to-video or reference-to-video: without a
@@ -416,15 +419,28 @@ describe("identity.required — what the character chip warns about", () => {
     }
   });
 
-  it("REGRESSION: Kling 1.6 and Veo do NOT require one, and must not warn", () => {
-    // Both render a generic person, and Veo is the lane the composer
-    // actively recommends when nobody is cast. An alarm that fires when
-    // nothing is wrong is one people learn to ignore where it matters.
+  it("Kling 1.6 and Veo do NOT require one, so neither blocks the send", () => {
+    // Note the distinction the composer draws on top of this: only VEO is
+    // treated as the characterless lane and left untinted. Kling 1.6 also
+    // renders a generic person, but an unpicked character there is still
+    // more likely an oversight, so its chip keeps the nudge. See
+    // CHARACTERLESS_MODEL_IDS.
     for (const id of ["kling", "veo"] as const) {
       expect(MODEL_CAPABILITIES[id].identity.required).toBe(false);
       const plan = resolveSendPlan({ ...base, modelId: id, character: null });
       expect(issue(plan, "NEEDS_REFERENCE_PHOTO")).toBeUndefined();
       expect(entry(plan, "identity")!.noteCode).toBe("GENERIC_PERSON");
     }
+  });
+});
+
+describe("CHARACTERLESS_MODEL_IDS — where an empty character chip is normal", () => {
+  it("is Veo alone, not every model that merely tolerates no character", () => {
+    // Operator, 2026-08-30: "the no tint only applies on Veo, not the rest".
+    // Kling 1.6 has identity.required false too, but an unpicked character
+    // there is still most likely the 2026-08-21 oversight, so it keeps the
+    // nudge. This is positioning, not capability — hence its own list.
+    expect(CHARACTERLESS_MODEL_IDS).toEqual(["veo"]);
+    expect(CHARACTERLESS_MODEL_IDS).not.toContain("kling");
   });
 });
