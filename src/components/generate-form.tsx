@@ -4409,11 +4409,22 @@ function GenerateFormInner({
   // display code, not the source of truth for what actually gets charged —
   // that's re-validated server-side in actions.ts regardless).
   function creditsForDuration(model: VideoModelOption, seconds: number): number {
-    return (
+    const base =
       model.durations.find((d) => d.seconds === seconds)?.creditWeight ??
       model.durations.find((d) => d.seconds === model.defaultDurationSeconds)?.creditWeight ??
-      1
-    );
+      1;
+    // A picked resolution changes what a render costs, so every price shown
+    // has to reflect it — the chip beside the current model AND each row in
+    // the switcher, whose whole job is making the tradeoff visible before
+    // picking rather than discovering it against the plan limit later.
+    //
+    // Keyed on videoResolutionWanted (the standing preference) rather than
+    // the derived active value on purpose: the dropdown answers "what would
+    // THIS model cost me, given my settings", and picking Veo with 4K armed
+    // genuinely will charge the higher weight. Models that do not offer the
+    // resolution get null back and keep their base price, so the comparison
+    // stays honest in both directions.
+    return resolutionCreditWeight(model.id, videoResolutionWanted, seconds) ?? base;
   }
 
   // Video model switcher — only worth showing once there's an actual
@@ -4607,7 +4618,13 @@ function GenerateFormInner({
             disabled={locked}
             onClick={() => setVideoDurationSeconds(d.seconds)}
             aria-pressed={videoDurationSeconds === d.seconds}
-            title={formatMsg(g.durationCredits, { n: d.creditWeight })}
+            // creditsForDuration, not d.creditWeight: with a paid resolution
+            // armed, each length's real cost differs from the catalogue's
+            // base weight, and this tooltip is where the tradeoff of a
+            // longer clip is meant to be visible before generating.
+            title={formatMsg(g.durationCredits, {
+              n: creditsForDuration(currentVideoModel, d.seconds),
+            })}
             className={cn(
               "rounded-full px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 sm:px-2.5",
               videoDurationSeconds === d.seconds
