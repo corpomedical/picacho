@@ -56,6 +56,8 @@ export default async function GeneratePage() {
     multiAngleAvailable,
     approachingLimit,
     voiceModeEnabled,
+    chatAgentEnabled,
+    chatSmarterAvailable,
     creditsUsed,
     creditsLimit,
     purchasedCredits,
@@ -147,6 +149,8 @@ export default async function GeneratePage() {
         multiAngleAvailable={multiAngleAvailable}
         approachingLimit={approachingLimit}
         voiceModeEnabled={voiceModeEnabled}
+        chatAgentEnabled={chatAgentEnabled}
+        chatSmarterAvailable={chatSmarterAvailable}
         creditsUsed={creditsUsed}
         creditsLimit={creditsLimit}
         purchasedCredits={purchasedCredits}

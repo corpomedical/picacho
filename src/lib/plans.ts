@@ -171,6 +171,58 @@ export const PLAN_PROMPT_ASSIST_LIMITS = {
 // Deliberately unchanged by the daily-trial switch: still a lifetime total.
 export const FREE_PROMPT_ASSIST_LIMIT = 10;
 
+// Chat-agent budget per billing period, in 2-cent units (2026-08-30).
+// See lib/agent/prices.ts for what a unit is and how a turn is priced.
+//
+// Sized against this file's own precedent: a worst-case spend that stays a
+// sane fraction of the plan price, the way PLAN_REFERENCE_IMAGE_LIMITS was
+// sized (~$1.70 of images against a $9 plan). Held at roughly a tenth of
+// each price so the share is the SAME on every tier — the first draft of
+// this table ran from 10% to 24% depending on the plan, which meant Starter
+// subscribers were quietly given twice the chat budget, per dollar, that
+// Studio subscribers were.
+//
+//   plan     units   worst case   price   share
+//   basic       45       $0.90       $9    10%
+//   starter     95       $1.90      $19    10%
+//   growth     400       $8.00      $79    10%
+//   studio   1,500      $30.00     $299    10%
+//   elite    2,500      $50.00     $499    10%
+//
+// Worst case is what it says: every unit spent, every month. Real use will
+// be a fraction of it, and agent_usage.cost_usd exists so these can be
+// re-cut against evidence instead of arithmetic.
+//
+// ELITE IS CAPPED, and that is a deliberate departure from
+// PLAN_PROMPT_ASSIST_LIMITS above, where elite is POSITIVE_INFINITY. The
+// reason is the warning already written there: an assist "writes no
+// generations row, so it bypasses both the credit meter and the 3-second
+// cooldown. Without a cap the endpoint is a free Claude proxy for anyone
+// with an account and a script." A streaming chat turn is that same bypass
+// with a bigger output budget. If a real Elite account ever approaches
+// 2,500 units, raise this number on purpose rather than leaving the hole
+// open by default.
+export const PLAN_CHAT_UNIT_LIMITS = {
+  none: 0,
+  basic: 45,
+  starter: 95,
+  growth: 400,
+  studio: 1500,
+  elite: 2500,
+} as const satisfies Record<PlanId, number>;
+
+// The free tier's chat allowance is a LIFETIME total, not per period — a
+// free account has no billing anchor to reset against, exactly as
+// FREE_PROMPT_ASSIST_LIMIT explains for assists.
+//
+// Twenty-five units is roughly fifteen to twenty Faster messages (a cached
+// Faster turn measures 1-2 units): about $0.50 per account, and Anthropic
+// spend rather than fal spend, so it cannot eat the render balance. The free tier's job is to produce a first result good
+// enough to convert, and the most common way that fails is a badly set up
+// character and a blind first send — which is precisely what this agent is
+// for. Faster mode only; Smarter is a paid capability.
+export const FREE_CHAT_UNIT_LIMIT = 25;
+
 export const PLAN_REFERENCE_IMAGE_LIMITS = {
   none: 0,
   // A third of Starter's (2026-08-19, added with the Basic tier). Ten still

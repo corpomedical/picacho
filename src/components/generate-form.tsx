@@ -40,6 +40,8 @@ import {
 } from "@/lib/generations/user-facing-error";
 import { createPortal } from "react-dom";
 import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
+import type { AgentMode } from "@/lib/agent/prices";
+import { parseSseFrames } from "@/lib/agent/sse";
 import {
   CHARACTERLESS_MODEL_IDS,
   MODEL_CAPABILITIES,
@@ -1313,6 +1315,12 @@ export function GenerateForm(props: {
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
+  // Whether the composer may offer Ask (the project-aware assistant).
+  // Optional and defaulting to false on purpose: every other call site of
+  // this component keeps compiling, and it keeps compiling with the feature
+  // OFF, which is the direction a feature that spends tokens should fail in.
+  chatAgentEnabled?: boolean;
+  chatSmarterAvailable?: boolean;
   // Raw numbers behind approachingLimit, plus the real reset timestamp when
   // the account has one (see currentPeriodEnd below) — passed straight
   // through from getGenerateWorkspaceData so the usage banner can show
@@ -1378,7 +1386,30 @@ type MultiAngleChatItem = {
   angles: MultiAngleClip[];
 };
 
-type ChatItem = ({ kind: "single" } & ChatTurn) | MultiAngleChatItem;
+// An Ask turn: a question and the assistant's answer, living in the SAME
+// transcript as the renders rather than in a side panel.
+//
+// One thread is the whole point. The thing being discussed — the take that
+// scored 61, the clip the model refused — is a few centimetres above the
+// question about it, and neither the person nor the assistant has to carry
+// it across a boundary. A separate chat panel would have meant re-describing
+// by hand what the transcript already shows.
+//
+// Ask turns are session-local: nothing writes them to `generations`, so
+// reloading the thread from History brings back the renders and not the
+// conversation about them. That is a deliberate v1 line — persisting them
+// means a new table, a retention decision, and a second place where a
+// person's words are stored.
+type AskChatItem = {
+  kind: "ask";
+  id: string;
+  question: string;
+  answer: string;
+  createdAt: string;
+  failed?: boolean;
+};
+
+type ChatItem = ({ kind: "single" } & ChatTurn) | MultiAngleChatItem | AskChatItem;
 
 // Maps a loaded-from-the-database history row (see getGenerationThread) to
 // the same shape a freshly-generated turn already gets in `items` — past
@@ -1538,6 +1569,85 @@ function MultiAngleTurnBubble({ item, domId }: { item: MultiAngleChatItem; domId
   );
 }
 
+// An Ask turn. Same bubble geometry as every other answer in the thread, with
+// one visual difference — a hairline ochre rail down the left edge — because
+// the two things in this transcript are NOT interchangeable: everything else
+// here cost credits and produced a file, and this cost neither and produced
+// an opinion. Someone scrolling back a week later has to be able to tell at a
+// glance which is which.
+//
+// Rendered as pre-wrapped plain text, deliberately. There is no markdown
+// renderer in this app, and adding one for this would mean shipping a parser
+// that runs on model output. The house rules ask for plain prose instead, so
+// what arrives is what shows.
+function AskTurnBubble({ item }: { item: AskChatItem }) {
+  const { t } = useLocale();
+  const g = t.generate;
+  return (
+    <div className="scroll-mt-6 space-y-3">
+      <UserBubble prompt={item.question} createdAt={item.createdAt} />
+      <div className="flex justify-start">
+        <div
+          className={cn(
+            "max-w-[90%] rounded-[18px] rounded-bl-[6px] border-l-2 bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]",
+            item.failed ? "border-l-atelier-rule" : "border-l-atelier-accent/50",
+          )}
+        >
+          <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+            <SparkIcon className="h-3 w-3 text-atelier-accent" />
+            {g.askAnswerLabel}
+          </p>
+          <p
+            className={cn(
+              "mt-2 whitespace-pre-wrap text-sm leading-relaxed",
+              item.failed ? "text-atelier-muted" : "text-atelier-ink",
+            )}
+          >
+            {item.answer}
+          </p>
+          {!item.failed && (
+            <p className="mt-3 text-[11px] leading-snug text-atelier-muted/80">{g.askDisclaimer}</p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// The live Ask bubble: the same frame, streaming. Kept separate from
+// AskTurnBubble rather than given an `isLive` prop because the two differ in
+// what they are allowed to show — a half-written answer gets no disclaimer
+// and no failure styling, and a caret that blinks under a finished answer
+// reads as a hang.
+function AskLiveBubble({ question, answer }: { question: string; answer: string }) {
+  const { t } = useLocale();
+  const g = t.generate;
+  return (
+    <div className="space-y-3">
+      <UserBubble prompt={question} />
+      <div className="flex justify-start">
+        <div className="max-w-[90%] rounded-[18px] rounded-bl-[6px] border-l-2 border-l-atelier-accent/50 bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
+          <p className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+            <SparkIcon className="h-3 w-3 text-atelier-accent" />
+            {g.askAnswerLabel}
+          </p>
+          {answer ? (
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-atelier-ink">
+              {answer}
+              <span className="ml-0.5 inline-block h-3.5 w-[2px] translate-y-0.5 animate-pulse bg-atelier-accent align-baseline" />
+            </p>
+          ) : (
+            <div className="mt-2 flex items-center gap-2 text-sm text-atelier-muted">
+              <LoaderIcon className="h-4 w-4" />
+              {g.askThinking}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // One frame of the Takes rail below: stage-grounded thumb, one-line caption,
 // caps microlabel, and the identity score in the ochre numeral serif when the
 // turn was scored. The whole frame is a button that scrolls the chat to its
@@ -1621,7 +1731,13 @@ function TakesRailEntry({
 function TakesRail({ items, inFlightPrompt }: { items: ChatItem[]; inFlightPrompt: string | null }) {
   const { t } = useLocale();
   const g = t.generate;
-  const takes = [...items].reverse();
+  // Ask turns are conversation, not takes — the rail is a filmstrip of what
+  // was rendered, and an answer has no frame to show. Filtered here rather
+  // than skipped in the map so the "no takes yet" empty state is still right
+  // in a session that has only been talked to.
+  const takes = [...items]
+    .filter((item): item is Exclude<ChatItem, AskChatItem> => item.kind !== "ask")
+    .reverse();
 
   return (
     <aside
@@ -1707,6 +1823,8 @@ function GenerateFormInner({
   multiAngleAvailable,
   approachingLimit,
   voiceModeEnabled,
+  chatAgentEnabled = false,
+  chatSmarterAvailable = false,
   creditsUsed,
   creditsLimit,
   purchasedCredits,
@@ -1725,6 +1843,8 @@ function GenerateFormInner({
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
+  chatAgentEnabled?: boolean;
+  chatSmarterAvailable?: boolean;
   creditsUsed: number;
   creditsLimit: number;
   purchasedCredits: number;
@@ -1904,6 +2024,23 @@ function GenerateFormInner({
 
   const [items, setItems] = useState<ChatItem[]>([]);
 
+  // Ask mode (2026-08-30). The composer has two things it can do with a
+  // sentence: render it, or answer it. `composerMode` picks which, and it is
+  // the ONLY switch — everything else about the composer (the character, the
+  // model, the attachments) stays exactly where it was, so switching to Ask
+  // and back does not cost the person their setup.
+  //
+  // Defaults to "render" and is reset to "render" by resetChat: the composer
+  // that opens is the one that makes things.
+  const [composerMode, setComposerMode] = useState<"render" | "ask">("render");
+  const [agentEffort, setAgentEffort] = useState<AgentMode>("faster");
+  const [liveAsk, setLiveAsk] = useState<{ question: string; answer: string } | null>(null);
+  const [asking, setAsking] = useState(false);
+  // Aborts the in-flight stream when the person hits Stop or starts a new
+  // chat. Without it a long answer keeps arriving into a thread that has
+  // already been cleared.
+  const askAbortRef = useRef<AbortController | null>(null);
+
   const [livePrompt, setLivePrompt] = useState<string | null>(null);
   const [liveAttachments, setLiveAttachments] = useState<ChatAttachment[]>([]);
   // The content type the live request was actually SUBMITTED with. The
@@ -1997,7 +2134,8 @@ function GenerateFormInner({
   // premature. It docks for one of two real reasons instead: a message
   // actually gets sent (hasAnyMessages), or the person explicitly picks
   // Create image/video from the + menu (creationModeActive).
-  const hasAnyMessages = items.length > 0 || livePrompt !== null || liveMultiAngle !== null;
+  const hasAnyMessages =
+    items.length > 0 || livePrompt !== null || liveMultiAngle !== null || liveAsk !== null;
   const isHero = heroMode && !creationModeActive && !hasAnyMessages;
 
   // The Takes rail renders only for the /app/generate instance (heroMode is
@@ -2578,6 +2716,11 @@ function GenerateFormInner({
     setApprovedPrompt(null);
     setPendingMultiAngle(null);
     setLiveMultiAngle(null);
+    askAbortRef.current?.abort();
+    askAbortRef.current = null;
+    setLiveAsk(null);
+    setAsking(false);
+    setComposerMode("render");
     setSelectedAngles(DEFAULT_ANGLE_IDS);
     clearAdvancedVideo();
     setAnchorPhotoPath(null);
@@ -4192,8 +4335,132 @@ function GenerateFormInner({
     setTimeout(() => composerFormRef.current?.requestSubmit(), 80);
   }
 
+  // Ask: one question, one streamed answer, no money moves.
+  //
+  // Server-Sent Events rather than a plain await because the alternative is a
+  // spinner that sits still for eight seconds and then dumps a paragraph —
+  // the exact failure the composer already learned about with renders. Text
+  // arriving a token at a time is how a person knows it is working.
+  //
+  // Every failure lands as a bubble marked `failed`, never as a silently
+  // dropped turn: the question stays on screen with the reason underneath, so
+  // nobody is left wondering whether they actually pressed send.
+  async function askAgent(question: string) {
+    const trimmed = question.trim();
+    if (!trimmed || asking) return;
+
+    setError("");
+    setPrompt("");
+    setAsking(true);
+    setLiveAsk({ question: trimmed, answer: "" });
+
+    // The last twelve turns of THIS thread, as conversation. Renders are
+    // deliberately not folded in here — the server already puts the last
+    // fifteen of them, with their scores and failure reasons, into the
+    // context it builds from the database. Sending them again as chat turns
+    // would double the tokens to say the same thing twice.
+    const history = [
+      ...items
+        .filter((item): item is AskChatItem => item.kind === "ask" && !item.failed)
+        .flatMap((item) => [
+          { role: "user" as const, content: item.question },
+          { role: "assistant" as const, content: item.answer },
+        ]),
+      { role: "user" as const, content: trimmed },
+    ];
+
+    const controller = new AbortController();
+    askAbortRef.current = controller;
+    let answer = "";
+    let failed = false;
+    let failure = "";
+
+    try {
+      const response = await fetch("/api/agent/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          messages: history,
+          mode: agentEffort,
+          characterId: characterId || null,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok || !response.body) {
+        // The route answers refusals in JSON with a human sentence (out of
+        // allowance, signed out, flag off). Show THAT, not a status code.
+        const payload = await response.json().catch(() => null);
+        failed = true;
+        failure = (payload as { error?: string } | null)?.error ?? g.askFailed;
+      } else {
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        // Framing lives in lib/agent/sse.ts so it can be tested against
+        // chunk boundaries — a frame split in half by the network is common
+        // on a phone and invisible in a click-through.
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const parsed = parseSseFrames(buffer);
+          buffer = parsed.rest;
+          for (const event of parsed.events) {
+            if (event.kind === "error") {
+              failed = true;
+              failure = event.error;
+            } else {
+              answer += event.text;
+              setLiveAsk({ question: trimmed, answer });
+            }
+          }
+        }
+        if (!failed && !answer.trim()) {
+          failed = true;
+          failure = g.askFailed;
+        }
+      }
+    } catch (err) {
+      // An abort is the person pressing Stop or starting a new chat, not a
+      // failure — bail without archiving anything.
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setAsking(false);
+        setLiveAsk(null);
+        askAbortRef.current = null;
+        return;
+      }
+      failed = true;
+      failure = g.askFailed;
+    }
+
+    askAbortRef.current = null;
+    setItems((prev) => [
+      ...prev,
+      {
+        kind: "ask",
+        id: `ask-${Date.now()}`,
+        question: trimmed,
+        answer: failed ? failure : answer,
+        createdAt: new Date().toISOString(),
+        ...(failed ? { failed: true } : {}),
+      },
+    ]);
+    setLiveAsk(null);
+    setAsking(false);
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+
+    // Ask short-circuits everything below it. None of the render pre-flight
+    // — attachments, angles, storyboards, the receipt — applies to a
+    // question, and running any of it would be a way to block a question on
+    // a render's rules.
+    if (composerMode === "ask") {
+      await askAgent(prompt);
+      return;
+    }
 
     const readyAttachments = pendingAttachments
       .filter((a): a is PendingAttachment & { status: "ready"; url: string; path: string } => a.status === "ready" && Boolean(a.url) && Boolean(a.path))
@@ -4940,7 +5207,7 @@ function GenerateFormInner({
             there is substance (see showImageReceipt). Inside the fold is a
             deliberate trade: a send always requires the composer open, so
             the line is still seen before anything rides. */}
-        {!isHero && (contentType === "video" || showImageReceipt) && (
+        {!isHero && composerMode === "render" && (contentType === "video" || showImageReceipt) && (
           <ReceiptStrip
             plan={sendPlanNow}
             headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
@@ -4975,12 +5242,16 @@ function GenerateFormInner({
         ) : (
           <>
             {items.map((item) =>
-              item.kind === "single" ? (
+              item.kind === "ask" ? (
+                <AskTurnBubble key={item.id} item={item} />
+              ) : item.kind === "single" ? (
                 <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} onGenerateAnyway={generateAnyway} onRetrySeedance2={retryOnSeedance2} />
               ) : (
                 <MultiAngleTurnBubble key={item.groupId} item={item} domId={`take-${item.groupId}`} />
               ),
             )}
+
+            {liveAsk && <AskLiveBubble question={liveAsk.question} answer={liveAsk.answer} />}
 
             {liveMultiAngle && (
               <div className="space-y-3">
@@ -5610,8 +5881,14 @@ function GenerateFormInner({
                     e.currentTarget.form?.requestSubmit();
                   }
                 }}
-                placeholder={contentType === "video" ? g.videoPlaceholder : g.imagePlaceholder}
-                disabled={submitting}
+                placeholder={
+                  composerMode === "ask"
+                    ? g.askPlaceholder
+                    : contentType === "video"
+                      ? g.videoPlaceholder
+                      : g.imagePlaceholder
+                }
+                disabled={submitting || asking}
                 maxLength={2000}
                 className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
               />
@@ -6114,6 +6391,91 @@ function GenerateFormInner({
                       strip, same pattern as the admin nav's mobile fix, so it
                       scrolls internally instead of pushing Send off-screen —
                       Send/Stop stays outside it, always visible. */}
+                  {/* Render | Ask (2026-08-30). Deliberately OUTSIDE the
+                      scrollable chip strip below and flex-shrink-0: it is
+                      the one control that changes what Send does, and a mode
+                      switch that can scroll out of view is a mode you can
+                      get stuck in. Hidden entirely when the feature flag is
+                      off — see chatAgentEnabled. */}
+                  {chatAgentEnabled && (
+                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5">
+                      {(["render", "ask"] as const).map((value) => {
+                        const active = composerMode === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => {
+                              setComposerMode(value);
+                              setError("");
+                            }}
+                            disabled={submitting || asking}
+                            aria-pressed={active}
+                            title={value === "render" ? g.modeRenderHint : g.modeAskHint}
+                            className={cn(
+                              "flex h-7 flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-semibold transition-colors disabled:opacity-50",
+                              active
+                                ? "bg-atelier-surface text-atelier-ink shadow-[0_1px_2px_rgba(33,29,22,0.08)]"
+                                : "text-atelier-muted hover:text-atelier-ink",
+                            )}
+                          >
+                            {value === "render" ? (
+                              <SendIcon className="h-3 w-3" />
+                            ) : (
+                              <SparkIcon className="h-3 w-3" />
+                            )}
+                            <span className="hidden sm:inline">
+                              {value === "render" ? g.modeRender : g.modeAsk}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {composerMode === "ask" ? (
+                  <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
+                    {/* Effort. Two settings, and the difference between them
+                        is real money — Smarter thinks longer and reads more,
+                        so it costs several times a Faster answer and draws
+                        several times as much from the monthly chat
+                        allowance. Faster is the default for that reason, and
+                        the label says which is which rather than pretending
+                        they are the same button in two colours. */}
+                    <span className="flex-shrink-0 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                      {g.effortLabel}
+                    </span>
+                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5">
+                      {(["faster", "smarter"] as const).map((value) => {
+                        const active = agentEffort === value;
+                        return (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setAgentEffort(value)}
+                            disabled={asking || (value === "smarter" && !chatSmarterAvailable)}
+                            aria-pressed={active}
+                            title={
+                              value === "faster"
+                                ? g.effortFasterHint
+                                : chatSmarterAvailable
+                                  ? g.effortSmarterHint
+                                  : g.effortSmarterPaid
+                            }
+                            className={cn(
+                              "flex h-7 flex-shrink-0 items-center rounded-full px-3 text-[11px] font-semibold transition-colors disabled:opacity-50",
+                              active
+                                ? "bg-atelier-surface text-atelier-ink shadow-[0_1px_2px_rgba(33,29,22,0.08)]"
+                                : "text-atelier-muted hover:text-atelier-ink",
+                            )}
+                          >
+                            {value === "faster" ? g.effortFaster : g.effortSmarter}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  ) : (
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
                   {/* Prompt Studio. Only appears once there's something to
                       enhance — an empty composer has nothing to improve, and
@@ -6413,8 +6775,22 @@ function GenerateFormInner({
                       dictation lives in the keyboard's own mic. The
                       sidebar's voice search is untouched. */}
                   </div>
+                  )}
 
-                  {submitting ? (
+                  {asking ? (
+                    // Stop for a streaming answer. Separate from the render
+                    // Stop below because it cancels a fetch, not a queued
+                    // job — nothing to cancel server-side, nothing to refund.
+                    <button
+                      type="button"
+                      onClick={() => askAbortRef.current?.abort()}
+                      title={g.stop}
+                      aria-label={g.stop}
+                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90"
+                    >
+                      <StopIcon className="h-3.5 w-3.5" />
+                    </button>
+                  ) : submitting ? (
                     <button
                       type="button"
                       onClick={handleStop}
@@ -6429,13 +6805,15 @@ function GenerateFormInner({
                     <button
                       type="submit"
                       disabled={
-                        isUploading ||
-                        (storyboardActive
-                          ? !storyboardReady
-                          : !prompt.trim() && pendingAttachments.length === 0)
+                        composerMode === "ask"
+                          ? !prompt.trim()
+                          : isUploading ||
+                            (storyboardActive
+                              ? !storyboardReady
+                              : !prompt.trim() && pendingAttachments.length === 0)
                       }
-                      title={g.send}
-                      aria-label={g.send}
+                      title={composerMode === "ask" ? g.askSend : g.send}
+                      aria-label={composerMode === "ask" ? g.askSend : g.send}
                       className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-30"
                     >
                       <SendIcon className="h-4 w-4" />

@@ -510,6 +510,23 @@ const en = {
     video: "Video",
     image: "Image",
     newChat: "New chat",
+    // Ask mode (2026-08-30): the composer's second job.
+    modeRender: "Render",
+    modeAsk: "Ask",
+    modeRenderHint: "Send makes an image or a video.",
+    modeAskHint: "Send asks about this project. No credits.",
+    askPlaceholder: "Ask about your characters, your takes, or what to try next…",
+    askSend: "Ask",
+    askAnswerLabel: "Assistant",
+    askThinking: "Reading your project…",
+    askFailed: "That didn't go through. Try again.",
+    askDisclaimer: "Advice only — nothing was generated and no credits were used.",
+    effortLabel: "Effort",
+    effortFaster: "Faster",
+    effortSmarter: "Smarter",
+    effortFasterHint: "Quick answers. Uses less of your monthly chat allowance.",
+    effortSmarterHint: "Thinks longer on hard questions. Uses several times more of your allowance.",
+    effortSmarterPaid: "Smarter is on paid plans.",
     noMessages: "No messages yet — describe what you want below, or tap the mic to speak.",
     // Native shell: the mic is hidden there (no WebView mic access), so the
     // hint must not point at a control that doesn't exist.

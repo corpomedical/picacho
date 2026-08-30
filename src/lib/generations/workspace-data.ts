@@ -1,6 +1,7 @@
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
+import { isChatAgentEnabled } from "@/lib/agent/enabled";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
   VIDEO_MODELS_BY_PRICE,
@@ -41,6 +42,16 @@ export type GenerateWorkspaceData = {
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
   voiceModeEnabled: boolean;
+  // Whether the composer may offer Ask. Both flags are read here rather
+  // than in the component so the control simply does not exist in the HTML
+  // when it is off — the API re-checks anyway (a hidden button is not an
+  // access control), but there is no reason to ship the markup.
+  chatAgentEnabled: boolean;
+  // Whether Smarter is offered at all. The route downgrades free accounts
+  // to Faster regardless (one Smarter turn can be a third of the free chat
+  // allowance), so without this the picker would be a control that silently
+  // does nothing — the UI says what the server will actually do.
+  chatSmarterAvailable: boolean;
   // Raw numbers + the real reset timestamp (when known — see
   // current_period_end below), so the usage banner in generate-form.tsx can
   // show "12 of 15 used, resets Aug 12 at 2:00 PM" instead of just a plain
@@ -156,7 +167,10 @@ export async function getGenerateWorkspaceData(
   const approachingLimit =
     !isAdminUser && planLimit > 0 && usedThisMonth < planLimit && usedThisMonth / planLimit >= 0.8;
 
-  const voiceModeEnabled = await isVoiceModeEnabled(supabase);
+  const [voiceModeEnabled, chatAgentEnabled] = await Promise.all([
+    isVoiceModeEnabled(supabase),
+    isChatAgentEnabled(supabase),
+  ]);
 
   return {
     hasCharacter,
@@ -167,6 +181,8 @@ export async function getGenerateWorkspaceData(
     multiAngleAvailable,
     approachingLimit,
     voiceModeEnabled,
+    chatAgentEnabled,
+    chatSmarterAvailable: (profile?.plan ?? "none") !== "none",
     creditsUsed: usedThisMonth,
     creditsLimit: planLimit,
     purchasedCredits: (profile?.purchased_credits ?? 0) as number,
