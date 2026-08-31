@@ -54,6 +54,15 @@ if (!OPENAI) {
 
 const h = { apikey: KEY, authorization: `Bearer ${KEY}`, "content-type": "application/json" };
 
+// What this run actually spent, in tokens. A backfill that calls a paid API
+// should be able to say what it cost afterwards rather than leaving you to
+// guess — and a DRY RUN COSTS THE SAME AS AN APPLY, because the classifier
+// call happens either way and only the write is skipped. Reported as tokens
+// rather than dollars on purpose: the per-token price is not something this
+// file should hardcode and quietly let go stale. The dollar figure is on the
+// project's own usage page, which is why the key is worth scoping to one.
+const spend = { calls: 0, promptTokens: 0, completionTokens: 0 };
+
 // Same prompt shape as classifyRenderStyle in providers/describe-image.ts.
 // Kept in step with it deliberately: a backfill that classifies differently
 // from the live path would seed the table with answers the app disagrees with.
@@ -69,11 +78,19 @@ async function classify(imageUrl) {
           content: [
             {
               type: "text",
+              // Kept in step with classifyRenderStyle (see the comment above)
+              // — a backfill that classifies differently from the live path
+              // would seed the table with answers the app disagrees with.
               text:
-                "Is this image a PHOTOREAL depiction of a person (a photograph, or a " +
-                "photorealistic render indistinguishable from one), or an ILLUSTRATED " +
-                "one (cartoon, anime, 3D character, painting, vector, mascot)? " +
-                'Reply with ONLY one word: photoreal or illustrated.',
+                "Answer with EXACTLY one word.\n\n" +
+                "Would a viewer take this image to show a REAL HUMAN BEING — a " +
+                "photograph of a person, or a render indistinguishable from one? " +
+                "Answer 'photoreal'.\n\n" +
+                "Anything else at all — a drawing, anime, a 3D cartoon, a mascot, a " +
+                "painting, a logo, a product, an animal, an object, a landscape, or " +
+                "an empty scene — answer 'illustrated'.\n\n" +
+                "The question is only whether a real human is depicted. If no human " +
+                "is depicted at all, the answer is 'illustrated'.",
             },
             { type: "image_url", image_url: { url: imageUrl } },
           ],
@@ -82,8 +99,15 @@ async function classify(imageUrl) {
       max_completion_tokens: 2000,
     }),
   });
-  if (!res.ok) return null;
-  const text = (await res.json())?.choices?.[0]?.message?.content?.toLowerCase() ?? "";
+  if (!res.ok) {
+    console.log(`     classifier HTTP ${res.status}`);
+    return null;
+  }
+  const body = await res.json();
+  spend.calls++;
+  spend.promptTokens += body?.usage?.prompt_tokens ?? 0;
+  spend.completionTokens += body?.usage?.completion_tokens ?? 0;
+  const text = body?.choices?.[0]?.message?.content?.toLowerCase() ?? "";
   if (text.includes("photoreal")) return "photoreal";
   if (text.includes("illustrated")) return "illustrated";
   return null;
@@ -133,3 +157,7 @@ for (const c of todo) {
   }
 }
 console.log(APPLY ? `\nWrote ${wrote} render_style values.` : "\nDry run — nothing written.");
+console.log(
+  `Spent: ${spend.calls} classifier call(s) on ${MODEL} — ` +
+    `${spend.promptTokens} prompt + ${spend.completionTokens} completion tokens.`,
+);

@@ -75,11 +75,27 @@ export async function classifyRenderStyle(
               content: [
                 {
                   type: "text",
+                  // Asks the question the FENCE actually needs, which is not
+                  // "what medium is this" but "would ByteDance's likeness
+                  // check see a real person here".
+                  //
+                  // Found 2026-08-31 by running the backfill twice: a
+                  // character whose photo is a photorealistic BUTTERFLY came
+                  // back "photoreal" on one run and "illustrated" on the
+                  // next. Neither answer fit, because the old wording
+                  // presupposed a person was depicted and left the model to
+                  // guess when none was. A coin flip decided whether a fence
+                  // fired. Non-human subjects now have one correct answer.
                   text:
-                    "Answer with EXACTLY one word: is the person or character in this image " +
-                    "'photoreal' (a photographic or photorealistic human) or 'illustrated' " +
-                    "(drawn, animated, 3D-cartoon, mascot, anime, or otherwise clearly not a " +
-                    "photograph of a real-looking human)?",
+                    "Answer with EXACTLY one word.\n\n" +
+                    "Would a viewer take this image to show a REAL HUMAN BEING — a " +
+                    "photograph of a person, or a render indistinguishable from one? " +
+                    "Answer 'photoreal'.\n\n" +
+                    "Anything else at all — a drawing, anime, a 3D cartoon, a mascot, a " +
+                    "painting, a logo, a product, an animal, an object, a landscape, or " +
+                    "an empty scene — answer 'illustrated'.\n\n" +
+                    "The question is only whether a real human is depicted. If no human " +
+                    "is depicted at all, the answer is 'illustrated'.",
                 },
                 { type: "image_url", image_url: { url: imageUrl } },
               ],
