@@ -895,6 +895,21 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   else imageModelId = resolved.modelId;
   const substitutedFrom = resolved.substitutedFrom;
 
+  // A storyboard has no substitute. The "storyboards run on Kling O3 Pro"
+  // gate above runs BEFORE resolveModel, so a breaker substitution used to
+  // sail through it — charged at the storyboard weight computed from total
+  // seconds, then rendered (or 422-refused) by whichever cheapest model the
+  // breaker failed over to, which takes neither the shot list nor the
+  // frames. The reprice block below skips storyboards on the strength of a
+  // comment claiming this "already errored"; as of the 2026-08-31 inspection
+  // nothing did. Now something does, before any reservation.
+  if (storyboardShots && substitutedFrom && videoModelId !== "kling-o3-pro") {
+    return {
+      error:
+        "Kling O3 Pro is temporarily unavailable, and storyboards only run there — try again in a little while, or clear the storyboard.",
+    };
+  }
+
   // Re-price for the model actually used. resolveModel above may have failed
   // the user over to a DIFFERENT model when their pick was out of service, but
   // the credit weight and duration were computed against the ORIGINAL pick —
@@ -2941,7 +2956,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           .eq("id", rowId)
           .eq("status", "generating");
         if (!succeeded && count !== 0) {
-          await refundGenerationCosts(rowId);
+          // forceRefundEligible here too — the single authority the other
+          // refund sites already use. Without it, a fal 422 on every angle
+          // (likeness, aspect ratio — refused before any render) left the
+          // refund behind the automatic_refunds switch, and with that OFF
+          // the person paid per angle for renders fal never performed.
+          await refundGenerationCosts(rowId, { force: forceRefundEligible(attempts) });
           await autoReportFailedGeneration(rowId, userData.user!.id, attempts);
         }
       }
@@ -2973,8 +2993,11 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           .update({ status: "failed", pipeline_log: crashLog })
           .eq("id", rowId);
         // Refund this angle's slice of the credits (see the placeholder
-        // insert above for how the purchased overflow was distributed).
-        await refundGenerationCosts(rowId);
+        // insert above for how the purchased overflow was distributed) —
+        // forced when the crash log shows a provider refusal, same
+        // authority as every other refund site (2026-08-31 inspection: this
+        // was the one call the unification missed).
+        await refundGenerationCosts(rowId, { force: forceRefundEligible(crashLog) });
         await autoReportFailedGeneration(rowId, userData.user!.id, crashLog);
       }
       return { angleId, id: rowId ?? "", succeeded: false, attempts: [], finalPrompt: "", resultUrl: null };

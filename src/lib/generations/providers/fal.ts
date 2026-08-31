@@ -877,14 +877,32 @@ async function fetchQueuedResult(job: QueuedJob): Promise<unknown> {
     { headers: { authorization: `Key ${apiKey}` } },
     30_000,
   );
-  const data = await res.json();
+  // Text first, JSON second — and the order is load-bearing. A gateway 502
+  // answers with an HTML body, and `res.json()` on that throws a bare
+  // SyntaxError carrying no "(NNN)" status. isTransportError classifies by
+  // that embedded status, so the SyntaxError read as terminal and a render
+  // fal had FINISHED AND BILLED was written off as failed (2026-08-31
+  // inspection). Parsed this way, every non-ok response throws the formatted
+  // message whatever its body looks like, and a 5xx retries like it should.
+  const text = await res.text();
   if (!res.ok) {
-    const errorMessage = (data as { error?: string } | null)?.error;
+    let errorMessage: string | undefined;
+    try {
+      errorMessage = (JSON.parse(text) as { error?: string } | null)?.error;
+    } catch {
+      // HTML or plain-text body — the raw slice is the best detail we have.
+    }
     throw new Error(
-      `fal.ai (${job.label}) error (${res.status}): ${errorMessage ?? JSON.stringify(data).slice(0, 800)}`,
+      `fal.ai (${job.label}) error (${res.status}): ${errorMessage ?? text.slice(0, 800)}`,
     );
   }
-  return data;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    // A 200 whose body isn't JSON is the same gateway hiccup wearing a
+    // success code — still transient, still worth another poll.
+    throw new Error(`fal.ai (${job.label}) error (502): non-JSON response body`);
+  }
 }
 
 export async function fetchQueuedVideoUrl(job: QueuedJob): Promise<string> {

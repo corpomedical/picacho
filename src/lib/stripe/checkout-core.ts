@@ -129,7 +129,7 @@ export async function startPlanCheckout(
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("stripe_customer_id, stripe_subscription_id, plan_status")
+    .select("stripe_customer_id, stripe_subscription_id, plan_status, plan_source")
     .eq("id", userData.user.id)
     .single();
 
@@ -146,6 +146,22 @@ export async function startPlanCheckout(
   ) {
     redirect(
       `/app/settings?tab=usage&error=${encodeURIComponent("You already have a subscription — use Manage billing to change plans.")}`,
+    );
+  }
+
+  // The Play-billed twin of the guard above (2026-08-31 inspection). A
+  // subscription bought in the Android app lives at Google — RevenueCat sets
+  // plan_source='play' and stripe_subscription_id stays NULL, so the Stripe
+  // guard alone waves the checkout through and the person ends up paying for
+  // the SAME plan twice, once to Google and once to Stripe, with no portal
+  // that can see both. The checkout page is a URL anyone can type; this is
+  // the server saying no.
+  if (
+    profile?.plan_source === "play" &&
+    (profile.plan_status === "active" || profile.plan_status === "past_due")
+  ) {
+    redirect(
+      `/app/settings?tab=usage&error=${encodeURIComponent("Your subscription is billed through Google Play — manage or change it in the Play Store on your phone.")}`,
     );
   }
 

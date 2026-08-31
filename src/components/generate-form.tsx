@@ -2577,10 +2577,16 @@ function GenerateFormInner({
     contentType === "video" && continueFromId
       ? continuationExtraCredits(videoModelId, videoDurationSeconds, continueSourceSeconds)
       : 0;
+  // NO multiRefPaths clause here, deliberately (2026-08-31 inspection). In
+  // storyboard mode the submit sends only the frames — multi-reference picks
+  // never ride — but the picks LINGER in state when someone switches tabs
+  // without clearing, and a preview that consulted them quoted 1 credit for
+  // a send the server then charged the frame surcharge on. The server's own
+  // condition counts what was SENT (reference_photo_paths, empty on this
+  // path), so the quote must count the same thing.
   const storyboardFrameExtra =
     contentType === "video" &&
     videoAdvancedMode === "storyboard" &&
-    multiRefPaths.length < 2 &&
     (storyboardStartPath || storyboardEndPath)
       ? storyboardFrameExtraCredits(videoModelId, videoDurationSeconds)
       : 0;

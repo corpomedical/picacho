@@ -436,9 +436,29 @@ export async function deleteAccount() {
   // of the try/catch rather than redirecting inside it.)
   const { data: billingProfile } = await admin
     .from("profiles")
-    .select("stripe_customer_id, stripe_subscription_id")
+    .select("stripe_customer_id, stripe_subscription_id, plan_source, plan_status")
     .eq("id", userId)
     .single();
+
+  // The Play-billed twin of the fail-loud rule below (2026-08-31 inspection).
+  // A Google Play subscription lives at Google: we cannot cancel it from
+  // here, and deleting the account anyway recreates the exact failure this
+  // block exists to prevent — "account gone, subscription still billing",
+  // with the renewal webhooks landing on a profile that no longer exists so
+  // nobody would ever notice. Google cancels a subscription when the person
+  // does it in the Play Store; the account can be deleted the moment that
+  // has happened.
+  if (
+    billingProfile?.plan_source === "play" &&
+    (billingProfile.plan_status === "active" || billingProfile.plan_status === "past_due")
+  ) {
+    redirect(
+      `/app/settings?error=${encodeURIComponent(
+        "Your subscription is billed through Google Play, and we can't cancel it from here. Cancel it in the Play Store first (Play Store → Payments & subscriptions), then delete your account.",
+      )}`,
+    );
+  }
+
   let stripeCancelError = false;
   try {
     await cancelStripeCustomerBilling({

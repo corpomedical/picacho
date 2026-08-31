@@ -1328,6 +1328,33 @@ export async function reapStaleJobs(userId: string): Promise<void> {
         // ignore — finishing the row is what matters
       }
       try {
+        // Same salvage advanceGeneration performs (2026-08-31 inspection):
+        // a job wedged in a dialogue stage already HAS a rendered, billed
+        // video in its payload, and dialogue is an enhancement, never a
+        // reason to throw that video away. Writing these off as failed
+        // discarded the render and — because the video step logs its billed
+        // marker — the refund was rightly withheld too, leaving the person
+        // charged for a video that existed and was never shown.
+        if (current.stage !== "video" && current.payload?.videoUrl) {
+          await finish(current.generation_id, current.user_id, {
+            status: "succeeded",
+            resultUrl: current.payload.videoUrl,
+            attempts: appendStep(
+              current.resume?.attempts ?? [],
+              "The dialogue step didn't finish in time — showing the video without dialogue.",
+              "speech",
+            ),
+          });
+          try {
+            await refundDialogueSurcharge(current.generation_id);
+          } catch (refundErr) {
+            console.error(
+              `dialogue surcharge refund failed for ${current.generation_id}:`,
+              refundErr,
+            );
+          }
+          continue;
+        }
         await finish(current.generation_id, current.user_id, {
           status: "failed",
           attempts: appendStep(
