@@ -364,8 +364,10 @@ export function defaultCreditCost(model: VideoModel): number {
 // 2-credit model and every trial request would silently stop matching the
 // gate, bricking the free tier for all new signups. Computed from the
 // catalog, the gate follows the model choice automatically.
-import { videoResolutionOffers } from "@/lib/generations/providers/video-resolution";
-import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
+// Relative, not "@/": vitest runs configless here, and aliased imports made
+// this whole catalogue untestable (2026-08-31).
+import { videoResolutionOffers } from "./video-resolution";
+import { FREE_TIER_VIDEO_MODEL_ID } from "../../plans";
 export const FREE_TIER_GENERATION_CREDITS = defaultCreditCost(
   getVideoModel(FREE_TIER_VIDEO_MODEL_ID),
 );
@@ -452,6 +454,73 @@ export function maxSingleRenderCostUsd(): number {
 //
 // Surfaced on Admin > AI providers so drift is visible rather than assumed
 // away.
+// Kling's start/end-frame lane runs on a DIFFERENT, pricier endpoint than
+// the model's own weights assume: fal-ai/kling-video/v2.1/pro/image-to-video,
+// "$0.49 for 5s, $0.098 per additional second" (read from fal's published
+// pricing 2026-08-31), against the $0.056/s the Kling 1.6 weights are built
+// on. Found by the 2026-08-31 inspection: every storyboard render was
+// charged 1 credit ($0.28 basis) while costing $0.49 — a loss on each one.
+//
+// Re-pointing at the v1.6 image-to-video endpoint was checked first and is
+// NOT possible: fal's docs show it has no tail_image_url, and the end frame
+// is the feature. So the price follows the cost, like the 4K weights.
+export const KLING_STORYBOARD_PER_SECOND_USD = 0.098;
+
+/**
+ * Extra credits when a Kling render carries a start/end frame — the
+ * difference between the storyboard endpoint's real per-second price and the
+ * base weight already charged, rounded up on the same $0.28 basis as every
+ * weight in the catalogue. 5s: +1 (2 total). 10s: +2 (4 total).
+ */
+export function storyboardFrameExtraCredits(modelId: string, seconds: number): number {
+  if (modelId !== "kling") return 0;
+  const model = VIDEO_MODELS.find((m) => m.id === modelId);
+  if (!model) return 0;
+  const base =
+    model.durations.find((d) => d.seconds === seconds)?.creditWeight ??
+    getDurationCreditWeight(model, seconds);
+  const total = Math.ceil((KLING_STORYBOARD_PER_SECOND_USD * seconds) / COST_BASIS_USD_PER_CREDIT);
+  return Math.max(0, total - base);
+}
+
+// Continuation bills the SOURCE clip too. fal's published pricing for both
+// Seedance reference-to-video endpoints (read 2026-08-31, their words): "The
+// number of tokens is given by (height * width * (input video duration +
+// output video duration) * 24) / 1024. If video inputs are provided the
+// price is multiplied by 0.6" — and, on 2.5, in as many words: "With video
+// references, you will be charged for both input and output videos."
+//
+// The old comment in fal.ts claimed the opposite ("continuation improves
+// margin rather than costing it") and the 2026-08-31 inspection found the
+// receipts: two production continuations from a ~15s source billed 266 units
+// ($3.72) against a 6-credit charge ($1.68 basis) — a real loss, twice.
+export const WITH_VIDEO_INPUT_MULTIPLIER = 0.6;
+
+/**
+ * Extra credits for continuing from a prior clip: the whole render re-priced
+ * at the with-video rate over BOTH durations, minus the base weight already
+ * charged. Floored at zero — when the discount on the output outweighs the
+ * source's cost (a short source into a long render), the user simply pays
+ * the normal price rather than a discount the mental model can't carry.
+ *
+ * seedance-2, 5s out + 15s source: ceil(0.6*0.3024*20 / 0.28) - 6 = +7 —
+ * which covers the exact $3.63 the observed incidents cost.
+ */
+export function continuationExtraCredits(
+  modelId: string,
+  outSeconds: number,
+  sourceSeconds: number,
+): number {
+  if (modelId !== "seedance" && modelId !== "seedance-2") return 0;
+  const model = VIDEO_MODELS.find((m) => m.id === modelId);
+  if (!model || sourceSeconds <= 0) return 0;
+  const withVideoRate = model.costPerSecondUsd * WITH_VIDEO_INPUT_MULTIPLIER;
+  const total = Math.ceil(
+    (withVideoRate * (sourceSeconds + outSeconds)) / COST_BASIS_USD_PER_CREDIT,
+  );
+  return Math.max(0, total - getDurationCreditWeight(model, outSeconds));
+}
+
 export function pricingAudit(): {
   modelId: string;
   name: string;
@@ -484,6 +553,20 @@ export function pricingAudit(): {
   for (const model of VIDEO_MODELS) {
     for (const d of model.durations) {
       check(model.id, model.name, d.seconds, d.creditWeight, model.costPerSecondUsd * d.seconds);
+    }
+    // The start/end-frame lane bills at its own endpoint's price — audited
+    // like everything else so a fal price rise shows up on the admin panel
+    // instead of in the margin.
+    if (model.id === "kling") {
+      for (const d of model.durations) {
+        check(
+          model.id,
+          `${model.name} (start/end frame)`,
+          d.seconds,
+          d.creditWeight + storyboardFrameExtraCredits(model.id, d.seconds),
+          KLING_STORYBOARD_PER_SECOND_USD * d.seconds,
+        );
+      }
     }
     // Priced resolutions are the most expensive options in the catalogue and
     // need the same drift check — an unaudited 4K row is exactly where a

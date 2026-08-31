@@ -44,24 +44,11 @@ export type ModelHealth = {
   lastError: string | null;
 };
 
-// Failures that mean the MODEL is broken, as opposed to this particular
-// request being unreasonable.
-//
-// The distinction matters: counting a rejected prompt as a provider failure
-// would let three people writing content-policy-violating prompts take a
-// perfectly healthy model offline for everyone. Only infrastructure-shaped
-// failures count.
-export function isProviderFault(message: string): boolean {
-  const m = message.toLowerCase();
-  const requestFault =
-    m.includes("content policy") ||
-    m.includes("moderation") ||
-    m.includes("nsfw") ||
-    m.includes("safety") ||
-    m.includes("invalid prompt") ||
-    m.includes("prompt is too long");
-  return !requestFault;
-}
+// isProviderFault lives in provider-fault.ts — alias-free so it can be
+// unit-tested, like refund-rules.ts and prices.ts. Re-exported here so every
+// existing caller keeps its import.
+import { isProviderFault } from "./provider-fault";
+export { isProviderFault };
 
 // Records a failed generation. Trips the breaker on the third in a row.
 //

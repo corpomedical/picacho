@@ -53,6 +53,8 @@ import {
   getVideoModel,
   getDefaultDurationSeconds,
   getDurationCreditWeight,
+  storyboardFrameExtraCredits,
+  continuationExtraCredits,
   getDialogueCreditWeight,
   isValidDuration,
   requiresReferenceImage,
@@ -911,6 +913,80 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
   }
 
+  // Start/end frames ride the storyboard endpoint, which bills higher than
+  // the base Kling weight assumes — see storyboardFrameExtraCredits for the
+  // real prices. Charged AFTER substitution, on the exact conditions
+  // buildVideoRequest uses to pick that endpoint (final model is kling, no
+  // 2+ multi-reference riding, a frame actually present), so the charge and
+  // the endpoint can never disagree. Every render on this lane before today
+  // was billed $0.49 against a $0.28 charge — a loss on each one
+  // (2026-08-31 inspection).
+  if (
+    contentType === "video" &&
+    !storyboardShots &&
+    videoModelId === "kling" &&
+    referencePhotoPaths.length < 2 &&
+    (storyboardStartPath || storyboardEndPath)
+  ) {
+    creditWeight += storyboardFrameExtraCredits(videoModelId, videoDurationSeconds);
+  }
+
+  // Clip continuation, validated and PRICED here — before the reservation.
+  //
+  // Two separate bugs lived in the old placement (2026-08-31 inspection).
+  // The validation used to run AFTER reserve_generation, and its error
+  // `return`s skipped the catch that refunds — a rejected continuation
+  // stranded a fully charged row at 'generating' forever. And it was never
+  // priced at all: fal bills the SOURCE clip's duration too ("If video
+  // inputs are provided the price is multiplied by 0.6 ... charged for both
+  // input and output videos"), which the old fal.ts comment flatly denied.
+  // Two production continuations each cost $3.72 against a $1.68 charge.
+  // Same stranding class, same fix: this conflict is knowable from the raw
+  // paths at parse time, so it must refuse BEFORE the reservation — its old
+  // home was past the charge, where a plain `return` skipped the refund.
+  if (storyboardShots && (storyboardStartPath || storyboardEndPath)) {
+    return { error: "Storyboards and start/end frames can't combine — remove one." };
+  }
+
+  let continuationSourceUrl: string | null = null;
+  const continueFromGenerationId = ((formData.get("continue_from_generation_id") as string) || "").trim();
+  if (continueFromGenerationId && contentType === "video") {
+    if (videoModelId !== "seedance" && videoModelId !== "seedance-2") {
+      return {
+        error:
+          "Continuing a clip works with the Seedance models — pick Seedance 2.0 (or 2.5 for illustrated characters), or clear the continuation.",
+      };
+    }
+    const { data: prior } = await supabase
+      .from("generations")
+      .select("id, user_id, content_type, status, result_url, video_duration_seconds")
+      .eq("id", continueFromGenerationId)
+      .single();
+    const priorUrl = prior ? toMediaUrl(prior.result_url) : null;
+    if (
+      !prior ||
+      prior.user_id !== userData.user.id ||
+      prior.content_type !== "video" ||
+      prior.status !== "succeeded" ||
+      !priorUrl ||
+      !isRenderableUrl(priorUrl)
+    ) {
+      return { error: "That clip can't be continued — it must be one of your own finished videos." };
+    }
+    // The source's length IS the price, so a source whose length was never
+    // recorded cannot be priced — refuse it plainly rather than guessing in
+    // either direction. Only rows from before duration tracking lack it.
+    const sourceSeconds = Number(prior.video_duration_seconds ?? 0);
+    if (!sourceSeconds) {
+      return {
+        error:
+          "That clip predates length tracking, so continuing from it can't be priced — pick a newer clip.",
+      };
+    }
+    creditWeight += continuationExtraCredits(videoModelId, videoDurationSeconds, sourceSeconds);
+    continuationSourceUrl = absolutizeMediaUrl(priorUrl, await getOrigin());
+  }
+
   // A model whose fal endpoint starts from a frame (image/reference-to-video)
   // cannot run without one. Checked on the RESOLVED model — the circuit breaker
   // may have substituted the user's text-to-video pick into a frame-requiring
@@ -1350,41 +1426,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         }
       }
 
-      // Clip continuation (2026-08-21): a prior finished clip of this user's,
-      // handed to Seedance as a @Video1 reference (see fal.ts). Validated
-      // against the FINAL model — the circuit breaker above may have
-      // rerouted — and never trusted beyond "my own finished video".
-      let videoContinueFromUrl: string | null = null;
-      const continueFromGenerationId = ((formData.get("continue_from_generation_id") as string) || "").trim();
-      if (continueFromGenerationId && contentType === "video") {
-        if (videoModelId !== "seedance" && videoModelId !== "seedance-2") {
-          return {
-            error:
-              "Continuing a clip works with the Seedance models — pick Seedance 2.0 (or 2.5 for illustrated characters), or clear the continuation.",
-          };
-        }
-        const { data: prior } = await supabase
-          .from("generations")
-          .select("id, user_id, content_type, status, result_url")
-          .eq("id", continueFromGenerationId)
-          .single();
-        const priorUrl = prior ? toMediaUrl(prior.result_url) : null;
-        if (
-          !prior ||
-          prior.user_id !== userData.user.id ||
-          prior.content_type !== "video" ||
-          prior.status !== "succeeded" ||
-          !priorUrl ||
-          !isRenderableUrl(priorUrl)
-        ) {
-          return { error: "That clip can't be continued — it must be one of your own finished videos." };
-        }
-        videoContinueFromUrl = absolutizeMediaUrl(priorUrl, await getOrigin());
-      }
+      // Clip continuation: validated and priced BEFORE the reservation (see
+      // the block above the reserve) — only the already-verified URL is
+      // consumed here.
+      const videoContinueFromUrl: string | null = continuationSourceUrl;
 
-      if (storyboardShots && (videoStartImageUrl || videoEndImageUrl)) {
-        return { error: "Storyboards and start/end frames can't combine — remove one." };
-      }
 
       // The outfit PHOTO attaches only where an endpoint genuinely takes a
       // clothing reference — Seedance's cited image_urls and GPT Image's

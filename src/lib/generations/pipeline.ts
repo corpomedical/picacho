@@ -1162,16 +1162,54 @@ export async function runRealPipeline(
           // function into a state machine, is deliberate: the retry loop and
           // the multi-attempt redraft above carry a lot of hard-won behaviour,
           // and the generate call is the single point where all of it has
-          // already finished and nothing is left in flight. Note there's no
-          // retry to preserve at this point either — validation ran before
-          // generation, so the only thing that can fail here is the submit
-          // itself, which is fast and safe to retry on the caller's side.
+          // already finished and nothing is left in flight.
+          //
+          // A SUBMIT THAT DIES AMBIGUOUSLY IS NEVER RETRIED. This comment
+          // used to claim the submit was "fast and safe to retry" — it is
+          // not. If fal accepts the job and the RESPONSE is what dies (a
+          // timeout, a reset, a TLS drop), no request id was ever seen: the
+          // first render runs to completion at fal, bills real dollars, and
+          // can never be collected — the webhook finds no job row and
+          // answers "Already handled". A retry then queues a SECOND paid
+          // render, and with the outer attempt loop this could reach six
+          // paid renders for one credit. Only a clean 4xx — fal answering
+          // "refused", so nothing was queued — is safe to hand to the retry
+          // machinery. Same reasoning job-runner.ts applies to the cheap
+          // dialogue submits; the expensive submit deserved it more.
           if (options.submitVideoOnly) {
-            const pendingVideoJob = await submitVideoJob(
-              reviewedPrompt,
-              options.videoModelId ?? "kling",
-              videoOptions,
-            );
+            let pendingVideoJob: Awaited<ReturnType<typeof submitVideoJob>>;
+            try {
+              pendingVideoJob = await submitVideoJob(
+                reviewedPrompt,
+                options.videoModelId ?? "kling",
+                videoOptions,
+              );
+            } catch (submitErr) {
+              const submitMessage =
+                submitErr instanceof Error ? submitErr.message : "Video submit failed.";
+              // fal answered with a 4xx: the request was refused, nothing
+              // was queued, and the normal retry/failure machinery below is
+              // the right owner.
+              if (/\(4\d\d\)/.test(submitMessage)) throw submitErr;
+              // Anything else — timeout, reset, 5xx — is ambiguous: fal may
+              // be running the job we just lost sight of. Fail THIS
+              // generation without any retry rather than paying for a
+              // second render nobody can collect.
+              steps.push({ step: "generate", detail: submitMessage });
+              attempts.push({
+                attempt: attemptNumber,
+                steps,
+                passed: false,
+                issues: ["ambiguous_submit"],
+                compiledPrompt: reviewedPrompt,
+              });
+              return {
+                attempts,
+                succeeded: false,
+                finalPrompt: reviewedPrompt,
+                resultUrl: null,
+              };
+            }
             steps.push({
               step: "generate",
               detail: `Queued with ${modelName}${modeNote}${durationNote}${aspectNote}.`,

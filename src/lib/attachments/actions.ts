@@ -121,6 +121,25 @@ export async function finalizeChatAttachment(formData: FormData): Promise<Upload
     return { error: "Not allowed." };
   }
 
+  // Metered SEPARATELY from the reserve step, and this limiter is the whole
+  // reason the split is safe: this half makes a paid vision call, and as a
+  // "use server" export it is wire-callable in a loop with nothing but a
+  // session cookie. The day it shipped it had no limiter at all — a free
+  // account could have looped it into unlimited OpenAI spend against one
+  // 40KB upload (found by the 2026-08-31 inspection, our own creation). Its
+  // own scope, so an upload's reserve+finalize pair doesn't spend one budget
+  // twice. Fails closed, like every limiter here.
+  if (
+    await rateLimited(
+      data.user.id,
+      "attachment-classify",
+      UPLOAD_RATE_WINDOW_SECONDS,
+      UPLOAD_RATE_MAX_PER_WINDOW,
+    )
+  ) {
+    return { error: "You're uploading a bit fast — wait a moment and try again." };
+  }
+
   const { data: blob, error: downloadError } = await supabase.storage
     .from("chat-attachments")
     .download(path);
@@ -152,7 +171,11 @@ export async function finalizeChatAttachment(formData: FormData): Promise<Upload
   // Is the thing in this photo a real person? See classifyRenderStyle for why
   // this is worth a vision call and why it can only ever SILENCE a warning.
   let style: "photoreal" | "illustrated" | null = null;
-  if (isImage) {
+  // Gated on MEASURED dimensions, not the client-declared mime type: `type`
+  // is whatever the browser said, and a 25MB blob labelled image/png would
+  // otherwise ride into sharp and a paid vision call. If sharp could not
+  // read a width out of it, it is not a photo worth paying to classify.
+  if (isImage && width && height) {
     try {
       const sharp = (await import("sharp")).default;
       const small = await sharp(bytes)

@@ -40,6 +40,10 @@ import {
 } from "@/lib/generations/user-facing-error";
 import { createPortal } from "react-dom";
 import {
+  storyboardFrameExtraCredits,
+  continuationExtraCredits,
+} from "@/lib/generations/providers/video-models";
+import {
   reserveChatAttachmentPath,
   finalizeChatAttachment,
   deleteChatAttachment,
@@ -2329,6 +2333,12 @@ function GenerateFormInner({
   const [continueFromId, setContinueFromId] = useState<string | null>(() =>
     searchParams.get("continue"),
   );
+  // The source clip's length, riding the same link (?continue_s=) so
+  // continuation's price can be shown before the send. Display only — the
+  // server re-reads the real duration off the row it validates.
+  const [continueSourceSeconds] = useState<number>(() =>
+    Math.max(0, Number(searchParams.get("continue_s") ?? 0) || 0),
+  );
   // ?continue is consumed into state once and then STRIPPED from the URL —
   // exactly like ?resume further down. It used to stay in the address bar
   // forever, so any later remount of the composer (hard reload, PWA
@@ -2480,15 +2490,6 @@ function GenerateFormInner({
     contentType === "video" && selectedVideoModel
       ? (selectedVideoModel.durations.find((d) => d.seconds === videoDurationSeconds)?.creditWeight ?? 1)
       : 1;
-  const selectedCreditCost =
-    contentType === "video" && storyboardActive
-      ? storyboardCredits
-      : contentType === "video"
-        ? (resolutionCreditWeight(videoModelId, videoResolution, videoDurationSeconds) ??
-          baseDurationCredits)
-        : 1;
-  const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
-  const cannotAfford = selectedCreditCost > creditsAvailable;
   useEffect(() => {
     const model = videoModels.find((m) => m.id === videoModelId);
     if (!model) return;
@@ -2547,6 +2548,33 @@ function GenerateFormInner({
   // path — that's how the server (actions.ts) tells an upload apart from a
   // character's own saved photo with no extra form field needed.
   const [panelUploads, setPanelUploads] = useState<{ path: string; url: string }[]>([]);
+
+  // A start/end frame moves the render to a pricier endpoint, so the price
+  // shown must move with it BEFORE the send — same rule as 4K. Mirrors the
+  // server's own conditions (kling, no 2+ multi-reference, a frame picked).
+  // Continuation re-prices the render over BOTH clips' durations — shown
+  // here for the same reason as 4K and the start/end frame: a price that
+  // only appears after the money moved is a claim, not a price.
+  const continuationExtra =
+    contentType === "video" && continueFromId
+      ? continuationExtraCredits(videoModelId, videoDurationSeconds, continueSourceSeconds)
+      : 0;
+  const storyboardFrameExtra =
+    contentType === "video" &&
+    videoAdvancedMode === "storyboard" &&
+    multiRefPaths.length < 2 &&
+    (storyboardStartPath || storyboardEndPath)
+      ? storyboardFrameExtraCredits(videoModelId, videoDurationSeconds)
+      : 0;
+  const selectedCreditCost =
+    contentType === "video" && storyboardActive
+      ? storyboardCredits
+      : contentType === "video"
+        ? (resolutionCreditWeight(videoModelId, videoResolution, videoDurationSeconds) ??
+            baseDurationCredits) + storyboardFrameExtra + continuationExtra
+        : 1;
+  const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
+  const cannotAfford = selectedCreditCost > creditsAvailable;
   const [panelUploadBusy, setPanelUploadBusy] = useState(false);
   const panelUploadInputRef = useRef<HTMLInputElement>(null);
 

@@ -181,7 +181,13 @@ export default async function HistoryDetailPage({
               generation.content_type === "video" &&
               generation.status === "succeeded" &&
               isRenderableUrl(generation.result_url) && (
-                <Link href={`/app/generate?continue=${encodeURIComponent(generation.id)}`}>
+                <Link
+                  // continue_s carries the source clip's length so the
+                  // composer can show continuation's real price BEFORE the
+                  // send — the server re-reads it from the row regardless,
+                  // so a tampered value changes only the preview.
+                  href={`/app/generate?continue=${encodeURIComponent(generation.id)}&continue_s=${generation.video_duration_seconds ?? ""}`}
+                >
                   <Button variant="secondary" size="sm">
                     {h.continueClipCta}
                   </Button>

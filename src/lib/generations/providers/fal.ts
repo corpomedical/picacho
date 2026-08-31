@@ -30,9 +30,14 @@ export type VideoGenerationOptions = {
   // Clip continuation (2026-08-21, verified live before wiring): a prior
   // finished clip passed as a VIDEO reference — Seedance's @Video citation
   // makes the new shot pick up that clip's world (setting, light, wardrobe)
-  // instead of reinventing it. Seedance-only; video input also bills at
-  // ByteDance's cheaper with-video rate while we charge standard weights,
-  // so continuation improves margin rather than costing it.
+  // instead of reinventing it. Seedance-only.
+  //
+  // BILLING (corrected 2026-08-31 — this comment used to claim continuation
+  // "improves margin"; fal's ledger proved the opposite, twice): fal bills
+  // the SOURCE clip's seconds as well as the output's, at 0.6x the normal
+  // rate — "charged for both input and output videos", their words. The
+  // surcharge lives in continuationExtraCredits (video-models.ts) and is
+  // charged in actions.ts before the reservation.
   continueFromVideoUrl?: string | null;
   // Outfit-on-the-character (2026-08-24): a signed URL of the character's
   // saved outfit photo — a clothing shot with NO person in it. Seedance-only:
