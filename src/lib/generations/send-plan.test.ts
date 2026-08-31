@@ -471,3 +471,50 @@ describe("identity.max — how many photos actually ride", () => {
     }
   });
 });
+
+// The "scene reference" report (operator, 2026-08-31, with a screenshot):
+// they attached an unmistakable portrait of Eva with no character selected,
+// and the composer told them it would ride "as a scene reference".
+//
+// Nothing had looked at the photo. The classifier that once assigned
+// Face/Outfit/Scene roles was deleted on 2026-08-25 (see AttachmentRole's
+// comment above), every client now stamps role "reference" on every
+// attachment, and the word "scene" survived only inside one warning string —
+// so a mountain, a logo and a human face all got called a scene.
+//
+// These pin the two halves shut: the resolver must put a plain attachment in
+// the reference slot and never the scene slot, and the copy must not name a
+// slot the resolver did not produce.
+describe("a characterless send with an attached photo (2026-08-31 report)", () => {
+  const attached: ResolveInput = {
+    ...base,
+    modelId: "seedance-2",
+    character: null,
+    attachments: [{ id: "a1", isImage: true, role: "reference" }],
+  };
+
+  it("puts the photo in the reference slot, never the scene slot", () => {
+    const plan = resolveSendPlan(attached);
+    const slots = plan.entries.map((e) => e.slot);
+    expect(slots).toContain("reference");
+    expect(slots).not.toContain("scene");
+  });
+
+  it("still asks for a character, because the face cannot come from an attachment", () => {
+    // The block itself was never the bug — only the sentence explaining it.
+    expect(resolveSendPlan(attached).issues.map((i) => i.code)).toContain(
+      "NEEDS_REFERENCE_PHOTO",
+    );
+  });
+
+  it("cannot reach the scene slot from anything a current client sends", () => {
+    // Every send site hardcodes role "reference"; "scene" is only accepted
+    // from transitional clients that no longer exist. If a future change
+    // makes the scene lane reachable again, this fails and the copy that
+    // describes it has to be revisited at the same time.
+    for (const role of ["reference", undefined] as const) {
+      const plan = resolveSendPlan({ ...attached, attachments: [{ id: "a1", isImage: true, role }] });
+      expect(plan.entries.map((e) => e.slot)).not.toContain("scene");
+    }
+  });
+});

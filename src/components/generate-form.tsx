@@ -3812,7 +3812,14 @@ function GenerateFormInner({
     const block = plan.issues.find(
       (i) => i.severity === "block" && (!onlyCodes || onlyCodes.has(i.code)),
     );
-    return block ? issueMessage(block, g, sendPlanModelName(), pendingAttachments.length > 0) : null;
+    // Images only, and it has to agree with the strip's own predicate
+    // (receipt-strip.tsx's hasAttachmentRiding, a slot test over the plan).
+    // Counting every attachment meant a PDF or a video could trigger a
+    // sentence that talks about "your photo".
+    const photoRiding = pendingAttachments.some(
+      (a) => a.status === "ready" && a.type.startsWith("image/"),
+    );
+    return block ? issueMessage(block, g, sendPlanModelName(), photoRiding) : null;
   }
 
   // One-tap remedies for the strip's issue rows.
