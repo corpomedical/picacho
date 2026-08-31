@@ -148,9 +148,20 @@ type RunResult =
       rulesBlock?: { label: string; evidence: string; fix: string }[];
     };
 
-// Long enough for a genuinely detailed request, short enough that a stray
-// giant paste can't turn into an oversized (and costly) AI call.
-const MAX_PROMPT_LENGTH = 2000;
+// The SERVER-SIDE BACKSTOP, sized to the largest legitimate payload rather
+// than to what a person types. Those are two different numbers, and treating
+// them as one was a live bug: a storyboard joins up to SIX shots of up to
+// 1,200 characters each into a single prompt string
+// (generate-form.tsx, `const joined = storyboardShots.map(...)`), which is
+// ~7,300 characters — so the old 2,000 cap rejected any storyboard with more
+// than one detailed shot, AFTER the person had written all of them, with the
+// unhelpful message "Keep prompts under 2000 characters."
+//
+// 8,000 covers six full shots with room for the "Shot 1 (5s): " prefixes.
+// What a human can TYPE is capped lower and separately, in the composer, so
+// this stays what it was meant to be: a backstop against a stray giant paste
+// turning into an oversized and costly AI call.
+const MAX_PROMPT_LENGTH = 8000;
 
 // A spoken line, not a scene description — kept much shorter than the main
 // prompt. Also roughly bounds ElevenLabs TTS cost per generation.
@@ -161,7 +172,7 @@ const MAX_DIALOGUE_LENGTH = 500;
 // from either a character's own saved reference-photo bucket path (needs
 // signing here, as before) or a photo freshly uploaded through the composer,
 // which the client already has a ready, pre-signed URL for (see
-// uploadChatAttachment in attachments/actions.ts) — passed straight through
+// finalizeChatAttachment in attachments/actions.ts) — passed straight through
 // with no extra signing needed. A signed URL always starts with "http"; a
 // character-references storage path never does, so that's a simple, reliable
 // way to tell the two apart without a second formData field per slot.
@@ -354,13 +365,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
   // A photo attached directly to this message (the generic "+" upload, not
   // the Elite-only multi-reference/storyboard pickers above) — already a
-  // signed, fal.ai-fetchable URL from uploadChatAttachment, so no further
+  // signed, fal.ai-fetchable URL from finalizeChatAttachment, so no further
   // signing is needed here. When present, this is what the person actually
   // wants used for this one generation, ahead of the character's saved
   // default photo (see the anchor-resolution block below).
   //
   // SSRF guard: the only legitimate value is one of our own relative /api/media
-  // URLs (from uploadChatAttachment). Anything else — an absolute http(s) URL,
+  // URLs (from finalizeChatAttachment). Anything else — an absolute http(s) URL,
   // a cloud-metadata IP — is discarded here so it can never become a
   // server-side fetch target or get handed to a provider.
   const legacyAttachmentUrl = (() => {

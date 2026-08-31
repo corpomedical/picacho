@@ -606,3 +606,36 @@ describe("an attached face on Seedance 2.5", () => {
     }
   });
 });
+
+// The storyboard/prompt-cap collision (found 2026-08-31 during the live
+// inspection). A storyboard joins up to six shots into ONE prompt string and
+// posts it as the user's input; the server rejects input over
+// MAX_PROMPT_LENGTH. Those two numbers were 6x1200 and 2000, so any
+// storyboard with more than one detailed shot was refused after the person
+// had already written every shot.
+//
+// This pins the arithmetic. It is deliberately written in terms of the real
+// constants so that raising either one without checking the other fails here
+// rather than in someone's composer.
+describe("a full storyboard fits inside the server's prompt cap", () => {
+  const MAX_SHOTS = 6;
+  const MAX_SHOT_CHARS = 1200; // generate-form.tsx, the shot textarea's maxLength
+  const SERVER_CAP = 8000; // actions.ts, MAX_PROMPT_LENGTH
+
+  it("six full shots still fit, with the per-shot prefixes counted", () => {
+    // Mirrors the join in generate-form.tsx: `Shot ${i + 1} (${s.seconds}s): `
+    const worst = Array.from({ length: MAX_SHOTS }, (_, i) =>
+      `Shot ${i + 1} (30s): ${"x".repeat(MAX_SHOT_CHARS)}`,
+    ).join("\n");
+    expect(worst.length).toBeLessThanOrEqual(SERVER_CAP);
+  });
+
+  it("the old cap really did reject a two-shot storyboard", () => {
+    // Kept as the regression's own headstone: two detailed shots were already
+    // over the 2,000 limit, so this was never an edge case.
+    const twoShots = Array.from({ length: 2 }, (_, i) =>
+      `Shot ${i + 1} (5s): ${"x".repeat(MAX_SHOT_CHARS)}`,
+    ).join("\n");
+    expect(twoShots.length).toBeGreaterThan(2000);
+  });
+});

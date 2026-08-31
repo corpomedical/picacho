@@ -1,0 +1,12 @@
+import { createClient } from '@supabase/supabase-js';
+import fs from 'fs';
+const env = Object.fromEntries(fs.readFileSync('/Users/ahmadkmm/Picacho/.env.local','utf8').split('\n').filter(l=>/^[A-Za-z_][A-Za-z0-9_]*=/.test(l)).map(l=>{const i=l.indexOf('=');return [l.slice(0,i), l.slice(i+1).replace(/^["']|["']$/g,'')];}));
+const s = createClient(env.NEXT_PUBLIC_SUPABASE_URL, env.SUPABASE_SERVICE_ROLE_KEY, {auth:{persistSession:false}});
+const { data } = await s.from('generations').select('id,status,content_type,result_url,created_at,match_score,match_notes,character_profile_id,video_model_id').eq('content_type','video').eq('status','succeeded').order('created_at',{ascending:false}).limit(12);
+for (const r of data) console.log(r.created_at, r.video_model_id, 'char=',!!r.character_profile_id, 'score=',r.match_score, 'notes=', (r.match_notes||'').slice(0,80), r.result_url?.slice(0,60));
+console.log('\n--- images with signed URLs: sample ---');
+const { data: imgs } = await s.from('generations').select('id,created_at,result_url').eq('content_type','image').like('result_url','%storage/v1/object/sign%').order('created_at',{ascending:false}).limit(3);
+for (const r of imgs) console.log(r.created_at, r.result_url.slice(0,120));
+console.log('\n--- images stored as fal-external ---');
+const { data: fi } = await s.from('generations').select('id,created_at,result_url,status').eq('content_type','image').order('created_at',{ascending:false}).limit(200);
+for (const r of fi.filter(r=>/fal/.test(r.result_url||''))) console.log(r.status, r.created_at, r.result_url.slice(0,110));

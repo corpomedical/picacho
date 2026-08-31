@@ -50,33 +50,92 @@ const UPLOAD_RATE_MAX_PER_WINDOW = 30;
 // These attachments are preview-only for now — they upload and show inline
 // in the chat, but aren't yet fed into the draft/review pipeline the way a
 // character's reference photo is.
-export async function uploadChatAttachment(formData: FormData): Promise<UploadResult> {
+/**
+ * Reserves a storage path for an attachment the BROWSER will upload directly.
+ *
+ * WHY THE BYTES NO LONGER COME THROUGH HERE (2026-08-31). Vercel rejects any
+ * request body over 4.5MB BEFORE the function is invoked, with a raw 413 that
+ * no application code can catch — not a try/catch, not an error boundary.
+ * This action advertised a 25MB limit and next.config asks for a 30MB body,
+ * and neither has any effect on that platform cap: the effective ceiling was
+ * about 4.5MB minus multipart overhead, and a person attaching a 5MB photo
+ * got a spinner that died with no explanation. The old catch in the composer
+ * even named the symptom, blaming Next.js's own body limit rather than the
+ * platform underneath it.
+ *
+ * So the file now goes straight from the browser to Supabase Storage, which
+ * is exactly what character reference photos have always done
+ * (character-form.tsx) — that is why a 4.5MB character photo uploaded fine
+ * while the same file failed as a chat attachment. Storage RLS is what
+ * authorises it, and the bucket's own file_size_limit is what enforces the
+ * size, returning a catchable EntityTooLarge instead of an opaque 413.
+ *
+ * This half only hands out a path scoped to the caller's own folder, so a
+ * client cannot choose where it writes.
+ */
+export async function reserveChatAttachmentPath(
+  formData: FormData,
+): Promise<{ error: string | null; path?: string }> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) return { error: "Your session expired — please log in again." };
 
-  const file = formData.get("file") as File | null;
-  if (!file) return { error: "No file provided." };
-  if (file.size > MAX_FILE_BYTES) return { error: `${file.name} is larger than 25MB.` };
+  const name = String(formData.get("name") ?? "");
+  const size = Number(formData.get("size") ?? 0);
+  if (!name) return { error: "No file provided." };
+  if (size > MAX_FILE_BYTES) return { error: `${name} is larger than 25MB.` };
 
-  // Fails closed on a limiter error, like previewVoice: a retry beats an
-  // unbounded storage-fill loop when the limiter itself is unavailable.
+  // Same limiter as before, still failing closed: it now bounds how fast a
+  // client can obtain paths, and storage RLS bounds what it can do with one.
   if (
     await rateLimited(data.user.id, "upload", UPLOAD_RATE_WINDOW_SECONDS, UPLOAD_RATE_MAX_PER_WINDOW)
   ) {
     return { error: "You're uploading a bit fast — wait a moment and try again." };
   }
 
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `${data.user.id}/${crypto.randomUUID()}-${safeName}`;
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return { error: null, path: `${data.user.id}/${crypto.randomUUID()}-${safeName}` };
+}
+
+/**
+ * Completes an attachment the browser has already uploaded: reads it back out
+ * of storage, measures it, judges whether it shows a real person, and returns
+ * the record the composer holds.
+ *
+ * Reading the bytes back is an ordinary server-side fetch from storage, not a
+ * request body, so the 4.5MB ceiling never applies to it.
+ */
+export async function finalizeChatAttachment(formData: FormData): Promise<UploadResult> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const path = String(formData.get("path") ?? "");
+  const name = String(formData.get("name") ?? "");
+  const type = String(formData.get("type") ?? "");
+  const size = Number(formData.get("size") ?? 0);
+
+  // The path came back from the client, so it is re-checked here rather than
+  // trusted: only ever this user's own folder, and no traversal.
+  if (!path.startsWith(`${data.user.id}/`) || path.includes("..")) {
+    return { error: "Not allowed." };
+  }
+
+  const { data: blob, error: downloadError } = await supabase.storage
+    .from("chat-attachments")
+    .download(path);
+  if (downloadError || !blob) {
+    return { error: downloadError?.message ?? "That upload didn't finish — try again." };
+  }
+  const bytes = Buffer.from(await blob.arrayBuffer());
 
   // Measure images while the bytes are in hand. EXIF orientations 5-8 are
   // 90°-rotated: swap so the dimensions describe the photo as DISPLAYED —
   // that's the shape the provider aspect checks care about.
   let width: number | undefined;
   let height: number | undefined;
-  if (file.type.startsWith("image/")) {
+  const isImage = type.startsWith("image/");
+  if (isImage) {
     try {
       const sharp = (await import("sharp")).default;
       const meta = await sharp(bytes).metadata();
@@ -90,62 +149,32 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
     }
   }
 
-  // Is the thing in this photo a real person? Asked here, while the bytes
-  // are already in hand, and RUN CONCURRENTLY with the storage write so it
-  // costs almost no extra wall-clock on an upload that is already showing a
-  // spinner.
-  //
-  // Why it is worth a vision call (operator, 2026-08-31: "What if I upload a
-  // picture of a rendered character or mascot, will I get the same annoying
-  // msg?" — yes, they would have): since a bare attachment can now be the
-  // face, the Seedance 2.5 likeness warning fires on any attached photo with
-  // no character behind it, because nothing knew what was in it. A mascot
-  // got told it might be refused for looking too much like a real person.
-  //
-  // This is NOT the role classifier coming back. That one guessed what an
-  // image was FOR and was rightly deleted; this asks what an image IS — the
-  // same question, and the same function, already asked of every saved
-  // character. And it can only ever REMOVE a warning, never add a block, so
-  // a wrong answer or no answer at all lands on today's behaviour.
-  const stylePromise: Promise<"photoreal" | "illustrated" | null> = file.type.startsWith("image/")
-    ? (async () => {
-        try {
-          // Downscaled to a data URI rather than classified from a URL: the
-          // file is not uploaded yet, the bucket is private, and 512px is
-          // plenty to tell a photograph from a cartoon. Keeps the request
-          // small and needs nothing publicly reachable.
-          const sharp = (await import("sharp")).default;
-          const small = await sharp(bytes)
-            // EXIF first — a sideways portrait is measurably harder to read.
-            .rotate()
-            // Flatten onto WHITE before the JPEG conversion. Without this a
-            // transparent PNG composites onto BLACK, which is precisely the
-            // shape of the uploads this check exists for: cut-out mascots and
-            // logos become a dark silhouette on a dark field.
-            .flatten({ background: "#ffffff" })
-            // 768, not 512: what separates skin texture from CGI shading, and
-            // a painting's brushwork from a photograph, is detail that 512px
-            // throws away. This is the only call made, so the pixels are
-            // worth spending here.
-            .resize(768, 768, { fit: "inside", withoutEnlargement: true })
-            // 4:4:4 keeps line-art edges crisp — the other thing that tells a
-            // drawing from a photograph at small sizes.
-            .jpeg({ quality: 82, chromaSubsampling: "4:4:4" })
-            .toBuffer();
-          return await classifyRenderStyle(`data:image/jpeg;base64,${small.toString("base64")}`);
-        } catch {
-          return null;
-        }
-      })()
-    : Promise.resolve(null);
-
-  const [{ error: uploadError }, style] = await Promise.all([
-    supabase.storage
-      .from("chat-attachments")
-      .upload(path, bytes, { contentType: file.type || "application/octet-stream" }),
-    stylePromise,
-  ]);
-  if (uploadError) return { error: uploadError.message };
+  // Is the thing in this photo a real person? See classifyRenderStyle for why
+  // this is worth a vision call and why it can only ever SILENCE a warning.
+  let style: "photoreal" | "illustrated" | null = null;
+  if (isImage) {
+    try {
+      const sharp = (await import("sharp")).default;
+      const small = await sharp(bytes)
+        // EXIF first — a sideways portrait is measurably harder to read.
+        .rotate()
+        // Flatten onto WHITE before the JPEG conversion. Without this a
+        // transparent PNG composites onto BLACK, which is precisely the shape
+        // of the uploads this check exists for: cut-out mascots and logos
+        // become a dark silhouette on a dark field.
+        .flatten({ background: "#ffffff" })
+        // 768, not 512: what separates skin texture from CGI shading, and a
+        // painting's brushwork from a photograph, is detail 512px throws away.
+        .resize(768, 768, { fit: "inside", withoutEnlargement: true })
+        // 4:4:4 keeps line-art edges crisp — the other thing that tells a
+        // drawing from a photograph at small sizes.
+        .jpeg({ quality: 82, chromaSubsampling: "4:4:4" })
+        .toBuffer();
+      style = await classifyRenderStyle(`data:image/jpeg;base64,${small.toString("base64")}`);
+    } catch {
+      // Unknown style behaves exactly as it did before this existed: warn.
+    }
+  }
 
   return {
     error: null,
@@ -155,9 +184,9 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
       // this attachment becomes a provider anchor, the server absolutizes
       // it first (see runGeneration).
       url: mediaUrl("chat-attachments", path),
-      name: file.name,
-      type: file.type,
-      size: file.size,
+      name,
+      type,
+      size,
       width,
       height,
       style,

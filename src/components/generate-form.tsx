@@ -39,7 +39,13 @@ import {
   isBudgetExhaustedDetail,
 } from "@/lib/generations/user-facing-error";
 import { createPortal } from "react-dom";
-import { uploadChatAttachment, deleteChatAttachment, type ChatAttachment } from "@/lib/attachments/actions";
+import {
+  reserveChatAttachmentPath,
+  finalizeChatAttachment,
+  deleteChatAttachment,
+  type ChatAttachment,
+} from "@/lib/attachments/actions";
+import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { AgentMode } from "@/lib/agent/prices";
 import { parseSseFrames } from "@/lib/agent/sse";
 import { classifyMessage } from "@/lib/agent/intent";
@@ -1406,6 +1412,18 @@ const SPARK_PARTICLES = [
   { x: "6px", y: "14px", size: "h-1 w-1", star: true, delay: 55, scale: "0.95" },
   { x: "16px", y: "8px", size: "h-[3px] w-[3px]", star: false, delay: 130, scale: "0.8" },
 ] as const;
+
+// What a person can type into the composer in one message. Raised from 2,000
+// on 2026-08-31 (operator: "a limit on characters on the chatbox. If a user
+// decides to write a long paragraph its impossible"). Measured first: across
+// every prompt this account has ever sent, the median is 209 characters and
+// the longest is 1,834 — so nothing had hit the old wall yet, but it was
+// close enough to be reachable in one detailed shot description.
+//
+// Deliberately NOT the same number as the server's MAX_PROMPT_LENGTH, which
+// is a backstop sized to the largest machine-built payload (a six-shot
+// storyboard) rather than to human typing.
+const COMPOSER_MAX_CHARS = 5000;
 
 // Where the assistant on/off choice is remembered. Versioned in the name so
 // a future change of meaning cannot silently inherit an old value.
@@ -2988,14 +3006,57 @@ function GenerateFormInner({
   // works identically as a fal.ai-fetchable reference. Single-file (not the
   // multi-select handleFilesSelected above) since each click here is "add
   // one more option to pick from," not "attach these to send."
+  /**
+   * Puts a file in storage and returns the finished attachment record.
+   *
+   * The BYTES GO STRAIGHT FROM THE BROWSER to Supabase Storage, never through
+   * a server action. Vercel rejects any request body over 4.5MB before the
+   * function is even invoked, with a raw 413 nothing in the app can catch —
+   * so the old path advertised 25MB and silently died a bit over four, which
+   * is what the operator hit. Character reference photos have always uploaded
+   * this way (character-form.tsx); this brings attachments in line.
+   *
+   * The server still bookends it: it hands out a path inside the caller's own
+   * folder, and afterwards reads the file back out of storage to measure it
+   * and judge whether it shows a real person.
+   */
+  async function uploadAttachmentFile(
+    file: File,
+  ): Promise<{ error: string | null; attachment?: ChatAttachment }> {
+    const reserve = new FormData();
+    reserve.set("name", file.name);
+    reserve.set("size", String(file.size));
+    const reserved = await reserveChatAttachmentPath(reserve);
+    if (reserved.error !== null || !reserved.path) {
+      return { error: reserved.error ?? g.uploadPhotoFailed };
+    }
+
+    const { error: uploadError } = await createBrowserSupabase()
+      .storage.from("chat-attachments")
+      .upload(reserved.path, file, {
+        contentType: file.type || "application/octet-stream",
+        upsert: false,
+      });
+    if (uploadError) {
+      // The bucket's own file_size_limit surfaces here as a real, catchable
+      // error — unlike the platform 413 this replaces.
+      return { error: uploadError.message };
+    }
+
+    const done = new FormData();
+    done.set("path", reserved.path);
+    done.set("name", file.name);
+    done.set("type", file.type);
+    done.set("size", String(file.size));
+    return await finalizeChatAttachment(done);
+  }
+
   function handlePanelFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     setPanelUploadBusy(true);
-    const formData = new FormData();
-    formData.set("file", file);
-    uploadChatAttachment(formData)
+    uploadAttachmentFile(file)
       .then((result) => {
         if (result.error !== null || !result.attachment) {
           setError(result.error ?? g.uploadPhotoFailed);
@@ -3249,9 +3310,7 @@ function GenerateFormInner({
         { id, name: file.name, type: file.type, size: file.size, status: "uploading" },
       ]);
 
-      const formData = new FormData();
-      formData.set("file", file);
-      uploadChatAttachment(formData)
+      uploadAttachmentFile(file)
         .then((result) => {
           setPendingAttachments((prev) =>
             prev.map((a) => {
@@ -3271,12 +3330,13 @@ function GenerateFormInner({
           if (result.error !== null) setError(result.error);
         })
         .catch(() => {
-          // A rejected promise here (vs. the function's own { error } return
-          // above) means the request never made it into uploadChatAttachment
-          // at all — e.g. Next.js's Server Action body size limit rejecting
-          // an oversized file before our own 25MB check ever runs. Without
-          // this catch, the chip was left stuck on its spinner forever with
-          // no visible sign anything had gone wrong.
+          // A rejected promise here, rather than the { error } return above,
+          // now means something unexpected: a network drop, or storage
+          // refusing outright. The case this catch was originally written for
+          // — an oversized body killed by the platform before any of our code
+          // ran — cannot happen any more, because the bytes no longer travel
+          // through a server action at all. Kept regardless: without it the
+          // chip sat on its spinner forever with nothing on screen.
           const message = formatMsg(g.uploadFailedFile, { name: file.name });
           setPendingAttachments((prev) =>
             prev.map((a) => (a.id === id ? { ...a, status: "error", error: message } : a)),
@@ -6083,7 +6143,7 @@ function GenerateFormInner({
                       : g.imagePlaceholder
                 }
                 disabled={submitting || asking}
-                maxLength={2000}
+                maxLength={COMPOSER_MAX_CHARS}
                 className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
               />
               </>

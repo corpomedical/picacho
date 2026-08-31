@@ -52,7 +52,9 @@ const MODEL = "claude-opus-5";
 // Twelve turns of history is enough for a conversation about one piece of
 // work and short enough that the cached prefix stays worth caching.
 const MAX_HISTORY_TURNS = 12;
-const MAX_MESSAGE_CHARS = 2000;
+// Matches the composer's own cap — the same box sends both, so a message the
+// composer let you type must not be silently truncated on arrival here.
+const MAX_MESSAGE_CHARS = 5000;
 
 type IncomingTurn = { role: "user" | "assistant"; content: string };
 
