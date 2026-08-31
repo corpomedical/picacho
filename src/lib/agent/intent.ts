@@ -114,6 +114,14 @@ const LEADING_FILLER = [
 // Phrases that address a person rather than describe a picture. These catch
 // the polite forms that would otherwise sail past the opener list.
 const ADDRESSED_PHRASES = [
+  // The app's own name, anywhere in the message. Nobody describes a SHOT by
+  // saying "picacho" — a message that names the app is talking TO it. Found
+  // the expensive way (operator, 2026-08-31): "Hey picacho" fell through
+  // every list below — "hey" is filler, "picacho" is no question word — and
+  // rendered. One credit for a greeting, which OpenAI's safety filter then
+  // rejected, which burned a softening call, which produced a nonsense
+  // image of the words "Hey picacho". The person was saying hello.
+  "picacho",
   "can you", "could you", "would you", "will you", "do you", "did you",
   "are you", "you think", "your opinion", "your advice", "let me know",
   "tell me", "explain to me", "walk me through", "what about",

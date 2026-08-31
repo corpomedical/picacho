@@ -242,3 +242,35 @@ describe("the app's other three languages", () => {
     }
   });
 });
+
+// "Hey picacho" (operator, 2026-08-31): a greeting addressed to the app by
+// name fell through every list — "hey" is filler, "picacho" matches no
+// opener — and RENDERED. One credit for saying hello, which OpenAI's safety
+// filter then rejected, which burned a softening retry, which produced a
+// nonsense image. Naming the app now reads as talking to it, in any
+// language, wherever the name sits in the sentence.
+describe("addressing the app by name", () => {
+  for (const t of [
+    "Hey picacho",
+    "hola picacho",
+    "thanks picacho",
+    "picacho why did that fail",
+    "ok picacho make it warmer",
+  ]) {
+    it(`asks: "${t}"`, () => {
+      expect(classifyMessage(t).intent).toBe("ask");
+    });
+  }
+
+  it("a shot that never names the app still renders", () => {
+    expect(classifyMessage("Eva waves hello at the camera").intent).toBe("render");
+  });
+
+  it('"ok picacho make it warmer" still offers the render chip', () => {
+    // Addressed to the app, but carrying an instruction — the answer should
+    // come with the one-tap "Render this" chip so the tap is not lost.
+    const r = classifyMessage("can you make Eva wave at the camera");
+    expect(r.intent).toBe("ask");
+    expect(r.renderablePrompt).toBeTruthy();
+  });
+});
