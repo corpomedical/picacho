@@ -14,6 +14,13 @@ const privacy: Record<Locale, LegalDoc> = {
       "This Privacy Policy explains what information Picacho (\"we\", \"us\") collects when you use the Picacho website and app, how we use it, and the choices you have.",
     sections: [
       {
+        heading: "Who is responsible for your data",
+        paragraphs: [
+          "The data controller for Picacho is JEAR TECNICA S.A. (NIF A28847549), Paseo de la Castellana 259, 28046 Madrid, Spain. You can reach us using the contact details shown at the top of this page.",
+          "If you believe your data has been handled improperly, you can also lodge a complaint with the Spanish data protection authority (AEPD, aepd.es) or your local supervisory authority in the EU.",
+        ],
+      },
+      {
         heading: "Information we collect",
         paragraphs: [
           "Account information: your email address and password (handled by our authentication provider), and optionally a username, company, and self-reported gender.",
@@ -93,6 +100,13 @@ const privacy: Record<Locale, LegalDoc> = {
     intro:
       "Esta Política de privacidad explica qué información recopila Picacho (\"nosotros\") cuando usas el sitio web y la aplicación de Picacho, cómo la usamos y qué opciones tienes.",
     sections: [
+      {
+        heading: "Responsable del tratamiento",
+        paragraphs: [
+          "El responsable del tratamiento de los datos de Picacho es JEAR TECNICA S.A. (NIF A28847549), Paseo de la Castellana 259, 28046 Madrid, España. Puedes contactarnos mediante los datos de contacto que aparecen al inicio de esta página.",
+          "Si consideras que tus datos se han tratado indebidamente, también puedes presentar una reclamación ante la Agencia Española de Protección de Datos (AEPD, aepd.es) o ante tu autoridad de control local en la UE.",
+        ],
+      },
       {
         heading: "Información que recopilamos",
         paragraphs: [
@@ -176,6 +190,13 @@ const privacy: Record<Locale, LegalDoc> = {
       "Esta Política de Privacidade explica quais informações o Picacho (\"nós\") coleta quando você usa o site e o aplicativo Picacho, como as usamos e quais escolhas você tem.",
     sections: [
       {
+        heading: "Responsável pelo tratamento dos dados",
+        paragraphs: [
+          "O responsável pelo tratamento dos dados do Picacho é a JEAR TECNICA S.A. (NIF A28847549), Paseo de la Castellana 259, 28046 Madrid, Espanha. Você pode falar conosco pelos dados de contato mostrados no topo desta página.",
+          "Se você acredita que seus dados foram tratados de forma indevida, também pode apresentar uma reclamação à autoridade espanhola de proteção de dados (AEPD, aepd.es) ou à sua autoridade de controle local na UE.",
+        ],
+      },
+      {
         heading: "Informações que coletamos",
         paragraphs: [
           "Informações da conta: seu e-mail e senha (gerenciados pelo nosso provedor de autenticação) e, opcionalmente, um nome de usuário, empresa e gênero autodeclarado.",
@@ -257,6 +278,13 @@ const privacy: Record<Locale, LegalDoc> = {
     intro:
       "Questa Informativa sulla privacy spiega quali informazioni Picacho (\"noi\") raccoglie quando utilizzi il sito e l'app Picacho, come le utilizziamo e quali scelte hai a disposizione.",
     sections: [
+      {
+        heading: "Titolare del trattamento",
+        paragraphs: [
+          "Il titolare del trattamento dei dati di Picacho è JEAR TECNICA S.A. (NIF A28847549), Paseo de la Castellana 259, 28046 Madrid, Spagna. Puoi contattarci tramite i recapiti mostrati in cima a questa pagina.",
+          "Se ritieni che i tuoi dati siano stati trattati in modo improprio, puoi anche presentare un reclamo all'autorità spagnola per la protezione dei dati (AEPD, aepd.es) o alla tua autorità di controllo locale nell'UE.",
+        ],
+      },
       {
         heading: "Informazioni che raccogliamo",
         paragraphs: [

@@ -471,6 +471,10 @@ const en = {
   },
   legal: {
     lastUpdatedLabel: "Last updated",
+    legalOperatorProvider: "Service provider",
+    legalOperatorNif: "NIF",
+    legalOperatorAddress: "Registered office",
+    legalOperatorContact: "Contact",
     notLegalAdviceNote:
       "This document is a draft provided for general informational purposes and does not constitute legal advice. Have a qualified attorney review it before relying on it.",
     seeContentPolicyNote:

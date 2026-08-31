@@ -2,6 +2,7 @@ import Link from "next/link";
 import { InstallBadges } from "@/components/install-badges";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
+import { LEGAL_ENTITY } from "@/lib/legal-entity";
 
 export async function MarketingFooter() {
   const { t } = await getServerMessages();
@@ -16,7 +17,8 @@ export async function MarketingFooter() {
       </div>
       <div className="mx-auto flex max-w-5xl flex-col items-center justify-between gap-4 px-8 py-8 text-sm text-neutral-500 sm:flex-row">
         <p>
-          © {new Date().getFullYear()} Picacho — {t.marketing.footer.rights}
+          © {new Date().getFullYear()} Picacho — {t.marketing.footer.rights} ·{" "}
+          {LEGAL_ENTITY.name} · NIF {LEGAL_ENTITY.nif} · Madrid
         </p>
         <div className="flex flex-col items-center gap-3 sm:items-end">
           <div className="flex flex-wrap items-center justify-center gap-6 sm:justify-end">

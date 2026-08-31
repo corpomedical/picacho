@@ -431,6 +431,10 @@ const pt = {
   },
   legal: {
     lastUpdatedLabel: "Última atualização",
+    legalOperatorProvider: "Prestador do serviço",
+    legalOperatorNif: "NIF",
+    legalOperatorAddress: "Sede social",
+    legalOperatorContact: "Contato",
     notLegalAdviceNote:
       "Este documento é um rascunho fornecido para fins informativos gerais e não constitui aconselhamento jurídico. Consulte um advogado qualificado antes de se basear nele.",
     seeContentPolicyNote:

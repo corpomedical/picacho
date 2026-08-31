@@ -5,6 +5,7 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { getServerMessages } from "@/lib/i18n/server";
 import termsDoc from "@/lib/i18n/legal/terms";
 import { localeAlternates } from "@/lib/i18n/metadata";
+import { OperatorCard } from "@/components/marketing/operator-card";
 
 // generateMetadata rather than a static object (2026-08-30): the canonical
 // depends on which locale URL is being served, and the hreflang set must be
@@ -40,6 +41,14 @@ export default async function TermsPage() {
         <p className="mt-2 text-xs text-neutral-400">
           {t.legal.lastUpdatedLabel}: {doc.updated}
         </p>
+        <OperatorCard
+          labels={{
+            provider: t.legal.legalOperatorProvider,
+            nif: t.legal.legalOperatorNif,
+            address: t.legal.legalOperatorAddress,
+            contact: t.legal.legalOperatorContact,
+          }}
+        />
         <p className="mt-4 rounded-[10px] bg-red-50 px-3.5 py-2.5 text-xs text-red-800 dark:bg-red-500/15 dark:text-red-300">
           {t.legal.seeContentPolicyNote}{" "}
           <Link href="/content-policy" className="font-semibold underline">
