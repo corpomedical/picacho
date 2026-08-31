@@ -139,11 +139,13 @@ export default async function AdminUserDetailPage({
                     : "Never"}
               </dd>
             </div>
-            {user.referred_by && (
+            {(user.referred_by || user.promo_rep) && (
               <div className="flex gap-1.5">
                 <dt>Referred by:</dt>
                 <dd>
-                  {user.referred_by}
+                  {/* Two different things that used to share one column: a
+                      referring USER's id, and a promo rep's NAME. */}
+                  {user.promo_rep ?? user.referred_by}
                   {user.promo_code && <span className="font-mono"> ({user.promo_code})</span>}
                 </dd>
               </div>

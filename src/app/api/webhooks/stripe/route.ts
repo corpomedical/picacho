@@ -262,7 +262,13 @@ export async function POST(request: Request) {
                 if (userId && !redemptionError) {
                   await supabase
                     .from("profiles")
-                    .update({ promo_code: promo.code, referred_by: promo.rep_name })
+                    // promo_rep, NOT referred_by. This used to write a
+                    // human name ("Jenny") into the column the referral
+                    // trigger reads as a user id, which made that account's
+                    // every future render abort its own terminal write —
+                    // paid for, billed by fal, and stranded at 'generating'
+                    // forever. See pending-2026-08-31/referral-column-type.sql.
+                    .update({ promo_code: promo.code, promo_rep: promo.rep_name })
                     .eq("id", userId);
                 }
               }
