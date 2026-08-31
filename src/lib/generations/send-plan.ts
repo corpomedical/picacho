@@ -282,6 +282,8 @@ export type ResolveInput = {
     isImage: boolean;
     width?: number;
     height?: number;
+    /** See ChatAttachment.style — absent means unknown, which never silences. */
+    style?: "photoreal" | "illustrated" | null;
     role?: AttachmentRole;
   }[];
   anchorPhotoPicked: boolean;
@@ -649,8 +651,15 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
     // photos and no judgement gets — assume a real person, and warn. Without
     // this, the newly-unblocked send would walk into a ByteDance refusal
     // with nothing on screen having mentioned it.
+    // A face that arrived as an attachment: warn unless the upload-time
+    // classifier positively said it is not a real person. Unknown still
+    // warns — the rule must never have a coverage gap — but a mascot or a
+    // rendered character no longer gets told it might be refused for looking
+    // too human.
+    const attachedFaceMightBeReal =
+      Boolean(referenceAsIdentity) && referenceAsIdentity?.style !== "illustrated";
     const heuristic =
-      (character?.photoreal == null && hasSavedPhotos) || Boolean(referenceAsIdentity);
+      (character?.photoreal == null && hasSavedPhotos) || attachedFaceMightBeReal;
     if (photorealKnown || heuristic) {
       issues.push({
         severity: "warn",

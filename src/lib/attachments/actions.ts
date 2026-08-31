@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
 import { rateLimited } from "@/lib/rate-limit";
+import { classifyRenderStyle } from "@/lib/generations/providers/describe-image";
 
 export type ChatAttachment = {
   path: string;
@@ -16,6 +17,13 @@ export type ChatAttachment = {
   // fails — absence never blocks anything.
   width?: number;
   height?: number;
+  /**
+   * Whether this image reads as a real human being, judged once at upload by
+   * the same classifier every saved character gets. Only ever used to SILENCE
+   * a warning that would otherwise fire on anything at all — absent means
+   * "unknown", which behaves exactly as before it existed.
+   */
+  style?: "photoreal" | "illustrated" | null;
   // Declared role (Send Receipt P2) — set client-side on the composer chip,
   // rides through submit plumbing. undefined = legacy identity contract.
   role?: "identity" | "outfit" | "scene" | "prop" | "unused";
@@ -82,9 +90,49 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
     }
   }
 
-  const { error: uploadError } = await supabase.storage
-    .from("chat-attachments")
-    .upload(path, bytes, { contentType: file.type || "application/octet-stream" });
+  // Is the thing in this photo a real person? Asked here, while the bytes
+  // are already in hand, and RUN CONCURRENTLY with the storage write so it
+  // costs almost no extra wall-clock on an upload that is already showing a
+  // spinner.
+  //
+  // Why it is worth a vision call (operator, 2026-08-31: "What if I upload a
+  // picture of a rendered character or mascot, will I get the same annoying
+  // msg?" — yes, they would have): since a bare attachment can now be the
+  // face, the Seedance 2.5 likeness warning fires on any attached photo with
+  // no character behind it, because nothing knew what was in it. A mascot
+  // got told it might be refused for looking too much like a real person.
+  //
+  // This is NOT the role classifier coming back. That one guessed what an
+  // image was FOR and was rightly deleted; this asks what an image IS — the
+  // same question, and the same function, already asked of every saved
+  // character. And it can only ever REMOVE a warning, never add a block, so
+  // a wrong answer or no answer at all lands on today's behaviour.
+  const stylePromise: Promise<"photoreal" | "illustrated" | null> = file.type.startsWith("image/")
+    ? (async () => {
+        try {
+          // Downscaled to a data URI rather than classified from a URL: the
+          // file is not uploaded yet, the bucket is private, and 512px is
+          // plenty to tell a photograph from a cartoon. Keeps the request
+          // small and needs nothing publicly reachable.
+          const sharp = (await import("sharp")).default;
+          const small = await sharp(bytes)
+            .rotate()
+            .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+          return await classifyRenderStyle(`data:image/jpeg;base64,${small.toString("base64")}`);
+        } catch {
+          return null;
+        }
+      })()
+    : Promise.resolve(null);
+
+  const [{ error: uploadError }, style] = await Promise.all([
+    supabase.storage
+      .from("chat-attachments")
+      .upload(path, bytes, { contentType: file.type || "application/octet-stream" }),
+    stylePromise,
+  ]);
   if (uploadError) return { error: uploadError.message };
 
   return {
@@ -100,6 +148,7 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
       size: file.size,
       width,
       height,
+      style,
     },
   };
 }

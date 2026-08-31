@@ -874,6 +874,9 @@ type PendingAttachment = {
   // provider aspect-bound checks. Absent = unmeasured = never blocks.
   width?: number;
   height?: number;
+  // Judged server-side at upload — whether this reads as a real human.
+  // Only ever silences a warning; absent = unknown = behaves as before.
+  style?: "photoreal" | "illustrated" | null;
 };
 
 function formatBytes(bytes: number): string {
@@ -3261,6 +3264,7 @@ function GenerateFormInner({
                 path: result.attachment!.path,
                 width: result.attachment!.width,
                 height: result.attachment!.height,
+                style: result.attachment!.style,
               };
             }),
           );
@@ -3776,9 +3780,11 @@ function GenerateFormInner({
           isImage: a.type.startsWith("image/"),
           width: a.width,
           height: a.height,
-          // The current contract (operator, 2026-08-25): attachments are
-          // neutral references — the prompt says what they're for, and
-          // identity never comes from them.
+          style: a.style,
+          // Attachments stay NEUTRAL references (operator, 2026-08-25) — the
+          // prompt says what they are for. Since 2026-08-31 the resolver may
+          // promote one to the identity slot when nothing else can supply a
+          // face; that is its decision to make, not a role the client asserts.
           role: "reference" as const,
         })),
       anchorPhotoPicked: Boolean(anchorPhotoPath),

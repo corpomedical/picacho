@@ -566,3 +566,43 @@ describe("the Seedance warning without a character", () => {
     expect(warn?.params?.name || "").toBe("");
   });
 });
+
+// "What if I upload a picture of a rendered character or mascot, will I get
+// the same annoying msg?" (operator, 2026-08-31). Before this, yes — the
+// warning fired on any attached photo standing in as the face, because
+// nothing knew what was in it. It now asks the upload-time judgement.
+describe("an attached face on Seedance 2.5", () => {
+  const withStyle = (style?: "photoreal" | "illustrated" | null) =>
+    resolveSendPlan({
+      ...base,
+      modelId: "seedance",
+      character: null,
+      attachments: [{ id: "a1", isImage: true, role: "reference", style }],
+    }).issues.map((i) => i.code);
+
+  it("stays quiet for a mascot or a rendered character", () => {
+    expect(withStyle("illustrated")).not.toContain("SEEDANCE25_PHOTOREAL");
+  });
+
+  it("still warns for a real face", () => {
+    expect(withStyle("photoreal")).toContain("SEEDANCE25_PHOTOREAL");
+  });
+
+  it("still warns when the judgement is missing — no coverage gap", () => {
+    // Classifier failed, no API key, or an older client that sends no style.
+    expect(withStyle(undefined)).toContain("SEEDANCE25_PHOTOREAL");
+    expect(withStyle(null)).toContain("SEEDANCE25_PHOTOREAL");
+  });
+
+  it("never turns the warning into a block, whatever the answer", () => {
+    for (const s of ["illustrated", "photoreal", null, undefined] as const) {
+      const plan = resolveSendPlan({
+        ...base,
+        modelId: "seedance",
+        character: null,
+        attachments: [{ id: "a1", isImage: true, role: "reference", style: s }],
+      });
+      expect(plan.issues.filter((i) => i.severity === "block")).toEqual([]);
+    }
+  });
+});
