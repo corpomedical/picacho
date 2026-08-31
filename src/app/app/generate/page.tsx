@@ -51,7 +51,17 @@ export default async function GeneratePage() {
   // includes refund and cancel work — could be suspended mid-flight
   // (2026-08-31 inspection). after() keeps the invocation alive until the
   // promise settles, and still never delays rendering the page.
-  after(reapAbandonedGenerations());
+  after(
+    // .catch, not a bare promise: a rejection handed to after() otherwise
+    // surfaces as an unhandled error in the render's own lifetime — exactly
+    // the class of invisible server-side failure behind the React #419
+    // reports (the Suspense boundary dies server-side, the client re-renders,
+    // and the error reporter files a minified mystery). Housekeeping must
+    // never be able to poison the page render.
+    reapAbandonedGenerations().catch((err) => {
+      console.error("reapAbandonedGenerations failed:", err);
+    }),
+  );
 
   const {
     hasCharacter,
