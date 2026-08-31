@@ -8,6 +8,7 @@ import {
   persistGeneratedImage,
 } from "@/lib/generations/core";
 import { refundGenerationCosts } from "@/lib/generations/job-runner";
+import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { absolutizeMediaUrl, isRenderableUrl, toMediaUrl } from "@/lib/media/url";
 import { getOrigin } from "@/lib/origin";
@@ -279,7 +280,9 @@ export async function runApiImageGeneration(params: {
               match_notes: verdict.notes,
             })
             .eq("id", generationId);
-          const refunded = await refundGenerationCosts(generationId);
+          const refunded = await refundGenerationCosts(generationId, {
+            force: forceRefundEligible(result.attempts),
+          });
           return {
             error: null,
             id: generationId,
@@ -306,7 +309,16 @@ export async function runApiImageGeneration(params: {
       })
       .eq("id", generationId);
 
-    const refunded = !succeeded ? await refundGenerationCosts(generationId) : false;
+    // Same force calculation as the website's path (2026-08-31): with the
+    // automatic_refunds switch off, an API customer whose request was
+    // refused by the provider before anything rendered — or blocked by
+    // their own brand rules — was charged where the composer refunded. The
+    // two surfaces sell the same credits; they refund by the same rule.
+    const refunded = !succeeded
+      ? await refundGenerationCosts(generationId, {
+          force: Boolean(result.rulesBlock?.length) || forceRefundEligible(result.attempts),
+        })
+      : false;
 
     return {
       error: null,

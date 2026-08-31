@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { acknowledgedPolicyWarning } from "@/lib/generations/refund-rules";
+import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { baselineIdentityReferences, resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
 import { resolvePresetBlocks } from "@/lib/generations/cinema-presets";
@@ -21,7 +21,6 @@ import {
   advanceGeneration,
   reapStaleJobs,
   refundGenerationCosts,
-  isProviderRejection,
   type AdvanceResult,
 } from "@/lib/generations/job-runner";
 import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
@@ -1720,18 +1719,70 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     return { error: message };
   }
 
-  const { error: updateError } = await createAdminClient()
-    .from("generations")
-    .update({
-      status: succeeded ? "succeeded" : "failed",
-      attempts: attempts.length,
-      result_url: resultUrl,
-      pipeline_log: attempts,
-    })
-    .eq("id", placeholder.id);
+  // The terminal write, hardened on two 2026-08-31 findings.
+  //
+  // STATUS GUARD: keyed on status='generating' like job-runner's finish(),
+  // so a row the person already stopped and had refunded cannot be
+  // resurrected to 'succeeded' by this late write — discardStoppedGeneration
+  // is wire-callable and the race was real.
+  //
+  // RETRIES: this one UPDATE is all that connects a paid, already-persisted
+  // PNG to its row. When it failed once (a pooler blip), the function gave
+  // up, the row sat at 'generating', the reaper later wrote it off as failed
+  // WITH a refund — and the rendered image became an orphan we paid OpenAI
+  // for. Three attempts with a short backoff before conceding.
+  let terminalWrite: { error: { message: string } | null; count: number | null } = {
+    error: { message: "not attempted" },
+    count: null,
+  };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error, count } = await createAdminClient()
+      .from("generations")
+      .update(
+        {
+          status: succeeded ? "succeeded" : "failed",
+          attempts: attempts.length,
+          result_url: resultUrl,
+          pipeline_log: attempts,
+        },
+        { count: "exact" },
+      )
+      .eq("id", placeholder.id)
+      .eq("status", "generating");
+    terminalWrite = { error: error ? { message: error.message } : null, count };
+    if (!error) break;
+    await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+  }
 
-  if (updateError) {
+  if (terminalWrite.error) {
+    console.error(
+      `inline terminal write failed 3x for ${placeholder.id}:`,
+      terminalWrite.error.message,
+    );
+    // Last resort: park the storage path on the row so the render is
+    // findable by support and the orphan sweep even though the status
+    // write keeps failing.
+    await createAdminClient()
+      .from("generations")
+      .update({ result_url: resultUrl })
+      .eq("id", placeholder.id)
+      .eq("status", "generating");
     return { error: "Finished, but couldn't save the result — try refreshing History in a moment." };
+  }
+
+  if (terminalWrite.count === 0) {
+    // Zero rows matched: the row went terminal underneath us (a Stop +
+    // discard while the pipeline ran). The discard already refunded;
+    // resurrecting it or re-running the success bookkeeping would re-charge
+    // a render the person was told was gone. Report it as the stop it was.
+    return {
+      error: null,
+      id: placeholder.id,
+      succeeded: false,
+      attempts,
+      finalPrompt,
+      resultUrl: null,
+    };
   }
 
   if (!succeeded) {
@@ -1749,9 +1800,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // chose to send it anyway (2026-08-30). Then the refusal is a decision
       // they made with the reason in front of them, not something that
       // happened to them, and the credit stands.
-      force:
-        Boolean(rulesBlock?.length) ||
-        (isProviderRejection(attempts) && !acknowledgedPolicyWarning(attempts)),
+      // forceRefundEligible is the single authority (refund-rules.ts) —
+      // this and job-runner's finish() used to assemble the same rule by
+      // hand and had drifted apart.
+      force: Boolean(rulesBlock?.length) || forceRefundEligible(attempts),
     });
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }
@@ -2741,16 +2793,23 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       }
 
       if (rowId) {
-        await createAdminClient()
+        // Same status guard as the single-render write and finish(): a row
+        // the person already stopped and had refunded must not be
+        // resurrected by this late write (2026-08-31).
+        const { count } = await createAdminClient()
           .from("generations")
-          .update({
-            status: succeeded ? "succeeded" : "failed",
-            attempts: attempts.length,
-            result_url: resultUrl,
-            pipeline_log: attempts,
-          })
-          .eq("id", rowId);
-        if (!succeeded) {
+          .update(
+            {
+              status: succeeded ? "succeeded" : "failed",
+              attempts: attempts.length,
+              result_url: resultUrl,
+              pipeline_log: attempts,
+            },
+            { count: "exact" },
+          )
+          .eq("id", rowId)
+          .eq("status", "generating");
+        if (!succeeded && count !== 0) {
           await refundGenerationCosts(rowId);
           await autoReportFailedGeneration(rowId, userData.user!.id, attempts);
         }

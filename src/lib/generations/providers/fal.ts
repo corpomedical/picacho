@@ -845,9 +845,17 @@ export async function checkQueuedJob(job: QueuedJob): Promise<QueuedJobState> {
 
   if (!res.ok) {
     const text = await res.text();
-    // 4xx here means the request id is gone or malformed — that won't heal, so
-    // treat it as terminal. 5xx is fal having a moment; let the next poll retry.
-    if (res.status >= 400 && res.status < 500) {
+    // Only 404/410 are terminal: the request id genuinely does not exist any
+    // more, and that won't heal. Everything else on a STATUS READ is
+    // transient and throws so the next poll retries — the old rule treated
+    // EVERY 4xx as "job lost", and production disproved it on 2026-08-25: a
+    // 403 "User is locked. Reason: Exhausted balance." A poll rate limit
+    // (429), an expired key (401), or an account lock (403) says nothing
+    // about the job, which fal may still be running and billing; writing it
+    // off terminally paid for a render nobody would ever collect. A status
+    // read is free to retry, and the reaper's absolute deadline is the real
+    // backstop for a job that is genuinely gone.
+    if (res.status === 404 || res.status === 410) {
       return {
         state: "failed",
         error: `fal.ai (${job.label}) lost track of this job (${res.status}): ${text.slice(0, 200)}`,

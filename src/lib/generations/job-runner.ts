@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { acknowledgedPolicyWarning, isProviderRejection } from "@/lib/generations/refund-rules";
+import { forceRefundEligible, isProviderRejection } from "@/lib/generations/refund-rules";
 import { createAdminClient } from "@/lib/supabase/server";
 import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import {
@@ -383,7 +383,13 @@ export async function refundGenerationCosts(
 
   // Admins are exempt, same as everywhere else — support and testing must
   // never be blocked by a customer-facing limit.
-  if (profile?.role !== "admin") {
+  // FORCE refunds are exempt from the daily ceiling (2026-08-31). The cap
+  // exists to bound refunds for failures that may have cost provider money;
+  // force is only ever set for classes that provably cost nothing (a rules
+  // block, a pre-render 4xx refusal). Capping those meant the 11th likeness
+  // refusal in a day kept a credit for a render ByteDance never performed —
+  // while the pricing page promised otherwise, unconditionally.
+  if (profile?.role !== "admin" && !opts?.force) {
     const cap = refundedFailureDailyCap((profile?.plan ?? "none") as PlanId);
     if ((forgivenToday ?? 0) >= cap) {
       console.warn("Refund withheld: daily refunded-failure cap reached", {
@@ -676,9 +682,8 @@ async function finish(
       // warned about and sent anyway keeps its credit. The push notification
       // below reads `refunded`, so it will correctly stop promising the
       // credits came back.
-      force:
-        isProviderRejection(outcome.attempts) &&
-        !acknowledgedPolicyWarning(outcome.attempts),
+      // The single authority — see refund-rules.ts.
+      force: forceRefundEligible(outcome.attempts),
     });
   }
 
@@ -988,7 +993,14 @@ export async function advanceGeneration(
     if (row.stage !== "video" && row.payload.videoUrl) {
       // Delivered silent because dialogue failed — give back the dialogue
       // surcharge the person was charged for a feature they didn't receive.
-      await refundDialogueSurcharge(generationId);
+      //
+      // AFTER finish, not before (2026-08-31): the refund is a
+      // compare-and-swap on the credit values, so it survives concurrency —
+      // but not SEQUENCE. When it ran first and finish() then threw on a
+      // transient DB error, the next advance re-entered this branch, read
+      // the post-refund values, and refunded the surcharge again, once per
+      // 90s lease until the write healed. finish() transitions the row
+      // exactly once, so anything after it runs exactly once.
       await finish(generationId, userId, {
         status: "succeeded",
         resultUrl: row.payload.videoUrl,
@@ -998,6 +1010,12 @@ export async function advanceGeneration(
           "speech",
         ),
       });
+      try {
+        await refundDialogueSurcharge(generationId);
+      } catch (refundErr) {
+        // The video shipped; a failed surcharge refund is loud, not fatal.
+        console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
+      }
       return { state: "succeeded", resultUrl: row.payload.videoUrl };
     }
 
@@ -1030,9 +1048,17 @@ export async function advanceGeneration(
   // during the RESULT-FETCH phase; see the comment there for why a transport
   // error mid-submit must stay terminal instead.
   let phase: "result-fetch" | "submit" = "result-fetch";
+  // The finished video's URL, hoisted so the CATCH can see it. It used to
+  // live only in the try block: when the TTS SUBMIT failed (a 429, a 30s
+  // timeout, an oversized dialogue line), stage was still "video" and
+  // payload.videoUrl unwritten — so the salvage branch below missed, the
+  // whole row was failed terminally, and a rendered, billed video was
+  // thrown away over a dialogue problem (2026-08-31 inspection).
+  let collectedVideoUrl: string | null = null;
   try {
     if (row.stage === "video") {
       const videoUrl = await fetchQueuedVideoUrl(jobHandle(row));
+      collectedVideoUrl = videoUrl;
       const wantsDialogue = Boolean(row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId);
 
       if (!wantsDialogue) {
@@ -1062,6 +1088,19 @@ export async function advanceGeneration(
             response_url: speech.responseUrl,
             cancel_url: speech.cancelUrl,
             payload: { ...row.payload, videoUrl },
+            // The billed moment: fal has delivered the video and the run
+            // continues into dialogue. This exact wording is what
+            // refund-rules' VIDEO_RENDERED matches — a later failure in the
+            // dialogue stages must not force-refund a render fal was paid
+            // for. ("Generated via" never appears on the queued lane.)
+            resume: {
+              ...row.resume,
+              attempts: appendStep(
+                row.resume.attempts ?? [],
+                "Rendered the video — generating the dialogue next.",
+                "generate",
+              ),
+            },
             updated_at: new Date().toISOString(),
             // Release the claim: the next stage is a different provider job and
             // its own advance must be able to claim it fresh.
@@ -1169,21 +1208,29 @@ export async function advanceGeneration(
     const message = err instanceof Error ? err.message : "Generation failed.";
 
     // Same rule as above: never discard a rendered video over a dialogue
-    // problem, even one that surfaces while fetching or submitting.
-    if (row.stage !== "video" && row.payload.videoUrl) {
+    // problem, even one that surfaces while fetching or submitting — and
+    // collectedVideoUrl covers the gap where the failure hit BEFORE the
+    // stage transition persisted the URL (the TTS submit itself).
+    const salvageUrl = row.payload.videoUrl || collectedVideoUrl;
+    if (salvageUrl && (row.stage !== "video" || collectedVideoUrl)) {
       // Delivered silent because dialogue failed — refund the dialogue
-      // surcharge (see the matching branch above).
-      await refundDialogueSurcharge(generationId);
+      // surcharge, AFTER finish for exactly-once (see the matching branch
+      // above for the sequential-retry double-refund this prevents).
       await finish(generationId, userId, {
         status: "succeeded",
-        resultUrl: row.payload.videoUrl,
+        resultUrl: salvageUrl,
         attempts: appendStep(
           row.resume.attempts ?? [],
           `${message} Showing the video without dialogue.`,
           "speech",
         ),
       });
-      return { state: "succeeded", resultUrl: row.payload.videoUrl };
+      try {
+        await refundDialogueSurcharge(generationId);
+      } catch (refundErr) {
+        console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
+      }
+      return { state: "succeeded", resultUrl: salvageUrl };
     }
 
     await finish(generationId, userId, {
@@ -1227,11 +1274,22 @@ export async function reapStaleJobs(userId: string): Promise<void> {
   const admin = createAdminClient();
   const cutoff = new Date(Date.now() - STALE_AFTER_MS).toISOString();
 
+  // Two ways in, because they catch different failures (2026-08-31):
+  //
+  //   1. Nobody has polled in a while — the original stale window.
+  //   2. The STAGE itself is older than any render could legitimately take,
+  //      regardless of polling. Without this, a tab left open on a wedged
+  //      render kept refreshing last_polled_at every few seconds, so the
+  //      absolute deadline below could never even be EVALUATED — the one
+  //      job most in need of the backstop (fal silently lost it, the person
+  //      is sitting there watching it) was the one job the backstop could
+  //      never see.
+  const absoluteCutoff = new Date(Date.now() - ABSOLUTE_JOB_TIMEOUT_MS).toISOString();
   const { data: stale } = await admin
     .from("generation_jobs")
     .select("*")
     .eq("user_id", userId)
-    .lt("last_polled_at", cutoff)
+    .or(`last_polled_at.lt.${cutoff},updated_at.lt.${absoluteCutoff}`)
     .limit(20)
     .returns<JobRow[]>();
 
