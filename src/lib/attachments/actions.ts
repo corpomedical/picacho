@@ -116,9 +116,21 @@ export async function uploadChatAttachment(formData: FormData): Promise<UploadRe
           // small and needs nothing publicly reachable.
           const sharp = (await import("sharp")).default;
           const small = await sharp(bytes)
+            // EXIF first — a sideways portrait is measurably harder to read.
             .rotate()
-            .resize(512, 512, { fit: "inside", withoutEnlargement: true })
-            .jpeg({ quality: 80 })
+            // Flatten onto WHITE before the JPEG conversion. Without this a
+            // transparent PNG composites onto BLACK, which is precisely the
+            // shape of the uploads this check exists for: cut-out mascots and
+            // logos become a dark silhouette on a dark field.
+            .flatten({ background: "#ffffff" })
+            // 768, not 512: what separates skin texture from CGI shading, and
+            // a painting's brushwork from a photograph, is detail that 512px
+            // throws away. This is the only call made, so the pixels are
+            // worth spending here.
+            .resize(768, 768, { fit: "inside", withoutEnlargement: true })
+            // 4:4:4 keeps line-art edges crisp — the other thing that tells a
+            // drawing from a photograph at small sizes.
+            .jpeg({ quality: 82, chromaSubsampling: "4:4:4" })
             .toBuffer();
           return await classifyRenderStyle(`data:image/jpeg;base64,${small.toString("base64")}`);
         } catch {
