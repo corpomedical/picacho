@@ -52,6 +52,29 @@ const QUESTION_OPENERS = [
   // Conversational openers that carry no question mark and no question word.
   // Every one of these was a real miss found in review (2026-08-31).
   "wondering", "curious", "thoughts", "unsure",
+  // THE OTHER THREE LANGUAGES THE APP SHIPS IN. Found in the 2026-08-31 site
+  // inspection: the whole module was English-only, so "por qué falló mi
+  // video" — a question in Spanish, no question mark — fell straight through
+  // to "render" and spent a credit on a video of the sentence. The app sells
+  // itself in es/pt/it; the classifier has to read what the composer invites.
+  // Inverted question marks are handled in classifyMessage directly.
+  //
+  // es
+  "qué", "que", "por qué", "por que", "cómo", "como", "cuál", "cual", "cuáles", "cuándo",
+  "cuando", "dónde", "donde", "quién", "quien", "cuánto", "cuanto", "cuánta",
+  "puedes", "podrías", "podrias", "deberías", "deberias", "explícame",
+  "explicame", "explica", "dime", "ayuda", "ayúdame", "ayudame", "recomienda",
+  "sugiere", "compara",
+  // pt
+  "porque", "por que", "porquê", "o que", "qual", "quais", "quando", "onde",
+  "quem", "quanto", "quanta", "pode", "poderia", "podes", "deveria", "explique",
+  "explica-me", "me explica", "diga", "diz-me", "me diz", "ajuda", "ajude",
+  "recomende", "recomenda", "sugira", "sugere",
+  // it
+  "cosa", "che", "perché", "perche", "come", "quale", "quali", "quando",
+  "dove", "chi", "quanto", "quanta", "puoi", "potresti", "dovrei", "dovresti",
+  "spiegami", "spiega", "dimmi", "aiuto", "aiutami", "consigliami", "consiglia",
+  "suggerisci", "confronta",
 ];
 
 // Multi-word openers, tested after the filler strip below. Kept separate from
@@ -81,6 +104,11 @@ const LEADING_FILLER = [
   "please", "so", "ok", "okay", "hmm", "hey", "hi", "also", "and", "but",
   "just", "actually", "sorry", "um", "uh", "well", "right", "then", "now",
   "quick question", "one more thing", "btw", "by the way",
+  // es / pt / it politeness in front of a question must not hide it either —
+  // "hola por qué falló" is the same hole "please explain why" was.
+  "hola", "bueno", "pues", "oye", "vale", "perdón", "perdon", "gracias",
+  "olá", "ola", "então", "entao", "bom", "desculpa", "obrigado", "obrigada",
+  "ciao", "allora", "beh", "scusa", "grazie", "ecco",
 ];
 
 // Phrases that address a person rather than describe a picture. These catch
@@ -89,6 +117,12 @@ const ADDRESSED_PHRASES = [
   "can you", "could you", "would you", "will you", "do you", "did you",
   "are you", "you think", "your opinion", "your advice", "let me know",
   "tell me", "explain to me", "walk me through", "what about",
+  // es / pt / it — the polite second-person forms, same role as above.
+  "me puedes", "me podrías", "me podrias", "qué opinas", "que opinas",
+  "qué te parece", "que te parece", "me dices", "me recomiendas",
+  "você pode", "voce pode", "o que acha", "o que você acha", "me diga",
+  "pode me", "poderia me", "mi puoi", "mi potresti", "cosa ne pensi",
+  "che ne pensi", "mi dici", "mi consigli", "secondo te",
 ];
 
 // A short conversational reply is never a shot. Without this, "thanks" is a
@@ -97,6 +131,13 @@ const SMALL_TALK = [
   "hi", "hello", "hey", "yo", "thanks", "thank you", "ta", "ok", "okay", "k",
   "yes", "no", "yeah", "nope", "cool", "nice", "great", "perfect", "got it",
   "sure", "please", "sorry", "good morning", "good evening", "bye",
+  // es / pt / it
+  "hola", "gracias", "muchas gracias", "vale", "sí", "si", "claro", "genial",
+  "perfecto", "buenos días", "buenos dias", "buenas", "adiós", "adios",
+  "olá", "ola", "obrigado", "obrigada", "sim", "não", "nao", "legal",
+  "ótimo", "otimo", "bom dia", "boa noite", "tchau",
+  "ciao", "grazie", "mille grazie", "va bene", "certo", "ottimo", "perfetto",
+  "buongiorno", "buonasera", "arrivederci",
 ];
 
 // Polite wrappers that can be peeled off to recover the shot underneath.
@@ -158,6 +199,8 @@ export function classifyMessage(text: string): IntentReading {
 
   const asks =
     raw.includes("?") ||
+    // Spanish opens questions with an inverted mark; it alone settles it.
+    raw.includes("\u00bf") ||
     SMALL_TALK.includes(lower.replace(/[.!]+$/, "")) ||
     QUESTION_OPENERS.some((w) => startsWithWord(probe, w)) ||
     QUESTION_PHRASE_OPENERS.some((w) => startsWithWord(probe, w)) ||

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Custom play/pause + mute/unmute for the homepage's real-result showcase
 // video (see app/page.tsx) — native browser <video controls> was replaced
@@ -69,7 +69,7 @@ export function ShowcaseVideoPlayer({
 }) {
   const showMuteControl = Boolean(muteLabel && unmuteLabel);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [playing, setPlaying] = useState(true);
+  const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
 
   function togglePlay() {
@@ -84,6 +84,22 @@ export function ShowcaseVideoPlayer({
     }
   }
 
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) {
+          video.play().catch(() => {});
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "100% 0px" },
+    );
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, []);
+
   function toggleMute() {
     const video = videoRef.current;
     if (!video) return;
@@ -97,11 +113,19 @@ export function ShowcaseVideoPlayer({
         ref={videoRef}
         src={src}
         poster={poster}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
         className="aspect-square w-full object-cover"
-        autoPlay
+        // No autoPlay and preload="none": these players sit below the fold,
+        // and on load the homepage was downloading every one of them —
+        // ~28MB before the visitor had scrolled an inch (2026-08-31
+        // inspection). The observer effect below starts playback (and the
+        // download) one viewport before the player scrolls in; the poster
+        // covers the gap.
         muted
         loop
         playsInline
+        preload="none"
         onClick={togglePlay}
       />
       <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">

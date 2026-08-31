@@ -2870,6 +2870,14 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             propImageUrl: anglePropImageUrl,
             durationSeconds: videoDurationSeconds,
             aspectRatio: videoAspectRatio ?? undefined,
+            // Priced above (resolutionCreditWeight sets creditWeight per
+            // angle) — so it must also RIDE. Found in the 2026-08-31 site
+            // inspection: the surcharge was charged N times over while the
+            // parameter itself was dropped here, so a 3-angle 8s 4K batch
+            // paid 54 credits for three renders fal delivered at its 720p
+            // default. Charging for a resolution and not sending it is the
+            // exact drift the single path's videoOptions already prevents.
+            resolution: videoResolution ?? undefined,
             generateNativeAudio: true,
           }),
         };

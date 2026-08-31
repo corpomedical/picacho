@@ -242,7 +242,7 @@ const en = {
         },
         {
           q: "Do failed generations use up my allowance?",
-          a: "If we block the request, or a provider refuses it before rendering, it never counts against your monthly generations. If a render fails after it has started, contact us and we'll review it and put the credit back where the fault was ours.",
+          a: "If we block the request, or a provider refuses it before rendering, it never counts against your monthly generations — unless we warned you about that exact refusal before you sent and you chose to send anyway. If a render fails after it has started, contact us and we'll review it and put the credit back where the fault was ours.",
         },
         {
           q: "Is there a free trial?",
@@ -293,7 +293,7 @@ const en = {
       picFormat: "Scene-based character images and video: action shots, multi-angle takes, multi-character scenes, lip-synced dialogue.",
       picScoring: "Every image is compared against the identity photo by a vision model, and the match score is printed under it.",
       picFailures: "When a provider is going to refuse a render, we tell you before you spend rather than after — and a refusal you were not warned about never uses your credits.",
-      picEntry: "A free generation every day, no card required. Paid plans from $9/mo (Basic, 12 credits) to $499/mo (Elite, 1,000 credits) — EU visitors are billed the same numbers in euros.",
+      picEntry: "A free generation every day, no card required. Paid plans from $9/mo (Basic, 12 credits) to $499/mo (Elite, 750 credits) — EU visitors are billed the same numbers in euros.",
       picCost: "A standard 5-second clip is 1 credit — about $0.50–0.75 depending on plan. Premium models cost more; the exact cost is always shown before you confirm.",
       picWatermark: "No watermarks on any plan, free trial included.",
       picApi: "Included on Elite ($499/mo) — generate from your own software.",
@@ -1218,7 +1218,7 @@ const en = {
       name: "Elite",
       badge: "",
       features: [
-        "600 credits ≈ 600 standard videos or 300 premium ones / month",
+        "750 credits ≈ 750 standard videos or 375 premium ones / month",
         "Everything in Studio",
         "API access — generate from your own software",
       ],

@@ -220,7 +220,7 @@ const pt = {
         },
         {
           q: "Gerações com falha consomem minha cota?",
-          a: "Se bloquearmos a solicitação, ou um provedor a recusar antes de renderizar, ela nunca conta nas suas gerações mensais. Se um render falhar depois de começar, fale com a gente: revisamos e devolvemos o crédito se a falha foi nossa.",
+          a: "Se bloquearmos o pedido, ou um provedor o recusar antes de renderizar, nunca conta contra suas gerações mensais — a menos que tenhamos avisado sobre essa recusa exata antes do envio e você tenha decidido enviar mesmo assim. Se um render falhar depois de começar, fale conosco: revisamos e devolvemos o crédito se a falha foi nossa.",
         },
         {
           q: "Existe teste grátis?",
@@ -256,7 +256,7 @@ const pt = {
       picFormat: "Imagens e vídeos de personagem baseados em cenas: cenas de ação, tomadas multi-ângulo, cenas com vários personagens e diálogo com sincronização labial.",
       picScoring: "Um modelo de visão compara cada imagem com a foto de identidade, e a pontuação de correspondência é impressa sob a imagem.",
       picFailures: "Quando um provedor vai recusar um render, avisamos antes de você gastar, e não depois — e uma recusa sobre a qual não avisamos nunca consome seus créditos.",
-      picEntry: "Uma geração grátis por dia, sem cartão. Planos pagos de $9/mês (Basic, 12 créditos) a $499/mês (Elite, 1.000 créditos) — visitantes da UE pagam os mesmos números em euros.",
+      picEntry: "Uma geração grátis por dia, sem cartão. Planos pagos de $9/mês (Basic, 12 créditos) a $499/mês (Elite, 750 créditos) — visitantes da UE pagam os mesmos números em euros.",
       picCost: "Um clipe padrão de 5 segundos custa 1 crédito — cerca de $0.50–0.75 dependendo do plano. Modelos premium custam mais; o custo exato é sempre mostrado antes de confirmar.",
       picWatermark: "Sem marca d'água em nenhum plano, incluindo o teste grátis.",
       picApi: "Incluído no Elite ($499/mês) — gere a partir do seu próprio software.",
@@ -1148,7 +1148,7 @@ const pt = {
       name: "Elite",
       badge: "",
       features: [
-        "600 créditos ≈ 600 vídeos padrão ou 300 premium / mês",
+        "750 créditos ≈ 750 vídeos padrão ou 375 premium / mês",
         "Tudo do Studio",
         "Acesso à API — gere a partir do seu próprio software",
       ],

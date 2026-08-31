@@ -220,7 +220,7 @@ const es = {
         },
         {
           q: "¿Las generaciones fallidas consumen mi cuota?",
-          a: "Si bloqueamos la solicitud, o un proveedor la rechaza antes de renderizar, nunca cuenta contra tus generaciones mensuales. Si un render falla una vez empezado, escríbenos y lo revisaremos y te devolveremos el crédito si el fallo fue nuestro.",
+          a: "Si bloqueamos la solicitud, o un proveedor la rechaza antes de renderizar, nunca cuenta contra tus generaciones mensuales — salvo que te hayamos avisado de ese rechazo exacto antes de enviar y decidieras enviar igualmente. Si un render falla después de empezar, escríbenos: lo revisamos y te devolvemos el crédito si la culpa fue nuestra.",
         },
         {
           q: "¿Hay prueba gratuita?",
@@ -256,7 +256,7 @@ const es = {
       picFormat: "Imágenes y vídeo de personaje basados en escenas: tomas de acción, planos multi-ángulo, escenas con varios personajes y diálogo con sincronización labial.",
       picScoring: "Un modelo de visión compara cada imagen con la foto de identidad, y la puntuación de coincidencia se imprime bajo la imagen.",
       picFailures: "Cuando un proveedor va a rechazar un render, te lo decimos antes de gastar y no después — y un rechazo del que no te avisamos nunca consume tus créditos.",
-      picEntry: "Una generación gratis cada día, sin tarjeta. Planes de pago desde $9/mes (Basic, 12 créditos) hasta $499/mes (Elite, 1.000 créditos) — a los visitantes de la UE se les cobran las mismas cifras en euros.",
+      picEntry: "Una generación gratis cada día, sin tarjeta. Planes de pago desde $9/mes (Basic, 12 créditos) hasta $499/mes (Elite, 750 créditos) — a los visitantes de la UE se les cobran las mismas cifras en euros.",
       picCost: "Un clip estándar de 5 segundos cuesta 1 crédito — entre $0.50 y $0.75 según el plan. Los modelos premium cuestan más; el coste exacto se muestra siempre antes de confirmar.",
       picWatermark: "Sin marcas de agua en ningún plan, prueba gratuita incluida.",
       picApi: "Incluido en Elite ($499/mes) — genera desde tu propio software.",
@@ -1148,7 +1148,7 @@ const es = {
       name: "Elite",
       badge: "",
       features: [
-        "600 créditos ≈ 600 vídeos estándar o 300 premium / mes",
+        "750 créditos ≈ 750 vídeos estándar o 375 premium / mes",
         "Todo lo de Studio",
         "Acceso a la API — genera desde tu propio software",
       ],

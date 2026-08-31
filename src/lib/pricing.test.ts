@@ -47,3 +47,35 @@ describe("annual pricing stays honest", () => {
     }
   });
 });
+
+// The i18n copy is the SECOND place credit numbers live, and it is the one
+// the pricing page actually renders — pricing-card.tsx reads its feature
+// bullets from t.pricingTiers, not from PRICING_TIERS.features. The 5fcff70
+// Elite repricing proved the gap: pricing.ts and plans.ts moved to 750 while
+// the live page kept selling "600 credits" and the compare pages "1,000
+// credits" in four languages, for two days, on a live site. This binds every
+// locale's copy to the server's number so a repricing that misses the words
+// fails here instead of shipping as false advertising.
+describe("the i18n copy agrees with the meter", () => {
+  // Static imports would break the no-config vitest run if these ever gain
+  // "@/" imports; today they are import-free, and requiring them lazily keeps
+  // this test from being the thing that couples them.
+  const locales = ["en", "es", "pt", "it"] as const;
+
+  it("every locale's Elite bullet and compare-page entry say the granted number", async () => {
+    for (const loc of locales) {
+      const messages = (await import(`./i18n/messages/${loc}`)).default as {
+        pricingTiers: Record<string, { features: string[] }>;
+        marketing: { compare: { picEntry: string } };
+      };
+      const bullets = messages.pricingTiers.elite.features.join(" ");
+      expect(bullets, `${loc} Elite bullet`).toContain(String(PLAN_LIMITS.elite));
+      expect(bullets, `${loc} Elite bullet still carries an old number`).not.toMatch(
+        /\b600\b|1[.,]000/,
+      );
+      expect(messages.marketing.compare.picEntry, `${loc} compare entry`).toContain(
+        String(PLAN_LIMITS.elite),
+      );
+    }
+  });
+});

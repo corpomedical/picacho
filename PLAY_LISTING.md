@@ -44,7 +44,7 @@ THE PROOF
 Most tools hope the face carries over. Picacho checks. A vision model compares every result against your character's identity photo and prints the match score under the image — so you see the number before your audience does.
 
 THE PIPELINE
-Every generation runs the full pipeline: one AI model drafts your prompt, a second reviews it against your character's rulebook, then the result is generated and validated before it reaches you. Failed attempts retry automatically — and failed generations never use your credits.
+Every generation runs the full pipeline: one AI model drafts your prompt, a second reviews it against your character's rulebook, then the result is generated and validated before it reaches you. Failed attempts retry automatically — and when we block a request, or a provider refuses it before rendering, it never uses your credits.
 
 BRAND RULES
 Give your character a rulebook — what it must always, or must never, appear with — and every prompt is drafted and reviewed against it before anything is generated. Your mascot stays on-brand everywhere it shows up.

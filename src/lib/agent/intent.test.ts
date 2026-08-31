@@ -188,3 +188,57 @@ describe("the Render this chip round-trips (review 2026-08-31)", () => {
     }
   });
 });
+
+// The classifier was English-only while the app ships in four languages
+// (found in the 2026-08-31 site inspection). A question typed in Spanish
+// with no question mark fell through to "render" and spent a credit on a
+// video of the sentence — the exact expensive direction the module's header
+// says the whole design exists to prevent, for a third of the user base.
+describe("the app's other three languages", () => {
+  const questions = [
+    // es — no question marks on purpose; "¿" alone would settle it.
+    "por qué falló mi video",
+    "cómo mejoro la puntuación",
+    "qué modelo es más barato",
+    "me puedes explicar los créditos",
+    "hola por qué falló mi video",
+    // pt
+    "por que meu vídeo falhou",
+    "como faço para melhorar a nota",
+    "qual modelo é mais barato",
+    "você pode explicar os créditos",
+    // it
+    "perché il mio video è fallito",
+    "come miglioro il punteggio",
+    "quale modello costa meno",
+    "mi puoi spiegare i crediti",
+  ];
+  for (const q of questions) {
+    it(`asks: "${q}"`, () => {
+      expect(classifyMessage(q).intent).toBe("ask");
+    });
+  }
+
+  it("the inverted question mark settles it alone", () => {
+    expect(classifyMessage("¿esto va a funcionar con Eva?").intent).toBe("ask");
+    expect(classifyMessage("¿funcionará").intent).toBe("ask");
+  });
+
+  it("shots in those languages still render", () => {
+    const shots = [
+      "Eva caminando por un mercado al amanecer",
+      "Adam corre sotto la pioggia, camera a mano",
+      "Eva caminha pela praia ao pôr do sol",
+      "primer plano de Eva sonriendo",
+    ];
+    for (const s of shots) {
+      expect(classifyMessage(s).intent, s).toBe("render");
+    }
+  });
+
+  it("small talk in those languages does not render", () => {
+    for (const s of ["gracias", "obrigado", "grazie", "hola", "ciao", "perfecto"]) {
+      expect(classifyMessage(s).intent, s).toBe("ask");
+    }
+  });
+});

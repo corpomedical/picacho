@@ -16,7 +16,7 @@ import { formatMsg } from "@/lib/i18n/format";
 // /api/showcase/<i> images the hero grid already loads.
 
 export type TryItWidgetEntry = {
-  /** Showcase index — the image is `/api/showcase/${index}`. */
+  /** Showcase index — the image is `/api/showcase/${index}?size=full`. */
   index: number;
   /** Real prompt_input text (whitespace-trimmed). Clamped visually; full text in title. */
   prompt: string;
