@@ -718,6 +718,7 @@ const es = {
     retryOnSeedance2: "Reintentar en Seedance 2.0 — acepta personas fotorrealistas",
     generateAnyway: "Generar igualmente — omitir mis reglas por esta vez",
     seedance25Warn: "Seedance 2.5 rechaza personas fotorrealistas — si {name} es fotorrealista, este render fallará y aun así usará créditos. Los personajes fotorrealistas van en Seedance 2.0.",
+    seedance25WarnNoCharacter: "Seedance 2.5 rechaza personas fotorrealistas: si la persona de tu foto lo es, esta generación fallará y aun así gastará créditos. Las caras fotorrealistas van en Seedance 2.0.",
     seedance25Switch: "Cambiar a Seedance 2.0",
     issueWhyLabel: "¿Por qué ocurre esto?",
     seedance25Why: "Es la norma de ByteDance, no la nuestra. Seedance 2.5 aplica su propia comprobación de parecido y rechaza todo lo que parezca una persona real — incluidas las caras generadas por IA, porque el filtro no las distingue. Lo verificamos con renders de prueba reales: la misma cara fue rechazada por 2.5 y funcionó en Seedance 2.0, mientras que un personaje de dibujos pasó en ambas. Te avisamos antes de gastar en lugar de dejar que lo descubras con un render fallido — pero si envías igualmente, el crédito se consume.",

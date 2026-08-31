@@ -395,7 +395,24 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
   })();
 
-  const attachmentReferenceUrl = attachmentRoles
+  // The identity slot from an attachment. Two ways in:
+  //
+  //   1. role "identity" — the explicit legacy contract, still honoured.
+  //   2. role "reference" WHEN NO CHARACTER IS SELECTED (2026-08-31,
+  //      operator: "we decided the model should follow prompt").
+  //
+  // (2) is the server half of the send-plan change. The 2026-08-25 decision
+  // made attachments neutral, with the user's prompt saying what they are
+  // for — but the anchor only ever looked for role "identity", so the one
+  // role every client actually sends could never become a face. Attaching a
+  // portrait with no character selected produced a blocked send on the
+  // client and, if it had got through, a faceless render here.
+  //
+  // Deliberately conditioned on there being no character: when one IS
+  // selected its saved photo stays the face and the attachment stays a
+  // neutral extra image, exactly as before. Resolved further down, where the
+  // character row has been loaded.
+  const identityRoleUrl = attachmentRoles
     ? (attachmentRoles.find((a) => a.role === "identity")?.url ?? "")
     : legacyAttachmentUrl;
   const outfitAttachmentUrl = attachmentRoles?.find((a) => a.role === "outfit")?.url ?? "";
@@ -498,6 +515,18 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (characterId && (characterQuery.error || !character)) {
     return { error: "Couldn't find that character." };
   }
+
+  // The identity anchor, resolved now that we know whether a character was
+  // selected — see identityRoleUrl above for the two ways in. With NO
+  // character, a neutral "reference" attachment becomes the face, because
+  // the prompt is what says who it is. With one, the character's saved photo
+  // stays the face and the attachment stays a neutral extra image.
+  //
+  // Note the guard further down already promised this in its own error text
+  // — "add one to this character, ATTACH A PHOTO TO THIS MESSAGE, or pick a
+  // different model" — so this restores behaviour the server said it had.
+  const attachmentReferenceUrl =
+    identityRoleUrl || (character ? "" : referenceAttachmentUrl);
 
   // Fetch + verify every companion character before spending anything — each
   // id must resolve to a real character actually owned by this account (not
@@ -1389,7 +1418,15 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // lanes best-effort — a vision hiccup never blocks the render.
       let propImageUrl: string | null = null;
       let propDescription: string | null = null;
-      const neutralUrl = referenceAttachmentUrl || propAttachmentUrl;
+      // When the neutral attachment was promoted to the identity anchor
+      // (no character selected — see attachmentReferenceUrl above), it must
+      // not ALSO ride this lane: the same photo would reach the model twice,
+      // once as the face and once as an extra image, spending part of the
+      // model's image budget to say the same thing. Mirrors the send plan's
+      // own "one photo, one slot" rule.
+      const referencePromoted =
+        Boolean(referenceAttachmentUrl) && referenceAttachmentUrl === attachmentReferenceUrl;
+      const neutralUrl = (referencePromoted ? "" : referenceAttachmentUrl) || propAttachmentUrl;
       if (neutralUrl && !wantsMultiCharacter && !storyboardShots && !videoReferenceImageUrls) {
         const propTakesPhoto =
           contentType === "image"

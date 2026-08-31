@@ -775,6 +775,7 @@ const en = {
     retryOnSeedance2: "Retry on Seedance 2.0 — it accepts photoreal people",
     generateAnyway: "Generate anyway — skip my rules this once",
     seedance25Warn: "Seedance 2.5 refuses photoreal people — if {name} is photoreal, this render will fail and still use credits. Photoreal characters belong on Seedance 2.0.",
+    seedance25WarnNoCharacter: "Seedance 2.5 refuses photoreal people — if the person in your photo is photoreal, this render will fail and still use credits. Photoreal faces belong on Seedance 2.0.",
     seedance25Switch: "Switch to Seedance 2.0",
     issueWhyLabel: "Why does this happen?",
     seedance25Why: "This is ByteDance's rule, not ours. Seedance 2.5 runs its own likeness check and refuses anything that reads as a real person — including AI-generated faces, because the filter cannot tell them apart. We verified it with live test renders: the same face was refused by 2.5 and generated fine on Seedance 2.0, while a cartoon character passed on both. We warn you before you spend rather than letting you find out from a failed render — but if you send anyway, the credit is used.",

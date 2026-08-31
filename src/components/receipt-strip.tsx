@@ -97,7 +97,12 @@ export function issueMessage(
     case "DIALOGUE_NEEDS_VOICE":
       return g.issueDialogueVoice;
     case "SEEDANCE25_PHOTOREAL":
-      return formatMsg(g.seedance25Warn, { name });
+      // The face can now arrive as an attachment with no character behind it
+      // (2026-08-31), and this warning used to interpolate a name that does
+      // not exist in that case — it read "if  is photoreal".
+      return name
+        ? formatMsg(g.seedance25Warn, { name })
+        : g.seedance25WarnNoCharacter;
     case "REF_ASPECT_OUT_OF_RANGE":
       return g.referenceAspectError;
     case "MODEL_CANNOT_MULTI_PERSON":

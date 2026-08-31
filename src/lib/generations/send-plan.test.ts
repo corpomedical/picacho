@@ -485,36 +485,84 @@ describe("identity.max — how many photos actually ride", () => {
 // These pin the two halves shut: the resolver must put a plain attachment in
 // the reference slot and never the scene slot, and the copy must not name a
 // slot the resolver did not produce.
-describe("a characterless send with an attached photo (2026-08-31 report)", () => {
+describe("a characterless send with an attached photo (2026-08-31)", () => {
+  // "seedance" is 2.5 — the model in the operator's screenshot, and the one
+  // whose likeness check refuses real faces. ("seedance-2" is 2.0.)
   const attached: ResolveInput = {
     ...base,
-    modelId: "seedance-2",
+    modelId: "seedance",
     character: null,
     attachments: [{ id: "a1", isImage: true, role: "reference" }],
   };
 
-  it("puts the photo in the reference slot, never the scene slot", () => {
+  it("uses the photo as the face — the model follows the prompt", () => {
+    // The operator's decision: an attachment is neutral and the PROMPT says
+    // what it is for, so with no character to take a face from, the attached
+    // photo IS the face. Previously this send was blocked outright.
     const plan = resolveSendPlan(attached);
-    const slots = plan.entries.map((e) => e.slot);
-    expect(slots).toContain("reference");
-    expect(slots).not.toContain("scene");
+    const identity = plan.entries.find((e) => e.slot === "identity");
+    expect(identity?.source).toBe("attachment");
+    expect(identity?.consumption).toBe("native");
   });
 
-  it("still asks for a character, because the face cannot come from an attachment", () => {
-    // The block itself was never the bug — only the sentence explaining it.
-    expect(resolveSendPlan(attached).issues.map((i) => i.code)).toContain(
+  it("no longer demands a character for a send that has a face in it", () => {
+    expect(resolveSendPlan(attached).issues.map((i) => i.code)).not.toContain(
       "NEEDS_REFERENCE_PHOTO",
     );
   });
 
-  it("cannot reach the scene slot from anything a current client sends", () => {
-    // Every send site hardcodes role "reference"; "scene" is only accepted
-    // from transitional clients that no longer exist. If a future change
-    // makes the scene lane reachable again, this fails and the copy that
-    // describes it has to be revisited at the same time.
+  it("charges the one photo to one slot, not two", () => {
+    // Promoted to identity, so it must not ALSO be listed as a neutral
+    // reference — that would have the receipt describe one upload twice.
+    const slots = resolveSendPlan(attached).entries.map((e) => e.slot);
+    expect(slots.filter((x) => x === "identity" || x === "reference")).toEqual(["identity"]);
+  });
+
+  it("still warns that Seedance 2.5 refuses real faces", () => {
+    // The newly-opened lane must not create a coverage gap in the fence: an
+    // attached face carries no stored style judgement, so it gets the same
+    // assumption as a character with photos and no judgement.
+    expect(resolveSendPlan(attached).issues.map((i) => i.code)).toContain(
+      "SEEDANCE25_PHOTOREAL",
+    );
+  });
+
+  it("leaves the character path exactly as it was", () => {
+    // With a character selected, the character is still the face and the
+    // attachment is still a neutral extra. This is the well-covered path and
+    // the decision did not touch it.
+    const plan = resolveSendPlan({ ...attached, character: base.character });
+    const identity = plan.entries.find((e) => e.slot === "identity");
+    expect(identity?.source).not.toBe("attachment");
+    expect(plan.entries.map((e) => e.slot)).toContain("reference");
+  });
+
+  it("never reaches the scene slot from anything a current client sends", () => {
+    // The word "scene" came from one stale string, not a classification —
+    // see the copy fix in the same commit. If a future change makes the
+    // scene lane reachable again, the copy describing it must be revisited.
     for (const role of ["reference", undefined] as const) {
       const plan = resolveSendPlan({ ...attached, attachments: [{ id: "a1", isImage: true, role }] });
       expect(plan.entries.map((e) => e.slot)).not.toContain("scene");
     }
+  });
+});
+
+// The empty-name bug the new lane exposed: SEEDANCE25_PHOTOREAL used to
+// interpolate the character's name unconditionally, and with the face now
+// arriving as an attachment there is no name — it read "if  is photoreal".
+// The plan still has to hand the renderer an empty name here, so the copy
+// picker branches on it; this pins the plan half of that contract.
+describe("the Seedance warning without a character", () => {
+  it("carries no name to interpolate", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      modelId: "seedance",
+      character: null,
+      attachments: [{ id: "a1", isImage: true, role: "reference" }],
+    });
+    const warn = plan.issues.find((i) => i.code === "SEEDANCE25_PHOTOREAL");
+    expect(warn).toBeTruthy();
+    expect(warn?.params?.name || "").toBe("");
   });
 });

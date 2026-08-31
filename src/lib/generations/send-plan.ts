@@ -398,6 +398,25 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   const sceneAttachment = input.attachments.find((a) => a.isImage && a.role === "scene");
   const propAttachment = input.attachments.find((a) => a.isImage && a.role === "prop");
   const referenceAttachment = input.attachments.find((a) => a.isImage && a.role === "reference");
+  // THE MODEL FOLLOWS THE PROMPT (operator, 2026-08-31).
+  //
+  // The 2026-08-25 decision made every attachment a NEUTRAL reference whose
+  // meaning comes from the user's prompt. The identity ladder below was
+  // never updated to match, so the one role that decision created was the
+  // one role that could not supply a face — attach a portrait with no
+  // character selected and the send was blocked, telling you to pick a
+  // character you might not have. That is the classifier deciding for you
+  // again, only with a hardcoded answer instead of a model's.
+  //
+  // So a neutral attachment now stands in for identity — but ONLY when
+  // nothing else can supply one. With a character selected, the character's
+  // own photo is still the face and the attachment stays a neutral extra:
+  // that path works, is well covered, and nobody asked to change it.
+  const identityFromSaved =
+    (input.anchorPhotoPicked && hasSavedPhotos) ||
+    (hasSavedPhotos && caps != null && caps.identity.mechanism !== "none");
+  const referenceAsIdentity =
+    !firstImageAttachment && !identityFromSaved && referenceAttachment ? referenceAttachment : undefined;
   const advanced = input.contentType === "video" ? input.advancedMode : "none";
   const isMulti = input.companionsCount > 0;
 
@@ -447,6 +466,13 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
         consumption: "native",
         noteCode: hasSavedPhotos ? "REPLACES_SAVED_FACE" : undefined,
         label: characterName || undefined,
+      });
+    } else if (referenceAsIdentity) {
+      // Your photo, your prompt, no character required.
+      entries.push({
+        slot: "identity",
+        source: "attachment",
+        consumption: "native",
       });
     } else if (input.anchorPhotoPicked && hasSavedPhotos) {
       entries.push({ slot: "identity", source: "gallery-pick", consumption: "native", label: characterName });
@@ -539,7 +565,10 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
   // GPT), and is vision-described into the prompt elsewhere — in BOTH cases
   // the user's own prompt says what to do with it. Identity always comes
   // from the character, never from a reference attachment.
-  if (referenceAttachment && advanced === "none") {
+  // Skipped when this same photo was promoted to identity above: it is the
+  // face now, and listing it twice would have the receipt charge one
+  // attachment to two slots.
+  if (referenceAttachment && !referenceAsIdentity && advanced === "none") {
     const nativeLane = Boolean(caps?.outfitImage) && !input.storyboardShotsActive;
     entries.push({
       slot: "reference",
@@ -614,7 +643,14 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
     !isMulti
   ) {
     const photorealKnown = character?.photoreal === true;
-    const heuristic = character?.photoreal == null && hasSavedPhotos;
+    // Same "never leave a coverage gap" rule, extended to the lane opened
+    // above: a face that arrived as an attachment has no stored style
+    // judgement at all, so it falls to the same assumption a character with
+    // photos and no judgement gets — assume a real person, and warn. Without
+    // this, the newly-unblocked send would walk into a ByteDance refusal
+    // with nothing on screen having mentioned it.
+    const heuristic =
+      (character?.photoreal == null && hasSavedPhotos) || Boolean(referenceAsIdentity);
     if (photorealKnown || heuristic) {
       issues.push({
         severity: "warn",
