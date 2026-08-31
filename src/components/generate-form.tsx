@@ -42,6 +42,7 @@ import { createPortal } from "react-dom";
 import {
   storyboardFrameExtraCredits,
   continuationExtraCredits,
+  getDialogueCreditWeight,
 } from "@/lib/generations/providers/video-models";
 import {
   reserveChatAttachmentPath,
@@ -6195,7 +6196,10 @@ function GenerateFormInner({
                   {dialogueText.trim().length > 0 && (
                     <p className="mt-1 font-numeral text-[11px] tabular-nums text-atelier-accent">
                       {formatMsg(g.dialogueCreditNote, {
-                        n: Math.max(1, Math.ceil(videoDurationSeconds / 5)),
+                        // The real function, not a re-typed divisor — the
+                        // hardcoded /5 here kept quoting the old price the
+                        // day the rate changed (2026-08-31).
+                        n: getDialogueCreditWeight(videoDurationSeconds),
                       })}
                     </p>
                   )}

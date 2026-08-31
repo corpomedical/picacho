@@ -4,6 +4,9 @@ import {
   KLING_STORYBOARD_PER_SECOND_USD,
   COST_BASIS_USD_PER_CREDIT,
   pricingAudit,
+  getDialogueCreditWeight,
+  SYNC_LIPSYNC_PER_SECOND_USD,
+  DIALOGUE_TTS_ALLOWANCE_USD,
 } from "./providers/video-models";
 
 // The start/end-frame lane renders on fal's v2.1 pro endpoint ($0.49/5s,
@@ -32,5 +35,23 @@ describe("storyboardFrameExtraCredits", () => {
     // provider cost. The storyboard row is audited now, so a fal price rise
     // shows up here (and on the admin panel) instead of in the margin.
     expect(pricingAudit()).toEqual([]);
+  });
+});
+
+// Dialogue's surcharge, re-priced 2026-08-31 from fal's published invoice
+// prices after the old rate's own comment admitted it was an estimate.
+describe("getDialogueCreditWeight covers the lipsync invoice", () => {
+  it("covers every duration at fal's published $5/minute", () => {
+    for (const seconds of [3, 5, 10, 15, 20, 30]) {
+      const charged = getDialogueCreditWeight(seconds) * COST_BASIS_USD_PER_CREDIT;
+      const cost = SYNC_LIPSYNC_PER_SECOND_USD * seconds + DIALOGUE_TTS_ALLOWANCE_USD;
+      expect(charged, `${seconds}s`).toBeGreaterThanOrEqual(cost);
+    }
+  });
+
+  it("charges the approved ladder", () => {
+    expect(getDialogueCreditWeight(5)).toBe(2);
+    expect(getDialogueCreditWeight(10)).toBe(4);
+    expect(getDialogueCreditWeight(15)).toBe(5);
   });
 });

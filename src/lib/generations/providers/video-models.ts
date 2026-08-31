@@ -330,12 +330,18 @@ export function isValidDuration(model: VideoModel, seconds: number): boolean {
 // model weight would have made dialogue on Veo cost 11 extra credits for the
 // same lipsync work Kling pays 1 for.
 //
-// One credit per 5 seconds is roughly cost-parity at the $0.28/credit peg
-// this file already uses — dialogue about doubles the cost of a short clip.
-// The underlying TTS and lipsync per-second prices are ESTIMATES, unlike the
-// video prices above which were confirmed against fal.ai's own pricing page;
-// worth checking against a real invoice and adjusting.
-const DIALOGUE_SECONDS_PER_CREDIT = 5;
+// One credit per THREE seconds (operator-approved 2026-08-31; was 5). The
+// old rate was built on estimated provider prices — its own comment said
+// "worth checking against a real invoice" — and the check came back showing
+// every dialogue clip sold below cost: Sync Lipsync's published price is
+// $5/minute ($0.0833/s) over the WHOLE clip, plus ElevenLabs TTS at $0.10
+// per 1k characters, against the $0.056/s the old rate charged. At 1/3s
+// every duration covers the invoice on the same $0.28 basis as everything
+// else: 5s -> 2cr ($0.56 vs ~$0.43 cost), 10s -> 4cr, 15s -> 5cr. Audited
+// below like every other price in this file.
+export const SYNC_LIPSYNC_PER_SECOND_USD = 5 / 60; // fal: "$5 per minutes", read 2026-08-31
+export const DIALOGUE_TTS_ALLOWANCE_USD = 0.01; // ~100 chars of ElevenLabs at $0.10/1k
+const DIALOGUE_SECONDS_PER_CREDIT = 3;
 
 export function getDialogueCreditWeight(seconds: number): number {
   return Math.max(1, Math.ceil(seconds / DIALOGUE_SECONDS_PER_CREDIT));
@@ -553,6 +559,20 @@ export function pricingAudit(): {
   for (const model of VIDEO_MODELS) {
     for (const d of model.durations) {
       check(model.id, model.name, d.seconds, d.creditWeight, model.costPerSecondUsd * d.seconds);
+    }
+    // Dialogue is a duration surcharge, not a model, so it gets its own
+    // audit rows: lipsync runs over the whole clip at fal's published
+    // $5/minute, and the surcharge must cover that at every length.
+    if (model === VIDEO_MODELS[0]) {
+      for (const seconds of [5, 10, 15, 20, 30]) {
+        check(
+          "dialogue",
+          "Dialogue (TTS + lipsync)",
+          seconds,
+          getDialogueCreditWeight(seconds),
+          SYNC_LIPSYNC_PER_SECOND_USD * seconds + DIALOGUE_TTS_ALLOWANCE_USD,
+        );
+      }
     }
     // The start/end-frame lane bills at its own endpoint's price — audited
     // like everything else so a fal price rise shows up on the admin panel
