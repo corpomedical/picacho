@@ -63,9 +63,15 @@ CREATE TRIGGER community_hide_ledger
   AFTER UPDATE OF hidden_at ON public.community_posts
   FOR EACH ROW EXECUTE PROCEDURE public.record_community_hide();
 
--- share_to_community: refuse a generation that has a hide on record. The
--- body below is the 2026-08-21 original with ONE added check — keep any
--- later edits in mind if this ever diverges.
+-- share_to_community: refuse a generation that has a hide on record.
+--
+-- THE BODY BELOW IS THE 2026-08-22 DEFINITION (community-feed.sql) with ONE
+-- added check. Not the 08-21 original: the 08-22 revision added the
+-- match_score and character_name snapshot to every share, and a first draft
+-- of this file replaced that body with the older one — which would have
+-- silently dropped identity scores from every future community post.
+-- Caught before it was applied (2026-08-31). If share_to_community is ever
+-- revised again, THIS file must be rebased on that revision before running.
 CREATE OR REPLACE FUNCTION public.share_to_community(p_generation_id uuid, p_caption text DEFAULT NULL)
 RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
 DECLARE
@@ -74,15 +80,18 @@ DECLARE
 BEGIN
   IF auth.uid() IS NULL THEN RAISE EXCEPTION 'Sign in required.'; END IF;
 
+  -- The one added line: a hide on record locks re-sharing from its own side.
   IF EXISTS (SELECT 1 FROM public.community_moderation WHERE generation_id = p_generation_id) THEN
     RAISE EXCEPTION 'This post was removed by moderation and can''t be shared again.';
   END IF;
 
   SELECT gen.id, gen.result_url, gen.content_type, gen.prompt_input, gen.status, gen.deleted_at,
+         gen.match_score, ch.name AS character_name,
          p.username
     INTO g
     FROM public.generations gen
     JOIN public.profiles p ON p.id = gen.user_id
+    LEFT JOIN public.character_profiles ch ON ch.id = gen.character_profile_id
    WHERE gen.id = p_generation_id AND gen.user_id = auth.uid();
 
   IF g.id IS NULL THEN RAISE EXCEPTION 'Couldn''t find that generation.'; END IF;
@@ -93,19 +102,22 @@ BEGIN
     RAISE EXCEPTION 'This render has no shareable media.';
   END IF;
 
-  INSERT INTO public.community_posts (generation_id, user_id, username, caption, media_url, content_type, prompt)
+  INSERT INTO public.community_posts
+    (generation_id, user_id, username, caption, media_url, content_type, prompt, match_score, character_name)
   VALUES (
     g.id, auth.uid(), g.username,
     nullif(left(trim(coalesce(p_caption, '')), 200), ''),
     g.result_url,
     CASE WHEN g.content_type = 'video' THEN 'video' ELSE 'image' END,
-    left(g.prompt_input, 300)
+    left(g.prompt_input, 300),
+    g.match_score,
+    left(g.character_name, 80)
   )
   ON CONFLICT (generation_id) DO NOTHING
   RETURNING id INTO post_id;
 
   IF post_id IS NULL THEN
-    SELECT id INTO post_id FROM public.community_posts WHERE generation_id = p_generation_id;
+    SELECT id INTO post_id FROM public.community_posts WHERE generation_id = g.id;
   END IF;
   RETURN post_id;
 END $$;
