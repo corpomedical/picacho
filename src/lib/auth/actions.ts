@@ -245,6 +245,27 @@ export async function checkUsernameAvailability(username: string): Promise<boole
 
 export async function logout() {
   const supabase = await createClient();
+
+  // Delete this user's push tokens BEFORE the session dies (2026-08-31
+  // inspection: forgetPushToken existed for exactly this and nothing ever
+  // called it — so on a shared or resold phone, the next person to sign in
+  // kept receiving the previous account's "your render finished"
+  // notifications). All of the user's tokens, not just this device's: the
+  // server has no way to know which token belongs to the device logging
+  // out, and NativePush re-registers on every app launch, so any OTHER
+  // device the person still uses heals itself the next time it opens the
+  // app. A missed notification on a second phone is a far smaller harm than
+  // a stranger receiving them.
+  const { data: userData } = await supabase.auth.getUser();
+  if (userData.user) {
+    try {
+      await supabase.from("push_tokens").delete().eq("user_id", userData.user.id);
+    } catch (err) {
+      // Never block a sign-out on housekeeping.
+      console.error("logout: push token cleanup failed", err);
+    }
+  }
+
   await supabase.auth.signOut();
   redirect("/login");
 }

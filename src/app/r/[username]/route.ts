@@ -4,9 +4,8 @@ import { createAdminClient } from "@/lib/supabase/server";
 // Referral landing: picacho.ai/r/<username>. Validates the handle, drops a
 // 30-day attribution cookie, and forwards to signup — the signup action
 // reads the cookie and records referred_by (see auth/actions.ts). Unknown
-// or malformed handles forward to the homepage with no cookie: a dead
-// referral link should never look like an error page to the person opening
-// it. The username lookup runs through the admin client because anon RLS
+// or malformed handles forward to the same signup page with no cookie, so
+// the response never says whether a handle exists. The username lookup runs through the admin client because anon RLS
 // deliberately can't read profiles.
 export async function GET(
   request: Request,
@@ -27,11 +26,18 @@ export async function GET(
     .eq("username", username)
     .maybeSingle();
 
+  // Known and unknown handles now land on the SAME page (2026-08-31
+  // inspection: known -> /signup, unknown -> / made this route an
+  // unauthenticated account-existence oracle — usernames default to the
+  // email local part, so /r/ahmed answering differently from /r/xqzk
+  // confirmed who has an account, one probe per name, no login needed).
+  // The cookie still only drops for a real referrer; a dead link simply
+  // becomes a plain signup visit, which is also the friendlier landing.
+  const response = NextResponse.redirect(`${origin}/signup`);
   if (!referrer?.id) {
-    return NextResponse.redirect(`${origin}/`);
+    return response;
   }
 
-  const response = NextResponse.redirect(`${origin}/signup`);
   response.cookies.set("picacho_ref", username, {
     path: "/",
     sameSite: "lax",

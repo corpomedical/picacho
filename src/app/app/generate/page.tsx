@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getReliabilityStats, reapAbandonedGenerations } from "@/lib/generations/actions";
@@ -45,7 +46,12 @@ export default async function GeneratePage() {
   // allows only one cron run per day, which is far too coarse. Deliberately
   // not awaited: this is housekeeping for jobs that are already half an hour
   // stale, and it must never delay rendering the page.
-  void reapAbandonedGenerations();
+  // after(), not a bare void: on Vercel the function can freeze the moment
+  // the response streams out, so fire-and-forget housekeeping — which here
+  // includes refund and cancel work — could be suspended mid-flight
+  // (2026-08-31 inspection). after() keeps the invocation alive until the
+  // promise settles, and still never delays rendering the page.
+  after(reapAbandonedGenerations());
 
   const {
     hasCharacter,
@@ -62,16 +68,24 @@ export default async function GeneratePage() {
     creditsLimit,
     purchasedCredits,
     currentPeriodEnd,
+    hasCompletedOnboarding,
+    plan,
+    bonusCredits,
+    freeGenerationLastAt,
   } = await getGenerateWorkspaceData(supabase, userData.user?.id);
 
   // The composer walkthrough used to auto-start on /app, when the composer
   // lived there in hero mode. /app is a dashboard now, so the walkthrough's
   // home is here — the first time someone actually faces these controls.
-  const { data: onboardingProfile } = await supabase
-    .from("profiles")
-    .select("has_completed_onboarding, plan, bonus_credits, free_generation_last_at")
-    .eq("id", userData.user?.id ?? "")
-    .single();
+  // The profile columns this page needs ride on getGenerateWorkspaceData's
+  // own profile read now — this was a second, sequential profiles query for
+  // four columns the first one could carry (2026-08-31 inspection).
+  const onboardingProfile = {
+    has_completed_onboarding: hasCompletedOnboarding,
+    plan,
+    bonus_credits: bonusCredits,
+    free_generation_last_at: freeGenerationLastAt,
+  };
 
   // Free-tier accounts get one generation per UTC day; whether today's slot
   // is still open drives the composer's "uses today's free generation"

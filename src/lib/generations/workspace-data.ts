@@ -52,6 +52,13 @@ export type GenerateWorkspaceData = {
   // allowance), so without this the picker would be a control that silently
   // does nothing — the UI says what the server will actually do.
   chatSmarterAvailable: boolean;
+  // Rode along on the same profile read so /app/generate stops making its
+  // own duplicate profiles query for the onboarding + daily-free banners
+  // (2026-08-31 inspection).
+  hasCompletedOnboarding: boolean;
+  plan: string;
+  bonusCredits: number;
+  freeGenerationLastAt: string | null;
   // Raw numbers + the real reset timestamp (when known — see
   // current_period_end below), so the usage banner in generate-form.tsx can
   // show "12 of 15 used, resets Aug 12 at 2:00 PM" instead of just a plain
@@ -83,11 +90,28 @@ export async function getGenerateWorkspaceData(
   // photo signing below would then fail for anyone else's paths anyway,
   // since storage RLS has no admin bypass — the same failure mode as the
   // /app/character list bug).
-  const { data: characters } = await supabase
-    .from("character_profiles")
-    .select("id, name, reference_image_urls, outfit_image_urls, voice_id, render_style")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
+  // One round trip for the three independent reads instead of three in a
+  // row (2026-08-31 inspection: this function alone was ~5 sequential trips
+  // and /app/generate's TTFB is the sum of them — none of these depends on
+  // another's answer).
+  const [{ data: characters }, { data: videoModelSetting }, { data: profile }] =
+    await Promise.all([
+      supabase
+        .from("character_profiles")
+        .select("id, name, reference_image_urls, outfit_image_urls, voice_id, render_style")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false }),
+      supabase.from("app_settings").select("value").eq("key", "video_model").single(),
+      userId
+        ? supabase
+            .from("profiles")
+            .select(
+              "plan, role, bonus_credits, purchased_credits, current_period_start, current_period_end, has_completed_onboarding, free_generation_last_at",
+            )
+            .eq("id", userId)
+            .single()
+        : Promise.resolve({ data: null }),
+    ]);
 
   const hasCharacter = Boolean(characters && characters.length > 0);
 
@@ -113,11 +137,6 @@ export async function getGenerateWorkspaceData(
       c.render_style === "photoreal" ? true : c.render_style === "illustrated" ? false : null,
   }));
 
-  const { data: videoModelSetting } = await supabase
-    .from("app_settings")
-    .select("value")
-    .eq("key", "video_model")
-    .single();
   const defaultVideoModelId = videoModelSetting?.value ?? "kling";
   // Cheapest first — see VIDEO_MODELS_BY_PRICE.
   const videoModels: VideoModelOption[] = VIDEO_MODELS_BY_PRICE.map((m) => ({
@@ -133,13 +152,6 @@ export async function getGenerateWorkspaceData(
   // Elite-only on 2026-08-12 so the Studio tier has a capability difference,
   // not just a bigger quota — keep in sync with the server-side check in
   // generations/actions.ts and the pricing copy in lib/pricing.ts.
-  const { data: profile } = userId
-    ? await supabase
-        .from("profiles")
-        .select("plan, role, bonus_credits, purchased_credits, current_period_start, current_period_end")
-        .eq("id", userId)
-        .single()
-    : { data: null };
   const advancedPlanActive =
     profile?.plan === "studio" || profile?.plan === "elite" || profile?.role === "admin";
   // Multi-angle is several generations in one click, so it isn't part of the
@@ -161,16 +173,17 @@ export async function getGenerateWorkspaceData(
   const isAdminUser = profile?.role === "admin";
   const planLimit =
     PLAN_LIMITS[(profile?.plan ?? "none") as PlanId] + (profile?.bonus_credits ?? 0);
-  const usedThisMonth = userId
-    ? await getMonthlyUsage(userId, profile?.current_period_start as string | null | undefined)
-    : 0;
-  const approachingLimit =
-    !isAdminUser && planLimit > 0 && usedThisMonth < planLimit && usedThisMonth / planLimit >= 0.8;
-
-  const [voiceModeEnabled, chatAgentEnabled] = await Promise.all([
+  // The remaining dependent read (needs current_period_start) rides with the
+  // two flag lookups, one trip instead of two.
+  const [usedThisMonth, voiceModeEnabled, chatAgentEnabled] = await Promise.all([
+    userId
+      ? getMonthlyUsage(userId, profile?.current_period_start as string | null | undefined)
+      : Promise.resolve(0),
     isVoiceModeEnabled(supabase),
     isChatAgentEnabled(supabase),
   ]);
+  const approachingLimit =
+    !isAdminUser && planLimit > 0 && usedThisMonth < planLimit && usedThisMonth / planLimit >= 0.8;
 
   return {
     hasCharacter,
@@ -183,6 +196,10 @@ export async function getGenerateWorkspaceData(
     voiceModeEnabled,
     chatAgentEnabled,
     chatSmarterAvailable: (profile?.plan ?? "none") !== "none",
+    hasCompletedOnboarding: profile?.has_completed_onboarding === true,
+    plan: (profile?.plan ?? "none") as string,
+    bonusCredits: (profile?.bonus_credits ?? 0) as number,
+    freeGenerationLastAt: (profile?.free_generation_last_at ?? null) as string | null,
     creditsUsed: usedThisMonth,
     creditsLimit: planLimit,
     purchasedCredits: (profile?.purchased_credits ?? 0) as number,

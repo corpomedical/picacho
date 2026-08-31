@@ -3,6 +3,7 @@ import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { currencyForPriceId, planIdForPriceId } from "@/lib/stripe/plans";
 import { Card } from "@/components/ui/card";
+import { fetchAll } from "@/lib/admin/fetch-all";
 
 const PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
   PRICING_TIERS.map((t) => [t.id, t.price]),
@@ -19,9 +20,16 @@ const ANNUAL_PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
 
 export default async function AdminBillingPage() {
   const supabase = await createClient();
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("plan, plan_status, stripe_price_id, plan_currency, plan_interval");
+  // Paged, not a bare select: PostgREST answers at most 1,000 rows per
+  // response, and MRR computed from whatever came back would silently drop
+  // every subscriber past the first thousand (2026-08-31 inspection).
+  const profiles = await fetchAll((from, to) =>
+    supabase
+      .from("profiles")
+      .select("plan, plan_status, stripe_price_id, plan_currency, plan_interval")
+      .order("created_at", { ascending: true })
+      .range(from, to),
+  );
 
   const distribution = Object.fromEntries(
     (Object.keys(PLAN_LIMITS) as PlanId[]).map((plan) => [plan, 0]),

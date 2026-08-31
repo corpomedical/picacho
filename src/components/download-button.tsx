@@ -37,6 +37,11 @@ export function announceDownload(kind: "image" | "video"): string {
 export function announceDownloadDone(id: string, ok: boolean) {
   window.dispatchEvent(new CustomEvent("picacho:download-done", { detail: { id, ok } }));
 }
+// Quietly retract a toast — for the one outcome that is neither success nor
+// failure: the person closed the share sheet themselves.
+export function announceDownloadDismiss(id: string) {
+  window.dispatchEvent(new CustomEvent("picacho:download-dismiss", { detail: { id } }));
+}
 
 export async function downloadResult(url: string, filename: string) {
   const kind = filename.endsWith(".mp4") ? "video" : "image";
@@ -88,6 +93,17 @@ export async function downloadResultNative(url: string, filename: string): Promi
     announceDownloadDone(toastId, true);
     return true;
   } catch (err) {
+    // Closing the share sheet is a decision, not a failure — and definitely
+    // not a reason to fall back to the web download path, which re-fetched
+    // the whole file only to be swallowed by the WebView and then toast
+    // "downloaded" for a file that went nowhere (2026-08-31 inspection).
+    // The plugin rejects with "Share canceled" for that case; report it
+    // handled, retract the toast, done.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/cancel/i.test(message)) {
+      announceDownloadDismiss(toastId);
+      return true;
+    }
     announceDownloadDone(toastId, false);
     throw err;
   }

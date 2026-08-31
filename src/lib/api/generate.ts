@@ -298,16 +298,39 @@ export async function runApiImageGeneration(params: {
       }
     }
 
-    await supabase
-      .from("generations")
-      .update({
-        status: succeeded ? "succeeded" : "failed",
-        attempts: result.attempts.length,
-        result_url: resultUrl,
-        pipeline_log: result.attempts,
-        match_score: matchScore,
-      })
-      .eq("id", generationId);
+    // The API twin of the inline path's hardened terminal write (2026-08-31):
+    // retried on transient failure, guarded on status so a cancelled row is
+    // never resurrected, and the error actually read — this used to be a
+    // fire-and-forget whose failure stranded a paid render at "generating"
+    // for the reaper to write off and refund while the PNG orphaned.
+    let terminalError: string | null = "not attempted";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const { error: writeError } = await supabase
+        .from("generations")
+        .update({
+          status: succeeded ? "succeeded" : "failed",
+          attempts: result.attempts.length,
+          result_url: resultUrl,
+          pipeline_log: result.attempts,
+          match_score: matchScore,
+        })
+        .eq("id", generationId)
+        .eq("status", "generating");
+      terminalError = writeError ? writeError.message : null;
+      if (!terminalError) break;
+      await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+    }
+    if (terminalError) {
+      console.error(`API terminal write failed 3x for ${generationId}:`, terminalError);
+      // Park the storage path so support and the orphan sweep can find the
+      // paid render even though the status write keeps failing.
+      await supabase
+        .from("generations")
+        .update({ result_url: resultUrl })
+        .eq("id", generationId)
+        .eq("status", "generating");
+      return { error: "Finished, but couldn't save the result — check the generation shortly.", status: 500 };
+    }
 
     // Same force calculation as the website's path (2026-08-31): with the
     // automatic_refunds switch off, an API customer whose request was

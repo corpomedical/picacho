@@ -44,13 +44,17 @@ const TITLE = "Picacho — Consistent AI Character Content, On the First Try";
 // viewport-fit=cover is required for env(safe-area-inset-*) to report real
 // values on iPhone — without it the notch and home-indicator padding in
 // globals.css silently resolves to 0 and content slides under the hardware.
-// maximumScale/userScalable stop the double-tap zoom that makes a webview
-// feel like a webview; the app's own text controls remain unaffected.
+// Pinch-zoom is ENABLED (2026-08-31 inspection reversed the old
+// maximumScale:1/userScalable:false pair). Locking zoom made the WebView
+// feel native, but it applied to the marketing pages and every low-vision
+// visitor on the web too — WCAG 1.4.4 requires text to scale to 200%, and
+// iOS Safari ignores the lock anyway, so the only people it actually
+// stopped were Android users who needed it most. Double-tap zoom inside
+// the shell is the smaller cost.
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  maximumScale: 5,
   viewportFit: "cover",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#ffffff" },

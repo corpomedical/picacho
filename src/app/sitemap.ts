@@ -44,7 +44,7 @@ const PUBLIC_ROUTES = [
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return PUBLIC_ROUTES.map((route) => {
+  const entries = PUBLIC_ROUTES.map((route) => {
     // Locale alternates (2026-08-30). Next's MetadataRoute.Sitemap emits
     // these as xhtml:link rel="alternate" entries on the one <url>, which is
     // the shape Google documents for a sitemap — one entry per page listing
@@ -72,4 +72,25 @@ export default function sitemap(): MetadataRoute.Sitemap {
       ...(languages ? { alternates: { languages } } : {}),
     };
   });
+
+  // The locale URLs as first-class <loc> entries too (2026-08-31
+  // inspection). The alternates above describe the RELATIONSHIP between
+  // translations, but the live sitemap carried zero /es|/pt|/it <loc>
+  // entries — and Google treats a URL that appears only inside someone
+  // else's xhtml:link as a second-class citizen for discovery. Thirty-three
+  // translated pages were findable only by crawling. Each locale entry
+  // carries the same alternates block, which is exactly the doubly-linked
+  // shape Google's hreflang documentation asks for.
+  const localeEntries = LOCALIZED_PATHS.flatMap((basePath) => {
+    const languages = Object.fromEntries(
+      LOCALES.map(({ code }) => [code, `${BASE_URL}${localizedHref(basePath, code)}`]),
+    );
+    return LOCALES.filter(({ code }) => code !== "en").map(({ code }) => ({
+      url: `${BASE_URL}${localizedHref(basePath, code)}`,
+      lastModified: new Date(),
+      alternates: { languages },
+    }));
+  });
+
+  return [...entries, ...localeEntries];
 }

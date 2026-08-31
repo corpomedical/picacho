@@ -1,10 +1,11 @@
 "use client";
 
 import { createContext, useContext, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { Locale } from "@/lib/i18n/locales";
 import { getMessages, type Messages } from "@/lib/i18n/messages";
 import { setLocaleCookie } from "@/lib/i18n/actions";
+import { matchLocalePrefix, localizedHref } from "@/lib/i18n/routing";
 
 type LocaleContextValue = {
   locale: Locale;
@@ -27,13 +28,25 @@ export function LocaleProvider({
 }) {
   const [locale, setLocaleState] = useState<Locale>(initialLocale);
   const router = useRouter();
+  const pathname = usePathname();
 
   function setLocale(next: Locale) {
     setLocaleState(next);
-    // Client Components using useLocale() update immediately; Server
-    // Components (marketing/legal pages) need a refresh to re-read the
-    // cookie on their next render.
-    setLocaleCookie(next).then(() => router.refresh());
+    // On a locale-prefixed URL (/es/pricing), the URL beats the cookie by
+    // design — so a cookie-and-refresh here could not change the language,
+    // and worse, the middleware re-stamped the URL's locale over the choice
+    // on the way back (2026-08-31 inspection: picking English on /es/pricing
+    // produced a mixed-language page and then erased the choice entirely).
+    // The switch has to MOVE: to the same page's URL in the chosen language.
+    // Everywhere else the cookie-and-refresh behaviour is unchanged.
+    const prefixed = matchLocalePrefix(pathname ?? "");
+    setLocaleCookie(next).then(() => {
+      if (prefixed) {
+        router.push(localizedHref(prefixed.basePath, next));
+      } else {
+        router.refresh();
+      }
+    });
   }
 
   return (

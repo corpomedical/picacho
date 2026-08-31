@@ -36,10 +36,16 @@ export function DownloadToasts() {
       );
     }
     window.addEventListener("picacho:download-start", onStart);
+    const onDismiss = (e: Event) => {
+      const { id } = (e as CustomEvent<{ id: string }>).detail;
+      setToasts((prev) => prev.filter((x) => x.id !== id));
+    };
     window.addEventListener("picacho:download-done", onDone);
+    window.addEventListener("picacho:download-dismiss", onDismiss);
     return () => {
       window.removeEventListener("picacho:download-start", onStart);
       window.removeEventListener("picacho:download-done", onDone);
+      window.removeEventListener("picacho:download-dismiss", onDismiss);
       timers.forEach(clearTimeout);
     };
   }, []);

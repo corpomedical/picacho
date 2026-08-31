@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { getFalAccountBalance } from "@/lib/generations/providers/fal";
+import { getFalBalance } from "@/lib/generations/providers/fal-ledger";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { AutoRefresh } from "@/components/auto-refresh";
 import { cn } from "@/lib/cn";
+import { fetchAll } from "@/lib/admin/fetch-all";
 
 // Stats, the Jetpack way (2026-08-29, operator: "I don't like it and it's
 // confusing… Jetpack stats is very clean and useful"). The page leads with
@@ -116,44 +117,83 @@ export default async function AdminStatsPage({
   const [
     { count: totalUsers },
     { count: onlineNow },
-    { data: viewRows },
-    { data: prevViewRows },
-    { data: signupRows },
+    viewRows,
+    prevViewRows,
+    signupRows,
     { count: prevSignups },
-    { data: genRows },
+    genRows,
     { count: prevGens },
-    { data: adoptionRows },
-    { data: demographicRows },
+    adoptionRows,
+    demographicRows,
     falBalance,
   ] = await Promise.all([
     supabase.from("profiles").select("*", { count: "exact", head: true }),
     supabase.from("profiles").select("*", { count: "exact", head: true }).gte("last_seen_at", fiveMinAgo),
-    supabase
-      .from("page_views")
-      .select("created_at, visitor_id, path, country, referrer")
-      .gte("created_at", rangeStart.toISOString())
-      .limit(50000),
-    supabase
-      .from("page_views")
-      .select("visitor_id")
-      .gte("created_at", prevStart.toISOString())
-      .lt("created_at", rangeStart.toISOString())
-      .limit(50000),
-    supabase.from("profiles").select("created_at").gte("created_at", rangeStart.toISOString()).limit(20000),
+    // fetchAll, not .limit(): PostgREST answers at most 1,000 rows per
+    // response whatever the limit says, and these charts were silently
+    // under-counting the moment traffic passed that (2026-08-31, verified
+    // live: 1,839 rows existed, 1,000 came back).
+    fetchAll((from, to) =>
+      supabase
+        .from("page_views")
+        .select("created_at, visitor_id, path, country, referrer")
+        .gte("created_at", rangeStart.toISOString())
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("page_views")
+        .select("visitor_id")
+        .gte("created_at", prevStart.toISOString())
+        .lt("created_at", rangeStart.toISOString())
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("profiles")
+        .select("created_at")
+        .gte("created_at", rangeStart.toISOString())
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from("profiles")
       .select("*", { count: "exact", head: true })
       .gte("created_at", prevStart.toISOString())
       .lt("created_at", rangeStart.toISOString()),
-    supabase.from("generations").select("created_at").gte("created_at", rangeStart.toISOString()).limit(50000),
+    fetchAll((from, to) =>
+      supabase
+        .from("generations")
+        .select("created_at")
+        .gte("created_at", rangeStart.toISOString())
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from("generations")
       .select("*", { count: "exact", head: true })
       .gte("created_at", prevStart.toISOString())
       .lt("created_at", rangeStart.toISOString()),
-    supabase.from("generations").select("user_id, content_type").limit(5000),
-    supabase.from("profiles").select("gender, company").limit(20000),
-    getFalAccountBalance(),
+    fetchAll((from, to) =>
+      supabase
+        .from("generations")
+        .select("user_id, content_type")
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase.from("profiles").select("gender, company").order("created_at", { ascending: true }).range(from, to),
+    ),
+    // The ledger's ADMIN-key reader, not fal.ts's FAL_KEY one — verified
+    // live (2026-08-31): FAL_KEY gets 403 on account/billing, FAL_ADMIN_KEY
+    // gets 200, so this panel had been permanently dead since it shipped.
+    getFalBalance().then((b) =>
+      b.ok
+        ? ({ ok: true, balance: b.balanceUsd, currency: b.currency } as const)
+        : ({ ok: false, reason: b.error } as const),
+    ),
   ]);
 
   // ---- daily buckets for the chart ----

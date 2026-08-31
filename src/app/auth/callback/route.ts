@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getOrigin } from "@/lib/origin";
 
@@ -60,6 +61,41 @@ export async function GET(request: Request) {
           return NextResponse.redirect(
             `${origin}/login?error=${encodeURIComponent("New signups are currently closed.")}`,
           );
+        }
+
+        // The bookkeeping every email signup gets and OAuth ones silently
+        // did not (2026-08-31 inspection): the terms-acceptance timestamp —
+        // the OAuth buttons sit under the same "by continuing you agree"
+        // line, so continuing IS the affirmative act, and the row should
+        // record when — and the referral cookie, which /r/<username> sets
+        // for everyone but only the email form ever read, so every referred
+        // signup that chose Google lost its referrer their bonus. Both
+        // best-effort: bookkeeping must never break a login.
+        try {
+          const admin = createAdminClient();
+          await admin
+            .from("profiles")
+            .update({ terms_accepted_at: new Date().toISOString() })
+            .eq("id", user.id)
+            .is("terms_accepted_at", null);
+          const cookieStore = await cookies();
+          const refUsername = cookieStore.get("picacho_ref")?.value?.trim().toLowerCase();
+          if (refUsername && /^[a-z0-9_]{3,24}$/.test(refUsername)) {
+            const { data: referrer } = await admin
+              .from("profiles")
+              .select("id")
+              .eq("username", refUsername)
+              .maybeSingle();
+            if (referrer?.id && referrer.id !== user.id) {
+              await admin
+                .from("profiles")
+                .update({ referred_by: referrer.id })
+                .eq("id", user.id)
+                .is("referred_by", null);
+            }
+          }
+        } catch {
+          // Attribution is a bonus, never a blocker.
         }
       }
       return NextResponse.redirect(`${origin}${next}`);

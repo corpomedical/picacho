@@ -1225,10 +1225,17 @@ export async function advanceGeneration(
           "speech",
         ),
       });
-      try {
-        await refundDialogueSurcharge(generationId);
-      } catch (refundErr) {
-        console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
+      // Only when dialogue was actually CHARGED (2026-08-31 inspection): a
+      // no-dialogue video can land in this catch too — a transport blip
+      // after its own successful finish — and the surcharge math would
+      // happily subtract a fee that was never added, handing out free
+      // credits sized to the clip length.
+      if (row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId) {
+        try {
+          await refundDialogueSurcharge(generationId);
+        } catch (refundErr) {
+          console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
+        }
       }
       return { state: "succeeded", resultUrl: salvageUrl };
     }

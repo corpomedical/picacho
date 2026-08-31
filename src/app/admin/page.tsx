@@ -8,6 +8,7 @@ import { cn } from "@/lib/cn";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { currencyForPriceId, planIdForPriceId } from "@/lib/stripe/plans";
+import { fetchAll } from "@/lib/admin/fetch-all";
 
 const PRICE_BY_PLAN: Record<string, number> = Object.fromEntries(
   PRICING_TIERS.map((t) => [t.id, t.price]),
@@ -192,19 +193,19 @@ export default async function AdminDashboard() {
     { count: newUsersThisWeekCount },
     { count: activeSubscribersCount },
     { count: suspendedUsersCount },
-    { data: activeSubRows },
-    { data: planRows },
+    activeSubRows,
+    planRows,
     { data: recentProfileRows },
-    { data: signupRows },
+    signupRows,
     { count: generationsMonthCount },
     { count: succeededAllCount },
     { count: failedAllCount },
     { count: videoAllCount },
     { count: imageAllCount },
     { data: recentGenRows },
-    { data: genWindowRows },
-    { data: pageViews },
-    { data: reports },
+    genWindowRows,
+    pageViews,
+    reports,
     { count: openFeedbackCount },
   ] = await Promise.all([
     supabase.from("profiles").select("id", { count: "exact", head: true }),
@@ -221,23 +222,34 @@ export default async function AdminDashboard() {
       .select("id", { count: "exact", head: true })
       .eq("status", "suspended"),
     // MRR only needs the paying rows — a small set by definition.
-    supabase
-      .from("profiles")
-      .select("plan, stripe_price_id, plan_currency, plan_interval")
-      .eq("plan_status", "active")
-      .limit(10000),
-    // One narrow column for the distribution chart; approximate past 20k users.
-    supabase.from("profiles").select("plan").limit(20000),
+    // fetchAll on every read that feeds a sum or a distribution —
+    // PostgREST answers at most 1,000 rows regardless of .limit(), so these
+    // "approximate past 20k" comments were actually "wrong past 1k"
+    // (2026-08-31 inspection; MRR is computed from the first of these).
+    fetchAll((from, to) =>
+      supabase
+        .from("profiles")
+        .select("plan, stripe_price_id, plan_currency, plan_interval")
+        .eq("plan_status", "active")
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase.from("profiles").select("plan").order("created_at", { ascending: true }).range(from, to),
+    ),
     supabase
       .from("profiles")
       .select("id, email, created_at")
       .order("created_at", { ascending: false })
       .limit(5),
-    supabase
-      .from("profiles")
-      .select("created_at")
-      .gte("created_at", last14.toISOString())
-      .limit(20000),
+    fetchAll((from, to) =>
+      supabase
+        .from("profiles")
+        .select("created_at")
+        .gte("created_at", last14.toISOString())
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from("generations")
       .select("id", { count: "exact", head: true })
@@ -262,17 +274,30 @@ export default async function AdminDashboard() {
       .limit(5),
     // Feeds the 14-day chart and the month's credit sum; approximate past
     // 20k generations in a month.
-    supabase
-      .from("generations")
-      .select("created_at, credits_used")
-      .gte("created_at", genSince.toISOString())
-      .limit(20000),
-    supabase
-      .from("page_views")
-      .select("path, referrer, country, visitor_id, created_at")
-      .gte("created_at", last30.toISOString())
-      .limit(20000),
-    supabase.from("generation_reports").select("status, source").eq("status", "open").limit(5000),
+    fetchAll((from, to) =>
+      supabase
+        .from("generations")
+        .select("created_at, credits_used")
+        .gte("created_at", genSince.toISOString())
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("page_views")
+        .select("path, referrer, country, visitor_id, created_at")
+        .gte("created_at", last30.toISOString())
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("generation_reports")
+        .select("status, source")
+        .eq("status", "open")
+        .order("created_at", { ascending: true })
+        .range(from, to),
+    ),
     supabase.from("feedback").select("id", { count: "exact", head: true }).eq("status", "open"),
   ]);
 

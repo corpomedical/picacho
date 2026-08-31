@@ -29,7 +29,20 @@ export type ChatAttachment = {
   role?: "identity" | "outfit" | "scene" | "prop" | "unused";
 };
 
-type UploadResult = { error: string | null; attachment?: ChatAttachment };
+/**
+ * Machine-readable reason alongside the prose (2026-08-31 inspection: these
+ * English strings were landing verbatim inside the fully-translated
+ * composer). The client maps the code to its own locale's message and falls
+ * back to `error` — same noteCode pattern the Send Receipt already uses for
+ * server-fed lines. The prose stays for any older client.
+ */
+export type UploadErrorCode = "SESSION_EXPIRED" | "TOO_LARGE" | "RATE_LIMITED" | "UPLOAD_INCOMPLETE";
+
+type UploadResult = {
+  error: string | null;
+  errorCode?: UploadErrorCode;
+  attachment?: ChatAttachment;
+};
 
 // Generous enough for a handful of photos or a short clip, without letting
 // someone accidentally upload something enormous through the chat composer.
@@ -75,22 +88,29 @@ const UPLOAD_RATE_MAX_PER_WINDOW = 30;
  */
 export async function reserveChatAttachmentPath(
   formData: FormData,
-): Promise<{ error: string | null; path?: string }> {
+): Promise<{ error: string | null; errorCode?: UploadErrorCode; path?: string }> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  if (!data.user) return { error: "Your session expired — please log in again." };
+  if (!data.user) {
+    return { error: "Your session expired — please log in again.", errorCode: "SESSION_EXPIRED" };
+  }
 
   const name = String(formData.get("name") ?? "");
   const size = Number(formData.get("size") ?? 0);
   if (!name) return { error: "No file provided." };
-  if (size > MAX_FILE_BYTES) return { error: `${name} is larger than 25MB.` };
+  if (size > MAX_FILE_BYTES) {
+    return { error: `${name} is larger than 25MB.`, errorCode: "TOO_LARGE" };
+  }
 
   // Same limiter as before, still failing closed: it now bounds how fast a
   // client can obtain paths, and storage RLS bounds what it can do with one.
   if (
     await rateLimited(data.user.id, "upload", UPLOAD_RATE_WINDOW_SECONDS, UPLOAD_RATE_MAX_PER_WINDOW)
   ) {
-    return { error: "You're uploading a bit fast — wait a moment and try again." };
+    return {
+      error: "You're uploading a bit fast — wait a moment and try again.",
+      errorCode: "RATE_LIMITED",
+    };
   }
 
   const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -108,7 +128,9 @@ export async function reserveChatAttachmentPath(
 export async function finalizeChatAttachment(formData: FormData): Promise<UploadResult> {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
-  if (!data.user) return { error: "Your session expired — please log in again." };
+  if (!data.user) {
+    return { error: "Your session expired — please log in again.", errorCode: "SESSION_EXPIRED" };
+  }
 
   const path = String(formData.get("path") ?? "");
   const name = String(formData.get("name") ?? "");
@@ -144,7 +166,10 @@ export async function finalizeChatAttachment(formData: FormData): Promise<Upload
     .from("chat-attachments")
     .download(path);
   if (downloadError || !blob) {
-    return { error: downloadError?.message ?? "That upload didn't finish — try again." };
+    return {
+      error: downloadError?.message ?? "That upload didn't finish — try again.",
+      errorCode: "UPLOAD_INCOMPLETE",
+    };
   }
   const bytes = Buffer.from(await blob.arrayBuffer());
 

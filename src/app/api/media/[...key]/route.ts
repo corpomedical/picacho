@@ -62,6 +62,22 @@ export async function GET(
   const requestedWidth = Number(searchParams.get("w"));
   const width = isThumbWidth(requestedWidth) ? requestedWidth : null;
 
+  // Canonicalize the query string (2026-08-31 inspection). Vercel's edge
+  // caches by FULL URL, so any parameter beyond the two this route reads —
+  // ?v=sig&zz=1, zz=2, ... — was an infinite family of cache keys, each one
+  // a fresh lambda + storage download of the same immutable file. The width
+  // whitelist above closed that hole for w and left it open for everything
+  // else. A 301 is itself cached, so even a deliberate busting loop stops
+  // reaching storage after the first hop per key.
+  const url = new URL(request.url);
+  const canonicalQuery = `?v=${encodeURIComponent(provided)}${width ? `&w=${width}` : ""}`;
+  if (url.search !== canonicalQuery) {
+    return NextResponse.redirect(new URL(url.pathname + canonicalQuery, url.origin), {
+      status: 301,
+      headers: { "cache-control": "public, max-age=31536000, s-maxage=31536000, immutable" },
+    });
+  }
+
   try {
     const admin = createAdminClient();
     const { data: blob, error } = await admin.storage.from(bucket).download(path);
@@ -105,13 +121,48 @@ export async function GET(
       }
     }
 
+    // Range support (2026-08-31 inspection). iOS Safari will not play a
+    // <video> from a server that answers a Range request with a plain 200 —
+    // it probes with "bytes=0-1" and treats the full-body answer as a
+    // broken source. Video attachments are served through this route, so
+    // they were poster frames that never played on iPhones. Only the
+    // passthrough branch needs this; thumbnails are images.
+    const range = request.headers.get("range");
+    const contentType = CONTENT_TYPES[ext] ?? "application/octet-stream";
+    const baseHeaders = {
+      "content-type": contentType,
+      // Same edge-cache note as the thumbnail branch above.
+      "cache-control": "public, max-age=31536000, s-maxage=31536000, immutable",
+      "X-Content-Type-Options": "nosniff",
+      "accept-ranges": "bytes",
+    };
+
+    if (range) {
+      const m = range.match(/^bytes=(\d*)-(\d*)$/);
+      const size = blob.size;
+      if (m && (m[1] || m[2])) {
+        const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
+        const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+        if (start <= end && start < size) {
+          const slice = blob.slice(start, end + 1);
+          return new NextResponse(slice.stream(), {
+            status: 206,
+            headers: {
+              ...baseHeaders,
+              "content-range": `bytes ${start}-${end}/${size}`,
+              "content-length": String(end - start + 1),
+            },
+          });
+        }
+      }
+      return new NextResponse(null, {
+        status: 416,
+        headers: { "content-range": `bytes */${size}` },
+      });
+    }
+
     return new NextResponse(blob.stream(), {
-      headers: {
-        "content-type": CONTENT_TYPES[ext] ?? "application/octet-stream",
-        // Same edge-cache note as the thumbnail branch above.
-        "cache-control": "public, max-age=31536000, s-maxage=31536000, immutable",
-        "X-Content-Type-Options": "nosniff",
-      },
+      headers: { ...baseHeaders, "content-length": String(blob.size) },
     });
   } catch {
     return NextResponse.json({ error: "Not found" }, { status: 404 });

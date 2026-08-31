@@ -7,6 +7,7 @@ import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { getCreditPack } from "@/lib/stripe/credit-packs";
 import { CheckoutEmbed } from "@/components/checkout-embed";
 import { formatMsg } from "@/lib/i18n/format";
+import { isEUVisitor } from "@/lib/geo";
 
 // Embedded checkout (2026-08-22): Stripe's payment form rendered inside a
 // Frost page on picacho.ai instead of a redirect to stripe.com. Session
@@ -39,6 +40,13 @@ export default async function CheckoutPage({
   let summaryPrice = "";
   let backHref = "/app/settings?tab=usage";
 
+  // The same visitor test startPlanCheckout itself uses to pick the Stripe
+  // price. EU numbers are billed 1:1 in euros (the pricing page says so),
+  // but this summary card hard-coded "$" — so an EU customer saw a dollar
+  // figure stacked directly above a Stripe iframe collecting euros for the
+  // same charge (2026-08-31 inspection). One page, one currency.
+  const currencySymbol = (await isEUVisitor()) ? "€" : "$";
+
   if (planParam) {
     const { clientSecret: cs } = await startPlanCheckout(planParam, interval, "embedded");
     clientSecret = cs;
@@ -49,8 +57,8 @@ export default async function CheckoutPage({
       summaryCredits = formatMsg(c.creditsMonthly, { n: PLAN_LIMITS[planId] ?? 0 });
       summaryPrice =
         interval === "annual"
-          ? formatMsg(c.priceAnnual, { price: `$${tier.annualPrice * 12}` })
-          : formatMsg(c.priceMonthly, { price: `$${tier.price}` });
+          ? formatMsg(c.priceAnnual, { price: `${currencySymbol}${tier.annualPrice * 12}` })
+          : formatMsg(c.priceMonthly, { price: `${currencySymbol}${tier.price}` });
     }
   } else if (packParam) {
     const { clientSecret: cs, returnTo: safeReturn } = await startCreditCheckout(
@@ -64,7 +72,7 @@ export default async function CheckoutPage({
     if (pack) {
       summaryTitle = formatMsg(c.packTitle, { n: pack.credits });
       summaryCredits = c.packNote;
-      summaryPrice = `$${pack.price}`;
+      summaryPrice = `${currencySymbol}${pack.price}`;
     }
   } else {
     redirect("/app/settings?tab=usage");

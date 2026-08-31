@@ -64,7 +64,11 @@ const nextConfig: NextConfig = {
       // the benefit: repeat visitors serve from disk instantly, and a
       // changed file propagates on its own within a week.
       {
-        source: "/:path((?:presets|templates|course|models|studio)/.*|.*\\.mp4)",
+        // Widened 2026-08-31: the rule matched the subdirectories and mp4s
+        // but missed every root-level image — logo.png, the og image, the
+        // showcase posters, the Play badge — which were re-validated on
+        // every single page view.
+        source: "/:path((?:presets|templates|course|models|studio)/.*|.*\\.(?:mp4|png|jpg|jpeg|webp|svg|ico))",
         headers: [
           {
             key: "Cache-Control",

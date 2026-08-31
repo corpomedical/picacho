@@ -1189,8 +1189,13 @@ export async function runRealPipeline(
                 submitErr instanceof Error ? submitErr.message : "Video submit failed.";
               // fal answered with a 4xx: the request was refused, nothing
               // was queued, and the normal retry/failure machinery below is
-              // the right owner.
-              if (/\(4\d\d\)/.test(submitMessage)) throw submitErr;
+              // the right owner. The ":" anchors the match to the status
+              // fal.ts itself formats — isTransportError in job-runner.ts
+              // documents the trap this avoids: error messages carry up to
+              // 800 chars of provider body, and a stray "(404)" INSIDE that
+              // body used to make an ambiguous transport failure read as a
+              // refusal, re-submitting a job fal may already be running.
+              if (/\(4\d\d\):/.test(submitMessage)) throw submitErr;
               // Anything else — timeout, reset, 5xx — is ambiguous: fal may
               // be running the job we just lost sight of. Fail THIS
               // generation without any retry rather than paying for a

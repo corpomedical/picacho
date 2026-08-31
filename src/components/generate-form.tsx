@@ -49,6 +49,7 @@ import {
   finalizeChatAttachment,
   deleteChatAttachment,
   type ChatAttachment,
+  type UploadErrorCode,
 } from "@/lib/attachments/actions";
 import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { AgentMode } from "@/lib/agent/prices";
@@ -3072,6 +3073,25 @@ function GenerateFormInner({
    * folder, and afterwards reads the file back out of storage to measure it
    * and judge whether it shows a real person.
    */
+  // Server upload errors arrive as machine codes and are spoken here in the
+  // person's own language — the raw English prose is only the fallback for
+  // a code this build doesn't know (2026-08-31 inspection: "video.mp4 is
+  // larger than 25MB." was landing verbatim between Portuguese strings).
+  function localizeUploadError(code: UploadErrorCode | undefined, prose: string | null, name: string): string {
+    switch (code) {
+      case "SESSION_EXPIRED":
+        return g.uploadErrSession;
+      case "TOO_LARGE":
+        return formatMsg(g.uploadErrTooLarge, { name });
+      case "RATE_LIMITED":
+        return g.uploadErrRate;
+      case "UPLOAD_INCOMPLETE":
+        return g.uploadErrIncomplete;
+      default:
+        return prose ?? g.uploadPhotoFailed;
+    }
+  }
+
   async function uploadAttachmentFile(
     file: File,
   ): Promise<{ error: string | null; attachment?: ChatAttachment }> {
@@ -3080,7 +3100,7 @@ function GenerateFormInner({
     reserve.set("size", String(file.size));
     const reserved = await reserveChatAttachmentPath(reserve);
     if (reserved.error !== null || !reserved.path) {
-      return { error: reserved.error ?? g.uploadPhotoFailed };
+      return { error: localizeUploadError(reserved.errorCode, reserved.error, file.name) };
     }
 
     const { error: uploadError } = await createBrowserSupabase()
@@ -3100,7 +3120,11 @@ function GenerateFormInner({
     done.set("name", file.name);
     done.set("type", file.type);
     done.set("size", String(file.size));
-    return await finalizeChatAttachment(done);
+    const finalized = await finalizeChatAttachment(done);
+    if (finalized.error !== null) {
+      return { error: localizeUploadError(finalized.errorCode, finalized.error, file.name) };
+    }
+    return finalized;
   }
 
   function handlePanelFileSelected(e: React.ChangeEvent<HTMLInputElement>) {

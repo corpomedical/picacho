@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { rateLimited } from "@/lib/rate-limit";
 
 // Community feed actions — thin wrappers over the SQL in
 // supabase/pending-2026-08-21/community.sql. Sharing and reporting go
@@ -83,6 +84,13 @@ export async function reportCommunityPost(
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  // Ten reports a minute is plenty for a human and a wall for a script —
+  // this action inserts an admin-queue row per call and had no limiter at
+  // all (2026-08-31 inspection). Same fail-closed limiter as uploads.
+  if (await rateLimited(userData.user.id, "community-report", 60, 10)) {
+    return { error: "You're reporting quickly — give it a moment." };
+  }
 
   const { error } = await supabase.rpc("report_community_post", {
     p_post_id: postId,
