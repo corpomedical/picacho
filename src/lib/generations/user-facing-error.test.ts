@@ -72,3 +72,12 @@ describe("step-detail helpers", () => {
     expect(isRawProviderError(BUDGET_STUB)).toBe(false);
   });
 });
+
+it("does not claim the attachment promise on a 5xx that mentions an image", () => {
+  // The "attachment" copy says "failed tries don't use up your credits" —
+  // true for a 4xx rejection (force-refunded), not for a 5xx (stays behind
+  // the refunds flag). A 5xx must fall through to the generic line.
+  expect(
+    classifyFailureDetails(['fal.ai (Kling) error (500): {"detail":"invalid image file"}']),
+  ).toBeNull();
+});

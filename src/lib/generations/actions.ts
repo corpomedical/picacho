@@ -537,8 +537,15 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // Note the guard further down already promised this in its own error text
   // — "add one to this character, ATTACH A PHOTO TO THIS MESSAGE, or pick a
   // different model" — so this restores behaviour the server said it had.
+  // Promoted when NOTHING ELSE can supply a face — no character, or a
+  // character with zero saved photos. The second half mirrors the resolver
+  // exactly (send-plan's identityFromSaved keys on hasSavedPhotos): the
+  // receipt was promising "Face: attached photo" for a photo-less character
+  // while this line refused to promote, and the send then failed telling the
+  // person to attach a photo they had already attached (2026-08-31).
   const attachmentReferenceUrl =
-    identityRoleUrl || (character ? "" : referenceAttachmentUrl);
+    identityRoleUrl ||
+    (character?.reference_image_urls?.length ? "" : referenceAttachmentUrl);
 
   // Fetch + verify every companion character before spending anything — each
   // id must resolve to a real character actually owned by this account (not
@@ -1448,7 +1455,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         // Plain path only (no storyboard, no multi-image reference) — it
         // matches what the composer's caption promises, and keeps Seedance's
         // reference list inside its 4-image budget.
-        const plainPath = Boolean(identityAnchor) && !storyboardShots && !videoReferenceImageUrls;
+        // Baseline multi-reference counts as an identity anchor: the refs
+        // ARE the face. The old `!videoReferenceImageUrls` clause silently
+        // skipped the outfit photo on exactly the sends the receipt said
+        // carried it (2026-08-31); the budget trim below keeps Seedance's
+        // 4-image ceiling honest instead.
+        const plainPath =
+          (Boolean(identityAnchor) || Boolean(videoReferenceImageUrls?.length)) &&
+          !storyboardShots;
         if (plainPath && modelTakesOutfitPhoto) {
           if (outfitAttachmentUrl) {
             // A per-message outfit-role attachment (Send Receipt P2)
@@ -1483,7 +1497,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       const referencePromoted =
         Boolean(referenceAttachmentUrl) && referenceAttachmentUrl === attachmentReferenceUrl;
       const neutralUrl = (referencePromoted ? "" : referenceAttachmentUrl) || propAttachmentUrl;
-      if (neutralUrl && !wantsMultiCharacter && !storyboardShots && !videoReferenceImageUrls) {
+      // No `!videoReferenceImageUrls` here any more (2026-08-31): baseline
+      // multi-reference used to silently DROP the person's attachment while
+      // the receipt said it rides. On cited-image models it rides beside the
+      // identity refs (the budget trim below makes room); elsewhere it is
+      // vision-described into the prompt, which multi-reference never
+      // interfered with in the first place.
+      if (neutralUrl && !wantsMultiCharacter && !storyboardShots) {
         const propTakesPhoto =
           contentType === "image"
             ? imageModelId === "gpt-image" || imageModelId === "flux"
@@ -1499,6 +1519,26 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           } catch {
             // Send without it.
           }
+        }
+      }
+
+      // Seedance's reference list is capped at 4 images total. When the
+      // outfit or the attachment rides beside baseline multi-reference,
+      // trim the identity refs to make room — dropping the LAST refs, never
+      // the person's outfit/attachment, and never below the 2 that make the
+      // send multi-reference at all. fal.ts's own guard would otherwise
+      // silently drop the outfit/prop instead, which is the exact
+      // receipt-vs-reality lie this exists to prevent.
+      if (
+        videoReferenceImageUrls &&
+        (videoModelId === "seedance" || videoModelId === "seedance-2")
+      ) {
+        const extras = (outfitImageUrl ? 1 : 0) + (propImageUrl ? 1 : 0);
+        if (extras > 0) {
+          videoReferenceImageUrls = videoReferenceImageUrls.slice(
+            0,
+            Math.max(2, 4 - extras),
+          );
         }
       }
 
@@ -2184,6 +2224,30 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     const raw = (formData.get("attachment_reference_url") as string) || "";
     return raw.startsWith("/api/media/") ? raw : "";
   })();
+  // The neutral "reference" attachment — the ONLY role current clients send.
+  // Multi-angle used to read the identity role alone, so every attached
+  // photo was silently discarded on this path while the receipt said it
+  // rides (2026-08-31). Cited on Seedance beside the identity anchor,
+  // vision-described into every angle's prompt elsewhere.
+  const neutralAttachmentUrl = (() => {
+    const rolesRaw = formData.get("attachment_roles");
+    if (!rolesRaw) return "";
+    try {
+      const parsed: unknown = JSON.parse(String(rolesRaw));
+      if (!Array.isArray(parsed)) return "";
+      const neutral = parsed.find(
+        (x) =>
+          x &&
+          typeof (x as { url?: unknown }).url === "string" &&
+          ((x as { url: string }).url).startsWith("/api/media/") &&
+          !((x as { url: string }).url).includes("..") &&
+          (x as { role?: unknown }).role === "reference",
+      ) as { url: string } | undefined;
+      return neutral?.url ?? "";
+    } catch {
+      return "";
+    }
+  })();
   const requestedAnchorPhotoPath = (formData.get("anchor_photo_path") as string) || "";
 
   if (!userInput) return { error: "Describe what you want first." };
@@ -2367,6 +2431,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // angle video generation sends fal.ai nothing but a text description of
   // the character, same root cause as the single-generation consistency bug.
   let videoCharacterAnchorUrl: string | null = null;
+  // The attachment's two lanes, resolved ONCE for the whole batch: the
+  // photo itself on cited-image models, a description everywhere else —
+  // described a single time here rather than once per angle, since the
+  // description is identical and vision calls cost money.
+  let anglePropImageUrl: string | null = null;
+  let anglePropDescription: string | null = null;
   if (useRealProviders) {
     if (attachmentReferenceUrl) {
       // Absolutize — the value is a relative /api/media URL and fal.ai fetches
@@ -2383,6 +2453,20 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           .from("character-references")
           .createSignedUrl(chosenPath, 60 * 10);
         videoCharacterAnchorUrl = signed?.signedUrl ?? null;
+      }
+    }
+
+    if (neutralAttachmentUrl) {
+      const absoluteNeutral = absolutizeMediaUrl(neutralAttachmentUrl, await getOrigin());
+      if (videoModelId === "seedance" || videoModelId === "seedance-2") {
+        anglePropImageUrl = absoluteNeutral;
+      } else {
+        try {
+          anglePropDescription = await describeImageAsPrompt(absoluteNeutral, "standalone");
+        } catch {
+          // Best-effort, same as the single path: an undescribed photo
+          // costs nothing and the render still runs.
+        }
       }
     }
   }
@@ -2677,9 +2761,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       if (useRealProviders) {
         // The shared scene plus this angle's camera line — the only thing
         // that differs between the angles in a batch.
-        const anglePrompt = preset
+        let anglePrompt = preset
           ? `${sharedScene!.finalPrompt}\n\n${preset.promptHint}`
           : sharedScene!.finalPrompt;
+        if (anglePropDescription) {
+          anglePrompt += `\n\nThe user attached an image; its contents (use as the prompt above describes): ${anglePropDescription}`;
+        }
 
         const angleAttempts: AttemptLog[] = JSON.parse(JSON.stringify(sharedScene!.attempts));
         const lastAttempt = angleAttempts[angleAttempts.length - 1];
@@ -2745,6 +2832,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           resultUrl: null as string | null,
           pendingVideoJob: await submitVideoJob(anglePrompt, videoModelId, {
             characterAnchorImageUrl: videoCharacterAnchorUrl,
+            // The attached photo, cited beside the identity anchor on
+            // Seedance — fal.ts's own budget guard keeps the list legal.
+            propImageUrl: anglePropImageUrl,
             durationSeconds: videoDurationSeconds,
             aspectRatio: videoAspectRatio ?? undefined,
             generateNativeAudio: true,

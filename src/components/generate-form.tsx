@@ -4302,6 +4302,11 @@ function GenerateFormInner({
         finalPrompt: result.finalPrompt,
         resultUrl,
         createdAt: new Date().toISOString(),
+        // The identity score the server just computed. Without this, a fresh
+        // image showed "unscored" until the thread was reloaded from History
+        // — the one moment the number matters most is right after the render
+        // (2026-08-31).
+        matchScore: result.matchScore ?? null,
         attachments: submittedAttachments,
         // Submit-time snapshot for the Takes rail's microlabel — the model/
         // duration the request actually ran with, not wherever the pickers

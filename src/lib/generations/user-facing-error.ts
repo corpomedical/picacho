@@ -47,7 +47,15 @@ export type KnownFailureKind = "attachment" | "attempts";
 
 export function classifyFailureDetails(details: Array<string | undefined>): KnownFailureKind | null {
   const all = details.filter((d): d is string => typeof d === "string");
-  if (all.some((d) => isRawProviderError(d) && ATTACHMENT_REJECTED.test(d))) return "attachment";
+  // The 4xx gate matters because of what the "attachment" copy PROMISES:
+  // "failed tries don't use up your credits." That is true for a provider
+  // REJECTION (a 4xx force-refunds, past the switch and past the daily cap)
+  // and not necessarily true for anything else — a 5xx that happens to say
+  // "invalid image" stays behind the refunds flag, so showing the promise
+  // there made the app lie about money (2026-08-31 inspection).
+  if (all.some((d) => isRawProviderError(d) && /\(4\d\d\)/.test(d) && ATTACHMENT_REJECTED.test(d))) {
+    return "attachment";
+  }
   if (all.some((d) => BUDGET_EXHAUSTED.test(d))) return "attempts";
   return null;
 }
