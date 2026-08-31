@@ -410,9 +410,18 @@ export async function refundGenerationCosts(
   // out of that count. Checked, not fire-and-forget: if this write fails
   // nothing was released, and returning true would let the caller tell the
   // customer their credits came back when they didn't.
+  // refunded_at feeds exactly one thing: the daily-cap count above. A
+  // FORCED refund is exempt from that cap going in, so stamping it here made
+  // it consume the cap budget anyway — ten free likeness refusals in a day
+  // and a legitimate our-fault failure that evening found the cap already
+  // eaten (2026-08-31 ledger audit). Forced refunds release the credits but
+  // leave the counter alone.
   const { error: releaseError } = await admin
     .from("generations")
-    .update({ credits_used: 0, refunded_at: new Date().toISOString() })
+    .update({
+      credits_used: 0,
+      ...(opts?.force ? {} : { refunded_at: new Date().toISOString() }),
+    })
     .eq("id", generationId);
   if (releaseError) {
     console.error("Refund couldn't release the monthly allowance:", {
@@ -432,10 +441,30 @@ export async function refundGenerationCosts(
     if (claimed?.length) {
       // Atomic add — a read-then-write here would race a concurrent spend and
       // lose the refund (or the spend).
-      await admin.rpc("add_purchased_credits", {
+      const { error: addError } = await admin.rpc("add_purchased_credits", {
         p_user_id: row.user_id,
         p_amount: row.purchased_credits_used,
       });
+      if (addError) {
+        // The CAS above already destroyed the only record of what was owed,
+        // so a failure HERE used to lose the refund silently (2026-08-31
+        // ledger audit). Put the record back so the next attempt can try
+        // again; if even that fails, log every number a human needs.
+        const { error: restoreError } = await admin
+          .from("generations")
+          .update({ purchased_credits_used: row.purchased_credits_used })
+          .eq("id", generationId)
+          .eq("purchased_credits_used", 0);
+        console.error("Purchased-credit refund failed", {
+          generationId,
+          userId: row.user_id,
+          amount: row.purchased_credits_used,
+          addError: addError.message,
+          restored: !restoreError,
+          restoreError: restoreError?.message,
+        });
+        return false;
+      }
     }
   }
 
@@ -597,13 +626,21 @@ export async function saveVideoJob(params: {
     .eq("id", params.generationId);
 }
 
+/**
+ * Returns true when THIS call performed the terminal transition, false when
+ * the row was already terminal (someone else finished or discarded it).
+ * Callers that pay out follow-up money — the dialogue-surcharge refund — must
+ * gate on it: refunding "after finish" from a caller whose finish was a
+ * zero-row no-op is how the surcharge went back twice when a webhook and a
+ * poll raced (2026-08-31 ledger audit).
+ */
 async function finish(
   generationId: string,
   userId: string,
   outcome:
     | { status: "succeeded"; resultUrl: string; attempts: AttemptLog[] }
     | { status: "failed"; attempts: AttemptLog[]; fault?: FailureFault },
-): Promise<void> {
+): Promise<boolean> {
   const admin = createAdminClient();
 
   const { data: transitioned, error: transitionError } = await admin
@@ -660,7 +697,7 @@ async function finish(
   // Already terminal (discarded/cancelled by the user, or finished by a
   // concurrent caller): stop here. Do not refund again, notify, or feed the
   // circuit breaker for a transition that didn't happen.
-  if (!transitioned?.length) return;
+  if (!transitioned?.length) return false;
 
   // Refund the other two credit sources (purchased top-ups, the daily free
   // generation) for refundable faults — the update above only released the
@@ -874,6 +911,7 @@ async function finish(
   // finishes (no session → auth.getUser() null → early return), which is
   // precisely when most queued failures land — the actions.ts pre-render
   // crash paths still use it, since a session always exists there.
+  return true;
 }
 
 function appendStep(attempts: AttemptLog[], detail: string, step: AttemptLog["steps"][number]["step"]) {
@@ -1001,7 +1039,7 @@ export async function advanceGeneration(
       // the post-refund values, and refunded the surcharge again, once per
       // 90s lease until the write healed. finish() transitions the row
       // exactly once, so anything after it runs exactly once.
-      await finish(generationId, userId, {
+      const didTransition = await finish(generationId, userId, {
         status: "succeeded",
         resultUrl: row.payload.videoUrl,
         attempts: appendStep(
@@ -1011,7 +1049,10 @@ export async function advanceGeneration(
         ),
       });
       try {
-        await refundDialogueSurcharge(generationId);
+        // Only the caller whose finish() actually performed the transition
+        // pays the surcharge back — a raced webhook/poll pair both landing
+        // here used to refund it twice (2026-08-31 ledger audit).
+        if (didTransition) await refundDialogueSurcharge(generationId);
       } catch (refundErr) {
         // The video shipped; a failed surcharge refund is loud, not fatal.
         console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
@@ -1216,7 +1257,7 @@ export async function advanceGeneration(
       // Delivered silent because dialogue failed — refund the dialogue
       // surcharge, AFTER finish for exactly-once (see the matching branch
       // above for the sequential-retry double-refund this prevents).
-      await finish(generationId, userId, {
+      const didTransition = await finish(generationId, userId, {
         status: "succeeded",
         resultUrl: salvageUrl,
         attempts: appendStep(
@@ -1230,7 +1271,7 @@ export async function advanceGeneration(
       // after its own successful finish — and the surcharge math would
       // happily subtract a fee that was never added, handing out free
       // credits sized to the clip length.
-      if (row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId) {
+      if (didTransition && row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId) {
         try {
           await refundDialogueSurcharge(generationId);
         } catch (refundErr) {
@@ -1343,7 +1384,7 @@ export async function reapStaleJobs(userId: string): Promise<void> {
         // marker — the refund was rightly withheld too, leaving the person
         // charged for a video that existed and was never shown.
         if (current.stage !== "video" && current.payload?.videoUrl) {
-          await finish(current.generation_id, current.user_id, {
+          const didTransition = await finish(current.generation_id, current.user_id, {
             status: "succeeded",
             resultUrl: current.payload.videoUrl,
             attempts: appendStep(
@@ -1353,7 +1394,7 @@ export async function reapStaleJobs(userId: string): Promise<void> {
             ),
           });
           try {
-            await refundDialogueSurcharge(current.generation_id);
+            if (didTransition) await refundDialogueSurcharge(current.generation_id);
           } catch (refundErr) {
             console.error(
               `dialogue surcharge refund failed for ${current.generation_id}:`,

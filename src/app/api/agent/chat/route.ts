@@ -154,18 +154,31 @@ export async function POST(request: NextRequest) {
     deliveredText: boolean,
   ) {
     if (usage) {
-      await admin
-        .from("agent_usage")
-        .update({
-          mode: effectiveMode,
-          units: unitsForTurn(usage),
-          cost_usd: Number(costOfTurnUsd(usage).toFixed(6)),
-          input_tokens: usage.input_tokens ?? 0,
-          cache_read_tokens: usage.cache_read_input_tokens ?? 0,
-          cache_write_tokens: usage.cache_creation_input_tokens ?? 0,
-          output_tokens: usage.output_tokens ?? 0,
-        })
-        .eq("id", reservationId);
+      // Checked and retried once: this UPDATE is what turns the worst-case
+      // reservation into the real (usually much smaller) charge. Discarding
+      // its error left the person silently billed the ceiling for a turn
+      // that cost one unit (2026-08-31 ledger audit).
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const { error: settleError } = await admin
+          .from("agent_usage")
+          .update({
+            mode: effectiveMode,
+            units: unitsForTurn(usage),
+            cost_usd: Number(costOfTurnUsd(usage).toFixed(6)),
+            input_tokens: usage.input_tokens ?? 0,
+            cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+            cache_write_tokens: usage.cache_creation_input_tokens ?? 0,
+            output_tokens: usage.output_tokens ?? 0,
+          })
+          .eq("id", reservationId);
+        if (!settleError) return;
+        console.error("agent-chat: settle write failed", {
+          reservationId,
+          attempt,
+          error: settleError.message,
+        });
+        await new Promise((r) => setTimeout(r, 300));
+      }
       return;
     }
     // No usage came back. If text DID still reach them, the reservation

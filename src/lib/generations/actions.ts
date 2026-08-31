@@ -1929,10 +1929,19 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           // and say so honestly in the pipeline log.
           succeeded = false;
           matchScore = null;
+          // The wording is decided AFTER the refund runs — this log used to
+          // promise "and refunded" unconditionally while the refund sat
+          // behind the automatic_refunds switch, which is OFF (2026-08-31
+          // ledger audit: a promise in the person's own pipeline log that
+          // the ledger contradicted).
+          // Refund FIRST, so the log line written below can state what
+          // actually happened instead of promising it.
+          const blankRefunded = await refundGenerationCosts(placeholder.id);
           attempts[attempts.length - 1]?.steps.push({
             step: "generate",
-            detail:
-              "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed and refunded.",
+            detail: blankRefunded
+              ? "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed and refunded."
+              : "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed. Contact us and we'll put the credit back.",
           });
           await createAdminClient()
             .from("generations")
@@ -1947,7 +1956,6 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
               pipeline_log: attempts,
             })
             .eq("id", placeholder.id);
-          await refundGenerationCosts(placeholder.id);
           await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
         } else if (verdict) {
           matchScore = verdict.score;
