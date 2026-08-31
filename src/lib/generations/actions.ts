@@ -245,12 +245,27 @@ async function addGeneratedImageAsReference(
       return "full";
     }
 
-    await supabase
+    // Compare-and-swap on the list that was read: the download+upload above
+    // leaves a seconds-wide window, and two concurrent promotes both read
+    // the same list, so the second write silently dropped the first photo
+    // and stranded its upload in storage (2026-08-31 inspection). Paths are
+    // uid/uuid names — no quotes, commas or backslashes — so the Postgres
+    // array literal below is safe to assemble by hand.
+    const currentLiteral = `{${existing.map((p) => `"${p}"`).join(",")}}`;
+    const { data: swapped } = await supabase
       .from("character_profiles")
       .update({
         reference_image_urls: existing.length === 0 ? [path] : [...existing, path],
       })
-      .eq("id", characterId);
+      .eq("id", characterId)
+      .filter("reference_image_urls", "eq", currentLiteral)
+      .select("id");
+    if (!swapped?.length) {
+      // Lost the race — a concurrent promote landed first. Remove this
+      // upload rather than stranding it, exactly as the "full" branch does.
+      await supabase.storage.from("character-references").remove([path]);
+      return "failed";
+    }
     return "added";
   } catch {
     return "failed";
@@ -434,6 +449,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // rides to the model where an extra image is possible, and the USER'S
   // PROMPT says what it's for; identity never comes from it.
   const referenceAttachmentUrl = attachmentRoles?.find((a) => a.role === "reference")?.url ?? "";
+
+  // Every chat-attachment storage path riding this send, whatever its role —
+  // recorded on the row so deletion can clean them up. /api/media/<bucket>/
+  // is the app's own stable media URL shape.
+  const attachmentStoragePaths = (attachmentRoles ?? [])
+    .map((a) => a.url)
+    .filter((u) => u.startsWith("/api/media/chat-attachments/"))
+    .map((u) => u.slice("/api/media/chat-attachments/".length));
 
   // Which of the character's OWN saved reference photos to anchor to —
   // from the picker in the composer, for characters with more than one
@@ -1186,6 +1209,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // from the two profile-side credit sources (see refundGenerationCosts).
       purchased_credits_used: consumePurchased ?? 0,
       free_generation_used: !!consumeFree,
+      // The chat-attachment storage paths that rode this send (2026-08-31).
+      // Until now the row recorded nothing about them, so deleting a
+      // generation could never clean its uploads and the bucket only ever
+      // grew. Same pre-SQL safety as model_id above: jsonb_populate_record
+      // drops the key until pending-2026-08-31/hygiene.sql adds the column.
+      attachments: attachmentStoragePaths,
     };
 
     const { data: reservedId, error: reserveError } = await admin.rpc("reserve_generation", {
@@ -1894,6 +1923,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             .from("generations")
             .update({
               status: "failed",
+              // Cleared, or History keeps serving the black frame the row
+              // was refunded FOR — two live rows were doing exactly that
+              // (2026-08-31 inspection).
+              result_url: null,
               match_score: verdict.score,
               match_notes: verdict.notes || "Unusable result (blank/black frame).",
               pipeline_log: attempts,
@@ -3041,7 +3074,7 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
 
   const { data: row } = await supabase
     .from("generations")
-    .select("id, angle_group_id, content_type, result_url")
+    .select("id, angle_group_id, content_type, result_url, attachments")
     .eq("id", id)
     .eq("user_id", userData.user.id)
     .single();
@@ -3051,7 +3084,7 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
   const { data: group } = row.angle_group_id
     ? await supabase
         .from("generations")
-        .select("id, content_type, result_url")
+        .select("id, content_type, result_url, attachments")
         .eq("angle_group_id", row.angle_group_id)
         .eq("user_id", userData.user.id)
     : { data: null };
@@ -3085,6 +3118,38 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
     return { error: "Couldn't delete this — try again." };
   }
 
+  // Un-share what is being deleted. The soft delete means the ON DELETE
+  // CASCADE on community_posts never fires, so a shared render stayed on the
+  // public feed forever — pointing at a storage object the next lines
+  // remove, i.e. a permanently dead public image (2026-08-31 inspection).
+  const { error: unshareError } = await supabase
+    .from("community_posts")
+    .delete()
+    .eq("user_id", userData.user.id)
+    .in(
+      "generation_id",
+      rows.map((r) => r.id),
+    );
+  if (unshareError) {
+    // The delete itself succeeded; log loudly rather than fail the action.
+    console.error("deleteGeneration couldn't remove community posts:", unshareError.message);
+  }
+
+  // The chat attachments this send carried (recorded on the row since
+  // 2026-08-31) go with it — scoped to the caller's own folder as a final
+  // guard, since the column is data a past request wrote.
+  const attachmentPaths = rows
+    .flatMap((r) => ((r as { attachments?: unknown }).attachments as string[] | null) ?? [])
+    .filter((p) => typeof p === "string" && p.startsWith(`${userData.user!.id}/`) && !p.includes(".."));
+  if (attachmentPaths.length) {
+    const { error: attachmentRemoveError } = await supabase.storage
+      .from("chat-attachments")
+      .remove(attachmentPaths);
+    if (attachmentRemoveError) {
+      console.error("deleteGeneration couldn't remove attachments:", attachmentRemoveError.message);
+    }
+  }
+
   const imagePaths = rows
     .filter((r) => r.content_type === "image")
     .map((r) => extractStoragePath(r.result_url as string | null, "generated-images"))
@@ -3114,6 +3179,8 @@ export type HistoryTurn = {
   // 0-100 identity-match score from the post-generation vision check
   // (characters v2); null/absent when the generation wasn't scored.
   matchScore?: number | null;
+  /** chat-attachments storage paths this send carried (recorded 2026-08-31). */
+  attachmentPaths?: string[];
 };
 
 export type HistoryAngleClip = {
@@ -3159,7 +3226,7 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
   if (!userData.user || !generationId) return null;
 
   const columns =
-    "id, prompt_input, content_type, status, result_url, pipeline_log, created_at, angle_group_id, angle, match_score";
+    "id, prompt_input, content_type, status, result_url, pipeline_log, created_at, angle_group_id, angle, match_score, attachments";
 
   const { data: row } = await supabase
     .from("generations")
@@ -3217,6 +3284,11 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
     resultUrl: toMediaUrl(row.result_url as string | null),
     createdAt: row.created_at as string,
     matchScore: (row.match_score ?? null) as number | null,
+    // Reloaded threads used to come back with the attachment chips missing —
+    // the paths were never stored anywhere to reload (2026-08-31).
+    attachmentPaths: ((row.attachments as string[] | null) ?? []).filter(
+      (p) => typeof p === "string",
+    ),
   };
 }
 

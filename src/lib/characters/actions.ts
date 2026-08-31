@@ -229,6 +229,25 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       console.error("saveCharacterProfile update failed:", error.message);
       return { error: "Couldn't save this character — try again." };
     }
+
+    // The submitted lists wholesale replace the stored ones, so any photo
+    // dropped from the gallery was left behind in storage forever — 43
+    // stranded objects had accumulated by the time the 2026-08-31 inspection
+    // counted them. Diff after a confirmed save and remove what fell off.
+    // Best-effort: a failed remove costs pennies of storage, not the save.
+    const keep = new Set([...referenceImagePaths, ...outfitImagePaths]);
+    const dropped = [
+      ...((existingRow?.reference_image_urls as string[] | null) ?? []),
+      ...((existingRow?.outfit_image_urls as string[] | null) ?? []),
+    ].filter((p) => p && !keep.has(p));
+    if (dropped.length) {
+      const { error: removeError } = await supabase.storage
+        .from("character-references")
+        .remove(dropped);
+      if (removeError) {
+        console.error("saveCharacterProfile couldn't clear dropped photos:", removeError.message);
+      }
+    }
   } else {
     const { error } = await supabase.from("character_profiles").insert(row);
 

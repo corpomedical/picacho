@@ -10,9 +10,12 @@ export type SearchResults = {
 
 const EMPTY: SearchResults = { projects: [], characters: [], generations: [] };
 
-// RLS scopes every table here to the signed-in user already (same pattern
-// used everywhere else in the app), so there's no need to filter by user_id
-// explicitly — a query just can't see anyone else's rows.
+// Explicit user_id filters, NOT just RLS. The old comment claimed "a query
+// just can't see anyone else's rows" — false for an admin account, whose
+// admin-read policies span every user's projects, characters and
+// generations, so the workspace search box quietly returned other people's
+// content to it (2026-08-31 inspection). RLS is the floor; the scope is
+// stated here.
 export async function searchAll(query: string): Promise<SearchResults> {
   const trimmed = query.trim();
   if (!trimmed) return EMPTY;
@@ -30,11 +33,22 @@ export async function searchAll(query: string): Promise<SearchResults> {
   const like = `%${escaped}%`;
 
   const [{ data: projects }, { data: characters }, { data: generations }] = await Promise.all([
-    supabase.from("projects").select("id, name").ilike("name", like).limit(5),
-    supabase.from("character_profiles").select("id, name").ilike("name", like).limit(5),
+    supabase
+      .from("projects")
+      .select("id, name")
+      .eq("user_id", userData.user.id)
+      .ilike("name", like)
+      .limit(5),
+    supabase
+      .from("character_profiles")
+      .select("id, name")
+      .eq("user_id", userData.user.id)
+      .ilike("name", like)
+      .limit(5),
     supabase
       .from("generations")
       .select("id, prompt_input, content_type")
+      .eq("user_id", userData.user.id)
       .ilike("prompt_input", like)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })

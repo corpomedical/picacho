@@ -1475,7 +1475,24 @@ function historyItemToChatItem(item: ChatHistoryItem): ChatItem {
   if (item.kind === "multi") {
     return { ...item, attachments: [] };
   }
-  return { ...item, attachments: [] };
+  // Rebuild the attachment chips from the storage paths the row records
+  // (2026-08-31 — before that the paths weren't stored and a reloaded
+  // thread silently lost its attachments). Only what the thumbnail needs is
+  // reconstructable: the stable media URL and a display name. Size is
+  // unknowable and unused for display; the type is guessed from the
+  // extension so video attachments still render as video.
+  const attachments: ChatAttachment[] = (item.attachmentPaths ?? []).map((path) => {
+    const name = path.split("/").pop() ?? path;
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    return {
+      path,
+      url: `/api/media/chat-attachments/${path}`,
+      name,
+      type: ["mp4", "webm", "mov"].includes(ext) ? `video/${ext}` : `image/${ext || "png"}`,
+      size: 0,
+    };
+  });
+  return { ...item, attachments };
 }
 
 // `domId` (optional) is the anchor the Takes rail scrolls to — a plain DOM

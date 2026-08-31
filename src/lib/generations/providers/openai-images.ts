@@ -146,6 +146,12 @@ export async function generateImageWithOpenAI(
     const form = new FormData();
     form.set("model", "gpt-image-2");
     form.set("prompt", prompt);
+    // Pinned like the /generations call below pins size (2026-08-31): with
+    // size unset, the edits endpoint defaults to "auto" and matches the
+    // INPUT's dimensions — so the same flat 1-credit charge bought a square
+    // render for one person and a taller, materially more expensive one for
+    // whoever anchored to a phone photo. One price, one output size.
+    form.set("size", "1024x1024");
     if (images.length === 1) {
       form.set("image", images[0].blob, images[0].filename);
     } else {
