@@ -709,6 +709,21 @@ const en = {
     takesEmpty: "Finished takes from this chat will collect here.",
     takesRendering: "Rendering…",
     takesAngles: "{n} angles",
+    // The Stage layout (A×B redesign, 2026-09-01): the filmstrip, the
+    // transcript toggle, the proof plate, the labeled mode pills, and the
+    // always-visible price line.
+    sessionTranscript: "Session transcript",
+    identityMatchLabel: "Identity match",
+    creditsShortN: "{n} cr",
+    durationsFor: "Durations — {model}",
+    multiAngleLabel: "Multi-angle",
+    cinemaLabel: "Cinema Studio",
+    framesPillLabel: "Frames",
+    storyboardPillLabel: "Storyboard",
+    askFree: "Ask — free",
+    thisTakeCredits: "This take · {n} credits",
+    sendTotalCredits: "{k} renders · {n} credits",
+    creditsLabel: "Credits",
     uploadFailedFile: "{name} couldn't be uploaded — it may be too large or the connection dropped.",
     uploadErrSession: "Your session expired — please log in again.",
     uploadErrTooLarge: "{name} is larger than 25MB.",

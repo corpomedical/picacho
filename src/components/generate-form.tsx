@@ -791,17 +791,6 @@ function ChevronDownIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-// Trigger for the composer's slide-out advanced-options panel (multi-angle,
-// storyboard/multi-reference) — points left to hint that the options slide
-// out in that direction, and flips to point right once open.
-function ChevronLeftIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m15 6-6 6 6 6" />
-    </svg>
-  );
-}
-
 function ImageIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -1773,175 +1762,6 @@ function AskLiveBubble({ question, answer }: { question: string; answer: string 
   );
 }
 
-// One frame of the Takes rail below: stage-grounded thumb, one-line caption,
-// caps microlabel, and the identity score in the ochre numeral serif when the
-// turn was scored. The whole frame is a button that scrolls the chat to its
-// turn (each bubble carries a matching DOM id — see SingleTurnBubble's domId).
-function TakesRailEntry({
-  domId,
-  prompt,
-  resultUrl,
-  isVideo,
-  microLabel,
-  score,
-}: {
-  domId: string;
-  prompt: string;
-  resultUrl: string | null;
-  isVideo: boolean;
-  microLabel: string;
-  score: number | null;
-}) {
-  const { t } = useLocale();
-  const g = t.generate;
-  return (
-    <li>
-      <button
-        type="button"
-        onClick={() =>
-          document.getElementById(domId)?.scrollIntoView({ behavior: "smooth", block: "start" })
-        }
-        title={prompt}
-        className="group/take block w-full rounded-media text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent"
-      >
-        {/* Media sits on the fixed Darkroom stage, like every other render
-            surface — so anything drawn ON the thumb uses fixed Darkroom
-            literals (#a39a88 muted), never theme-mapped colors: the stage
-            deliberately doesn't flip with the theme (see globals.css). */}
-        <div className="aspect-video overflow-hidden rounded-media bg-atelier-stage">
-          {resultUrl ? (
-            isVideo ? (
-              // #t fragment: paints the first frame in Android WebView too —
-              // see history/page.tsx.
-              <video src={`${resultUrl}#t=0.1`} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={resultUrl} alt="" className="h-full w-full object-cover" />
-            )
-          ) : (
-            // A take that didn't pass — an empty frame on the stage.
-            <div className="flex h-full w-full items-center justify-center text-[#a39a88]">
-              <XIcon className="h-4 w-4" />
-            </div>
-          )}
-        </div>
-        <p className="mt-1.5 truncate text-[11px] leading-snug text-atelier-ink/80 transition-colors group-hover/take:text-atelier-ink">
-          {prompt}
-        </p>
-        <div className="mt-0.5 flex items-baseline justify-between gap-2">
-          <span className="truncate text-[9px] font-medium uppercase tracking-widest text-atelier-muted/80">
-            {microLabel}
-          </span>
-          {score !== null && (
-            <span
-              title={formatMsg(g.identityMatch, { n: score })}
-              className="flex-shrink-0 font-numeral text-[11px] font-semibold tabular-nums text-atelier-accent"
-            >
-              {score}%
-            </span>
-          )}
-        </div>
-      </button>
-    </li>
-  );
-}
-
-// The Takes rail — a slim, desktop-only (hidden below xl, so phones and
-// tablets are untouched) filmstrip beside the chat listing THIS session's
-// finished turns, newest first, straight from the same `items` state the
-// thread renders — no fetch of its own. An in-flight render shows as a
-// dashed frame with an ochre "Rendering…" pulse until it's archived into
-// `items`. Sticky within the app's scroll container so it stays in view
-// while the thread scrolls.
-function TakesRail({ items, inFlightPrompt }: { items: ChatItem[]; inFlightPrompt: string | null }) {
-  const { t } = useLocale();
-  const g = t.generate;
-  // Ask turns are conversation, not takes — the rail is a filmstrip of what
-  // was rendered, and an answer has no frame to show. Filtered here rather
-  // than skipped in the map so the "no takes yet" empty state is still right
-  // in a session that has only been talked to.
-  const takes = [...items]
-    .filter((item): item is Exclude<ChatItem, AskChatItem> => item.kind !== "ask")
-    .reverse();
-
-  return (
-    <aside
-      aria-label={g.takesTitle}
-      className="sticky top-6 hidden max-h-[calc(100vh-8rem)] w-48 flex-shrink-0 flex-col overflow-y-auto xl:flex"
-    >
-      <div className="flex items-baseline justify-between gap-2 border-b border-atelier-rule pb-2">
-        <h2 className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-          {g.takesTitle}
-        </h2>
-        {/* takes.length, not items.length: ask turns are conversation and the
-            filmstrip below already excludes them — the header was counting
-            things the list refused to show. */}
-        <p className="font-numeral text-sm font-semibold tabular-nums text-atelier-ink">{takes.length}</p>
-      </div>
-
-      {takes.length === 0 && inFlightPrompt === null ? (
-        <p className="mt-3 text-[11px] leading-relaxed text-atelier-muted/80">{g.takesEmpty}</p>
-      ) : (
-        <ol className="mt-3 space-y-3.5">
-          {inFlightPrompt !== null && (
-            <li>
-              <div className="flex aspect-video items-center justify-center rounded-media border border-dashed border-atelier-rule">
-                <span className="animate-pulse text-[10px] font-medium uppercase tracking-widest text-atelier-accent">
-                  {g.takesRendering}
-                </span>
-              </div>
-              {inFlightPrompt && (
-                <p
-                  title={inFlightPrompt}
-                  className="mt-1.5 truncate text-[11px] leading-snug text-atelier-muted"
-                >
-                  {inFlightPrompt}
-                </p>
-              )}
-            </li>
-          )}
-          {takes.map((item) => {
-            if (item.kind === "single") {
-              return (
-                <TakesRailEntry
-                  key={item.id}
-                  domId={`take-${item.id}`}
-                  prompt={item.prompt}
-                  resultUrl={item.succeeded ? item.resultUrl : null}
-                  isVideo={item.contentType === "video"}
-                  microLabel={
-                    !item.succeeded
-                      ? g.failed
-                      : item.contentType === "video"
-                        ? item.takeMeta
-                          ? `${item.takeMeta.modelName} · ${formatMsg(g.durationSecondsShort, { n: item.takeMeta.durationSeconds })}`
-                          : g.video
-                        : g.image
-                  }
-                  score={typeof item.matchScore === "number" ? item.matchScore : null}
-                />
-              );
-            }
-            const firstClip = item.angles.find((a) => a.succeeded && a.resultUrl) ?? null;
-            return (
-              <TakesRailEntry
-                key={item.groupId}
-                domId={`take-${item.groupId}`}
-                prompt={item.prompt}
-                resultUrl={firstClip?.resultUrl ?? null}
-                isVideo
-                microLabel={
-                  firstClip ? formatMsg(g.takesAngles, { n: item.angles.length }) : g.failed
-                }
-                score={null}
-              />
-            );
-          })}
-        </ol>
-      )}
-    </aside>
-  );
-}
 
 function GenerateFormInner({
   characters,
@@ -2313,11 +2133,13 @@ function GenerateFormInner({
   const [sceneShotCount, setSceneShotCount] = useState(3);
 
 
-  // New composer toolbar state (the + menu / creation-mode chip / slide-out
-  // advanced options) — see the render return below.
+  // New composer toolbar state (the + menu / creation-mode chip) — see the
+  // render return below. The old slide-out advanced group (advancedOpen, the
+  // unlabeled chevron that width-clipped four identical icon toggles) is gone
+  // with the Stage redesign: every mode is a labeled pill, always rendered,
+  // so there is no reveal state left to track.
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
   const [creationModeActive, setCreationModeActive] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
   const plusMenuRef = useRef<HTMLDivElement>(null);
 
   // "Take photo" only makes sense on a phone/tablet — that's the only place
@@ -2365,12 +2187,6 @@ function GenerateFormInner({
   const hasAnyMessages =
     items.length > 0 || livePrompt !== null || liveMultiAngle !== null || liveAsk !== null;
   const isHero = heroMode && !creationModeActive && !hasAnyMessages;
-
-  // The Takes rail renders only for the /app/generate instance (heroMode is
-  // the dashboard-home embed, which keeps its narrower container and its
-  // plain greeting), and only at xl+ — see TakesRail itself for the
-  // below-xl hiding, so phones and tablets are untouched.
-  const takesRailEnabled = !heroMode;
 
   // Kling advanced video options — storyboard (start/end frame) and
   // multi-image reference both draw from the selected character's existing
@@ -3025,11 +2841,30 @@ function GenerateFormInner({
   // resetChat; ignored mid-request for the same reason the New chat button
   // is disabled then — clearing the live bubble would orphan the render.
   // The focused flow (operator-approved from a mock, 2026-08-24): on
-  // Generate the composer folds to a slim pull-up bar and the selector
-  // header compresses to picked-option chips — the freed space goes to the
-  // render. stageExpanded folds the takes rail away for a full-stage view.
+  // Generate the composer folds to a slim pull-up bar — the freed space goes
+  // to the render, which the Stage above now shows at full width anyway.
   const [composerFolded, setComposerFolded] = useState(false);
-  const [stageExpanded, setStageExpanded] = useState(false);
+  // The Stage redesign (operator-chosen A×B merge, 2026-09-01): the docked
+  // layout leads with a full-width Darkroom stage showing the newest (or a
+  // filmstrip-picked) take, and the chat thread becomes a collapsible
+  // "Session transcript" card. stageTakeId pins the stage to one take; null
+  // means follow the newest. transcriptOpen starts closed — the stage
+  // carries the session — and is forced open by the three moments where the
+  // thread is the only place the answer lives: a streaming Ask reply, a
+  // failed render (its recovery pills live in the bubble), and arriving
+  // from History via ?resume=.
+  const [stageTakeId, setStageTakeId] = useState<string | null>(null);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // Keyed on the booleans, not the objects, so a streaming answer's token
+  // updates don't re-run the effect on every chunk.
+  const liveAskActive = liveAsk !== null;
+  const liveRenderFailed = liveResult !== null && !liveResult.succeeded;
+  useEffect(() => {
+    if (liveAskActive) setTranscriptOpen(true);
+  }, [liveAskActive]);
+  useEffect(() => {
+    if (liveRenderFailed) setTranscriptOpen(true);
+  }, [liveRenderFailed]);
 
   // "Generate anyway" on a rules-block failure: a one-shot flag consumed by
   // the next submit (adds skip_brand_rules=1 — the server logs the send as
@@ -3666,6 +3501,9 @@ function GenerateFormInner({
       const thread = await getGenerationThread(resumeId);
       if (!cancelled && thread) {
         setItems([historyItemToChatItem(thread)]);
+        // Arriving from History means "show me that conversation" — the
+        // transcript is the point, so it must not sit behind its toggle.
+        setTranscriptOpen(true);
       }
     })();
     return () => {
@@ -5197,7 +5035,7 @@ function GenerateFormInner({
           <div
             role="listbox"
             aria-multiselectable="true"
-            className="absolute left-0 right-0 top-full z-20 mt-2 rounded-[16px] bg-atelier-surface p-2.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+            className="absolute bottom-full left-0 right-0 z-30 mb-2 rounded-[16px] bg-atelier-surface p-2.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
             <div className="flex gap-2.5 overflow-x-auto pb-1">
               {characters.map((c) => {
@@ -5306,36 +5144,6 @@ function GenerateFormInner({
   const currentDurationCredits = currentVideoModel
     ? creditsForDuration(currentVideoModel, videoDurationSeconds)
     : 1;
-  // The stage-expand toggle (Google-style tailless corner brackets,
-  // operator-specified): folds the takes rail away so the render gets the
-  // full width. Lives in the header's model row, and in the compressed
-  // chip strip while the composer is folded.
-  const stageExpandButton = (
-    <button
-      type="button"
-      onClick={() => setStageExpanded((v) => !v)}
-      aria-pressed={stageExpanded}
-      aria-label={stageExpanded ? g.collapseStage : g.expandStage}
-      title={stageExpanded ? g.collapseStage : g.expandStage}
-      className={cn(
-        "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-[8px] transition-colors",
-        stageExpanded
-          ? "bg-atelier-ink text-atelier-paper"
-          : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-      )}
-    >
-      {stageExpanded ? (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-3.5 w-3.5">
-          <path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />
-        </svg>
-      ) : (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-3.5 w-3.5">
-          <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
-        </svg>
-      )}
-    </button>
-  );
-
   const videoModelPicker =
     contentType === "video" && videoModels.length > 1 ? (
       <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="min-w-0 flex-1">
@@ -5374,33 +5182,52 @@ function GenerateFormInner({
         {videoModelMenuOpen && (
           <div
             role="listbox"
-            className="absolute left-0 right-0 top-full z-20 mt-2 overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+            className="absolute bottom-full left-0 right-0 z-30 mb-2 max-h-[min(420px,55vh)] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
             {/* Phone widths: the duration chips live here instead of the
                 bar (the bar can't fit name + durations at 390px — the
                 mock's stated trade: one extra tap for the rare duration
-                change on small screens). */}
+                change on small screens). Captioned with the engine they
+                price (A×B redesign): a bare 3/5/8-credit schedule above a
+                list of four engines read as if it applied to all of them. */}
             {currentVideoModel && currentVideoModel.durations.length > 1 && (
-              <div className="mb-1 flex items-center gap-1 border-b border-atelier-rule/70 px-1 pb-1.5 pt-0.5 sm:hidden">
-                {currentVideoModel.durations.map((d) => (
-                  <button
-                    key={d.seconds}
-                    type="button"
-                    onClick={() => setVideoDurationSeconds(d.seconds)}
-                    aria-pressed={videoDurationSeconds === d.seconds}
-                    className={cn(
-                      "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                      videoDurationSeconds === d.seconds
-                        ? "bg-atelier-ink text-atelier-paper"
-                        : "text-atelier-muted hover:text-atelier-ink",
-                    )}
-                  >
-                    {formatMsg(g.durationSecondsShort, { n: d.seconds })}
-                  </button>
-                ))}
-                <span className="ml-auto pr-1 font-numeral text-[11px] tabular-nums text-atelier-accent">
-                  {formatMsg(g.creditsEach, { n: currentDurationCredits })}
-                </span>
+              <div className="mb-1 border-b border-atelier-rule/70 px-1 pb-1.5 pt-0.5 sm:hidden">
+                <p className="px-1.5 pb-1 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                  {formatMsg(g.durationsFor, { model: currentVideoModel.name })}
+                </p>
+                <div className="flex items-center gap-1">
+                  {currentVideoModel.durations.map((d) => {
+                    const segCredits = creditsForDuration(currentVideoModel, d.seconds);
+                    return (
+                      <button
+                        key={d.seconds}
+                        type="button"
+                        onClick={() => setVideoDurationSeconds(d.seconds)}
+                        aria-pressed={videoDurationSeconds === d.seconds}
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                          videoDurationSeconds === d.seconds
+                            ? "bg-atelier-ink text-atelier-paper"
+                            : "text-atelier-muted hover:text-atelier-ink",
+                        )}
+                      >
+                        {formatMsg(g.durationSecondsShort, { n: d.seconds })}
+                        {segCredits > 1 && (
+                          <span
+                            className={cn(
+                              "ml-1 font-numeral text-[10px] tabular-nums",
+                              videoDurationSeconds === d.seconds
+                                ? "text-atelier-paper/70"
+                                : "text-atelier-accent/90",
+                            )}
+                          >
+                            {formatMsg(g.creditsShortN, { n: segCredits })}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
             {(() => {
@@ -5507,6 +5334,20 @@ function GenerateFormInner({
             )}
           >
             {formatMsg(g.durationSecondsShort, { n: d.seconds })}
+            {/* The price INSIDE the segment (A×B redesign) — it used to
+                live only in this tooltip, which touch never sees. */}
+            {creditsForDuration(currentVideoModel, d.seconds) > 1 && (
+              <span
+                className={cn(
+                  "ml-1 font-numeral text-[10px] tabular-nums",
+                  videoDurationSeconds === d.seconds
+                    ? "text-atelier-paper/70"
+                    : "text-atelier-accent/90",
+                )}
+              >
+                {formatMsg(g.creditsShortN, { n: creditsForDuration(currentVideoModel, d.seconds) })}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -5560,6 +5401,14 @@ function GenerateFormInner({
   const freeTierClient = dailyFreeAvailable && purchasedCredits === 0;
   const blockingFenceVisible =
     receiptEngaged && sendPlanNow.issues.some((i) => i.severity === "block");
+  // Mirrors the banner-slot ternary in the sticky wrapper below: when a
+  // banner strip is fused to the composer's top edge, the (now standalone,
+  // fully-rounded) form flattens its top corners so the two read as one
+  // piece — the same seam contract the old in-card composer had.
+  const composerBannerVisible =
+    !isHero &&
+    ((cannotAfford && !freeTierClient && !blockingFenceVisible && Boolean(selectedVideoModel)) ||
+      approachingLimit);
 
   // First-login walkthrough (or a replay via ?tour=1 from the sidebar's
   // settings menu — see the effect above that strips that param). Steps are
@@ -5595,6 +5444,278 @@ function GenerateFormInner({
     />
   ) : null;
 
+  // ── The Stage (A×B redesign, operator-chosen 2026-09-01) ──────────────
+  // Docked-only derivations for the stage + filmstrip: the same `items`
+  // state the thread renders, never a fetch of its own. Newest first, ask
+  // turns excluded — an answer has no frame to show. The in-flight
+  // placeholder clears once the result is being revealed (liveResult), not
+  // when it's archived, so the strip never says "Rendering…" beside an
+  // already-visible result — same rule the old Takes rail enforced.
+  const stageTakes = isHero
+    ? []
+    : [...items]
+        .filter((it): it is Exclude<ChatItem, AskChatItem> => it.kind !== "ask")
+        .reverse();
+  const stageInFlightPrompt = liveMultiAngle
+    ? liveMultiAngle.prompt
+    : liveResult === null
+      ? livePrompt
+      : null;
+  const stageTake =
+    (stageTakeId !== null
+      ? stageTakes.find((t) => (t.kind === "single" ? t.id : t.groupId) === stageTakeId)
+      : undefined) ??
+    stageTakes[0] ??
+    null;
+  const stageTakeUrl = stageTake
+    ? stageTake.kind === "single"
+      ? stageTake.succeeded
+        ? stageTake.resultUrl
+        : null
+      : (stageTake.angles.find((a) => a.succeeded && a.resultUrl)?.resultUrl ?? null)
+    : null;
+  const stageTakeIsVideo = stageTake
+    ? stageTake.kind === "single"
+      ? stageTake.contentType === "video"
+      : true
+    : false;
+
+  // Everything painted ON the stage uses fixed Darkroom literals, never
+  // theme-mapped colors — the stage deliberately doesn't flip with the
+  // theme (see --color-atelier-stage in globals.css).
+  const stagePanel = isHero ? null : (
+    <div className="mb-4">
+      <div className="relative overflow-hidden rounded-[16px] bg-atelier-stage shadow-[0_1px_2px_rgba(33,29,22,0.06),0_24px_60px_-28px_rgba(33,29,22,0.28)]">
+        <div className="flex aspect-video max-h-[56vh] w-full items-center justify-center">
+          {stageInFlightPrompt !== null ? (
+            <div className="flex flex-col items-center gap-3 px-6 text-center">
+              <LoaderIcon className="h-5 w-5 text-[#a39a88]" />
+              <p className="text-sm text-[#cfc8ba]">{liveProgress ?? g.runningPipeline}</p>
+              <p className="max-w-md truncate text-[11px] text-[#a39a88]">{stageInFlightPrompt}</p>
+            </div>
+          ) : stageTakeUrl ? (
+            stageTakeIsVideo ? (
+              // key remounts the player when the filmstrip picks another
+              // take — without it the <video> keeps playing the old src.
+              <video
+                key={stageTakeUrl}
+                src={stageTakeUrl}
+                controls
+                playsInline
+                preload="metadata"
+                className="h-full max-h-full w-full object-contain"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={stageTakeUrl}
+                src={stageTakeUrl}
+                alt=""
+                className="h-full max-h-full w-full object-contain"
+              />
+            )
+          ) : stageTake ? (
+            <div className="flex flex-col items-center gap-2 px-6 text-center">
+              <XIcon className="h-5 w-5 text-[#a39a88]" />
+              <p className="text-sm text-[#cfc8ba]">{g.couldntValidate}</p>
+              <button
+                type="button"
+                onClick={() => setTranscriptOpen(true)}
+                className="text-[12px] font-medium text-[#e0a468] underline-offset-2 hover:underline"
+              >
+                {g.sessionTranscript}
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-media bg-white/10 text-[#cfc8ba]">
+                {contentType === "video" ? <VideoIcon className="h-5 w-5" /> : <ImageIcon className="h-5 w-5" />}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-[#cfc8ba]">
+                  {creationModeActive
+                    ? contentType === "video"
+                      ? g.createVideosTitle
+                      : g.createImagesTitle
+                    : nativeClient
+                      ? g.noMessagesNative
+                      : g.noMessages}
+                </p>
+                {creationModeActive && (
+                  <p className="mt-1 text-xs text-[#a39a88]">{g.createModeSubtitle}</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+        {/* The proof plate — the identity score as a first-class mark on the
+            render itself, not a footnote in a bubble. pointer-events-none so
+            neither overlay ever blocks the video's own controls. */}
+        {stageTake && stageTakeUrl !== null && stageInFlightPrompt === null && (
+          <>
+            <div className="pointer-events-none absolute left-3 top-3 rounded-[12px] border border-white/10 bg-[#141519]/70 px-3 py-2 backdrop-blur-[10px]">
+              {stageTake.kind === "single" && typeof stageTake.matchScore === "number" ? (
+                <div>
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-white/55">
+                    {g.identityMatchLabel}
+                  </p>
+                  <p className="flex items-baseline gap-2">
+                    <span className="font-numeral text-xl font-semibold tabular-nums text-[#e0a468]">
+                      {stageTake.matchScore}%
+                    </span>
+                    <span className="text-[11px] text-white/75">
+                      {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
+                    </span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-[11px] text-white/75">
+                  {stageTake.kind === "multi"
+                    ? formatMsg(g.takesAngles, { n: stageTake.angles.length })
+                    : stageTakeIsVideo
+                      ? g.video
+                      : g.image}
+                </p>
+              )}
+            </div>
+            <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-[#141519]/60 px-2.5 py-1 text-[10.5px] text-white/65">
+              {stageTake.kind === "single" && stageTake.takeMeta
+                ? `${stageTake.takeMeta.modelName} · ${formatMsg(g.durationSecondsShort, { n: stageTake.takeMeta.durationSeconds })}`
+                : stageTakeIsVideo
+                  ? g.video
+                  : g.image}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* The filmstrip — the session's takes at every breakpoint, replacing
+          the xl-only Takes rail. Scrolls inside itself (the 2026-08-09 /
+          2026-08-30 page-overflow incidents both came from strips that
+          couldn't). */}
+      <div className="mt-3 flex items-center gap-3">
+        <div className="flex flex-shrink-0 flex-col">
+          <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+            {g.takesTitle}
+          </span>
+          <span className="font-numeral text-base font-semibold tabular-nums text-atelier-ink">
+            {stageTakes.length}
+          </span>
+        </div>
+        <div className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto overscroll-x-contain pb-1">
+          {stageInFlightPrompt !== null && (
+            <div
+              title={stageInFlightPrompt}
+              className="flex h-[62px] w-[110px] flex-shrink-0 items-center justify-center rounded-media border border-dashed border-atelier-rule bg-atelier-surface/40"
+            >
+              <span className="animate-pulse px-2 text-center text-[10px] font-medium uppercase tracking-widest text-atelier-accent">
+                {g.takesRendering}
+              </span>
+            </div>
+          )}
+          {stageTakes.map((it) => {
+            const tid = it.kind === "single" ? it.id : it.groupId;
+            const url =
+              it.kind === "single"
+                ? it.succeeded
+                  ? it.resultUrl
+                  : null
+                : (it.angles.find((a) => a.succeeded && a.resultUrl)?.resultUrl ?? null);
+            const tileIsVideo = it.kind === "single" ? it.contentType === "video" : true;
+            const score =
+              it.kind === "single" && typeof it.matchScore === "number" ? it.matchScore : null;
+            const selected =
+              stageTake !== null &&
+              (stageTake.kind === "single" ? stageTake.id : stageTake.groupId) === tid;
+            return (
+              <button
+                key={tid}
+                type="button"
+                title={it.prompt}
+                onClick={() => {
+                  setStageTakeId(tid);
+                  if (transcriptOpen) {
+                    document
+                      .getElementById(`take-${tid}`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                }}
+                className={cn(
+                  "relative h-[62px] w-[110px] flex-shrink-0 overflow-hidden rounded-media bg-atelier-stage transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent",
+                  selected
+                    ? "shadow-[0_0_0_2px_var(--color-atelier-accent)]"
+                    : "hover:shadow-[0_0_0_1px_var(--color-atelier-rule)]",
+                )}
+              >
+                {url ? (
+                  tileIsVideo ? (
+                    // #t fragment: paints the first frame in Android WebView
+                    // too — see history/page.tsx.
+                    <video
+                      src={`${url}#t=0.1`}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={url} alt="" className="h-full w-full object-cover" />
+                  )
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center text-[#a39a88]">
+                    <XIcon className="h-4 w-4" />
+                  </span>
+                )}
+                {score !== null && (
+                  <span className="absolute bottom-1 right-1 rounded-[5px] bg-[#141519]/75 px-1 py-px font-numeral text-[10px] font-semibold tabular-nums text-[#e0a468]">
+                    {score}%
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          {stageTakes.length === 0 && stageInFlightPrompt === null && (
+            <p className="text-[11px] leading-relaxed text-atelier-muted/80">{g.takesEmpty}</p>
+          )}
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setTranscriptOpen((v) => !v)}
+            aria-expanded={transcriptOpen}
+            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              className="h-3.5 w-3.5 flex-shrink-0"
+            >
+              <path d="M4 6h16M4 12h10M4 18h7" />
+            </svg>
+            <span className="hidden sm:inline">{g.sessionTranscript}</span>
+            <ChevronDownIcon
+              className={cn("h-3 w-3 transition-transform", transcriptOpen && "rotate-180")}
+            />
+          </button>
+          {hasAnyMessages && (
+            <button
+              type="button"
+              onClick={() => resetChat()}
+              disabled={locked}
+              className="flex-shrink-0 rounded-full border border-atelier-rule px-3.5 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
+            >
+              {g.newChat}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <>
       {tourActive && (
@@ -5610,180 +5731,35 @@ function GenerateFormInner({
           stepsLabel={ob.stepsLabel}
         />
       )}
-    {/* Below xl (and on the dashboard-home embed) this wrapper is a plain
-        block and nothing changes; at xl+ on /app/generate it becomes the row
-        that seats the Takes rail beside the chat card. The card keeps
-        min-w-0 + flex-1 so it yields the rail's slim column without any of
-        its internals reflowing differently. */}
-    <div className={cn(takesRailEnabled && "xl:flex xl:items-start xl:gap-5")}>
+    {/* The Stage layout (A×B redesign): a plain column — stage + filmstrip
+        first, then the collapsible transcript card, then the composer. The
+        old xl-only Takes-rail row is gone; the filmstrip serves every
+        breakpoint. */}
+    <div>
+    {stagePanel}
     <div
       className={cn(
         "relative flex flex-col transition-all duration-300 ease-out",
-        takesRailEnabled && "xl:min-w-0 xl:flex-1",
-        isHero
-          ? "min-h-[60vh] items-center justify-center gap-6"
-          : // isolate + transform-gpu forces this onto its own GPU layer, which
-            // works around a Safari bug where border-radius on an element whose
-            // ancestor has a CSS transition renders with square/banded corners
-            // instead of the actual radius. The box-shadow itself lives on the
-            // decorative aria-hidden layer rendered just below, not on this
-            // element — putting the Safari shadow-corner mask fix here would
-            // also clip the "+" dropdown and character switcher, which need
-            // to render outside this box's bounds.
-            // Borderless (operator, 2026-08-21): edge definition comes from
-            // the shadow layer's 1px ring below, GPT-style — no border line.
-            "isolate transform-gpu rounded-[26px] bg-atelier-surface/80 backdrop-blur-xl",
+        // Docked is a plain column now — the glass card belongs to the
+        // transcript and the composer individually, not to one shell
+        // around everything.
+        isHero && "min-h-[60vh] items-center justify-center gap-6",
         justArrived && "transition-opacity duration-[220ms] ease-out",
         justArrived && !settled && "opacity-0",
       )}
     >
-      {!isHero && (
+      {isHero && <h1 className="text-2xl font-semibold text-atelier-ink">{greeting}</h1>}
+
+      {!isHero && transcriptOpen && (
+      <>
+      {/* The Session transcript — the chat thread in its own glass card,
+          opened from the filmstrip's toggle (and forced open by an Ask
+          answer, a failed render, or ?resume= — see transcriptOpen). */}
+      <div className="isolate relative mb-4 transform-gpu rounded-[26px] bg-atelier-surface/80 backdrop-blur-xl">
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 -z-10 rounded-[26px] shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
         />
-      )}
-      {isHero && <h1 className="text-2xl font-semibold text-atelier-ink">{greeting}</h1>}
-
-      {!isHero && (
-      <>
-      {/* The focused flow's compressed header: while the composer is folded,
-          the pickers become read-only chips stating exactly what's running —
-          tap one and the full composer returns. The expand control (Google-
-          style tailless corners) folds the takes rail for a full-stage view. */}
-      {composerFolded ? (
-        <div className="flex items-center gap-2 border-b border-atelier-rule/70 px-4 py-2.5">
-          <button
-            type="button"
-            onClick={() => setComposerFolded(false)}
-            className="flex min-w-0 items-center gap-1.5 rounded-full bg-atelier-ink/[0.045] px-3 py-1.5 text-xs font-medium text-atelier-ink transition-colors hover:bg-atelier-ink/[0.07]"
-          >
-            <span className="truncate">
-              {characters.find((c) => c.id === characterId)?.name ??
-                (contentType === "video" ? g.video : g.image)}
-            </span>
-            <ChevronDownIcon className="h-3 w-3 rotate-180 text-atelier-muted" />
-          </button>
-          {contentType === "video" && currentVideoModel && (
-            <button
-              type="button"
-              onClick={() => setComposerFolded(false)}
-              className="flex min-w-0 items-center gap-1.5 rounded-full bg-atelier-ink/[0.045] px-3 py-1.5 text-xs text-atelier-ink transition-colors hover:bg-atelier-ink/[0.07]"
-            >
-              <span className="truncate">
-                {currentVideoModel.name} · {videoDurationSeconds}s
-                {videoAspectRatio ? ` · ${videoAspectRatio}` : ""}
-              </span>
-              <ChevronDownIcon className="h-3 w-3 rotate-180 text-atelier-muted" />
-            </button>
-          )}
-          <div className="ml-auto">{stageExpandButton}</div>
-        </div>
-      ) : (
-      <div className="space-y-3 border-b border-atelier-rule p-5">
-        {hasAnyMessages && (
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={() => resetChat()}
-              disabled={locked}
-              className="flex-shrink-0 rounded-full border border-atelier-rule px-3.5 py-2 text-xs font-medium text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
-            >
-              {g.newChat}
-            </button>
-          </div>
-        )}
-
-        {/* The Casting Bar (2026-08-28): character segment | model segment
-            | durations | stage expand — one pill instead of two stacked
-            rows. The wrapper is the positioning context, so both sheets
-            drop bar-wide beneath it. */}
-        <div className="relative">
-          <div className="flex items-center gap-1 rounded-full bg-atelier-ink/[0.045] p-1">
-            {characterPicker}
-            {videoModelPicker && <span aria-hidden className="h-5 w-px flex-shrink-0 bg-atelier-rule" />}
-            {videoModelPicker}
-            {videoDurationPicker}
-            {(videoModelPicker || videoDurationPicker) && (
-              <span className="flex-shrink-0 pr-1">{stageExpandButton}</span>
-            )}
-          </div>
-        </div>
-        {referencePhotos.length > 1 &&
-          anchorPhotoPickerRelevant &&
-          videoAdvancedMode === "none" &&
-          !isMultiCharacter && (
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
-              {g.anchorPhotoLabel}
-            </p>
-            <p className="mt-0.5 text-[11px] leading-snug text-atelier-muted/80">{g.anchorPhotoHint}</p>
-            {/* Reported 2026-08-30 with a screenshot: on a character with
-                eight saved photos this strip pushed the whole PAGE wider
-                than the phone, so the composer card ran off the right edge
-                and every heading on the screen ("Generate", "REFERENCE
-                PHOTO", "Picacho is AI…") sat clipped on the left. Eight
-                48px thumbs plus gaps is ~426px of flex-shrink-0 children
-                with nothing allowed to shrink and nothing clipping the
-                overflow, so the document itself grew a horizontal scroll.
-                Same class as the 2026-08-09 icon-strip incident below, and
-                the same fix: min-w-0 + overflow-x-auto so the strip scrolls
-                INSIDE itself. overscroll-x-contain matters more here than
-                usual — this app deliberately keeps one scroller per gesture
-                (the two-swipe fix), and without it a flick that runs out of
-                photos would chain straight back to the page. */}
-            <div className="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto overscroll-x-contain pb-1">
-              {referencePhotos.map((p, i) => {
-                const selected = anchorPhotoPath ? anchorPhotoPath === p.path : i === 0;
-                return (
-                  <button
-                    key={p.path}
-                    type="button"
-                    onClick={() => setAnchorPhotoPath(p.path)}
-                    className={cn(
-                      "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-media border-2",
-                      selected ? "border-atelier-ink" : "border-transparent",
-                    )}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={p.url} alt="" className="h-full w-full object-cover" />
-                    {selected && (
-                      <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper">
-                        <CheckIcon className="h-2 w-2" />
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-        {isMultiCharacter && castMemberMissingPhoto && (
-          <p className="text-xs text-red-500">
-            {formatMsg(g.multiCharacterNeedsPhoto, { name: castMemberMissingPhoto.name })}
-          </p>
-        )}
-        {/* Send Receipt, tucked directly under the model selector (operator,
-            2026-08-26: the floating placement read as banner clutter). Video
-            drops the model+duration headline — the picker above already says
-            it — leaving only the substance (face source, attachments, and
-            engagement-gated warnings). Image mode renders nothing unless
-            there is substance (see showImageReceipt). Inside the fold is a
-            deliberate trade: a send always requires the composer open, so
-            the line is still seen before anything rides. */}
-        {!isHero && (contentType === "video" || showImageReceipt) && (
-          <ReceiptStrip
-            plan={sendPlanNow}
-            headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
-            g={g}
-            modelName={sendPlanModelName()}
-            onAction={handlePlanAction}
-            showIssues={receiptEngaged}
-          />
-        )}
-      </div>
-      )}
-
       <div className="min-h-[280px] space-y-7 p-6">
         {!hasAnyMessages ? (
           creationModeActive ? (
@@ -5922,14 +5898,18 @@ function GenerateFormInner({
             )}
           </>
         )}
-        {voiceSessionCard}
         <div ref={bottomRef} />
+      </div>
       </div>
       </>
       )}
 
-      {isHero && voiceSessionCard && (
-        <div className="mx-auto w-full max-w-5xl">{voiceSessionCard}</div>
+      {/* The voice session card sits directly above the composer in BOTH
+          layouts now — in the Stage layout the thread can be collapsed, and
+          a live mic session must never be invisible (2026-08-24 incident:
+          the mic turned on with nothing on screen to show for it). */}
+      {voiceSessionCard && (
+        <div className={cn(isHero ? "mx-auto w-full max-w-5xl" : "mb-3")}>{voiceSessionCard}</div>
       )}
 
       {/* max-w-5xl, matching the app layout's own container.
@@ -5985,7 +5965,10 @@ function GenerateFormInner({
         <button
           type="button"
           onClick={() => setComposerFolded(false)}
-          className="relative z-10 flex w-full flex-col items-center gap-0.5 rounded-b-[26px] bg-atelier-surface/90 py-2 shadow-[0_-12px_28px_-16px_rgba(20,22,30,0.3)] backdrop-blur-xl"
+          className={cn(
+            "relative z-10 flex w-full flex-col items-center gap-0.5 bg-atelier-surface/90 py-2 shadow-[0_-12px_28px_-16px_rgba(20,22,30,0.3)] backdrop-blur-xl",
+            composerBannerVisible ? "rounded-b-[26px]" : "rounded-[18px]",
+          )}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 text-atelier-ink/70">
             <path d="m6 14 6-6 6 6" />
@@ -6000,13 +5983,17 @@ function GenerateFormInner({
         onSubmit={handleSubmit}
         className={cn(
           // Borderless everywhere (operator, 2026-08-21 — GPT-style): the
-          // hero frame gets its edge from the shadow ring layer below; the
-          // docked form's old border-t divider is gone too — the input
-          // chip's own fill is the separation now.
-          "relative z-10 p-4",
+          // frame gets its edge from the shadow ring layer below. Since the
+          // Stage redesign the docked composer is a standalone floating
+          // card too, not the bottom slab of a chat card — fully rounded
+          // unless a banner strip is fused above it.
+          "relative z-10 isolate transform-gpu p-4 backdrop-blur-xl",
           isHero
-            ? "isolate transform-gpu rounded-[28px] bg-atelier-surface/80 backdrop-blur-xl"
-            : "rounded-b-[22px] bg-atelier-surface",
+            ? "rounded-[28px] bg-atelier-surface/80"
+            : cn(
+                "bg-atelier-surface/90",
+                composerBannerVisible ? "rounded-b-[22px]" : "rounded-[22px]",
+              ),
         )}
       >
         {/* Lives inside the form (not the outer wrapper) specifically so its
@@ -6014,15 +6001,99 @@ function GenerateFormInner({
             the form's own top edge, regardless of whether UsageBanner is
             also rendered above it pushing the form down. */}
         {error && <ComposerToast key={error} message={error} onDone={() => setError("")} />}
-        {isHero && (
-          // Decorative shadow layer, separate from the form itself: the
-          // Safari shadow-corner mask fix (see the docked container above)
-          // would also clip the "+" dropdown, which is a child of this form
-          // and needs to render outside its bounds when open.
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 -z-10 rounded-[28px] shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]"
-          />
+        {/* Decorative shadow layer, separate from the form itself: the
+            Safari shadow-corner mask fix would also clip the "+" dropdown
+            and the loadout sheets, which are children of this form and need
+            to render outside its bounds when open. */}
+        <div
+          aria-hidden
+          className={cn(
+            "pointer-events-none absolute inset-0 -z-10 shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]",
+            isHero
+              ? "rounded-[28px]"
+              : composerBannerVisible
+                ? "rounded-b-[22px]"
+                : "rounded-[22px]",
+          )}
+        />
+        {/* The loadout row — the Casting Bar relocated from the old card
+            header into the composer itself (A×B redesign): character,
+            engine + price, durations and the Send Receipt all live where
+            the send happens. The wrapper is the positioning context; both
+            sheets open UPWARD here, since the composer sits at the bottom
+            of the screen — the same rule the + menu already follows. */}
+        {!isHero && (
+          <div className="mb-2.5 space-y-2.5">
+            <div className="relative">
+              <div className="flex items-center gap-1 rounded-full bg-atelier-ink/[0.045] p-1">
+                {characterPicker}
+                {videoModelPicker && (
+                  <span aria-hidden className="h-5 w-px flex-shrink-0 bg-atelier-rule" />
+                )}
+                {videoModelPicker}
+                {videoDurationPicker}
+              </div>
+            </div>
+            {referencePhotos.length > 1 &&
+              anchorPhotoPickerRelevant &&
+              videoAdvancedMode === "none" &&
+              !isMultiCharacter && (
+                <div>
+                  <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
+                    {g.anchorPhotoLabel}
+                  </p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-atelier-muted/80">
+                    {g.anchorPhotoHint}
+                  </p>
+                  {/* min-w-0 + overflow-x-auto + overscroll-x-contain: the
+                      2026-08-30 page-overflow incident — the strip must
+                      scroll INSIDE itself, and the flick must not chain to
+                      the page scroller. */}
+                  <div className="mt-1.5 flex min-w-0 gap-1.5 overflow-x-auto overscroll-x-contain pb-1">
+                    {referencePhotos.map((p, i) => {
+                      const selected = anchorPhotoPath ? anchorPhotoPath === p.path : i === 0;
+                      return (
+                        <button
+                          key={p.path}
+                          type="button"
+                          onClick={() => setAnchorPhotoPath(p.path)}
+                          className={cn(
+                            "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-media border-2",
+                            selected ? "border-atelier-ink" : "border-transparent",
+                          )}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={p.url} alt="" className="h-full w-full object-cover" />
+                          {selected && (
+                            <span className="absolute right-0.5 top-0.5 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper">
+                              <CheckIcon className="h-2 w-2" />
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            {isMultiCharacter && castMemberMissingPhoto && (
+              <p className="text-xs text-red-500">
+                {formatMsg(g.multiCharacterNeedsPhoto, { name: castMemberMissingPhoto.name })}
+              </p>
+            )}
+            {/* Send Receipt — the honesty layer, fused into the composer
+                (A×B: the Control Room's centerpiece riding the Stage's
+                frame). Same visibility rules as before the move. */}
+            {(contentType === "video" || showImageReceipt) && (
+              <ReceiptStrip
+                plan={sendPlanNow}
+                headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
+                g={g}
+                modelName={sendPlanModelName()}
+                onAction={handlePlanAction}
+                showIssues={receiptEngaged}
+              />
+            )}
+          </div>
         )}
         <Label htmlFor="prompt" className="sr-only">
           {g.messageLabel}
@@ -6573,9 +6644,9 @@ function GenerateFormInner({
               </>
               )}
 
-              {contentType === "video" &&
-                currentCharacter?.voiceId &&
-                (advancedOpen || dialogueText.trim().length > 0) && (
+              {/* Dialogue is a first-class line now (A×B) — it used to hide
+                  behind the advanced reveal, which no longer exists. */}
+              {contentType === "video" && currentCharacter?.voiceId && (
                 <div className="border-t border-atelier-rule/70 px-3.5 py-2.5">
                   <input
                     value={dialogueText}
@@ -7103,205 +7174,187 @@ function GenerateFormInner({
                       </span>
                     </button>
                   )}
+                  {/* The mode pills (A×B redesign): every mode is a LABELED
+                      pill, always rendered — no width-clip reveal, no
+                      unlabeled chevron. The four abstract rectangle-stack
+                      icons at 16px were shipped confusables (Clapper/Film
+                      identical); the word does the work now, the icon just
+                      anchors it. Same handlers, locks and one-tap
+                      explanations as before — locked stays clickable, the
+                      tap says why (disabled buttons dispatch no events on
+                      touch). The group carries the tour anchor the chevron
+                      used to. */}
                   {contentType === "video" && (
-                    <>
-                      <div
+                    <div
+                      data-tour-id="tour-advanced-toggle"
+                      className="flex flex-shrink-0 items-center gap-1.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() =>
+                          multiAngleLocked ? setError(g.multiAngleLocked) : toggleMultiAngleMode()
+                        }
+                        disabled={submitting}
+                        title={
+                          multiAngleLocked
+                            ? g.multiAngleLocked
+                            : multiAngleMode
+                              ? g.multiAngleOnTitle
+                              : g.multiAngleOffTitle
+                        }
+                        aria-label={
+                          multiAngleLocked
+                            ? g.multiAngleLocked
+                            : multiAngleMode
+                              ? g.multiAngleOnTitle
+                              : g.multiAngleOffTitle
+                        }
+                        aria-pressed={multiAngleMode}
+                        aria-disabled={multiAngleLocked || undefined}
                         className={cn(
-                          // flex-shrink-0 matters here specifically because
-                          // this div has overflow-hidden (needed for the
-                          // width-clip animation) — per the flexbox spec, an
-                          // overflow:hidden flex item's automatic minimum
-                          // size is 0, not its content size. Inside the new
-                          // overflow-x-auto strip above, that made this one
-                          // element (uniquely, of everything in the row) a
-                          // candidate to get squeezed toward 0 width under
-                          // space pressure instead of just scrolling into
-                          // view — which is what made the two icons collapse
-                          // to a sliver behind the neighboring chip when
-                          // expanded, real incident 2026-08-09.
-                          "flex-shrink-0 overflow-hidden transition-all duration-300 ease-out",
-                          advancedOpen ? "max-w-[192px] opacity-100" : "max-w-0 opacity-0",
+                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          multiAngleLocked
+                            ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                            : multiAngleMode
+                              ? "bg-atelier-ink text-atelier-paper"
+                              : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
-                        <div className="flex items-center gap-1.5 pr-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              multiAngleLocked ? setError(g.multiAngleLocked) : toggleMultiAngleMode()
-                            }
-                            disabled={submitting}
-                            title={
-                              multiAngleLocked
-                                ? g.multiAngleLocked
-                                : multiAngleMode
-                                  ? g.multiAngleOnTitle
-                                  : g.multiAngleOffTitle
-                            }
-                            aria-label={
-                              multiAngleLocked
-                                ? g.multiAngleLocked
-                                : multiAngleMode
-                                  ? g.multiAngleOnTitle
-                                  : g.multiAngleOffTitle
-                            }
-                            aria-pressed={multiAngleMode}
-                            aria-disabled={multiAngleLocked || undefined}
-                            className={cn(
-                              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                              multiAngleLocked
-                                ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
-                                : multiAngleMode
-                                  ? "bg-atelier-ink text-atelier-paper"
-                                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                            )}
-                          >
-                            <AnglesIcon className="h-4 w-4" />
-                          </button>
+                        <AnglesIcon className="h-4 w-4" />
+                        <span className="hidden md:inline">{g.multiAngleLabel}</span>
+                      </button>
 
-                          {/* Cinema Studio. Shares multi-angle's plan gate:
-                              both fan one send out into several paid renders,
-                              so the same entitlement applies. */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              multiAngleLocked ? setError(g.multiAngleLocked) : toggleSceneMode()
-                            }
-                            disabled={submitting}
-                            title={
-                              multiAngleLocked
-                                ? g.multiAngleLocked
-                                : sceneMode
-                                  ? g.sceneModeOnTitle
-                                  : g.sceneModeOffTitle
-                            }
-                            aria-label={
-                              multiAngleLocked
-                                ? g.multiAngleLocked
-                                : sceneMode
-                                  ? g.sceneModeOnTitle
-                                  : g.sceneModeOffTitle
-                            }
-                            aria-pressed={sceneMode}
-                            aria-disabled={multiAngleLocked || undefined}
-                            className={cn(
-                              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                              multiAngleLocked
-                                ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
-                                : sceneMode
-                                  ? "bg-atelier-ink text-atelier-paper"
-                                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                            )}
-                          >
-                            <ClapperIcon className="h-4 w-4" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (advancedVideoLockedReason === "plan") {
-                                setError(g.advancedVideoLocked);
-                                return;
-                              }
-                              if (advancedVideoLockedReason === "model") {
-                                setError(g.advancedVideoNeedsKling);
-                                return;
-                              }
-                              if (videoAdvancedMode === "none") {
-                                openAdvancedVideo("storyboard");
-                              } else {
-                                setAdvancedPanelOpen((v) => !v);
-                              }
-                            }}
-                            disabled={submitting}
-                            title={
-                              advancedVideoLockedReason === "plan"
-                                ? g.advancedVideoLocked
-                                : advancedVideoLockedReason === "model"
-                                  ? g.advancedVideoNeedsKling
-                                  : videoAdvancedMode === "none"
-                                    ? g.advancedVideoOffTitle
-                                    : g.advancedVideoOnTitle
-                            }
-                            aria-label={
-                              advancedVideoLockedReason === "plan"
-                                ? g.advancedVideoLocked
-                                : advancedVideoLockedReason === "model"
-                                  ? g.advancedVideoNeedsKling
-                                  : videoAdvancedMode === "none"
-                                    ? g.advancedVideoOffTitle
-                                    : g.advancedVideoOnTitle
-                            }
-                            aria-pressed={videoAdvancedMode !== "none"}
-                            aria-disabled={advancedVideoLockedReason !== null || undefined}
-                            className={cn(
-                              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                              advancedVideoLockedReason !== null
-                                ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
-                                : videoAdvancedMode !== "none"
-                                  ? "bg-atelier-ink text-atelier-paper"
-                                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                            )}
-                          >
-                            <StackIcon className="h-4 w-4" />
-                          </button>
-                          {/* Storyboard (multi-shot) — O3 Pro only, so the
-                              button exists only there; the same plan lock as
-                              its siblings. Turning it on clears the modes it
-                              can't combine with (multi-angle, start/end
-                              frames) instead of letting the server bounce
-                              the submit later. */}
-                          {videoModelId === "kling-o3-pro" && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (advancedVideoLockedReason === "plan") {
-                                  setError(g.advancedVideoLocked);
-                                  return;
-                                }
-                                if (storyboardMode) {
-                                  setStoryboardMode(false);
-                                  return;
-                                }
-                                if (multiAngleMode) toggleMultiAngleMode();
-                                clearAdvancedVideo();
-                                setStoryboardMode(true);
-                              }}
-                              disabled={submitting}
-                              title={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
-                              aria-label={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
-                              aria-pressed={storyboardActive}
-                              className={cn(
-                                "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                                advancedVideoLockedReason === "plan"
-                                  ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
-                                  : storyboardActive
-                                    ? "bg-atelier-ink text-atelier-paper"
-                                    : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                              )}
-                            >
-                              <FilmIcon className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                      {/* Cinema Studio. Shares multi-angle's plan gate: both
+                          fan one send out into several paid renders, so the
+                          same entitlement applies. */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          multiAngleLocked ? setError(g.multiAngleLocked) : toggleSceneMode()
+                        }
+                        disabled={submitting}
+                        title={
+                          multiAngleLocked
+                            ? g.multiAngleLocked
+                            : sceneMode
+                              ? g.sceneModeOnTitle
+                              : g.sceneModeOffTitle
+                        }
+                        aria-label={
+                          multiAngleLocked
+                            ? g.multiAngleLocked
+                            : sceneMode
+                              ? g.sceneModeOnTitle
+                              : g.sceneModeOffTitle
+                        }
+                        aria-pressed={sceneMode}
+                        aria-disabled={multiAngleLocked || undefined}
+                        className={cn(
+                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          multiAngleLocked
+                            ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                            : sceneMode
+                              ? "bg-atelier-ink text-atelier-paper"
+                              : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        )}
+                      >
+                        <ClapperIcon className="h-4 w-4" />
+                        <span className="hidden md:inline">{g.cinemaLabel}</span>
+                      </button>
 
                       <button
                         type="button"
-                        data-tour-id="tour-advanced-toggle"
-                        onClick={() => setAdvancedOpen((v) => !v)}
-                        title={advancedOpen ? g.advancedOptionsHide : g.advancedOptionsShow}
-                        aria-label={advancedOpen ? g.advancedOptionsHide : g.advancedOptionsShow}
-                        aria-expanded={advancedOpen}
-                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                        onClick={() => {
+                          if (advancedVideoLockedReason === "plan") {
+                            setError(g.advancedVideoLocked);
+                            return;
+                          }
+                          if (advancedVideoLockedReason === "model") {
+                            setError(g.advancedVideoNeedsKling);
+                            return;
+                          }
+                          if (videoAdvancedMode === "none") {
+                            openAdvancedVideo("storyboard");
+                          } else {
+                            setAdvancedPanelOpen((v) => !v);
+                          }
+                        }}
+                        disabled={submitting}
+                        title={
+                          advancedVideoLockedReason === "plan"
+                            ? g.advancedVideoLocked
+                            : advancedVideoLockedReason === "model"
+                              ? g.advancedVideoNeedsKling
+                              : videoAdvancedMode === "none"
+                                ? g.advancedVideoOffTitle
+                                : g.advancedVideoOnTitle
+                        }
+                        aria-label={
+                          advancedVideoLockedReason === "plan"
+                            ? g.advancedVideoLocked
+                            : advancedVideoLockedReason === "model"
+                              ? g.advancedVideoNeedsKling
+                              : videoAdvancedMode === "none"
+                                ? g.advancedVideoOffTitle
+                                : g.advancedVideoOnTitle
+                        }
+                        aria-pressed={videoAdvancedMode !== "none"}
+                        aria-disabled={advancedVideoLockedReason !== null || undefined}
+                        className={cn(
+                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          advancedVideoLockedReason !== null
+                            ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                            : videoAdvancedMode !== "none"
+                              ? "bg-atelier-ink text-atelier-paper"
+                              : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        )}
                       >
-                        <ChevronLeftIcon
-                          className={cn("h-4 w-4 transition-transform duration-300", advancedOpen && "rotate-180")}
-                        />
+                        <StackIcon className="h-4 w-4" />
+                        <span className="hidden md:inline">{g.framesPillLabel}</span>
                       </button>
-                    </>
+                      {/* Storyboard (multi-shot) — O3 Pro only, so the
+                          button exists only there; the same plan lock as
+                          its siblings. Turning it on clears the modes it
+                          can't combine with (multi-angle, start/end
+                          frames) instead of letting the server bounce
+                          the submit later. */}
+                      {videoModelId === "kling-o3-pro" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (advancedVideoLockedReason === "plan") {
+                              setError(g.advancedVideoLocked);
+                              return;
+                            }
+                            if (storyboardMode) {
+                              setStoryboardMode(false);
+                              return;
+                            }
+                            if (multiAngleMode) toggleMultiAngleMode();
+                            clearAdvancedVideo();
+                            setStoryboardMode(true);
+                          }}
+                          disabled={submitting}
+                          title={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
+                          aria-label={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
+                          aria-pressed={storyboardActive}
+                          className={cn(
+                            "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                            advancedVideoLockedReason === "plan"
+                              ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                              : storyboardActive
+                                ? "bg-atelier-ink text-atelier-paper"
+                                : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                          )}
+                        >
+                          <FilmIcon className="h-4 w-4" />
+                          <span className="hidden md:inline">{g.storyboardPillLabel}</span>
+                        </button>
+                      )}
+                    </div>
                   )}
 
-                  {advancedOpen && contentType === "video" && (
+                  {contentType === "video" && (
                     <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-atelier-rule p-1">
                       <button
                         type="button"
@@ -7346,7 +7399,7 @@ function GenerateFormInner({
                       a plain toggle rather than a picker because there is
                       exactly one honest option: 4K bills 1.5x and belongs
                       behind a real credit weight, not a free switch. */}
-                  {advancedOpen && resolutionOffers.length > 0 && (
+                  {contentType === "video" && resolutionOffers.length > 0 && (
                     <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-atelier-rule p-1">
                       {resolutionOffers.map((offer) => {
                         const total = resolutionCreditWeight(
@@ -7408,6 +7461,35 @@ function GenerateFormInner({
                       dictation lives in the keyboard's own mic. The
                       sidebar's voice search is untouched. */}
                   </div>
+
+                  {/* The price beside the button (A×B): what THIS send
+                      costs, through the same fanout math the server charges
+                      with (sendCreditCost) — or "free" when the send will
+                      be answered. Quiet for free-tier sends (the footer
+                      pill owns that promise), while a shortfall banner
+                      already shows the number, and while a mode panel
+                      (scene plan / storyboard) quotes its own total.
+                      Outside the scroll strip, like Send — a price that can
+                      scroll out of sight is no price at all. sm+ only: at
+                      320px the receipt and the menus carry it. */}
+                  {!isHero &&
+                    !composerBannerVisible &&
+                    !pendingScene &&
+                    !storyboardActive &&
+                    !submitting &&
+                    !asking &&
+                    (willAsk ? (
+                      <span className="hidden flex-shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-atelier-muted sm:flex">
+                        <SparkIcon className="h-3 w-3 text-atelier-accent" />
+                        {g.askFree}
+                      </span>
+                    ) : !freeTierClient && sendCreditCost > 0 && contentType === "video" ? (
+                      <span className="hidden flex-shrink-0 whitespace-nowrap font-numeral text-[11px] tabular-nums text-atelier-muted sm:inline">
+                        {sendRenderCount > 1
+                          ? formatMsg(g.sendTotalCredits, { k: sendRenderCount, n: sendCreditCost })
+                          : formatMsg(g.thisTakeCredits, { n: sendCreditCost })}
+                      </span>
+                    ) : null)}
 
                   {asking ? (
                     // Stop for a streaming answer. Separate from the render
@@ -7773,22 +7855,6 @@ function GenerateFormInner({
       )}
       </div>
     </div>
-    {/* The Takes rail — this session's finished turns as a filmstrip, fed
-        straight from the `items`/live state above. Rendered in the tree even
-        in hero mode's brief docked-transition frames is harmless: it hides
-        itself below xl, and takesRailEnabled already excludes the dashboard
-        embed entirely. The in-flight placeholder clears once the result is
-        being revealed in the thread (liveResult), not when it's archived —
-        so the rail never says "Rendering…" next to an already-visible
-        result. */}
-    {takesRailEnabled && !stageExpanded && (
-      <TakesRail
-        items={items}
-        inFlightPrompt={
-          liveMultiAngle ? liveMultiAngle.prompt : liveResult === null ? livePrompt : null
-        }
-      />
-    )}
     </div>
     </>
   );

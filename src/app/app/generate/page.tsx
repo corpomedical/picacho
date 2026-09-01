@@ -150,18 +150,31 @@ export default async function GeneratePage() {
       )}
       <div className="mb-7 flex items-end justify-between gap-3 border-b border-atelier-rule pb-4">
         <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
-        {stats.total > 0 && (
-          <div className="flex gap-5">
-            <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
-              <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</p>
-              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</p>
-            </div>
-            <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
-              <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</p>
-              <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</p>
-            </div>
+        <div className="flex gap-5">
+          {stats.total > 0 && (
+            <>
+              <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
+                <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</p>
+                <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</p>
+              </div>
+              <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
+                <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</p>
+                <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</p>
+              </div>
+            </>
+          )}
+          {/* Credits in the header (A×B redesign) — the ochre-numeral proof
+              idiom. Display only, same formula the composer's affordability
+              check uses (creditsAvailable in generate-form.tsx); the server
+              re-validates every spend, so this can never oversell. Not a
+              purchase entry point, so no native gating needed. */}
+          <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
+            <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-accent">
+              {Math.max(0, creditsLimit - creditsUsed) + purchasedCredits}
+            </p>
+            <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.creditsLabel}</p>
           </div>
-        )}
+        </div>
       </div>
 
       <GenerateForm

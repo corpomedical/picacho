@@ -10,6 +10,14 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
+  {
+    // Claude Code session worktrees — full checkouts of this repo (each
+    // with its own android/ build output and vendored files) that ESLint
+    // otherwise sweeps up, drowning the real tree's signal in ~1,000
+    // errors from generated code. Never lint them; each worktree lints
+    // itself when worked in.
+    ignores: [".claude/"],
+  },
   ...nextCoreWebVitals,
   ...nextTypescript,
   {

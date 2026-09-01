@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.9.0",
+    build: 15,
+    date: "2026-09-01",
+    title: "The Stage: the render takes the room, and every price stands where you spend it",
+    items: [
+      "Generate leads with the render now. A full-width darkroom stage shows the newest take (or the one you pick from the filmstrip under it), wearing its identity score and attempt count as a plate on the frame itself — the score used to live in an ochre footnote inside a chat bubble. While a render runs, the stage carries the live progress stage; when a session is empty, it says what to do. The old chat card became a Session transcript you open from the filmstrip row — and it opens itself in the three moments it is the only place the answer lives: a streaming assistant reply, a failed render (its recovery buttons live there), and arriving from History.",
+      "The takes filmstrip replaces the desktop-only side rail, on every screen size — phones had no session overview at all before this. Each tile carries its identity score; tapping one puts it on the stage.",
+      "The four advanced-mode buttons stop being a riddle. They were four near-identical abstract icons hidden behind an unlabeled arrow (two of them shipped literally identical for a while, and people assumed mis-clicks); they are now labeled pills — Multi-angle, Cinema Studio, Frames, Storyboard — always visible in video mode. Locked ones stay visible and say why when tapped, same as before.",
+      "Every price now stands where the spend happens. The duration control shows each length's credit cost inside the segment, on screens where it used to live only in a hover tooltip touch could never see; the engine menu's duration row is captioned with the engine it prices; and the send button gained a standing quote — 'This take · 3 credits', multiplying honestly when a fan-out is armed ('3 renders · 9 credits') and flipping to 'Ask — free' the moment the assistant will answer instead, so the button's verdict and the price can never disagree. The page header shows your credit balance in the same ochre numerals as every other proof mark.",
+      "The character, engine and duration pickers moved off the chat card's header and into the composer itself, opening upward from where your thumb already is; the Send Receipt rides with them. The dialogue line is a first-class row now instead of hiding behind the removed arrow. All of it in all four languages.",
+    ],
+  },
+  {
     version: "1.8.5",
     build: 14,
     date: "2026-09-01",
