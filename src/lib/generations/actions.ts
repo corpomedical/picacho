@@ -66,7 +66,15 @@ import {
 } from "@/lib/generations/providers/video-resolution";
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
-import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
+import { newProviderBudget } from "@/lib/generations/providers/image";
+import {
+  gateLogLine,
+  resolveIdentityThreshold,
+} from "@/lib/generations/identity-gate";
+import {
+  runImageIdentityGate,
+  type GateOutcome,
+} from "@/lib/generations/identity-gate-run";
 import { isTrivialUtterance } from "@/lib/voice/agent";
 import type { BrandRule } from "@/lib/brand-rules/types";
 // Credits and image persistence live in a plain module, not here: this file
@@ -643,6 +651,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     { data: videoModelSetting },
     { data: imageModelSetting },
     { data: userProfile },
+    { data: identityGateSetting },
   ] = await Promise.all([
     supabase.from("app_settings").select("value").eq("key", "max_retry_attempts").single(),
     supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
@@ -653,6 +662,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       .select("skip_ai_refinement, plan, bonus_credits, purchased_credits, role, status")
       .eq("id", userData.user.id)
       .single(),
+    supabase.from("app_settings").select("value").eq("key", "identity_gate_threshold").single(),
   ]);
   // Suspension check IN the action, not just middleware. The middleware only
   // guards by path prefix, and a "use server" export is a wire-callable
@@ -663,6 +673,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     return { error: "This account is suspended." };
   }
   const maxAttempts = Number(retrySetting?.value) || undefined;
+  // The identity gate's bar. Seeded at '0' — OFF — because nobody has read
+  // the production distribution of match_score yet, and that distribution is
+  // the only thing that says whether a threshold of 70 costs cents a month or
+  // thousands: every render under it gets a second render at our cost, and
+  // every render that misses twice is refunded as well. Set it in
+  // Admin > Settings once the numbers are in; no deploy needed.
+  const identityThreshold = resolveIdentityThreshold(identityGateSetting?.value ?? null);
   const useRealProviders = flag?.enabled === true;
   let imageModelId = imageModelSetting?.value ?? "gpt-image";
   // Per-user preference (see setSkipAiRefinement in profile/actions.ts) —
@@ -1287,6 +1304,13 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
+  // Wall clock for the identity gate: the image lane is synchronous under a
+  // hard 300s Vercel ceiling, and the gate declines to start a second render
+  // when there is no longer room for one. See GATE_WALL_CLOCK_BUDGET_MS.
+  const requestStartedAt = Date.now();
+  // What the gate decided, hoisted so the terminal write below can fold it in
+  // — it runs inside the try, where the render inputs are in scope.
+  let gateOutcome: GateOutcome | null = null;
   let attempts: AttemptLog[] = [];
   let rulesBlock: { label: string; evidence: string; fix: string }[] | null = null;
   let succeeded = false;
@@ -1763,6 +1787,76 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
       ({ attempts, succeeded, finalPrompt, resultUrl } = result);
       rulesBlock = result.rulesBlock ?? null;
+
+      // ---- the identity gate -------------------------------------------
+      //
+      // Runs HERE, inside the try, rather than where scoring used to live
+      // (after the terminal write), for two reasons. The render inputs it
+      // needs to re-render — referenceImageUrl, the outfit and prop photos,
+      // the compiled prompt — are scoped to this block. And a retry after
+      // the terminal write would mean resurrecting a row already marked
+      // succeeded, whose "Your image is ready" has already gone out.
+      //
+      // Everything it decides is folded into the single terminal write
+      // below, which replaces the second UPDATE the old scoring block made.
+      if (
+        succeeded &&
+        contentType === "image" &&
+        characterId &&
+        resultUrl &&
+        isRenderableUrl(resultUrl)
+      ) {
+        const identityPath = character?.reference_image_urls?.[0];
+        if (identityPath) {
+          const { data: signedIdentity } = await supabase.storage
+            .from("character-references")
+            .createSignedUrl(identityPath, 600);
+          if (signedIdentity?.signedUrl) {
+            const origin = await getOrigin();
+            const traitSummary = [
+              character?.traits?.hair ? `hair: ${character.traits.hair}` : null,
+              character?.traits?.distinguishing_features
+                ? `distinguishing features: ${character.traits.distinguishing_features}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join("; ");
+            gateOutcome = await runImageIdentityGate({
+              supabase,
+              userId: userData.user.id,
+              resultUrl,
+              absoluteResultUrl: absolutizeMediaUrl(resultUrl, origin),
+              identityPhotoUrl: signedIdentity.signedUrl,
+              traitSummary,
+              threshold: identityThreshold,
+              rerender: {
+                modelId: imageModelId,
+                // The prompt the winning attempt actually compiled, so the
+                // retry re-renders the SAME thing rather than re-drafting.
+                // Skipping the Claude draft and OpenAI review is what keeps
+                // a gated request inside the 300s ceiling.
+                compiledPrompt:
+                  result.attempts[result.attempts.length - 1]?.compiledPrompt || finalPrompt,
+                referenceImageUrl: referenceImageUrls ?? referenceImageUrl,
+                outfitImageUrl,
+                propImageUrl,
+                // ONE paid call, not another full allowance. runRealPipeline
+                // mints its own budget of MAX_PAID_IMAGE_CALLS internally, so
+                // re-entering the pipeline would have doubled the ceiling the
+                // budget exists to enforce. The retry is a single render and
+                // is bounded like one.
+                budget: newProviderBudget(1),
+              },
+              elapsedMs: Date.now() - requestStartedAt,
+              absolutize: (u: string) => absolutizeMediaUrl(u, origin),
+            });
+            resultUrl = gateOutcome.resultUrl;
+            for (const line of gateOutcome.logLines) {
+              attempts[attempts.length - 1]?.steps.push({ step: "generate", detail: line });
+            }
+          }
+        }
+      }
     } else {
       const result = runPipeline(userInput, characterForPipeline, maxAttempts, contentType);
       ({ attempts, succeeded, finalPrompt, resultUrl } = result);
@@ -1824,10 +1918,28 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       .from("generations")
       .update(
         {
-          status: succeeded ? "succeeded" : "failed",
+          // An unusable render (blank/black frame — fal's safety checker
+          // answers 200 with a black image) is a non-delivery, not a weak
+          // likeness: it fails here and its URL is cleared, so History can
+          // never serve the frame the row was refunded for.
+          status: succeeded && !gateOutcome?.unusable ? "succeeded" : "failed",
           attempts: attempts.length,
-          result_url: resultUrl,
+          result_url: gateOutcome?.unusable ? null : resultUrl,
           pipeline_log: attempts,
+          // Folded into the terminal write rather than a second UPDATE. The
+          // old scoring block ran AFTER this write and issued its own; one
+          // write means the score and the row it describes can never
+          // disagree, and a row can never be briefly visible unscored.
+          ...(gateOutcome
+            ? {
+                match_score: gateOutcome.matchScore,
+                match_notes: gateOutcome.unusable
+                  ? gateOutcome.matchNotes || "Unusable result (blank/black frame)."
+                  : gateOutcome.matchNotes,
+                identity_retries: gateOutcome.retries,
+                identity_gated_at: gateOutcome.settledAt,
+              }
+            : {}),
         },
         { count: "exact" },
       )
@@ -1897,74 +2009,70 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // image lives in History either way; making it an identity anchor is now
   // the user's explicit call.
 
-  // Characters v2: image-level identity verification. Best-effort — a
-  // scoring hiccup never affects the generation itself.
-  let matchScore: number | null = null;
-  if (succeeded && contentType === "image" && characterId && isRenderableUrl(resultUrl)) {
-    const identityPath = character?.reference_image_urls?.[0];
-    if (identityPath) {
-      const { data: signedIdentity } = await supabase.storage
-        .from("character-references")
-        .createSignedUrl(identityPath, 600);
-      if (signedIdentity?.signedUrl) {
-        const traitSummary = [
-          character?.traits?.hair ? `hair: ${character.traits.hair}` : null,
-          character?.traits?.distinguishing_features
-            ? `distinguishing features: ${character.traits.distinguishing_features}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join("; ");
-        const verdict = await scoreIdentityMatch(
-          absolutizeMediaUrl(resultUrl!, await getOrigin()),
-          signedIdentity.signedUrl,
-          traitSummary,
-        );
-        if (verdict && verdict.unusable) {
-          // The provider claimed success but delivered a black/blank frame
-          // (fal.ai's safety checker does exactly this — HTTP 200, image
-          // replaced with black). Nobody should pay for a black rectangle,
-          // and nobody should have to notice and report it either:
-          // automatically mark it failed, refund everything it consumed,
-          // and say so honestly in the pipeline log.
-          succeeded = false;
-          matchScore = null;
-          // The wording is decided AFTER the refund runs — this log used to
-          // promise "and refunded" unconditionally while the refund sat
-          // behind the automatic_refunds switch, which is OFF (2026-08-31
-          // ledger audit: a promise in the person's own pipeline log that
-          // the ledger contradicted).
-          // Refund FIRST, so the log line written below can state what
-          // actually happened instead of promising it.
-          const blankRefunded = await refundGenerationCosts(placeholder.id);
-          attempts[attempts.length - 1]?.steps.push({
-            step: "generate",
-            detail: blankRefunded
-              ? "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed and refunded."
-              : "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed. Contact us and we'll put the credit back.",
-          });
-          await createAdminClient()
-            .from("generations")
-            .update({
-              status: "failed",
-              // Cleared, or History keeps serving the black frame the row
-              // was refunded FOR — two live rows were doing exactly that
-              // (2026-08-31 inspection).
-              result_url: null,
-              match_score: verdict.score,
-              match_notes: verdict.notes || "Unusable result (blank/black frame).",
-              pipeline_log: attempts,
-            })
-            .eq("id", placeholder.id);
-          await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
-        } else if (verdict) {
-          matchScore = verdict.score;
-          await createAdminClient()
-            .from("generations")
-            .update({ match_score: verdict.score, match_notes: verdict.notes || null })
-            .eq("id", placeholder.id);
+  // The identity gate's settlement, and the cleanup that goes with it.
+  //
+  // Scoring itself has moved INTO the pipeline block above (see the gate
+  // call there): it now happens before the terminal write, so the score is
+  // part of the same UPDATE as the result it describes. What is left here is
+  // the bookkeeping that must happen only once the row is safely terminal.
+  if (gateOutcome && terminalWrite.count !== 0) {
+    // The losing render. persistGeneratedImage writes a new object per
+    // render and nothing but result_url is ever swept, so an unclaimed
+    // attempt would sit in the bucket forever — billed, unreferenced, and
+    // still fetchable, since these are capability URLs that never expire.
+    if (gateOutcome.discardedUrl) {
+      const loserPath = extractStoragePath(gateOutcome.discardedUrl, "generated-images");
+      if (loserPath) {
+        const { error: sweepError } = await createAdminClient()
+          .storage.from("generated-images")
+          .remove([loserPath]);
+        if (sweepError) {
+          console.warn("Couldn't remove the discarded gate attempt:", sweepError.message);
         }
       }
+    }
+
+    if (gateOutcome.settledAt) {
+      // Two tries, still under the bar. FORCED past the automatic_refunds
+      // switch (which is off) because this is our failure by our own
+      // published standard: the product says the identity is verified, and
+      // this row is the product saying it could not verify it.
+      //
+      // Forced refunds are exempt from the daily refunded-failure cap by
+      // design, and deliberately leave no refunded_at stamp — which is
+      // exactly why identity_gated_at exists and was written above. It is
+      // the only durable marker that this row was settled, and the guard
+      // that stops a second settlement refunding twice.
+      const refunded = await refundGenerationCosts(placeholder.id, { force: true });
+      const line = gateLogLine(
+        { action: "settle", score: gateOutcome.matchScore ?? 0, bestScore: gateOutcome.matchScore ?? 0, keepPrevious: false },
+        refunded,
+      );
+      if (line) {
+        attempts[attempts.length - 1]?.steps.push({ step: "generate", detail: line });
+        await createAdminClient()
+          .from("generations")
+          .update({ pipeline_log: attempts })
+          .eq("id", placeholder.id);
+      }
+    }
+
+    if (gateOutcome.unusable) {
+      // Same contract as before the gate: nobody pays for a black rectangle,
+      // and nobody should have to notice and report it either. The row was
+      // already failed with its URL cleared by the terminal write above.
+      const blankRefunded = await refundGenerationCosts(placeholder.id);
+      attempts[attempts.length - 1]?.steps.push({
+        step: "generate",
+        detail: blankRefunded
+          ? "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed and refunded."
+          : "Post-generation check found the finished image unusable (blank/black frame) — automatically marked failed. Contact us and we'll put the credit back.",
+      });
+      await createAdminClient()
+        .from("generations")
+        .update({ pipeline_log: attempts })
+        .eq("id", placeholder.id);
+      await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
     }
   }
 
@@ -1974,11 +2082,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   return {
     error: null,
     id: placeholder.id,
-    succeeded,
+    // An unusable render is reported as the failure it is, matching what the
+    // terminal write persisted — the composer must never show a success for
+    // a row the database has marked failed and refunded.
+    succeeded: succeeded && !gateOutcome?.unusable,
     attempts,
     finalPrompt,
-    resultUrl,
-    matchScore,
+    resultUrl: gateOutcome?.unusable ? null : resultUrl,
+    matchScore: gateOutcome?.matchScore ?? null,
     ...(rulesBlock && rulesBlock.length > 0 ? { rulesBlock } : {}),
   };
 }

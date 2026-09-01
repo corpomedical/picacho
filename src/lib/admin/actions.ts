@@ -9,6 +9,10 @@ import { computeAdminBadgeCounts, type AdminBadgeCounts } from "@/lib/admin/badg
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
+import {
+  MAX_IDENTITY_THRESHOLD,
+  MIN_IDENTITY_THRESHOLD,
+} from "@/lib/generations/identity-gate";
 
 // Called imperatively (not from a <form>) by AdminCommandBar, which polls
 // this on an interval to keep the nav's red-dot badges live without the
@@ -242,6 +246,26 @@ function validateAppSetting(key: string, value: string): string | null {
       return Number.isInteger(n) && n >= 1 && n <= 10
         ? null
         : "max_retry_attempts must be a whole number from 1 to 10.";
+    }
+    case "identity_gate_threshold": {
+      // Validated here as well as in resolveIdentityThreshold, because the
+      // two failures are different. resolveIdentityThreshold falls back to
+      // the default SILENTLY, which is right at render time — a malformed
+      // setting must never take the product down. But silence is wrong at
+      // the moment someone types it: an operator who sets "seventy" and
+      // sees it saved would believe the gate was at 70 while it ran at the
+      // default, and the only symptom is a bill.
+      //
+      // The ceiling is MAX_IDENTITY_THRESHOLD (95), not 100: the scorer is a
+      // vision model reading a render against a photograph and essentially
+      // never returns 100, so 100 would re-render and then refund every
+      // generation ever made.
+      const n = Number(value);
+      return Number.isInteger(n) &&
+        n >= MIN_IDENTITY_THRESHOLD &&
+        n <= MAX_IDENTITY_THRESHOLD
+        ? null
+        : `identity_gate_threshold must be a whole number from ${MIN_IDENTITY_THRESHOLD} to ${MAX_IDENTITY_THRESHOLD} (0 turns the gate off).`;
     }
     case "support_email":
       return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 254
