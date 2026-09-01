@@ -248,3 +248,16 @@ describe("fanoutCreditCost", () => {
     expect(scenePlanCreditCost(plan, () => 9)).toBe(fanoutCreditCost(9, plan.shots.length));
   });
 });
+
+describe("fan-out quoting (2026-09-01 audit)", () => {
+  it("MONEY REGRESSION: a scene is quoted at N renders, not one", () => {
+    // The composer computed its fan-out count from multiAngleMode alone. In
+    // Cinema Studio that flag is false, so a six-shot scene was priced — and
+    // its affordability checked — as a single render, while the server
+    // charged for all six.
+    const shots = 6;
+    const perRender = 9;
+    expect(fanoutCreditCost(perRender, shots)).toBe(54);
+    expect(fanoutCreditCost(perRender, shots)).not.toBe(perRender);
+  });
+});

@@ -41,10 +41,20 @@ export const MIN_IDENTITY_THRESHOLD = 0;
 export const MAX_IDENTITY_THRESHOLD = 95;
 
 /**
- * Reads the admin-set threshold safely. Anything unparseable, out of range,
- * or absent falls back to the default rather than to zero — a malformed
- * setting must not silently switch the feature off, because "the gate
- * quietly stopped working" looks identical to "no render ever misses".
+ * Reads the admin-set threshold from a row that EXISTS.
+ *
+ * A malformed value falls back to the default rather than to zero, because
+ * "the gate quietly stopped working" looks identical to "no render ever
+ * misses" — a typo in the admin field must not silently disable the feature.
+ *
+ * DO NOT call this when the app_settings row is ABSENT. Use
+ * resolveIdentityThresholdSetting below, which is the only caller-facing
+ * entry point, and which treats absence as OFF. The distinction is the whole
+ * point: an absent row means the migration has not been applied yet, and
+ * defaulting THAT to 70 would turn the gate on — spending a second render on
+ * every miss and force-refunding every double miss — in exactly the window
+ * where no admin field exists to turn it off, because Admin > Settings
+ * renders one card per existing row.
  */
 export function resolveIdentityThreshold(raw: string | null | undefined): number {
   if (raw === null || raw === undefined || raw.trim() === "") return DEFAULT_IDENTITY_THRESHOLD;
@@ -197,4 +207,27 @@ export function gateLogLine(decision: GateDecision, refunded: boolean): string |
   return refunded
     ? `Two tries and the face still didn't hold (best score ${decision.bestScore}). Keeping ${kept}, and the credit has been put back.`
     : `Two tries and the face still didn't hold (best score ${decision.bestScore}). Keeping ${kept}. Contact us and we'll put the credit back.`;
+}
+
+/**
+ * The threshold, from the app_settings row — or OFF when there is no row.
+ *
+ * This is what call sites use. `setting` is the row as fetched, so `null`
+ * (PostgREST returns no row and an error the destructure discards) means the
+ * feature has not been provisioned and the gate must not run.
+ *
+ * The failure this prevents, found in the 2026-09-01 audit: the first version
+ * called resolveIdentityThreshold(setting?.value ?? null) directly, so a
+ * missing row resolved to the DEFAULT of 70 rather than to 0. Between a code
+ * deploy and its migration the gate would have been live at 70 — a second
+ * paid render on every miss, a forced refund past the automatic_refunds kill
+ * switch on every double miss, no Admin field to stop it, and, because the
+ * new columns would not exist either, a terminal write that fails with
+ * PGRST204 and leaves the row stranded after both renders were billed.
+ */
+export function resolveIdentityThresholdSetting(
+  setting: { value: string | null } | null | undefined,
+): number {
+  if (!setting) return MIN_IDENTITY_THRESHOLD;
+  return resolveIdentityThreshold(setting.value);
 }

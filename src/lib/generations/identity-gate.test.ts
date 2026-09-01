@@ -5,7 +5,9 @@ import {
   gateLogLine,
   identityGateDecision,
   MAX_IDENTITY_THRESHOLD,
+  MIN_IDENTITY_THRESHOLD,
   resolveIdentityThreshold,
+  resolveIdentityThresholdSetting,
 } from "./identity-gate";
 
 // The identity gate (2026-09-01). Every test here is really about one of two
@@ -193,5 +195,37 @@ describe("gateLogLine", () => {
     expect(gateLogLine(d, true)).toContain("has been put back");
     expect(gateLogLine(d, false)).toContain("Contact us");
     expect(gateLogLine(d, false)).not.toContain("has been put back");
+  });
+});
+
+
+describe("resolveIdentityThresholdSetting", () => {
+  it("MONEY REGRESSION: no settings row means OFF, not the default", () => {
+    // The 2026-09-01 audit found the gate shipping ON. The call site read
+    // resolveIdentityThreshold(setting?.value ?? null), so an ABSENT row —
+    // the state between a code deploy and its migration — resolved to the
+    // default of 70 rather than 0. The gate would have been live at 70 with
+    // no Admin field to turn it off (Admin > Settings renders one card per
+    // EXISTING row), spending a second render on every miss and force-
+    // refunding past the automatic_refunds kill switch on every double miss.
+    expect(resolveIdentityThresholdSetting(null)).toBe(MIN_IDENTITY_THRESHOLD);
+    expect(resolveIdentityThresholdSetting(undefined)).toBe(MIN_IDENTITY_THRESHOLD);
+    expect(
+      identityGateDecision({
+        score: 12,
+        threshold: resolveIdentityThresholdSetting(null),
+        retriesUsed: 0,
+      }),
+    ).toEqual({ action: "pass", reason: "gate-disabled" });
+  });
+
+  it("a row that EXISTS still falls back to the default when malformed", () => {
+    // The opposite rule, and it is the right one for a row that is there: a
+    // typo in the admin field must not silently disable the feature, because
+    // "the gate stopped working" looks identical to "nothing ever misses".
+    expect(resolveIdentityThresholdSetting({ value: "seventy" })).toBe(DEFAULT_IDENTITY_THRESHOLD);
+    expect(resolveIdentityThresholdSetting({ value: null })).toBe(DEFAULT_IDENTITY_THRESHOLD);
+    expect(resolveIdentityThresholdSetting({ value: "0" })).toBe(0);
+    expect(resolveIdentityThresholdSetting({ value: "70" })).toBe(70);
   });
 });

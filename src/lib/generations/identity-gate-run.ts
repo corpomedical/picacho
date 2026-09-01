@@ -31,6 +31,8 @@ export type GateOutcome = {
   retries: number;
   /** Set when the gate settled — two misses. Written to identity_gated_at. */
   settledAt: string | null;
+  /** True when the FIRST attempt was the one delivered. */
+  keptPrevious: boolean;
   /** True when the delivered render is a blank/black frame (existing behaviour). */
   unusable: boolean;
   /** Lines to append to the pipeline log, in order. */
@@ -114,6 +116,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
+      keptPrevious: false,
       unusable: true,
       logLines,
       discardedUrl: null,
@@ -133,6 +136,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
+      keptPrevious: false,
       unusable: false,
       logLines,
       discardedUrl: null,
@@ -158,6 +162,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
+      keptPrevious: false,
       unusable: false,
       logLines,
       discardedUrl: null,
@@ -190,6 +195,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
+      keptPrevious: false,
       unusable: false,
       logLines,
       discardedUrl: null,
@@ -227,6 +233,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       matchNotes: winnerNotes,
       retries: 1,
       settledAt: new Date().toISOString(),
+      keptPrevious: keepFirst,
       unusable: keepFirst ? false : second.unusable,
       logLines,
       discardedUrl: loserUrl,
@@ -246,6 +253,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     matchNotes: winnerNotes,
     retries: 1,
     settledAt: null,
+    keptPrevious: keepFirst,
     unusable: keepFirst ? false : second.unusable,
     logLines,
     discardedUrl: loserUrl,

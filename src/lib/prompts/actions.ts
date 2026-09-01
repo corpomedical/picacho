@@ -582,7 +582,15 @@ export async function planScene(formData: FormData): Promise<PlanSceneResult> {
   // runMultiAngleGeneration for why a per-shot duration would drag the
   // reservation and the row value out of step with each other.
   const model = getVideoModel(videoModelId);
-  const seconds = getDefaultDurationSeconds(model);
+  // The duration the composer will actually send, when it tells us — falling
+  // back to the model's default only when it does not. Briefing the director
+  // at the default while the fan-out renders at the picked length made the
+  // shot list's seconds, and therefore the price shown beside it, describe a
+  // different scene than the one that would be rendered.
+  const requestedSeconds = Number(formData.get("video_duration_seconds"));
+  const seconds = model.durations.some((d) => d.seconds === requestedSeconds)
+    ? requestedSeconds
+    : getDefaultDurationSeconds(model);
 
   let raw: unknown;
   try {

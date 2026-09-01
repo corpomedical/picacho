@@ -88,6 +88,7 @@ import {
 } from "@/lib/generations/pipeline";
 import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "@/lib/generations/angles";
 import { fanoutCreditCost, type ScenePlan } from "@/lib/generations/scene-plan";
+import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
 import { FEATURED_VIDEO_MODEL_IDS } from "@/lib/generations/providers/video-models";
 import {
@@ -838,7 +839,9 @@ function CheckIcon(props: React.SVGProps<SVGSVGElement>) {
 }
 
 // Multi-image reference + storyboard toggle — a small stack-of-photos glyph,
-// distinct from the single-angles icon above.
+// Filmstrip — the Storyboard button (a start frame and an end frame).
+// Distinct from ClapperIcon below, which is Cinema Studio: this one is a
+// plain barred rectangle, that one has an angled hinged top.
 function FilmIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -853,6 +856,25 @@ function StackIcon(props: React.SVGProps<SVGSVGElement>) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
       <rect x="7" y="7" width="14" height="14" rx="2" />
       <path d="M3 15V5a2 2 0 0 1 2-2h10" />
+    </svg>
+  );
+}
+
+// Clapperboard — Cinema Studio (a director planning a shot list).
+//
+// Deliberately NOT FilmIcon, which is the Storyboard button two positions
+// along in the same row. Shipping both with the same glyph put two different
+// features behind one symbol, which is the kind of thing nobody misreads as a
+// bug — they just assume they clicked the wrong one. Distinct from its three
+// neighbours by silhouette, not only by detail: AnglesIcon is a stack of
+// chevrons, StackIcon two offset squares, FilmIcon a plain barred rectangle,
+// and this one is the only shape with a hinged, angled top.
+function ClapperIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-8Z" />
+      <path d="M3.7 6.6 20.4 4.4l.9 4.4L4.6 11 3.7 6.6Z" />
+      <path d="m9.2 5.9.7 4.4M14.6 5.2l.7 4.4" />
     </svg>
   );
 }
@@ -2192,7 +2214,11 @@ function GenerateFormInner({
     // would let a question mark left in it divert an explicit Generate into
     // a chat turn — and skip the storyboardReady / character guards on the
     // way past.
-    if (storyboardActive || multiAngleMode) return "render";
+    // sceneMode joins them for the same reason: Cinema Studio owns the
+    // composer once armed, and with the assistant on, an armed scene send was
+    // being classified as a question and diverted to the chat agent — so the
+    // feature simply did not fire.
+    if (storyboardActive || multiAngleMode || sceneMode || pendingScene !== null) return "render";
     return classifyMessage(prompt).intent;
   }
 
@@ -2624,8 +2650,25 @@ function GenerateFormInner({
   // batch. They found out after pressing send, which the action's own comment
   // calls the worst moment to learn it. Both sides now go through
   // fanoutCreditCost.
-  const sendRenderCount = multiAngleMode && contentType === "video" ? selectedAngles.length : 1;
-  const sendCreditCost = fanoutCreditCost(selectedCreditCost, sendRenderCount);
+  const sendRenderCount =
+    contentType !== "video"
+      ? 1
+      : // A staged scene is a fan-out too, and it is the LARGER one — up to
+        // six renders. Counting only multi-angle here priced a whole scene as
+        // a single render, so the affordability check and the shortfall
+        // banner both looked at one shot's price while the server charged for
+        // all of them.
+        scenePlan
+        ? scenePlan.shots.length
+        : multiAngleMode
+          ? selectedAngles.length
+          : 1;
+  // A fan-out never carries the continuation surcharge: neither the scene nor
+  // the multi-angle path sends continueFromId, so quoting it inflated the
+  // total by a charge the server does not make.
+  const perRenderForFanout =
+    sendRenderCount > 1 ? Math.max(0, selectedCreditCost - continuationExtra) : selectedCreditCost;
+  const sendCreditCost = fanoutCreditCost(perRenderForFanout, sendRenderCount);
   const cannotAfford = sendCreditCost > creditsAvailable;
   const [panelUploadBusy, setPanelUploadBusy] = useState(false);
   const panelUploadInputRef = useRef<HTMLInputElement>(null);
@@ -2960,6 +3003,13 @@ function GenerateFormInner({
     setApprovedPrompt(null);
     setPendingMultiAngle(null);
     setLiveMultiAngle(null);
+    // Cinema Studio's panel is staged state exactly like the multi-angle
+    // confirm above. Left behind, "New chat" or a character switch kept a
+    // stale shot list on screen with a live Render button — planned against
+    // a character that is no longer selected.
+    setPendingScene(null);
+    setScenePlan(null);
+    setScenePlanning(false);
     askAbortRef.current?.abort();
     askAbortRef.current = null;
     setLiveAsk(null);
@@ -3022,7 +3072,25 @@ function GenerateFormInner({
     });
   }
 
+  // Cancel puts the person back where they were. Multi-angle's cancel
+  // restores the prompt and the attachments it took; the scene panel used to
+  // simply drop both, so backing out of Cinema Studio silently ate what you
+  // had typed and everything you had uploaded.
   function exitSceneMode() {
+    if (pendingScene) {
+      setPrompt(pendingScene.prompt);
+      setPendingAttachments(
+        pendingScene.attachments.map((a) => ({
+          id: crypto.randomUUID(),
+          name: a.name,
+          type: a.type,
+          size: a.size,
+          status: "ready" as const,
+          url: a.url,
+          path: a.path,
+        })),
+      );
+    }
     setSceneMode(false);
     setPendingScene(null);
     setScenePlan(null);
@@ -3033,6 +3101,10 @@ function GenerateFormInner({
     setSceneMode((prev) => {
       const next = !prev;
       if (next) {
+        // clearAdvancedVideo() drops storyboard and multi-reference, so the
+        // four advanced modes stay mutually exclusive in BOTH directions —
+        // arming a scene over a filled storyboard used to leave the shot list
+        // populated while the scene branch won the submit, dead-ending it.
         clearAdvancedVideo();
         setCompanionCharacterIds([]);
         setMultiAngleMode(false);
@@ -3055,6 +3127,11 @@ function GenerateFormInner({
       fd.set("character_id", characterId);
       fd.set("video_model_id", videoModelId);
       fd.set("shot_count", String(sceneShotCount));
+      // The duration the scene will ACTUALLY render at. Without it the
+      // director was briefed at the model's default length while the fan-out
+      // rendered at the picked one, so the panel's "Ns total" and its price
+      // both described a scene nobody was going to get.
+      fd.set("video_duration_seconds", String(videoDurationSeconds));
       const res = await planScene(fd);
       if (res.error) {
         setError(res.error);
@@ -3071,11 +3148,26 @@ function GenerateFormInner({
   // failure recovery are identical, and the only difference is the payload.
   async function confirmScene() {
     if (!pendingScene || !scenePlan) return;
+    if (!characterId) {
+      // Guarded here rather than only inside confirmMultiAngle, whose own
+      // guard is a bare `return` — deselecting the character while a scene
+      // was staged made both panel buttons silent no-ops with nothing on
+      // screen explaining why.
+      setError(g.pickCharacter);
+      return;
+    }
     const scene = { plan: scenePlan, pending: pendingScene };
-    setPendingScene(null);
-    setScenePlan(null);
-    setSceneMode(false);
-    await confirmMultiAngle(scene);
+    // State is torn down only AFTER the send is accepted. Clearing first meant
+    // a send rejected by the pre-flight fences (aspect bounds, missing
+    // reference photo, multi-person on a model that cannot do it) left the
+    // panel gone, the plan gone and the typed scene gone — an error message
+    // pointing at something the person could no longer see or retry.
+    const accepted = await confirmMultiAngle(scene);
+    if (accepted) {
+      setPendingScene(null);
+      setScenePlan(null);
+      setSceneMode(false);
+    }
   }
 
   function clearAdvancedVideo() {
@@ -3252,9 +3344,9 @@ function GenerateFormInner({
   async function confirmMultiAngle(scene?: {
     plan: ScenePlan;
     pending: { prompt: string; attachments: ChatAttachment[] };
-  }) {
+  }): Promise<boolean> {
     const source = scene ? scene.pending : pendingMultiAngle;
-    if (!source || !characterId) return;
+    if (!source || !characterId) return false;
     // A scene's rows are keyed "shot-1".."shot-6"; an angle batch's by angle
     // name. Everything downstream only counts them.
     const sendKeys: string[] = scene
@@ -3262,7 +3354,7 @@ function GenerateFormInner({
       : selectedAngles;
     if (sendKeys.length === 0) {
       setError(g.pickAngle);
-      return;
+      return false;
     }
 
     // Multi-angle carries neither dialogue nor continuation, so only the
@@ -3273,7 +3365,7 @@ function GenerateFormInner({
     );
     if (planBlock) {
       setError(planBlock);
-      return;
+      return false;
     }
 
     const { prompt: mPrompt, attachments } = source;
@@ -3338,7 +3430,7 @@ function GenerateFormInner({
       setLiveMultiAngle(null);
       setSubmitting(false);
       if (stale) setTimeout(() => window.location.reload(), 1800);
-      return;
+      return false;
     }
 
     if (result.error !== null) {
@@ -3357,7 +3449,7 @@ function GenerateFormInner({
       );
       setLiveMultiAngle(null);
       setSubmitting(false);
-      return;
+      return false;
     }
 
     // Every angle was queued with fal.ai in parallel and is still rendering.
@@ -3435,7 +3527,7 @@ function GenerateFormInner({
       setSubmitting(false);
       setStopping(false);
       setError(g.stoppedByUser);
-      return;
+      return false;
     }
 
     if (hadPending) {
@@ -3474,6 +3566,10 @@ function GenerateFormInner({
         ? formatMsg(g.passedOnAttempt, { n: angles[0]?.attempts.length ?? 1 })
         : (summarizeFailure(angles[0]?.attempts ?? [], g) ?? g.noPassingResultOne),
     );
+    // The send was accepted and has run to completion. confirmScene reads
+    // this to decide whether to tear its panel down — a rejected send must
+    // leave the shot list on screen so it can be corrected and retried.
+    return true;
   }
 
   function handleFilesSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -3619,7 +3715,7 @@ function GenerateFormInner({
       } catch {
         // Never block the composer over this — it's recovery, not the
         // main path.
-        return;
+        return false;
       }
       if (cancelled || inFlight.length === 0) return;
 
@@ -3794,7 +3890,15 @@ function GenerateFormInner({
   // (resetChat, triggered by the effect above on contentType change, clears
   // any in-progress confirm panel too).
   useEffect(() => {
-    if (contentType !== "video") setMultiAngleMode(false);
+    if (contentType !== "video") {
+      setMultiAngleMode(false);
+      // Cinema Studio is video-only too. Left armed, its button vanished with
+      // the video toolbar while the staged panel stayed on screen — and its
+      // Render button would still fire a VIDEO fan-out from Image mode.
+      setSceneMode(false);
+      setPendingScene(null);
+      setScenePlan(null);
+    }
   }, [contentType]);
 
   // Typing on the dashboard's landing composer and hitting send arrives here
@@ -4070,24 +4174,24 @@ function GenerateFormInner({
     switch (issue.action) {
       case "switch-seedance-2":
         setVideoModelId("seedance-2");
-        return;
+        return false;
       case "clear-continuation":
         setContinueFromId(null);
-        return;
+        return false;
       case "clear-dialogue":
         setDialogueText("");
-        return;
+        return false;
       case "remove-attachment": {
         const img = pendingAttachments.find(
           (a) => a.status === "ready" && a.type.startsWith("image/"),
         );
         if (img) removeAttachment(img.id);
-        return;
+        return false;
       }
       case "pick-character":
         setComposerFolded(false);
         setCharacterMenuOpen(true);
-        return;
+        return false;
     }
   }
 
@@ -6204,11 +6308,15 @@ function GenerateFormInner({
                           <span className="mt-0.5 text-xs tabular-nums text-atelier-muted">{i + 1}</span>
                           <span className="min-w-0 flex-1">
                             <span className="block text-atelier-ink/85">{shot.prompt}</span>
-                            {shot.movePresetId && (
-                              <span className="mt-0.5 block text-xs text-atelier-muted">
-                                {shot.movePresetId} · {shot.seconds}s
-                              </span>
-                            )}
+                            {/* The seconds render unconditionally — nesting
+                                them inside the move meant a shot the director
+                                gave no camera move simply had no length shown,
+                                which is the one number that explains the
+                                price. */}
+                            <span className="mt-0.5 block text-xs text-atelier-muted">
+                              {shot.movePresetId ? `${shot.movePresetId} · ` : ""}
+                              {shot.seconds}s
+                            </span>
                           </span>
                         </li>
                       ))}
@@ -7084,7 +7192,7 @@ function GenerateFormInner({
                                   : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                             )}
                           >
-                            <FilmIcon className="h-4 w-4" />
+                            <ClapperIcon className="h-4 w-4" />
                           </button>
 
                           <button
@@ -7399,14 +7507,23 @@ function GenerateFormInner({
                         {/* Free sends are pinned server-side to the free
                             lane whatever the picker says (actions.ts) —
                             say so instead of letting the render surprise. */}
-                        {freeTierClient && contentType === "video" && videoModelId !== "kling" && (
-                          <>
-                            {" · "}
-                            {formatMsg(g.freePinnedNote, {
-                              model: videoModels.find((m) => m.id === "kling")?.name ?? "Kling 1.6",
-                            })}
-                          </>
-                        )}
+                        {/* Read from FREE_TIER_VIDEO_MODEL_ID, never a
+                            literal. This said "Kling 1.6" for the hours
+                            between the free tier moving to Wan 2.2 Turbo and
+                            somebody noticing — telling free users their
+                            render runs on a model it no longer runs on. */}
+                        {freeTierClient &&
+                          contentType === "video" &&
+                          videoModelId !== FREE_TIER_VIDEO_MODEL_ID && (
+                            <>
+                              {" · "}
+                              {formatMsg(g.freePinnedNote, {
+                                model:
+                                  videoModels.find((m) => m.id === FREE_TIER_VIDEO_MODEL_ID)?.name ??
+                                  FREE_TIER_VIDEO_MODEL_ID,
+                              })}
+                            </>
+                          )}
                       </p>
                     )}
                     {!hasGeneratedBefore && contentType === "image" && (

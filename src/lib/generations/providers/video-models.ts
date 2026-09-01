@@ -415,9 +415,10 @@ export const VIDEO_MODELS = [
     // Google's namespace on fal, like MiniMax's — not the fal-ai/ prefix.
     // Text-to-video is the catalogue endpoint so requiresReferenceImage()
     // reads false; the branch in fal.ts swaps to
-    // google/gemini-omni-flash/v1.1/image-to-video when a character photo
-    // exists. Both lanes bill at the same per-second rate, so the swap
-    // cannot change the price — the same shape as Veo and Wan above.
+    // google/gemini-omni-flash/v1.1/reference-to-video when a character photo
+    // exists — the REFERENCE lane, not image-to-video, so the clip does not
+    // open frozen on the photograph. Both lanes bill at the same per-second
+    // rate, so the swap cannot change the price.
     falEndpoint: "google/gemini-omni-flash/v1.1/text-to-video",
     recommended: false,
     // Ranked around the top of the Artificial Analysis text-to-video arena

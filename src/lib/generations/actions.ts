@@ -74,7 +74,7 @@ import { autoReportFailedGeneration } from "@/lib/generations/reports";
 import { newProviderBudget } from "@/lib/generations/providers/image";
 import {
   gateLogLine,
-  resolveIdentityThreshold,
+  resolveIdentityThresholdSetting,
 } from "@/lib/generations/identity-gate";
 import {
   runImageIdentityGate,
@@ -684,7 +684,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // thousands: every render under it gets a second render at our cost, and
   // every render that misses twice is refunded as well. Set it in
   // Admin > Settings once the numbers are in; no deploy needed.
-  const identityThreshold = resolveIdentityThreshold(identityGateSetting?.value ?? null);
+  const identityThreshold = resolveIdentityThresholdSetting(identityGateSetting);
   const useRealProviders = flag?.enabled === true;
   let imageModelId = imageModelSetting?.value ?? "gpt-image";
   // Per-user preference (see setSkipAiRefinement in profile/actions.ts) —
@@ -1804,11 +1804,21 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       //
       // Everything it decides is folded into the single terminal write
       // below, which replaces the second UPDATE the old scoring block made.
+      //
+      // NOT on the free tier, and that is a money decision rather than a
+      // quality one. A free render already runs at cost; the gate would add
+      // a second paid render on a miss, and its settle force-refunds — which
+      // on a free row means refundGenerationCosts clears
+      // free_generation_last_at and hands the day's slot BACK. Three renders
+      // for one free slot, repeatable daily by anyone whose character photo
+      // the scorer reads poorly. Paying accounts get the gate; the free
+      // render keeps the behaviour it has always had.
       if (
         succeeded &&
         contentType === "image" &&
         characterId &&
         resultUrl &&
+        !isFreeTierAccount &&
         isRenderableUrl(resultUrl)
       ) {
         const identityPath = character?.reference_image_urls?.[0];
@@ -1941,6 +1951,25 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 match_notes: gateOutcome.unusable
                   ? gateOutcome.matchNotes || "Unusable result (blank/black frame)."
                   : gateOutcome.matchNotes,
+              }
+            : {}),
+          // The gate's own two columns are written ONLY once the gate has
+          // actually done something — which cannot happen before the
+          // operator has applied pending-2026-09-01/identity-gate.sql AND
+          // raised the threshold above 0.
+          //
+          // This is a deploy-ORDER safety net, not tidiness. Every other
+          // column this codebase has added ahead of its migration reaches
+          // the row through reserve_generation, whose jsonb_populate_record
+          // silently drops keys that match no column. A direct .update()
+          // has no such mercy: PostgREST rejects the whole statement with
+          // PGRST204 if a column is missing. Written unconditionally, this
+          // spread would have failed the terminal write — three retries,
+          // then "couldn't save the result" — on EVERY character image
+          // render made between the code deploy and the SQL being run,
+          // after the image had already been rendered and paid for.
+          ...(gateOutcome && (gateOutcome.retries > 0 || gateOutcome.settledAt)
+            ? {
                 identity_retries: gateOutcome.retries,
                 identity_gated_at: gateOutcome.settledAt,
               }
@@ -2050,7 +2079,16 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // that stops a second settlement refunding twice.
       const refunded = await refundGenerationCosts(placeholder.id, { force: true });
       const line = gateLogLine(
-        { action: "settle", score: gateOutcome.matchScore ?? 0, bestScore: gateOutcome.matchScore ?? 0, keepPrevious: false },
+        {
+          action: "settle",
+          score: gateOutcome.matchScore ?? 0,
+          bestScore: gateOutcome.matchScore ?? 0,
+          // The REAL answer, not a placeholder. Hardcoding false here made
+          // the log say "keeping the second attempt" on every settle,
+          // including the ones where the re-roll came out worse and the
+          // FIRST render is the file actually delivered.
+          keepPrevious: gateOutcome.keptPrevious,
+        },
         refunded,
       );
       if (line) {

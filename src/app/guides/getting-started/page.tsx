@@ -417,8 +417,8 @@ const CHAPTERS: Chapter[] = [
           text: (
             <>
               Videos cost credits (the price chip on the model row is per clip). Your daily free
-              generation covers one render a day — and on the free tier it runs on <b>Kling 1.6</b>,
-              whatever is selected; the note under the composer says so before you send. After that
+              generation covers one render a day — and on the free tier it runs on the
+              pinned free model, whatever is selected; the note under the composer says so before you send. After that
               you&apos;ll need a plan or a credit pack from Settings.
             </>
           ),

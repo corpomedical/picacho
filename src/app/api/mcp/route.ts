@@ -239,28 +239,36 @@ async function callTool(
   }
 
   if (name === "get_usage") {
+    // Deliberately the SAME helpers the REST route uses, not a second
+    // implementation. The first version of this summed credits_used since the
+    // raw current_period_start, which is wrong twice over: getMonthlyUsageWith
+    // exists because that column is a BILLING period anchor — on an annual
+    // plan it is a year ago, so the window covered twelve months of usage —
+    // and the included allowance has to add bonus_credits, which a comped
+    // account lives on entirely. An agent asking "how many credits do I have"
+    // must get the same answer the API and the app give.
     const { PLAN_LIMITS, PLAN_LABELS } = await import("@/lib/plans");
+    const { getMonthlyUsageWith } = await import("@/lib/generations/core");
     const { data: profile } = await ctx.supabase
       .from("profiles")
-      .select("purchased_credits, current_period_start")
+      .select("plan, bonus_credits, purchased_credits, current_period_start")
       .eq("id", ctx.userId)
       .single();
     const plan = ctx.plan as keyof typeof PLAN_LIMITS;
-    const included = PLAN_LIMITS[plan] ?? 0;
-    const since = (profile?.current_period_start as string | null) ?? new Date(0).toISOString();
-    const { data: used } = await ctx.supabase
-      .from("generations")
-      .select("credits_used")
-      .eq("user_id", ctx.userId)
-      .gte("created_at", since);
-    const spent = (used ?? []).reduce((t, r) => t + ((r.credits_used as number | null) ?? 0), 0);
+    const used = await getMonthlyUsageWith(
+      ctx.supabase,
+      ctx.userId,
+      profile?.current_period_start as string | null | undefined,
+    );
+    const included = (PLAN_LIMITS[plan] ?? 0) + ((profile?.bonus_credits ?? 0) as number);
     return toolResult({
       plan: ctx.plan,
       plan_label: PLAN_LABELS[plan] ?? ctx.plan,
       included_this_period: included,
-      used_this_period: spent,
-      remaining_this_period: Math.max(0, included - spent),
-      purchased_credits: (profile?.purchased_credits as number | null) ?? 0,
+      used_this_period: used,
+      remaining_this_period: Math.max(0, included - used),
+      purchased_credits: (profile?.purchased_credits ?? 0) as number,
+      period_started_at: (profile?.current_period_start as string | null) ?? null,
     });
   }
 
@@ -275,6 +283,11 @@ async function callTool(
       .select("id, status, result_url, match_score, credits_used, prompt_input, content_type")
       .eq("id", genId)
       .eq("user_id", ctx.userId)
+      // Deleted generations are gone, not merely hidden. Without this an
+      // agent could still fetch a render the person had deleted — and the
+      // media URL is a capability URL that never expires, so "deleted" would
+      // have meant "removed from the list".
+      .is("deleted_at", null)
       .maybeSingle();
     if (!data) return toolError("No generation with that id on this account.");
     return toolResult({
