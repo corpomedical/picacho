@@ -338,6 +338,61 @@ export const VIDEO_MODELS = [
       { seconds: 15, creditWeight: 4 },
     ] satisfies VideoDurationOption[],
   },
+  {
+    id: "wan-turbo",
+    // A FLAT price expressed per second, which is the one place this
+    // catalogue's cost model bends — read this before changing anything.
+    //
+    // fal bills both Wan turbo lanes per VIDEO, not per second. Verbatim
+    // from both model pages, 2026-09-01, identical on each: "Your request
+    // will cost $0.10 per video for 720p, $0.075 per video for 580p, $0.05
+    // per video for 480p." The catalogue has only costPerSecondUsd, and
+    // pricingAudit() multiplies it by the duration — so the flat $0.10 is
+    // recorded here as $0.02 x the single 5s option it offers, which makes
+    // the audit exact rather than approximate.
+    //
+    // That equivalence holds ONLY while this model offers exactly one
+    // duration. Add a second one and the audit silently starts asserting a
+    // cost fal does not charge (it would claim $0.20 for a 10s clip that
+    // still bills $0.10) — overcharging the user's allowance for a render
+    // that got no more expensive. If a longer option is ever wanted here,
+    // the honest fix is a flat-price field in VideoDurationOption, not a
+    // second row against this rate.
+    costPerSecondUsd: 0.02,
+    name: "Wan 2.2 Turbo",
+    // The TEXT-to-video lane is the catalogue endpoint, exactly like Kling
+    // 1.6 above: requiresReferenceImage() reads this string, and false is
+    // the right answer because the lane works with no photo at all. When a
+    // character photo IS present the branch in fal.ts swaps to
+    // fal-ai/wan/v2.2-a14b/image-to-video/turbo — same flat $0.10 at 720p,
+    // so the swap cannot change what a render costs.
+    falEndpoint: "fal-ai/wan/v2.2-a14b/text-to-video/turbo",
+    recommended: false,
+    // Replaced Kling 1.6 as the free tier on 2026-09-01 (operator call:
+    // "we are not running a charity"). The old peg was $0.056/sec x 5s =
+    // exactly $0.28 against a 1-credit allowance of exactly $0.28 — zero
+    // headroom, passing pricingAudit() only on its half-cent floating-point
+    // tolerance, so any fal price rise on Kling 1.6 would have turned every
+    // free render into a loss. This is $0.10 for the same 5 seconds at the
+    // same 720p: 64% less provider spend, with $0.18 of real headroom.
+    //
+    // Why this model and not something cheaper. fal lists text-to-video
+    // endpoints down to $0.02, but they are all pure text-to-video — and a
+    // free render that cannot contain the user's own character is the wrong
+    // saving for a character-consistency product, because showing someone
+    // their character IS the conversion. Wan 2.2 A14B turbo is the cheapest
+    // model found that has BOTH lanes at one flat price, so the free tier
+    // keeps doing what it does today.
+    description:
+      "Fast and very cheap — a 720p clip at a flat $0.10, whatever the length. Silent, and anchors to one photo rather than several.",
+    // Length is decided by the ENDPOINT, not by us. The text-to-video lane
+    // defaults to num_frames 81 at frames_per_second 16 (~5.06s) and the
+    // image-to-video lane exposes no frame controls at all, so neither
+    // takes a duration parameter and fal.ts sends none. This row exists to
+    // carry the credit weight and to label the picker honestly at the
+    // length the endpoint actually returns; it is not a request.
+    durations: [{ seconds: 5, creditWeight: 1, default: true }] satisfies VideoDurationOption[],
+  },
 ] as const;
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]["id"];

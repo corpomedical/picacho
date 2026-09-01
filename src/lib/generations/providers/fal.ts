@@ -595,6 +595,48 @@ async function buildVideoRequest(
       aspect_ratio: resolvedAspectRatio,
     };
     label = options.resolution === "2k" ? "MiniMax H3 (reference, 2K)" : "MiniMax H3 (reference)";
+  } else if (modelId === "wan-turbo") {
+    // Wan 2.2 A14B turbo — the free tier's model since 2026-09-01.
+    //
+    // Two lanes, chosen exactly the way Kling 1.6 chooses between elements
+    // and text-to-video: a character photo means image-to-video, no photo
+    // means text-to-video. Both lanes bill the SAME flat $0.10 at 720p
+    // (verbatim on both pages, 2026-09-01: "Your request will cost $0.10
+    // per video for 720p, $0.075 per video for 580p, $0.05 per video for
+    // 480p"), so which lane runs can never change what a render costs —
+    // which is what lets one costPerSecondUsd in the catalogue cover both.
+    //
+    // Schema confirmed against fal's own openapi documents for BOTH
+    // endpoints, 2026-09-01. Two things to know:
+    //
+    // 1. NEITHER LANE TAKES A DURATION. text-to-video has num_frames (81)
+    //    and frames_per_second (16) instead, giving ~5.06s; image-to-video
+    //    exposes no frame controls at all. Both are left at their defaults,
+    //    so formatDuration is deliberately not called here — sending
+    //    `duration` would be an unknown parameter, and fal rejects those.
+    // 2. RESOLUTION IS PINNED, though 720p is already the default. The price
+    //    peg in video-models.ts is the 720p number, and a provider default
+    //    is not a promise — the same reasoning as the MiniMax H3 branch
+    //    above, where the default happens to be the EXPENSIVE tier. Pinning
+    //    costs nothing and makes the bill independent of fal's defaults.
+    //
+    // aspect_ratio differs between the lanes: text-to-video takes
+    // 16:9/9:16/1:1 (default 16:9), image-to-video adds "auto" and defaults
+    // to it. Picacho only ever resolves 16:9 or 9:16, which both accept.
+    //
+    // No audio parameter on either lane — Wan renders silent video, the
+    // same as Kling 1.6 before it, so the free tier loses nothing.
+    const wanAnchor = anchorImages[0] ?? options.characterAnchorImageUrl ?? null;
+    endpoint = wanAnchor
+      ? "fal-ai/wan/v2.2-a14b/image-to-video/turbo"
+      : "fal-ai/wan/v2.2-a14b/text-to-video/turbo";
+    body = {
+      prompt,
+      ...(wanAnchor ? { image_url: wanAnchor } : {}),
+      resolution: "720p",
+      aspect_ratio: resolvedAspectRatio,
+    };
+    label = wanAnchor ? "Wan 2.2 Turbo (character photo)" : "Wan 2.2 Turbo";
   } else if (modelId === "kling-2.5") {
     // Kling 2.5 Turbo Pro. First-frame image-to-video, so image_url is
     // required and the clip does open on that photo — this model is the

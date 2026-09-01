@@ -70,20 +70,54 @@ export type PlanId = keyof typeof PLAN_LIMITS;
 // daily-trial.sql), not a balance, so there is nothing to hoard and a
 // returning burst can never cost more than one render.
 //
-// Worst-case cost: ~$0.29 per day per ACTIVE free user (the pinned model's
-// default clip is 1 credit at the ~$0.28 cost basis) — and only on days
-// they actually generate, so the spend is bounded and scales with
+// Worst-case cost: $0.10 per day per ACTIVE free user — the pinned model's
+// flat per-video price (see FREE_TIER_VIDEO_MODEL_ID below) — and only on
+// days they actually generate, so the spend is bounded and scales with
 // engagement rather than with signups.
+//
+// Was ~$0.28 until 2026-09-01, when the peg moved off Kling 1.6. At one
+// render a day that is $8.40 a month of provider spend for an active free
+// account that has never paid anything; it is now $3.00.
 //
 // The trial is counted in GENERATIONS, not credits, and is restricted to
 // the cheapest model (below) — Veo costs 12 credits for 8 seconds, so a
 // free allowance denominated in credits with free model choice would make
 // each free day cost 12x the budget.
 
-// The only video model a free-tier account may use. Also the fastest, so a
-// trial user sees a result sooner — which matters more at trial than quality
-// does.
-export const FREE_TIER_VIDEO_MODEL_ID = "kling";
+// The only video model a free-tier account may use.
+//
+// MOVED OFF KLING 1.6 on 2026-09-01 (operator call: "we are not running a
+// charity"). Kling 1.6 costs $0.056/sec, so its 5s default was exactly
+// $0.28 against a free allowance of exactly 1 credit at a $0.28 cost basis
+// — zero headroom, and passing pricingAudit() only on its half-cent
+// floating-point tolerance. Any fal price rise, however small, would have
+// turned every free render into a loss and lit up Admin > AI providers.
+//
+// Wan 2.2 A14B turbo is $0.10 flat per video at the same 720p, so the same
+// free render now costs 64% less with $0.18 of real headroom. It keeps the
+// two-lane shape that made Kling 1.6 the right choice in the first place:
+// a character photo goes to image-to-video, no photo goes to text-to-video,
+// and BOTH lanes bill the same flat price. That mattered more than price
+// when picking the replacement — fal has text-to-video endpoints down to
+// $0.02, but every one of them is text-only, and a free render that cannot
+// show the user their own character is the wrong saving for a product whose
+// entire pitch is character consistency. The free render's job is to
+// convert, and what converts is seeing your character hold up.
+//
+// The old comment here also claimed this model was chosen for being "the
+// fastest, so a trial user sees a result sooner". That was not true by
+// 2026-09-01: fal's own Kling 1.6 page says "This generation takes
+// approximately 6m", one of the slowest endpoints in the catalogue, while
+// the open-weight Wan endpoints run on fal's own GPUs and publish no such
+// warning. The speed argument now genuinely applies, where before it was
+// stale.
+//
+// NOT VERIFIED BY A TEST RENDER at the time of the switch. The cost and
+// schema are read from fal's own pages; the output quality at 720p is not
+// measured. If a free render ever looks worse than the product deserves,
+// this line is the one to revisit — the catalogue entry documents the
+// runners-up.
+export const FREE_TIER_VIDEO_MODEL_ID = "wan-turbo";
 
 // Monthly cap on AI-generated character reference photos.
 //

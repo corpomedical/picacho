@@ -38,7 +38,8 @@ export type VideoModelId =
   | "minimax-h3"
   | "seedance"
   | "seedance-2"
-  | "veo";
+  | "veo"
+  | "wan-turbo";
 export type ImageModelId = "gpt-image" | "flux";
 
 export type ModelCapabilities = {
@@ -194,6 +195,30 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     identity: { max: 1, mechanism: "first-frame", required: false },
     outfitImage: false,
     continuation: false,
+    startEndFrames: false,
+    storyboard: false,
+    multiPerson: false,
+    aspectControl: "param",
+    photorealPolicy: "accepts",
+  },
+  "wan-turbo": {
+    kind: "video",
+    // Exactly Veo's shape above, and for the same reason: two sibling
+    // endpoints at ONE price, so a character photo costs nothing to honour.
+    // max 1 because image-to-video takes a single image_url and has no
+    // reference array (openapi confirmed 2026-09-01) — which also makes
+    // baselineIdentityReferences decline it, so a multi-photo character
+    // sends its primary photo and nothing else. required false because the
+    // text-to-video lane runs perfectly well with no photo, which matters
+    // more here than anywhere: this is the free tier, and a first-run
+    // account that has not built a character yet must still get its render.
+    identity: { max: 1, mechanism: "first-frame", required: false },
+    outfitImage: false,
+    continuation: false,
+    // The image-to-video lane does take an end_image_url, so this could
+    // become true — but the storyboard surcharge and the composer slot are
+    // their own change, and claiming it here would offer a slot fal.ts
+    // never fills.
     startEndFrames: false,
     storyboard: false,
     multiPerson: false,
