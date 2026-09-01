@@ -713,6 +713,10 @@ const en = {
     // transcript toggle, the proof plate, the labeled mode pills, and the
     // always-visible price line.
     sessionTranscript: "Session transcript",
+    receiptTitle: "Send receipt",
+    totalLabel: "Total",
+    sendRender: "Render",
+    stageScoredNote: "Every take is scored — a missed face re-renders free.",
     identityMatchLabel: "Identity match",
     creditsShortN: "{n} cr",
     durationsFor: "Durations — {model}",

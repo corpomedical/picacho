@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.9.1",
+    build: 16,
+    date: "2026-09-02",
+    title: "The Stage matches its blueprint",
+    items: [
+      "The composer looks like the approved design now, not just behaves like it. It floats as its own centered card — narrower than the stage above, the way the board drew it — instead of spanning the full page. The Send Receipt became the fused band from the design: a tinted strip across the composer's top headed SEND RECEIPT with the total on the right, the same inventory rows and one-tap remedies underneath, unchanged.",
+      "The character, engine and duration pickers are separate chips now rather than segments of one shared pill, and the send button says what it will do — 'Render' in ink, 'Ask' in ochre — instead of leaving the verdict to an icon. The identity plate returned to the stage's bottom edge where the design put it (lifted clear of a video's control bar), finished images grew a download button on the stage itself, and the filmstrip carries the line that explains the scores: every take is scored, and a missed face re-renders free.",
+    ],
+  },
+  {
     version: "1.9.0",
     build: 15,
     date: "2026-09-01",

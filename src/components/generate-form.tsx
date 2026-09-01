@@ -4972,7 +4972,7 @@ function GenerateFormInner({
                   // An alarm that fires when nothing is wrong is an alarm
                   // people learn to ignore on the models where it matters.
                   "bg-atelier-accent/[0.09] hover:bg-atelier-accent/[0.14]"
-                : "hover:bg-atelier-ink/[0.06]",
+                : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
           )}
         >
           {isMultiCharacter ? (
@@ -5146,7 +5146,7 @@ function GenerateFormInner({
     : 1;
   const videoModelPicker =
     contentType === "video" && videoModels.length > 1 ? (
-      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="min-w-0 flex-1">
+      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="min-w-0">
         <button
           type="button"
           onClick={() => {
@@ -5158,8 +5158,10 @@ function GenerateFormInner({
           aria-expanded={videoModelMenuOpen}
           className={cn(
             // Borderless soft chip — matches the character select above.
-            "flex w-full min-w-0 items-center gap-1.5 rounded-full py-1 pl-2 pr-2 text-left transition-colors disabled:opacity-50 sm:gap-2 sm:pl-2.5 sm:pr-2.5",
-            videoModelMenuOpen ? "bg-atelier-ink/[0.08]" : "hover:bg-atelier-ink/[0.06]",
+            "flex min-w-0 items-center gap-1.5 rounded-full py-1 pl-2 pr-2 text-left transition-colors disabled:opacity-50 sm:gap-2 sm:pl-2.5 sm:pr-2.5",
+            videoModelMenuOpen
+              ? "bg-atelier-ink/[0.08]"
+              : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
           )}
         >
           <span className="min-w-[52px] flex-1 truncate text-sm font-medium text-atelier-ink">{currentVideoModel?.name}</span>
@@ -5311,7 +5313,7 @@ function GenerateFormInner({
     // Hidden while a storyboard is on: per-shot durations rule there, and a
     // dead global picker would just invite a click that does nothing.
     contentType === "video" && !storyboardActive && currentVideoModel && currentVideoModel.durations.length > 1 ? (
-      <div className="hidden flex-shrink-0 items-center gap-0.5 rounded-full p-0.5 sm:flex">
+      <div className="hidden flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5 sm:flex">
         {currentVideoModel.durations.map((d) => (
           <button
             key={d.seconds}
@@ -5553,7 +5555,15 @@ function GenerateFormInner({
             neither overlay ever blocks the video's own controls. */}
         {stageTake && stageTakeUrl !== null && stageInFlightPrompt === null && (
           <>
-            <div className="pointer-events-none absolute left-3 top-3 rounded-[12px] border border-white/10 bg-[#141519]/70 px-3 py-2 backdrop-blur-[10px]">
+            {/* Bottom-left, per the approved board. Video lifts the plate
+                clear of the native control bar (bottom-14); images sit
+                flush (bottom-3). */}
+            <div
+              className={cn(
+                "pointer-events-none absolute left-3 rounded-[12px] border border-white/10 bg-[#141519]/70 px-3 py-2 backdrop-blur-[10px]",
+                stageTakeIsVideo ? "bottom-14" : "bottom-3",
+              )}
+            >
               {stageTake.kind === "single" && typeof stageTake.matchScore === "number" ? (
                 <div>
                   <p className="text-[10px] font-medium uppercase tracking-widest text-white/55">
@@ -5585,6 +5595,11 @@ function GenerateFormInner({
                   ? g.video
                   : g.image}
             </div>
+            {/* The board's ghost action, functional: same DownloadButton the
+                thread's result frames use (it positions itself bottom-right
+                and carries the one-at-a-time guard). Skipped for video —
+                the native control bar owns that corner. */}
+            {!stageTakeIsVideo && <DownloadButton url={stageTakeUrl} contentType="image" />}
           </>
         )}
       </div>
@@ -5679,6 +5694,9 @@ function GenerateFormInner({
             <p className="text-[11px] leading-relaxed text-atelier-muted/80">{g.takesEmpty}</p>
           )}
         </div>
+        <p className="hidden flex-shrink-0 text-xs text-atelier-muted lg:block">
+          {g.stageScoredNote}
+        </p>
         <div className="flex flex-shrink-0 items-center gap-2">
           <button
             type="button"
@@ -5918,7 +5936,15 @@ function GenerateFormInner({
           672px to 1024px the moment it docked — the hero wrapper fell away and
           the layout's width took over. Submitting a prompt is the worst moment
           for the thing you just typed into to change size. */}
-      <div className={cn("relative z-10", isHero ? "mx-auto w-full max-w-5xl" : "sticky bottom-4")}>
+      <div
+        className={cn(
+          "relative z-10",
+          // Docked: the composer floats at the approved board's width —
+          // narrower than the stage above it, centered — instead of
+          // spanning the whole container (fidelity pass, 2026-09-02).
+          isHero ? "mx-auto w-full max-w-5xl" : "sticky bottom-4 mx-auto w-full max-w-[880px]",
+        )}
+      >
         {/* Sits directly on top of the form with no gap, sharing its
             rounded-[22px] outer frame (see UsageBanner's own comment) —
             not a floating card of its own, which is what made two earlier
@@ -6023,13 +6049,52 @@ function GenerateFormInner({
             sheets open UPWARD here, since the composer sits at the bottom
             of the screen — the same rule the + menu already follows. */}
         {!isHero && (
+          <>
+            {/* Send Receipt — the fused band from the approved A×B board
+                (fidelity pass, 2026-09-02): a tinted strip fused into the
+                composer's top edge, headed SEND RECEIPT with the total on
+                the right, wrapping the same ReceiptStrip machinery
+                (inventory rows, one-tap remedies) unchanged. */}
+            {(contentType === "video" || showImageReceipt) && (
+              <div
+                className={cn(
+                  "-mx-4 -mt-4 mb-3 border-b border-atelier-rule/60 bg-atelier-accent/[0.05] pb-2 pt-2.5",
+                  !composerBannerVisible && "rounded-t-[22px]",
+                )}
+              >
+                <div className="mb-1 flex items-baseline justify-between gap-3 px-4">
+                  <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                    {g.receiptTitle}
+                  </span>
+                  {!willAsk && sendCreditCost > 0 && !freeTierClient && (
+                    <span className="flex items-baseline gap-1.5">
+                      <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                        {g.totalLabel}
+                      </span>
+                      <span className="font-numeral text-[13px] font-semibold tabular-nums text-atelier-ink">
+                        {formatMsg(g.durationCredits, { n: sendCreditCost })}
+                      </span>
+                    </span>
+                  )}
+                </div>
+                <ReceiptStrip
+                  plan={sendPlanNow}
+                  headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
+                  g={g}
+                  modelName={sendPlanModelName()}
+                  onAction={handlePlanAction}
+                  showIssues={receiptEngaged}
+                />
+              </div>
+            )}
           <div className="mb-2.5 space-y-2.5">
             <div className="relative">
-              <div className="flex items-center gap-1 rounded-full bg-atelier-ink/[0.045] p-1">
+              {/* Separated loadout chips (approved board), not one shared
+                  pill: character · engine+price · durations, each its own
+                  chip. The .relative wrapper stays the anchor, so both
+                  sheets still open bar-wide above the row. */}
+              <div className="flex flex-wrap items-center gap-2">
                 {characterPicker}
-                {videoModelPicker && (
-                  <span aria-hidden className="h-5 w-px flex-shrink-0 bg-atelier-rule" />
-                )}
                 {videoModelPicker}
                 {videoDurationPicker}
               </div>
@@ -6080,20 +6145,8 @@ function GenerateFormInner({
                 {formatMsg(g.multiCharacterNeedsPhoto, { name: castMemberMissingPhoto.name })}
               </p>
             )}
-            {/* Send Receipt — the honesty layer, fused into the composer
-                (A×B: the Control Room's centerpiece riding the Stage's
-                frame). Same visibility rules as before the move. */}
-            {(contentType === "video" || showImageReceipt) && (
-              <ReceiptStrip
-                plan={sendPlanNow}
-                headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
-                g={g}
-                modelName={sendPlanModelName()}
-                onAction={handlePlanAction}
-                showIssues={receiptEngaged}
-              />
-            )}
           </div>
+          </>
         )}
         <Label htmlFor="prompt" className="sr-only">
           {g.messageLabel}
@@ -6639,7 +6692,7 @@ function GenerateFormInner({
                 }
                 disabled={submitting || asking}
                 maxLength={COMPOSER_MAX_CHARS}
-                className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
+                className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-[15px] text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
               />
               </>
               )}
@@ -7529,7 +7582,12 @@ function GenerateFormInner({
                       title={willAsk ? g.askSend : g.send}
                       aria-label={willAsk ? g.askSend : g.send}
                       className={cn(
-                        "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-paper transition-colors disabled:opacity-30",
+                        // The approved board's labeled button (fidelity
+                        // pass, 2026-09-02): "Render" in ink, "Ask" in
+                        // ochre — the classifier's verdict spelled out, not
+                        // just tinted. Icon-only below sm so the control
+                        // row's 320px overflow contract holds.
+                        "flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-[10px] text-sm font-medium text-atelier-paper transition-colors disabled:opacity-30 max-sm:w-9 sm:px-4",
                         // The send button is the classifier made visible:
                         // ink arrow = this renders, ochre spark = this asks.
                         // The verdict shows in the one place the eye already
@@ -7545,6 +7603,9 @@ function GenerateFormInner({
                       ) : (
                         <SendIcon className="h-4 w-4" />
                       )}
+                      <span className="hidden sm:inline">
+                        {willAsk ? g.askSend : g.sendRender}
+                      </span>
                     </button>
                   )}
                 </div>
