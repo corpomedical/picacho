@@ -8,6 +8,16 @@ import { describeImageAsPrompt, type DescribeMode } from "@/lib/generations/prov
 import { absolutizeMediaUrl } from "@/lib/media/url";
 import { getOrigin } from "@/lib/origin";
 import type { BrandRule } from "@/lib/brand-rules/types";
+import { directScene } from "@/lib/generations/providers/anthropic";
+import {
+  getDefaultDurationSeconds,
+  getVideoModel,
+} from "@/lib/generations/providers/video-models";
+import {
+  buildDirectorInstructions,
+  normaliseScenePlan,
+  type ScenePlan,
+} from "@/lib/generations/scene-plan";
 import {
   FREE_PROMPT_ASSIST_LIMIT,
   PLAN_LABELS,
@@ -506,4 +516,98 @@ export async function touchSavedPrompt(formData: FormData): Promise<void> {
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", id)
     .eq("user_id", userData.user.id);
+}
+
+// ---------------------------------------------------------------------------
+// Cinema Studio — planning a scene
+// ---------------------------------------------------------------------------
+
+export type PlanSceneResult =
+  | { error: string; plan?: undefined; assistsLeft?: undefined }
+  | { error: null; plan: ScenePlan; assistsLeft: number | null };
+
+// Turns one sentence into a shot list, and spends NOTHING but an assist.
+//
+// Deliberately a separate step from rendering, and this is the whole design.
+// A scene is N paid renders, which on a premium video lane is more than a
+// month's allowance on the smaller plans — so the person sees the shot list
+// and its full price, and then decides. That is the same principle the Send
+// Receipt was built on: nothing about a spend should be learned after
+// pressing the button.
+//
+// Metered as a prompt ASSIST rather than in credits, matching Enhance and the
+// image-to-prompt read: one Claude call costs a fraction of a cent against a
+// credit that sells for far more, and charging credits to PLAN would make
+// people avoid the step that stops them wasting a render.
+export async function planScene(formData: FormData): Promise<PlanSceneResult> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const idea = String(formData.get("prompt") ?? "").trim();
+  const characterId = String(formData.get("character_id") ?? "").trim();
+  const videoModelId = String(formData.get("video_model_id") ?? "").trim();
+  const requestedShots = Number(formData.get("shot_count"));
+
+  if (!idea) return { error: "Describe the scene you want first." };
+  if (idea.length > MAX_INPUT_LENGTH) {
+    return { error: `That's longer than ${MAX_INPUT_LENGTH} characters — trim it a little.` };
+  }
+
+  const [{ data: studioFlag }, { data: providersFlag }] = await Promise.all([
+    supabase.from("feature_flags").select("enabled").eq("key", "prompt_studio").single(),
+    supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),
+  ]);
+  if (studioFlag?.enabled !== true) return { error: "Prompt Studio is switched off right now." };
+  if (providersFlag?.enabled !== true) {
+    // The mock pipeline has no director. Planning against it would burn an
+    // assist to produce a canned shot list nobody can render.
+    return { error: "Real AI providers are off, so there's no director to plan with yet." };
+  }
+
+  const allowance = await assistAllowance(supabase, userData.user.id);
+  if (allowance.error) return { error: allowance.error };
+
+  const { data: character } = characterId
+    ? await supabase
+        .from("character_profiles")
+        .select("name")
+        .eq("id", characterId)
+        .eq("user_id", userData.user.id)
+        .single()
+    : { data: null };
+
+  // The scene renders at ONE duration on ONE model, so the director is only
+  // ever offered that length — see the normalise call in
+  // runMultiAngleGeneration for why a per-shot duration would drag the
+  // reservation and the row value out of step with each other.
+  const model = getVideoModel(videoModelId);
+  const seconds = getDefaultDurationSeconds(model);
+
+  let raw: unknown;
+  try {
+    raw = await directScene(
+      buildDirectorInstructions({
+        idea,
+        characterName: (character as { name?: string } | null)?.name ?? null,
+        shotCount: Number.isFinite(requestedShots) ? requestedShots : 3,
+        allowedSeconds: [seconds],
+      }),
+    );
+  } catch (err) {
+    // Nothing has been charged and nothing rendered — say so plainly rather
+    // than surfacing a provider error string.
+    console.warn("Scene planning failed:", err);
+    return { error: "The director couldn't plan that scene just now — try again in a moment." };
+  }
+
+  const plan = normaliseScenePlan(raw, { allowedSeconds: [seconds], defaultSeconds: seconds });
+  if (!plan) {
+    return {
+      error: "That didn't come back as a scene — try describing it with a bit more of what happens.",
+    };
+  }
+
+  const assistsLeft = await recordAssist(allowance, userData.user.id, "scene_plan");
+  return { error: null, plan, assistsLeft };
 }

@@ -54,6 +54,29 @@ export function getAnglePreset(id: string): AnglePreset | undefined {
 // unrecognized/legacy angle strings sort last but keep their relative order.
 export function angleSortIndex(angleId: string | null): number {
   if (!angleId) return ANGLE_PRESETS.length + 1;
+  // Cinema Studio scenes key their rows "shot-1".."shot-6" rather than by
+  // angle name, and for a shot list the ORDER IS THE CONTENT — shot 3 before
+  // shot 2 is not a sorting nit, it is the scene playing wrong.
+  //
+  // Without this branch every shot in a scene returns the same
+  // unrecognised-string index, and the tiebreak is created_at — which is
+  // IDENTICAL across the batch, because reserve_generations inserts all N
+  // rows in one transaction and Postgres now() is transaction start time. A
+  // tied sort over tied keys preserves whatever order the query happened to
+  // return, so the shots would play in an arbitrary order that looks like an
+  // AI-director quality problem rather than a missing ORDER BY.
+  //
+  // Offset into a band of their own so a scene's shots sort among themselves
+  // and can never interleave with an angle group's five fixed views. Groups
+  // are homogeneous in practice; the band makes that explicit rather than
+  // relying on it.
+  const shot = /^shot-(\d{1,3})$/.exec(angleId);
+  if (shot) return 1000 + Number(shot[1]);
   const idx = ANGLE_PRESETS.findIndex((a) => a.id === angleId);
   return idx === -1 ? ANGLE_PRESETS.length : idx;
+}
+
+/** The row key for shot N of a scene (1-based). */
+export function sceneShotKey(index: number): string {
+  return `shot-${index + 1}`;
 }

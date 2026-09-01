@@ -86,6 +86,7 @@ import {
   type ContentType,
 } from "@/lib/generations/pipeline";
 import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "@/lib/generations/angles";
+import { fanoutCreditCost } from "@/lib/generations/scene-plan";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
 import { FEATURED_VIDEO_MODEL_IDS } from "@/lib/generations/providers/video-models";
 import {
@@ -2599,7 +2600,19 @@ function GenerateFormInner({
             baseDurationCredits) + storyboardFrameExtra + continuationExtra
         : 1;
   const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
-  const cannotAfford = selectedCreditCost > creditsAvailable;
+  // What THIS SEND actually costs, which for a fan-out is not one render.
+  //
+  // Multi-angle charges angleIds.length * creditWeight on the server
+  // (runMultiAngleGeneration) while this file quoted selectedCreditCost — the
+  // price of a single render — so a five-angle Seedance batch displayed 9
+  // credits and took 45, and cannotAfford compared the wrong number, meaning
+  // the shortfall banner stayed silent for someone who could not afford the
+  // batch. They found out after pressing send, which the action's own comment
+  // calls the worst moment to learn it. Both sides now go through
+  // fanoutCreditCost.
+  const sendRenderCount = multiAngleMode && contentType === "video" ? selectedAngles.length : 1;
+  const sendCreditCost = fanoutCreditCost(selectedCreditCost, sendRenderCount);
+  const cannotAfford = sendCreditCost > creditsAvailable;
   const [panelUploadBusy, setPanelUploadBusy] = useState(false);
   const panelUploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -5739,8 +5752,8 @@ function GenerateFormInner({
             // suspends it for THAT selection rather than silencing a
             // different, larger shortfall the person hasn't seen yet. Image
             // mode is its own selection for the same reason.
-            key={contentType === "image" ? "image" : `${selectedVideoModel.id}-${videoDurationSeconds}`}
-            needed={selectedCreditCost}
+            key={contentType === "image" ? "image" : `${selectedVideoModel.id}-${videoDurationSeconds}-${sendRenderCount}`}
+            needed={sendCreditCost}
             available={creditsAvailable}
             allowExternalPurchase={allowExternalPurchase}
             modelName={selectedVideoModel.name}

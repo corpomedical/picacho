@@ -23,7 +23,7 @@ import {
   refundGenerationCosts,
   type AdvanceResult,
 } from "@/lib/generations/job-runner";
-import { getAnglePreset, angleSortIndex } from "@/lib/generations/angles";
+import { getAnglePreset, angleSortIndex, sceneShotKey } from "@/lib/generations/angles";
 import { submitVideoJob, cancelQueuedJob, type QueuedJob } from "@/lib/generations/providers/fal";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
@@ -65,6 +65,11 @@ import {
   resolveVideoResolution,
 } from "@/lib/generations/providers/video-resolution";
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
+import {
+  fanoutCreditCost,
+  normaliseScenePlan,
+  shotPresetIds,
+} from "@/lib/generations/scene-plan";
 import { autoReportFailedGeneration } from "@/lib/generations/reports";
 import { newProviderBudget } from "@/lib/generations/providers/image";
 import {
@@ -2355,9 +2360,15 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // De-dup and keep only real angle presets: duplicate angles would insert (and
   // charge) two placeholder rows that collapse to one id — orphaning a paid fal
   // job — and unknown ids would fan out billed renders. Bounded by preset count.
-  const angleIds = [...new Set((formData.getAll("angle") as string[]).filter(Boolean))].filter(
+  let angleIds = [...new Set((formData.getAll("angle") as string[]).filter(Boolean))].filter(
     (a) => getAnglePreset(a) !== undefined,
   );
+  // Cinema Studio sends a director-planned SHOT LIST instead of an angle set.
+  // Kept raw here and normalised further down, once the model is resolved —
+  // the shot list has to be clamped against the durations that model really
+  // accepts, and against the ONE duration this batch is priced at.
+  const sceneRaw = (formData.get("scene_plan") as string) || "";
+  let shotPromptByKey: Map<string, string> | null = null;
   // Same idea as runGeneration's clientGenerationId — generated up front on
   // the client so the Stop button has something to cancel against before
   // this action has returned anything.
@@ -2438,7 +2449,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     };
   }
   if (!characterId) return { error: "Pick a character to generate with." };
-  if (angleIds.length === 0) return { error: "Pick at least one angle." };
+  if (angleIds.length === 0 && !sceneRaw) return { error: "Pick at least one angle." };
 
   const { data: character, error: characterError } = await supabase
     .from("character_profiles")
@@ -2564,7 +2575,49 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     };
   }
 
-  const totalRequestedCredits = angleIds.length * creditWeight;
+  // Cinema Studio: turn the director's plan into this batch's shots.
+  //
+  // Normalised HERE, server-side, against the resolved model — never trusted
+  // from the client. The plan travelled through the browser, so the shot
+  // count, the preset ids and the durations are all attacker-controlled until
+  // this runs; normaliseScenePlan is what caps them.
+  //
+  // allowedSeconds is deliberately the SINGLE chosen duration rather than the
+  // model's full ladder. This batch reserves, charges and records one
+  // creditWeight per row (see the rows built below), so a per-shot duration
+  // would have to change the total, the reservation and the row value
+  // together — and missing one means the check runs against a different
+  // number than the rows record. That is exactly the drift class behind the
+  // 2026-08-31 multi-angle resolution-surcharge bug.
+  if (sceneRaw) {
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(sceneRaw);
+    } catch {
+      return { error: "That scene plan wasn't readable — plan the scene again." };
+    }
+    const plan = normaliseScenePlan(parsed, {
+      allowedSeconds: [videoDurationSeconds],
+      defaultSeconds: videoDurationSeconds,
+    });
+    if (!plan) {
+      return { error: "That scene needs at least two usable shots — plan it again." };
+    }
+    angleIds = plan.shots.map((_, i) => sceneShotKey(i));
+    shotPromptByKey = new Map(
+      plan.shots.map((shot, i) => [
+        sceneShotKey(i),
+        // What happens in this shot, then its camera move and the scene's one
+        // look. resolvePresetBlocks keeps a single preset per category and
+        // drops unknown or unproven ids, so a director that invented a
+        // preset simply loses that block rather than sending untested text.
+        [shot.prompt, resolvePresetBlocks(shotPresetIds(plan, shot))].filter(Boolean).join("\n\n"),
+      ]),
+    );
+  }
+
+  // Through the same function the composer quotes with — see fanoutCreditCost.
+  const totalRequestedCredits = fanoutCreditCost(creditWeight, angleIds.length);
   let multiAllowance = await checkGenerationAllowance(
     supabase,
     userData.user.id,
@@ -2865,8 +2918,15 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     // Same refund treatment as the async user_cancelled path (job-runner's
     // REFUNDS table): a Stop honoured before any provider spend should give
     // everything back — still through the one flag-gated refund door.
+    // FORCED, because nothing has been submitted to any provider on this
+    // path — the batch was reserved and then abandoned before the fan-out,
+    // so the provider cost is provably zero. That is precisely the class
+    // refund-rules.ts reserves force for. Without it, and with the
+    // automatic_refunds switch off, pressing Stop during the shared compile
+    // charged the FULL N x weight for no work at all — and the compile is
+    // the slow serial step, so the window is wide.
     for (const p of placeholders) {
-      await refundGenerationCosts(p.id);
+      await refundGenerationCosts(p.id, { force: true });
     }
     return { error: "Stopped before any renders were submitted." };
   }
@@ -2907,8 +2967,15 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
 
     // Whole group failed before any provider call — also give back the
     // purchased-credit slices recorded on each row.
+    // FORCED, because nothing has been submitted to any provider on this
+    // path — the batch was reserved and then abandoned before the fan-out,
+    // so the provider cost is provably zero. That is precisely the class
+    // refund-rules.ts reserves force for. Without it, and with the
+    // automatic_refunds switch off, pressing Stop during the shared compile
+    // charged the FULL N x weight for no work at all — and the compile is
+    // the slow serial step, so the window is wide.
     for (const p of placeholders) {
-      await refundGenerationCosts(p.id as string);
+      await refundGenerationCosts(p.id as string, { force: true });
     }
 
     return { error: "Couldn't build a scene for these angles — try rewording the prompt." };
@@ -2917,7 +2984,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const settled = await Promise.allSettled(
     angleIds.map(async (angleId) => {
       const preset = getAnglePreset(angleId);
-      const angledInput = preset ? `${userInput}\n\n${preset.promptHint}` : userInput;
+      // A scene's shot brings its own line; an angle brings its preset's.
+      const shotHint = shotPromptByKey?.get(angleId) ?? preset?.promptHint ?? null;
+      const angledInput = shotHint ? `${userInput}\n\n${shotHint}` : userInput;
       const rowId = placeholderByAngle.get(angleId);
 
       let attempts: AttemptLog[];
@@ -2928,8 +2997,8 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       if (useRealProviders) {
         // The shared scene plus this angle's camera line — the only thing
         // that differs between the angles in a batch.
-        let anglePrompt = preset
-          ? `${sharedScene!.finalPrompt}\n\n${preset.promptHint}`
+        let anglePrompt = shotHint
+          ? `${sharedScene!.finalPrompt}\n\n${shotHint}`
           : sharedScene!.finalPrompt;
         if (anglePropDescription) {
           anglePrompt += `\n\nThe user attached an image; its contents (use as the prompt above describes): ${anglePropDescription}`;
@@ -2941,7 +3010,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           lastAttempt.compiledPrompt = anglePrompt;
           lastAttempt.steps.push({
             step: "generate",
-            detail: `Shared scene, ${preset?.label ?? angleId} camera angle.`,
+            detail: shotPromptByKey
+              ? `Shared scene, ${angleId.replace("shot-", "shot ")} of ${angleIds.length}.`
+              : `Shared scene, ${preset?.label ?? angleId} camera angle.`,
           });
         }
 

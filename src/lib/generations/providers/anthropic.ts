@@ -124,3 +124,52 @@ export async function softenPromptForSafety(prompt: string): Promise<string> {
   if (!softened) throw new Error("Safety rewrite came back empty.");
   return softened;
 }
+
+
+// ---------------------------------------------------------------------------
+// Cinema Studio's director
+// ---------------------------------------------------------------------------
+
+// Decomposes one sentence into a shot list.
+//
+// Deliberately NOT a creative-writing call. The director's whole job is to
+// choose from a fixed, pre-tested vocabulary — the proven camera moves and
+// looks in cinema-presets.ts — and to say what happens in each shot. Every
+// other decision (which model renders it, how the character is anchored, what
+// the block text actually says) is already made by code that has been proven
+// on real renders. That is the same discipline the preset file itself
+// records: nothing here guesses, classifies, or asks a model to do something
+// unproven.
+//
+// Returns the PARSED JSON, unvalidated. normaliseScenePlan in scene-plan.ts is
+// what makes it safe to spend money on, and it is unit-tested against exactly
+// the kinds of nonsense this can return: invented preset ids, twenty shots, a
+// duration the endpoint would reject. Keeping parsing and validation apart is
+// what lets the validation be testable without a network.
+export async function directScene(instructions: string): Promise<unknown> {
+  // Reuses the draft call so there is ONE Anthropic request shape in this
+  // file — same model, same timeout, same empty-response and cut-short
+  // handling, including the retry for API versions that reject the thinking
+  // parameter. A second hand-rolled fetch would drift from it.
+  const text = await draftWithClaude(instructions);
+
+  // Models wrap JSON in markdown fences often enough that refusing it would
+  // be a self-inflicted failure. Strip a fence if present, then fall back to
+  // the outermost braces — cheaper and more reliable than asking again.
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  const candidate = (fenced ? fenced[1] : text).trim();
+  const braced =
+    candidate.startsWith("{") && candidate.endsWith("}")
+      ? candidate
+      : candidate.slice(candidate.indexOf("{"), candidate.lastIndexOf("}") + 1);
+
+  try {
+    return JSON.parse(braced);
+  } catch {
+    // Null rather than a throw: the caller turns this into "the director
+    // couldn't plan that scene, nothing was charged", which is a better
+    // outcome than a crash on a step that costs a fraction of a cent and has
+    // spent no render money yet.
+    return null;
+  }
+}
