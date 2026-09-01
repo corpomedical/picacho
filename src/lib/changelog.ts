@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.8.5",
+    build: 14,
+    date: "2026-09-01",
+    title: "The widest face lock yet — and the free render stops costing exactly what it earns",
+    items: [
+      "MiniMax H3 joins the model catalogue as the new identity lane, and it is the widest one here: up to five of your character's photos anchor a single clip, against the four Kling's reference model takes and the one every first-frame model gets. It renders 5, 10 or 15 seconds with native stereo audio in the same pass as the picture, at 2 credits for five seconds where the closest comparable lane costs 3 — cheaper at every length, with a 2K option priced separately and shown before you spend. Announced by MiniMax on 2026-07-31 and reachable on the same fal key everything else already uses; the endpoint lives under MiniMax's own namespace rather than fal's, which looks like a typo and is not.",
+      "Three things about that endpoint would each have been a silent bug, and all three are pinned by tests rather than by memory. Its reference photos are cited in the prompt as plain words — Image 1, Image 2 — not with the @ prefix the Seedance and Kling lanes use; an @ there is an unrecognised token, so the render would have quietly ignored your character and invented a face, which reads as a quality problem rather than a fault. Its duration is a number where every Kling endpoint wants a string. And its resolution defaults to 2K, not to its cheapest tier, so simply not sending the parameter would have billed every render at more than double the rate the credit weights are built on. The lane sends 768p explicitly, always. The photo budget is capped at five on purpose too: the endpoint accepts nine, but the sixth onward carries a per-image fee that a per-second price cannot express, and five is the largest set that stays free.",
+      "The free daily render stops running at exactly cost. It was pinned to Kling 1.6 at $0.056 a second, so a five-second clip cost $0.2800 against a free allowance worth exactly $0.2800 — zero headroom, clearing the pricing audit only on the half-cent of floating-point tolerance built into the comparison. Any provider price rise, however small, would have turned every free render into a loss. It now runs on Wan 2.2 Turbo at a flat $0.10 for the same five seconds at the same 720p: 64% less, and $0.18 of real margin instead of none. Nothing changes for the person using it — same length, same resolution, still silent, still one a day.",
+      "The cheaper option was not the obvious one. There are text-to-video endpoints down to $0.02, and every one of them is text-only — a free render that cannot contain your own character is the wrong saving for a product whose entire pitch is that your character holds up, because seeing your character IS what makes the free render worth giving away. Wan 2.2 Turbo was the cheapest model with both lanes at one flat price: a character photo routes to image-to-video, no photo routes to text-to-video, and both bill identically, so which lane runs can never change what a render costs. One more thing the switch corrected: the old note in the code justified Kling 1.6 as the fastest model, so trial users saw a result sooner. Its own provider page says that generation takes about six minutes — one of the slowest endpoints in the catalogue. A first-time visitor had been waiting six minutes for their single free render, which was costing conversions quite apart from the money.",
+    ],
+  },
+  {
     version: "1.8.4",
     build: 13,
     date: "2026-08-30",
