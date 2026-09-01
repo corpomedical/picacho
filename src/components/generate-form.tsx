@@ -7515,35 +7515,11 @@ function GenerateFormInner({
                       sidebar's voice search is untouched. */}
                   </div>
 
-                  {/* The price beside the button (A×B): what THIS send
-                      costs, through the same fanout math the server charges
-                      with (sendCreditCost) — or "free" when the send will
-                      be answered. Quiet for free-tier sends (the footer
-                      pill owns that promise), while a shortfall banner
-                      already shows the number, and while a mode panel
-                      (scene plan / storyboard) quotes its own total.
-                      Outside the scroll strip, like Send — a price that can
-                      scroll out of sight is no price at all. sm+ only: at
-                      320px the receipt and the menus carry it. */}
-                  {!isHero &&
-                    !composerBannerVisible &&
-                    !pendingScene &&
-                    !storyboardActive &&
-                    !submitting &&
-                    !asking &&
-                    (willAsk ? (
-                      <span className="hidden flex-shrink-0 items-center gap-1 whitespace-nowrap text-[11px] text-atelier-muted sm:flex">
-                        <SparkIcon className="h-3 w-3 text-atelier-accent" />
-                        {g.askFree}
-                      </span>
-                    ) : !freeTierClient && sendCreditCost > 0 && contentType === "video" ? (
-                      <span className="hidden flex-shrink-0 whitespace-nowrap font-numeral text-[11px] tabular-nums text-atelier-muted sm:inline">
-                        {sendRenderCount > 1
-                          ? formatMsg(g.sendTotalCredits, { k: sendRenderCount, n: sendCreditCost })
-                          : formatMsg(g.thisTakeCredits, { n: sendCreditCost })}
-                      </span>
-                    ) : null)}
-
+                  {/* No price beside the button (operator, 2026-09-02: the
+                      receipt band's Total at the composer's top right
+                      already quotes the same number, through the same
+                      sendCreditCost). The button's own label carries the
+                      ask verdict; the band's Total carries the money. */}
                   {asking ? (
                     // Stop for a streaming answer. Separate from the render
                     // Stop below because it cancels a fetch, not a queued
