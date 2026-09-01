@@ -5185,11 +5185,14 @@ function GenerateFormInner({
               // tail — a picker that hides the checkmark teaches nothing.
               const showAll = modelMenuShowAll || featured.length === 0 || rest.some((m) => m.id === videoModelId);
               const shown = showAll ? [...featured, ...rest] : featured;
-              // Plain-language jobs for the three lanes; the long tail
-              // keeps each model's own description.
+              // Plain-language jobs for the featured lanes; the long tail
+              // keeps each model's own description. One key per id in
+              // FEATURED_VIDEO_MODEL_IDS — a missing one renders an empty
+              // subtitle rather than falling back to the description.
               const jobs: Record<string, string> = {
                 "seedance-2": g.modelJobSeedance2,
                 "kling-o3-pro": g.modelJobKlingO3Pro,
+                "gemini-omni": g.modelJobGeminiOmni,
                 veo: g.modelJobVeo,
               };
               return (

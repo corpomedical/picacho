@@ -380,7 +380,8 @@ async function buildVideoRequest(
             modelId === "seedance" ||
             modelId === "seedance-2" ||
             modelId === "kling-o3-pro" ||
-            modelId === "minimax-h3")
+            modelId === "minimax-h3" ||
+            modelId === "gemini-omni")
         ? [options.characterAnchorImageUrl]
         : [];
 
@@ -637,6 +638,90 @@ async function buildVideoRequest(
       aspect_ratio: resolvedAspectRatio,
     };
     label = wanAnchor ? "Wan 2.2 Turbo (character photo)" : "Wan 2.2 Turbo";
+  } else if (modelId === "gemini-omni") {
+    // Gemini Omni Flash 1.1 — Google's newest, under Google's own namespace
+    // on fal rather than the fal-ai/ prefix.
+    //
+    // Two lanes chosen the same way Veo and Wan choose: a character photo
+    // means image-to-video, no photo means text-to-video. Both bill at the
+    // identical per-second rate (the price string is quoted in
+    // video-models.ts), so the swap cannot change what a render costs.
+    //
+    // Schema confirmed against fal's own openapi documents for BOTH
+    // endpoints, 2026-09-01. The traps:
+    //
+    // 1. DURATION IS AN INTEGER, range 3-10, default 8 — not the numeric
+    //    string every Kling endpoint wants, so formatDuration is not called
+    //    here. Note the 10s CEILING: this is the shortest maximum in the
+    //    catalogue, and actions.ts already rejects a duration this model
+    //    does not list, so nothing can ask it for 15.
+    // 2. RESOLUTION IS PINNED even though 720p is already fal's default,
+    //    for the same reason as every other branch here — a provider
+    //    default is not a promise, and the credit weights are built on the
+    //    720p number.
+    // 3. THERE IS NO AUDIO PARAMETER. Native synchronised audio is always
+    //    generated, so generateNativeAudio has nothing to switch off; a
+    //    dialogue render simply gets its track replaced by the Sync Labs
+    //    pass, exactly as on MiniMax H3.
+    // 4. THE CITATION TOKEN IS ZERO-INDEXED. <IMAGE_REF_0> is the FIRST
+    //    image — every other reference lane in this file counts from one
+    //    (Seedance's @Image1, H3's "Image 1", O3 Pro's @Element1). Getting
+    //    this wrong points the prompt at the wrong photo, or at no photo at
+    //    all on a single-reference send, which reads as a quality problem
+    //    rather than a bug. fal's own field description, verbatim:
+    //    "Reference media is sent in list order before the prompt."
+    // 5. THE ARRAY IS image_urls, NOT reference_image_urls (which is what
+    //    MiniMax H3 calls its equivalent). fal rejects unknown parameters.
+    //
+    // aspect_ratio is a real parameter and its enum is exactly "16:9" |
+    // "9:16" — the two values Picacho resolves — so no reframe workaround.
+    //
+    // Identity rides the REFERENCE lane, not the image-to-video one, and
+    // that is the whole point of this branch. image-to-video would make the
+    // character's photo literally frame one — the frozen-open defect this
+    // file softens with negative prompts in four other places and admits it
+    // cannot cure ("the only complete fix is to stop handing the raw photo
+    // in as frame one"). reference-to-video binds the likeness by citation
+    // instead, so the clip can open mid-motion. Both lanes bill the same
+    // per-second rate, so choosing the better one is free. The cost of
+    // dropping image-to-video is its optional end_image_url, a start/end
+    // lane that was never wired here anyway.
+    const geminiResolution =
+      options.resolution === "4k" ? "4k" : options.resolution === "1080p" ? "1080p" : "720p";
+    const geminiDuration = options.durationSeconds ?? DEFAULT_DURATION_SECONDS;
+    if (anchorImages.length > 0) {
+      endpoint = "google/gemini-omni-flash/v1.1/reference-to-video";
+      // Zero-indexed citations, and one line that names every photo as the
+      // SAME person — a flat list would otherwise read as several different
+      // subjects, the same trap the MiniMax H3 branch handles above.
+      const refs = anchorImages.map((_, i) => `<IMAGE_REF_${i}>`).join(", ");
+      const citation =
+        anchorImages.length > 1
+          ? `${refs} are all photographs of the same person — match their face, hair, and features exactly, but do not copy the pose or framing of any of those photos.`
+          : `<IMAGE_REF_0> is the person in this video — match their face, hair, and features exactly, but do not copy the pose or framing of that photo.`;
+      body = {
+        prompt: `${prompt}\n\n${citation}`,
+        image_urls: anchorImages,
+        duration: geminiDuration,
+        resolution: geminiResolution,
+        aspect_ratio: resolvedAspectRatio,
+      };
+    } else {
+      endpoint = "google/gemini-omni-flash/v1.1/text-to-video";
+      body = {
+        prompt,
+        duration: geminiDuration,
+        // "360p" | "720p" | "1080p" | "4k" — note the LOWERCASE k, which
+        // happens to match our own VideoResolution spelling exactly, so the
+        // paid tiers pass straight through. 720p is the base the weights
+        // are built on and the fallback for anything not offered.
+        resolution: geminiResolution,
+        aspect_ratio: resolvedAspectRatio,
+      };
+    }
+    label = `Gemini Omni Flash 1.1${anchorImages.length > 0 ? " (reference)" : ""}${
+      options.resolution ? ` (${options.resolution})` : ""
+    }`;
   } else if (modelId === "kling-2.5") {
     // Kling 2.5 Turbo Pro. First-frame image-to-video, so image_url is
     // required and the clip does open on that photo — this model is the

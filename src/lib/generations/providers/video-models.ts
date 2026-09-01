@@ -393,6 +393,55 @@ export const VIDEO_MODELS = [
     // length the endpoint actually returns; it is not a request.
     durations: [{ seconds: 5, creditWeight: 1, default: true }] satisfies VideoDurationOption[],
   },
+  {
+    id: "gemini-omni",
+    // fal's real per-second price at the 720p tier this lane renders at.
+    // Verbatim from the model page, 2026-09-01: "Billing is calculated per
+    // second of output video, by resolution. For 360p, your request will
+    // cost $0.03 per second; for 720p, $0.10 per second; for 1080p, $0.15
+    // per second; and for 4K, $0.30 per second."
+    //
+    // 720p is also fal's own default here — unlike MiniMax H3, whose default
+    // is its EXPENSIVE tier. The branch still pins it explicitly: a provider
+    // default is not a promise, and this catalogue has been caught by that
+    // once already.
+    //
+    // 360p at $0.03/sec is deliberately not offered. video-resolution.ts
+    // expresses resolutions ABOVE a model's default, and dropping the base
+    // to 360p to save a credit would make the newest, best-ranked model in
+    // the catalogue look worse than the free tier.
+    costPerSecondUsd: 0.10,
+    name: "Gemini Omni Flash 1.1",
+    // Google's namespace on fal, like MiniMax's — not the fal-ai/ prefix.
+    // Text-to-video is the catalogue endpoint so requiresReferenceImage()
+    // reads false; the branch in fal.ts swaps to
+    // google/gemini-omni-flash/v1.1/image-to-video when a character photo
+    // exists. Both lanes bill at the same per-second rate, so the swap
+    // cannot change the price — the same shape as Veo and Wan above.
+    falEndpoint: "google/gemini-omni-flash/v1.1/text-to-video",
+    recommended: false,
+    // Ranked around the top of the Artificial Analysis text-to-video arena
+    // (~Elo 1,237, roughly second overall) at $0.10/sec against Veo 3.1's
+    // $0.40 — a quarter of the price of the model this catalogue has been
+    // calling its flagship. Native synchronised audio comes with every
+    // render and has no parameter to disable it, so a dialogue run simply
+    // has its track replaced by the Sync Labs pass, same as MiniMax H3.
+    description:
+      "Google's newest — top-ranked quality with native audio, at a quarter of Veo's price. About $0.10 per second at 720p.",
+    // fal types duration as an INTEGER (not the numeric string every Kling
+    // endpoint wants), range 3-10, default 8. The 5/8/10 ladder mirrors the
+    // rest of the catalogue rather than exposing all eight values, and 8 is
+    // marked default because it is the endpoint's OWN default — the rule
+    // this file's header sets for every entry.
+    //
+    // Weights are cost / $0.28 rounded up: $0.50 for 5s = 1.79 -> 2,
+    // $0.80 for 8s = 2.86 -> 3, $1.00 for 10s = 3.57 -> 4.
+    durations: [
+      { seconds: 5, creditWeight: 2 },
+      { seconds: 8, creditWeight: 3, default: true },
+      { seconds: 10, creditWeight: 4 },
+    ] satisfies VideoDurationOption[],
+  },
 ] as const;
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]["id"];
@@ -724,4 +773,19 @@ export function pricingAudit(): {
 // three curated lanes with plain jobs; everything else sits behind a
 // "More models" expander. Curation only — nothing is removed from the
 // catalog, and the server accepts every id exactly as before.
-export const FEATURED_VIDEO_MODEL_IDS = ["seedance-2", "kling-o3-pro", "veo"] as const;
+// Four since 2026-09-01 (operator call), when Gemini Omni Flash 1.1 joined.
+// It earns a slot rather than replacing one: it is the highest-ranked model
+// in the catalogue and it costs a quarter of what Veo does, so leaving it in
+// the long tail would hide the best price-to-quality lane behind an
+// expander. Veo stays because it is the one people arrive already knowing.
+//
+// EVERY id here needs a matching plain-language job line in the `jobs` map
+// in generate-form.tsx AND in all four locales (en/es/it/pt) — the featured
+// lanes show that line instead of the model's own description, so a missing
+// key renders an empty subtitle rather than falling back.
+export const FEATURED_VIDEO_MODEL_IDS = [
+  "seedance-2",
+  "kling-o3-pro",
+  "gemini-omni",
+  "veo",
+] as const;

@@ -675,6 +675,7 @@ const es = {
     moreModels: "Más modelos ({n})",
     modelJobSeedance2: "El mejor equilibrio — presets y continuar",
     modelJobKlingO3Pro: "Máxima fidelidad del rostro",
+    modelJobGeminiOmni: "Máxima calidad — a un cuarto del precio de Veo",
     modelJobVeo: "Sin personaje — con audio",
     freePinnedNote: "se genera con {model}",
     issueNeedsCharacterWithAttachment: "Tu foto acompaña a tu prompt como referencia, pero la cara tiene que venir de un personaje guardado. Elige uno o cambia a Veo para generar sin personaje.",

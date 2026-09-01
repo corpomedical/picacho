@@ -675,6 +675,7 @@ const it = {
     moreModels: "Altri modelli ({n})",
     modelJobSeedance2: "Il migliore all-round — preset e continua",
     modelJobKlingO3Pro: "Massima fedeltà del volto",
+    modelJobGeminiOmni: "Qualità al top — a un quarto del prezzo di Veo",
     modelJobVeo: "Senza personaggio — con audio",
     freePinnedNote: "genera con {model}",
     issueNeedsCharacterWithAttachment: "La tua foto accompagna il prompt come riferimento, ma il volto deve venire da un personaggio salvato. Scegline uno o passa a Veo per generare senza personaggio.",

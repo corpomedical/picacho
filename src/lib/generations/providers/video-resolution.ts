@@ -91,6 +91,28 @@ const OFFERS: Record<string, ResolutionOffer[]> = {
   "minimax-h3": [
     { value: "2k", costPerSecondUsd: 0.13, weights: { 5: 3, 10: 5, 15: 7 } },
   ],
+  // Gemini Omni Flash 1.1, verbatim from fal's own model page 2026-09-01:
+  //   "Billing is calculated per second of output video, by resolution. For
+  //    360p, your request will cost $0.03 per second; for 720p, $0.10 per
+  //    second; for 1080p, $0.15 per second; and for 4K, $0.30 per second."
+  //
+  // The lane renders at 720p, which is what its base weights are built on,
+  // so BOTH rows here are paid upgrades — neither is weightless.
+  //
+  // Weights are cost / $0.28 rounded up, derived from the per-second price
+  // rather than scaled off the base weight (same reasoning as Veo's 4K):
+  //   1080p  5s -> $0.75 -> 2.68  -> 3   (base 2)
+  //   1080p  8s -> $1.20 -> 4.29  -> 5   (base 3)
+  //   1080p 10s -> $1.50 -> 5.36  -> 6   (base 4)
+  //   4k     5s -> $1.50 -> 5.36  -> 6
+  //   4k     8s -> $2.40 -> 8.57  -> 9
+  //   4k    10s -> $3.00 -> 10.71 -> 11
+  //
+  // Ascending order matters — the composer renders these left to right.
+  "gemini-omni": [
+    { value: "1080p", costPerSecondUsd: 0.15, weights: { 5: 3, 8: 5, 10: 6 } },
+    { value: "4k", costPerSecondUsd: 0.30, weights: { 5: 6, 8: 9, 10: 11 } },
+  ],
 };
 
 /** Resolutions this model offers above its default, in ascending order. */

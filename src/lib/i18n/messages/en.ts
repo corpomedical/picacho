@@ -732,6 +732,7 @@ const en = {
     moreModels: "More models ({n})",
     modelJobSeedance2: "Best all-round — presets & continue",
     modelJobKlingO3Pro: "Strongest face lock",
+    modelJobGeminiOmni: "Top-ranked quality — a quarter of Veo's price",
     modelJobVeo: "No character needed — with audio",
     freePinnedNote: "runs on {model}",
     issueNeedsCharacterWithAttachment: "Your photo rides along as a reference with your prompt — but the face has to come from a saved character. Pick one, or switch to Veo for a character-free render.",

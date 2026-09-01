@@ -34,6 +34,7 @@ export type VideoModelId =
   | "kling"
   | "kling-2.5"
   | "kling-o3"
+  | "gemini-omni"
   | "kling-o3-pro"
   | "minimax-h3"
   | "seedance"
@@ -200,6 +201,35 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     multiPerson: false,
     aspectControl: "param",
     photorealPolicy: "accepts",
+  },
+  "gemini-omni": {
+    kind: "video",
+    // CITATION, not first-frame — the identity rides as <IMAGE_REF_n> in the
+    // prompt (fal's reference-to-video lane), so the clip does not open
+    // frozen in the photographed pose. That is a deliberate choice of lane:
+    // the image-to-video sibling exists and costs exactly the same, and it
+    // would have put the photo in frame one. See the branch in fal.ts.
+    //
+    // max 4 to match every other citation lane here (Seedance, Kling
+    // elements, O3 Pro). fal actually allows 10 with NO per-image
+    // surcharge — the price is output seconds only — so this can be raised
+    // for free if a test render shows more references hold the face better.
+    // It is capped at the house number rather than the endpoint's, because
+    // more references is an unverified quality bet, not a free win.
+    identity: { max: 4, mechanism: "citation", required: false },
+    outfitImage: false,
+    // The reference lane takes up to 3 reference_video_urls, which is a
+    // continuation path — but continuationExtraCredits is derived from
+    // ByteDance's published with-video multiplier and Gemini posts no
+    // equivalent rule. Charging Seedance's discount against Google's prices
+    // is exactly the guess the 2026-08-31 continuation audit cleaned up.
+    continuation: false,
+    startEndFrames: false,
+    storyboard: false,
+    multiPerson: false,
+    aspectControl: "param",
+    photorealPolicy: "accepts",
+    imageBudget: 4,
   },
   "wan-turbo": {
     kind: "video",
