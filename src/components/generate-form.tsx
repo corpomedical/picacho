@@ -17,6 +17,7 @@ import {
   type HistoryTurn,
   type ChatHistoryItem,
 } from "@/lib/generations/actions";
+import { planScene } from "@/lib/prompts/actions";
 import { synthesizeVoice } from "@/lib/voice/actions";
 import { parseVoiceCommand } from "@/lib/voice/commands";
 import { recommendCreditPack } from "@/lib/stripe/credit-packs";
@@ -86,7 +87,7 @@ import {
   type ContentType,
 } from "@/lib/generations/pipeline";
 import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "@/lib/generations/angles";
-import { fanoutCreditCost } from "@/lib/generations/scene-plan";
+import { fanoutCreditCost, type ScenePlan } from "@/lib/generations/scene-plan";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
 import { FEATURED_VIDEO_MODEL_IDS } from "@/lib/generations/providers/video-models";
 import {
@@ -2270,7 +2271,20 @@ function GenerateFormInner({
   const [multiAngleMode, setMultiAngleMode] = useState(false);
   const [pendingMultiAngle, setPendingMultiAngle] = useState<{ prompt: string; attachments: ChatAttachment[] } | null>(null);
   const [selectedAngles, setSelectedAngles] = useState<AngleId[]>(DEFAULT_ANGLE_IDS);
-  const [liveMultiAngle, setLiveMultiAngle] = useState<{ prompt: string; attachments: ChatAttachment[]; angleIds: AngleId[] } | null>(null);
+  // string[], not AngleId[]: a Cinema Studio scene's rows are keyed "shot-1"
+  // .. "shot-6" rather than by angle name. Only .length is ever read.
+  const [liveMultiAngle, setLiveMultiAngle] = useState<{ prompt: string; attachments: ChatAttachment[]; angleIds: string[] } | null>(null);
+
+  // ---- Cinema Studio -------------------------------------------------
+  // Armed like multi-angle, but with a planning step in between: the idea is
+  // sent to a director, the shot list comes back with its full price, and
+  // only then can it be rendered. A scene is N paid renders, so nothing about
+  // the spend should be learned after pressing the button.
+  const [sceneMode, setSceneMode] = useState(false);
+  const [pendingScene, setPendingScene] = useState<{ prompt: string; attachments: ChatAttachment[] } | null>(null);
+  const [scenePlan, setScenePlan] = useState<ScenePlan | null>(null);
+  const [scenePlanning, setScenePlanning] = useState(false);
+  const [sceneShotCount, setSceneShotCount] = useState(3);
 
 
   // New composer toolbar state (the + menu / creation-mode chip / slide-out
@@ -3002,9 +3016,66 @@ function GenerateFormInner({
       if (next) {
         clearAdvancedVideo();
         setCompanionCharacterIds([]);
+        exitSceneMode();
       }
       return next;
     });
+  }
+
+  function exitSceneMode() {
+    setSceneMode(false);
+    setPendingScene(null);
+    setScenePlan(null);
+    setScenePlanning(false);
+  }
+
+  function toggleSceneMode() {
+    setSceneMode((prev) => {
+      const next = !prev;
+      if (next) {
+        clearAdvancedVideo();
+        setCompanionCharacterIds([]);
+        setMultiAngleMode(false);
+      } else {
+        setPendingScene(null);
+        setScenePlan(null);
+      }
+      return next;
+    });
+  }
+
+  // Plans the scene. Costs a prompt assist, never a credit — see planScene.
+  async function planCurrentScene() {
+    if (!pendingScene || !characterId || scenePlanning) return;
+    setScenePlanning(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.set("prompt", pendingScene.prompt);
+      fd.set("character_id", characterId);
+      fd.set("video_model_id", videoModelId);
+      fd.set("shot_count", String(sceneShotCount));
+      const res = await planScene(fd);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setScenePlan(res.plan ?? null);
+    } finally {
+      setScenePlanning(false);
+    }
+  }
+
+  // Renders the planned scene. Delegates to the multi-angle path rather than
+  // duplicating it: the queue-and-poll machinery, the stop handling and the
+  // failure recovery are identical, and the only difference is the payload.
+  async function confirmScene() {
+    if (!pendingScene || !scenePlan) return;
+    const scene = { plan: scenePlan, pending: pendingScene };
+    setPendingScene(null);
+    setScenePlan(null);
+    setSceneMode(false);
+    await confirmMultiAngle(scene);
   }
 
   function clearAdvancedVideo() {
@@ -3018,6 +3089,7 @@ function GenerateFormInner({
 
   function openAdvancedVideo(mode: "storyboard" | "multiref") {
     setMultiAngleMode(false);
+    exitSceneMode();
     setVideoAdvancedMode(mode);
     setAdvancedPanelOpen(true);
     setCompanionCharacterIds([]);
@@ -3177,9 +3249,18 @@ function GenerateFormInner({
     setError("");
   }
 
-  async function confirmMultiAngle() {
-    if (!pendingMultiAngle || !characterId) return;
-    if (selectedAngles.length === 0) {
+  async function confirmMultiAngle(scene?: {
+    plan: ScenePlan;
+    pending: { prompt: string; attachments: ChatAttachment[] };
+  }) {
+    const source = scene ? scene.pending : pendingMultiAngle;
+    if (!source || !characterId) return;
+    // A scene's rows are keyed "shot-1".."shot-6"; an angle batch's by angle
+    // name. Everything downstream only counts them.
+    const sendKeys: string[] = scene
+      ? scene.plan.shots.map((_shot, i: number) => `shot-${i + 1}`)
+      : selectedAngles;
+    if (sendKeys.length === 0) {
       setError(g.pickAngle);
       return;
     }
@@ -3195,12 +3276,12 @@ function GenerateFormInner({
       return;
     }
 
-    const { prompt: mPrompt, attachments } = pendingMultiAngle;
+    const { prompt: mPrompt, attachments } = source;
     requestNotificationPermission();
     setSubmitting(true);
     setStopping(false);
     setError("");
-    setLiveMultiAngle({ prompt: mPrompt, attachments, angleIds: selectedAngles });
+    setLiveMultiAngle({ prompt: mPrompt, attachments, angleIds: sendKeys });
     setPendingMultiAngle(null);
 
     const groupId = crypto.randomUUID();
@@ -3215,7 +3296,14 @@ function GenerateFormInner({
     formData.set("video_duration_seconds", String(videoDurationSeconds));
     if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
     if (videoResolution) formData.set("video_resolution", videoResolution);
-    selectedAngles.forEach((id) => formData.append("angle", id));
+    if (scene) {
+      // The plan itself. Re-normalised server-side against the resolved
+      // model — it travelled through the browser, so the shot count, the
+      // preset ids and the durations are all untrusted until then.
+      formData.set("scene_plan", JSON.stringify(scene.plan));
+    } else {
+      selectedAngles.forEach((id) => formData.append("angle", id));
+    }
     // Same attachment/anchor-photo priority as the single-generation path
     // above — see the comments there.
     const multiAngleRoles = attachments
@@ -4810,6 +4898,27 @@ function GenerateFormInner({
       return;
     }
 
+    // Cinema Studio: sending arms the PLANNING step, not a render. The
+    // director runs first, the shot list and its full price appear, and only
+    // then is anything spent.
+    if (sceneMode && contentType === "video") {
+      const trimmedScene = prompt.trim();
+      if (!trimmedScene) {
+        setError(g.describeFirst);
+        return;
+      }
+      if (!characterId) {
+        setError(g.pickCharacter);
+        return;
+      }
+      setError("");
+      setPendingScene({ prompt: trimmedScene, attachments: readyAttachments });
+      setScenePlan(null);
+      setPrompt("");
+      setPendingAttachments([]);
+      return;
+    }
+
     if (storyboardActive) {
       if (!storyboardReady) {
         setError(g.storyboardNeedsPrompts);
@@ -6026,7 +6135,117 @@ function GenerateFormInner({
           </div>
         )}
         <div data-tour-id="tour-prompt" className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
-          {pendingMultiAngle ? (
+          {pendingScene ? (
+            <div className="space-y-3 p-4">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-widest text-atelier-muted">
+                  {g.sceneIdeaLabel}
+                </p>
+                <p className="mt-1 text-sm text-atelier-ink/80">{pendingScene.prompt}</p>
+              </div>
+
+              {!scenePlan ? (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-widest text-atelier-muted">
+                      {g.sceneShotsLabel}
+                    </p>
+                    <div className="mt-2 flex gap-2">
+                      {[2, 3, 4, 5, 6].map((n) => (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setSceneShotCount(n)}
+                          disabled={scenePlanning}
+                          aria-pressed={sceneShotCount === n}
+                          className={cn(
+                            "h-9 w-9 rounded-control border text-sm transition-colors disabled:opacity-50",
+                            sceneShotCount === n
+                              ? "border-atelier-ink bg-atelier-surface text-atelier-ink"
+                              : "border-atelier-rule text-atelier-muted hover:border-atelier-muted hover:text-atelier-ink",
+                          )}
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={exitSceneMode}
+                      className="rounded-control px-3.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5"
+                    >
+                      {g.cancel}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={planCurrentScene}
+                      disabled={scenePlanning}
+                      className="flex items-center gap-2 rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                    >
+                      {scenePlanning && <LoaderIcon className="h-3.5 w-3.5" />}
+                      {scenePlanning ? g.scenePlanning : g.scenePlanAction}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-widest text-atelier-muted">
+                      {scenePlan.title}
+                    </p>
+                    <ol className="mt-2 space-y-1.5">
+                      {scenePlan.shots.map((shot, i) => (
+                        <li
+                          key={i}
+                          className="flex gap-2.5 rounded-control border border-atelier-rule px-2.5 py-2 text-sm"
+                        >
+                          <span className="mt-0.5 text-xs tabular-nums text-atelier-muted">{i + 1}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-atelier-ink/85">{shot.prompt}</span>
+                            {shot.movePresetId && (
+                              <span className="mt-0.5 block text-xs text-atelier-muted">
+                                {shot.movePresetId} · {shot.seconds}s
+                              </span>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                  {/* The full price of the whole scene, before anything is
+                      spent — through the same function the server charges
+                      with. */}
+                  <p className="text-xs text-atelier-muted">
+                    {formatMsg(g.sceneCost, {
+                      shots: scenePlan.shots.length,
+                      seconds: scenePlan.shots.reduce((t, sh) => t + sh.seconds, 0),
+                      credits: fanoutCreditCost(selectedCreditCost, scenePlan.shots.length),
+                    })}
+                  </p>
+                  <div className="flex items-center justify-end gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setScenePlan(null)}
+                      className="rounded-control px-3.5 py-2 text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/5"
+                    >
+                      {g.sceneReplan}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={confirmScene}
+                      disabled={cannotAfford}
+                      className="rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                    >
+                      {formatMsg(g.sceneRender, { n: scenePlan.shots.length })}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : pendingMultiAngle ? (
+
             <div className="space-y-3 p-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-widest text-atelier-muted">
@@ -6070,7 +6289,7 @@ function GenerateFormInner({
                 </button>
                 <button
                   type="button"
-                  onClick={confirmMultiAngle}
+                  onClick={() => confirmMultiAngle()}
                   disabled={selectedAngles.length === 0}
                   className="rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
@@ -6793,7 +7012,7 @@ function GenerateFormInner({
                           // to a sliver behind the neighboring chip when
                           // expanded, real incident 2026-08-09.
                           "flex-shrink-0 overflow-hidden transition-all duration-300 ease-out",
-                          advancedOpen ? "max-w-[144px] opacity-100" : "max-w-0 opacity-0",
+                          advancedOpen ? "max-w-[192px] opacity-100" : "max-w-0 opacity-0",
                         )}
                       >
                         <div className="flex items-center gap-1.5 pr-1">
@@ -6829,6 +7048,43 @@ function GenerateFormInner({
                             )}
                           >
                             <AnglesIcon className="h-4 w-4" />
+                          </button>
+
+                          {/* Cinema Studio. Shares multi-angle's plan gate:
+                              both fan one send out into several paid renders,
+                              so the same entitlement applies. */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              multiAngleLocked ? setError(g.multiAngleLocked) : toggleSceneMode()
+                            }
+                            disabled={submitting}
+                            title={
+                              multiAngleLocked
+                                ? g.multiAngleLocked
+                                : sceneMode
+                                  ? g.sceneModeOnTitle
+                                  : g.sceneModeOffTitle
+                            }
+                            aria-label={
+                              multiAngleLocked
+                                ? g.multiAngleLocked
+                                : sceneMode
+                                  ? g.sceneModeOnTitle
+                                  : g.sceneModeOffTitle
+                            }
+                            aria-pressed={sceneMode}
+                            aria-disabled={multiAngleLocked || undefined}
+                            className={cn(
+                              "flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
+                              multiAngleLocked
+                                ? "text-atelier-muted/40 hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                                : sceneMode
+                                  ? "bg-atelier-ink text-atelier-paper"
+                                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                            )}
+                          >
+                            <FilmIcon className="h-4 w-4" />
                           </button>
 
                           <button
