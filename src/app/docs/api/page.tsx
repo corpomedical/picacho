@@ -212,6 +212,46 @@ curl -X POST https://picacho.ai/api/v1/generations \\
           Video isn&apos;t in this version. A render takes six to ten minutes and needs a queue
           rather than a request — if you need it, tell us and it moves up the list.
         </p>
+
+        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-slate-900">
+          Use it from Claude, Cursor or any MCP client
+        </h2>
+        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+          The same four endpoints are also an{" "}
+          <a
+            href="https://modelcontextprotocol.io"
+            target="_blank"
+            rel="noreferrer"
+            className="underline underline-offset-2"
+          >
+            MCP
+          </a>{" "}
+          server, so an assistant can render your character directly. One endpoint, your same API
+          key, and the same credits — nothing goes through a separate meter.
+        </p>
+        <Code>{`{
+  "mcpServers": {
+    "picacho": {
+      "url": "https://picacho.ai/api/mcp",
+      "headers": { "Authorization": "Bearer pic_live_your_key_here" }
+    }
+  }
+}`}</Code>
+        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+          Four tools: <code className="text-[12.5px]">list_characters</code>,{" "}
+          <code className="text-[12.5px]">generate_image</code>,{" "}
+          <code className="text-[12.5px]">get_generation</code> and{" "}
+          <code className="text-[12.5px]">get_usage</code>. Only{" "}
+          <code className="text-[12.5px]">generate_image</code> spends credits, and it&apos;s marked
+          that way so a client asks you first.
+        </p>
+        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+          The reason it&apos;s worth connecting rather than calling a generic image API:{" "}
+          <code className="text-[12.5px]">generate_image</code> comes back with{" "}
+          <code className="text-[12.5px]">match_score</code> — how closely the rendered face matches
+          your character&apos;s own photo. An assistant can read that number and try again on its
+          own, instead of handing you a picture of someone else and calling it done.
+        </p>
       </main>
 
       <MarketingFooter />
