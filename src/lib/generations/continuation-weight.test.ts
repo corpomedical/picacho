@@ -51,7 +51,7 @@ describe("continuationExtraCredits", () => {
   });
 
   it("is zero for models that cannot continue, and for a zero-length source", () => {
-    for (const id of ["kling", "kling-o3-pro", "veo", "kling-2.5"]) {
+    for (const id of ["kling", "kling-o3-pro", "veo", "kling-2.5", "minimax-h3"]) {
       expect(continuationExtraCredits(id, 5, 15)).toBe(0);
     }
     expect(continuationExtraCredits("seedance-2", 5, 0)).toBe(0);

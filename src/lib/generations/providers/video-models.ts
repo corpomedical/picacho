@@ -281,6 +281,63 @@ export const VIDEO_MODELS = [
       { seconds: 15, creditWeight: 8 },
     ] satisfies VideoDurationOption[],
   },
+  {
+    id: "minimax-h3",
+    // fal.ai's real per-second price, for pricingAudit() below. This is the
+    // 768P rate, and it is only the right number because the branch in
+    // fal.ts SENDS resolution: "768P" explicitly.
+    //
+    // READ THAT AGAIN BEFORE CHANGING THE BRANCH. fal's schema defaults this
+    // endpoint's resolution to "2K", not to its cheapest tier — verbatim
+    // from the model page, 2026-09-01: "$0.05 per second at 480p, $0.06 per
+    // second at 768p, $0.13 per second at 2K and $0.16 per second at 4K".
+    // Dropping the parameter would not restore some neutral default; it
+    // would silently bill every render at $0.13/sec against weights built
+    // for $0.06 — more than double, on the one lane most likely to become
+    // the busiest. The 2K tier is offered deliberately and priced
+    // separately in video-resolution.ts.
+    costPerSecondUsd: 0.06,
+    name: "MiniMax H3 (reference)",
+    // NOT under the fal-ai/ prefix, unlike every other endpoint in this
+    // file — MiniMax's own namespace on fal is `minimax/`. Harmless here
+    // (submitToQueue interpolates the string as given, and the status and
+    // response URLs come back from fal's submit response rather than being
+    // rebuilt), but it will look like a typo to the next reader, so: it is
+    // not. The older Hailuo models keep fal-ai/minimax/hailuo-02/....
+    falEndpoint: "minimax/h3/reference-to-video",
+    recommended: false,
+    // MiniMax H3, announced 2026-07-31 (informally "Hailuo 3.0"). Same job
+    // as Seedance and O3 Pro above — the photos say WHO is in the clip, not
+    // what frame one looks like — but with the widest identity budget in
+    // this catalogue: fal's schema takes up to 9 subject/style reference
+    // images, plus 3 reference videos and 3 reference audio clips, capped
+    // at 12 files combined. We send at most 5 (see fal.ts for why).
+    //
+    // Audio is not a parameter on this endpoint: H3 generates native stereo
+    // sound in the same pass as the picture, always. There is no
+    // generate_audio to turn off, so a dialogue render simply has its audio
+    // replaced by the Sync Labs lipsync pass, exactly as it would on any
+    // other model — the cost of the native track is already in the
+    // per-second price either way.
+    description:
+      "MiniMax's newest model — the widest identity reference set here (up to 5 photos), always with native audio. About $0.06 per second at 768p. Needs a reference photo.",
+    // fal's schema types duration as an INTEGER with a 5 default (every
+    // Kling endpoint wants a numeric string instead — see formatDuration,
+    // which this lane deliberately does not use). Range is 5-15s; the same
+    // 5/10/15 ladder as O3 and O3 Pro rather than all eleven values, for
+    // the reason given on Kling O3 above.
+    //
+    // Weights are cost / $0.28 rounded up, like every other row in this
+    // file: $0.06/sec gives $0.30 for 5s = 1.07 -> 2 credits, $0.60 for 10s
+    // = 2.14 -> 3, and $0.90 for 15s = 3.21 -> 4. Cheaper at every length
+    // than the O3 Pro reference lane above (3/5/8), which is the closest
+    // thing to it in the catalogue.
+    durations: [
+      { seconds: 5, creditWeight: 2, default: true },
+      { seconds: 10, creditWeight: 3 },
+      { seconds: 15, creditWeight: 4 },
+    ] satisfies VideoDurationOption[],
+  },
 ] as const;
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]["id"];

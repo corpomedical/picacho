@@ -25,7 +25,7 @@ describe("storyboardFrameExtraCredits", () => {
   });
 
   it("applies to kling only — no other model takes this endpoint", () => {
-    for (const id of ["kling-o3-pro", "kling-2.5", "seedance", "seedance-2", "veo", "kling-o3"]) {
+    for (const id of ["kling-o3-pro", "kling-2.5", "seedance", "seedance-2", "veo", "kling-o3", "minimax-h3"]) {
       expect(storyboardFrameExtraCredits(id, 5)).toBe(0);
     }
   });

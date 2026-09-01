@@ -35,6 +35,7 @@ export type VideoModelId =
   | "kling-2.5"
   | "kling-o3"
   | "kling-o3-pro"
+  | "minimax-h3"
   | "seedance"
   | "seedance-2"
   | "veo";
@@ -121,6 +122,33 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     refAspectBounds: { min: 0.4, max: 2.5 },
     photorealPolicy: "accepts",
     imageBudget: 4,
+  },
+  "minimax-h3": {
+    kind: "video",
+    // Five, not the endpoint's own nine: the 6th reference image onward is
+    // billed at $0.08 each and the catalogue prices this lane per second
+    // only. See the identityBudget note in providers/fal.ts.
+    identity: { max: 5, mechanism: "citation", required: true },
+    // No extra-image outfit lane wired yet. The endpoint could carry one —
+    // its reference list is flat and cited by order, exactly like Seedance's
+    // — but the outfit citation line and the budget arithmetic that goes
+    // with it are their own change, and claiming the capability here would
+    // make the composer offer a slot fal.ts never fills.
+    outfitImage: false,
+    // Not wired, though the endpoint takes up to 3 reference VIDEOS: the
+    // continuation surcharge in video-models.ts is derived from ByteDance's
+    // published with-video multiplier, and H3 publishes no equivalent rule.
+    // Charging Seedance's discount against MiniMax's prices is exactly the
+    // guess the 2026-08-31 continuation audit was cleaning up after.
+    continuation: false,
+    startEndFrames: false,
+    storyboard: false,
+    multiPerson: false,
+    // A real aspect_ratio parameter (adaptive/21:9/16:9/4:3/1:1/3:4/9:16),
+    // so no reframe workaround — same as O3 Pro, unlike O3 standard.
+    aspectControl: "param",
+    photorealPolicy: "accepts",
+    imageBudget: 5,
   },
   seedance: {
     kind: "video",

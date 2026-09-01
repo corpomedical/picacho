@@ -19,7 +19,11 @@
 // codebase: provider cost / $0.28 per credit, rounded UP. Rounding down
 // would sell the most expensive option in the catalogue at a loss.
 
-export type VideoResolution = "1080p" | "4k";
+// "2k" added 2026-09-01 with the MiniMax H3 lane. Note these are OUR values,
+// not the provider's spelling — each branch in fal.ts maps them to whatever
+// its own endpoint's enum wants (H3's is "480P" | "768P" | "2K" | "4K", with
+// that exact capitalisation).
+export type VideoResolution = "1080p" | "2k" | "4k";
 
 export type ResolutionOffer = {
   value: VideoResolution;
@@ -58,10 +62,34 @@ export type ResolutionOffer = {
 //   4s -> 4  x $0.60 = $2.40 -> 8.57  -> 9   (base 6)
 //   6s -> 6  x $0.60 = $3.60 -> 12.86 -> 13  (base 9; scaling 9 x 1.5 = 14, one credit too many)
 //   8s -> 8  x $0.60 = $4.80 -> 17.14 -> 18  (base 12)
+// MiniMax H3, verbatim from fal's own model page 2026-09-01:
+//   "Video costs $0.05 per second at 480p, $0.06 per second at 768p, $0.13
+//    per second at 2K and $0.16 per second at 4K; the first 5 reference
+//    images are free and each additional image costs $0.08."
+//
+// The lane renders at 768P ($0.06/sec), which is what its base weights in
+// video-models.ts are built on, so 2K is a genuine paid upgrade rather than
+// a free one — no weightless row here.
+//
+// 2K weights, cost / $0.28 rounded up, derived from the per-second price
+// rather than by scaling the base weight (same reasoning as Veo's 4K above —
+// the base weights were themselves rounded up and compounding that would
+// overcharge):
+//    5s -> 5  x $0.13 = $0.65 -> 2.32 -> 3   (base 2)
+//   10s -> 10 x $0.13 = $1.30 -> 4.64 -> 5   (base 3; scaling 3 x 2.17 = 7, two credits too many)
+//   15s -> 15 x $0.13 = $1.95 -> 6.96 -> 7   (base 4)
+//
+// 480P ($0.05/sec) is deliberately NOT offered. This module's contract is
+// resolutions ABOVE the model's default — a cheaper tier would need a
+// negative weight it has no way to express, and the saving is a quarter of
+// one credit at 5s, which cannot be charged for anyway.
 const OFFERS: Record<string, ResolutionOffer[]> = {
   veo: [
     { value: "1080p" },
     { value: "4k", costPerSecondUsd: 0.6, weights: { 4: 9, 6: 13, 8: 18 } },
+  ],
+  "minimax-h3": [
+    { value: "2k", costPerSecondUsd: 0.13, weights: { 5: 3, 10: 5, 15: 7 } },
   ],
 };
 

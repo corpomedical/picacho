@@ -357,11 +357,30 @@ async function buildVideoRequest(
   // image_urls at all — ByteDance 422'd the referenceless request, and even
   // a referenceless success would have silently skipped the entire
   // identity-anchoring feature the model was chosen for.
+  //
+  // The identity budget is per-model because the endpoints genuinely differ:
+  // Kling's elements + image_urls are capped at 4 COMBINED, Seedance's
+  // image_urls at 4, and MiniMax H3's reference_image_urls at 9.
+  //
+  // H3 is held at 5 rather than its schema maximum, and the reason is money
+  // rather than capability. fal bills that endpoint "the first 5 reference
+  // images are free and each additional image costs $0.08" (read 2026-09-01).
+  // A 9-photo character would add $0.32 to a render whose 5s of 768P video
+  // costs $0.30 — it would more than double the bill for the same clip, and
+  // costPerSecondUsd has no way to express a per-image surcharge, so
+  // pricingAudit() would not see it and the weights in video-models.ts would
+  // quietly stop covering the cost. Five is the largest free set, and it is
+  // still more identity signal than any other lane in this catalogue gets.
+  const identityBudget = modelId === "minimax-h3" ? 5 : 4;
   const anchorImages =
     referenceImageUrls.length > 0
-      ? referenceImageUrls.slice(0, 4)
+      ? referenceImageUrls.slice(0, identityBudget)
       : options.characterAnchorImageUrl &&
-          (modelId === "kling" || modelId === "seedance" || modelId === "seedance-2" || modelId === "kling-o3-pro")
+          (modelId === "kling" ||
+            modelId === "seedance" ||
+            modelId === "seedance-2" ||
+            modelId === "kling-o3-pro" ||
+            modelId === "minimax-h3")
         ? [options.characterAnchorImageUrl]
         : [];
 
@@ -507,6 +526,75 @@ async function buildVideoRequest(
         "motionless opening shot, subject standing still facing camera",
     };
     label = storyboard && storyboard.length >= 2 ? `Kling O3 Pro (storyboard, ${storyboard.length} shots)` : "Kling O3 Pro";
+  } else if (modelId === "minimax-h3") {
+    // MiniMax H3 reference-to-video. Same job as Seedance and O3 Pro above —
+    // the photos anchor WHO is in the clip rather than what frame one looks
+    // like — with the widest reference set in this file.
+    //
+    // Schema confirmed against fal's own docs, 2026-09-01
+    // (fal.ai/models/minimax/h3/reference-to-video/api). Three things about
+    // it differ from every other branch here, and each one is a live way to
+    // get this wrong:
+    //
+    // 1. CITATIONS ARE PLAIN WORDS. Not @Image1 (Seedance) and not @Element1
+    //    (O3 Pro) — fal's field description, verbatim: "Refer to reference
+    //    assets by their modality and order in the reference lists: Image 1,
+    //    Image 2, Video 1, Audio 1, and so on." Their own example prompt
+    //    reads "Image 1 is the female protagonist." An @ prefix here is just
+    //    an unrecognised token, so the render would silently ignore the
+    //    references and invent a face — the failure mode that looks like a
+    //    quality problem rather than a bug.
+    // 2. DURATION IS AN INTEGER. fal types it `integer`, default 5. Every
+    //    Kling endpoint wants a numeric STRING, which is what formatDuration
+    //    produces, so this lane deliberately does not call it.
+    // 3. RESOLUTION DEFAULTS TO 2K, NOT TO THE CHEAPEST TIER. Omitting the
+    //    parameter bills $0.13/sec against weights built for $0.06 — see the
+    //    note in video-models.ts. It is sent explicitly, always.
+    //
+    // No generate_audio parameter exists: H3 always produces native stereo
+    // audio in the same pass. The dialogue pipeline still works — Sync Labs
+    // re-renders the clip with its own track — it just cannot save anything
+    // by asking for silence first.
+    if (anchorImages.length === 0) {
+      // actions.ts already rejects a reference-less request before spending
+      // any credits (requiresReferenceImage) — backstop only, same as the
+      // O3 Pro branch above.
+      throw new Error(
+        "MiniMax H3 needs a reference photo — add one to this character, attach a photo, or switch to Kling 1.6.",
+      );
+    }
+    endpoint = "minimax/h3/reference-to-video";
+    // One line naming every photo, so a multi-photo character is described
+    // as ONE person seen several times rather than as several people. The
+    // O3 Pro branch gets this for free (its `elements` are structurally one
+    // person); a flat list does not, and "Image 1 is X. Image 2 is Y." is
+    // exactly the shape fal's own example uses for two DIFFERENT subjects.
+    const citation =
+      anchorImages.length > 1
+        ? `${anchorImages
+            .map((_, i) => `Image ${i + 1}`)
+            .join(", ")} are all photographs of the same person — match their face, hair, and features exactly, but do not copy the pose or framing of any of those photos.`
+        : "Image 1 is the person in this video — match their face, hair, and features exactly, but do not copy the pose or framing of that photo.";
+    // The anti-frozen-frame terms ride in the PROMPT, not in a
+    // negative_prompt: this endpoint's schema has no such field (its inputs
+    // are prompt, duration, resolution, seed, enable_safety_checker,
+    // sync_mode, prompt_expansion_mode, aspect_ratio and the three reference
+    // lists — nothing else), and fal rejects unknown parameters rather than
+    // ignoring them.
+    const motion =
+      "The shot is already in motion when it begins — no static posed portrait, no frozen opening frame, no subject standing still facing camera.";
+    body = {
+      prompt: `${prompt}\n\n${citation} ${motion}`,
+      reference_image_urls: anchorImages,
+      duration: options.durationSeconds ?? DEFAULT_DURATION_SECONDS,
+      // "480P" | "768P" | "2K" | "4K", with that exact capitalisation —
+      // OUR VideoResolution values are lower-case, so they are mapped here
+      // rather than passed through. Anything the catalogue does not offer
+      // has already been rejected by resolveVideoResolution server-side.
+      resolution: options.resolution === "2k" ? "2K" : "768P",
+      aspect_ratio: resolvedAspectRatio,
+    };
+    label = options.resolution === "2k" ? "MiniMax H3 (reference, 2K)" : "MiniMax H3 (reference)";
   } else if (modelId === "kling-2.5") {
     // Kling 2.5 Turbo Pro. First-frame image-to-video, so image_url is
     // required and the clip does open on that photo — this model is the

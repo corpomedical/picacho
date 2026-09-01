@@ -19,6 +19,21 @@ describe("baselineIdentityReferences", () => {
     expect(baselineIdentityReferences("seedance-2", EIGHT)).toHaveLength(4);
   });
 
+  it("sends FIVE to MiniMax H3 — the widest identity set, and the last free one", () => {
+    // fal's schema takes nine, but bills every image past the fifth at
+    // $0.08. The catalogue prices this lane per second only, so a sixth
+    // photo would be a cost pricingAudit() cannot see. See the
+    // identityBudget note in providers/fal.ts.
+    expect(baselineIdentityReferences("minimax-h3", EIGHT)).toHaveLength(5);
+    expect(baselineIdentityReferences("minimax-h3", EIGHT)).toEqual([
+      "a.jpg",
+      "b.jpg",
+      "c.jpg",
+      "d.jpg",
+      "e.jpg",
+    ]);
+  });
+
   it("REGRESSION: never multi-references a first-frame model", () => {
     // kling-o3 and kling-2.5 take the photo AS frame one. A second photo has
     // nowhere to go, and quietly swapping which one becomes the opening
