@@ -392,8 +392,12 @@ export default async function Home({
         {/* Third clip added 2026-08-21: the operator's Seedance 2.0 render —
             the reel now also demos the newest catalog model. Same 1280x720
             10s shape as the first two. */}
+        {/* Fourth clip added 2026-09-02 (operator-picked): Eva's space-mission
+            trailer — the 15s Seedance 2.0 render from the night of Aug 23
+            (cockpit, helmet, sun through the canopy). Same 1280x720 native
+            output, served as delivered by the provider. */}
         <HeroReel
-          sources={["/hero-band.mp4", "/hero-band-2.mp4", "/hero-band-3.mp4"]}
+          sources={["/hero-band.mp4", "/hero-band-2.mp4", "/hero-band-3.mp4", "/hero-band-4.mp4"]}
           badge={m.showcaseBadge}
         />
 
