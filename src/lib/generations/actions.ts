@@ -26,12 +26,16 @@ import {
 } from "@/lib/generations/job-runner";
 import { saveUpscaleJob } from "@/lib/generations/job-runner";
 import {
+  availableUpscaleTiers,
+  takeSourceHeight,
   takeUpscaleIneligibility,
   uploadUpscaleIneligibility,
   upscaleCreditCost,
   upscaleFactor,
   UPSCALE_MAX_BYTES,
   UPSCALE_MODEL_ID,
+  UPSCALE_TIERS,
+  type UpscaleTier,
 } from "@/lib/generations/upscale";
 import { probeMp4 } from "@/lib/media/mp4-probe";
 import { rateLimited } from "@/lib/rate-limit";
@@ -3652,12 +3656,14 @@ async function startUpscaleCore(params: {
   userId: string;
   sourceUrl: string;
   seconds: number;
+  tier: UpscaleTier;
   factor: number;
-  promptInput: string;
   sourceGenerationId: string | null;
 }): Promise<UpscaleStartResult> {
   const supabase = await createClient();
-  const creditWeight = upscaleCreditCost(params.seconds);
+  const tierLabel = UPSCALE_TIERS[params.tier].label;
+  const promptInput = `Upscaled to ${tierLabel}`;
+  const creditWeight = upscaleCreditCost(params.seconds, params.tier);
 
   // The free daily slot NEVER covers an upscale (boards + product guide both
   // promise it), so the allowance is consumed as plan/purchased credits
@@ -3673,7 +3679,7 @@ async function startUpscaleCore(params: {
     id: crypto.randomUUID(),
     character_profile_id: null,
     character_profile_ids: [],
-    prompt_input: params.promptInput,
+    prompt_input: promptInput,
     content_type: "video",
     status: "generating",
     attempts: 0,
@@ -3739,16 +3745,17 @@ async function startUpscaleCore(params: {
       generationId,
       userId: params.userId,
       job: pendingJob,
+      tier: tierLabel,
       attempts: [
         {
           attempt: 1,
           passed: true,
           issues: [],
-          compiledPrompt: params.promptInput,
+          compiledPrompt: promptInput,
           steps: [
             {
               step: "generate" as const,
-              detail: "Submitted for a 1080p upscale (FLUX Video Upscale, precise mode).",
+              detail: `Submitted for a ${tierLabel} upscale (FLUX Video Upscale, precise mode).`,
             },
           ],
         },
@@ -3767,7 +3774,7 @@ async function startUpscaleCore(params: {
             attempt: 1,
             passed: false,
             issues: [],
-            compiledPrompt: params.promptInput,
+            compiledPrompt: promptInput,
             steps: [{ step: "generate" as const, detail: message }],
           },
         ],
@@ -3784,6 +3791,10 @@ async function startUpscaleCore(params: {
 
   revalidatePath("/app/history");
   return { generationId };
+}
+
+function parseUpscaleTier(raw: unknown): UpscaleTier | null {
+  return raw === "1080p" || raw === "4k" ? raw : null;
 }
 
 /** Upscale a finished take from History. */
@@ -3810,6 +3821,15 @@ export async function startTakeUpscale(formData: FormData): Promise<UpscaleStart
   const ineligible = takeUpscaleIneligibility(source);
   if (ineligible) return { error: "This take can't be upscaled." };
 
+  // The tier is the caller's pick, but only from the tiers this source's
+  // real height can honestly reach — the factor is then the exact landing,
+  // so the delivered output always bills at the tier that priced the job.
+  const tier = parseUpscaleTier(formData.get("tier"));
+  const sourceHeight = takeSourceHeight(source.video_model_id);
+  if (!tier || !availableUpscaleTiers(sourceHeight).includes(tier)) {
+    return { error: "That output size isn't available for this take." };
+  }
+
   const stored = toMediaUrl(source.result_url as string | null);
   if (!stored || !isRenderableUrl(stored)) return { error: "This take has no video to upscale." };
   const sourceUrl = absolutizeMediaUrl(stored, await getOrigin());
@@ -3818,10 +3838,8 @@ export async function startTakeUpscale(formData: FormData): Promise<UpscaleStart
     userId: userData.user.id,
     sourceUrl,
     seconds: source.video_duration_seconds as number,
-    // Every eligible engine outputs 720p (768p+ engines are excluded by the
-    // eligibility rule), so the factor is the exact 1080p landing.
-    factor: upscaleFactor(720),
-    promptInput: "Upscaled to 1080p",
+    tier,
+    factor: upscaleFactor(sourceHeight, tier),
     sourceGenerationId: source.id,
   });
 }
@@ -3884,8 +3902,13 @@ export async function startUploadUpscale(formData: FormData): Promise<UpscaleSta
   });
   if (ineligible === "too-long") return { error: "That video is over 20 seconds." };
   if (ineligible === "too-big") return { error: "That video is over 50 MB." };
-  if (ineligible === "too-sharp") return { error: "That video is already 1080p or sharper." };
+  if (ineligible === "too-sharp") return { error: "That video is past the upscaler's 2K input limit." };
   if (ineligible) return { error: "That file can't be upscaled." };
+
+  const tier = parseUpscaleTier(formData.get("tier"));
+  if (!tier || !availableUpscaleTiers(probe.height).includes(tier)) {
+    return { error: "That output size isn't available for this video." };
+  }
 
   // A signed URL fal can fetch; generous enough to outlive any queue wait.
   const { data: signed, error: signError } = await admin.storage
@@ -3899,8 +3922,8 @@ export async function startUploadUpscale(formData: FormData): Promise<UpscaleSta
     userId: userData.user.id,
     sourceUrl: signed.signedUrl,
     seconds,
-    factor: upscaleFactor(probe.height),
-    promptInput: "Uploaded video — upscaled to 1080p",
+    tier,
+    factor: upscaleFactor(probe.height, tier),
     sourceGenerationId: null,
   });
 }

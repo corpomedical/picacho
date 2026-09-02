@@ -82,7 +82,7 @@ type JobRow = {
   status_url: string | null;
   response_url: string | null;
   cancel_url: string | null;
-  payload: { videoUrl?: string; audioUrl?: string; label?: string };
+  payload: { videoUrl?: string; audioUrl?: string; label?: string; tier?: string };
   resume: ResumeState;
   started_at: string;
   // Rewritten on every stage transition, so it marks when the CURRENT provider
@@ -97,7 +97,7 @@ const STAGE_PROGRESS: Record<JobStage, string> = {
   video: "Rendering your video",
   dialogue_tts: "Generating the voice",
   dialogue_lipsync: "Syncing the lips to the dialogue",
-  upscale: "Upscaling to 1080p",
+  upscale: "Upscaling the video",
 };
 
 // How long a job may go unpolled before the reaper assumes nobody is coming
@@ -589,6 +589,9 @@ export async function saveUpscaleJob(params: {
   userId: string;
   job: QueuedJob;
   attempts: AttemptLog[];
+  /** Display tier ("1080p" | "4K") — rides payload for the collection log
+   *  and the per-row progress copy. */
+  tier: string;
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -599,7 +602,7 @@ export async function saveUpscaleJob(params: {
     status_url: params.job.statusUrl,
     response_url: params.job.responseUrl,
     cancel_url: params.job.cancelUrl,
-    payload: { label: params.job.label },
+    payload: { label: params.job.label, tier: params.tier },
     resume: { attempts: params.attempts } satisfies ResumeState,
     started_at: new Date().toISOString(),
     last_polled_at: new Date().toISOString(),
@@ -609,9 +612,11 @@ export async function saveUpscaleJob(params: {
     throw new Error(`Couldn't record the queued upscale job: ${upsertError.message}`);
   }
   // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
+  // Tier-specific here (the static STAGE_PROGRESS entry stays generic,
+  // since one label cannot honestly cover both output tiers).
   await admin
     .from("generations")
-    .update({ progress_stage: STAGE_PROGRESS.upscale })
+    .update({ progress_stage: `Upscaling to ${params.tier}` })
     .eq("id", params.generationId);
 }
 
@@ -1168,7 +1173,7 @@ export async function advanceGeneration(
         resultUrl: upscaledUrl,
         attempts: appendStep(
           row.resume.attempts ?? [],
-          "Upscaled to 1080p in precise mode (FLUX Video Upscale).",
+          `Upscaled to ${row.payload.tier ?? "1080p"} in precise mode (FLUX Video Upscale).`,
           "generate",
         ),
       });

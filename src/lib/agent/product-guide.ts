@@ -3,6 +3,7 @@ import { FREE_TIER_VIDEO_MODEL_ID } from "../plans";
 import { getDialogueCreditWeight } from "../generations/providers/video-models";
 import { CINEMA_PRESETS, isProvenPreset } from "../generations/cinema-presets";
 import { TEMPLATES } from "../templates";
+import { UPSCALE_TIERS, upscaleCreditCost } from "../generations/upscale";
 
 // The assistant's product guide (operator ask, 2026-09-02: "needs to know
 // how to answer any question about picacho. What each button does and how
@@ -122,7 +123,7 @@ OTHER SURFACES.
 ${renderPresets()}
 - Presets currently apply on plain Seedance video sends (not Storyboard or multi-reference — the chips clear on leaving that lane).
 - HISTORY: every render ever made, including failures, with type and outcome filters; a render's page can continue its session. CONTINUE A CLIP: on a finished video in History, "Continue this clip" seeds the next render with that clip as the starting world — Seedance engines only, with an extra credit surcharge priced in the receipt before sending.
-- UPSCALE (FLUX Video Upscale, precise mode — built to keep the face): "Upscale to 1080p" on a finished video's History page, or "Upscale a video" on the History list to bring any MP4 (up to 20 seconds, 50 MB, below 1080p). Costs 0.6 credits per second of the clip, rounded up (10s → 6 credits), quoted before the button; the result is a NEW take linked to its source, the original untouched, and it carries no identity score because nothing re-measured it. If the provider refuses or the upscale is stopped, the credits come back automatically. Not part of the free daily generation. Uploaded videos pass the same content rules as everything else.
+- UPSCALE (FLUX Video Upscale, precise mode — built to keep the face): "Upscale" on a finished video's History page, or "Upscale a video" on the History list to bring any MP4 (up to 20 seconds, 50 MB, up to 2K input). Two output sizes, priced per second of the clip, rounded up: 1080p at ${UPSCALE_TIERS["1080p"].creditsPerSecond} credits/second (10s → ${upscaleCreditCost(10, "1080p")} credits) and 4K at ${UPSCALE_TIERS["4k"].creditsPerSecond} credits/second (10s → ${upscaleCreditCost(10, "4k")} credits) — which sizes are offered depends on the source's resolution (Picacho's own 720p renders get both; sharper sources get 4K only). Always quoted before the button; the result is a NEW take linked to its source, the original untouched, and it carries no identity score because nothing re-measured it. If the provider refuses or the upscale is stopped, the credits come back automatically. Not part of the free daily generation. Uploaded videos pass the same content rules as everything else.
 - PROJECTS: group characters by project (pin, star, archive); renders follow their character.
 - COMMUNITY: a public showcase; sharing is per-render, explicit, and only ever the person's own choice.
 - SETTINGS: account/profile; appearance (theme and language — English, Español, Italiano, Português; the interface is fully localized, though template and preset prompt text stays English by design); security (password); usage and billing; Brand rules; Support.

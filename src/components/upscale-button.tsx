@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { startTakeUpscale } from "@/lib/generations/actions";
+import { UPSCALE_TIERS, upscaleCreditCost, type UpscaleTier } from "@/lib/generations/upscale";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -12,23 +13,28 @@ import { formatMsg } from "@/lib/i18n/format";
 // source, the FIXED precise mode, output, and the serif-ochre total — quoted
 // before the button, like every other spend in the product. The server
 // re-derives price and eligibility from the row; everything here is preview.
-export function UpscaleButton({ generationId, seconds, credits }: {
+export function UpscaleButton({ generationId, seconds, tiers }: {
   generationId: string;
   seconds: number;
-  credits: number;
+  /** The tiers this take's real source height can reach, cheapest first —
+   *  computed server-side by the page from the same module the action uses. */
+  tiers: UpscaleTier[];
 }) {
   const { t } = useLocale();
   const h = t.history;
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [tier, setTier] = useState<UpscaleTier>(tiers[0]);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const credits = upscaleCreditCost(seconds, tier);
 
   const start = () => {
     setError(null);
     startTransition(async () => {
       const form = new FormData();
       form.set("generation_id", generationId);
+      form.set("tier", tier);
       const result = await startTakeUpscale(form);
       if ("error" in result) {
         setError(result.error);
@@ -84,7 +90,29 @@ export function UpscaleButton({ generationId, seconds, credits }: {
                 <dt className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted/80">
                   {h.upscaleOutput}
                 </dt>
-                <dd className="mt-0.5 text-sm text-atelier-ink">{h.upscaleOutputDetail}</dd>
+                <dd className="mt-1.5 flex gap-2">
+                  {tiers.map((option) => (
+                    <button
+                      key={option}
+                      type="button"
+                      onClick={() => setTier(option)}
+                      aria-pressed={tier === option}
+                      className={
+                        tier === option
+                          ? "rounded-[10px] bg-atelier-accent/10 px-3.5 py-2 text-sm font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                          : "rounded-[10px] border border-atelier-rule px-3.5 py-2 text-sm text-atelier-muted transition-colors hover:text-atelier-ink"
+                      }
+                    >
+                      {UPSCALE_TIERS[option].label}
+                      <span className="ml-2 font-numeral text-xs tabular-nums">
+                        {formatMsg(t.generate.creditsShortN, { n: upscaleCreditCost(seconds, option) })}
+                      </span>
+                    </button>
+                  ))}
+                </dd>
+                <dd className="mt-1.5 text-sm text-atelier-ink">
+                  {formatMsg(h.upscaleOutputDetail, { res: UPSCALE_TIERS[tier].label })}
+                </dd>
                 <dd className="mt-1 text-xs text-atelier-muted">{h.upscaleLinkedNote}</dd>
               </div>
             </dl>

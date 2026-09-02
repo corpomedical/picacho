@@ -6,9 +6,12 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
 import { reserveUpscaleUploadPath, startUploadUpscale } from "@/lib/generations/actions";
 import {
+  availableUpscaleTiers,
   uploadUpscaleIneligibility,
   upscaleCreditCost,
-  UPSCALE_MAX_SOURCE_HEIGHT,
+  UPSCALE_TIERS,
+  ENGINE_SOURCE_HEIGHT_DEFAULT,
+  type UpscaleTier,
 } from "@/lib/generations/upscale";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
@@ -35,6 +38,7 @@ export function UpscaleUpload() {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [picked, setPicked] = useState<PickedFile | null>(null);
+  const [tier, setTier] = useState<UpscaleTier | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "uploading">("idle");
   const [pending, startTransition] = useTransition();
@@ -57,13 +61,15 @@ export function UpscaleUpload() {
       URL.revokeObjectURL(url);
       const seconds = Math.ceil(probe.duration || 0);
       const height = probe.videoHeight || 0;
+      const effectiveHeight = height || ENGINE_SOURCE_HEIGHT_DEFAULT;
       const code = uploadUpscaleIneligibility({
         seconds,
         bytes: file.size,
-        height: height || UPSCALE_MAX_SOURCE_HEIGHT,
+        height: effectiveHeight,
         mimeType: file.type,
       });
       setPicked({ file, seconds, height, problem: problemLabel(code) });
+      setTier(code ? null : (availableUpscaleTiers(effectiveHeight)[0] ?? null));
     };
     probe.onerror = () => {
       URL.revokeObjectURL(url);
@@ -73,7 +79,7 @@ export function UpscaleUpload() {
   };
 
   const start = () => {
-    if (!picked || picked.problem) return;
+    if (!picked || picked.problem || !tier) return;
     setError(null);
     setPhase("uploading");
     startTransition(async () => {
@@ -96,6 +102,7 @@ export function UpscaleUpload() {
         }
         const startForm = new FormData();
         startForm.set("path", reserved.path);
+        startForm.set("tier", tier);
         const result = await startUploadUpscale(startForm);
         if ("error" in result) {
           setError(result.error);
@@ -110,7 +117,11 @@ export function UpscaleUpload() {
     });
   };
 
-  const credits = picked && !picked.problem ? upscaleCreditCost(picked.seconds) : null;
+  const previewTiers =
+    picked && !picked.problem
+      ? availableUpscaleTiers(picked.height || ENGINE_SOURCE_HEIGHT_DEFAULT)
+      : [];
+  const credits = picked && !picked.problem && tier ? upscaleCreditCost(picked.seconds, tier) : null;
 
   return (
     <>
@@ -172,7 +183,7 @@ export function UpscaleUpload() {
 
             {credits !== null && (
               <>
-                <dl className="mt-4 flex gap-8 border-t border-atelier-rule pt-3">
+                <dl className="mt-4 space-y-3 border-t border-atelier-rule pt-3">
                   <div>
                     <dt className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted/80">
                       {h.upscaleMode}
@@ -183,7 +194,33 @@ export function UpscaleUpload() {
                     <dt className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted/80">
                       {h.upscaleOutput}
                     </dt>
-                    <dd className="mt-0.5 text-sm text-atelier-ink">{h.upscaleOutputDetail}</dd>
+                    <dd className="mt-1.5 flex gap-2">
+                      {previewTiers.map((option) => (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setTier(option)}
+                          aria-pressed={tier === option}
+                          className={
+                            tier === option
+                              ? "rounded-[10px] bg-atelier-accent/10 px-3.5 py-2 text-sm font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                              : "rounded-[10px] border border-atelier-rule px-3.5 py-2 text-sm text-atelier-muted transition-colors hover:text-atelier-ink"
+                          }
+                        >
+                          {UPSCALE_TIERS[option].label}
+                          <span className="ml-2 font-numeral text-xs tabular-nums">
+                            {formatMsg(t.generate.creditsShortN, {
+                              n: upscaleCreditCost(picked!.seconds, option),
+                            })}
+                          </span>
+                        </button>
+                      ))}
+                    </dd>
+                    {tier && (
+                      <dd className="mt-1.5 text-sm text-atelier-ink">
+                        {formatMsg(h.upscaleOutputDetail, { res: UPSCALE_TIERS[tier].label })}
+                      </dd>
+                    )}
                   </div>
                 </dl>
                 <div className="mt-3 flex items-end justify-between border-t border-atelier-rule pt-3">

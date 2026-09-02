@@ -19,7 +19,11 @@ import { LocalDate } from "@/components/local-date";
 import type { GenerationFeedback } from "@/lib/generations/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { UpscaleButton } from "@/components/upscale-button";
-import { takeUpscaleIneligibility, upscaleCreditCost } from "@/lib/generations/upscale";
+import {
+  availableUpscaleTiers,
+  takeSourceHeight,
+  takeUpscaleIneligibility,
+} from "@/lib/generations/upscale";
 import { formatMsg } from "@/lib/i18n/format";
 
 export default async function HistoryDetailPage({
@@ -147,10 +151,12 @@ export default async function HistoryDetailPage({
   // Whether the Upscale action shows — the same pure rule the server action
   // re-runs before taking any money, so the button can never promise what
   // the action refuses.
-  const upscaleEligible =
+  const upscaleTiers =
     isOwner &&
     isRenderableUrl(generation.result_url) &&
-    takeUpscaleIneligibility(generation) === null;
+    takeUpscaleIneligibility(generation) === null
+      ? availableUpscaleTiers(takeSourceHeight(generation.video_model_id))
+      : [];
 
   // Whether this render is already in the community feed (drives the share
   // button's state). Soft-fails to "not shared" if the community SQL hasn't
@@ -203,11 +209,11 @@ export default async function HistoryDetailPage({
                   </Button>
                 </Link>
               )}
-            {upscaleEligible && (
+            {upscaleTiers.length > 0 && (
               <UpscaleButton
                 generationId={generation.id}
                 seconds={generation.video_duration_seconds as number}
-                credits={upscaleCreditCost(generation.video_duration_seconds as number)}
+                tiers={upscaleTiers}
               />
             )}
             {canShareToCommunity && (
