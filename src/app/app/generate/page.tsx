@@ -187,7 +187,7 @@ export default async function GeneratePage() {
                 <TranscriptToggle label={g.sessionTranscript} />
               </div>
             </div>
-            <div className="flex w-full flex-wrap items-baseline gap-x-4 gap-y-1 sm:w-auto sm:gap-x-[26px]">
+            <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 sm:w-auto sm:items-baseline sm:gap-x-[26px]">
               {stats.total > 0 && (
                 <>
                   <div className="flex items-baseline gap-[7px]">

@@ -5786,9 +5786,6 @@ function GenerateFormInner({
               </button>
             );
           })}
-          {stageTakes.length === 0 && stageInFlightPrompt === null && (
-            <p className="text-[11px] leading-relaxed text-atelier-muted/80">{g.takesEmpty}</p>
-          )}
         </div>
         <p className="hidden flex-shrink-0 text-xs text-atelier-muted lg:block">
           {g.stageScoredNote}
@@ -6328,31 +6325,15 @@ function GenerateFormInner({
             Every thumbnail IS that preset's own proof render from the
             validation matrix — nothing unproven gets a chip. Tap toggles;
             the selected block is applied server-side after drafting. */}
-        {cinemaPresetsAvailable && (
+        {/* Camera moves & lighting looks (A×B layout integration,
+            2026-09-02 — operator: "you forgot to add the camera angles and
+            lighting to the new layout"): the strip no longer hides behind a
+            lone Presets button — the labeled Camera / Lighting pills in the
+            controls row below open it straight onto their tab, and wear the
+            armed preset's name. This block is now just the tabs + chips. */}
+        {cinemaPresetsAvailable && presetRowOpen && (
           <div className="mb-2.5">
-            <button
-              type="button"
-              onClick={() => setPresetRowOpen((v) => !v)}
-              aria-expanded={presetRowOpen}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-medium transition-colors",
-                armedPresetIds.length > 0
-                  ? "bg-atelier-accent/10 text-atelier-accent"
-                  : "bg-transparent text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]",
-              )}
-            >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5 flex-shrink-0">
-                <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
-                <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
-                <path d="m8 7.2 2.5-3.7M13 6.5l2.5-3.7" />
-              </svg>
-              {armedPresetIds.length > 0
-                ? armedPresetIds
-                    .map((id) => (g.cinemaPresetLabels as Record<string, string>)[id] ?? id)
-                    .join(" + ")
-                : g.cinemaPresetsButton}
-            </button>
-            {presetRowOpen && (() => {
+            {(() => {
               const provenPresets = CINEMA_PRESETS.filter(isProvenPreset);
               const tabs = (["move", "look", "fx"] as const).filter((cat) =>
                 provenPresets.some((p) => p.category === cat),
@@ -7545,6 +7526,81 @@ function GenerateFormInner({
                         <span className="hidden md:inline">{g.framesPillLabel}</span>
                       </button>
                     </div>
+                  )}
+
+                  {/* Camera & Lighting — the proven cinema presets as
+                      first-class pills (operator, 2026-09-02: they were
+                      buried behind a lone Presets button in the new
+                      layout). Same grammar as the modes: warm when armed,
+                      wearing the armed preset's name. Model-scoped like
+                      the Storyboard pill — the presets only exist on the
+                      Seedance lanes, so the pills do too. */}
+                  {cinemaPresetsAvailable && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (presetRowOpen && presetTab === "move") {
+                            setPresetRowOpen(false);
+                          } else {
+                            setPresetTab("move");
+                            setPresetRowOpen(true);
+                          }
+                        }}
+                        disabled={submitting}
+                        aria-expanded={presetRowOpen && presetTab === "move"}
+                        aria-pressed={Boolean(cinemaPresetIds.move)}
+                        className={cn(
+                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          cinemaPresetIds.move
+                            ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                            : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        )}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                          <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+                          <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
+                          <path d="m8 7.2 2.5-3.7M13 6.5l2.5-3.7" />
+                        </svg>
+                        <span className="hidden md:inline">
+                          {g.presetTabCamera}
+                          {cinemaPresetIds.move
+                            ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.move] ?? cinemaPresetIds.move}`
+                            : ""}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (presetRowOpen && presetTab === "look") {
+                            setPresetRowOpen(false);
+                          } else {
+                            setPresetTab("look");
+                            setPresetRowOpen(true);
+                          }
+                        }}
+                        disabled={submitting}
+                        aria-expanded={presetRowOpen && presetTab === "look"}
+                        aria-pressed={Boolean(cinemaPresetIds.look)}
+                        className={cn(
+                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          cinemaPresetIds.look
+                            ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                            : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        )}
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4">
+                          <circle cx="12" cy="12" r="4" />
+                          <path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4" />
+                        </svg>
+                        <span className="hidden md:inline">
+                          {g.presetTabLight}
+                          {cinemaPresetIds.look
+                            ? ` · ${(g.cinemaPresetLabels as Record<string, string>)[cinemaPresetIds.look] ?? cinemaPresetIds.look}`
+                            : ""}
+                        </span>
+                      </button>
+                    </>
                   )}
 
                   {/* Aspect moved to the loadout row as text chips (approved
