@@ -8,6 +8,7 @@ import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
 import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { BuyCreditsPanel } from "@/components/buy-credits-panel";
+import { NativeStore } from "@/components/native-store";
 import { isNativeApp } from "@/lib/native/server";
 import { allowExternalPurchaseLink, EXTERNAL_PURCHASE_URL } from "@/lib/native/external-purchase";
 import { ExternalCheckoutButton } from "@/components/external-checkout-button";
@@ -459,6 +460,15 @@ export default async function SettingsPage({
               all — same reader-app reasoning as the plan card above. */}
           {activeTab === "usage" && !nativeApp && (
             <BuyCreditsPanel purchasedCredits={purchasedCredits} currencySymbol={currencySymbol} />
+          )}
+
+          {/* Play Billing store (2026-09-02): rendered for the native shell,
+              but the component itself shows NOTHING unless the installed
+              binary carries the Purchases plugin (versionCode 10+) and the
+              RevenueCat key is live — the approved reader-mode builds keep
+              their zero purchase surfaces. See lib/native/purchases.ts. */}
+          {activeTab === "usage" && nativeApp && data.user && (
+            <NativeStore userId={data.user.id} currentPlan={plan} />
           )}
 
           {activeTab === "brand" && <BrandRulesPanel rules={brandRules} enforcementPaused={brandRulesPaused} />}

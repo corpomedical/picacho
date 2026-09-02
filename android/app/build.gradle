@@ -18,7 +18,15 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 9
+        versionCode 10
+        // 10 = Play Billing returns (2026-09-02, operator: "we need to add
+        // payment on the android app"): the RevenueCat Purchases plugin is
+        // back in the binary — the deployed site's store UI self-gates on
+        // Capacitor.isPluginAvailable("Purchases"), so THIS build lights up
+        // Settings → usage with plans/packs while every older install keeps
+        // the reader-mode surface its review approved. Nothing sells until
+        // the PLAY_BILLING_SETUP.md runbook (products, service account,
+        // RevenueCat, env vars, SQL) is completed.
         // 9 = the launcher icon's P scaled to the size it should always have
         // been (2026-08-30, operator: "the P stays Big in dark mode and normal
         // mode. I wanted the smaller P icon that was on dark mode"). Adaptive
@@ -61,7 +69,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.8.3"
+        versionName "1.10.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

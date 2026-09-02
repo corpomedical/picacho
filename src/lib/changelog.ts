@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.10.0",
+    build: 17,
+    date: "2026-09-02",
+    title: "The Android app learns to take payment",
+    items: [
+      "Plans and credit packs are purchasable inside the Android app through Google Play's own billing. Settings → usage grows a store: the five monthly plans (only when no plan is live — a running subscription is managed where it was bought) and the three credit packs, priced by Play in your local currency, bought through Play's payment sheet. The insufficient-credits strip in the composer now walks straight there. Purchases land server-side through the same idempotent granting path web payments use, so a pack can never grant twice and a refund claws back exactly what it granted.",
+      "The rollout is self-protecting: the site runs inside every installed copy of the app, including older ones that Google approved as purchase-free readers — so every purchase surface checks whether the installed binary actually carries the billing machinery before rendering. Old installs keep their approved purchase-free experience untouched; the new build lights the store up. Requires the versionCode 10 app build plus the Play Console / RevenueCat setup runbook to go live.",
+    ],
+  },
+  {
     version: "1.9.1",
     build: 16,
     date: "2026-09-02",

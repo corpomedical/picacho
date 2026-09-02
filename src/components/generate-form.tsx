@@ -23,6 +23,7 @@ import { parseVoiceCommand } from "@/lib/voice/commands";
 import { recommendCreditPack } from "@/lib/stripe/credit-packs";
 import { createCreditCheckoutSession } from "@/lib/stripe/actions";
 import { isNativeAppClient } from "@/lib/native/platform";
+import { playBillingAvailable } from "@/lib/native/purchases";
 import {
   pickPhrasing,
   isTrivialUtterance,
@@ -995,8 +996,10 @@ function InsufficientCreditsBanner({
   // false so a browser renders the button on the first frame; only flips true
   // once the client detector confirms native.
   const [native, setNative] = useState(false);
+  const [canPlayBilling, setCanPlayBilling] = useState(false);
   useEffect(() => {
     setNative(isNativeAppClient());
+    setCanPlayBilling(playBillingAvailable());
   }, []);
 
   // Dismissed for THIS selection only. The call site keys this component on
@@ -1063,10 +1066,21 @@ function InsufficientCreditsBanner({
             {formatMsg(g.addCreditsCta, { n: pack.credits })}
           </button>
         )}
-        {/* The US-native counterpart: same inline-link voice, but it opens
-            website checkout in the system browser (picacho.io is outside
-            allowNavigation, so the WebView kicks it external). */}
-        {native && allowExternalPurchase && (
+        {/* The binary-can-bill counterpart (Play Billing resumed,
+            2026-09-02): when this install carries the Purchases plugin,
+            the same inline-link voice walks to the in-app store on the
+            usage tab. Takes precedence over the US external link — native
+            billing beats steering out. Old reader-mode binaries fail the
+            plugin check and keep their approved zero-purchase surface. */}
+        {native && canPlayBilling && (
+          <Link
+            href="/app/settings?tab=usage"
+            className="cursor-pointer font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
+          >
+            {formatMsg(g.addCreditsCta, { n: pack.credits })}
+          </Link>
+        )}
+        {native && !canPlayBilling && allowExternalPurchase && (
           <button
             type="button"
             onClick={() => window.open("https://picacho.io/pricing", "_blank")}

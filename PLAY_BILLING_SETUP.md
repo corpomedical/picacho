@@ -1,11 +1,22 @@
-# Play Billing setup — operator runbook (2026-08-21)
+# Play Billing setup — operator runbook (2026-08-21, resumed 2026-09-02)
 
-The in-app purchase build (versionCode 6) sells the five monthly plans and
-the three credit packs inside the Android app through Google Play Billing,
-with RevenueCat as the receipt/entitlement layer. Stripe on the web is
-untouched. This file is the operator's checklist — every dashboard step, in
-order, one sitting (~45 min). The code is already wired; nothing works end
-to end until these steps are done.
+The in-app purchase build (**versionCode 10** — the 08-21 pivot uninstalled
+the plugin before 6 ever shipped a store; 10 is the build that actually
+carries it) sells the five monthly plans and the three credit packs inside
+the Android app through Google Play Billing, with RevenueCat as the
+receipt/entitlement layer. Stripe on the web is untouched. This file is the
+operator's checklist — every dashboard step, in order, one sitting
+(~45 min). The code is wired end to end (store UI on Settings → usage, the
+insufficient-credits banner links to it, webhook grants); nothing works
+until these steps are done.
+
+**Safety property to know:** every purchase surface self-gates on the
+Purchases plugin being present in the installed binary
+(`playBillingAvailable()` in `src/lib/native/purchases.ts`). Installs of
+versionCode ≤ 9 — the reader-mode builds Play approved — keep showing zero
+purchase UI even after the site deploys, so there is no policy exposure
+while the rollout is in flight. The store also stays hidden until
+`NEXT_PUBLIC_REVENUECAT_GOOGLE_KEY` is set (step 4).
 
 **The product-ID contract** (must match `src/lib/play/products.ts` exactly):
 
@@ -84,11 +95,17 @@ Run `supabase/pending-2026-08-21/play-billing.sql` in the Supabase SQL
 editor (adds `profiles.plan_source` + `profiles.play_product_id`, backfills
 current payers as `stripe`).
 
-## 6 · Testing (before Production)
+## 6 · Build & upload versionCode 10
+
+`cd android && JAVA_HOME=$(/usr/libexec/java_home) ./gradlew bundleRelease`
+→ upload the AAB to an internal-testing track. (Remember `npx cap copy
+android` runs from the repo ROOT if web assets changed.)
+
+## 7 · Testing (before Production)
 
 1. Play Console → Settings → **License testing**: add your Google account →
    purchases in internal-testing builds charge nothing and auto-refund.
-2. Install the internal-testing build (versionCode 6), open Settings →
+2. Install the internal-testing build (versionCode 10), open Settings →
    plans, buy Basic with the test card sheet, then a pack. Verify in Admin:
    plan flips with `plan_source = play`, credits granted; cancel from Play
    Store → subscription center and verify expiration resets the plan after
