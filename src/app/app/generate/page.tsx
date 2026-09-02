@@ -153,21 +153,28 @@ export default async function GeneratePage() {
           affordance beside it, and the stats as BASELINE pairs (number,
           then its label to the right) — no rule under the row, no divider
           except the one that sets Credits apart. */}
-      <div className="mb-5 flex items-end justify-between gap-6">
+      {/* flex-wrap + whitespace-nowrap labels: on phone widths the three
+          stat pairs cannot share a line with the title, and a label that
+          wraps INSIDE its pair leaves the numeral stranded against the
+          first baseline — the "number aligned top" report from the native
+          shell (operator, 2026-09-02). Pairs now wrap as whole units, so
+          number and label always sit on one baseline; the credits divider
+          only draws at sm+, where the row is genuinely one line. */}
+      <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
         <div className="flex items-baseline gap-3.5">
           <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
           <TranscriptToggle label={g.sessionTranscript} />
         </div>
-        <div className="flex items-baseline gap-[26px]">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 sm:gap-x-[26px]">
           {stats.total > 0 && (
             <>
               <div className="flex items-baseline gap-[7px]">
                 <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</span>
-                <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</span>
+                <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</span>
               </div>
               <div className="flex items-baseline gap-[7px]">
                 <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</span>
-                <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</span>
+                <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</span>
               </div>
             </>
           )}
@@ -176,11 +183,11 @@ export default async function GeneratePage() {
               (creditsAvailable in generate-form.tsx); the server
               re-validates every spend, so this can never oversell. Not a
               purchase entry point, so no native gating needed. */}
-          <div className={`flex items-baseline gap-[7px] ${stats.total > 0 ? "border-l border-atelier-rule pl-[26px]" : ""}`}>
+          <div className={`flex items-baseline gap-[7px] ${stats.total > 0 ? "sm:border-l sm:border-atelier-rule sm:pl-[26px]" : ""}`}>
             <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-accent">
               {Math.max(0, creditsLimit - creditsUsed) + purchasedCredits}
             </span>
-            <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.creditsLabel}</span>
+            <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.creditsLabel}</span>
           </div>
         </div>
       </div>
