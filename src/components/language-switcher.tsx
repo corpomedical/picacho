@@ -18,7 +18,7 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
 // header/footer and (compact variant) inside the app. Reads/writes through
 // LocaleProvider, which persists the choice in a cookie server-rendered
 // pages read on their next request.
-export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
+export function LanguageSwitcher({ compact = false, triggerClassName }: { compact?: boolean; triggerClassName?: string }) {
   const { locale, setLocale } = useLocale();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -42,7 +42,11 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
         title="Language"
         aria-label="Language"
         className={cn(
-          "flex items-center gap-1.5 rounded-[10px] text-sm text-neutral-500 transition-colors hover:text-neutral-900",
+          "flex items-center gap-1.5 rounded-[10px] text-sm transition-colors",
+          // Callers on a pinned-dark surface (the front page's header) pass
+          // their own literals via triggerClassName; the default keeps the
+          // theme-adaptive greys.
+          triggerClassName ?? "text-neutral-500 hover:text-neutral-900",
           compact ? "h-8 w-8 justify-center" : "px-1",
         )}
       >

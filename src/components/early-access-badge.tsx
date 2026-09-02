@@ -17,7 +17,7 @@ import { cn } from "@/lib/cn";
 //
 // NOT shown in /admin — that's internal, and nobody needs reassuring about
 // the maturity of a product they built.
-export function EarlyAccessBadge({ className }: { className?: string }) {
+export function EarlyAccessBadge({ className, dark }: { className?: string; dark?: boolean }) {
   return (
     <span
       // No border, padding or pill — those made it read as a button people
@@ -32,7 +32,10 @@ export function EarlyAccessBadge({ className }: { className?: string }) {
       // and alignment to the bottom lines the label up with the rule instead
       // of the word. Centring on the whole image box is what looks right.
       className={cn(
-        "select-none text-[10px] font-medium uppercase leading-none tracking-wide text-neutral-400 dark:text-neutral-500",
+        "select-none text-[10px] font-medium uppercase leading-none tracking-wide",
+        // The dark front page pins literals so the site theme can't touch
+        // them; everywhere else the badge keeps its theme-adaptive greys.
+        dark ? "text-[#f7f6f4]/40" : "text-neutral-400 dark:text-neutral-500",
         className,
       )}
     >

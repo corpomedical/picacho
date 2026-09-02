@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.10.0",
+    build: 17,
+    date: "2026-09-02",
+    title: "The front page goes dark, and the proof takes the stage",
+    items: [
+      "The homepage was rebuilt around one idea: proof as the aesthetic. It opens on the reel itself — real renders playing full-bleed behind the headline, starting with Eva's 15-second space trailer — wearing the app's own identity plate in the corner: her reference photo, the ochre serif score, 'every render scored against this photo'. The clip that is actually playing is captioned with its engine and length ('Seedance 2.0 · 15s · real output'), and clips whose provenance we haven't pinned down say only 'real output' rather than borrowing a name.",
+      "Below it, the thread: four real scored renders of the same character — snowfall, a garden party, a cooking show, a beach — each carrying the identity score our verifier actually gave it, pulled live from the database. Tiles without a stored score show no chip; a score on this page is real or absent, never invented.",
+      "The studio section finally states the feature set in one place: camera moves and lighting looks, Multi-angle, Storyboard, Cinema Studio, dialogue and lip-sync, the Assistant — plus the brand-rules guarantee and the extras strip. The engines band derives its names and its '+ 6 more' from the same model catalogues the pipeline switches on, so it can never advertise an engine we don't run. The receipt section restates the money promise in the receipt's own visual language, down to the visible '+1 cr / 3s' dialogue rate.",
+      "The interactive try-it band, the two real video players, and the pricing grid all survive from the old page — pricing on a paper-light break in the dark show. All of it in all four languages, and the old homepage is one git tag away (pre-frontpage-redesign) if we ever want it back.",
+    ],
+  },
+  {
     version: "1.9.1",
     build: 16,
     date: "2026-09-02",

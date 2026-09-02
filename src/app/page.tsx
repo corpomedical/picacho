@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { EngineRail } from "@/components/marketing/engine-rail";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
@@ -10,12 +9,14 @@ import { isNativeApp } from "@/lib/native/server";
 import { cn } from "@/lib/cn";
 import { ShowcaseVideoPlayer } from "@/components/showcase-video-player";
 import { TryItWidget } from "@/components/marketing/try-it-widget";
-import { HeroReel } from "@/components/marketing/hero-reel";
+import { HeroBackdropReel } from "@/components/marketing/hero-reel";
 import { getShowcaseProof } from "@/lib/showcase";
+import { brandName, uniqueBrands } from "@/components/marketing/engine-rail";
+import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
+import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 
 import type { Metadata } from "next";
 import { localeAlternates } from "@/lib/i18n/metadata";
-import { LazyVideo } from "@/components/marketing/lazy-video";
 
 // The homepage had NO metadata export at all, so it inherited the root
 // layout's `alternates: { canonical: "/" }` — which meant /es, /pt and /it
@@ -48,193 +49,126 @@ const SOFTWARE_APPLICATION_JSON_LD = {
   url: "https://picacho.ai",
 };
 
-// Small hand-rolled icons for the feature mockups below — same inline-SVG
-// convention used everywhere else in the app (see download-button.tsx,
-// result-actions.tsx, etc.), not a new icon dependency.
-function SendIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m5 12 14-8-5 8 5 8-14-8Z" />
-    </svg>
-  );
-}
+// ─────────────────────────────────────────────────────────────────────────
+// THE DARK FRONT PAGE (operator-picked C×A merge, 2026-09-02; approved
+// board on the "Picacho Front Page" canvas). The previous light homepage
+// lives at git tag `pre-frontpage-redesign` — restoring it is one checkout.
+//
+// The page's one idea: PROOF AS THE AESTHETIC. The reel plays full-bleed
+// behind the hero wearing the app's own identity plate; the thread shows
+// the SAME live showcase tiles the old hero used (real generations of the
+// showcase character, real match scores from their own DB rows — nothing
+// baked into the repo, nothing invented); the studio section states the
+// real feature set; the receipt section restates the product's money
+// honesty in its own visual language.
+//
+// This page is ALWAYS dark regardless of the site theme, so it uses
+// explicit literals (#101014 stage, #e0a468 ochre-on-dark, white alphas)
+// rather than theme tokens — the same rule the app's Darkroom stage
+// follows. Tokens here would flip with the theme and break the design.
+// ─────────────────────────────────────────────────────────────────────────
 
-function CheckIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
-// "This is where generated media would be" glyph — used inside the two
-// media-placeholder mockups (Validate/Result) below. Went through two bad
-// tries before this: a rect+circle+jagged-line combo that read as the
-// browser's own broken-image icon, then a 4-point sparkle that turned out
-// to be a near-exact match for Gemini's logo. This is a plain play-in-a-
-// circle instead — the same generic "media preview" glyph used all over
-// the web (and already used for video thumbnails elsewhere in this app,
-// see media-gallery.tsx's PlayIcon), tied to no particular brand.
-function TwoModelsIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <circle cx="7" cy="12" r="4" />
-      <circle cx="17" cy="12" r="4" />
-    </svg>
-  );
-}
-
+// The one icon this page still hand-rolls (brand-rules card) — same
+// inline-SVG convention as everywhere else, not an icon dependency.
 function ShieldCheckIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="M12 3 4.5 6v5c0 4.5 3 8.3 7.5 10 4.5-1.7 7.5-5.5 7.5-10V6L12 3Z" />
+      <path d="M12 3l7 3v5c0 4.6-3 8.4-7 10-4-1.6-7-5.4-7-10V6z" />
       <path d="m9 12 2 2 4-4" />
     </svg>
   );
 }
 
-function LayersIcon(props: React.SVGProps<SVGSVGElement>) {
+// The studio cards' small ochre glyphs, drawn once each.
+function PresetIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <path d="m12 3 9 5-9 5-9-5 9-5Z" />
-      <path d="m3 13 9 5 9-5" />
+      <path d="M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z" />
+      <path d="m4 8-1.5-3.5 15.5-2L19.5 6z" />
+    </svg>
+  );
+}
+function AnglesIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M12 4.5v3M12 16.5v3M4.5 12h3M16.5 12h3" />
+    </svg>
+  );
+}
+function StoryboardIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" {...props}>
+      <rect x="3.5" y="6" width="5" height="12" rx="1" />
+      <rect x="9.5" y="6" width="5" height="12" rx="1" />
+      <rect x="15.5" y="6" width="5" height="12" rx="1" />
+    </svg>
+  );
+}
+function ClapperIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 9h16v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+      <path d="M4 9l1.5-4h13L20 9M8.5 5L7 9m6.5-4L12 9" />
+    </svg>
+  );
+}
+function SpeechIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M4 5.5h16v11H10l-5.5 4z" />
+    </svg>
+  );
+}
+function SparkIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" />
+    </svg>
+  );
+}
+function PhoneIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="6" y="3" width="12" height="18" rx="2.5" />
+      <path d="M11 18h2" />
+    </svg>
+  );
+}
+function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <circle cx="12" cy="12" r="8.5" />
+      <path d="M3.5 12h17M12 3.5c2.5 2.4 3.8 5.4 3.8 8.5s-1.3 6.1-3.8 8.5c-2.5-2.4-3.8-5.4-3.8-8.5s1.3-6.1 3.8-8.5z" />
     </svg>
   );
 }
 
-// Animated color-blob background for the hero and closing-CTA sections —
-// see the wallpaper-drift-* keyframes in globals.css. Third pass used
-// stronger tints at 70-80% opacity, which read as too
-// bold/saturated. This pass lightens every blob a step or two (200s instead
-// of 300-400s), drops opacity further, and blurs a bit more for a soft,
-// pastel wash rather than distinct colored circles — still animated, just
-// gentler. mix-blend-multiply (not screen) is still the right pairing for a
-// light base — screen only lightens further, which would wash blues out to
-// near-invisible on white.
-//
-// The wrapping <section> this renders into (see below) carries `isolate` —
-// without it, mix-blend-multiply composites against the whole page's
-// stacking context instead of just this section, which Chrome tends to
-// paper over but Safari does not: real report, 2026-08-08, "the homepage
-// looks nothing like the original in Safari" turned out to be blend-mode
-// compositing without an isolated stacking context, not a Safari-only bug
-// so much as Safari correctly following the spec where Chrome was lenient.
-function LiveWallpaper() {
-  return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      <div className="animate-wallpaper-a absolute -left-[15%] -top-[25%] h-[600px] w-[600px] rounded-full bg-orange-200 opacity-50 mix-blend-multiply blur-[95px]" />
-      <div className="animate-wallpaper-b absolute -right-[12%] -top-[15%] h-[560px] w-[560px] rounded-full bg-amber-200 opacity-45 mix-blend-multiply blur-[95px] [animation-delay:-3s]" />
-      <div className="animate-wallpaper-c absolute left-[28%] top-[5%] h-[500px] w-[500px] rounded-full bg-cyan-100 opacity-50 mix-blend-multiply blur-[95px] [animation-delay:-6s]" />
-      <div className="animate-wallpaper-b absolute -bottom-[30%] right-[18%] h-[520px] w-[520px] rounded-full bg-rose-100 opacity-45 mix-blend-multiply blur-[95px] [animation-delay:-9s]" />
-      <div className="animate-wallpaper-a absolute -bottom-[25%] left-[8%] h-[480px] w-[480px] rounded-full bg-amber-100 opacity-50 mix-blend-multiply blur-[95px] [animation-delay:-5s]" />
-    </div>
-  );
-}
+// The engines band names the four flagship engines by their exact
+// catalogue names (video-models.ts — " (reference)" is that file's internal
+// disambiguator, not part of the product name) and DERIVES the "+ n more"
+// count from the same catalogues the pipeline switches on, at brand level,
+// plus the two engines with no catalogue entry (ElevenLabs speech, Claude
+// drafting — same pair EngineRail names by hand, next to the code that
+// calls them). Rename or remove a model and the band follows; it can never
+// advertise an engine Picacho doesn't run.
+const ENGINE_BAND_NAMES = ["Seedance 2.0", "Kling O3 Pro", "Gemini Omni Flash 1.1", "Veo 3.1"];
+const ENGINE_BAND_MORE = (() => {
+  const all = new Set([
+    ...uniqueBrands(
+      [...IMAGE_MODELS, ...VIDEO_MODELS].map((m) => m.name.replace(" (reference)", "")),
+    ),
+    "ElevenLabs",
+    "Claude",
+  ]);
+  const shown = new Set(ENGINE_BAND_NAMES.map(brandName));
+  return [...all].filter((b) => !shown.has(b)).length;
+})();
 
-// The four mockups below are original, abstract illustrations of Picacho's
-// actual draft → review → generate → validate pipeline (see pipeline.ts) —
-// not screenshots of the real UI, and not stand-ins for real customer
-// content. "Nova" is the same example name already used as the character-
-// name placeholder in the character form, kept consistent here rather than
-// inventing a new one.
-
-type HomeMessages = Awaited<ReturnType<typeof getServerMessages>>["t"]["marketing"]["home"];
-type ComposerPlaceholder = Awaited<ReturnType<typeof getServerMessages>>["t"]["dashboard"]["composerPlaceholder"];
-
-function ComposerMockup({ m, composerPlaceholder }: { m: HomeMessages; composerPlaceholder: ComposerPlaceholder }) {
-  return (
-    <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)]">
-      <div className="flex items-center gap-2 text-xs font-medium text-neutral-400">
-        <span className="h-2 w-2 rounded-full bg-neutral-300" />
-        Nova
-      </div>
-      <p className="mt-3 text-sm leading-relaxed text-neutral-700">&ldquo;{m.mockupQuote}&rdquo;</p>
-      <div className="mt-4 flex items-center justify-between rounded-[12px] border border-neutral-100 bg-neutral-50 px-3.5 py-2.5">
-        <span className="text-xs text-neutral-400">{composerPlaceholder}</span>
-        <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-orange-500 text-white">
-          <SendIcon className="h-3.5 w-3.5" />
-        </span>
-      </div>
-    </div>
-  );
-}
-
-function RulebookMockup({ m }: { m: HomeMessages }) {
-  const traits = [m.mockupTraitHair, m.mockupTraitOutfit, m.mockupTraitPersonality];
-  return (
-    <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)]">
-      <p className="text-xs font-medium text-neutral-400">{m.mockupRulebookTitle}</p>
-      <div className="mt-3 space-y-2">
-        {traits.map((trait) => (
-          <div key={trait} className="flex items-center gap-2.5 rounded-[10px] bg-neutral-50 px-3 py-2.5 text-xs text-neutral-600">
-            <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
-            {trait}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ValidateMockup({ m }: { m: HomeMessages }) {
-  const checks = [m.mockupCheckHair, m.mockupCheckOutfit, m.mockupCheckMotion];
-  return (
-    <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)]">
-      {/* Third pass on this panel (2026-08-21, operator: still reads as an
-          empty image): abstract dark surfaces keep failing no matter how
-          they're dressed, so it now shows the REAL thing — the showcase's
-          cooking render, which is genuinely the 92% row (see lib/showcase.ts
-          index 3), under the scan bar and the same identity-match chip the
-          product prints. The chip's number stopped being decoration. */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-neutral-900">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/api/showcase/3?size=full" alt="" className="h-full w-full object-cover object-[50%_25%]" />
-        <div className="absolute inset-0 bg-gradient-to-t from-neutral-950/45 via-transparent to-transparent" />
-        <div className="scan-sweep pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-white/25 to-transparent" />
-        <span className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-neutral-800 shadow-sm">
-          {m.scoreBandMatch}
-          <span className="text-ochre">92%</span>
-        </span>
-      </div>
-      <div className="mt-4 space-y-1.5">
-        {checks.map((check) => (
-          <div key={check} className="flex items-center gap-2 text-xs text-neutral-500">
-            <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
-            {check}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ResultMockup({ m }: { m: HomeMessages }) {
-  return (
-    <div className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)]">
-      {/* Real output here too (2026-08-21, same operator report as the
-          validate panel): the reel's own Seedance clip loops quietly behind
-          the badge instead of a glyph on an empty box — "the good one you
-          see" IS one. */}
-      <div className="relative aspect-video w-full overflow-hidden rounded-[12px] bg-neutral-900">
-        <LazyVideo src="/hero-band-3.mp4" className="h-full w-full object-cover" />
-        <span className="absolute left-3 top-3 rounded-full bg-emerald-500 px-2.5 py-1 text-[10px] font-medium text-white">
-          {m.mockupPassedBadge}
-        </span>
-      </div>
-      <p className="mt-3 text-xs text-neutral-400 line-through decoration-neutral-300">
-        {m.mockupHiddenAttempts}
-      </p>
-    </div>
-  );
-}
-
-// Always render fresh, never serve a CDN-cached copy. These marketing/legal
-// pages were getting stuck: after a deploy, one hostname (picacho.ai) kept
-// serving a weeks-old prerendered copy while others served the new build,
-// because the pages were statically cacheable and a stale per-host edge copy
-// never got evicted. force-dynamic makes every request render on the server,
-// so a stale copy can't be served and the content always matches the deploy.
-export const dynamic = "force-dynamic";
+const MICRO = "text-[11px] font-semibold uppercase tracking-[0.16em] text-[#f7f6f4]/45";
+const CARD = "rounded-[16px] border border-[#f7f6f4]/[0.08] bg-[#f7f6f4]/[0.04] p-6";
+const CARD_TITLE = "mt-3.5 text-base font-semibold text-[#f7f6f4]";
+const CARD_COPY = "mt-2 text-sm leading-relaxed text-[#f7f6f4]/60";
 
 export default async function Home({
   searchParams,
@@ -244,314 +178,371 @@ export default async function Home({
   const { t } = await getServerMessages();
   const m = t.marketing.home;
   const p = t.marketing.pricing;
-  // Same URL-param billing toggle as /pricing (see the rationale there) —
-  // added 2026-08-19: this section used to show annual prices with a struck
-  // monthly figure and NO way to see monthly, so "$8/mo" met "$9" at
-  // checkout for anyone who never found the toggle on /pricing. The #pricing
-  // anchor keeps the page from jumping back to the hero on switch (the page
-  // is force-dynamic, so the toggle is a full server render).
+  // Same URL-param billing toggle as /pricing (see the rationale there).
   const { billing } = await searchParams;
   const interval: "annual" | "month" = billing === "monthly" ? "month" : "annual";
   // No pricing UI inside the native app (Apple 3.1.1 / Google Play): the
   // "See pricing" hero link, the pricing card grid, and the "full plan
   // details" link are all omitted. Everything else on the page is unchanged.
   const native = await isNativeApp();
-  // Real match_score/prompt data for the SAME rows the hero grid serves
-  // (shared row selection in lib/showcase.ts, service client — the rows
-  // belong to the showcase owner, not the visitor). Best-effort: on any
-  // failure this comes back empty and the score chips + "Try it" section
-  // below simply don't render — a score is either real or absent.
+  // Real match_score/prompt data for the SAME rows the tiles serve
+  // (shared row selection in lib/showcase.ts, service client). Best-effort:
+  // on failure this comes back empty and score chips simply don't render —
+  // a score is either real or absent.
   const { scores: showcaseScores, tryIt: tryItEntries } = await getShowcaseProof();
+  // The hero plate's number: the first REAL score among the showcase rows.
+  // No score in the data → no plate. A score is never invented for the hero.
+  const plateScore = [1, 2, 3, 4, 5].map((i) => showcaseScores[i]).find((s) => s != null) ?? null;
 
-  const STEPS = [
-    {
-      title: m.step1Title,
-      detail: m.step1Detail,
-      mockup: <ComposerMockup m={m} composerPlaceholder={t.dashboard.composerPlaceholder} />,
-    },
-    { title: m.step2Title, detail: m.step2Detail, mockup: <RulebookMockup m={m} /> },
-    { title: m.step3Title, detail: m.step3Detail, mockup: <ValidateMockup m={m} /> },
-    { title: m.step4Title, detail: m.step4Detail, mockup: <ResultMockup m={m} /> },
+  const STUDIO_CARDS = [
+    { icon: PresetIcon, title: m.studioCameraTitle, copy: m.studioCameraCopy },
+    { icon: AnglesIcon, title: m.studioAnglesTitle, copy: m.studioAnglesCopy },
+    { icon: StoryboardIcon, title: m.studioStoryboardTitle, copy: m.studioStoryboardCopy },
+    { icon: ClapperIcon, title: m.studioCinemaTitle, copy: m.studioCinemaCopy },
+    { icon: SpeechIcon, title: m.studioDialogueTitle, copy: m.studioDialogueCopy },
+    { icon: SparkIcon, title: m.studioAssistantTitle, copy: m.studioAssistantCopy },
+  ];
+  // The board's four output tiles: real curated renders (indices 1–4 of the
+  // showcase set — index 0 is the identity photo, which lives in the hero
+  // plate). Scene names describe what each curated image actually shows;
+  // tile 3 is the portrait shot, cropped toward the face.
+  const THREAD_TILES = [
+    { index: 1, scene: m.threadScene1, crop: "" },
+    { index: 2, scene: m.threadScene2, crop: "" },
+    { index: 3, scene: m.threadScene3, crop: "object-[50%_12%]" },
+    { index: 4, scene: m.threadScene4, crop: "" },
+  ];
+  const STUDIO_CHIPS = [
+    m.chipTemplates,
+    m.chipCasts,
+    m.chipContinue,
+    m.chipOutfit,
+    m.chipProjects,
+    m.chipCommunity,
   ];
 
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-[#101014]">
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(SOFTWARE_APPLICATION_JSON_LD) }}
       />
-      <MarketingHeader />
 
-      {/* Hero — bg-paper (not bg-white/bg-neutral-50, both of which the
-          theme remaps to a dark shade under .dark) so this section stays
-          genuinely light regardless of the site's own light/dark toggle,
-          same anchoring idea as the earlier dark version just flipped. Text
-          uses slate (never remapped by dark mode) rather than neutral/ink
-          for the same reason. */}
-      {/* Hero — "Ochre & Grotesk" theme (see the pre-theme-ochre git tag
-          for the previous centered version). Asymmetric on purpose:
-          headline left, PROOF right — a real character's identity photo
-          plus genuinely generated scenes of her, served from her gallery
-          via /api/showcase/[i]. Slate/sky/explicit colors here, never the
-          neutral scale, so the dark-mode remap can't touch the marketing
-          hero. */}
-      <section className="isolate relative overflow-hidden bg-paper">
-        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-8 pb-20 pt-24 lg:grid-cols-[1.05fr_.95fr] sm:pt-28">
-          <div>
-            <h1 className="font-display text-4xl font-bold leading-[1.02] tracking-[-0.035em] text-slate-900 sm:text-6xl">
-              {m.heroTitle} <em className="not-italic text-ochre">{m.heroAccent}</em>
+      {/* ── HERO — the reel plays full-bleed behind everything, including
+             the header. The gradients keep the type readable over any
+             frame of any clip. ─────────────────────────────────────── */}
+      <section className="isolate relative overflow-hidden">
+        <HeroBackdropReel
+          sources={["/hero-band-4.mp4", "/hero-band.mp4", "/hero-band-2.mp4", "/hero-band-3.mp4"]}
+          // Per-clip provenance, verified before it was written down:
+          // hero-band-4 is the Seedance 2.0 15s space trailer (DB row,
+          // 2026-08-23), hero-band-3 was committed as "operator's Seedance
+          // 2.0 render, 10s" (0bee2f7). Bands 1–2 predate that record-
+          // keeping, so they carry the bare truthful caption rather than a
+          // guessed engine name.
+          captions={[
+            `Seedance 2.0 · 15s · ${m.heroClipRealOutput}`,
+            m.heroClipRealOutput,
+            m.heroClipRealOutput,
+            `Seedance 2.0 · 10s · ${m.heroClipRealOutput}`,
+          ]}
+          pillLabel={m.heroPlayingReel}
+        />
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-[linear-gradient(100deg,rgba(16,16,20,0.88)_0%,rgba(16,16,20,0.6)_36%,rgba(16,16,20,0.08)_64%,rgba(16,16,20,0.15)_100%),linear-gradient(0deg,#101014_0%,rgba(16,16,20,0)_22%),linear-gradient(180deg,rgba(16,16,20,0.75)_0%,rgba(16,16,20,0)_24%)]"
+        />
+
+        <div className="relative">
+          <MarketingHeader dark />
+
+          <div className="mx-auto max-w-6xl px-4 pb-40 pt-24 sm:px-8 sm:pb-48 sm:pt-32">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0a468]">
+              {m.heroKicker}
+            </p>
+            <h1 className="mt-4 max-w-2xl font-display text-4xl font-extrabold leading-[1.0] tracking-[-0.022em] text-[#f7f6f4] sm:text-6xl lg:text-7xl">
+              {m.heroTitle} <em className="not-italic text-[#e0a468]">{m.heroAccent}</em>
             </h1>
-            <p className="mt-6 max-w-md text-base leading-relaxed text-slate-600 sm:text-lg">
+            <p className="mt-6 max-w-[470px] text-base leading-relaxed text-[#f7f6f4]/[0.78] sm:text-[17px]">
               {m.heroSubtitle}
             </p>
-            <div className="mt-9 flex flex-wrap items-center gap-4">
+            <div className="mt-9 flex flex-wrap items-center gap-[14px]">
               <Link
                 href="/signup"
-                className="inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-semibold text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
+                className="inline-flex items-center justify-center rounded-[10px] bg-ochre px-[30px] py-[15px] text-[15.5px] font-semibold text-[#f7f6f4] shadow-[0_14px_34px_-10px_rgba(168,78,36,0.6)] transition-colors hover:bg-ochre-deep"
               >
                 {m.getStarted}
               </Link>
               {!native && (
                 <Link
-                  href="/pricing"
-                  className="text-sm font-medium text-slate-700 underline decoration-slate-300 underline-offset-4 transition-colors hover:decoration-slate-500"
+                  href="/#pricing"
+                  className="inline-flex items-center justify-center rounded-[10px] px-6 py-[15px] text-[15.5px] font-medium text-[#f7f6f4] shadow-[inset_0_0_0_1px_rgba(247,246,244,0.3)] transition-colors hover:shadow-[inset_0_0_0_1px_rgba(247,246,244,0.55)]"
                 >
                   {m.seePricing}
                 </Link>
               )}
             </div>
-            {/* The trial exists in the product (a free generation every day,
-                no card) but was invisible on the marketing site — the single
-                cheapest conversion lever there is. One quiet line, right
-                where the decision happens. */}
-            <p className="mt-4 text-sm text-slate-500">{m.heroFreeTrialNote}</p>
+            <p className="mt-4 text-[12.5px] text-[#f7f6f4]/55">{m.heroFreeTrialNote}</p>
           </div>
 
-          {/* Same face, six real tiles: [0] is Eva's identity photo (badged),
-              the rest are images Picacho actually generated of her. No stock,
-              no mockups — the product's own output is the pitch. */}
-          <div>
-            <div className="grid grid-cols-3 gap-2.5">
-              {[0, 1, 2, 3, 4, 5].map((i) => {
-                // The tile's REAL vision score, read from the same DB row
-                // the image itself comes from (lib/showcase.ts). null —
-                // reference-gallery tiles have no generations row, and a
-                // row without a numeric match_score stays chipless too —
-                // renders nothing: no score is ever invented for the hero.
-                const score = i === 0 ? null : (showcaseScores[i] ?? null);
-                return (
-                  <div
-                    key={i}
-                    className="relative aspect-square overflow-hidden rounded-[12px] bg-slate-200 shadow-[0_1px_2px_rgba(0,0,0,0.06)]"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/api/showcase/${i}`}
-                      alt=""
-                      loading={i < 3 ? "eager" : "lazy"}
-                      className={cn(
-                        "h-full w-full object-cover",
-                        // Tile 3 is the full-length cooking-show shot; square-
-                        // cropping it from the centre would land on the plate.
-                        // Anchoring near the top keeps it chest-up, so her face
-                        // still reads at this size.
-                        i === 3 && "object-[50%_12%]",
-                      )}
-                    />
-                    {i === 0 && (
-                      <span className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm">
-                        {m.heroIdentityPhoto}
-                      </span>
-                    )}
-                    {score !== null && (
-                      <span
-                        className="absolute bottom-1.5 left-1.5 rounded-full bg-white/95 px-2 py-0.5 text-[10px] font-semibold text-slate-800 shadow-sm"
-                        title={formatMsg(t.generate.identityMatch, { n: score })}
-                        aria-label={formatMsg(t.generate.identityMatch, { n: score })}
-                      >
-                        {score}%
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
+          {/* The signature: the app's identity plate, on the playing
+              footage — real identity photo, real score from a real row. */}
+          {plateScore !== null && (
+            <div className="pointer-events-none absolute bottom-8 left-4 sm:bottom-10 sm:left-8 lg:left-[max(2rem,calc((100%-72rem)/2))]">
+              <div className="flex items-center gap-3.5 rounded-[14px] border border-[#f7f6f4]/10 bg-[#101014]/[0.66] p-3.5 pr-5 backdrop-blur-[10px]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/api/showcase/0"
+                  alt=""
+                  className="h-[46px] w-[46px] rounded-[9px] object-cover object-[50%_30%]"
+                />
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f7f6f4]/55">
+                    {m.scoreBandMatch}
+                  </p>
+                  <p className="mt-0.5 flex items-baseline gap-2.5">
+                    <span className="font-numeral text-[27px] font-semibold leading-none tabular-nums text-[#e0a468]">
+                      {plateScore}%
+                    </span>
+                    <span className="text-[12.5px] text-[#f7f6f4]/[0.78]">{m.heroPlateScored}</span>
+                  </p>
+                </div>
+              </div>
             </div>
-            <p className="mt-3 text-center text-xs text-slate-400">{m.heroRealNote}</p>
+          )}
+        </div>
+      </section>
+
+      {/* ── THE THREAD — the same live showcase tiles the old hero used:
+             identity photo first, then real generations with their real
+             scores. One character, every world. ─────────────────────── */}
+      <section className="mx-auto max-w-6xl px-4 pt-16 sm:px-8 sm:pt-[72px]">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2">
+          <h2 className="font-display text-2xl font-bold tracking-[-0.01em] text-[#f7f6f4] sm:text-[32px]">
+            {m.threadTitle}
+          </h2>
+          <p className="text-[13.5px] text-[#f7f6f4]/50">{m.heroRealNote}</p>
+        </div>
+        <div className="mt-[26px] grid grid-cols-2 gap-[14px] lg:grid-cols-4">
+          {THREAD_TILES.map(({ index, scene, crop }, n) => {
+            const score = showcaseScores[index] ?? null;
+            return (
+              <div
+                key={index}
+                className="relative aspect-[7/5] overflow-hidden rounded-[14px] bg-black shadow-[0_20px_50px_-24px_rgba(0,0,0,0.9)]"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`/api/showcase/${index}`}
+                  alt=""
+                  loading={n < 2 ? "eager" : "lazy"}
+                  className={cn("h-full w-full object-cover", crop)}
+                />
+                <span className="absolute bottom-[9px] left-[10px] text-[11px] text-[#f7f6f4]/70">
+                  {scene}
+                </span>
+                {score !== null && (
+                  <span
+                    className="absolute bottom-[9px] right-[10px] rounded-[7px] bg-[#101014]/[0.72] px-2 py-[3px] font-numeral text-[12.5px] font-semibold tabular-nums text-[#e0a468]"
+                    title={formatMsg(t.generate.identityMatch, { n: score })}
+                    aria-label={formatMsg(t.generate.identityMatch, { n: score })}
+                  >
+                    {score}%
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-[13px] text-[#f7f6f4]/55">
+          {m.threadFootnote}{" "}
+          <span className="font-medium text-[#e0a468]">{m.threadFootnoteAccent}</span>
+        </p>
+      </section>
+
+      {/* ── THE STUDIO — the real feature set, six cards + the brand-rules
+             guarantee + the extras strip. ─────────────────────────────── */}
+      <section className="mx-auto max-w-6xl px-4 pt-20 sm:px-8 sm:pt-24">
+        <p className={MICRO}>{m.studioEyebrow}</p>
+        <h2 className="mt-3 font-display text-2xl font-bold tracking-[-0.01em] text-[#f7f6f4] sm:text-[32px]">
+          {m.studioTitle}
+        </h2>
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {STUDIO_CARDS.map((card) => (
+            <div key={card.title} className={CARD}>
+              <card.icon className="h-[22px] w-[22px] text-[#e0a468]" />
+              <h3 className={CARD_TITLE}>{card.title}</h3>
+              <p className={CARD_COPY}>{card.copy}</p>
+            </div>
+          ))}
+        </div>
+        {/* Brand rules — the most defensible feature in the product keeps
+            its card (same strings the old differentiator section used). */}
+        <div className={cn(CARD, "mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-6")}>
+          <ShieldCheckIcon className="h-6 w-6 flex-shrink-0 text-[#e0a468]" />
+          <div>
+            <h3 className="text-base font-semibold text-[#f7f6f4]">{m.diffRulesTitle}</h3>
+            <p className="mt-1.5 max-w-3xl text-sm leading-relaxed text-[#f7f6f4]/60">{m.diffRulesDetail}</p>
           </div>
         </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {STUDIO_CHIPS.map((chip) => (
+            <span
+              key={chip}
+              className="rounded-full border border-[#f7f6f4]/[0.12] px-3.5 py-1.5 text-xs text-[#f7f6f4]/60"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      </section>
 
-        {/* Full-width motion band (operator-placed, 2026-08-19): real
-            Picacho renders of the same hero character, edge to edge, directly
-            under the still grid — the stills claim identity, this shows it
-            MOVING. Grew from one clip to a two-clip reel the same day; the
-            sequencing lives in HeroReel (each clip plays to the end, then
-            the next, looping the set forever). Both files are 1280x720
-            transcodes of the operator's 1080p originals (~8MB + ~7MB),
-            served from public/. The chip reuses the showcase badge — same
-            claim, same words. */}
-        {/* Third clip added 2026-08-21: the operator's Seedance 2.0 render —
-            the reel now also demos the newest catalog model. Same 1280x720
-            10s shape as the first two. */}
-        {/* Fourth clip added 2026-09-02 (operator-picked): Eva's space-mission
-            trailer — the 15s Seedance 2.0 render from the night of Aug 23
-            (cockpit, helmet, sun through the canopy). Same 1280x720 native
-            output, served as delivered by the provider. */}
-        <HeroReel
-          sources={["/hero-band.mp4", "/hero-band-2.mp4", "/hero-band-3.mp4", "/hero-band-4.mp4"]}
-          badge={m.showcaseBadge}
-        />
+      {/* ── ENGINES band ───────────────────────────────────────────────── */}
+      <section className="mx-auto mt-20 max-w-6xl border-y border-[#f7f6f4]/[0.08] px-4 py-[26px] sm:mt-[88px] sm:px-8">
+        <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+          <p className={MICRO}>{m.enginesEyebrow}</p>
+          <div className="flex flex-wrap items-center gap-x-[34px] gap-y-2">
+            {ENGINE_BAND_NAMES.map((name) => (
+              <span key={name} className="font-display text-[15.5px] font-semibold text-[#f7f6f4]/80">
+                {name}
+              </span>
+            ))}
+            <span className="text-[12.5px] text-[#f7f6f4]/45">
+              {formatMsg(m.enginesMoreN, { n: ENGINE_BAND_MORE })}
+            </span>
+          </div>
+        </div>
+      </section>
 
-        {/* Engine rail — the models Picacho actually runs, named for the
-            first time on the marketing site. Sits between the hero's proof
-            and the numbers because it answers the question the photos
-            provoke: "generated with what?" */}
-        <EngineRail />
-
-        {/* Proof band — three verifiable numbers, ruled like a spec sheet. */}
-        <div className="border-y border-slate-200">
-          <div className="mx-auto grid max-w-6xl sm:grid-cols-3">
+      {/* ── THE RECEIPT — money honesty as a section: copy + the app's
+             receipt idiom on dark glass, using the SAME strings the real
+             composer renders. Stats row keeps the three claim-source-
+             verified numbers from the previous page. ─────────────────── */}
+      <section className="mx-auto grid max-w-6xl items-center gap-10 px-4 pt-20 sm:px-8 sm:pt-[88px] lg:grid-cols-2 lg:gap-14">
+        <div>
+          <p className={MICRO}>{t.generate.receiptTitle}</p>
+          <h2 className="mt-3 font-display text-2xl font-bold leading-[1.15] tracking-[-0.02em] text-[#f7f6f4] sm:text-[34px]">
+            {m.receiptSecTitle}
+          </h2>
+          <p className="mt-4 max-w-md text-[15px] leading-relaxed text-[#f7f6f4]/62">{m.receiptSecBody}</p>
+          <div className="mt-7 flex flex-wrap gap-x-9 gap-y-5">
             {[
               [m.stat1, m.stat1Caption],
               [m.stat2, m.stat2Caption],
               [m.stat3, m.stat3Caption],
             ].map(([num, caption], i) => (
-              <div
-                key={i}
-                className={
-                  "px-8 py-7" + (i > 0 ? " border-t border-slate-200 sm:border-l sm:border-t-0" : "")
-                }
-              >
-                <div className="font-display text-3xl font-bold tracking-[-0.03em] text-slate-900">
+              <div key={i} className="max-w-[150px]">
+                {/* Third stat in proof ochre, per the board. */}
+                <p
+                  className={cn(
+                    "font-numeral text-[32px] font-semibold leading-none tabular-nums",
+                    i === 2 ? "text-[#e0a468]" : "text-[#f7f6f4]",
+                  )}
+                >
                   {num}
-                </div>
-                <p className="mt-1.5 max-w-[240px] text-xs leading-relaxed text-slate-500">{caption}</p>
+                </p>
+                <p className="mt-2 text-[11px] font-semibold uppercase leading-relaxed tracking-[0.16em] text-[#f7f6f4]/45">
+                  {caption}
+                </p>
               </div>
             ))}
           </div>
         </div>
+        <div className="overflow-hidden rounded-[18px] border border-[#f7f6f4]/[0.09] bg-[#f7f6f4]/[0.05] shadow-[0_34px_80px_-34px_rgba(0,0,0,0.9)]">
+          <div className="flex items-start gap-4 border-b border-[#f7f6f4]/[0.07] bg-[#e0a468]/[0.07] px-5 py-3.5">
+            <div className="flex-shrink-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f7f6f4]/50">
+                {t.generate.receiptTitle}
+              </p>
+              <p className="mt-0.5 text-[10.5px] text-[#f7f6f4]/35">{t.generate.receiptQuoted}</p>
+            </div>
+            <span aria-hidden className="mt-0.5 h-7 w-px flex-shrink-0 bg-[#f7f6f4]/10" />
+            <div className="flex min-w-0 flex-1 flex-wrap gap-x-5 gap-y-1.5">
+              <div>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#f7f6f4]/45">
+                  {t.generate.receiptFace}
+                </p>
+                <p className="mt-0.5 text-xs text-[#f7f6f4]/85">{t.generate.receiptSrcSaved} ✓</p>
+              </div>
+              <div>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#f7f6f4]/45">
+                  {t.generate.receiptDialogue}
+                </p>
+                <p
+                  className="mt-0.5 font-numeral text-xs tabular-nums text-[#e0a468]"
+                  title={formatMsg(t.generate.dialogueCreditNote, { n: 1 })}
+                >
+                  +{formatMsg(t.generate.creditsShortN, { n: 1 })} / 3s
+                </p>
+              </div>
+              <div>
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.12em] text-[#f7f6f4]/45">
+                  {t.generate.totalLabel}
+                </p>
+                <p className="mt-0.5 font-numeral text-xs font-semibold tabular-nums text-[#f7f6f4]/90">
+                  {formatMsg(t.generate.durationCredits, { n: 4 })}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="px-5 py-4">
+            <p className="text-[14.5px] text-[#f7f6f4]/85">{m.receiptPromptSample}</p>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full px-3 py-1.5 text-[11.5px] text-[#f7f6f4]/55 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]">
+                  {t.generate.multiAngleLabel}
+                </span>
+                <span className="rounded-full px-3 py-1.5 text-[11.5px] text-[#f7f6f4]/55 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.14)]">
+                  {t.generate.cinemaLabel}
+                </span>
+                <span className="rounded-full bg-[#e0a468]/[0.12] px-3 py-1.5 text-[11.5px] text-[#e0a468] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.4)]">
+                  {t.generate.presetTabCamera} · Orbit
+                </span>
+              </div>
+              <span className="inline-flex items-center gap-2 rounded-[9px] bg-[#f7f6f4] px-[18px] py-[9px] text-[13px] font-medium text-[#1c1c1e]">
+                {t.generate.sendRender}
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px]" aria-hidden>
+                  <path d="M12 19V5m0 0l-6 6m6-6l6 6" />
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
 
-        {/* Dark score band — the product's honesty, restated as design. */}
-        <div className="bg-ink">
-          <div className="mx-auto grid max-w-6xl items-center gap-10 px-8 py-14 lg:grid-cols-2">
+      {/* ── THE APP + THE LANGUAGES — the board's paired cards: the studio
+             on Google Play (reader-mode binary — install, sign in, render;
+             purchases live on the web) and the four full localizations. ── */}
+      <section className="mx-auto grid max-w-6xl gap-4 px-4 pt-20 sm:grid-cols-2 sm:px-8 sm:pt-[88px]">
+        {[
+          { icon: PhoneIcon, title: m.appCardTitle, copy: m.appCardCopy },
+          { icon: GlobeIcon, title: m.langCardTitle, copy: m.langCardCopy },
+        ].map((card) => (
+          <div
+            key={card.title}
+            className="flex items-center gap-6 rounded-[16px] border border-[#f7f6f4]/[0.08] bg-[#f7f6f4]/[0.04] p-7"
+          >
+            <span className="flex h-[54px] w-[54px] flex-shrink-0 items-center justify-center rounded-[14px] bg-[#e0a468]/10">
+              <card.icon className="h-6 w-6 text-[#e0a468]" />
+            </span>
             <div>
-              <h2 className="font-display text-2xl font-bold tracking-[-0.03em] text-paper sm:text-3xl">
-                {m.scoreBandTitle}
-              </h2>
-              <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-400">{m.scoreBandBody}</p>
-            </div>
-            <div className="rounded-[14px] bg-white/[0.06] p-5">
-              <div className="flex items-center justify-between text-xs text-slate-400">
-                <span>{m.scoreBandMatch}</span>
-                <span className="font-semibold text-paper">92%</span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full w-[92%] rounded-full bg-ochre" />
-              </div>
-              <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
-                <span>{m.scoreBandPassed}</span>
-                <span className="font-semibold text-paper">1 / 3</span>
-              </div>
+              <h3 className="text-base font-semibold text-[#f7f6f4]">{card.title}</h3>
+              <p className="mt-1.5 text-sm leading-relaxed text-[#f7f6f4]/60">{card.copy}</p>
             </div>
           </div>
-        </div>
+        ))}
       </section>
 
-      {/* "Try it" — the score band above states the claim; this lets a
-          visitor act it out. Every prompt, image and score in the widget is
-          a real stored generation from the showcase character (same rows as
-          the hero grid — lib/showcase.ts), replayed with a short pipeline
-          trace; the widget's own footnote says so. Renders only when at
-          least two rows genuinely qualify (image + prompt + score) —
-          otherwise the section is absent entirely, never padded with
-          placeholders. */}
-      {tryItEntries.length >= 2 && (
-        <section className="mx-auto max-w-5xl px-8 pt-16">
-          <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-neutral-400">
-            {m.tryItEyebrow}
-          </h2>
-          <h3 className="mx-auto mt-3 max-w-xl text-center text-2xl font-semibold tracking-tight text-neutral-900">
-            {m.tryItTitle}
-          </h3>
-          <p className="mx-auto mt-2 max-w-md text-center text-sm text-neutral-500">{m.tryItSubtitle}</p>
-          <div className="mx-auto mt-10 max-w-4xl">
-            <TryItWidget
-              entries={tryItEntries.map((e) => ({
-                ...e,
-                // Same crop quirk as hero tile 3 (full-length shot — anchor
-                // near the top so the face reads in a square box).
-                objectPosition: e.index === 3 ? "50% 12%" : undefined,
-              }))}
-              labels={{
-                pick: m.tryItPick,
-                // Draft → Validate → Generate → Score, in the order the
-                // pipeline actually runs them. Was Draft → Review → Validate
-                // → Score until 2026-08-30; the second-model review step was
-                // removed in characters v2 (see pipeline.ts) and the chip
-                // outlived it.
-                steps: [m.tryItStepDraft, m.tryItStepValidate, m.tryItStepGenerate, m.tryItStepScore],
-                match: m.scoreBandMatch,
-                matchTitle: t.generate.identityMatch,
-                passed: m.scoreBandPassed,
-                realNote: m.tryItRealNote,
-                cta: m.tryItCta,
-              }}
-            />
-          </div>
-        </section>
-      )}
-
-      {/* Differentiators — what Picacho does that a single-shot "type a
-          prompt, get an image" tool doesn't: two AI models checking each
-          other's work on the prompt, and one character reused across
-          formats most competitors don't support at all (multi-angle video,
-          multi-character scenes, lip-synced dialogue). Sits right under the
-          hero since these are the two things most worth a visitor knowing
-          before they scroll further. */}
-      <section className="mx-auto max-w-5xl px-8 pt-16">
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-            <TwoModelsIcon className="h-6 w-6 text-ochre" />
-            <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffModelsTitle}</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffModelsDetail}</p>
-          </div>
-          <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)]">
-            <LayersIcon className="h-6 w-6 text-ochre" />
-            <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffFormatsTitle}</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffFormatsDetail}</p>
-          </div>
-          {/* Brand rules are the most defensible thing in the product —
-              require/forbid rules with block/warn severity, enforced by the
-              validation gate — and until now they weren't mentioned anywhere
-              on the marketing site. */}
-          <div className="rounded-[18px] border border-neutral-100 bg-white p-6 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_12px_28px_-12px_rgba(0,0,0,0.06)] sm:col-span-2 lg:col-span-1">
-            <ShieldCheckIcon className="h-6 w-6 text-ochre" />
-            <h3 className="mt-4 text-base font-semibold text-neutral-900">{m.diffRulesTitle}</h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-neutral-500">{m.diffRulesDetail}</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Showcase — an actual Picacho result, not another illustration. The
-          four mockups above and below are deliberately abstract; this is the
-          one spot on the page with real proof. Framed with a soft animated
-          glow (reusing the same wallpaper-drift keyframes, just toned way
-          down) so it feels like a deliberate spotlight rather than a plain
-          embedded file. */}
-      <section className="mx-auto max-w-5xl px-8 pt-24 text-center">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          {m.showcaseEyebrow}
-        </h2>
-        <h3 className="mx-auto mt-3 max-w-xl text-2xl font-semibold tracking-tight text-neutral-900">
+      {/* ── SHOWCASE — the two real players (the first carries AUDIO: the
+             dialogue + lip-sync proof the muted hero can't give). ─────── */}
+      <section className="mx-auto max-w-5xl px-4 pt-20 text-center sm:px-8 sm:pt-[88px]">
+        <h2 className={MICRO}>{m.showcaseEyebrow}</h2>
+        <h3 className="mx-auto mt-3 max-w-xl font-display text-2xl font-bold tracking-[-0.02em] text-[#f7f6f4]">
           {m.showcaseTitle}
         </h3>
-        <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">{m.showcaseSubtitle}</p>
-
-        <div className="mx-auto mt-10 flex w-full max-w-4xl flex-col items-center gap-6 sm:flex-row sm:justify-center">
-          <div className="relative w-full max-w-sm">
-            <div aria-hidden className="isolate pointer-events-none absolute inset-0 overflow-hidden rounded-[28px]">
-              <div className="animate-wallpaper-a absolute -left-[10%] -top-[10%] h-[260px] w-[260px] rounded-full bg-orange-200 opacity-60 mix-blend-multiply blur-[70px]" />
-              <div className="animate-wallpaper-b absolute -bottom-[10%] -right-[10%] h-[260px] w-[260px] rounded-full bg-amber-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-4s]" />
-            </div>
+        <p className="mx-auto mt-2 max-w-md text-sm text-[#f7f6f4]/50">{m.showcaseSubtitle}</p>
+        <div className="mx-auto mt-9 flex w-full max-w-4xl flex-col items-center gap-6 sm:flex-row sm:justify-center">
+          <div className="w-full max-w-sm">
             <ShowcaseVideoPlayer
               badge={m.showcaseBadge}
               playLabel={m.showcasePlay}
@@ -560,11 +551,7 @@ export default async function Home({
               unmuteLabel={m.showcaseUnmute}
             />
           </div>
-          <div className="relative w-full max-w-sm">
-            <div aria-hidden className="isolate pointer-events-none absolute inset-0 overflow-hidden rounded-[28px]">
-              <div className="animate-wallpaper-b absolute -left-[10%] -top-[10%] h-[260px] w-[260px] rounded-full bg-amber-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-2s]" />
-              <div className="animate-wallpaper-a absolute -bottom-[10%] -right-[10%] h-[260px] w-[260px] rounded-full bg-orange-200 opacity-60 mix-blend-multiply blur-[70px] [animation-delay:-6s]" />
-            </div>
+          <div className="w-full max-w-sm">
             {/* No mute control — this clip has no audio track (see
                 showcase-video-player.tsx: omitting muteLabel/unmuteLabel
                 hides the speaker button rather than showing a dead one). */}
@@ -579,94 +566,126 @@ export default async function Home({
         </div>
       </section>
 
-      <section className="mx-auto max-w-5xl px-8 py-24">
-        <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-neutral-400">
-          {m.howItWorks}
-        </h2>
-        <div className="mt-16 space-y-20">
-          {STEPS.map((step, idx) => (
-            <div key={step.title} className="grid items-center gap-8 sm:grid-cols-2 sm:gap-14">
-              <div className={cn(idx % 2 === 1 && "sm:order-2")}>
-                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-neutral-900 text-xs font-semibold text-white">
-                  {idx + 1}
-                </span>
-                <h3 className="mt-4 text-2xl font-semibold tracking-tight text-neutral-900">{step.title}</h3>
-                <p className="mt-2.5 text-sm leading-relaxed text-neutral-500">{step.detail}</p>
-              </div>
-              <div className={cn(idx % 2 === 1 && "sm:order-1")}>{step.mockup}</div>
+      {/* ── LIGHT BAND — the interactive proof and the pricing grid keep
+             their light components untouched (PricingCard and TryItWidget
+             are shared with /pricing and styled for paper); the band reads
+             as the receipt-paper break in the dark show. ──────────────── */}
+      <div className="mt-20 bg-paper sm:mt-24">
+        {tryItEntries.length >= 2 && (
+          <section className="mx-auto max-w-5xl px-4 pt-16 sm:px-8">
+            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-neutral-400">
+              {m.tryItEyebrow}
+            </h2>
+            <h3 className="mx-auto mt-3 max-w-xl text-center text-2xl font-semibold tracking-tight text-neutral-900">
+              {m.tryItTitle}
+            </h3>
+            <p className="mx-auto mt-2 max-w-md text-center text-sm text-neutral-500">{m.tryItSubtitle}</p>
+            <div className="mx-auto mt-10 max-w-4xl">
+              <TryItWidget
+                entries={tryItEntries.map((e) => ({
+                  ...e,
+                  // Same crop quirk as thread tile 3 (full-length shot —
+                  // anchor near the top so the face reads in a square box).
+                  objectPosition: e.index === 3 ? "50% 12%" : undefined,
+                }))}
+                labels={{
+                  pick: m.tryItPick,
+                  // Draft → Validate → Generate → Score, in the order the
+                  // pipeline actually runs them.
+                  steps: [m.tryItStepDraft, m.tryItStepValidate, m.tryItStepGenerate, m.tryItStepScore],
+                  match: m.scoreBandMatch,
+                  matchTitle: t.generate.identityMatch,
+                  passed: m.scoreBandPassed,
+                  realNote: m.tryItRealNote,
+                  cta: m.tryItCta,
+                }}
+              />
             </div>
-          ))}
-        </div>
-      </section>
+          </section>
+        )}
 
-      {!native && (
-        // max-w-6xl + a 5-column top break, same as /pricing (2026-08-19):
-        // the Basic tier made it five cards, and five into lg:grid-cols-4
-        // left one orphaned on its own row.
-        <section id="pricing" className="mx-auto max-w-6xl scroll-mt-8 px-8 pb-24">
-          <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-900">
-            {m.pricingHeading}
-          </h2>
-          <div className="mt-8 flex justify-center">
-            <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white p-1">
-              <Link
-                href="/#pricing"
-                className={
-                  interval === "annual"
-                    ? "flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
-                    : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
-                }
-              >
-                {p.billingAnnual}
-                {/* Matches the real annualPrice discount in lib/pricing.ts
-                    (~15% since 2026-08-19) — change together with /pricing. */}
-                <span
+        {!native && (
+          // max-w-6xl + a 5-column top break, same as /pricing (2026-08-19).
+          <section id="pricing" className="mx-auto max-w-6xl scroll-mt-8 px-4 py-16 sm:px-8 sm:py-20">
+            <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-900">
+              {m.pricingHeading}
+            </h2>
+            <div className="mt-8 flex justify-center">
+              <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white p-1">
+                <Link
+                  href="/#pricing"
                   className={
                     interval === "annual"
-                      ? "rounded-full bg-ochre px-1.5 py-0.5 text-[10px] font-semibold text-white"
-                      : "hidden"
+                      ? "flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
+                      : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
                   }
                 >
-                  -15%
-                </span>
-              </Link>
-              <Link
-                href="/?billing=monthly#pricing"
-                className={
-                  interval === "month"
-                    ? "rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
-                    : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
-                }
-              >
-                {p.billingMonthly}
-              </Link>
+                  {p.billingAnnual}
+                  {/* Matches the real annualPrice discount in lib/pricing.ts
+                      (~15% since 2026-08-19) — change together with /pricing. */}
+                  <span
+                    className={
+                      interval === "annual"
+                        ? "rounded-full bg-ochre px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                        : "hidden"
+                    }
+                  >
+                    -15%
+                  </span>
+                </Link>
+                <Link
+                  href="/?billing=monthly#pricing"
+                  className={
+                    interval === "month"
+                      ? "rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
+                      : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
+                  }
+                >
+                  {p.billingMonthly}
+                </Link>
+              </div>
             </div>
-          </div>
-          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {PRICING_TIERS.map((tier) => (
-              <PricingCard key={tier.id} tier={tier} interval={interval} />
-            ))}
-          </div>
-          <p className="mt-6 text-center text-sm text-neutral-500">
-            <Link href="/pricing" className="font-medium text-neutral-900 underline">
-              {m.fullPlanDetails}
-            </Link>
-          </p>
-        </section>
-      )}
+            <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {PRICING_TIERS.map((tier) => (
+                <PricingCard key={tier.id} tier={tier} interval={interval} />
+              ))}
+            </div>
+            <p className="mt-6 text-center text-sm text-neutral-500">
+              <Link href="/pricing" className="font-medium text-neutral-900 underline">
+                {m.fullPlanDetails}
+              </Link>
+            </p>
+          </section>
+        )}
+      </div>
 
-      {/* Final CTA — the light bookend to the hero above, same fixed
-          bg-paper treatment for the same reason. */}
-      <section className="isolate relative overflow-hidden bg-paper">
-        <LiveWallpaper />
-        <div className="relative mx-auto max-w-2xl px-8 py-24 text-center">
-          <h2 className="font-display text-3xl font-bold tracking-[-0.03em] text-slate-900 sm:text-4xl">{m.ctaTitle}</h2>
-          <p className="mx-auto mt-3 max-w-md text-sm text-slate-600">{m.ctaSubtitle}</p>
+      {/* ── CLOSING — back to the dark stage: a real render behind the
+             radial dim, the board's sign-off. ─────────────────────────── */}
+      <section className="isolate relative overflow-hidden bg-[#101014]">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src="/api/showcase/5"
+          alt=""
+          loading="lazy"
+          className="absolute inset-0 h-full w-full object-cover opacity-[0.28]"
+        />
+        <div
+          aria-hidden
+          className="absolute inset-0 bg-[radial-gradient(70%_80%_at_50%_45%,rgba(16,16,20,0.3)_0%,rgba(16,16,20,0.96)_100%)]"
+        />
+        <div className="relative mx-auto max-w-2xl px-4 py-24 text-center sm:px-8 sm:py-28">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#e0a468]">
+            {m.closingKicker}
+          </p>
+          <h2 className="mt-4 font-display text-3xl font-extrabold tracking-[-0.015em] text-[#f7f6f4] sm:text-5xl">
+            {m.closingTitle}
+          </h2>
+          <p className="mx-auto mt-4 max-w-md text-[15px] text-[#f7f6f4]/65">{m.closingSubtitle}</p>
           <Link
             href="/signup"
-            className="mt-8 inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-medium text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
+            className="mt-8 inline-flex items-center justify-center rounded-[10px] bg-ochre px-8 py-[15px] text-[15.5px] font-semibold text-[#f7f6f4] shadow-[0_16px_40px_-12px_rgba(168,78,36,0.65)] transition-colors hover:bg-ochre-deep"
           >
-            {m.getStarted}
+            {m.closingCta}
           </Link>
         </div>
       </section>

@@ -132,7 +132,11 @@ export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer
 // costing no vertical space — which is why the homepage hero doesn't carry
 // the badges any more (they pushed the headline out of line with the photo
 // grid beside it).
-export function GetAppButton() {
+// `variant="darkText"` (the dark front page, 2026-09-02): on the near-black
+// header the board draws this as a plain text link, so the nav carries
+// exactly ONE white pill (the auth CTA). Literals, not theme tokens — the
+// dark page pins its palette regardless of the site theme.
+export function GetAppButton({ variant = "solid" }: { variant?: "solid" | "darkText" } = {}) {
   const { t } = useLocale();
   const m = t.marketing.install;
   const flow = useInstallFlow();
@@ -144,7 +148,11 @@ export function GetAppButton() {
       <button
         type="button"
         onClick={flow.openAny}
-        className="inline-flex items-center gap-1.5 rounded-[8px] border border-neutral-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-neutral-900 transition-colors hover:border-neutral-300 hover:text-ochre sm:px-3"
+        className={
+          variant === "darkText"
+            ? "inline-flex items-center gap-1.5 text-[13.5px] text-[#f7f6f4]/65 transition-colors hover:text-[#f7f6f4]"
+            : "inline-flex items-center gap-1.5 rounded-[8px] border border-neutral-200 bg-white px-2.5 py-1.5 text-sm font-semibold text-neutral-900 transition-colors hover:border-neutral-300 hover:text-ochre sm:px-3"
+        }
       >
         <DownloadIcon className="h-3.5 w-3.5" />
         {/* Label hides on the narrowest screens so the nav never wraps. */}

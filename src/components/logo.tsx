@@ -12,7 +12,15 @@ import { cn } from "@/lib/cn";
 // uses. Sized by height; width scales automatically via the image's own
 // aspect ratio (source is 1942x595, ~3.26:1) so callers just pick an h-*
 // class — applied to both images identically so the swap is invisible.
-export function Logo({ className }: { className?: string }) {
+export function Logo({ className, forceDark }: { className?: string; forceDark?: boolean }) {
+  // forceDark: the dark front page always sits on near-black regardless of
+  // the site theme, so it always needs the white-text export.
+  if (forceDark) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src="/logo-dark.png" alt="Picacho" className={cn("w-auto", className)} />
+    );
+  }
   return (
     <>
       {/* eslint-disable-next-line @next/next/no-img-element */}

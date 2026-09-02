@@ -25,13 +25,13 @@ import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 // the brand is the signal.
 const VERSION_TOKEN = /^(v?\d+(\.\d+)*|o\d+|turbo|pro|standard|max|fast|lite)$/i;
 
-function brandName(name: string): string {
+export function brandName(name: string): string {
   const tokens = name.split(" ");
   while (tokens.length > 1 && VERSION_TOKEN.test(tokens[tokens.length - 1])) tokens.pop();
   return tokens.join(" ");
 }
 
-function uniqueBrands(names: readonly string[]): string[] {
+export function uniqueBrands(names: readonly string[]): string[] {
   return [...new Set(names.map(brandName))];
 }
 

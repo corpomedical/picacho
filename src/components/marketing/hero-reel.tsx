@@ -44,3 +44,66 @@ export function HeroReel({ sources, badge }: { sources: string[]; badge: string 
     </section>
   );
 }
+
+// The dark front page's hero backdrop (2026-09-02): the same reel, but
+// filling the hero section behind the headline instead of being its own
+// band — absolute, cover-fit, muted, sequencing on ended exactly as above.
+// The poster paints the first frame's territory while metadata loads so
+// the hero never opens on a black hole.
+// `captions`/`pillLabel`: the board's bottom-right composition — a per-clip
+// provenance caption ("Seedance 2.0 · 15s · real output") beside a
+// "Playing: the reel" pill. The caption must ride the clip that is actually
+// playing, which only this component knows, so it renders here rather than
+// in the page. z-10 lifts it above the page's scrim overlays (later
+// siblings in the same stacking context). Captions are truthful per clip —
+// a clip whose engine we haven't pinned down gets the bare "real output"
+// caption, never an invented name.
+export function HeroBackdropReel({
+  sources,
+  poster,
+  captions,
+  pillLabel,
+}: {
+  sources: string[];
+  poster?: string;
+  captions?: string[];
+  pillLabel?: string;
+}) {
+  const [index, setIndex] = useState(0);
+  const ref = useRef<HTMLVideoElement | null>(null);
+
+  return (
+    <>
+      <video
+        ref={(el) => {
+          ref.current = el;
+          if (el) el.muted = true;
+        }}
+        key={sources[index]}
+        src={sources[index]}
+        poster={poster}
+        autoPlay
+        muted
+        playsInline
+        preload="metadata"
+        aria-hidden
+        className="absolute inset-0 h-full w-full object-cover"
+        onEnded={() => setIndex((i) => (i + 1) % sources.length)}
+        loop={sources.length === 1}
+      />
+      {captions && (
+        <div className="pointer-events-none absolute bottom-8 right-4 z-10 hidden items-center gap-4 sm:bottom-10 sm:right-8 sm:flex lg:right-[max(2rem,calc((100%-72rem)/2))]">
+          <span className="text-[12px] tracking-[0.02em] text-[#f7f6f4]/60">{captions[index]}</span>
+          {pillLabel && (
+            <span className="inline-flex items-center gap-[7px] rounded-full border border-[#f7f6f4]/[0.14] bg-[#101014]/60 px-3.5 py-[7px] text-[12px] text-[#f7f6f4]/85">
+              <svg viewBox="0 0 24 24" fill="currentColor" className="h-[11px] w-[11px]" aria-hidden>
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              {pillLabel}
+            </span>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
