@@ -14,7 +14,20 @@ import { isNativeApp } from "@/lib/native/server";
 // it must not appear. FAIL CLOSED: no header (local dev, unknown geo) means
 // no link. The decision is per-request, not per-account, matching how the
 // policy itself applies (what the app SHOWS, where).
+// KILLED 2026-09-02 (research pass; operator: "Stripe only for now"):
+// Google formalized the US external-link right into an enrollment program
+// (declaration form + external-links API + pre-link disclosure; existing
+// link users had to enroll by Jan 28, 2026) and link-out transactions owe
+// Google service fees + 24h reporting from Oct 1, 2026. This link was
+// never enrolled, so showing it is live policy exposure for near-zero
+// revenue — the app returns to the pure reader mode its review approved.
+// To resurrect: complete the external content links program enrollment
+// FIRST, then flip this flag — the geo gate below and every downstream
+// surface still render from this one verdict.
+const EXTERNAL_LINK_PROGRAM_ENROLLED = false;
+
 export async function allowExternalPurchaseLink(): Promise<boolean> {
+  if (!EXTERNAL_LINK_PROGRAM_ENROLLED) return false;
   if (!(await isNativeApp())) return false;
   const country = (await headers()).get("x-vercel-ip-country");
   return country === "US";
