@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
@@ -245,6 +246,11 @@ export function UpscaleUpload() {
             {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
             <p className="mt-3 text-xs leading-relaxed text-atelier-muted">{h.upscaleContentNote}</p>
             <p className="mt-1 text-xs leading-relaxed text-atelier-muted">{h.upscaleFootnote}</p>
+            <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
+              <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">
+                {h.upscaleTopUpLink}
+              </Link>
+            </p>
           </div>
         </div>
       )}

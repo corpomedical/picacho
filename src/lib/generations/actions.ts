@@ -3733,7 +3733,7 @@ async function startUpscaleCore(params: {
         error: releaseError.message,
       });
     }
-    return { error: "You're out of credits — that upscale couldn't be covered." };
+    return { error: "You're out of credits — top up under Settings → Usage (credit packs need no plan)." };
   }
 
   // Submit, then record; on bookkeeping failure cancel the fal job and

@@ -953,6 +953,7 @@ const en = {
     upscaleContentNote: "Uploaded videos pass the same content rules as everything else.",
     upscaleViewSource: "View the source take",
     upscaledBadge: "Upscaled",
+    upscaleTopUpLink: "Need credits? Buy a pack — no plan required.",
     title: "History",
     thisMonth: "This month",
     noActivePlan: "No active plan yet — billing isn't connected.",

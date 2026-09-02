@@ -885,6 +885,7 @@ const it = {
     upscaleContentNote: "I video caricati passano per le stesse regole sui contenuti di tutto il resto.",
     upscaleViewSource: "Vedi la ripresa originale",
     upscaledBadge: "Migliorato",
+    upscaleTopUpLink: "Servono crediti? Compra un pacchetto — senza piano.",
     title: "Cronologia",
     thisMonth: "Questo mese",
     noActivePlan: "Nessun piano attivo — la fatturazione non è collegata.",

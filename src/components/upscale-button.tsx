@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { startTakeUpscale } from "@/lib/generations/actions";
@@ -131,6 +132,14 @@ export function UpscaleButton({ generationId, seconds, tiers }: {
             </Button>
             {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
             <p className="mt-3 text-xs leading-relaxed text-atelier-muted">{h.upscaleFootnote}</p>
+            {/* Where the money lives — packs need no plan (operator report,
+                2026-09-02: the walls that say "you need credits" never
+                pointed at the door). */}
+            <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
+              <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">
+                {h.upscaleTopUpLink}
+              </Link>
+            </p>
           </div>
         </div>
       )}
