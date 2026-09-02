@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import {
   setApiAccess,
   setBonusCredits,
@@ -65,10 +65,12 @@ export default async function AdminUserDetailPage({
       .order("created_at", { ascending: false }),
     supabase
       .from("generations")
-      .select("id, prompt_input, status, attempts, created_at, featured_at")
+      .select(
+        "id, prompt_input, status, attempts, created_at, featured_at, content_type, video_model_id, model_id, credits_used, match_score, refunded_at",
+      )
       .eq("user_id", id)
       .order("created_at", { ascending: false })
-      .limit(10),
+      .limit(15),
     supabase.from("generations").select("*", { count: "exact", head: true }).eq("user_id", id),
     supabase
       .from("generations")
@@ -88,6 +90,46 @@ export default async function AdminUserDetailPage({
       .eq("user_id", id),
     getMonthlyUsage(id),
   ]);
+
+  // The dossier reads (2026-09-02, operator: "every single detail needed
+  // for me to review, every refund, every error or crash"). All additive:
+  // every report this user ever filed or auto-filed, every refunded
+  // generation, who referred them, and which auth provider they came
+  // through.
+  const [{ data: reports }, { data: refunds }, { data: referrer }, providerLookup] =
+    await Promise.all([
+      supabase
+        .from("generation_reports")
+        .select("id, created_at, reason, details, source, status, generation_id")
+        .eq("user_id", id)
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("generations")
+        .select("id, created_at, refunded_at, credits_used, purchased_credits_used, prompt_input, video_model_id, model_id, content_type")
+        .eq("user_id", id)
+        .not("refunded_at", "is", null)
+        .order("refunded_at", { ascending: false })
+        .limit(50),
+      // referred_by holds a referring USER's id (promo_rep holds a rep's
+      // name) — resolve it to something a human can recognize and click.
+      user.referred_by
+        ? supabase.from("profiles").select("id, email, full_name").eq("id", user.referred_by).single()
+        : Promise.resolve({ data: null }),
+      // Auth provider lives in auth.users (app_metadata), not in profiles —
+      // the one fact "where they came from" needs that PostgREST can't see.
+      createAdminClient()
+        .auth.admin.getUserById(id)
+        .then((r) => r.data.user)
+        .catch(() => null),
+    ]);
+  const providers: string[] =
+    (providerLookup?.app_metadata?.providers as string[] | undefined) ??
+    (providerLookup?.app_metadata?.provider ? [providerLookup.app_metadata.provider as string] : []);
+  const refundedCreditsTotal = (refunds ?? []).reduce(
+    (sum, g) => sum + (g.credits_used ?? 0) + (g.purchased_credits_used ?? 0),
+    0,
+  );
 
   // Sign-in / session facts from auth.users + auth.sessions.
   const activity = (await getUserActivity([user])).get(user.id) ?? null;
@@ -121,9 +163,19 @@ export default async function AdminUserDetailPage({
 
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1">
-          <p className="text-sm font-medium text-neutral-900">{user.email}</p>
+          {/* Full name leads when we have it; the email is the identifier
+              either way. */}
+          {user.full_name ? (
+            <>
+              <p className="text-base font-semibold text-neutral-900">{user.full_name}</p>
+              <p className="mt-0.5 text-sm text-neutral-600">{user.email}</p>
+            </>
+          ) : (
+            <p className="text-sm font-medium text-neutral-900">{user.email}</p>
+          )}
           {user.username && <p className="mt-0.5 text-xs text-neutral-500">@{user.username}</p>}
           {user.company && <p className="mt-0.5 text-xs text-neutral-500">{user.company}</p>}
+          {user.gender && <p className="mt-0.5 text-xs text-neutral-400">{user.gender}</p>}
           <dl className="mt-2 space-y-0.5 text-xs text-neutral-400">
             <div className="flex gap-1.5">
               <dt>Joined:</dt>
@@ -139,15 +191,40 @@ export default async function AdminUserDetailPage({
                     : "Never"}
               </dd>
             </div>
-            {(user.referred_by || user.promo_rep) && (
+            <div className="flex gap-1.5">
+              <dt>Signed up via:</dt>
+              <dd>{providers.length > 0 ? providers.join(", ") : "unknown"}</dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt>Came from:</dt>
+              <dd>
+                {/* Two different things that used to share one column: a
+                    referring USER's id (resolved to their account), and a
+                    promo rep's NAME. "Direct" = no referral recorded. */}
+                {user.promo_rep ? (
+                  <>rep {user.promo_rep}</>
+                ) : referrer ? (
+                  <Link href={`/admin/users/${referrer.id}`} className="underline hover:text-neutral-700">
+                    {referrer.full_name || referrer.email}
+                  </Link>
+                ) : user.referred_by ? (
+                  <span className="font-mono">{user.referred_by}</span>
+                ) : (
+                  "direct"
+                )}
+                {user.promo_code && <span className="font-mono"> ({user.promo_code})</span>}
+              </dd>
+            </div>
+            {user.plan_source && (
               <div className="flex gap-1.5">
-                <dt>Referred by:</dt>
-                <dd>
-                  {/* Two different things that used to share one column: a
-                      referring USER's id, and a promo rep's NAME. */}
-                  {user.promo_rep ?? user.referred_by}
-                  {user.promo_code && <span className="font-mono"> ({user.promo_code})</span>}
-                </dd>
+                <dt>Billing via:</dt>
+                <dd>{user.plan_source}</dd>
+              </div>
+            )}
+            {user.marketing_opt_out && (
+              <div className="flex gap-1.5">
+                <dt>Marketing:</dt>
+                <dd>opted out</dd>
               </div>
             )}
             <div className="flex gap-1.5">
@@ -433,6 +510,97 @@ export default async function AdminUserDetailPage({
             </div>
           </Card>
 
+          {/* Every error and crash this account ever hit — the full report
+              list inline, not a count behind a link. Reasons: user-filed
+              reports, auto-filed generation failures, and client crashes
+              (generation_id null = a crash/JS error, not a render). */}
+          <Card>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900">
+                Errors &amp; reports ({reports?.length ?? 0})
+              </h2>
+              {(reports?.length ?? 0) > 0 && (
+                <Link href="/admin/reports" className="text-xs text-neutral-400 hover:text-neutral-900">
+                  Open reports queue →
+                </Link>
+              )}
+            </div>
+            {!reports || reports.length === 0 ? (
+              <p className="mt-2 text-sm text-neutral-500">
+                Clean record — no errors, crashes or reports from this account.
+              </p>
+            ) : (
+              <ul className="mt-3 divide-y divide-neutral-100">
+                {reports.map((r) => (
+                  <li key={r.id} className="py-2.5 first:pt-0 last:pb-0">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs font-medium text-neutral-700">
+                        {r.generation_id === null && r.reason === "technical_error"
+                          ? "App crash / client error"
+                          : r.reason.replace(/_/g, " ")}
+                        <span className="ml-2 font-normal text-neutral-400">
+                          {r.source === "auto" ? "auto-filed" : "filed by the user"} ·{" "}
+                          {timeAgo(r.created_at)}
+                        </span>
+                      </p>
+                      <Badge
+                        tone={r.status === "open" ? "warning" : "neutral"}
+                        className="flex-shrink-0"
+                      >
+                        {r.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-neutral-500">
+                      {r.details}
+                    </p>
+                    {r.generation_id && (
+                      <Link
+                        href={`/app/history/${r.generation_id}`}
+                        className="mt-1 inline-block text-xs text-neutral-400 underline hover:text-neutral-700"
+                      >
+                        View the render
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
+          {/* Every refund, with the credits that went back. */}
+          <Card>
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-900">
+                Refunds ({refunds?.length ?? 0})
+              </h2>
+              {refundedCreditsTotal > 0 && (
+                <span className="text-xs text-neutral-400">
+                  {refundedCreditsTotal} credit{refundedCreditsTotal === 1 ? "" : "s"} returned in total
+                </span>
+              )}
+            </div>
+            {!refunds || refunds.length === 0 ? (
+              <p className="mt-2 text-sm text-neutral-500">No refunded generations.</p>
+            ) : (
+              <ul className="mt-3 divide-y divide-neutral-100">
+                {refunds.map((g) => (
+                  <li key={g.id} className="flex items-center justify-between gap-4 py-2.5 first:pt-0 last:pb-0">
+                    <Link href={`/app/history/${g.id}`} className="min-w-0 flex-1 hover:opacity-70">
+                      <p className="truncate text-xs text-neutral-700">{g.prompt_input}</p>
+                      <p className="mt-0.5 text-xs text-neutral-400">
+                        {g.content_type} on {g.video_model_id ?? g.model_id ?? "?"} · refunded{" "}
+                        {g.refunded_at ? timeAgo(g.refunded_at) : "—"}
+                      </p>
+                    </Link>
+                    <span className="flex-shrink-0 text-xs font-medium text-neutral-700">
+                      +{(g.credits_used ?? 0) + (g.purchased_credits_used ?? 0)} cr back
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Card>
+
           <Card>
             <h2 className="text-sm font-semibold text-neutral-900">
               Characters ({characters?.length ?? 0})
@@ -470,15 +638,24 @@ export default async function AdminUserDetailPage({
                   <li key={g.id} className="flex items-center justify-between gap-4">
                     <Link
                       href={`/app/history/${g.id}`}
-                      className="flex min-w-0 flex-1 items-center justify-between gap-4 text-sm hover:opacity-70"
+                      className="min-w-0 flex-1 hover:opacity-70"
                     >
-                      <span className="min-w-0 truncate text-neutral-700">{g.prompt_input}</span>
-                      <Badge
-                        tone={g.status === "succeeded" ? "success" : "danger"}
-                        className="flex-shrink-0"
-                      >
-                        {g.status}
-                      </Badge>
+                      <div className="flex items-center justify-between gap-4 text-sm">
+                        <span className="min-w-0 truncate text-neutral-700">{g.prompt_input}</span>
+                        <Badge
+                          tone={g.status === "succeeded" ? "success" : "danger"}
+                          className="flex-shrink-0"
+                        >
+                          {g.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-0.5 text-xs text-neutral-400">
+                        {g.content_type} · {g.video_model_id ?? g.model_id ?? "—"} ·{" "}
+                        {g.credits_used ?? 0} cr
+                        {typeof g.match_score === "number" && <> · match {g.match_score}%</>}
+                        {(g.attempts ?? 0) > 1 && <> · {g.attempts} attempts</>}
+                        {g.refunded_at && <> · refunded</>} · {timeAgo(g.created_at)}
+                      </p>
                     </Link>
                     {/* Public-gallery toggle (/gallery). Only rendered on
                         succeeded rows of ADMIN-owned accounts — the v1

@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.10.1",
+    build: 18,
+    date: "2026-09-02",
+    title: "The Assistant learns the product, and the admin gets the whole story on every user",
+    items: [
+      "Ask the Assistant anything about Picacho now — what a button does, what a mode costs, why a chip is glowing — and it answers from a built-in product guide instead of guessing. The guide derives its numbers from the same code the product charges with (plan prices, the dialogue rate, the free-tier engine, the preset list), and every hand-written sentence in it was adversarially audited against the shipped components before release: three review agents checked thirty-plus claims, and the corrections they found — from the real multi-angle count to exactly which failures refund automatically — are what shipped. It knows what it cannot do, too: no invented UI, and 'I am not certain' when the guide does not cover something.",
+      "The admin user page became a dossier. Full name leads the card; 'Signed up via' and 'Came from' say which door they entered (auth provider, referrer resolved to a clickable account, promo rep and code, or plain 'direct'); billing shows its source. Two new cards carry what used to hide behind counts: every error, crash and report the account ever hit — inline, newest first, crashes labeled as crashes — and every refunded generation with the credits that went back. Generation rows now carry their engine, type, credits, identity score, attempt count and refund flag.",
+    ],
+  },
+  {
     version: "1.10.0",
     build: 17,
     date: "2026-09-02",

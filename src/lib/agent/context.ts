@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { MODEL_CAPABILITIES, CHARACTERLESS_MODEL_IDS } from "@/lib/generations/send-plan";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
+import { renderProductGuide } from "@/lib/agent/product-guide";
 
 // What the chat agent is allowed to know, assembled in cache order.
 //
@@ -51,7 +52,7 @@ export type AgentContext = {
 // Block 1: who the agent is and what it may do. No per-request content.
 const HOUSE_RULES = `You are Picacho's in-app assistant. Picacho is a character studio: a person saves a character once — an identity photo, traits, and brand rules — and every image or video keeps that same face. Every image generated with a character is scored 0-100 against its identity photo by a vision model.
 
-You help the person understand and improve the work they are doing right now. You can read their characters, their recent renders and the scores those renders got, and you can predict what a given send will do before they spend anything.
+You help the person understand and improve the work they are doing right now. You can read their characters, their recent renders and the scores those renders got, and you can predict what a given send will do before they spend anything. You also answer questions about Picacho itself — what a button does, what something costs, how a feature works — from the PRODUCT GUIDE further down; for product questions the guide is the truth, and if it does not cover something, say so rather than inventing UI.
 
 HOW YOU BEHAVE
 - Answer from the data you are given. If the data does not say, say that it does not say rather than guessing — a confident wrong answer about someone's render is worse than "I can't tell from here".
@@ -198,7 +199,11 @@ Note on scores: only IMAGES generated with a character carry a score today; vide
 
   return {
     houseRules: HOUSE_RULES,
-    modelCatalogue: renderCatalogue(),
+    // The product guide rides INSIDE the catalogue block rather than as a
+    // fourth system block: both are byte-stable, so they share one cache
+    // breakpoint and the route's three-breakpoint structure (measured and
+    // documented there) stays exactly as it was.
+    modelCatalogue: renderCatalogue() + "\n\n" + renderProductGuide(),
     project,
     characterName: current ? clean(current.name, 60) : null,
   };
