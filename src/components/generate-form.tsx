@@ -868,24 +868,6 @@ function ClapperIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-// Wide rectangle — 16:9 / widescreen.
-function LandscapeIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="2" y="6" width="20" height="12" rx="2" />
-    </svg>
-  );
-}
-
-// Tall rectangle — 9:16 / vertical.
-function PortraitIcon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
-      <rect x="6" y="2" width="12" height="20" rx="2" />
-    </svg>
-  );
-}
-
 type PendingAttachment = {
   id: string;
   name: string;
@@ -1394,7 +1376,15 @@ type ChatTurn = HistoryTurn & {
   // time purely for the Takes rail's microlabel. HistoryTurn doesn't record
   // it, so turns resumed from History won't have it; the rail falls back to
   // the plain content-type label there.
-  takeMeta?: { modelName: string; durationSeconds: number } | null;
+  takeMeta?: {
+    modelName: string;
+    durationSeconds: number;
+    /** the aspect the request rode with (null = prompt decided) */
+    aspectRatio?: string | null;
+    /** the character's lead reference photo at submit time — the identity
+        plate's thumbnail; absent on history-resumed takes */
+    characterPhotoUrl?: string | null;
+  } | null;
 };
 
 type MultiAngleClip = {
@@ -2855,6 +2845,8 @@ function GenerateFormInner({
   // from History via ?resume=.
   const [stageTakeId, setStageTakeId] = useState<string | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
+  // The stage's <video>, so the fullscreen ghost can drive it.
+  const stageVideoRef = useRef<HTMLVideoElement>(null);
   // Keyed on the booleans, not the objects, so a streaming answer's token
   // updates don't re-run the effect on every chunk.
   const liveAskActive = liveAsk !== null;
@@ -2862,6 +2854,13 @@ function GenerateFormInner({
   useEffect(() => {
     if (liveAskActive) setTranscriptOpen(true);
   }, [liveAskActive]);
+  // The page header's "Session transcript" affordance (a server component
+  // can't hold this state) — same window-event pattern NEW_CHAT_EVENT uses.
+  useEffect(() => {
+    const onToggle = () => setTranscriptOpen((v) => !v);
+    window.addEventListener("picacho:toggle-transcript", onToggle);
+    return () => window.removeEventListener("picacho:toggle-transcript", onToggle);
+  }, []);
   useEffect(() => {
     if (liveRenderFailed) setTranscriptOpen(true);
   }, [liveRenderFailed]);
@@ -4403,7 +4402,12 @@ function GenerateFormInner({
         // sit by the time this resolves.
         takeMeta:
           effectiveContentType === "video" && selectedVideoModel
-            ? { modelName: selectedVideoModel.name, durationSeconds: videoDurationSeconds }
+            ? {
+                modelName: selectedVideoModel.name,
+                durationSeconds: videoDurationSeconds,
+                aspectRatio: videoAspectRatio,
+                characterPhotoUrl: currentCharacter?.referencePhotos[0]?.url ?? null,
+              }
             : null,
       },
     ]);
@@ -5018,6 +5022,25 @@ function GenerateFormInner({
               ? formatMsg(g.multiCharacterSummary, { name: currentCharacter?.name ?? "", n: companionCharacterIds.length })
               : (currentCharacter?.name ?? g.selectCharacter)}
           </span>
+          {/* The face-lock meter from the approved board — the casting
+              sheet's 5-bar meter in miniature, right on the chip: one ochre
+              bar per saved reference photo (capped at five). Single-cast
+              only; the stacked avatars already carry the multi-cast story. */}
+          {currentCharacter && !isMultiCharacter && currentCharacter.referencePhotos.length > 0 && (
+            <span className="hidden flex-shrink-0 items-center gap-[2.5px] sm:flex" aria-hidden>
+              {Array.from({ length: 5 }).map((_, i) => (
+                <span
+                  key={i}
+                  className={cn(
+                    "h-[9px] w-[3px] rounded-[2px]",
+                    i < Math.min(5, currentCharacter.referencePhotos.length)
+                      ? "bg-atelier-accent"
+                      : "bg-atelier-accent/25",
+                  )}
+                />
+              ))}
+            </span>
+          )}
           <ChevronDownIcon
             className={cn(
               "h-3.5 w-3.5 flex-shrink-0 text-atelier-muted transition-transform",
@@ -5146,7 +5169,7 @@ function GenerateFormInner({
     : 1;
   const videoModelPicker =
     contentType === "video" && videoModels.length > 1 ? (
-      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="min-w-0">
+      <div ref={videoModelMenuRef} data-tour-id="tour-video-model" className="flex min-w-0 items-center gap-2">
         <button
           type="button"
           onClick={() => {
@@ -5169,8 +5192,8 @@ function GenerateFormInner({
             // Hidden on phone widths: the bar can't fit name + price +
             // durations there, and the price still lives in the menu rows,
             // the duration tooltips, and the credit strip before send.
-            <span className="hidden flex-shrink-0 rounded-full bg-atelier-accent/10 px-2 py-0.5 font-numeral text-[11px] font-medium tabular-nums text-atelier-accent sm:inline-flex">
-              {formatMsg(g.creditsEach, { n: currentDurationCredits })}
+            <span className="hidden flex-shrink-0 font-numeral text-[11.5px] font-semibold tabular-nums text-atelier-accent sm:inline">
+              {formatMsg(g.creditsShortN, { n: currentDurationCredits })}
             </span>
           )}
           <ChevronDownIcon
@@ -5180,6 +5203,26 @@ function GenerateFormInner({
             )}
           />
         </button>
+
+        {/* The duration chip lives INSIDE this ref container on purpose:
+            it opens the same sheet, and the sheet's outside-click handler
+            would otherwise close what the chip just opened. */}
+        {!storyboardActive && currentVideoModel && currentVideoModel.durations.length > 1 && (
+      <button
+        type="button"
+        disabled={locked}
+        onClick={() => {
+          setModelMenuShowAll(false);
+          setVideoModelMenuOpen((v) => !v);
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={videoModelMenuOpen}
+        title={formatMsg(g.durationCredits, { n: currentDurationCredits })}
+        className="flex flex-shrink-0 items-center gap-1 rounded-full bg-atelier-ink/[0.045] px-3 py-[7px] text-xs font-medium text-atelier-ink transition-colors hover:bg-atelier-ink/[0.07] disabled:opacity-50"
+      >
+        {formatMsg(g.durationSecondsShort, { n: videoDurationSeconds })}
+      </button>
+        )}
 
         {videoModelMenuOpen && (
           <div
@@ -5193,7 +5236,7 @@ function GenerateFormInner({
                 price (A×B redesign): a bare 3/5/8-credit schedule above a
                 list of four engines read as if it applied to all of them. */}
             {currentVideoModel && currentVideoModel.durations.length > 1 && (
-              <div className="mb-1 border-b border-atelier-rule/70 px-1 pb-1.5 pt-0.5 sm:hidden">
+              <div className="mb-1 border-b border-atelier-rule/70 px-1 pb-1.5 pt-0.5">
                 <p className="px-1.5 pb-1 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
                   {formatMsg(g.durationsFor, { model: currentVideoModel.name })}
                 </p>
@@ -5304,56 +5347,6 @@ function GenerateFormInner({
       </div>
     ) : null;
 
-  // Clip length picker — a compact segmented control (not a dropdown, since
-  // it's never more than 3 options) sitting right next to the model picker.
-  // Each option shows its own credit cost so the tradeoff of picking a
-  // longer clip is visible before generating, not just discovered later
-  // against the plan limit.
-  const videoDurationPicker =
-    // Hidden while a storyboard is on: per-shot durations rule there, and a
-    // dead global picker would just invite a click that does nothing.
-    contentType === "video" && !storyboardActive && currentVideoModel && currentVideoModel.durations.length > 1 ? (
-      <div className="hidden flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5 sm:flex">
-        {currentVideoModel.durations.map((d) => (
-          <button
-            key={d.seconds}
-            type="button"
-            disabled={locked}
-            onClick={() => setVideoDurationSeconds(d.seconds)}
-            aria-pressed={videoDurationSeconds === d.seconds}
-            // creditsForDuration, not d.creditWeight: with a paid resolution
-            // armed, each length's real cost differs from the catalogue's
-            // base weight, and this tooltip is where the tradeoff of a
-            // longer clip is meant to be visible before generating.
-            title={formatMsg(g.durationCredits, {
-              n: creditsForDuration(currentVideoModel, d.seconds),
-            })}
-            className={cn(
-              "rounded-full px-2 py-1 text-xs font-medium transition-colors disabled:opacity-50 sm:px-2.5",
-              videoDurationSeconds === d.seconds
-                ? "bg-atelier-ink text-atelier-paper"
-                : "text-atelier-muted hover:text-atelier-ink",
-            )}
-          >
-            {formatMsg(g.durationSecondsShort, { n: d.seconds })}
-            {/* The price INSIDE the segment (A×B redesign) — it used to
-                live only in this tooltip, which touch never sees. */}
-            {creditsForDuration(currentVideoModel, d.seconds) > 1 && (
-              <span
-                className={cn(
-                  "ml-1 font-numeral text-[10px] tabular-nums",
-                  videoDurationSeconds === d.seconds
-                    ? "text-atelier-paper/70"
-                    : "text-atelier-accent/90",
-                )}
-              >
-                {formatMsg(g.creditsShortN, { n: creditsForDuration(currentVideoModel, d.seconds) })}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-    ) : null;
 
   // One resolve per render, shared by the receipt strip below the model
   // selector (2026-08-26 declutter: the strip moved from its own floating
@@ -5488,7 +5481,7 @@ function GenerateFormInner({
   const stagePanel = isHero ? null : (
     <div className="mb-4">
       <div className="relative overflow-hidden rounded-[16px] bg-atelier-stage shadow-[0_1px_2px_rgba(33,29,22,0.06),0_24px_60px_-28px_rgba(33,29,22,0.28)]">
-        <div className="flex aspect-video max-h-[56vh] w-full items-center justify-center">
+        <div className="flex h-[300px] w-full items-center justify-center sm:h-[428px]">
           {stageInFlightPrompt !== null ? (
             <div className="flex flex-col items-center gap-3 px-6 text-center">
               <LoaderIcon className="h-5 w-5 text-[#a39a88]" />
@@ -5501,6 +5494,7 @@ function GenerateFormInner({
               // take — without it the <video> keeps playing the old src.
               <video
                 key={stageTakeUrl}
+                ref={stageVideoRef}
                 src={stageTakeUrl}
                 controls
                 playsInline
@@ -5555,25 +5549,36 @@ function GenerateFormInner({
             neither overlay ever blocks the video's own controls. */}
         {stageTake && stageTakeUrl !== null && stageInFlightPrompt === null && (
           <>
-            {/* Bottom-left, per the approved board. Video lifts the plate
-                clear of the native control bar (bottom-14); images sit
-                flush (bottom-3). */}
+            {/* Bottom-left, per the approved board (left 18px, p-3 with an
+                18px right pad, 0.66 scrim). Video lifts the plate clear of
+                the native control bar (bottom-14); images sit at the
+                board's bottom-4. Leads with the character's reference
+                photo when the take carries one (submit-time snapshot;
+                history-resumed takes render text-only). */}
             <div
               className={cn(
-                "pointer-events-none absolute left-3 rounded-[12px] border border-white/10 bg-[#141519]/70 px-3 py-2 backdrop-blur-[10px]",
-                stageTakeIsVideo ? "bottom-14" : "bottom-3",
+                "pointer-events-none absolute left-[18px] flex items-center gap-3.5 rounded-[12px] border border-white/[0.08] bg-[#141519]/[0.66] p-3 pr-[18px] backdrop-blur-[10px]",
+                stageTakeIsVideo ? "bottom-14" : "bottom-4",
               )}
             >
+              {stageTake.kind === "single" && stageTake.takeMeta?.characterPhotoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={stageTake.takeMeta.characterPhotoUrl}
+                  alt=""
+                  className="h-[42px] w-[42px] flex-shrink-0 rounded-[8px] object-cover [object-position:50%_30%]"
+                />
+              )}
               {stageTake.kind === "single" && typeof stageTake.matchScore === "number" ? (
                 <div>
                   <p className="text-[10px] font-medium uppercase tracking-widest text-white/55">
                     {g.identityMatchLabel}
                   </p>
                   <p className="flex items-baseline gap-2">
-                    <span className="font-numeral text-xl font-semibold tabular-nums text-[#e0a468]">
+                    <span className="font-numeral text-2xl font-semibold tabular-nums text-[#e0a468]">
                       {stageTake.matchScore}%
                     </span>
-                    <span className="text-[11px] text-white/75">
+                    <span className="text-xs lowercase text-white/75">
                       {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
                     </span>
                   </p>
@@ -5588,18 +5593,51 @@ function GenerateFormInner({
                 </p>
               )}
             </div>
-            <div className="pointer-events-none absolute right-3 top-3 rounded-full bg-[#141519]/60 px-2.5 py-1 text-[10.5px] text-white/65">
+            {/* The board's soft vignette — reads the plates against any
+                frame; pointer-events-none so video controls stay live. */}
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(27,28,32,0.18)_0%,rgba(27,28,32,0)_22%,rgba(27,28,32,0)_62%,rgba(27,28,32,0.55)_100%)]"
+            />
+            {/* Spec line bottom-right, per the board: bare text, no pill —
+                engine · length · aspect when the take recorded them. Video
+                lifts it clear of the control bar. */}
+            <div
+              className={cn(
+                "pointer-events-none absolute right-[18px] text-[11.5px] tracking-[0.02em] text-white/[0.66]",
+                stageTakeIsVideo ? "bottom-14" : "bottom-5",
+              )}
+            >
               {stageTake.kind === "single" && stageTake.takeMeta
-                ? `${stageTake.takeMeta.modelName} · ${formatMsg(g.durationSecondsShort, { n: stageTake.takeMeta.durationSeconds })}`
+                ? `${stageTake.takeMeta.modelName} · ${formatMsg(g.durationSecondsShort, { n: stageTake.takeMeta.durationSeconds })}${stageTake.takeMeta.aspectRatio ? ` · ${stageTake.takeMeta.aspectRatio}` : ""}`
                 : stageTakeIsVideo
                   ? g.video
                   : g.image}
             </div>
-            {/* The board's ghost action, functional: same DownloadButton the
-                thread's result frames use (it positions itself bottom-right
-                and carries the one-at-a-time guard). Skipped for video —
-                the native control bar owns that corner. */}
-            {!stageTakeIsVideo && <DownloadButton url={stageTakeUrl} contentType="image" />}
+            {/* The board's ghost actions, top-right — only the ones that
+                genuinely work: download (both media kinds) and fullscreen
+                (video). No share ghost: a dead control is worse than a
+                missing one. */}
+            <div className="absolute right-3.5 top-3.5 flex gap-2">
+              <DownloadButton
+                url={stageTakeUrl}
+                contentType={stageTakeIsVideo ? "video" : "image"}
+                variant="ghost"
+              />
+              {stageTakeIsVideo && (
+                <button
+                  type="button"
+                  onClick={() => stageVideoRef.current?.requestFullscreen?.()}
+                  title={g.expandStage}
+                  aria-label={g.expandStage}
+                  className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-white/10 text-white/85 transition-colors hover:bg-white/20"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
+                    <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </>
         )}
       </div>
@@ -5611,7 +5649,7 @@ function GenerateFormInner({
       <div className="mt-3 flex items-center gap-3">
         <div className="flex flex-shrink-0 flex-col">
           <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-            {g.takesTitle}
+            {g.takesShort}
           </span>
           <span className="font-numeral text-base font-semibold tabular-nums text-atelier-ink">
             {stageTakes.length}
@@ -5621,9 +5659,12 @@ function GenerateFormInner({
           {stageInFlightPrompt !== null && (
             <div
               title={stageInFlightPrompt}
-              className="flex h-[62px] w-[110px] flex-shrink-0 items-center justify-center rounded-media border border-dashed border-atelier-rule bg-atelier-surface/40"
+              className="flex h-[66px] w-[118px] flex-shrink-0 flex-col items-center justify-center gap-1.5 rounded-media border border-dashed border-atelier-rule bg-atelier-surface/40"
             >
-              <span className="animate-pulse px-2 text-center text-[10px] font-medium uppercase tracking-widest text-atelier-accent">
+              <span className="h-[3px] w-[62px] overflow-hidden rounded-full bg-atelier-ink/10">
+                <span className="block h-full w-[38%] animate-pulse rounded-full bg-atelier-accent" />
+              </span>
+              <span className="px-2 text-center text-[10.5px] text-atelier-muted">
                 {g.takesRendering}
               </span>
             </div>
@@ -5656,9 +5697,9 @@ function GenerateFormInner({
                   }
                 }}
                 className={cn(
-                  "relative h-[62px] w-[110px] flex-shrink-0 overflow-hidden rounded-media bg-atelier-stage transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent",
+                  "relative h-[66px] w-[118px] flex-shrink-0 overflow-hidden rounded-media bg-atelier-stage transition-shadow focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-atelier-accent",
                   selected
-                    ? "shadow-[0_0_0_2px_var(--color-atelier-accent)]"
+                    ? "shadow-[0_0_0_2px_var(--color-atelier-accent),0_0_0_5px_rgba(180,90,40,0.18)]"
                     : "hover:shadow-[0_0_0_1px_var(--color-atelier-rule)]",
                 )}
               >
@@ -5697,39 +5738,7 @@ function GenerateFormInner({
         <p className="hidden flex-shrink-0 text-xs text-atelier-muted lg:block">
           {g.stageScoredNote}
         </p>
-        <div className="flex flex-shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setTranscriptOpen((v) => !v)}
-            aria-expanded={transcriptOpen}
-            className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.75"
-              strokeLinecap="round"
-              className="h-3.5 w-3.5 flex-shrink-0"
-            >
-              <path d="M4 6h16M4 12h10M4 18h7" />
-            </svg>
-            <span className="hidden sm:inline">{g.sessionTranscript}</span>
-            <ChevronDownIcon
-              className={cn("h-3 w-3 transition-transform", transcriptOpen && "rotate-180")}
-            />
-          </button>
-          {hasAnyMessages && (
-            <button
-              type="button"
-              onClick={() => resetChat()}
-              disabled={locked}
-              className="flex-shrink-0 rounded-full border border-atelier-rule px-3.5 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
-            >
-              {g.newChat}
-            </button>
-          )}
-        </div>
+
       </div>
     </div>
   );
@@ -6058,33 +6067,46 @@ function GenerateFormInner({
             {(contentType === "video" || showImageReceipt) && (
               <div
                 className={cn(
-                  "-mx-4 -mt-4 mb-3 border-b border-atelier-rule/60 bg-atelier-accent/[0.05] pb-2 pt-2.5",
+                  "-mx-4 -mt-4 mb-3 flex items-start gap-[18px] border-b border-atelier-rule/60 bg-atelier-accent/[0.06] px-4 pb-2.5 pt-2.5",
                   !composerBannerVisible && "rounded-t-[22px]",
                 )}
               >
-                <div className="mb-1 flex items-baseline justify-between gap-3 px-4">
+                <div className="flex flex-shrink-0 flex-col gap-0.5">
                   <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
                     {g.receiptTitle}
                   </span>
-                  {!willAsk && sendCreditCost > 0 && !freeTierClient && (
-                    <span className="flex items-baseline gap-1.5">
-                      <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-                        {g.totalLabel}
-                      </span>
-                      <span className="font-numeral text-[13px] font-semibold tabular-nums text-atelier-ink">
-                        {formatMsg(g.durationCredits, { n: sendCreditCost })}
-                      </span>
-                    </span>
-                  )}
+                  <span className="text-[10.5px] leading-tight text-atelier-muted/80">
+                    {g.receiptQuoted}
+                  </span>
                 </div>
-                <ReceiptStrip
-                  plan={sendPlanNow}
-                  headline={contentType === "video" && videoAspectRatio ? videoAspectRatio : null}
-                  g={g}
-                  modelName={sendPlanModelName()}
-                  onAction={handlePlanAction}
-                  showIssues={receiptEngaged}
-                />
+                <span aria-hidden className="mt-0.5 h-7 w-px flex-shrink-0 bg-atelier-rule/80" />
+                <div className="min-w-0 flex-1">
+                  <ReceiptStrip
+                    plan={sendPlanNow}
+                    headline={null}
+                    g={g}
+                    modelName={sendPlanModelName()}
+                    onAction={handlePlanAction}
+                    showIssues={receiptEngaged}
+                    dialogueNote={
+                      contentType === "video" && dialogueText.trim().length > 0
+                        ? formatMsg(g.dialogueCreditNote, {
+                            n: getDialogueCreditWeight(videoDurationSeconds),
+                          })
+                        : null
+                    }
+                  />
+                </div>
+                {!willAsk && sendCreditCost > 0 && !freeTierClient && (
+                  <div className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                    <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                      {g.totalLabel}
+                    </span>
+                    <span className="font-numeral text-[13px] font-semibold tabular-nums text-atelier-ink">
+                      {formatMsg(g.durationCredits, { n: sendCreditCost })}
+                    </span>
+                  </div>
+                )}
               </div>
             )}
           <div className="mb-2.5 space-y-2.5">
@@ -6096,7 +6118,45 @@ function GenerateFormInner({
               <div className="flex flex-wrap items-center gap-2">
                 {characterPicker}
                 {videoModelPicker}
-                {videoDurationPicker}
+                {/* Aspect as loadout chips (approved board): "16:9 · 9:16"
+                    text chips beside the durations, not icon toggles buried
+                    in the control row. Active click clears back to
+                    prompt-decides, exactly as before. */}
+                {contentType === "video" && (
+                  <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full bg-atelier-ink/[0.045] p-0.5">
+                    {(["16:9", "9:16"] as const).map((ar) => (
+                      <button
+                        key={ar}
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => setVideoAspectRatio((prev) => (prev === ar ? null : ar))}
+                        title={ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
+                        aria-label={ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
+                        aria-pressed={videoAspectRatio === ar}
+                        className={cn(
+                          "rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+                          videoAspectRatio === ar
+                            ? "bg-atelier-ink text-atelier-paper"
+                            : "text-atelier-muted hover:text-atelier-ink",
+                        )}
+                      >
+                        {ar}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* New chat lives at the loadout's right edge, where the
+                    board put it. */}
+                {hasAnyMessages && (
+                  <button
+                    type="button"
+                    onClick={() => resetChat()}
+                    disabled={locked}
+                    className="ml-auto flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50"
+                  >
+                    {g.newChat}
+                  </button>
+                )}
               </div>
             </div>
             {referencePhotos.length > 1 &&
@@ -6362,7 +6422,15 @@ function GenerateFormInner({
             )}
           </div>
         )}
-        <div data-tour-id="tour-prompt" className="rounded-[14px] bg-atelier-ink/[0.045] transition-colors focus-within:bg-atelier-ink/[0.07]">
+        <div
+          data-tour-id="tour-prompt"
+          className={cn(
+            "rounded-[14px] transition-colors",
+            // The board runs the prompt bare on the card; hero keeps the
+            // soft chip fill it always had.
+            isHero && "bg-atelier-ink/[0.045] focus-within:bg-atelier-ink/[0.07]",
+          )}
+        >
           {pendingScene ? (
             <div className="space-y-3 p-4">
               <div>
@@ -6700,27 +6768,35 @@ function GenerateFormInner({
               {/* Dialogue is a first-class line now (A×B) — it used to hide
                   behind the advanced reveal, which no longer exists. */}
               {contentType === "video" && currentCharacter?.voiceId && (
-                <div className="border-t border-atelier-rule/70 px-3.5 py-2.5">
+                <div
+                  className={cn(
+                    "flex items-center gap-2 px-3.5 py-2",
+                    isHero && "border-t border-atelier-rule/70",
+                  )}
+                >
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[13px] w-[13px] flex-shrink-0 text-atelier-muted">
+                    <path d="M4 5.5h16v11H10l-5.5 4z" />
+                  </svg>
                   <input
                     value={dialogueText}
                     onChange={(e) => setDialogueText(e.target.value)}
                     disabled={submitting}
                     maxLength={500}
                     placeholder={formatMsg(g.dialoguePlaceholder, { name: currentCharacter.name })}
-                    className="w-full border-none bg-transparent text-sm text-atelier-ink/80 outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
+                    className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-atelier-ink/90 outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
                   />
                   {/* Only once there's actually dialogue to charge for —
                       showing a surcharge against an empty field would read
-                      as a warning about something they haven't done. */}
+                      as a warning about something they haven't done. The
+                      real function, not a re-typed divisor — the hardcoded
+                      /5 here kept quoting the old price the day the rate
+                      changed (2026-08-31). */}
                   {dialogueText.trim().length > 0 && (
-                    <p className="mt-1 font-numeral text-[11px] tabular-nums text-atelier-accent">
+                    <span className="flex-shrink-0 whitespace-nowrap text-[11.5px] text-atelier-muted">
                       {formatMsg(g.dialogueCreditNote, {
-                        // The real function, not a re-typed divisor — the
-                        // hardcoded /5 here kept quoting the old price the
-                        // day the rate changed (2026-08-31).
                         n: getDialogueCreditWeight(videoDurationSeconds),
                       })}
-                    </p>
+                    </span>
                   )}
                 </div>
               )}
@@ -7072,7 +7148,7 @@ function GenerateFormInner({
                     aria-label={plusMenuOpen ? g.cancel : g.attachTitle}
                     aria-haspopup="menu"
                     aria-expanded={plusMenuOpen}
-                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50"
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-atelier-rule text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50"
                   >
                     {plusMenuOpen ? <XIcon className="h-4 w-4" /> : <PlusIcon className="h-4 w-4" />}
                   </button>
@@ -7197,6 +7273,32 @@ function GenerateFormInner({
                       scrolls internally instead of pushing Send off-screen —
                       Send/Stop stays outside it, always visible. */}
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
+                  {/* The Assistant pill (approved board): the switch, worn
+                      as a chip in the row — warm ochre when on, ghost when
+                      off. The Faster/Smarter effort words keep their quiet
+                      strip below while it is on. */}
+                  {chatAgentEnabled && (
+                    <>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={assistantOn}
+                        onClick={toggleAssistant}
+                        disabled={submitting || asking}
+                        title={assistantOn ? g.assistantOnHint : g.assistantOffHint}
+                        className={cn(
+                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                          assistantOn
+                            ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                            : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                        )}
+                      >
+                        <SparkIcon className="h-3.5 w-3.5" />
+                        <span className="hidden md:inline">{g.assistant}</span>
+                      </button>
+                      <span aria-hidden className="h-[18px] w-px flex-shrink-0 bg-atelier-rule" />
+                    </>
+                  )}
                   {/* Prompt Studio. Only appears once there's something to
                       enhance — an empty composer has nothing to improve, and
                       a control that can't do anything yet is just noise. */}
@@ -7269,14 +7371,58 @@ function GenerateFormInner({
                           multiAngleLocked
                             ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                             : multiAngleMode
-                              ? "bg-atelier-ink text-atelier-paper"
+                              ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
                               : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <AnglesIcon className="h-4 w-4" />
                         <span className="hidden md:inline">{g.multiAngleLabel}</span>
+                        {multiAngleMode && (
+                          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
+                            <path d="M5 12.5l4.5 4.5L19 7.5" />
+                          </svg>
+                        )}
                       </button>
 
+                      {/* Storyboard (multi-shot) — O3 Pro only, so the
+                          button exists only there; the same plan lock as
+                          its siblings. Turning it on clears the modes it
+                          can't combine with (multi-angle, start/end
+                          frames) instead of letting the server bounce
+                          the submit later. */}
+                      {videoModelId === "kling-o3-pro" && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (advancedVideoLockedReason === "plan") {
+                              setError(g.advancedVideoLocked);
+                              return;
+                            }
+                            if (storyboardMode) {
+                              setStoryboardMode(false);
+                              return;
+                            }
+                            if (multiAngleMode) toggleMultiAngleMode();
+                            clearAdvancedVideo();
+                            setStoryboardMode(true);
+                          }}
+                          disabled={submitting}
+                          title={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
+                          aria-label={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
+                          aria-pressed={storyboardActive}
+                          className={cn(
+                            "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
+                            advancedVideoLockedReason === "plan"
+                              ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
+                              : storyboardActive
+                                ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+                                : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                          )}
+                        >
+                          <FilmIcon className="h-4 w-4" />
+                          <span className="hidden md:inline">{g.storyboardPillLabel}</span>
+                        </button>
+                      )}
                       {/* Cinema Studio. Shares multi-angle's plan gate: both
                           fan one send out into several paid renders, so the
                           same entitlement applies. */}
@@ -7307,7 +7453,7 @@ function GenerateFormInner({
                           multiAngleLocked
                             ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                             : sceneMode
-                              ? "bg-atelier-ink text-atelier-paper"
+                              ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
                               : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
@@ -7358,93 +7504,19 @@ function GenerateFormInner({
                           advancedVideoLockedReason !== null
                             ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
                             : videoAdvancedMode !== "none"
-                              ? "bg-atelier-ink text-atelier-paper"
+                              ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
                               : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
                         )}
                       >
                         <StackIcon className="h-4 w-4" />
                         <span className="hidden md:inline">{g.framesPillLabel}</span>
                       </button>
-                      {/* Storyboard (multi-shot) — O3 Pro only, so the
-                          button exists only there; the same plan lock as
-                          its siblings. Turning it on clears the modes it
-                          can't combine with (multi-angle, start/end
-                          frames) instead of letting the server bounce
-                          the submit later. */}
-                      {videoModelId === "kling-o3-pro" && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (advancedVideoLockedReason === "plan") {
-                              setError(g.advancedVideoLocked);
-                              return;
-                            }
-                            if (storyboardMode) {
-                              setStoryboardMode(false);
-                              return;
-                            }
-                            if (multiAngleMode) toggleMultiAngleMode();
-                            clearAdvancedVideo();
-                            setStoryboardMode(true);
-                          }}
-                          disabled={submitting}
-                          title={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
-                          aria-label={storyboardActive ? g.storyboardOnTitle : g.storyboardOffTitle}
-                          aria-pressed={storyboardActive}
-                          className={cn(
-                            "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
-                            advancedVideoLockedReason === "plan"
-                              ? "text-atelier-muted/40 shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-muted/70"
-                              : storyboardActive
-                                ? "bg-atelier-ink text-atelier-paper"
-                                : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                          )}
-                        >
-                          <FilmIcon className="h-4 w-4" />
-                          <span className="hidden md:inline">{g.storyboardPillLabel}</span>
-                        </button>
-                      )}
                     </div>
                   )}
 
-                  {contentType === "video" && (
-                    <div className="flex flex-shrink-0 items-center gap-0.5 rounded-full border border-atelier-rule p-1">
-                      <button
-                        type="button"
-                        onClick={() => setVideoAspectRatio((prev) => (prev === "16:9" ? null : "16:9"))}
-                        disabled={submitting}
-                        title={g.aspectWideTitle}
-                        aria-label={g.aspectWideTitle}
-                        aria-pressed={videoAspectRatio === "16:9"}
-                        className={cn(
-                          "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                          videoAspectRatio === "16:9"
-                            ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted/80 hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                        )}
-                      >
-                        <LandscapeIcon className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setVideoAspectRatio((prev) => (prev === "9:16" ? null : "9:16"))}
-                        disabled={submitting}
-                        title={g.aspectTallTitle}
-                        aria-label={g.aspectTallTitle}
-                        aria-pressed={videoAspectRatio === "9:16"}
-                        className={cn(
-                          "flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
-                          videoAspectRatio === "9:16"
-                            ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted/80 hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                        )}
-                      >
-                        <PortraitIcon className="h-4 w-4" />
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Free resolution upgrade. Only rendered when the selected
+                  {/* Aspect moved to the loadout row as text chips (approved
+                      board) — the icon pair that lived here is gone. */}
+{/* Free resolution upgrade. Only rendered when the selected
                       model genuinely bills the higher resolution at its
                       default rate (freeHighResolution) — today that is Veo
                       3.1 alone, whose endpoints default to 720p while
@@ -7563,7 +7635,7 @@ function GenerateFormInner({
                         // ochre — the classifier's verdict spelled out, not
                         // just tinted. Icon-only below sm so the control
                         // row's 320px overflow contract holds.
-                        "flex h-9 flex-shrink-0 items-center justify-center gap-1.5 rounded-[10px] text-sm font-medium text-atelier-paper transition-colors disabled:opacity-30 max-sm:w-9 sm:px-4",
+                        "flex h-9 flex-shrink-0 items-center justify-center gap-2 rounded-[10px] text-[13.5px] font-medium text-atelier-paper shadow-[0_8px_18px_-8px_rgba(35,37,45,0.5)] transition-colors disabled:opacity-30 max-sm:w-9 sm:px-[18px]",
                         // The send button is the classifier made visible:
                         // ink arrow = this renders, ochre spark = this asks.
                         // The verdict shows in the one place the eye already
@@ -7574,14 +7646,18 @@ function GenerateFormInner({
                           : "bg-atelier-ink hover:bg-atelier-ink/90",
                       )}
                     >
+                      <span className="hidden sm:inline">
+                        {willAsk
+                          ? g.askSend
+                          : multiAngleMode && selectedAngles.length > 1
+                            ? formatMsg(g.renderAnglesN, { n: selectedAngles.length })
+                            : g.sendRender}
+                      </span>
                       {willAsk ? (
                         <SparkIcon className="h-4 w-4" />
                       ) : (
                         <SendIcon className="h-4 w-4" />
                       )}
-                      <span className="hidden sm:inline">
-                        {willAsk ? g.askSend : g.sendRender}
-                      </span>
                     </button>
                   )}
                 </div>
@@ -7674,52 +7750,12 @@ function GenerateFormInner({
                   system font scales this row outgrows a 320px screen, and
                   without wrapping it would push the whole PAGE sideways
                   again. */}
-              {chatAgentEnabled && (
+              {/* The effort strip: the assistant lives in the controls
+                  row as a pill now (approved board); only the Faster/Smarter
+                  words remain down here, while the assistant is on. */}
+              {chatAgentEnabled && assistantOn && (
                 <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={assistantOn}
-                    onClick={toggleAssistant}
-                    disabled={submitting || asking}
-                    title={assistantOn ? g.assistantOnHint : g.assistantOffHint}
-                    className="flex h-6 flex-shrink-0 items-center gap-1.5 rounded-full disabled:opacity-50"
-                  >
-                    {/* Track and knob, sized to the strip: 26x14 with a
-                        10px knob sliding 12px. Unmistakably a switch,
-                        small enough to be furniture. */}
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "relative h-3.5 w-[26px] flex-shrink-0 rounded-full transition-colors duration-200",
-                        assistantOn ? "bg-atelier-accent" : "bg-atelier-ink/15",
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          "absolute left-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-atelier-paper shadow-[0_1px_2px_rgba(33,29,22,0.25)] transition-transform duration-200 motion-reduce:transition-none",
-                          assistantOn && "translate-x-3",
-                        )}
-                      />
-                    </span>
-                    <span
-                      className={cn(
-                        "text-[11px] font-medium transition-colors",
-                        assistantOn ? "text-atelier-ink" : "text-atelier-muted",
-                      )}
-                    >
-                      {g.assistant}
-                    </span>
-                  </button>
-
-                  {/* Effort, as two words rather than two buttons-that-
-                      look-like-buttons: the active one is ink, the idle
-                      one is barely there. Exists only while the assistant
-                      does. */}
-                  {assistantOn && (
-                    <>
-                      <span aria-hidden className="h-3.5 w-px flex-shrink-0 bg-atelier-rule" />
-                      <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setAgentEffort("faster")}
@@ -7831,11 +7867,16 @@ function GenerateFormInner({
                           )}
                         </button>
                       </div>
-                    </>
-                  )}
                 </div>
               )}
 
+        {/* The armed-mode sentence, written out (board's second state):
+            never silent arming, never a mystery about what Storyboard did. */}
+        {multiAngleMode && contentType === "video" && !submitting && (
+          <p className="mt-2 px-1 text-[11.5px] text-atelier-muted">
+            {formatMsg(g.multiAngleArmedNote, { n: selectedAngles.length })}
+          </p>
+        )}
         {/* "You can leave" reassurance, only while it's actually true:
             liveProgress is set on exactly the paths where a render is queued
             at fal.ai and being driven by polls (submit, multi-angle, resume)

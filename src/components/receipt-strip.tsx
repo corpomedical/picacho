@@ -147,6 +147,7 @@ export function ReceiptStrip({
   g,
   modelName,
   onAction,
+  dialogueNote,
   showIssues,
 }: {
   plan: SendPlan;
@@ -158,6 +159,10 @@ export function ReceiptStrip({
   g: Messages["generate"];
   modelName: string;
   onAction: (issue: PlanIssue) => void;
+  /** When a spoken line is typed, the dialogue entry's column shows this
+      note (the "+N cr / 3s" surcharge) as its value, in proof ochre —
+      the board's DIALOGUE column. */
+  dialogueNote?: string | null;
   // Issue rows wait for engagement (operator, 2026-08-25: a red block about
   // the empty default state greeted people the moment they opened Generate).
   // The caller flips this once anything is typed, attached, or picked; the
@@ -165,22 +170,74 @@ export function ReceiptStrip({
   // engagement costs no safety.
   showIssues: boolean;
 }) {
+  // The approved A×B board draws the receipt as a SPEC SHEET, not a
+  // sentence: labeled columns (microlabel over value, an ochre check when
+  // the input genuinely rides the send) — so each entry's text splits at
+  // its first ": " into label + value; entries without that shape render
+  // as a value-only block. Same strings, same resolver, new geometry.
   const parts = plan.entries
-    .map((e) => entryText(e, g))
-    .filter((s): s is string => Boolean(s));
+    .map((e) => {
+      const text = entryText(e, g);
+      if (!text) return null;
+      if (e.slot === "dialogue" && dialogueNote) {
+        return { label: g.receiptDialogue, value: dialogueNote, ok: false, accent: true };
+      }
+      const ci = text.indexOf(": ");
+      return {
+        label: ci > 0 ? text.slice(0, ci) : null,
+        value: ci > 0 ? text.slice(ci + 2) : text,
+        ok: e.consumption === "native",
+        accent: false,
+      };
+    })
+    .filter(
+      (p): p is { label: string | null; value: string; ok: boolean; accent: boolean } =>
+        p !== null,
+    );
   const visibleIssues = showIssues ? plan.issues : [];
   const hasAttachmentRiding = plan.entries.some(
     (e) => e.slot === "reference" || e.slot === "prop" || e.slot === "scene",
   );
   if (parts.length === 0 && visibleIssues.length === 0 && !headline) return null;
   return (
-    <div className="-mt-1.5 space-y-1 px-4">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] leading-snug text-atelier-muted">
-        {headline && <span className="font-medium text-atelier-ink/70">{headline}</span>}
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap items-start gap-x-6 gap-y-1.5">
+        {headline && (
+          <span className="self-end text-[12px] font-medium leading-snug text-atelier-ink/80">
+            {headline}
+          </span>
+        )}
         {parts.map((p, i) => (
-          <span key={i} className="flex items-center gap-2">
-            {(headline || i > 0) && <span aria-hidden className="text-atelier-muted/50">·</span>}
-            {p}
+          <span key={i} className="flex min-w-0 flex-col gap-0.5">
+            {p.label && (
+              <span className="text-[9.5px] font-medium uppercase tracking-widest text-atelier-muted/80">
+                {p.label}
+              </span>
+            )}
+            <span
+              className={cn(
+                "flex items-center gap-1 text-[12px] leading-snug",
+                p.accent
+                  ? "font-numeral tabular-nums text-atelier-accent"
+                  : "text-atelier-ink/90",
+              )}
+            >
+              {p.value}
+              {p.ok && (
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-3 w-3 flex-shrink-0 text-atelier-accent"
+                  aria-hidden
+                >
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+              )}
+            </span>
           </span>
         ))}
       </div>

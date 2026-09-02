@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getReliabilityStats, reapAbandonedGenerations } from "@/lib/generations/actions";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { GenerateForm } from "@/components/generate-form";
+import { TranscriptToggle } from "@/components/transcript-toggle";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -148,31 +149,38 @@ export default async function GeneratePage() {
           </Link>
         </div>
       )}
-      <div className="mb-7 flex items-end justify-between gap-3 border-b border-atelier-rule pb-4">
-        <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
-        <div className="flex gap-5">
+      {/* The approved board's header: title with the Session transcript
+          affordance beside it, and the stats as BASELINE pairs (number,
+          then its label to the right) — no rule under the row, no divider
+          except the one that sets Credits apart. */}
+      <div className="mb-5 flex items-end justify-between gap-6">
+        <div className="flex items-baseline gap-3.5">
+          <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
+          <TranscriptToggle label={g.sessionTranscript} />
+        </div>
+        <div className="flex items-baseline gap-[26px]">
           {stats.total > 0 && (
             <>
-              <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
-                <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</p>
-                <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</p>
+              <div className="flex items-baseline gap-[7px]">
+                <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</span>
+                <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</span>
               </div>
-              <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
-                <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</p>
-                <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</p>
+              <div className="flex items-baseline gap-[7px]">
+                <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</span>
+                <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</span>
               </div>
             </>
           )}
-          {/* Credits in the header (A×B redesign) — the ochre-numeral proof
-              idiom. Display only, same formula the composer's affordability
-              check uses (creditsAvailable in generate-form.tsx); the server
+          {/* Credits in the header — the ochre-numeral proof idiom. Display
+              only, same formula the composer's affordability check uses
+              (creditsAvailable in generate-form.tsx); the server
               re-validates every spend, so this can never oversell. Not a
               purchase entry point, so no native gating needed. */}
-          <div className="border-l border-atelier-rule py-0.5 pl-4 text-right">
-            <p className="font-numeral text-lg font-semibold tabular-nums text-atelier-accent">
+          <div className={`flex items-baseline gap-[7px] ${stats.total > 0 ? "border-l border-atelier-rule pl-[26px]" : ""}`}>
+            <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-accent">
               {Math.max(0, creditsLimit - creditsUsed) + purchasedCredits}
-            </p>
-            <p className="mt-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.creditsLabel}</p>
+            </span>
+            <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.creditsLabel}</span>
           </div>
         </div>
       </div>

@@ -112,9 +112,13 @@ export async function downloadResultNative(url: string, filename: string): Promi
 export function DownloadButton({
   url,
   contentType,
+  variant = "overlay",
 }: {
   url: string;
   contentType: "image" | "video";
+  /** "overlay" = the self-positioning charcoal circle on result frames;
+      "ghost" = the Stage's 30px square ghost (parent positions it). */
+  variant?: "overlay" | "ghost";
 }) {
   const { t } = useLocale();
   // One download at a time per button: with no feedback, people clicked
@@ -150,9 +154,13 @@ export function DownloadButton({
       // (the Darkroom stage), which is the same charcoal in both themes — so
       // theme-mapped colors (text-white flips dark in dark mode) are wrong
       // here and constants are right.
-      className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#17150f]/70 text-[#f5f1e9] shadow-sm backdrop-blur-sm transition-colors hover:bg-[#17150f]/85"
+      className={
+        variant === "ghost"
+          ? "flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-white/10 text-white/85 transition-colors hover:bg-white/20"
+          : "absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#17150f]/70 text-[#f5f1e9] shadow-sm backdrop-blur-sm transition-colors hover:bg-[#17150f]/85"
+      }
     >
-      <DownloadIcon className="h-4 w-4" />
+      <DownloadIcon className={variant === "ghost" ? "h-[15px] w-[15px]" : "h-4 w-4"} />
     </button>
   );
 }

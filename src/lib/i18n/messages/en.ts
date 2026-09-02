@@ -714,8 +714,12 @@ const en = {
     // always-visible price line.
     sessionTranscript: "Session transcript",
     receiptTitle: "Send receipt",
+    receiptQuoted: "quoted before the button",
+    takesShort: "Takes",
     totalLabel: "Total",
     sendRender: "Render",
+    renderAnglesN: "Render {n} angles",
+    multiAngleArmedNote: "Multi-angle is armed — {n} angles render in parallel. Storyboard stands down while it\u2019s on.",
     stageScoredNote: "Every take is scored — a missed face re-renders free.",
     identityMatchLabel: "Identity match",
     creditsShortN: "{n} cr",
