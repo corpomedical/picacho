@@ -187,6 +187,14 @@ function MediaIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function UpscaleIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" />
+    </svg>
+  );
+}
+
 function ChevronDownIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -317,7 +325,6 @@ const THEME_OPTIONS: { value: ThemeMode; icon: (props: SVGProps<SVGSVGElement>) 
 // characters, history, [Media], notes).
 function getNavItems(t: Messages["nav"]) {
   return [
-    { href: "/app/generate", label: t.generate, icon: BoltIcon },
     { href: "/app/templates", label: t.templates, icon: TemplatesIcon },
     { href: "/app/projects", label: t.projects, icon: FolderIcon },
     { href: "/app/character", label: t.characters, icon: UserIcon },
@@ -367,6 +374,11 @@ export function AppSidebar({
   const TRAILING_NAV_ITEMS = getTrailingNavItems(t.nav);
   const MEDIA_ITEMS = getMediaItems(t.nav);
   const [mediaOpen, setMediaOpen] = useState(false);
+  // The Generate group (operator placement pick, 2026-09-03): Upscale nests
+  // under Generate behind a chevron — but EXPANDED by default, unlike Media.
+  // Media collapses to hide two archive views; this group exists to make a
+  // feature findable, and a closed chevron is where features go to hide.
+  const [generateOpen, setGenerateOpen] = useState(true);
   const themeLabel: Record<ThemeMode, string> = {
     default: s.themeDefault,
     light: s.themeLight,
@@ -524,6 +536,7 @@ export function AppSidebar({
   // hide the active page inside a collapsed submenu.
   const isMediaActive = isActive("/app/images") || isActive("/app/videos");
   const mediaExpanded = mediaOpen || isMediaActive;
+  const generateExpanded = generateOpen || isActive("/app/upscale");
 
   // Global voice command — "open characters" navigates, "new chat" clears
   // the Generate thread, and anything else is forwarded to Generate as a
@@ -674,6 +687,82 @@ export function AppSidebar({
       </div>
 
       <nav className={cn("mt-2 space-y-0.5", iconOnly && "flex flex-col items-center")}>
+        {/* Generate group — the studio link with Upscale nested under it.
+            The row itself still NAVIGATES (it is the app's front door); only
+            the chevron toggles. Collapsed-rail mode links straight through,
+            same as the Media group. */}
+        {iconOnly ? (
+          <Link
+            href="/app/generate"
+            title={t.nav.generate}
+            aria-label={t.nav.generate}
+            className={cn(
+              "flex h-9 w-9 items-center justify-center rounded-control text-sm transition-colors",
+              isActive("/app/generate") || isActive("/app/upscale")
+                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+            )}
+          >
+            <BoltIcon className="h-4 w-4 flex-shrink-0" />
+          </Link>
+        ) : (
+          <div>
+            {/* Link and chevron are SIBLINGS — a button inside an anchor is
+                invalid interactive nesting. The row still reads as one
+                control: link fills it, chevron sits flush at its end. */}
+            <div
+              className={cn(
+                "flex items-center whitespace-nowrap rounded-control pr-1 text-sm transition-colors",
+                isActive("/app/generate")
+                  ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+              )}
+            >
+              <Link
+                href="/app/generate"
+                title={t.nav.generate}
+                aria-label={t.nav.generate}
+                className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2"
+              >
+                <BoltIcon className="h-4 w-4 flex-shrink-0" />
+                <span className="flex-1 text-left">{t.nav.generate}</span>
+              </Link>
+              <button
+                type="button"
+                aria-label={t.nav.upscale}
+                aria-expanded={generateExpanded}
+                onClick={() => setGenerateOpen((v) => !v)}
+                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-atelier-ink/10 hover:text-atelier-ink"
+              >
+                <ChevronDownIcon
+                  className={cn("h-3.5 w-3.5 transition-transform", generateExpanded && "rotate-180")}
+                />
+              </button>
+            </div>
+            {generateExpanded && (
+              <div className="ml-4 mt-0.5 space-y-0.5 border-l border-atelier-rule/70 pl-2">
+                <Link
+                  href="/app/upscale"
+                  title={t.nav.upscale}
+                  aria-label={t.nav.upscale}
+                  className={cn(
+                    "flex items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-1.5 text-sm transition-colors",
+                    isActive("/app/upscale")
+                      ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                      : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                  )}
+                >
+                  <UpscaleIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                  <span className="flex-1 text-left">{t.nav.upscale}</span>
+                  <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
+                    {t.nav.newBadge}
+                  </span>
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
+
         {NAV_ITEMS.map((item) => (
           <Link
             key={item.href}

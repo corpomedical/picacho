@@ -14,12 +14,16 @@ import { formatMsg } from "@/lib/i18n/format";
 // source, the FIXED precise mode, output, and the serif-ochre total — quoted
 // before the button, like every other spend in the product. The server
 // re-derives price and eligibility from the row; everything here is preview.
-export function UpscaleButton({ generationId, seconds, tiers }: {
+export function UpscaleButton({ generationId, seconds, tiers, trigger = "chip" }: {
   generationId: string;
   seconds: number;
   /** The tiers this take's real source height can reach, cheapest first —
-   *  computed server-side by the page from the same module the action uses. */
+   *  computed by the caller from the same module the action uses. */
   tiers: UpscaleTier[];
+  /** "chip" = the light-surface ochre chip (History, the Upscale page);
+   *  "stageGhost" = the dark ghost pill for the stage's corner cluster —
+   *  stage colors are theme-invariant literals, like every stage control. */
+  trigger?: "chip" | "stageGhost";
 }) {
   const { t } = useLocale();
   const h = t.history;
@@ -51,8 +55,15 @@ export function UpscaleButton({ generationId, seconds, tiers }: {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-1.5 rounded-[10px] bg-atelier-accent/10 px-3.5 py-1.5 text-xs font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)] transition-colors hover:bg-atelier-accent/15"
+        className={
+          trigger === "stageGhost"
+            ? "flex h-[30px] items-center gap-1.5 rounded-[8px] bg-[#1b1c20]/70 px-3 text-xs font-semibold text-[#e0a468] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.5)] transition-colors hover:bg-[#1b1c20]/90"
+            : "inline-flex items-center gap-1.5 rounded-[10px] bg-atelier-accent/10 px-3.5 py-1.5 text-xs font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)] transition-colors hover:bg-atelier-accent/15"
+        }
       >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+          <path d="M14 4h6v6M20 4l-7 7M10 20H4v-6M4 20l7-7" />
+        </svg>
         {h.upscaleCta}
       </button>
 

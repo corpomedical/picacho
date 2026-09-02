@@ -14,6 +14,7 @@ import {
   ENGINE_SOURCE_HEIGHT_DEFAULT,
   type UpscaleTier,
 } from "@/lib/generations/upscale";
+import { SerifNumerals } from "@/components/marketing/serif-numerals";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -25,6 +26,16 @@ import { formatMsg } from "@/lib/i18n/format";
 // is the chat-attachment shape: reserve a path, upload straight to storage
 // under the caller's own folder (bucket RLS + the bucket's 50MB/MP4 caps),
 // then hand the path to the action.
+function UpscaleGlyph(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M13.5 3H7a1.5 1.5 0 0 0-1.5 1.5v15A1.5 1.5 0 0 0 7 21h10a1.5 1.5 0 0 0 1.5-1.5V8z" />
+      <path d="M13.5 3v5h5" />
+      <path d="M12 16.5V12M9.9 14.1 12 12l2.1 2.1" />
+    </svg>
+  );
+}
+
 type PickedFile = {
   file: File;
   seconds: number;
@@ -32,7 +43,11 @@ type PickedFile = {
   problem: string | null;
 };
 
-export function UpscaleUpload() {
+export function UpscaleUpload({ variant = "button" }: {
+  /** "button" = the compact trigger; "well" = the Upscale page's wide
+   *  dashed drop area (board B) — same sheet behind both. */
+  variant?: "button" | "well";
+} = {}) {
   const { t } = useLocale();
   const h = t.history;
   const router = useRouter();
@@ -55,6 +70,7 @@ export function UpscaleUpload() {
 
   const onPick = (file: File) => {
     setError(null);
+    setOpen(true);
     const url = URL.createObjectURL(file);
     const probe = document.createElement("video");
     probe.preload = "metadata";
@@ -126,9 +142,45 @@ export function UpscaleUpload() {
 
   return (
     <>
-      <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
-        {h.upscaleUpload}
-      </Button>
+      {variant === "well" ? (
+        <>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="video/mp4"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) onPick(file);
+            }}
+          />
+          {/* Board B's double frame: a solid card wrapping the dashed
+              drop area. */}
+          <div className="rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                const file = e.dataTransfer.files?.[0];
+                if (file) onPick(file);
+              }}
+              className="flex w-full flex-col items-center gap-2.5 rounded-control border-[1.5px] border-dashed border-atelier-rule px-6 py-9 text-center transition-colors hover:border-atelier-muted"
+            >
+              <UpscaleGlyph className="h-7 w-7 text-atelier-muted/70" />
+              <span className="text-sm font-semibold text-atelier-ink">{h.upscaleDropFile}</span>
+              <span className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted/70">
+                <SerifNumerals text={h.upscaleLimits} />
+              </span>
+            </button>
+          </div>
+        </>
+      ) : (
+        <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+          {h.upscaleUpload}
+        </Button>
+      )}
 
       {open && (
         <div
@@ -145,16 +197,18 @@ export function UpscaleUpload() {
             <h2 className="mt-1.5 text-lg font-semibold text-atelier-ink">{h.upscaleUploadTitle}</h2>
             <p className="mt-1 text-sm text-atelier-muted">{h.upscaleUploadSub}</p>
 
-            <input
-              ref={inputRef}
-              type="file"
-              accept="video/mp4"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onPick(file);
-              }}
-            />
+            {variant === "button" && (
+              <input
+                ref={inputRef}
+                type="file"
+                accept="video/mp4"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) onPick(file);
+                }}
+              />
+            )}
             <button
               type="button"
               onClick={() => inputRef.current?.click()}

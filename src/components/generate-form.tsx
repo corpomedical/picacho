@@ -65,6 +65,12 @@ import {
   type PlanIssue,
 } from "@/lib/generations/send-plan";
 import { CINEMA_PRESETS, isProvenPreset, type CinemaPresetCategory } from "@/lib/generations/cinema-presets";
+import { UpscaleButton } from "@/components/upscale-button";
+import {
+  availableUpscaleTiers,
+  takeSourceHeight,
+  UPSCALE_MAX_SECONDS,
+} from "@/lib/generations/upscale";
 import { ReceiptStrip, issueMessage } from "@/components/receipt-strip";
 import {
   compilePrompt,
@@ -1410,6 +1416,9 @@ type ChatTurn = HistoryTurn & {
   // the plain content-type label there.
   takeMeta?: {
     modelName: string;
+    /** the engine's catalogue id — drives the stage Upscale pill's
+        eligibility/tier math (takeSourceHeight keys on ids, not names) */
+    modelId?: string;
     durationSeconds: number;
     /** the aspect the request rode with (null = prompt decided) */
     aspectRatio?: string | null;
@@ -4452,6 +4461,7 @@ function GenerateFormInner({
           effectiveContentType === "video" && selectedVideoModel
             ? {
                 modelName: selectedVideoModel.name,
+                modelId: selectedVideoModel.id,
                 durationSeconds: videoDurationSeconds,
                 aspectRatio: videoAspectRatio,
                 characterPhotoUrl: currentCharacter?.referencePhotos[0]?.url ?? null,
@@ -5692,6 +5702,24 @@ function GenerateFormInner({
                   </svg>
                 </button>
               )}
+              {/* Upscale, in the moment of admiring the result (operator-
+                  picked placement A + the sidebar group, 2026-09-03).
+                  Session takes only — a history-resumed take has no
+                  takeMeta and keeps its Upscale entry on its History page.
+                  Storyboards past the provider's 20s cap self-exclude. */}
+              {stageTakeIsVideo &&
+                stageTake?.kind === "single" &&
+                stageTake.succeeded &&
+                stageTake.takeMeta?.modelId &&
+                stageTake.takeMeta.durationSeconds <= UPSCALE_MAX_SECONDS &&
+                availableUpscaleTiers(takeSourceHeight(stageTake.takeMeta.modelId)).length > 0 && (
+                  <UpscaleButton
+                    trigger="stageGhost"
+                    generationId={stageTake.id}
+                    seconds={stageTake.takeMeta.durationSeconds}
+                    tiers={availableUpscaleTiers(takeSourceHeight(stageTake.takeMeta.modelId))}
+                  />
+                )}
             </div>
           </>
         )}

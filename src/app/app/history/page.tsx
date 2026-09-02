@@ -10,7 +10,6 @@ import { QuietVideo } from "@/components/quiet-video";
 import { formatMsg } from "@/lib/i18n/format";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { ContinueChatButton } from "@/components/continue-chat-button";
-import { UpscaleUpload } from "@/components/upscale-upload";
 import { LocalDate } from "@/components/local-date";
 
 // History, redesigned as a contact sheet (2026-08-20, operator: the old
@@ -209,11 +208,7 @@ export default async function HistoryPage({
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-lg font-semibold text-atelier-ink">{h.title}</h1>
-        {/* Board C's entry point: bring any clip, not just a Picacho render. */}
-        <UpscaleUpload />
-      </div>
+      <h1 className="text-lg font-semibold text-atelier-ink">{h.title}</h1>
 
       {/* Atelier sheet instead of ui/Card (which stays neutral/white until its
           own phase): warm surface, hairline rule, control radius. The usage

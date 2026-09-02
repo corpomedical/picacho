@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.11.1",
+    build: 20,
+    date: "2026-09-03",
+    title: "Upscale finds its address",
+    items: [
+      "Upscale stopped being a feature you find by mistake. It now lives in three honest places: nested under Generate in the sidebar — expanded by default with a New tag, so it's visible every day without adding another top-level entry — as a warm ghost button on the stage the moment a finished video is sitting there, and on each video's History page as before. The sidebar entry opens Upscale's own page: bring any MP4 (drag it straight in), or pick a recent take from a grid that quotes both sizes' prices before a single tap.",
+      "Every door opens the same receipt — source, fixed precise mode, output picker, total — quoted before the button, and the upload lane moved off the History header to its proper home on the page.",
+    ],
+  },
+  {
     version: "1.11.0",
     build: 19,
     date: "2026-09-02",
