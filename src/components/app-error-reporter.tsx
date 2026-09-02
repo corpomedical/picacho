@@ -55,12 +55,22 @@ export function AppErrorReporter() {
       void reportClientError(message, context);
     }
 
+    // Next attaches a `digest` to errors that originated server-side (the
+    // React #419 "switched to client rendering" class among them) — the
+    // same digest the server prints beside the real, unminified error in
+    // the function log. Carrying it into the report turns "minified
+    // mystery" into a grep key (2026-09-02, from a first-session crash).
+    function digestOf(err: unknown): string {
+      const digest = (err as { digest?: unknown } | null)?.digest;
+      return typeof digest === "string" && digest ? `\ndigest: ${digest}` : "";
+    }
+
     function onError(event: ErrorEvent) {
       const message = event.error instanceof Error ? event.error.message : event.message;
       const stack = event.error instanceof Error ? event.error.stack : undefined;
       handle(
         message || "Unknown client error",
-        `page: ${window.location.pathname}\n${stack ?? `${event.filename}:${event.lineno}:${event.colno}`}`,
+        `page: ${window.location.pathname}${digestOf(event.error)}\n${stack ?? `${event.filename}:${event.lineno}:${event.colno}`}`,
       );
     }
 
@@ -69,7 +79,7 @@ export function AppErrorReporter() {
       const message =
         reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "Unhandled promise rejection";
       const stack = reason instanceof Error ? reason.stack : undefined;
-      handle(message, `page: ${window.location.pathname}\n${stack ?? String(reason)}`);
+      handle(message, `page: ${window.location.pathname}${digestOf(reason)}\n${stack ?? String(reason)}`);
     }
 
     window.addEventListener("error", onError);

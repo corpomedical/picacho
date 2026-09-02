@@ -64,6 +64,20 @@ export default async function GeneratePage() {
     }),
   );
 
+  // Black box for the first paint (2026-09-02): when this gather throws,
+  // the stream dies inside a Suspense boundary and the client files a
+  // minified React #419 with no cause — so name the cause and the user
+  // here, where the function log can keep it, then rethrow unchanged.
+  let workspaceData;
+  try {
+    workspaceData = await getGenerateWorkspaceData(supabase, userData.user?.id);
+  } catch (err) {
+    console.error(
+      `[first-paint] /app/generate SSR failed for user ${userData.user?.id ?? "anonymous"}:`,
+      err,
+    );
+    throw err;
+  }
   const {
     hasCharacter,
     charactersForForm,
@@ -83,7 +97,7 @@ export default async function GeneratePage() {
     plan,
     bonusCredits,
     freeGenerationLastAt,
-  } = await getGenerateWorkspaceData(supabase, userData.user?.id);
+  } = workspaceData;
 
   // The composer walkthrough used to auto-start on /app, when the composer
   // lived there in hero mode. /app is a dashboard now, so the walkthrough's

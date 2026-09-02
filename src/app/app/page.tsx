@@ -24,29 +24,42 @@ export default async function AppHome() {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
 
-  const [{ data: profile }, workspace, { data: characters }, { data: recent }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("username, plan, role, has_completed_onboarding")
-      .eq("id", data.user?.id ?? "")
-      .single(),
-    getGenerateWorkspaceData(supabase, data.user?.id),
-    supabase
-      .from("character_profiles")
-      .select("id, name, reference_image_urls")
-      .eq("user_id", data.user?.id ?? "")
-      .order("created_at", { ascending: false })
-      .limit(12),
-    supabase
-      .from("generations")
-      .select("id, result_url, content_type, prompt_input")
-      .eq("user_id", data.user?.id ?? "")
-      .eq("status", "succeeded")
-      .eq("content_type", "image")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false })
-      .limit(6),
-  ]);
+  // Same first-paint black box as /app/generate (2026-09-02): a throw in
+  // this gather reaches the admin queue as a minified React #419 unless the
+  // cause is named here first.
+  let dashboardReads;
+  try {
+    dashboardReads = await Promise.all([
+      supabase
+        .from("profiles")
+        .select("username, plan, role, has_completed_onboarding")
+        .eq("id", data.user?.id ?? "")
+        .single(),
+      getGenerateWorkspaceData(supabase, data.user?.id),
+      supabase
+        .from("character_profiles")
+        .select("id, name, reference_image_urls")
+        .eq("user_id", data.user?.id ?? "")
+        .order("created_at", { ascending: false })
+        .limit(12),
+      supabase
+        .from("generations")
+        .select("id, result_url, content_type, prompt_input")
+        .eq("user_id", data.user?.id ?? "")
+        .eq("status", "succeeded")
+        .eq("content_type", "image")
+        .is("deleted_at", null)
+        .order("created_at", { ascending: false })
+        .limit(6),
+    ]);
+  } catch (err) {
+    console.error(
+      `[first-paint] /app dashboard SSR failed for user ${data.user?.id ?? "anonymous"}:`,
+      err,
+    );
+    throw err;
+  }
+  const [{ data: profile }, workspace, { data: characters }, { data: recent }] = dashboardReads;
 
   const name = profile?.username ?? (data.user?.email ?? "").split("@")[0];
   const plan = (profile?.plan ?? "none") as PlanId;

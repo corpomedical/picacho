@@ -1,4 +1,5 @@
 import { getMonthlyUsage } from "@/lib/generations/actions";
+import { guardedRead } from "@/lib/supabase/read-guard";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { isChatAgentEnabled } from "@/lib/agent/enabled";
@@ -94,24 +95,44 @@ export async function getGenerateWorkspaceData(
   // row (2026-08-31 inspection: this function alone was ~5 sequential trips
   // and /app/generate's TTFB is the sum of them — none of these depends on
   // another's answer).
-  const [{ data: characters }, { data: videoModelSetting }, { data: profile }] =
-    await Promise.all([
-      supabase
-        .from("character_profiles")
-        .select("id, name, reference_image_urls, outfit_image_urls, voice_id, render_style")
-        .eq("user_id", userId)
-        .order("created_at", { ascending: false }),
+  //
+  // guardedRead on all three (2026-09-02, from a live first-session crash
+  // report): these reads used to destructure `data` and DISCARD `error`, so
+  // a transient DB failure didn't crash — it rendered a confidently wrong
+  // page (characters null → the "create your first character" card shown to
+  // someone who has characters; profile null → plan "none", zero credits).
+  // Now a transient is absorbed by one retry, and a persistent failure
+  // throws with the read's name so the function log carries the real cause
+  // instead of a minified React #419.
+  const [characters, videoModelSetting, profile] = await Promise.all([
+    // No user, no characters — and no query. With userId undefined this
+    // used to fire `.eq("user_id", undefined)`, which Postgres rejects as
+    // "invalid input syntax for type uuid" — swallowed silently before the
+    // guard existed, surfaced by it on its first live run (2026-09-02).
+    userId
+      ? guardedRead("characters", () =>
+          supabase
+            .from("character_profiles")
+            .select("id, name, reference_image_urls, outfit_image_urls, voice_id, render_style")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false }),
+        )
+      : Promise.resolve(null),
+    guardedRead("video-model setting", () =>
       supabase.from("app_settings").select("value").eq("key", "video_model").single(),
-      userId
-        ? supabase
+    ),
+    userId
+      ? guardedRead("profile", () =>
+          supabase
             .from("profiles")
             .select(
               "plan, role, bonus_credits, purchased_credits, current_period_start, current_period_end, has_completed_onboarding, free_generation_last_at",
             )
             .eq("id", userId)
-            .single()
-        : Promise.resolve({ data: null }),
-    ]);
+            .single(),
+        )
+      : Promise.resolve(null),
+  ]);
 
   const hasCharacter = Boolean(characters && characters.length > 0);
 
