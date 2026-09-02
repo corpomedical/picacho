@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.11.0",
+    build: 19,
+    date: "2026-09-02",
+    title: "Upscale: any clip to crisp 1080p, with the face guaranteed to survive",
+    items: [
+      "A finished video in History gained an Upscale to 1080p action, and the History page gained Upscale a video — bring any MP4 up to 20 seconds and 50 MB: phone footage, an old render, a clip from another tool. Both run FLUX Video Upscale (Black Forest Labs' FLUX-3-powered super-resolution) in its precise mode, the one built to keep faces intact — and that mode is hard-wired, not a setting, because the creative alternative can change a person's identity and this product exists to prevent exactly that. Validated before shipping on a real Picacho render: same face, same expression, visibly crisper.",
+      "Priced like everything else here: quoted before the button. The upscale receipt shows the source, the fixed mode, the output, and the total — 0.6 credits per second of the clip, rounded up, so a 10-second video costs 6 credits. The result is a new take linked to its source (the original is never touched), it carries no identity score because nothing re-measured it, and if the provider refuses the clip or you stop the job, the credits come back automatically — a refused upscale provably cost nothing, so the refund doesn't wait for anyone's approval.",
+      "The uploaded file's duration and resolution are read from the video's own container on the server, never trusted from the browser — the price and the upscale factor both derive from what the file really is. In all four languages, and the Assistant's product guide learned the feature in the same commit.",
+    ],
+  },
+  {
     version: "1.10.1",
     build: 18,
     date: "2026-09-02",

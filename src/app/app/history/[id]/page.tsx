@@ -18,6 +18,8 @@ import { ResultActions } from "@/components/result-actions";
 import { LocalDate } from "@/components/local-date";
 import type { GenerationFeedback } from "@/lib/generations/actions";
 import { getServerMessages } from "@/lib/i18n/server";
+import { UpscaleButton } from "@/components/upscale-button";
+import { takeUpscaleIneligibility, upscaleCreditCost } from "@/lib/generations/upscale";
 import { formatMsg } from "@/lib/i18n/format";
 
 export default async function HistoryDetailPage({
@@ -142,6 +144,14 @@ export default async function HistoryDetailPage({
   // generations, only for reading them).
   const isOwner = generation.user_id === userData.user.id;
 
+  // Whether the Upscale action shows — the same pure rule the server action
+  // re-runs before taking any money, so the button can never promise what
+  // the action refuses.
+  const upscaleEligible =
+    isOwner &&
+    isRenderableUrl(generation.result_url) &&
+    takeUpscaleIneligibility(generation) === null;
+
   // Whether this render is already in the community feed (drives the share
   // button's state). Soft-fails to "not shared" if the community SQL hasn't
   // been applied yet — supabase-js returns an error, not a throw.
@@ -193,6 +203,13 @@ export default async function HistoryDetailPage({
                   </Button>
                 </Link>
               )}
+            {upscaleEligible && (
+              <UpscaleButton
+                generationId={generation.id}
+                seconds={generation.video_duration_seconds as number}
+                credits={upscaleCreditCost(generation.video_duration_seconds as number)}
+              />
+            )}
             {canShareToCommunity && (
               <CommunityShareButton generationId={generation.id} initialShared={sharedToCommunity} />
             )}
@@ -214,6 +231,17 @@ export default async function HistoryDetailPage({
                 used to be invisible unless someone expanded the attempt log.
                 One line of proof on every successful result — and proof is
                 the accent's job, in the numeral serif. */}
+            {generation.source_generation_id && (
+              <p className="mt-1 text-xs text-atelier-muted">
+                {h.upscaledBadge} ·{" "}
+                <Link
+                  href={`/app/history/${generation.source_generation_id}`}
+                  className="underline hover:text-atelier-ink"
+                >
+                  {h.upscaleViewSource}
+                </Link>
+              </p>
+            )}
             {generation.status === "succeeded" && attempts.length > 0 && (
               <p className="mt-1.5 font-numeral text-xs font-medium tabular-nums text-atelier-accent">
                 {attempts.length === 1

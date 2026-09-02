@@ -1046,6 +1046,21 @@ export async function submitLipSyncJob(videoUrl: string, audioUrl: string): Prom
   );
 }
 
+// FLUX Video Upscale (2026-09-02). creativity: 0 is NOT a default to
+// override — fal's own default is 1, the creative mode whose vendor docs
+// say it "can change or replace identity". Pinned here, at the one place
+// the request body is built, so no caller can ever un-pin it. Output shape
+// is { video: { url } }, the same the video models use, so
+// fetchQueuedVideoUrl collects it unmodified (probe-verified 2026-09-02).
+export async function submitUpscaleJob(videoUrl: string, upscaleFactor: number): Promise<QueuedJob> {
+  return submitToQueue(
+    "blackforestlabs/flux-video-upscale",
+    { video_url: videoUrl, creativity: 0, upscale_factor: upscaleFactor },
+    "FLUX Video Upscale",
+    requireApiKey(),
+  );
+}
+
 // One status check. Never throws on a job-level failure — a job that failed on
 // fal's side comes back as { state: "failed" } so the caller can record a real
 // error against the generation. Only genuine transport problems throw, because

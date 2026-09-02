@@ -22,9 +22,21 @@ import {
   reapStaleJobs,
   refundGenerationCosts,
   type AdvanceResult,
+  // eslint-disable-next-line no-duplicate-imports -- single block, appended
 } from "@/lib/generations/job-runner";
+import { saveUpscaleJob } from "@/lib/generations/job-runner";
+import {
+  takeUpscaleIneligibility,
+  uploadUpscaleIneligibility,
+  upscaleCreditCost,
+  upscaleFactor,
+  UPSCALE_MAX_BYTES,
+  UPSCALE_MODEL_ID,
+} from "@/lib/generations/upscale";
+import { probeMp4 } from "@/lib/media/mp4-probe";
+import { rateLimited } from "@/lib/rate-limit";
 import { getAnglePreset, angleSortIndex, sceneShotKey } from "@/lib/generations/angles";
-import { submitVideoJob, cancelQueuedJob, type QueuedJob } from "@/lib/generations/providers/fal";
+import { submitVideoJob, submitUpscaleJob, cancelQueuedJob, type QueuedJob } from "@/lib/generations/providers/fal";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
 
@@ -3619,4 +3631,276 @@ export async function getMonthlyUsage(userId: string, periodStart?: string | nul
     target = userId;
   }
   return getMonthlyUsageWith(supabase, target, periodStart);
+}
+
+
+// ---------------------------------------------------------------------------
+// Video upscale (FLUX Video Upscale, 2026-09-02 — probe-validated on a real
+// Eva render the day it shipped). Two entry points, one shared core: a
+// finished take from History, or an uploaded MP4. Both create an ordinary
+// generations row (video_model_id "flux-upscale", no character — an upscale
+// is never re-scored) plus a stage-"upscale" job row; the fal webhook and
+// the reaper drive it to completion like every other lane, and the receipt
+// promise ("if the provider refuses, nothing is charged") is enforced by
+// job-runner's force-refund on the upscale stage's failure and cancel
+// paths.
+// ---------------------------------------------------------------------------
+
+type UpscaleStartResult = { error: string } | { generationId: string };
+
+async function startUpscaleCore(params: {
+  userId: string;
+  sourceUrl: string;
+  seconds: number;
+  factor: number;
+  promptInput: string;
+  sourceGenerationId: string | null;
+}): Promise<UpscaleStartResult> {
+  const supabase = await createClient();
+  const creditWeight = upscaleCreditCost(params.seconds);
+
+  // The free daily slot NEVER covers an upscale (boards + product guide both
+  // promise it), so the allowance is consumed as plan/purchased credits
+  // only. checkGenerationAllowance can offer consumeFree for cheap sends —
+  // deliberately ignored below.
+  const allowance = await checkGenerationAllowance(supabase, params.userId, creditWeight);
+  if (allowance.error) return { error: allowance.error };
+  const consumePurchased = allowance.consumePurchased ?? 0;
+  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, creditWeight - consumePurchased);
+
+  const admin = createAdminClient();
+  const reservationRow = {
+    id: crypto.randomUUID(),
+    character_profile_id: null,
+    character_profile_ids: [],
+    prompt_input: params.promptInput,
+    content_type: "video",
+    status: "generating",
+    attempts: 0,
+    result_url: null,
+    pipeline_log: [],
+    video_model_id: UPSCALE_MODEL_ID,
+    model_id: UPSCALE_MODEL_ID,
+    video_duration_seconds: params.seconds,
+    video_aspect_ratio: null,
+    credits_used: creditWeight,
+    purchased_credits_used: consumePurchased,
+    free_generation_used: false,
+    // Dropped silently by jsonb_populate_record until
+    // pending-2026-09-02/upscale.sql runs — the insert still succeeds, only
+    // the lineage link is lost, so pre-SQL behavior fails soft.
+    source_generation_id: params.sourceGenerationId,
+  };
+
+  const { data: reservedId, error: reserveError } = await admin.rpc("reserve_generation", {
+    p_user_id: params.userId,
+    p_monthly_portion: monthlyPortion,
+    p_limit: allowance.monthlyLimit ?? 0,
+    p_since: allowance.periodStartIso ?? new Date(0).toISOString(),
+    p_row: reservationRow,
+  });
+  if (reserveError) {
+    console.error("reserve_generation failed for upscale:", reserveError);
+    return { error: "Couldn't start this upscale — try again." };
+  }
+  if (!reservedId) {
+    return { error: "You've used all the credits included in your plan this month." };
+  }
+  const generationId = reservedId as string;
+
+  // Guarded purchased-credit spend, same abort contract as the render path:
+  // nothing paid has run yet, so losing the race releases the placeholder.
+  const purchasedOk = await consumePurchasedCredits(supabase, params.userId, consumePurchased);
+  if (!purchasedOk) {
+    const { error: releaseError } = await admin
+      .from("generations")
+      .update({
+        status: "failed",
+        credits_used: 0,
+        purchased_credits_used: 0,
+        progress_stage: null,
+      })
+      .eq("id", generationId);
+    if (releaseError) {
+      console.error("Upscale guarded-spend abort couldn't release the placeholder:", {
+        generationId,
+        error: releaseError.message,
+      });
+    }
+    return { error: "You're out of credits — that upscale couldn't be covered." };
+  }
+
+  // Submit, then record; on bookkeeping failure cancel the fal job and
+  // refund — the same belt-and-suspenders order the video lane runs.
+  let pendingJob: QueuedJob | null = null;
+  try {
+    pendingJob = await submitUpscaleJob(params.sourceUrl, params.factor);
+    await saveUpscaleJob({
+      generationId,
+      userId: params.userId,
+      job: pendingJob,
+      attempts: [
+        {
+          attempt: 1,
+          passed: true,
+          issues: [],
+          compiledPrompt: params.promptInput,
+          steps: [
+            {
+              step: "generate" as const,
+              detail: "Submitted for a 1080p upscale (FLUX Video Upscale, precise mode).",
+            },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    if (pendingJob) await cancelQueuedJob(pendingJob);
+    const message = err instanceof Error ? err.message : "Couldn't start the upscale.";
+    await admin
+      .from("generations")
+      .update({
+        status: "failed",
+        progress_stage: null,
+        pipeline_log: [
+          {
+            attempt: 1,
+            passed: false,
+            issues: [],
+            compiledPrompt: params.promptInput,
+            steps: [{ step: "generate" as const, detail: message }],
+          },
+        ],
+      })
+      .eq("id", generationId);
+    try {
+      // Nothing was delivered, so nothing was billed — force the refund.
+      await refundGenerationCosts(generationId, { force: true });
+    } catch (refundErr) {
+      console.error(`upscale submit-failure refund failed for ${generationId}:`, refundErr);
+    }
+    return { error: "Couldn't start the upscale — nothing was charged. Try again." };
+  }
+
+  revalidatePath("/app/history");
+  return { generationId };
+}
+
+/** Upscale a finished take from History. */
+export async function startTakeUpscale(formData: FormData): Promise<UpscaleStartResult> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const sourceId = String(formData.get("generation_id") ?? "");
+  if (!sourceId) return { error: "No take given." };
+
+  // Owner's row only — RLS would also enforce this, but the money decision
+  // happens server-side on these fields, so they are read fresh here rather
+  // than trusted from the form.
+  const { data: source } = await supabase
+    .from("generations")
+    .select("id, user_id, content_type, status, video_duration_seconds, video_model_id, result_url")
+    .eq("id", sourceId)
+    .eq("user_id", userData.user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!source) return { error: "That take is gone." };
+
+  const ineligible = takeUpscaleIneligibility(source);
+  if (ineligible) return { error: "This take can't be upscaled." };
+
+  const stored = toMediaUrl(source.result_url as string | null);
+  if (!stored || !isRenderableUrl(stored)) return { error: "This take has no video to upscale." };
+  const sourceUrl = absolutizeMediaUrl(stored, await getOrigin());
+
+  return startUpscaleCore({
+    userId: userData.user.id,
+    sourceUrl,
+    seconds: source.video_duration_seconds as number,
+    // Every eligible engine outputs 720p (768p+ engines are excluded by the
+    // eligibility rule), so the factor is the exact 1080p landing.
+    factor: upscaleFactor(720),
+    promptInput: "Upscaled to 1080p",
+    sourceGenerationId: source.id,
+  });
+}
+
+/**
+ * Reserve a storage path for an uploaded source video — the chat-attachment
+ * upload shape: the browser uploads straight to storage under its own
+ * folder (bucket RLS + the bucket's own 50MB/MP4 caps enforce the rest).
+ */
+export async function reserveUpscaleUploadPath(
+  formData: FormData,
+): Promise<{ error: string | null; path?: string }> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const name = String(formData.get("name") ?? "");
+  const size = Number(formData.get("size") ?? 0);
+  if (!name) return { error: "No file provided." };
+  if (size > UPSCALE_MAX_BYTES) return { error: "That video is over 50 MB." };
+  if (await rateLimited(data.user.id, "upscale-upload", 600, 10)) {
+    return { error: "You're uploading a bit fast — wait a moment and try again." };
+  }
+
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  return { error: null, path: `${data.user.id}/${crypto.randomUUID()}-${safeName}` };
+}
+
+/** Upscale an uploaded video the browser has already put in storage. */
+export async function startUploadUpscale(formData: FormData): Promise<UpscaleStartResult> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const path = String(formData.get("path") ?? "");
+  // Re-checked, not trusted: only this user's folder, no traversal.
+  if (!path.startsWith(`${userData.user.id}/`) || path.includes("..")) {
+    return { error: "Not allowed." };
+  }
+
+  // THE MONEY PATH READS THE FILE, NOT THE FORM. Duration prices the job
+  // and height sets the upscale factor; fal bills whatever is really
+  // delivered, so a client-claimed number would let the caller set their
+  // own price (or ours). probeMp4 reads the container's actual boxes.
+  const admin = createAdminClient();
+  const { data: blob, error: downloadError } = await admin.storage
+    .from("upscale-sources")
+    .download(path);
+  if (downloadError || !blob) return { error: "Couldn't read that upload — try again." };
+  const buf = Buffer.from(await blob.arrayBuffer());
+
+  const probe = probeMp4(buf);
+  if (!probe) return { error: "That file doesn't read as an MP4 video." };
+  const seconds = Math.ceil(probe.seconds);
+  const ineligible = uploadUpscaleIneligibility({
+    seconds,
+    bytes: buf.length,
+    height: probe.height,
+    mimeType: "video/mp4",
+  });
+  if (ineligible === "too-long") return { error: "That video is over 20 seconds." };
+  if (ineligible === "too-big") return { error: "That video is over 50 MB." };
+  if (ineligible === "too-sharp") return { error: "That video is already 1080p or sharper." };
+  if (ineligible) return { error: "That file can't be upscaled." };
+
+  // A signed URL fal can fetch; generous enough to outlive any queue wait.
+  const { data: signed, error: signError } = await admin.storage
+    .from("upscale-sources")
+    .createSignedUrl(path, 60 * 60 * 24);
+  if (signError || !signed?.signedUrl) {
+    return { error: "Couldn't prepare that upload — try again." };
+  }
+
+  return startUpscaleCore({
+    userId: userData.user.id,
+    sourceUrl: signed.signedUrl,
+    seconds,
+    factor: upscaleFactor(probe.height),
+    promptInput: "Uploaded video — upscaled to 1080p",
+    sourceGenerationId: null,
+  });
 }

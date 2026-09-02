@@ -47,7 +47,7 @@ import { notifyUser } from "@/lib/push/send";
 // A video generation can pass through several queued provider jobs in turn.
 // Each is submitted only once its predecessor has finished, because each one
 // consumes the previous one's output.
-export type JobStage = "video" | "dialogue_tts" | "dialogue_lipsync";
+export type JobStage = "video" | "dialogue_tts" | "dialogue_lipsync" | "upscale";
 
 // What advanceGeneration tells the caller after one tick.
 export type AdvanceResult =
@@ -97,6 +97,7 @@ const STAGE_PROGRESS: Record<JobStage, string> = {
   video: "Rendering your video",
   dialogue_tts: "Generating the voice",
   dialogue_lipsync: "Syncing the lips to the dialogue",
+  upscale: "Upscaling to 1080p",
 };
 
 // How long a job may go unpolled before the reaper assumes nobody is coming
@@ -579,6 +580,41 @@ function jobHandle(row: JobRow): QueuedJob {
 
 // Records a freshly queued render so later polls can pick it up. Called by
 // runGeneration immediately after the pipeline returns a pendingVideoJob.
+// The upscale lane's job row — stage "upscale", no dialogue resume state.
+// Same must-not-swallow contract as saveVideoJob below: by the time this
+// runs the fal job is already submitted, and an unrecorded job can never be
+// polled, finished, or refunded.
+export async function saveUpscaleJob(params: {
+  generationId: string;
+  userId: string;
+  job: QueuedJob;
+  attempts: AttemptLog[];
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { error: upsertError } = await admin.from("generation_jobs").upsert({
+    generation_id: params.generationId,
+    user_id: params.userId,
+    stage: "upscale" satisfies JobStage,
+    provider_request_id: params.job.requestId,
+    status_url: params.job.statusUrl,
+    response_url: params.job.responseUrl,
+    cancel_url: params.job.cancelUrl,
+    payload: { label: params.job.label },
+    resume: { attempts: params.attempts } satisfies ResumeState,
+    started_at: new Date().toISOString(),
+    last_polled_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  if (upsertError) {
+    throw new Error(`Couldn't record the queued upscale job: ${upsertError.message}`);
+  }
+  // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
+  await admin
+    .from("generations")
+    .update({ progress_stage: STAGE_PROGRESS.upscale })
+    .eq("id", params.generationId);
+}
+
 export async function saveVideoJob(params: {
   generationId: string;
   userId: string;
@@ -995,11 +1031,22 @@ export async function advanceGeneration(
         return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
       }
       await cancelQueuedJob(jobHandle(row));
-      await finish(generationId, userId, {
+      const didCancelTransition = await finish(generationId, userId, {
         status: "failed",
         attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
         fault: "user_cancelled",
       });
+      // A stopped upscale delivered nothing (the completion check just above
+      // is what routes an already-finished one to delivery instead), and
+      // fal bills upscales on delivered output only — so the credit goes
+      // back, force past the flag, exactly once.
+      if (row.stage === "upscale" && didCancelTransition) {
+        try {
+          await refundGenerationCosts(generationId, { force: true });
+        } catch (refundErr) {
+          console.error(`upscale cancel refund failed for ${generationId}:`, refundErr);
+        }
+      }
       return { state: "cancelled" };
     }
     // Completed before the stop landed: fall through to the normal
@@ -1060,11 +1107,23 @@ export async function advanceGeneration(
       return { state: "succeeded", resultUrl: row.payload.videoUrl };
     }
 
-    await finish(generationId, userId, {
+    const didFailTransition = await finish(generationId, userId, {
       status: "failed",
       attempts: appendStep(row.resume.attempts ?? [], status.error, "generate"),
       fault: "provider_failed",
     });
+    // An upscale is billed per second of DELIVERED output (fal, read
+    // 2026-09-02): a job fal reports failed delivered nothing and cost
+    // nothing, so the credit goes back unconditionally — force past the
+    // automatic_refunds switch, after finish() for exactly-once (the same
+    // sequencing the dialogue-surcharge refund above earned the hard way).
+    if (row.stage === "upscale" && didFailTransition) {
+      try {
+        await refundGenerationCosts(generationId, { force: true });
+      } catch (refundErr) {
+        console.error(`upscale failure refund failed for ${generationId}:`, refundErr);
+      }
+    }
     return { state: "failed", message: status.error };
   }
 
@@ -1097,6 +1156,25 @@ export async function advanceGeneration(
   // thrown away over a dialogue problem (2026-08-31 inspection).
   let collectedVideoUrl: string | null = null;
   try {
+    if (row.stage === "upscale") {
+      // Single-stage lane: the delivered file IS the result — no dialogue
+      // branches, no scoring (the row was created with no character on
+      // purpose: an upscale regenerates pixels, nothing re-measured the
+      // face, and a fabricated score would be the exact dishonesty the
+      // scoring system exists to prevent).
+      const upscaledUrl = await fetchQueuedVideoUrl(jobHandle(row));
+      await finish(generationId, userId, {
+        status: "succeeded",
+        resultUrl: upscaledUrl,
+        attempts: appendStep(
+          row.resume.attempts ?? [],
+          "Upscaled to 1080p in precise mode (FLUX Video Upscale).",
+          "generate",
+        ),
+      });
+      return { state: "succeeded", resultUrl: upscaledUrl };
+    }
+
     if (row.stage === "video") {
       const videoUrl = await fetchQueuedVideoUrl(jobHandle(row));
       collectedVideoUrl = videoUrl;
