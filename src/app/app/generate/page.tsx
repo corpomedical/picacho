@@ -153,44 +153,63 @@ export default async function GeneratePage() {
           affordance beside it, and the stats as BASELINE pairs (number,
           then its label to the right) — no rule under the row, no divider
           except the one that sets Credits apart. */}
-      {/* flex-wrap + whitespace-nowrap labels: on phone widths the three
-          stat pairs cannot share a line with the title, and a label that
-          wraps INSIDE its pair leaves the numeral stranded against the
-          first baseline — the "number aligned top" report from the native
-          shell (operator, 2026-09-02). Pairs now wrap as whole units, so
-          number and label always sit on one baseline; the credits divider
-          only draws at sm+, where the row is genuinely one line. */}
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-        <div className="flex items-baseline gap-3.5">
-          <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
-          <TranscriptToggle label={g.sessionTranscript} />
-        </div>
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 sm:gap-x-[26px]">
-          {stats.total > 0 && (
-            <>
-              <div className="flex items-baseline gap-[7px]">
-                <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</span>
-                <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</span>
-              </div>
-              <div className="flex items-baseline gap-[7px]">
-                <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</span>
-                <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</span>
-              </div>
-            </>
-          )}
-          {/* Credits in the header — the ochre-numeral proof idiom. Display
-              only, same formula the composer's affordability check uses
-              (creditsAvailable in generate-form.tsx); the server
-              re-validates every spend, so this can never oversell. Not a
-              purchase entry point, so no native gating needed. */}
-          <div className={`flex items-baseline gap-[7px] ${stats.total > 0 ? "sm:border-l sm:border-atelier-rule sm:pl-[26px]" : ""}`}>
+      {/* Two header shapes (operator, 2026-09-02, from the native shell:
+          the un-wrapping row slid sideways and hid Credits — "what if we
+          moved session transcript to fit everything").
+          PHONE (<sm): line 1 is title + the ochre credit balance, corner
+          to corner — the number that must never need a sideways slide;
+          line 2 is the reliability pairs with the transcript control at
+          its end. Labels are whitespace-nowrap so a pair can never wrap
+          internally and strand its numeral on the first baseline.
+          DESKTOP (sm+): the approved board's row — title with the
+          transcript affordance beside it, stat pairs right, one divider
+          before Credits. */}
+      {(() => {
+        const creditsPair = (extra: string) => (
+          <div className={`flex items-baseline gap-[7px] ${extra}`}>
+            {/* Credits — the ochre-numeral proof idiom. Display only, same
+                formula the composer's affordability check uses
+                (creditsAvailable in generate-form.tsx); the server
+                re-validates every spend, so this can never oversell. Not a
+                purchase entry point, so no native gating needed. */}
             <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-accent">
               {Math.max(0, creditsLimit - creditsUsed) + purchasedCredits}
             </span>
             <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.creditsLabel}</span>
           </div>
-        </div>
-      </div>
+        );
+        return (
+          <div className="mb-5 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+            <div className="flex w-full items-baseline justify-between sm:w-auto sm:justify-start sm:gap-3.5">
+              <h1 className="text-xl font-semibold tracking-tight text-atelier-ink">{g.pageTitle}</h1>
+              <div className="sm:hidden">{creditsPair("")}</div>
+              <div className="hidden sm:block">
+                <TranscriptToggle label={g.sessionTranscript} />
+              </div>
+            </div>
+            <div className="flex w-full flex-wrap items-baseline gap-x-4 gap-y-1 sm:w-auto sm:gap-x-[26px]">
+              {stats.total > 0 && (
+                <>
+                  <div className="flex items-baseline gap-[7px]">
+                    <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.firstTryRate}%</span>
+                    <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.firstTrySuccess}</span>
+                  </div>
+                  <div className="flex items-baseline gap-[7px]">
+                    <span className="font-numeral text-[17px] font-semibold tabular-nums text-atelier-ink">{stats.avgAttempts}</span>
+                    <span className="whitespace-nowrap text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{g.avgAttempts}</span>
+                  </div>
+                </>
+              )}
+              {creditsPair(
+                `hidden sm:flex ${stats.total > 0 ? "sm:border-l sm:border-atelier-rule sm:pl-[26px]" : ""}`,
+              )}
+              <div className="ml-auto sm:hidden">
+                <TranscriptToggle label={g.sessionTranscript} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <GenerateForm
         startOnboarding={onboardingProfile?.has_completed_onboarding !== true}
