@@ -163,7 +163,10 @@ export default async function AdminReportsPage({
   return (
     <div>
       <AdminErrorBanner error={actionError} />
-      <h1 className="text-lg font-semibold text-neutral-900">Reports</h1>
+      <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Trust &amp; Safety</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Reports</h1>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         Problems users flagged directly on a result via the report button next to Copy/Like/Dislike,
         plus ones the site caught on its own (failed generations, client-side errors — tagged

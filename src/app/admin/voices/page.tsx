@@ -21,7 +21,10 @@ export default async function AdminVoicesPage({
   return (
     <div>
       <AdminErrorBanner error={actionError} />
-      <h1 className="text-lg font-semibold text-neutral-900">Character voices</h1>
+      <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Product</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Character voices</h1>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         Curated ElevenLabs voices users can assign to a character for lip-synced dialogue (runs
         through the same fal.ai key as video/image generation — no new secret needed). Preview and

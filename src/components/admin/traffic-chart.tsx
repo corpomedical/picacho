@@ -4,22 +4,44 @@ import { Card } from "@/components/ui/card";
 // each add a few hundred KB to the bundle for one chart on one admin page,
 // and neither would match the rest of the app's flat, hairline styling
 // without a pile of overrides. This is ~100 lines and themes for free.
+//
+// THE LEDGER (operator pick B, 2026-09-03): a wide, low plot — four unlabelled
+// hairlines, bottom tick marks, the two date captions set beneath the drawing
+// as microlabels, the total in serif at the header's right. Numbers on the
+// axis were dropped on purpose: the ledger states the total; the line shows
+// the shape. The drawing is a FIXED 140px tall however wide the card is
+// (preserveAspectRatio none + non-scaling strokes), so the plot stays low and
+// the hairlines stay hairlines; the hollow "today" marker is an HTML ring
+// positioned over the last point, since a circle would stretch with the box.
 
 export type TrafficDay = { day: string; views: number; visitors: number };
 
-const W = 760;
-const H = 220;
-const PAD_L = 40;
-const PAD_R = 12;
-const PAD_T = 16;
-const PAD_B = 28;
+const W = 688;
+const H = 140;
+const PAD_L = 4;
+const PAD_R = 4;
+const PAD_T = 8;
+const PAD_B = 10;
+
+function shortDate(day: string): string {
+  return new Date(`${day}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+}
+
+function Microlabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+      {children}
+    </p>
+  );
+}
 
 export function TrafficChart({ data }: { data: TrafficDay[] }) {
-  if (data.length === 0) {
+  const days = data.length;
+  if (days === 0) {
     return (
       <Card>
-        <h2 className="text-sm font-semibold text-neutral-900">Traffic</h2>
-        <p className="mt-3 text-sm text-neutral-500">No page views recorded yet.</p>
+        <Microlabel>Traffic</Microlabel>
+        <p className="mt-3 text-sm text-atelier-muted">No page views recorded yet.</p>
       </Card>
     );
   }
@@ -32,97 +54,100 @@ export function TrafficChart({ data }: { data: TrafficDay[] }) {
 
   const plotW = W - PAD_L - PAD_R;
   const plotH = H - PAD_T - PAD_B;
-  const x = (i: number) => PAD_L + (data.length === 1 ? plotW / 2 : (i / (data.length - 1)) * plotW);
+  const x = (i: number) => PAD_L + (days === 1 ? plotW / 2 : (i / (days - 1)) * plotW);
   const y = (v: number) => PAD_T + plotH - (v / max) * plotH;
 
   const linePoints = data.map((d, i) => `${x(i)},${y(d.views)}`).join(" ");
   // Same path closed along the baseline to make the filled area.
-  const areaPath = `M ${x(0)},${PAD_T + plotH} L ${linePoints.split(" ").join(" L ")} L ${x(data.length - 1)},${PAD_T + plotH} Z`;
-
-  // Four horizontal gridlines, labelled with rounded values.
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f));
-  const uniqueTicks = Array.from(new Set(ticks));
-
-  // Only label a handful of dates — one per day is unreadable at 30 days.
-  const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+  const areaPath = `M ${x(0)},${PAD_T + plotH} L ${linePoints.split(" ").join(" L ")} L ${x(days - 1)},${PAD_T + plotH} Z`;
 
   return (
     <Card>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-neutral-900">Traffic</h2>
-        <p className="text-xs text-neutral-500">
-          {totalViews.toLocaleString()} views · peak {peakVisitors} visitors/day · last {data.length} days
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <Microlabel>Traffic · {days} days</Microlabel>
+          <p className="mt-1 text-xs text-atelier-muted" title={`Peak ${peakVisitors} visitors in a day`}>
+            Page views, daily
+          </p>
+        </div>
+        <div className="text-right">
+          <p className="font-numeral text-[22px] leading-none tabular-nums text-atelier-ink">
+            {totalViews.toLocaleString()}
+          </p>
+          <p className="mt-[3px] text-[9.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+            views · {days} days
+          </p>
+        </div>
       </div>
 
+      <div className="relative mt-3">
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="mt-4 w-full"
+        preserveAspectRatio="none"
+        className="block h-[140px] w-full"
         role="img"
-        aria-label={`Daily page views over the last ${data.length} days, totalling ${totalViews} views.`}
+        aria-label={`Daily page views over the last ${days} days, totalling ${totalViews} views.`}
       >
-        {uniqueTicks.map((t) => (
-          <g key={t}>
-            <line
-              x1={PAD_L}
-              x2={W - PAD_R}
-              y1={y(t)}
-              y2={y(t)}
-              className="stroke-neutral-100"
-              strokeWidth={1}
-            />
-            <text
-              x={PAD_L - 8}
-              y={y(t) + 3}
-              textAnchor="end"
-              className="fill-neutral-400"
-              style={{ fontSize: 9 }}
-            >
-              {t}
-            </text>
-          </g>
+        {[0, 1 / 3, 2 / 3, 1].map((f) => (
+          <line
+            key={f}
+            x1={PAD_L}
+            x2={W - PAD_R}
+            y1={y(max * f)}
+            y2={y(max * f)}
+            className="stroke-atelier-rule"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
         ))}
 
-        <path d={areaPath} className="fill-neutral-900/[0.06]" />
+        <path d={areaPath} className="fill-atelier-ink/[0.06]" />
         <polyline
           points={linePoints}
           fill="none"
-          className="stroke-neutral-900"
-          strokeWidth={2}
+          className="stroke-atelier-ink"
+          strokeWidth={1.5}
           strokeLinejoin="round"
           strokeLinecap="round"
+          vectorEffect="non-scaling-stroke"
         />
 
         {data.map((d, i) => (
           <g key={d.day}>
-            {/* Dots only on days with traffic — a row of dots along zero
-                reads as data that isn't there. */}
-            {d.views > 0 && <circle cx={x(i)} cy={y(d.views)} r={2.5} className="fill-neutral-900" />}
+            <line
+              x1={x(i)}
+              x2={x(i)}
+              y1={PAD_T + plotH}
+              y2={PAD_T + plotH + 4}
+              className="stroke-atelier-ink/[0.28]"
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
             {/* Full-height hit area so the native tooltip works anywhere in
-                the column, not just on the 2.5px dot. */}
+                the column, not just on the dot. */}
             <rect
-              x={x(i) - plotW / (data.length * 2)}
+              x={x(i) - plotW / (days * 2)}
               y={PAD_T}
-              width={Math.max(plotW / data.length, 4)}
-              height={plotH}
+              width={Math.max(plotW / days, 4)}
+              height={plotH + PAD_B}
               fill="transparent"
             >
               <title>{`${d.day}: ${d.views} views, ${d.visitors} visitors`}</title>
             </rect>
-            {i % labelEvery === 0 && (
-              <text
-                x={x(i)}
-                y={H - 8}
-                textAnchor="middle"
-                className="fill-neutral-400"
-                style={{ fontSize: 9 }}
-              >
-                {d.day.slice(5)}
-              </text>
-            )}
           </g>
         ))}
       </svg>
+      <span
+        aria-hidden
+        className="absolute h-[7px] w-[7px] -translate-x-1/2 -translate-y-1/2 rounded-full border-[1.5px] border-atelier-ink bg-atelier-paper"
+        style={{ left: `${(x(days - 1) / W) * 100}%`, top: `${(y(data[days - 1].views) / H) * 100}%` }}
+      />
+      </div>
+
+      <div className="mt-2 flex justify-between text-[9.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+        <span>{shortDate(data[0].day)}</span>
+        <span>{shortDate(data[days - 1].day)} · Today</span>
+      </div>
     </Card>
   );
 }

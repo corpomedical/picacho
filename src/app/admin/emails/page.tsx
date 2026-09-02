@@ -68,7 +68,10 @@ export default async function AdminEmailsPage({
   if (templatesRes.error) {
     return (
       <div>
-        <h1 className="text-lg font-semibold text-neutral-900">Emails</h1>
+        <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Product</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Emails</h1>
+      </div>
         <Card className="mt-6 border-amber-200 bg-amber-50">
           <p className="text-sm text-amber-800">
             The email tables aren&apos;t in the database yet. Apply{" "}
@@ -136,7 +139,10 @@ export default async function AdminEmailsPage({
       <AdminErrorBanner error={actionError} />
       <AdminSuccessBanner message={message} />
 
-      <h1 className="text-lg font-semibold text-neutral-900">Emails</h1>
+      <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Product</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Emails</h1>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         Announcement templates, sent by hand to a chosen audience. Nothing here ever sends on its
         own, and account emails (sign-up confirmation, password reset) are a separate system.

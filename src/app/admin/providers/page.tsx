@@ -72,7 +72,10 @@ export default async function AdminProvidersPage({
   return (
     <div>
       <AdminErrorBanner error={actionError} />
-      <h1 className="text-lg font-semibold text-neutral-900">AI providers</h1>
+      <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Product</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">AI providers</h1>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         Claude drafts, OpenAI reviews, fal.ai generates the clip. Voice command and voice mode
         reuse the same OpenAI key for transcription and speech. Character dialogue (spoken lines,

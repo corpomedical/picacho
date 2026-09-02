@@ -21,7 +21,7 @@ import type { PlanId } from "@/lib/plans";
 // credit purchases. It is NOT read from Stripe invoices — we do not sync
 // those — so treat it as "what this plan bills", not "what cleared".
 
-const IMAGE_COST_USD = 0.17;
+export const IMAGE_COST_USD = 0.17;
 
 // A Claude draft plus, for the image mode, a vision read. Cents, not euros —
 // listed for completeness rather than because it moves the total.

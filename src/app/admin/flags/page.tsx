@@ -19,7 +19,10 @@ export default async function AdminFlagsPage({
   return (
     <div>
       <AdminErrorBanner error={actionError} />
-      <h1 className="text-lg font-semibold text-neutral-900">Feature flags</h1>
+      <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Product</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Feature flags</h1>
+      </div>
       <p className="mt-1 text-sm text-neutral-500">
         Toggle app behavior without a redeploy.
       </p>

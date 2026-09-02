@@ -36,23 +36,31 @@ export default async function AdminLayout({
   // live without a page refresh — see admin-command-bar.tsx.
   const badges = await computeAdminBadgeCounts(supabase);
 
+  // THE LEDGER (operator pick B, 2026-09-03): the admin sits on the same
+  // Frost ground as the studio, with the grouped rail (AdminCommandBar's
+  // md+ face) beside the page. Under md the component renders its compact
+  // strip in a slim top bar instead — no rail has room on a phone.
   return (
-    <div className="min-h-screen bg-neutral-50">
-      <header className="border-b border-neutral-200/70 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-8 py-4">
-          <Link href="/admin" className="flex items-center gap-2">
-            <Logo className="h-5" />
-            <span className="text-sm font-medium text-neutral-400">admin</span>
-          </Link>
-          <Link href="/app" className="text-sm text-neutral-500 hover:text-neutral-900">
-            Back to app
-          </Link>
+    <div className="frost-ground min-h-screen">
+      <div className="md:flex">
+        <div className="border-b border-atelier-rule bg-atelier-surface/80 backdrop-blur-xl md:hidden">
+          <div className="flex items-center justify-between px-4 pt-3">
+            <Link href="/admin" className="flex items-center gap-2">
+              <Logo className="h-5" />
+              <span className="text-[9.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                Admin
+              </span>
+            </Link>
+            <Link href="/app" className="text-xs text-atelier-muted hover:text-atelier-ink">
+              Back to studio
+            </Link>
+          </div>
         </div>
-        <div className="border-t border-neutral-100">
-          <AdminCommandBar badges={badges} />
-        </div>
-      </header>
-      <div className="mx-auto max-w-6xl px-8 py-10">{children}</div>
+        <AdminCommandBar badges={badges} />
+        <main className="min-w-0 flex-1 px-4 py-6 sm:px-8 md:px-10 md:py-7">
+          <div className="mx-auto max-w-6xl">{children}</div>
+        </main>
+      </div>
     </div>
   );
 }

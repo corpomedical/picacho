@@ -74,7 +74,10 @@ export default async function AdminUsersPage({
       <AdminErrorBanner error={actionError} />
       <AdminSuccessBanner message={message} />
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-neutral-900">Users</h1>
+        <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">People</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Users</h1>
+      </div>
         <form className="w-64">
           <Input type="search" name="q" placeholder="Search by email" defaultValue={q ?? ""} />
         </form>

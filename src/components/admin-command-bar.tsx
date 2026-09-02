@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
 import { getAdminBadgeCounts } from "@/lib/admin/actions";
+import { Logo } from "@/components/logo";
 
 // Replaces the old always-expanded 12-tab text nav (AdminNav), which had no
 // scroll container of its own and used to drag the whole page sideways on a
@@ -13,8 +14,15 @@ import { getAdminBadgeCounts } from "@/lib/admin/actions";
 // scroll on its own) plus a Cmd+K palette for typing to jump to a page —
 // the fastest path once you know the tool, which fits an admin area used by
 // exactly one person.
+// THE LEDGER (operator pick B, 2026-09-03): on md+ this component is the
+// grouped left rail in the product's own house style — fifteen flat tabs
+// became six groups (Overview · People · Trust & Safety · Money · Product ·
+// System). The horizontal icon strip below survives only under md, where a
+// rail has no room; the ⌘K palette and the live badge polling are shared by
+// both. NAV_ITEMS stays the flat source of truth for the palette and the
+// mobile strip; NAV_GROUPS is the same items, grouped.
 const NAV_ITEMS = [
-  { href: "/admin", label: "Dashboard", icon: HomeIcon },
+  { href: "/admin", label: "Overview", icon: HomeIcon },
   { href: "/admin/users", label: "Users", icon: UsersIcon },
   { href: "/admin/stats", label: "Stats", icon: ChartIcon },
   { href: "/admin/billing", label: "Billing", icon: CardIcon },
@@ -30,6 +38,15 @@ const NAV_ITEMS = [
   { href: "/admin/settings", label: "Settings", icon: GearIcon },
   { href: "/admin/updates", label: "Updates", icon: SparklesIcon },
 ] as const;
+
+const NAV_GROUPS: { label: string | null; hrefs: string[] }[] = [
+  { label: null, hrefs: ["/admin"] },
+  { label: "People", hrefs: ["/admin/users", "/admin/feedback"] },
+  { label: "Trust & Safety", hrefs: ["/admin/reports", "/admin/moderation"] },
+  { label: "Money", hrefs: ["/admin/billing", "/admin/promo", "/admin/stats"] },
+  { label: "Product", hrefs: ["/admin/providers", "/admin/voices", "/admin/flags", "/admin/updates", "/admin/emails"] },
+  { label: "System", hrefs: ["/admin/system", "/admin/settings"] },
+];
 
 function isActive(pathname: string, href: string): boolean {
   if (href === "/admin") return pathname === "/admin";
@@ -295,7 +312,77 @@ export function AdminCommandBar({
         />
       )}
 
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-8 py-2.5">
+      <aside className="sticky top-0 hidden h-screen w-[232px] flex-shrink-0 flex-col border-r border-atelier-rule bg-atelier-surface/70 px-3 pb-16 pt-6 backdrop-blur-xl md:flex">
+        <Link href="/admin" className="block px-2.5">
+          <Logo className="h-5" />
+          <span className="mt-1.5 block text-[9.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+            Admin · Ledger
+          </span>
+        </Link>
+        <nav className="mt-5 min-h-0 flex-1 overflow-y-auto border-t border-atelier-rule pt-4">
+          {NAV_GROUPS.map((group) => (
+            <div key={group.label ?? "top"} className={group.label ? "mt-5" : ""}>
+              {group.label && (
+                <p className="px-3 pb-1.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                  {group.label}
+                </p>
+              )}
+              <div className="space-y-0.5">
+                {group.hrefs.map((href) => {
+                  const item = NAV_ITEMS.find((i) => i.href === href)!;
+                  const active = isActive(pathname, href);
+                  const count = badges[href] ?? 0;
+                  return (
+                    <Link
+                      key={href}
+                      href={href}
+                      aria-current={active ? "page" : undefined}
+                      className={cn(
+                        "relative flex h-8 items-center gap-2.5 rounded-control px-3.5 text-[13.5px] transition-colors",
+                        active
+                          ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink before:absolute before:bottom-2 before:left-0 before:top-2 before:w-[2px] before:rounded-[1px] before:bg-atelier-accent"
+                          : "text-atelier-ink/[0.82] hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                      )}
+                    >
+                      <span className="flex-1">{item.label}</span>
+                      {count > 0 && (
+                        <span
+                          aria-label={`${count} notification${count === 1 ? "" : "s"}`}
+                          className="flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-atelier-accent px-[5px] font-numeral text-[11.5px] tabular-nums text-atelier-paper"
+                        >
+                          {count > 9 ? "9+" : count}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+        <div className="mt-4 flex items-center justify-between border-t border-atelier-rule px-3 pt-4">
+          <Link
+            href="/app"
+            className="flex items-center gap-1 text-xs text-atelier-muted transition-colors hover:text-atelier-ink"
+          >
+            Back to studio
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5" aria-hidden>
+              <path d="M7 17 17 7M9 7h8v8" />
+            </svg>
+          </Link>
+          <button
+            type="button"
+            onClick={openPalette}
+            className="flex items-center gap-1.5 text-xs text-atelier-muted transition-colors hover:text-atelier-ink"
+            aria-label="Jump to a page"
+          >
+            <SearchIcon className="h-3.5 w-3.5" />
+            <kbd className="font-sans text-[11px]">&#8984;K</kbd>
+          </button>
+        </div>
+      </aside>
+
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-2.5 md:hidden">
         {/* Scroll region with fade-edged chevron controls. The wrapper is
             relative so the arrows can overlay the nav's edges; min-w-0 lets
             this flex child actually shrink (default min-width:auto would
@@ -303,7 +390,7 @@ export function AdminCommandBar({
         <div className="relative min-w-0 flex-1">
           <div
             className={cn(
-              "pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center bg-gradient-to-r from-white via-white to-transparent pr-8 transition-opacity duration-200",
+              "pointer-events-none absolute inset-y-0 left-0 z-20 flex items-center bg-gradient-to-r from-atelier-paper via-atelier-paper to-transparent pr-8 transition-opacity duration-200",
               canLeft ? "opacity-100" : "opacity-0",
             )}
           >
@@ -344,8 +431,8 @@ export function AdminCommandBar({
                 className={cn(
                   "flex h-8 flex-shrink-0 items-center justify-center gap-2 rounded-[10px] px-2 text-sm transition-colors sm:justify-start sm:px-3",
                   active
-                    ? "bg-neutral-900 text-white"
-                    : "text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900",
+                    ? "bg-atelier-ink text-atelier-paper"
+                    : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
                 )}
               >
                 <span className="relative flex-shrink-0">
@@ -365,7 +452,7 @@ export function AdminCommandBar({
 
           <div
             className={cn(
-              "pointer-events-none absolute inset-y-0 right-0 z-20 flex items-center justify-end bg-gradient-to-l from-white via-white to-transparent pl-8 transition-opacity duration-200",
+              "pointer-events-none absolute inset-y-0 right-0 z-20 flex items-center justify-end bg-gradient-to-l from-atelier-paper via-atelier-paper to-transparent pl-8 transition-opacity duration-200",
               canRight ? "opacity-100" : "opacity-0",
             )}
           >
@@ -384,7 +471,7 @@ export function AdminCommandBar({
         <button
           type="button"
           onClick={openPalette}
-          className="flex flex-shrink-0 items-center gap-2 rounded-[10px] border border-neutral-200 px-3 py-1.5 text-sm text-neutral-400 transition-colors hover:border-neutral-300 hover:text-neutral-600"
+          className="flex flex-shrink-0 items-center gap-2 rounded-control border border-atelier-rule px-3 py-1.5 text-sm text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink"
         >
           <SearchIcon className="h-4 w-4" />
           <span className="hidden sm:inline">Jump to&hellip;</span>
@@ -404,7 +491,7 @@ export function AdminCommandBar({
             aria-modal="true"
             aria-label="Jump to admin page"
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-[0_20px_60px_-15px_rgba(0,0,0,0.35)]"
+            className="w-full max-w-md overflow-hidden rounded-control bg-atelier-surface/95 backdrop-blur-xl shadow-[0_0_0_1px_var(--frost-ring),0_20px_60px_-15px_rgba(0,0,0,0.35)]"
           >
             <div className="flex items-center gap-2.5 border-b border-neutral-100 px-4 py-3">
               <SearchIcon className="h-4 w-4 flex-shrink-0 text-neutral-400" />
@@ -417,7 +504,7 @@ export function AdminCommandBar({
                 }}
                 onKeyDown={onInputKeyDown}
                 placeholder="Jump to a page&hellip;"
-                className="w-full text-sm text-neutral-900 placeholder:text-neutral-400 focus:outline-none"
+                className="w-full bg-transparent text-sm text-atelier-ink placeholder:text-atelier-muted focus:outline-none"
               />
               <button
                 type="button"
@@ -444,7 +531,7 @@ export function AdminCommandBar({
                       onClick={() => go(item.href)}
                       className={cn(
                         "flex w-full items-center gap-3 rounded-[10px] px-3 py-2 text-left text-sm transition-colors",
-                        active ? "bg-neutral-900 text-white" : "text-neutral-700",
+                        active ? "bg-atelier-ink text-atelier-paper" : "text-atelier-ink/[0.82]",
                       )}
                     >
                       <span className="relative flex-shrink-0">

@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.12.0",
+    build: 21,
+    date: "2026-09-03",
+    title: "The admin becomes the studio's ledger",
+    items: [
+      "The admin area was redesigned in the product's own house style — the Ledger, picked from three directions on the design canvas. Fifteen flat tabs in a horizontal strip became six groups in a left rail: Overview · People (Users, Feedback) · Trust & Safety (Reports, Moderation) · Money (Billing, Promo codes, Stats) · Product (AI providers, Voices, Feature flags, Updates, Emails) · System (System health, Settings). The live badge counts and the ⌘K jump palette carried over untouched; on a phone the compact strip stays, since a rail has no room there.",
+      "The Overview reads as a ledger now: a serif title with the period stamped beside it, the four key figures as columns of one sheet with money in ochre serif, ink-drawn traffic and growth bars, plan distribution with paying tiers in ochre, and a ruled activity list with serif timestamps. Every section page sits on the same Frost ground with the same sheets and vocabulary, each headed by its group name and a serif title — one design system, front and back of house.",
+    ],
+  },
+  {
     version: "1.11.1",
     build: 20,
     date: "2026-09-03",

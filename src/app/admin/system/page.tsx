@@ -17,7 +17,10 @@ export default async function AdminSystemPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-900">System health</h1>
+      <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">System</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">System health</h1>
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>

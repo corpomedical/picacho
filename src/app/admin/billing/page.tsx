@@ -82,7 +82,10 @@ export default async function AdminBillingPage() {
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-neutral-900">Billing</h1>
+      <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Money</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Billing</h1>
+      </div>
 
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         <Card>

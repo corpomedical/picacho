@@ -271,7 +271,10 @@ export default async function AdminStatsPage({
 
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold text-neutral-900">Stats</h1>
+          <div>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">Money</p>
+        <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Stats</h1>
+      </div>
           <p className="mt-1 text-sm text-neutral-500">
             {total.toLocaleString()} users all-time · {onlineNow ?? 0} online now · refreshes every 30s
           </p>
