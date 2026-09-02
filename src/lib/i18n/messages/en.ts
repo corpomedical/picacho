@@ -223,6 +223,19 @@ const en = {
       closingTitle: "Your character is waiting.",
       closingSubtitle: "One photo. Every scene you can describe. Scored before you see it.",
       closingCta: "Start free",
+      // The Ticket Wall (dark pricing, 2026-09-02). exchangeLine's three
+      // facts are the only established credit math: the 1:1 standard rate
+      // and premium≈2 come from the tier feature lines, dialogue 1cr/3s
+      // from getDialogueCreditWeight.
+      boxOfficeEyebrow: "Box office",
+      ticketTitle: "Pick your ticket.",
+      ticketSub: "Every seat is credits a month — the exchange rate is printed below.",
+      admitLabel: "Admit",
+      perMonthWord: "month",
+      saveUpToPct: "save up to {n}%",
+      ticketBilledYr: "billed {sym}{total}/yr",
+      choosePlan: "Choose {name}",
+      exchangeLine: "1 credit ≈ 1 standard video or image · a premium render ≈ 2 credits · spoken dialogue adds 1 credit per 3 seconds",
       heroPlayingReel: "Playing: the reel",
       heroClipRealOutput: "real output",
       threadScene1: "Snowfall",

@@ -63,9 +63,14 @@ function CheckIcon(props: React.SVGProps<SVGSVGElement>) {
 export function TryItWidget({
   entries,
   labels,
+  dark = false,
 }: {
   entries: TryItWidgetEntry[];
   labels: TryItWidgetLabels;
+  // The dark homepage (2026-09-02) pins literals — the .dark theme remap
+  // must not touch this widget there; /pricing-style light surfaces keep
+  // the original classes.
+  dark?: boolean;
 }) {
   // Which entry (position in `entries`) is playing/shown; null = idle.
   const [selected, setSelected] = useState<number | null>(null);
@@ -131,11 +136,18 @@ export function TryItWidget({
   const entry = selected === null ? null : (entries[selected] ?? null);
 
   return (
-    <div ref={rootRef} className="rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)] sm:p-6">
+    <div
+      ref={rootRef}
+      className={
+        dark
+          ? "rounded-[18px] border border-[#f7f6f4]/[0.08] bg-[#f7f6f4]/[0.04] p-5 sm:p-6"
+          : "rounded-[18px] border border-neutral-200 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03),0_20px_44px_-18px_rgba(0,0,0,0.14)] sm:p-6"
+      }
+    >
       <div className="grid gap-6 sm:grid-cols-2 sm:gap-8">
         {/* Real prompts — the "pick a scene" list. */}
         <div>
-          <p className="text-xs font-medium text-neutral-400">{labels.pick}</p>
+          <p className={dark ? "text-xs font-medium text-[#f7f6f4]/45" : "text-xs font-medium text-neutral-400"}>{labels.pick}</p>
           <div className="mt-3 space-y-2">
             {entries.map((e, i) => (
               <button
@@ -146,9 +158,13 @@ export function TryItWidget({
                 title={e.prompt}
                 className={cn(
                   "w-full rounded-[12px] border px-3.5 py-2.5 text-left text-sm leading-relaxed transition-colors",
-                  selected === i
-                    ? "border-ochre/50 bg-ochre-soft text-neutral-900"
-                    : "border-neutral-100 bg-neutral-50 text-neutral-600 hover:border-neutral-200 hover:bg-neutral-100",
+                  dark
+                    ? selected === i
+                      ? "border-[#e0a468]/50 bg-[#e0a468]/10 text-[#f7f6f4]"
+                      : "border-[#f7f6f4]/[0.08] bg-[#f7f6f4]/[0.03] text-[#f7f6f4]/65 hover:border-[#f7f6f4]/[0.16] hover:bg-[#f7f6f4]/[0.06]"
+                    : selected === i
+                      ? "border-ochre/50 bg-ochre-soft text-neutral-900"
+                      : "border-neutral-100 bg-neutral-50 text-neutral-600 hover:border-neutral-200 hover:bg-neutral-100",
                 )}
               >
                 <span className="line-clamp-2">{e.prompt}</span>
@@ -168,9 +184,17 @@ export function TryItWidget({
                   key={label}
                   className={cn(
                     "flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-semibold transition-colors",
-                    complete && "bg-neutral-50 text-neutral-700",
-                    active && "bg-ochre-soft text-neutral-800",
-                    !complete && !active && "bg-neutral-50 text-neutral-300",
+                    dark
+                      ? cn(
+                          complete && "bg-[#f7f6f4]/[0.06] text-[#f7f6f4]/80",
+                          active && "bg-[#e0a468]/15 text-[#e0a468]",
+                          !complete && !active && "bg-[#f7f6f4]/[0.05] text-[#f7f6f4]/30",
+                        )
+                      : cn(
+                          complete && "bg-neutral-50 text-neutral-700",
+                          active && "bg-ochre-soft text-neutral-800",
+                          !complete && !active && "bg-neutral-50 text-neutral-300",
+                        ),
                   )}
                 >
                   {complete ? (
@@ -179,7 +203,7 @@ export function TryItWidget({
                     <span
                       className={cn(
                         "h-1.5 w-1.5 flex-shrink-0 rounded-full",
-                        active ? "animate-pulse bg-ochre" : "bg-neutral-200",
+                        active ? "animate-pulse bg-ochre" : dark ? "bg-[#f7f6f4]/20" : "bg-neutral-200",
                       )}
                     />
                   )}
@@ -191,9 +215,23 @@ export function TryItWidget({
 
           {/* Aspect box is always reserved — the image fades in over the same
               dark render surface the ValidateMockup uses, so nothing shifts. */}
-          <div className="relative mt-3 aspect-square w-full overflow-hidden rounded-[12px] bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-700">
+          <div
+            className={cn(
+              "relative mt-3 aspect-square w-full overflow-hidden rounded-[12px] bg-gradient-to-br",
+              // Pinned on the dark page — the neutral scale inverts under
+              // .dark, which would wash this render surface light there.
+              dark
+                ? "from-[#17171c] via-[#1e1e24] to-[#2a2a32]"
+                : "from-neutral-900 via-neutral-800 to-neutral-700",
+            )}
+          >
             {entry !== null && !done && (
-              <div className="scan-sweep pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
+              <div
+                className={cn(
+                  "scan-sweep pointer-events-none absolute inset-x-0 h-10 bg-gradient-to-b from-transparent to-transparent",
+                  dark ? "via-[#f7f6f4]/20" : "via-white/20",
+                )}
+              />
             )}
             {entry !== null && (
               /* eslint-disable-next-line @next/next/no-img-element */
@@ -210,7 +248,7 @@ export function TryItWidget({
             )}
             {entry !== null && done && (
               <span
-                className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-neutral-800 shadow-sm"
+                className="absolute bottom-2.5 left-2.5 flex items-center gap-1.5 rounded-full bg-[#f7f6f4]/95 px-2.5 py-1 text-[10px] font-semibold text-[#1c1c1e] shadow-sm"
                 title={formatMsg(labels.matchTitle, { n: entry.score })}
               >
                 {labels.match}
@@ -226,12 +264,12 @@ export function TryItWidget({
             {entry !== null && done && (
               <>
                 {entry.attempts !== null && (
-                  <p className="flex items-center gap-2 text-xs text-neutral-500">
+                  <p className={dark ? "flex items-center gap-2 text-xs text-[#f7f6f4]/55" : "flex items-center gap-2 text-xs text-neutral-500"}>
                     <CheckIcon className="h-3.5 w-3.5 flex-shrink-0 text-emerald-500" />
                     {labels.passed} {entry.attempts}
                   </p>
                 )}
-                <p className={cn("text-xs leading-relaxed text-neutral-400", entry.attempts !== null && "mt-1.5")}>
+                <p className={cn("text-xs leading-relaxed", dark ? "text-[#f7f6f4]/45" : "text-neutral-400", entry.attempts !== null && "mt-1.5")}>
                   {formatMsg(labels.realNote, { score: entry.score })}
                 </p>
               </>
@@ -240,7 +278,7 @@ export function TryItWidget({
 
           <Link
             href="/signup"
-            className="mt-4 inline-flex items-center justify-center rounded-[10px] bg-ochre px-5 py-2.5 text-sm font-semibold text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
+            className="mt-4 inline-flex items-center justify-center rounded-[10px] bg-ochre px-5 py-2.5 text-sm font-semibold text-[#f7f6f4] shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
           >
             {labels.cta}
           </Link>

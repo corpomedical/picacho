@@ -81,7 +81,16 @@ function useInstallFlow() {
   };
 }
 
-export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer" }) {
+export function InstallBadges({
+  variant = "hero",
+  dark = false,
+}: {
+  variant?: "hero" | "footer";
+  // Pinned-dark surfaces (the homepage footer): the near-black badge fill
+  // vanishes on #101014, and the neutral-900 tokens would flip under the
+  // .dark theme anyway — literals with a visible hairline instead.
+  dark?: boolean;
+}) {
   const { t } = useLocale();
   const m = t.marketing.install;
   const flow = useInstallFlow();
@@ -91,7 +100,9 @@ export function InstallBadges({ variant = "hero" }: { variant?: "hero" | "footer
   if (flow.standalone) return null;
 
   const badgeClass = cn(
-    "flex items-center gap-2.5 rounded-[12px] border border-neutral-900 bg-neutral-900 text-left text-white transition-transform hover:-translate-y-px",
+    dark
+      ? "flex items-center gap-2.5 rounded-[12px] border border-[#f7f6f4]/[0.16] bg-[#17171c] text-left text-[#f7f6f4] transition-transform hover:-translate-y-px"
+      : "flex items-center gap-2.5 rounded-[12px] border border-neutral-900 bg-neutral-900 text-left text-white transition-transform hover:-translate-y-px",
     variant === "hero" ? "px-4 py-2 pl-3" : "px-3 py-1.5 pl-2.5",
   );
 

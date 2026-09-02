@@ -10,6 +10,7 @@ import { cn } from "@/lib/cn";
 import { ShowcaseVideoPlayer } from "@/components/showcase-video-player";
 import { TryItWidget } from "@/components/marketing/try-it-widget";
 import { HeroBackdropReel } from "@/components/marketing/hero-reel";
+import { SerifNumerals } from "@/components/marketing/serif-numerals";
 import { getShowcaseProof } from "@/lib/showcase";
 import { brandName, uniqueBrands } from "@/components/marketing/engine-rail";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
@@ -153,6 +154,13 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
 // calls them). Rename or remove a model and the band follows; it can never
 // advertise an engine Picacho doesn't run.
 const ENGINE_BAND_NAMES = ["Seedance 2.0", "Kling O3 Pro", "Gemini Omni Flash 1.1", "Veo 3.1"];
+
+// The billing toggle's "save up to {n}%" — computed from the same table the
+// tickets render, so a pricing change can never strand the claim. (The flat
+// "-15%" badge died with the light band: real per-tier savings run 11–20%.)
+const MAX_ANNUAL_SAVE_PCT = Math.max(
+  ...PRICING_TIERS.map((t) => Math.round((1 - t.annualPrice / t.price) * 100)),
+);
 const ENGINE_BAND_MORE = (() => {
   const all = new Set([
     ...uniqueBrands(
@@ -566,98 +574,101 @@ export default async function Home({
         </div>
       </section>
 
-      {/* ── LIGHT BAND — the interactive proof and the pricing grid keep
-             their light components untouched (PricingCard and TryItWidget
-             are shared with /pricing and styled for paper); the band reads
-             as the receipt-paper break in the dark show. ──────────────── */}
-      <div className="mt-20 bg-paper sm:mt-24">
-        {tryItEntries.length >= 2 && (
-          <section className="mx-auto max-w-5xl px-4 pt-16 sm:px-8">
-            <h2 className="text-center text-sm font-semibold uppercase tracking-wide text-neutral-400">
-              {m.tryItEyebrow}
-            </h2>
-            <h3 className="mx-auto mt-3 max-w-xl text-center text-2xl font-semibold tracking-tight text-neutral-900">
-              {m.tryItTitle}
-            </h3>
-            <p className="mx-auto mt-2 max-w-md text-center text-sm text-neutral-500">{m.tryItSubtitle}</p>
-            <div className="mx-auto mt-10 max-w-4xl">
-              <TryItWidget
-                entries={tryItEntries.map((e) => ({
-                  ...e,
-                  // Same crop quirk as thread tile 3 (full-length shot —
-                  // anchor near the top so the face reads in a square box).
-                  objectPosition: e.index === 3 ? "50% 12%" : undefined,
-                }))}
-                labels={{
-                  pick: m.tryItPick,
-                  // Draft → Validate → Generate → Score, in the order the
-                  // pipeline actually runs them.
-                  steps: [m.tryItStepDraft, m.tryItStepValidate, m.tryItStepGenerate, m.tryItStepScore],
-                  match: m.scoreBandMatch,
-                  matchTitle: t.generate.identityMatch,
-                  passed: m.scoreBandPassed,
-                  realNote: m.tryItRealNote,
-                  cta: m.tryItCta,
-                }}
-              />
-            </div>
-          </section>
-        )}
+      {/* ── TRY IT — the interactive proof, now on the same dark stage
+             as everything else (the paper-light break died 2026-09-02:
+             operator, "You left one part below in white background"). ── */}
+      {tryItEntries.length >= 2 && (
+        <section className="mx-auto max-w-5xl px-4 pt-20 sm:px-8 sm:pt-[88px]">
+          <h2 className={cn(MICRO, "text-center")}>{m.tryItEyebrow}</h2>
+          <h3 className="mx-auto mt-3 max-w-xl text-center font-display text-2xl font-bold tracking-[-0.01em] text-[#f7f6f4]">
+            {m.tryItTitle}
+          </h3>
+          <p className="mx-auto mt-2 max-w-md text-center text-sm text-[#f7f6f4]/50">{m.tryItSubtitle}</p>
+          <div className="mx-auto mt-10 max-w-4xl">
+            <TryItWidget
+              dark
+              entries={tryItEntries.map((e) => ({
+                ...e,
+                // Same crop quirk as the thread's portrait tile (full-length
+                // shot — anchor near the top so the face reads in a square).
+                objectPosition: e.index === 3 ? "50% 12%" : undefined,
+              }))}
+              labels={{
+                pick: m.tryItPick,
+                // Draft → Validate → Generate → Score, in the order the
+                // pipeline actually runs them.
+                steps: [m.tryItStepDraft, m.tryItStepValidate, m.tryItStepGenerate, m.tryItStepScore],
+                match: m.scoreBandMatch,
+                matchTitle: t.generate.identityMatch,
+                passed: m.scoreBandPassed,
+                realNote: m.tryItRealNote,
+                cta: m.tryItCta,
+              }}
+            />
+          </div>
+        </section>
+      )}
 
-        {!native && (
-          // max-w-6xl + a 5-column top break, same as /pricing (2026-08-19).
-          <section id="pricing" className="mx-auto max-w-6xl scroll-mt-8 px-4 py-16 sm:px-8 sm:py-20">
-            <h2 className="text-center text-2xl font-semibold tracking-tight text-neutral-900">
-              {m.pricingHeading}
+      {/* ── BOX OFFICE — the Ticket Wall (operator-picked board B,
+             2026-09-02): five admission tickets, Growth lifted with the
+             only filled CTA. The tickets are PricingCard's ticket variant,
+             so checkout, portal, current-plan and EU-currency behavior are
+             the same machinery /pricing runs. ─────────────────────────── */}
+      {!native && (
+        <section id="pricing" className="mx-auto max-w-6xl scroll-mt-8 px-4 pt-20 sm:px-8 sm:pt-[88px]">
+          <div className="text-center">
+            <p className={MICRO}>{m.boxOfficeEyebrow}</p>
+            <h2 className="mt-4 font-display text-2xl font-bold tracking-[-0.01em] text-[#f7f6f4] sm:text-[32px]">
+              {m.ticketTitle}
             </h2>
-            <div className="mt-8 flex justify-center">
-              <div className="inline-flex items-center gap-1 rounded-full border border-neutral-200 bg-white p-1">
-                <Link
-                  href="/#pricing"
-                  className={
-                    interval === "annual"
-                      ? "flex items-center gap-1.5 rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
-                      : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
-                  }
-                >
-                  {p.billingAnnual}
-                  {/* Matches the real annualPrice discount in lib/pricing.ts
-                      (~15% since 2026-08-19) — change together with /pricing. */}
-                  <span
-                    className={
-                      interval === "annual"
-                        ? "rounded-full bg-ochre px-1.5 py-0.5 text-[10px] font-semibold text-white"
-                        : "hidden"
-                    }
-                  >
-                    -15%
-                  </span>
-                </Link>
-                <Link
-                  href="/?billing=monthly#pricing"
-                  className={
-                    interval === "month"
-                      ? "rounded-full bg-neutral-900 px-4 py-1.5 text-sm font-medium text-white"
-                      : "rounded-full px-4 py-1.5 text-sm text-neutral-500 hover:text-neutral-900"
-                  }
-                >
-                  {p.billingMonthly}
-                </Link>
-              </div>
-            </div>
-            <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-              {PRICING_TIERS.map((tier) => (
-                <PricingCard key={tier.id} tier={tier} interval={interval} />
-              ))}
-            </div>
-            <p className="mt-6 text-center text-sm text-neutral-500">
-              <Link href="/pricing" className="font-medium text-neutral-900 underline">
-                {m.fullPlanDetails}
+            <p className="mx-auto mt-3 max-w-[560px] text-[15px] text-[#f7f6f4]/62">{m.ticketSub}</p>
+          </div>
+          <div className="mt-8 flex justify-center">
+            <div className="inline-flex items-center gap-1 rounded-full p-1 shadow-[inset_0_0_0_1px_rgba(247,246,244,0.12)]">
+              <Link
+                href="/#pricing"
+                className={
+                  interval === "annual"
+                    ? "flex items-center gap-2 rounded-full bg-[#f7f6f4]/[0.08] px-4 py-2 text-[13px] font-semibold text-[#f7f6f4]"
+                    : "flex items-center gap-2 rounded-full px-4 py-2 text-[13px] font-semibold text-[#f7f6f4]/45 transition-colors hover:text-[#f7f6f4]"
+                }
+              >
+                {p.billingAnnual}
+                <span className="rounded-full bg-[#e0a468]/[0.14] px-2 py-0.5 font-numeral text-[11px] lowercase text-[#e0a468]">
+                  {formatMsg(m.saveUpToPct, { n: MAX_ANNUAL_SAVE_PCT })}
+                </span>
               </Link>
-            </p>
-          </section>
-        )}
-      </div>
+              <Link
+                href="/?billing=monthly#pricing"
+                className={
+                  interval === "month"
+                    ? "rounded-full bg-[#f7f6f4]/[0.08] px-4 py-2 text-[13px] font-semibold text-[#f7f6f4]"
+                    : "rounded-full px-4 py-2 text-[13px] font-semibold text-[#f7f6f4]/45 transition-colors hover:text-[#f7f6f4]"
+                }
+              >
+                {p.billingMonthly}
+              </Link>
+            </div>
+          </div>
+          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:mt-12 lg:grid-cols-5 lg:gap-4 xl:-mx-24">
+            {PRICING_TIERS.map((tier) => (
+              <PricingCard key={tier.id} tier={tier} interval={interval} variant="ticket" />
+            ))}
+          </div>
+          <p className="mt-11 text-center text-[13px] text-[#f7f6f4]/62">
+            <SerifNumerals
+              className="text-[#f7f6f4]/80"
+              text={m.exchangeLine.replaceAll(" · ", "\u2002·\u2002")}
+            />
+          </p>
+          <p className="mt-4 text-center text-[13px] text-[#f7f6f4]/45">
+            {m.heroFreeTrialNote}{"  "}
+            <Link href="/pricing" className="font-medium text-[#e0a468] underline decoration-[#e0a468]/40 underline-offset-4">
+              {m.fullPlanDetails}
+            </Link>
+          </p>
+        </section>
+      )}
 
       {/* ── CLOSING — back to the dark stage: a real render behind the
              radial dim, the board's sign-off. ─────────────────────────── */}
@@ -690,7 +701,7 @@ export default async function Home({
         </div>
       </section>
 
-      <MarketingFooter />
+      <MarketingFooter dark />
     </div>
   );
 }
