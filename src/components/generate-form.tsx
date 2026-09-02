@@ -773,6 +773,24 @@ function LoaderIcon({ className, ...props }: React.SVGProps<SVGSVGElement>) {
   );
 }
 
+// Aspect glyphs: a wide frame and a tall frame — restored 2026-09-02
+// (operator: "the aspect ratio must have its icons").
+function LandscapeIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="6.5" width="18" height="11" rx="2" />
+    </svg>
+  );
+}
+
+function PortraitIcon(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="6.5" y="3" width="11" height="18" rx="2" />
+    </svg>
+  );
+}
+
 function AnglesIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -2308,6 +2326,10 @@ function GenerateFormInner({
     }
   }, [continueFromId, videoModelId, contentType]);
   const [videoModelMenuOpen, setVideoModelMenuOpen] = useState(false);
+  // The duration chip's own dropdown (operator, 2026-09-02: durations get a
+  // separate menu, not a ride on the engine sheet).
+  const [durationMenuOpen, setDurationMenuOpen] = useState(false);
+  const durationMenuRef = useRef<HTMLDivElement>(null);
   // "More models" expander inside the picker (composer cleanup case 1).
   const [modelMenuShowAll, setModelMenuShowAll] = useState(false);
   const videoModelMenuRef = useRef<HTMLDivElement>(null);
@@ -2622,6 +2644,18 @@ function GenerateFormInner({
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, [videoModelMenuOpen]);
+
+  // And for the duration dropdown.
+  useEffect(() => {
+    if (!durationMenuOpen) return;
+    function onClick(e: MouseEvent) {
+      if (durationMenuRef.current && !durationMenuRef.current.contains(e.target as Node)) {
+        setDurationMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, [durationMenuOpen]);
 
   // Composer + menu — "Create image"/"Create video" set the content type
   // directly (Picacho has no separate style-template gallery like Gemini's,
@@ -5174,6 +5208,7 @@ function GenerateFormInner({
           type="button"
           onClick={() => {
             setModelMenuShowAll(false);
+            setDurationMenuOpen(false);
             setVideoModelMenuOpen((v) => !v);
           }}
           disabled={locked}
@@ -5204,24 +5239,76 @@ function GenerateFormInner({
           />
         </button>
 
-        {/* The duration chip lives INSIDE this ref container on purpose:
-            it opens the same sheet, and the sheet's outside-click handler
-            would otherwise close what the chip just opened. */}
+        {/* The duration chip and its OWN dropdown (operator, 2026-09-02):
+            a small upward menu of the engine's lengths, each priced —
+            separate from the engine sheet. */}
         {!storyboardActive && currentVideoModel && currentVideoModel.durations.length > 1 && (
-      <button
-        type="button"
-        disabled={locked}
-        onClick={() => {
-          setModelMenuShowAll(false);
-          setVideoModelMenuOpen((v) => !v);
-        }}
-        aria-haspopup="listbox"
-        aria-expanded={videoModelMenuOpen}
-        title={formatMsg(g.durationCredits, { n: currentDurationCredits })}
-        className="flex flex-shrink-0 items-center gap-1 rounded-full bg-atelier-ink/[0.045] px-3 py-[7px] text-xs font-medium text-atelier-ink transition-colors hover:bg-atelier-ink/[0.07] disabled:opacity-50"
-      >
-        {formatMsg(g.durationSecondsShort, { n: videoDurationSeconds })}
-      </button>
+          <div ref={durationMenuRef} className="relative flex-shrink-0">
+            <button
+              type="button"
+              disabled={locked}
+              onClick={() => {
+                setVideoModelMenuOpen(false);
+                setDurationMenuOpen((v) => !v);
+              }}
+              aria-haspopup="listbox"
+              aria-expanded={durationMenuOpen}
+              title={formatMsg(g.durationCredits, { n: currentDurationCredits })}
+              className={cn(
+                "flex flex-shrink-0 items-center gap-1 rounded-full px-3 py-[7px] text-xs font-medium text-atelier-ink transition-colors disabled:opacity-50",
+                durationMenuOpen
+                  ? "bg-atelier-ink/[0.08]"
+                  : "bg-atelier-ink/[0.045] hover:bg-atelier-ink/[0.07]",
+              )}
+            >
+              {formatMsg(g.durationSecondsShort, { n: videoDurationSeconds })}
+              <ChevronDownIcon
+                className={cn(
+                  "h-3 w-3 flex-shrink-0 text-atelier-muted transition-transform",
+                  durationMenuOpen && "rotate-180",
+                )}
+              />
+            </button>
+            {durationMenuOpen && (
+              <div
+                role="listbox"
+                className="absolute bottom-full left-0 z-30 mb-2 w-max rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+              >
+                {currentVideoModel.durations.map((d) => {
+                  const c = creditsForDuration(currentVideoModel, d.seconds);
+                  const active = videoDurationSeconds === d.seconds;
+                  return (
+                    <button
+                      key={d.seconds}
+                      type="button"
+                      role="option"
+                      aria-selected={active}
+                      onClick={() => {
+                        setVideoDurationSeconds(d.seconds);
+                        setDurationMenuOpen(false);
+                      }}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-[8px] px-2.5 py-1.5 text-left text-sm transition-colors",
+                        active
+                          ? "bg-atelier-accent/[0.08] text-atelier-ink shadow-[inset_0_0_0_1.5px_var(--color-atelier-accent)]"
+                          : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+                      )}
+                    >
+                      <span className="min-w-[2rem] font-medium">
+                        {formatMsg(g.durationSecondsShort, { n: d.seconds })}
+                      </span>
+                      {c > 1 && (
+                        <span className="font-numeral text-[11px] tabular-nums text-atelier-accent">
+                          {formatMsg(g.creditsShortN, { n: c })}
+                        </span>
+                      )}
+                      {active && <CheckIcon className="ml-auto h-3.5 w-3.5 flex-shrink-0 text-atelier-accent" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         )}
 
         {videoModelMenuOpen && (
@@ -5229,52 +5316,6 @@ function GenerateFormInner({
             role="listbox"
             className="absolute bottom-full left-0 right-0 z-30 mb-2 max-h-[min(420px,55vh)] overflow-y-auto rounded-[14px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
           >
-            {/* Phone widths: the duration chips live here instead of the
-                bar (the bar can't fit name + durations at 390px — the
-                mock's stated trade: one extra tap for the rare duration
-                change on small screens). Captioned with the engine they
-                price (A×B redesign): a bare 3/5/8-credit schedule above a
-                list of four engines read as if it applied to all of them. */}
-            {currentVideoModel && currentVideoModel.durations.length > 1 && (
-              <div className="mb-1 border-b border-atelier-rule/70 px-1 pb-1.5 pt-0.5">
-                <p className="px-1.5 pb-1 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-                  {formatMsg(g.durationsFor, { model: currentVideoModel.name })}
-                </p>
-                <div className="flex items-center gap-1">
-                  {currentVideoModel.durations.map((d) => {
-                    const segCredits = creditsForDuration(currentVideoModel, d.seconds);
-                    return (
-                      <button
-                        key={d.seconds}
-                        type="button"
-                        onClick={() => setVideoDurationSeconds(d.seconds)}
-                        aria-pressed={videoDurationSeconds === d.seconds}
-                        className={cn(
-                          "rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
-                          videoDurationSeconds === d.seconds
-                            ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted hover:text-atelier-ink",
-                        )}
-                      >
-                        {formatMsg(g.durationSecondsShort, { n: d.seconds })}
-                        {segCredits > 1 && (
-                          <span
-                            className={cn(
-                              "ml-1 font-numeral text-[10px] tabular-nums",
-                              videoDurationSeconds === d.seconds
-                                ? "text-atelier-paper/70"
-                                : "text-atelier-accent/90",
-                            )}
-                          >
-                            {formatMsg(g.creditsShortN, { n: segCredits })}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
             {(() => {
               const featuredIds = FEATURED_VIDEO_MODEL_IDS as readonly string[];
               const featured = videoModels.filter((m) => featuredIds.includes(m.id));
@@ -6134,13 +6175,17 @@ function GenerateFormInner({
                         aria-label={ar === "16:9" ? g.aspectWideTitle : g.aspectTallTitle}
                         aria-pressed={videoAspectRatio === ar}
                         className={cn(
-                          "rounded-full px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-50",
+                          "flex h-7 w-8 items-center justify-center rounded-full transition-colors disabled:opacity-50",
                           videoAspectRatio === ar
                             ? "bg-atelier-ink text-atelier-paper"
-                            : "text-atelier-muted hover:text-atelier-ink",
+                            : "text-atelier-muted/80 hover:text-atelier-ink",
                         )}
                       >
-                        {ar}
+                        {ar === "16:9" ? (
+                          <LandscapeIcon className="h-4 w-4" />
+                        ) : (
+                          <PortraitIcon className="h-4 w-4" />
+                        )}
                       </button>
                     ))}
                   </div>
@@ -7273,32 +7318,6 @@ function GenerateFormInner({
                       scrolls internally instead of pushing Send off-screen —
                       Send/Stop stays outside it, always visible. */}
                   <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain">
-                  {/* The Assistant pill (approved board): the switch, worn
-                      as a chip in the row — warm ochre when on, ghost when
-                      off. The Faster/Smarter effort words keep their quiet
-                      strip below while it is on. */}
-                  {chatAgentEnabled && (
-                    <>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-checked={assistantOn}
-                        onClick={toggleAssistant}
-                        disabled={submitting || asking}
-                        title={assistantOn ? g.assistantOnHint : g.assistantOffHint}
-                        className={cn(
-                          "flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:opacity-50",
-                          assistantOn
-                            ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-                            : "text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)] hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                        )}
-                      >
-                        <SparkIcon className="h-3.5 w-3.5" />
-                        <span className="hidden md:inline">{g.assistant}</span>
-                      </button>
-                      <span aria-hidden className="h-[18px] w-px flex-shrink-0 bg-atelier-rule" />
-                    </>
-                  )}
                   {/* Prompt Studio. Only appears once there's something to
                       enhance — an empty composer has nothing to improve, and
                       a control that can't do anything yet is just noise. */}
@@ -7750,12 +7769,52 @@ function GenerateFormInner({
                   system font scales this row outgrows a 320px screen, and
                   without wrapping it would push the whole PAGE sideways
                   again. */}
-              {/* The effort strip: the assistant lives in the controls
-                  row as a pill now (approved board); only the Faster/Smarter
-                  words remain down here, while the assistant is on. */}
-              {chatAgentEnabled && assistantOn && (
+              {/* The assistant strip, back in its original home (operator,
+                  2026-09-02: "move assist to the same place it was") — the
+                  quiet 26x14 switch under the input chip, with the
+                  Faster/Smarter words beside it while it is on. */}
+              {chatAgentEnabled && (
                 <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 px-3.5">
-                  <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={assistantOn}
+                    onClick={toggleAssistant}
+                    disabled={submitting || asking}
+                    title={assistantOn ? g.assistantOnHint : g.assistantOffHint}
+                    className="flex h-6 flex-shrink-0 items-center gap-1.5 rounded-full disabled:opacity-50"
+                  >
+                    {/* Track and knob, sized to the strip: 26x14 with a
+                        10px knob sliding 12px. Unmistakably a switch,
+                        small enough to be furniture. */}
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "relative h-3.5 w-[26px] flex-shrink-0 rounded-full transition-colors duration-200",
+                        assistantOn ? "bg-atelier-accent" : "bg-atelier-ink/15",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute left-0.5 top-0.5 h-2.5 w-2.5 rounded-full bg-atelier-paper shadow-[0_1px_2px_rgba(33,29,22,0.25)] transition-transform duration-200 motion-reduce:transition-none",
+                          assistantOn && "translate-x-3",
+                        )}
+                      />
+                    </span>
+                    <span
+                      className={cn(
+                        "text-[11px] font-medium transition-colors",
+                        assistantOn ? "text-atelier-ink" : "text-atelier-muted",
+                      )}
+                    >
+                      {g.assistant}
+                    </span>
+                  </button>
+
+                  {assistantOn && (
+                    <>
+                      <span aria-hidden className="h-3.5 w-px flex-shrink-0 bg-atelier-rule" />
+                      <div className="flex items-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => setAgentEffort("faster")}
@@ -7867,6 +7926,8 @@ function GenerateFormInner({
                           )}
                         </button>
                       </div>
+                    </>
+                  )}
                 </div>
               )}
 
