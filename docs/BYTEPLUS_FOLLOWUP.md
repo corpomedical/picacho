@@ -107,3 +107,53 @@ WHERE I DECLINED A REVIEWER
 - The recipient wanted two concrete call slots in SGT. I cannot invent the operator's availability; offered the window generically.
 - "By the end of September" is written as prose rather than a fourth bracket — three reviewers agree an unfilled bracket kills the email, and each extra one raises that odds. The operator should change that phrase if the timing is wrong.
 - The International Availability wording is unverifiable from the repo (it originates in the unsent draft). Kept, because it was already put to them, but hedged to "As I read your International Availability page."
+
+
+---
+
+## What was actually sent (2026-09-03): two support tickets, not the email
+
+The BytePlus console has no sales inbox reachable from a new account; the door
+that exists is **Support → Create Ticket → ModelArk**, and its description
+field takes **1,000 characters**. The email above is 5,300. So it went as two
+tickets, split by who can answer: a **General Inquiry** for access and
+availability (the two answers that gate everything, and the ones a support
+engineer can escalate with the account already attached), and a **Technical
+Support** ticket for the five API-reference points (which route straight to
+engineers and would be noise on the first). Legal, DPA and the H5 flow detail
+wait for whoever replies — they are partnership questions and a ticket cannot
+carry them.
+
+### Ticket 1 — General Inquiry (967 chars)
+
+**Subject:** Seedance in production from Spain, and access to the real-human asset library
+
+```
+Picacho (picacho.ai), operated by JEAR TECNICA S.A., Madrid. We generate short video of a saved character from the customer's own reference photos and want to move our Seedance lane to ModelArk directly.
+
+1. Can this Spain-registered account run dreamina-seedance-2-0 and 2-5 in production for paying customers? ListModelRateLimit returns both, but I read that as capacity, not permission: your availability page excludes "Restricted Model" tagged models for Spain. A yes/no in writing, please.
+
+2. The real-human asset library does not appear in our API list. Is the Entry tier self-serve, or does it need an invitation? If an invitation, please treat this as the request. Does a verified asset clear the real-person check on both 2.0 and 2.5, and must the end user hold their own BytePlus account to complete verification?
+
+3. Does returned video carry provenance metadata (C2PA), and what does watermark:true produce: a visible overlay, embedded metadata, or both?
+```
+
+### Ticket 2 — Technical Support (900 chars)
+
+**Subject:** Video generation API: five reference questions before we build
+
+```
+Building a client for POST /contents/generations/tasks (Seedance). Five points the reference leaves open:
+
+1. Model id on create. ListModelRateLimit gives bare family names (dreamina-seedance-2-5), the create sample uses a version-suffixed id, and pricing quotes dreamina-seedance-2-0-260128. Which form does create accept?
+
+2. Service tier. filter.service_tier exists on the list endpoint. Is there a request-side field to choose flex vs default, and how is flex priced?
+
+3. Failed tasks. The reference documents success fields only. What is the error object on failure, so we can separate a content refusal (e.g. InputImageSensitiveContentDetected) from a platform error?
+
+4. Does deleting an in-flight task stop billing, or only remove the record?
+
+5. Once a real-human asset is verified, what does the create call look like: an asset id inside an image_url part, or a different shape?
+
+Thank you.
+```
