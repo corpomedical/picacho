@@ -145,3 +145,69 @@ daily cap applies.
   design the page for that (the Upscale page already does).
 - **Provenance** — Nano Banana Pro output may carry Google's SynthID; whether
   fal preserves C2PA per endpoint is the open question already sent to fal.
+
+---
+
+## Measured, 2026-09-03 — the go/no-go probe
+
+Operator: "I like B, but I'm not here to be embarrassed. If you can't build
+it better then don't." So before any product code, every primitive was run
+live on a synthetic person (no customer data): a FLUX.2 Pro identity photo,
+then a café "take" through our own edit lane, then every candidate engine on
+that take. Scores are the product's own `scoreIdentityMatch` (gpt-5.4-mini,
+same prompt, gate threshold 70). Total spend ≈ $2.50. Sheets in the session
+scratchpad `layers-probe/`.
+
+| Step | Engine | Time | Result |
+|---|---|---|---|
+| Identity photo | `fal-ai/flux-2-pro` | 13 s | 1024² |
+| Take (our lane) | `fal-ai/flux-2-pro/edit` | 14 s | scores **84** vs identity |
+| Background swap | `bytedance/seedream/v5/pro/edit` | 31 s | **86**, background fully replaced |
+| Background swap | `fal-ai/nano-banana-pro/edit` | 22 s | **83**, reframed tighter |
+| Background swap | `fal-ai/flux-2-pro/edit` (ours) | 23 s | **96**, everything preserved |
+| Cutout | `fal-ai/birefnet/v2` | 1.5 s (2 s at 2048²) | clean matte, soft hair edges, flyaways kept |
+| Cutout | `fal-ai/bria/background/remove` | 3.8 s | acceptable; hard-cut strays; slower |
+| Layer split | `fal-ai/qwen-image-layered` | 19 s | semantically right, **always 640×640** — structure only |
+| Layer split | `bytedance/seedream/v5/pro/layerize` 2K | **96 s** | **6 named, z-ordered layers at 2K**: base, window/outdoor background (fully inpainted), leather armchair, round table, portrait of woman, ceramic cup. Clean alpha. |
+| Layer split | same, 1K fast / 1K standard | 59 s / 76 s | 7 / 6 layers |
+| Background plate | `fal-ai/image-editing/object-removal` | 15 s | **FAILED — painted the woman back in, different pose** |
+| Background plate | BiRefNet mask → `fal-ai/bria/eraser` | 3 + 8 s | clean plate, chair/table/window intact |
+| Brush replace | `fal-ai/flux-pro/v1/fill` (cup → croissant) | 15 s | convincing; identity **89** |
+| Still upscale 2× | `fal-ai/clarity-upscaler` | 13 s | identity **89** at defaults |
+| Alpha upscale 4× | `topaz/upscale/image/transparent` | 89 s | 4096², strands sharper, alpha kept |
+| Text edit | Nano Banana Pro 1K | 19 s | **"PICCHO"** — a letter dropped |
+| Text edit | Nano Banana Pro **2K** | 33 s | **"PICACHO"** — correct, clean, face intact (90) |
+| Text edit | Seedream 5 Pro edit | 81 s | ignored the instruction entirely |
+| Text layer | `fal-ai/ideogram/v3/layerize-text` | 29 s | 0 containers on AI-generated signage |
+
+### Decisions the probe forces
+
+- **Decomposition: Seedream layerize**, not Qwen. Named layers with z-order and
+  boxes at native 2K are the product; Qwen's 640px output is only a guide.
+  Default 1K standard (~75 s), 2K on request (~95 s). The wait is real and the
+  receipt says so — this is not an interactive brush, it is a render.
+- **Subject cutout: BiRefNet v2**, Portrait model, with `output_mask`. Fast,
+  full-res, best hair.
+- **Background plate: mask → Bria eraser.** `object-removal` is excluded: a
+  plate that hallucinates the subject back is exactly the embarrassment.
+- **Identity re-render: our own FLUX.2 edit lane stays the engine.** It beat
+  both of Higgsfield's on the same swap (96 vs 86/83). Every re-render is
+  scored; the gate and free retry already exist.
+- **Text: Nano Banana Pro at 2K only**, and every text edit is *read back* by
+  a vision call and retried once if it does not match — the same
+  measured-not-claimed rule as identity. Seedream is not used for text.
+  Ideogram's text layers are not usable on generated signage.
+- **4K export: Topaz transparent.** Slow (~90 s); offered as an explicit
+  step with its own receipt, never implied.
+
+### The honest limits, stated up front
+
+1. Operations take **20–95 seconds**. Higgsfield's editor feels interactive;
+   ours is a studio render with a receipt. The page is designed for that.
+2. "Flawless text" is not a claim we make. "Regenerate text, verified" is.
+3. Layer *grouping* can differ between runs of the same image (6 vs 7 layers
+   at 1K). Layers are addressed by name and box, never by index.
+
+**Go for B.** The part that matters — a character that survives every edit,
+measured — is not just achievable, it is where we already beat the engines
+they run.
