@@ -1,0 +1,130 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Picacho email signature — copy into Gmail</title>
+<style>
+  body { margin:0; padding:40px 24px 64px; background:#fafafa;
+         font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; color:#404040; }
+  .wrap { max-width:640px; margin:0 auto; }
+  h1 { font-size:19px; font-weight:700; letter-spacing:-0.02em; color:#171717; margin:0 0 6px; }
+  .lede { font-size:14px; line-height:1.6; color:#737373; margin:0 0 28px; }
+  .lede b { color:#404040; }
+  .label { font-size:11px; text-transform:uppercase; letter-spacing:.12em; color:#a3a3a3; margin:28px 0 8px; }
+  .card { background:#fff; border:1px solid #e5e5e5; border-radius:14px; padding:24px; }
+  button { margin-top:10px; font:inherit; font-size:13px; border:1px solid #e5e5e5; background:#fff;
+           color:#404040; border-radius:8px; padding:7px 14px; cursor:pointer; }
+  button:hover { border-color:#a3a3a3; }
+  button.done { border-color:#a84e24; color:#a84e24; }
+  .todo { background:#fff8f2; border:1px solid #f0d9c6; border-radius:10px; padding:14px 16px;
+          font-size:13px; line-height:1.6; margin:0 0 24px; }
+  code { background:#f5f5f5; padding:1px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Picacho email signature</h1>
+  <p class="lede">Press <b>Copy</b>, then paste straight into Gmail →
+     Settings → See all settings → General → Signature. It copies as formatted
+     text, which is what that box expects — pasting the HTML source into it
+     shows you the code instead.</p>
+
+  <div class="todo">
+    <b>Fill these in first</b>, by editing this file: <code>[SURNAME]</code>,
+    <code>[CIF]</code>, <code>[REGISTERED ADDRESS]</code>,
+    <code>[REGISTRO MERCANTIL]</code>. They are left blank on purpose — a
+    company registration number is not something to guess at.
+  </div>
+
+  <div class="label">Full — first message in a thread</div>
+  <div class="card">
+    <div id="sig-full">
+      <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#404040;">
+        <tr>
+          <td>
+            <!-- Nested table so the ochre rule is exactly as wide as the
+                 wordmark: a td in a single-column table stretches to the
+                 widest row, which here is the legal line. -->
+            <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">
+              <tr>
+                <td style="padding:0 0 6px;border-bottom:2px solid #a84e24;">
+                  <span style="font-size:17px;font-weight:700;color:#171717;">Picacho</span>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:12px 0 0;">
+            <span style="color:#171717;">Ahmad [SURNAME]</span><br>
+            <span style="color:#737373;">Founder</span>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:10px 0 0;">
+            <a href="https://picacho.ai" style="color:#a84e24;text-decoration:none;">picacho.ai</a>
+            <span style="color:#d4d4d4;">&nbsp;·&nbsp;</span>
+            <a href="mailto:hello@picacho.ai" style="color:#a84e24;text-decoration:none;">hello@picacho.ai</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:10px 0 0;font-size:13px;color:#737373;">
+            The same character, in every single frame.
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:14px 0 0;font-size:11px;line-height:1.5;color:#a3a3a3;">
+            Picacho is a trading name of Jeartecnica S.A. · CIF [CIF] · [REGISTERED ADDRESS] · [REGISTRO MERCANTIL]
+          </td>
+        </tr>
+      </table>
+    </div>
+    <button data-copy="sig-full">Copy full signature</button>
+  </div>
+
+  <div class="label">Short — replies</div>
+  <div class="card">
+    <div id="sig-short">
+      <table cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#404040;">
+        <tr>
+          <td>
+            <span style="color:#171717;">Ahmad [SURNAME]</span><br>
+            <span style="color:#737373;">Picacho · </span><a href="https://picacho.ai" style="color:#a84e24;text-decoration:none;">picacho.ai</a>
+          </td>
+        </tr>
+      </table>
+    </div>
+    <button data-copy="sig-short">Copy short signature</button>
+  </div>
+
+  <p class="lede" style="margin-top:32px;">Gmail keeps more than one signature —
+     set the short one as the default for replies so a full block does not
+     repeat down a thread.</p>
+</div>
+
+<script>
+document.querySelectorAll("button[data-copy]").forEach(function (btn) {
+  btn.addEventListener("click", function () {
+    var node = document.getElementById(btn.getAttribute("data-copy"));
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    // execCommand is deprecated but is the one path that reliably puts
+    // FORMATTED text on the clipboard from a file:// page, which is exactly
+    // what Gmail's signature box wants.
+    var ok = document.execCommand("copy");
+    sel.removeAllRanges();
+    btn.textContent = ok ? "Copied — paste into Gmail" : "Press Cmd+C now";
+    btn.className = "done";
+    setTimeout(function () {
+      btn.textContent = btn.getAttribute("data-copy") === "sig-full"
+        ? "Copy full signature" : "Copy short signature";
+      btn.className = "";
+    }, 3000);
+  });
+});
+</script>
+</body>
+</html>
