@@ -96,13 +96,31 @@ export function NativeChrome() {
       // operator's 2026-08-21 "unify the color" fix is actually riding on.
       //
       // Play's release dashboard flags "deprecated APIs for edge-to-edge" on
-      // this build. Verified 2026-08-30: none of it is ours — our res/ and
-      // manifest contain no statusBarColor, navigationBarColor,
-      // windowLightStatusBar or fitsSystemWindows — the references live in
-      // @capacitor/status-bar, which is already at its latest version
-      // (8.0.3). It is a recommendation, not a blocker, and the only way to
-      // clear it is a plugin release or dropping the plugin, which would cost
-      // setStyle above. Revisit on the next Capacitor bump.
+      // this build. None of it is ours: our res/ and manifest contain no
+      // statusBarColor, navigationBarColor, windowLightStatusBar or
+      // fitsSystemWindows. An earlier note here blamed @capacitor/status-bar
+      // alone; that was only the part visible from node_modules. Read out of
+      // the actual release DEX on 2026-09-03 (dexdump + the R8 mapping, which
+      // is the only way to see it — these are Gradle deps, not npm packages),
+      // every surviving caller of Window.set/getStatusBarColor and
+      // set/getNavigationBarColor is a library:
+      //
+      //   androidx.activity.EdgeToEdgeApi23/26/29     (activity 1.11.0)
+      //   androidx.core.splashscreen.SplashScreen$Impl31 (core-splashscreen 1.2.0)
+      //   com.google.android.material.internal.EdgeToEdgeUtils
+      //   com.google.android.material.bottomsheet.BottomSheetDialog (material 1.13.0)
+      //   com.capacitorjs.plugins.statusbar.StatusBar  (status-bar 8.0.3)
+      //   io.ionic.libs...IONCAMRImageEditorActivity   (via @capacitor/camera)
+      //
+      // All are current versions, and each guards the call by API level at
+      // runtime — Play's scan reads the bytecode, not the guard. R8 does not
+      // remove them. So there is no version bump that clears this today; the
+      // last three could only go by dropping plugins (the camera one is
+      // never called from here — see AndroidManifest, capture rides the web
+      // <input capture> bridge — so that one is a real option), and the first
+      // two cannot go at all. It is a recommendation with no deadline, unlike
+      // the obfuscation item. Revisit when AndroidX and Material ship
+      // releases without the legacy paths.
       void statusBar?.setBackgroundColor?.({ color: dark ? "#1a1c24" : "#eef1f8" });
     };
     paintBars();
