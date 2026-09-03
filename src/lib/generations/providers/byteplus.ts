@@ -177,8 +177,22 @@ export async function cancelArkTask(taskId: string): Promise<void> {
   await arkFetch(`${TASKS_PATH}/${encodeURIComponent(taskId)}`, { method: "DELETE" }, 15_000);
 }
 
-/** One part of the multimodal `content` array. */
-type ArkContentPart = { type: "text"; text: string };
+// The multimodal `content` array, verified against ByteDance's reference-to-
+// video example. Every reference rides as its own part with a `role`, and the
+// PROMPT cites it in prose — their sample writes "The first frame is Image 1"
+// and "the fruit tea from Image 2". That is NOT the "@Image1" form our fal
+// Seedance path uses; the citation lines have to be rewritten for this lane
+// rather than reused, or the model is handed references it was never told to
+// bind to.
+//
+// Documented combinations: text alone; text + image; text + video; and those
+// two plus audio, in any pairing. There is also a "sample task id" mode that
+// conditions on a previously generated Seedance video, which is worth a look
+// for continuation work later.
+type ArkContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string }; role: "reference_image" }
+  | { type: "video_url"; video_url: { url: string }; role: "reference_video" };
 
 export type ArkSubmitOptions = {
   /** Versioned model id, e.g. "dreamina-seedance-2-0-260128". See ARK_MODELS. */
@@ -192,10 +206,13 @@ export type ArkSubmitOptions = {
   watermark?: boolean;
   serviceTier?: ArkServiceTier;
   /**
-   * Reference images for identity work. NOT SENT YET — see the throw below.
-   * Kept in the signature so the call sites that will need it are typed now.
+   * Identity references, in citation order — the caller is responsible for
+   * the cap (our catalogue budgets Seedance at 4 images) and for writing a
+   * prompt that actually refers to them as "Image 1", "Image 2" and so on.
    */
   referenceImageUrls?: string[];
+  /** A clip to continue from, cited in the prompt as "Video 1". */
+  referenceVideoUrl?: string;
 };
 
 /**
@@ -206,22 +223,23 @@ export type ArkSubmitOptions = {
  * inference endpoint id; `content` is an OpenAI-style array of typed parts;
  * ratio, duration and watermark sit alongside it at the top level.
  *
- * REFERENCE IMAGES ARE REFUSED HERE ON PURPOSE. The documented example is
- * text-to-video only, and the part shape for an image is not something to
- * infer — every plausible guess (an image_url part, a bare url, an asset
- * reference) is a request that costs money to discover is wrong. Picacho's
- * whole Seedance use is identity work, so until the content array's allowed
- * part types are read from the reference, this path is honest about being
- * unfinished rather than expensively optimistic.
+ * Identity references ride as image_url parts carrying role
+ * "reference_image", and a continuation clip as a video_url part with role
+ * "reference_video" — both read from ByteDance's own reference-to-video
+ * sample, not inferred.
  */
 export async function submitArkVideoJob(options: ArkSubmitOptions): Promise<string> {
-  if (options.referenceImageUrls?.length) {
-    throw new Error(
-      "BytePlus ModelArk: reference images are not wired yet — the content array's image part shape is undocumented here.",
-    );
-  }
-
   const content: ArkContentPart[] = [{ type: "text", text: options.prompt }];
+  for (const url of options.referenceImageUrls ?? []) {
+    content.push({ type: "image_url", image_url: { url }, role: "reference_image" });
+  }
+  if (options.referenceVideoUrl) {
+    content.push({
+      type: "video_url",
+      video_url: { url: options.referenceVideoUrl },
+      role: "reference_video",
+    });
+  }
   const body: Record<string, unknown> = {
     model: options.model,
     content,
