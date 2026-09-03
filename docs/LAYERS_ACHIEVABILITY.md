@@ -211,3 +211,58 @@ scratchpad `layers-probe/`.
 **Go for B.** The part that matters — a character that survives every edit,
 measured — is not just achievable, it is where we already beat the engines
 they run.
+
+
+---
+
+## Built — stage 1 of B (2026-09-03)
+
+Operator: "Build." What shipped, and where:
+
+| Piece | Where |
+|---|---|
+| Contract: endpoint, tiers, prices, eligibility, storage paths | `src/lib/generations/layers.ts` (+ tests) |
+| Schema: `generation_layers`, `layer-sources` bucket, RLS | `supabase/pending-2026-09-03/layers.sql` — **run before deploy** |
+| fal: `submitLayerizeJob`, `fetchQueuedLayers` | `providers/fal.ts` |
+| Job lane: stage `"layers"`, `saveLayersJob`, finish handler, refund on fail/cancel | `job-runner.ts` |
+| Actions: `startTakeLayers`, `startUploadLayers`, `reserveLayersUploadPath` | `actions.ts` |
+| Byte-exact storage: `persistImageBytes` | `core.ts` |
+| Image dimension probe (PNG/JPEG/WebP, money path reads the file) | `src/lib/media/image-probe.ts` (+ tests) |
+| Store-only ZIP writer, dependency-free | `src/lib/media/zip-store.ts` (+ tests, round-trips through `unzip`) |
+| Pages: tool page, stack page (polls), ZIP route | `src/app/app/layers/**` |
+| Components: receipt button, upload lane, stack, progress | `src/components/layers-*.tsx`, `layer-stack.tsx` |
+| Sidebar entry + four locales | `app-sidebar.tsx`, `messages/{en,es,pt,it}.ts` |
+
+**Verified:** tsc, lint, 966 tests, production build. **Not yet verified live:**
+the split end to end against prod, which needs the SQL run and a signed-in
+session — the same live check Upscale had on its day.
+
+**Reviewed before commit** (eight-angle pass, ~30 candidates, the real ones
+fixed): the poll loop now treats "gone" as settled instead of spinning
+forever after the webhook collects the job; delivery-billed stages refund on
+EVERY terminal path through one per-stage table (cancel, provider failure,
+our own collection failure, the reaper's write-off) so the receipt's promise
+is kept, not just usually kept; our storage/row writes throw
+`CriticalWriteError` so a blink on our side is retried rather than booked as
+the provider's fault; a layer-fetch 5xx uses the `(NNN):` shape the retry
+classifier reads; the ZIP streams (a 2K split is 20–80 MB against a 4.5 MB
+buffered cap); the composite places each layer at its provider box — the
+layers are box crops, often upscaled, not full-canvas; `persistImageBytes`
+enforces the owner folder and never rewrites an immutable-cached object;
+History keys the tool badge on `model_id`, so a split no longer wears
+"Upscaled"; the upload probe reads a 256 KB prefix instead of the file.
+
+**Tracked debt, deliberately not done in this cut:** `startLayersCore`
+duplicates `startUpscaleCore` (extract a `startToolJobCore` when a third tool
+lands — touching the live Upscale money path for symmetry alone was judged
+the greater risk today); the receipt sheet exists four times
+(upscale/layers × button/upload) — a `ReceiptSheet` + `TierPicker` when the
+next sheet is written; the composer's own poll loop should move onto
+`poll-client.ts`; `image-probe.ts` overlaps `sharp(...).metadata()` used by
+attachments — kept because it probes a 256 KB prefix where sharp needs the
+whole file, but the two should agree on what they accept.
+
+**Next (stage 2, the 10x part):** re-render the person layer through the
+FLUX.2 edit lane with the character's identity references, gated and scored
+(`runImageIdentityGate`); cut out / plate / transparent-upscale a layer; text
+regeneration at 2K with read-back; "use as first frame"; History chip.

@@ -394,3 +394,41 @@ export async function persistGeneratedImage(
   // History silently broke a week after it was made. This one never expires.
   return mediaUrl("generated-images", path);
 }
+
+/**
+ * Store image bytes at a CHOSEN path in generated-images and return the
+ * stable media URL. Layers need deterministic paths
+ * (userId/layers/generationId/zN.png) so a stack can be re-read by
+ * generation id.
+ *
+ * Two invariants persistGeneratedImage gets for free are enforced here
+ * rather than trusted from callers. The path must sit under the owner's
+ * folder — the bucket's RLS is keyed on it. And an existing object is never
+ * rewritten: the media route serves everything immutable for a year, so a
+ * rewrite with different bytes would ship stale pixels to anyone who had
+ * already looked. A retry that finds its own earlier upload (a transport
+ * blip mid-loop re-runs the pass) is a success, not a conflict; a step that
+ * wants new pixels must choose a new path.
+ */
+export async function persistImageBytes(
+  supabase: SupabaseClient,
+  userId: string,
+  path: string,
+  bytes: Uint8Array,
+  contentType = "image/png",
+): Promise<string> {
+  if (!path.startsWith(`${userId}/`) || path.includes("..")) {
+    throw new Error("persistImageBytes: path must sit under the owner's folder.");
+  }
+  const { error } = await supabase.storage
+    .from("generated-images")
+    .upload(path, bytes, { contentType, upsert: false });
+  if (error) {
+    const alreadyThere =
+      /already exists|duplicate/i.test(error.message) ||
+      (error as { statusCode?: string | number }).statusCode === "409" ||
+      (error as { statusCode?: string | number }).statusCode === 409;
+    if (!alreadyThere) throw new Error(`Couldn't save the image: ${error.message}`);
+  }
+  return mediaUrl("generated-images", path);
+}

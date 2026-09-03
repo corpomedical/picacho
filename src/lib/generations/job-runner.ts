@@ -1,4 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { persistImageBytes } from "@/lib/generations/core";
+import { LAYERS_TIERS, layerStoragePath, type LayersTier } from "@/lib/generations/layers";
 import { forceRefundEligible, isProviderRejection } from "@/lib/generations/refund-rules";
 import { createAdminClient } from "@/lib/supabase/server";
 import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
@@ -11,6 +14,7 @@ import {
   submitLipSyncJob,
   submitSpeechJob,
   type QueuedJob,
+  fetchQueuedLayers,
 } from "@/lib/generations/providers/fal";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
@@ -47,7 +51,7 @@ import { notifyUser } from "@/lib/push/send";
 // A video generation can pass through several queued provider jobs in turn.
 // Each is submitted only once its predecessor has finished, because each one
 // consumes the previous one's output.
-export type JobStage = "video" | "dialogue_tts" | "dialogue_lipsync" | "upscale";
+export type JobStage = "video" | "dialogue_tts" | "dialogue_lipsync" | "upscale" | "layers";
 
 // What advanceGeneration tells the caller after one tick.
 export type AdvanceResult =
@@ -98,6 +102,23 @@ const STAGE_PROGRESS: Record<JobStage, string> = {
   dialogue_tts: "Generating the voice",
   dialogue_lipsync: "Syncing the lips to the dialogue",
   upscale: "Upscaling the video",
+  layers: "Splitting into layers",
+};
+
+// Which stages the provider bills ONLY on delivery. A job in one of these
+// that ends without delivering — refused, lost, stopped, or delivered but
+// unstorable on our side — cost the user nothing they received, so the credit
+// goes back on EVERY terminal-failure path, forced past the automatic_refunds
+// switch. The video lanes stay on the fault-keyed REFUNDS table below. A new
+// stage added to JobStage without a row here is a compile error, which is the
+// point: the receipt copy "if the provider refuses, nothing is charged" is a
+// promise this table keeps.
+const REFUND_ON_FAILURE: Record<JobStage, boolean> = {
+  video: false,
+  dialogue_tts: false,
+  dialogue_lipsync: false,
+  upscale: true,
+  layers: true,
 };
 
 // How long a job may go unpolled before the reaper assumes nobody is coming
@@ -147,6 +168,9 @@ const ADVANCE_LEASE_SECONDS = 90;
 // would permanently strand — or double-charge — a billed render. Callers let
 // this propagate so the webhook 500s (fal retries), the client poll errors and
 // retries, and the reaper leaves the row for the next pass.
+/** A lane's own notification copy and deep link, for finish(). */
+type LaneNotice = { title: string; body: string; path: string };
+
 class CriticalWriteError extends Error {
   constructor(message: string) {
     super(message);
@@ -570,11 +594,14 @@ function jobHandle(row: JobRow): QueuedJob {
     // Seedance 422 during that render's post-mortem, which is why the real
     // label is stored now.
     label:
-      row.stage === "video"
-        ? (row.payload?.label ?? "Kling")
+      row.payload?.label ??
+      (row.stage === "video"
+        ? "Kling"
         : row.stage === "dialogue_tts"
           ? "ElevenLabs TTS"
-          : "Sync Lipsync",
+          : row.stage === "dialogue_lipsync"
+            ? "Sync Lipsync"
+            : row.stage),
   };
 }
 
@@ -617,6 +644,40 @@ export async function saveUpscaleJob(params: {
   await admin
     .from("generations")
     .update({ progress_stage: `Upscaling to ${params.tier}` })
+    .eq("id", params.generationId);
+}
+
+// The layers lane's job row — stage "layers". Same must-not-swallow
+// contract as saveUpscaleJob: once the fal job is submitted, an unrecorded
+// job can never be polled, finished, or refunded.
+export async function saveLayersJob(params: {
+  generationId: string;
+  userId: string;
+  job: QueuedJob;
+  attempts: AttemptLog[];
+  tier: LayersTier;
+}): Promise<void> {
+  const admin = createAdminClient();
+  const { error: upsertError } = await admin.from("generation_jobs").upsert({
+    generation_id: params.generationId,
+    user_id: params.userId,
+    stage: "layers" satisfies JobStage,
+    provider_request_id: params.job.requestId,
+    status_url: params.job.statusUrl,
+    response_url: params.job.responseUrl,
+    cancel_url: params.job.cancelUrl,
+    payload: { label: params.job.label, tier: params.tier },
+    resume: { attempts: params.attempts } satisfies ResumeState,
+    started_at: new Date().toISOString(),
+    last_polled_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  });
+  if (upsertError) {
+    throw new Error(`Couldn't record the queued layers job: ${upsertError.message}`);
+  }
+  void admin
+    .from("generations")
+    .update({ progress_stage: STAGE_PROGRESS.layers })
     .eq("id", params.generationId);
 }
 
@@ -679,8 +740,8 @@ async function finish(
   generationId: string,
   userId: string,
   outcome:
-    | { status: "succeeded"; resultUrl: string; attempts: AttemptLog[] }
-    | { status: "failed"; attempts: AttemptLog[]; fault?: FailureFault },
+    | { status: "succeeded"; resultUrl: string; attempts: AttemptLog[]; notify?: LaneNotice }
+    | { status: "failed"; attempts: AttemptLog[]; fault?: FailureFault; notify?: LaneNotice },
 ): Promise<boolean> {
   const admin = createAdminClient();
 
@@ -827,15 +888,20 @@ async function finish(
   // actually released them — it used to promise "your credits weren't charged
   // if it was our fault" unconditionally, which was untrue whenever the
   // refund flag was off or the daily cap had been reached.
+  // Every lane before Layers produced a video, so the copy was hardcoded;
+  // an image lane hands finish() its own words and its own deep link.
   void notifyUser(userId, {
-    title: outcome.status === "succeeded" ? "Your video is ready" : "That generation didn't finish",
+    title:
+      outcome.notify?.title ??
+      (outcome.status === "succeeded" ? "Your video is ready" : "That generation didn't finish"),
     body:
-      outcome.status === "succeeded"
+      outcome.notify?.body ??
+      (outcome.status === "succeeded"
         ? "Tap to watch it."
         : refunded
           ? "Tap to see what happened — the credits it used were released."
-          : "Tap to see what happened.",
-    path: `/app/history/${generationId}`,
+          : "Tap to see what happened."),
+    path: outcome.notify?.path ?? `/app/history/${generationId}`,
   });
 
   // Feed the circuit breaker. A model that fails three times in a row takes
@@ -1045,11 +1111,11 @@ export async function advanceGeneration(
       // is what routes an already-finished one to delivery instead), and
       // fal bills upscales on delivered output only — so the credit goes
       // back, force past the flag, exactly once.
-      if (row.stage === "upscale" && didCancelTransition) {
+      if (REFUND_ON_FAILURE[row.stage] && didCancelTransition) {
         try {
           await refundGenerationCosts(generationId, { force: true });
         } catch (refundErr) {
-          console.error(`upscale cancel refund failed for ${generationId}:`, refundErr);
+          console.error(`${row.stage} cancel refund failed for ${generationId}:`, refundErr);
         }
       }
       return { state: "cancelled" };
@@ -1122,11 +1188,11 @@ export async function advanceGeneration(
     // nothing, so the credit goes back unconditionally — force past the
     // automatic_refunds switch, after finish() for exactly-once (the same
     // sequencing the dialogue-surcharge refund above earned the hard way).
-    if (row.stage === "upscale" && didFailTransition) {
+    if (REFUND_ON_FAILURE[row.stage] && didFailTransition) {
       try {
         await refundGenerationCosts(generationId, { force: true });
       } catch (refundErr) {
-        console.error(`upscale failure refund failed for ${generationId}:`, refundErr);
+        console.error(`${row.stage} failure refund failed for ${generationId}:`, refundErr);
       }
     }
     return { state: "failed", message: status.error };
@@ -1161,6 +1227,77 @@ export async function advanceGeneration(
   // thrown away over a dialogue problem (2026-08-31 inspection).
   let collectedVideoUrl: string | null = null;
   try {
+    if (row.stage === "layers") {
+      // Single-stage lane. Every delivered layer is fetched from fal and
+      // stored VERBATIM under the owner's folder (an RGBA PNG keeps its
+      // alpha), one generation_layers row each, and the base (z 0) becomes
+      // the split's result_url so History shows it like any image. No
+      // score is recorded: nothing re-rendered the person.
+      //
+      // Four at a time: the probe measured 6–7 layers of up to ~5 MB each,
+      // and a strictly sequential pass could outlive the 90 s advance lease
+      // and let a second poll start the same pass concurrently.
+      //
+      // Error shapes are load-bearing. A non-OK fetch throws in fal.ts's
+      // "(NNN): …" form so isTransportError retries a CDN 5xx instead of
+      // failing a billed split; OUR storage and row writes throw
+      // CriticalWriteError so a blink on our side keeps the job row for the
+      // next pass rather than being booked as the provider's fault.
+      const layers = await fetchQueuedLayers(jobHandle(row));
+      const admin = createAdminClient();
+      const stored: { zIndex: number; url: string }[] = [];
+      const persistOne = async (layer: (typeof layers)[number]) => {
+        const res = await fetchWithTimeout(layer.url, {}, 60_000);
+        if (!res.ok) {
+          throw new Error(`fal.ai (${row.payload?.label ?? "Layerize"}) error (${res.status}): couldn't fetch layer ${layer.zIndex}`);
+        }
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        const path = layerStoragePath(userId, generationId, layer.zIndex);
+        let url: string;
+        try {
+          url = await persistImageBytes(admin, userId, path, bytes);
+        } catch (err) {
+          throw new CriticalWriteError(`storing layer ${layer.zIndex}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        const { error: layerError } = await admin.from("generation_layers").upsert(
+          {
+            generation_id: generationId,
+            user_id: userId,
+            z_index: layer.zIndex,
+            name: layer.name,
+            description: layer.description,
+            bbox: layer.boundingBox ?? null,
+            storage_path: path,
+            width: layer.width,
+            height: layer.height,
+          },
+          { onConflict: "generation_id,z_index" },
+        );
+        if (layerError) throw new CriticalWriteError(`recording layer ${layer.zIndex}: ${layerError.message}`);
+        stored.push({ zIndex: layer.zIndex, url });
+      };
+      for (let i = 0; i < layers.length; i += 4) {
+        await Promise.all(layers.slice(i, i + 4).map(persistOne));
+      }
+      const base = stored.reduce((lo, l) => (l.zIndex < lo.zIndex ? l : lo), stored[0]);
+      const tier = (row.payload.tier as LayersTier | undefined) ?? "1k";
+      await finish(generationId, userId, {
+        status: "succeeded",
+        resultUrl: base.url,
+        attempts: appendStep(
+          row.resume.attempts ?? [],
+          `Split into ${layers.length} layers at ${LAYERS_TIERS[tier].label} (Seedream 5 Pro Layerize).`,
+          "generate",
+        ),
+        notify: {
+          title: "Your layers are ready",
+          body: `${layers.length} layers — tap to open the stack.`,
+          path: `/app/layers/${generationId}`,
+        },
+      });
+      return { state: "succeeded", resultUrl: base.url };
+    }
+
     if (row.stage === "upscale") {
       // Single-stage lane: the delivered file IS the result — no dialogue
       // branches, no scoring (the row was created with no character on
@@ -1364,11 +1501,19 @@ export async function advanceGeneration(
       return { state: "succeeded", resultUrl: salvageUrl };
     }
 
-    await finish(generationId, userId, {
+    const didCatchTransition = await finish(generationId, userId, {
       status: "failed",
       attempts: appendStep(row.resume.attempts ?? [], message, "generate"),
       fault: "provider_failed",
     });
+    // Delivery-billed stages: whatever threw, nothing reached the user.
+    if (REFUND_ON_FAILURE[row.stage] && didCatchTransition) {
+      try {
+        await refundGenerationCosts(generationId, { force: true });
+      } catch (refundErr) {
+        console.error(`${row.stage} failure refund failed for ${generationId}:`, refundErr);
+      }
+    }
     return { state: "failed", message };
   }
 }
@@ -1486,7 +1631,7 @@ export async function reapStaleJobs(userId: string): Promise<void> {
           }
           continue;
         }
-        await finish(current.generation_id, current.user_id, {
+        const didWriteOff = await finish(current.generation_id, current.user_id, {
           status: "failed",
           attempts: appendStep(
             current.resume?.attempts ?? [],
@@ -1496,6 +1641,13 @@ export async function reapStaleJobs(userId: string): Promise<void> {
           // "fal errored or lost the job" — the provider-fault case by definition.
           fault: "provider_failed",
         });
+        if (didWriteOff && REFUND_ON_FAILURE[current.stage as JobStage]) {
+          try {
+            await refundGenerationCosts(current.generation_id, { force: true });
+          } catch (refundErr) {
+            console.error(`${current.stage} write-off refund failed for ${current.generation_id}:`, refundErr);
+          }
+        }
       } catch {
         // finish() throws CriticalWriteError when its terminal write fails —
         // it kept the job row, so the next reap retries this write-off.

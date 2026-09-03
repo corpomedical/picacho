@@ -1,0 +1,130 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
+import { LAYERS_MODEL_ID, LAYERS_TIERS, layersCreditCost, takeLayersIneligibility } from "@/lib/generations/layers";
+import { LayersUpload } from "@/components/layers-upload";
+import { LayersButton } from "@/components/layers-button";
+import { getServerMessages } from "@/lib/i18n/server";
+import { formatMsg } from "@/lib/i18n/format";
+
+// The Layers page (shape B, 2026-09-03), the Upscale page's shape: the
+// upload well first, then a grid of recent images each quoting both tiers
+// before a single tap, then the splits already made. Eligibility and prices
+// come from the same module the server action re-runs before taking money.
+export default async function LayersPage() {
+  const { t } = await getServerMessages();
+  const L = t.layers;
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) redirect("/login");
+
+  // Two independent owner-scoped reads, one round trip; the eligibility
+  // rule's cheap halves pushed into SQL so we do not over-fetch to filter.
+  const [{ data: recent }, { data: splits }] = await Promise.all([
+    supabase
+      .from("generations")
+      .select("id, prompt_input, status, content_type, model_id, result_url, source_generation_id, created_at")
+      .eq("user_id", userData.user.id)
+      .eq("content_type", "image")
+      .eq("status", "succeeded")
+      .neq("model_id", LAYERS_MODEL_ID)
+      .not("result_url", "is", null)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("generations")
+      .select("id, prompt_input, status, result_url, created_at")
+      .eq("user_id", userData.user.id)
+      .eq("model_id", LAYERS_MODEL_ID)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(8),
+  ]);
+
+  const sources = (recent ?? [])
+    .filter((g) => takeLayersIneligibility(g) === null)
+    .map((g) => ({
+      id: g.id as string,
+      prompt: (g.prompt_input as string | null) ?? "",
+      url: toMediaUrl(g.result_url as string | null),
+    }))
+    .filter((g) => isRenderableUrl(g.url))
+    .slice(0, 8);
+
+  const priceLine = (["1k", "2k"] as const)
+    .map((tier) => `${LAYERS_TIERS[tier].label} ${formatMsg(t.generate.creditsShortN, { n: layersCreditCost(tier) })}`)
+    .join(" · ");
+
+  return (
+    <div className="mx-auto max-w-4xl">
+      <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{L.pageEyebrow}</p>
+      <h1 className="mt-1 text-xl font-semibold tracking-tight text-atelier-ink">{t.nav.layers}</h1>
+      <p className="mt-1 text-sm text-atelier-muted">{L.pageSub}</p>
+
+      <div className="mt-6">
+        <LayersUpload />
+      </div>
+
+      {sources.length > 0 && (
+        <>
+          <div className="mt-8 flex items-center gap-3.5">
+            <p className="whitespace-nowrap text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{L.pagePick}</p>
+            <div className="h-px flex-1 bg-atelier-rule" />
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {sources.map((src) => (
+              <div key={src.id} className="flex flex-col rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+                <div className="relative aspect-square overflow-hidden rounded-[10px] bg-atelier-stage">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={thumbUrl(src.url, 640) ?? src.url!} alt={src.prompt} className="h-full w-full object-cover" loading="lazy" />
+                </div>
+                <p className="mt-2.5 min-w-0 truncate text-xs font-medium text-atelier-ink">{src.prompt}</p>
+                <p className="mt-1 font-numeral text-[11px] tabular-nums text-atelier-muted">{priceLine}</p>
+                <div className="mt-2.5">
+                  <LayersButton generationId={src.id} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {(splits ?? []).length > 0 && (
+        <>
+          <div className="mt-8 flex items-center gap-3.5">
+            <p className="whitespace-nowrap text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{L.stackTitle}</p>
+            <div className="h-px flex-1 bg-atelier-rule" />
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {(splits ?? []).map((g) => {
+              const url = toMediaUrl(g.result_url as string | null);
+              return (
+                <Link
+                  key={g.id as string}
+                  href={`/app/layers/${g.id}`}
+                  className="flex flex-col rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)] transition-colors hover:border-atelier-muted"
+                >
+                  <div className="relative aspect-square overflow-hidden rounded-[10px] bg-atelier-stage">
+                    {url && isRenderableUrl(url) ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={thumbUrl(url, 640) ?? url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    ) : (
+                      <div className="flex h-full w-full items-center justify-center text-[11px] text-atelier-muted">
+                        {g.status === "failed" ? L.failed : L.working}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-2.5 min-w-0 truncate text-xs font-medium text-atelier-ink">{(g.prompt_input as string | null) ?? ""}</p>
+                </Link>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <p className="mt-6 text-xs text-atelier-muted">{L.pageNote}</p>
+    </div>
+  );
+}

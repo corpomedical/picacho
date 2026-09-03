@@ -1,4 +1,5 @@
 import { getVideoModel } from "@/lib/generations/providers/video-models";
+import { LAYERIZE_ENDPOINT, LAYERIZE_LABEL } from "@/lib/generations/layers";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { canExtractFrameFrom, IDENTITY_FRAME_TYPE } from "@/lib/generations/providers/frame-url";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
@@ -1145,6 +1146,75 @@ export async function fetchQueuedAudioUrl(job: QueuedJob): Promise<string> {
   const url = extractAudioUrl(await fetchQueuedResult(job));
   if (!url) throw new Error(`fal.ai (${job.label}) response didn't include an audio URL.`);
   return url;
+}
+
+// Seedream 5 Pro layerize (2026-09-03, probe-validated on a synthetic take:
+// 6 named layers at 2K in 96 s). image_size is the tier; enhance_prompt_mode
+// "standard" is the one that produced the cleaner grouping in the probe.
+// No layer-count parameter exists on this endpoint — the provider decides
+// (2–17), which is why the price is a fixed tier and not a per-layer quote.
+export async function submitLayerizeJob(
+  imageUrl: string,
+  imageSize: "auto_1K" | "auto_2K",
+): Promise<QueuedJob> {
+  return submitToQueue(
+    LAYERIZE_ENDPOINT,
+    { image_url: imageUrl, image_size: imageSize, enhance_prompt_mode: "standard" },
+    LAYERIZE_LABEL,
+    requireApiKey(),
+  );
+}
+
+/** One delivered layer, as fal returns it (shape read from the probe,
+ *  2026-09-03). z_index 0 is the base; bounding_box carries both absolute
+ *  and normalized boxes and is stored verbatim. */
+export type FalLayer = {
+  url: string;
+  width: number | null;
+  height: number | null;
+  zIndex: number;
+  name: string | null;
+  description: string | null;
+  boundingBox: unknown;
+};
+
+export async function fetchQueuedLayers(job: QueuedJob): Promise<FalLayer[]> {
+  const data = (await fetchQueuedResult(job)) as {
+    layers?: Array<{
+      image?: { url?: string; width?: number; height?: number };
+      z_index?: number;
+      name?: string | null;
+      description?: string | null;
+      bounding_box?: unknown;
+    }>;
+  } | null;
+  const layers = (data?.layers ?? [])
+    .filter((l) => typeof l?.image?.url === "string")
+    .map((l, i) => ({
+      url: l.image!.url as string,
+      width: typeof l.image?.width === "number" ? l.image.width : null,
+      height: typeof l.image?.height === "number" ? l.image.height : null,
+      zIndex: typeof l.z_index === "number" ? l.z_index : i,
+      name: l.name ?? null,
+      description: l.description ?? null,
+      boundingBox: l.bounding_box ?? null,
+    }));
+  if (layers.length === 0) {
+    throw new Error(`fal.ai (${job.label}) response didn't include any layers.`);
+  }
+  // z_index is the storage key and the (generation_id, z_index) unique. If the
+  // provider ever omits one or repeats one, a positional fallback for the odd
+  // layer could collide with a real index and the upsert would silently
+  // overwrite a delivered, billed layer — so any gap or duplicate renumbers
+  // the whole set by position, keeping the provider's order.
+  const seen = new Set<number>();
+  const clean = layers.every((l, i) => {
+    const explicit = typeof data?.layers?.[i]?.z_index === "number";
+    const fresh = !seen.has(l.zIndex);
+    seen.add(l.zIndex);
+    return explicit && fresh;
+  });
+  return clean ? layers : layers.map((l, i) => ({ ...l, zIndex: i }));
 }
 
 // Best effort, and deliberately never throws — this is called from cancel and

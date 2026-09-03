@@ -1,6 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import {
+  LAYERS_MAX_BYTES,
+  LAYERS_MODEL_ID,
+  LAYERS_TIERS,
+  layersCreditCost,
+  takeLayersIneligibility,
+  uploadLayersIneligibility,
+  type LayersTier,
+} from "@/lib/generations/layers";
+import { probeImage } from "@/lib/media/image-probe";
 import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { baselineIdentityReferences, resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
@@ -22,7 +32,8 @@ import {
   reapStaleJobs,
   refundGenerationCosts,
   type AdvanceResult,
-  // eslint-disable-next-line no-duplicate-imports -- single block, appended
+  // eslint-disable-next-line no-duplicate-imports -- single block, appended,
+  saveLayersJob,
 } from "@/lib/generations/job-runner";
 import { saveUpscaleJob } from "@/lib/generations/job-runner";
 import {
@@ -40,7 +51,9 @@ import {
 import { probeMp4 } from "@/lib/media/mp4-probe";
 import { rateLimited } from "@/lib/rate-limit";
 import { getAnglePreset, angleSortIndex, sceneShotKey } from "@/lib/generations/angles";
-import { submitVideoJob, submitUpscaleJob, cancelQueuedJob, type QueuedJob } from "@/lib/generations/providers/fal";
+import { submitVideoJob, submitUpscaleJob, cancelQueuedJob, type QueuedJob,
+  submitLayerizeJob,
+} from "@/lib/generations/providers/fal";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
 
@@ -3864,7 +3877,10 @@ export async function reserveUpscaleUploadPath(
     return { error: "You're uploading a bit fast — wait a moment and try again." };
   }
 
-  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  // Consecutive dots would survive the character filter and then trip the
+  // ".." traversal guard in the start action — after the upload had already
+  // happened. "cover..png" is a real file name; make it "cover.png".
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.{2,}/g, ".");
   return { error: null, path: `${data.user.id}/${crypto.randomUUID()}-${safeName}` };
 }
 
@@ -3925,5 +3941,253 @@ export async function startUploadUpscale(formData: FormData): Promise<UpscaleSta
     tier,
     factor: upscaleFactor(probe.height, tier),
     sourceGenerationId: null,
+  });
+}
+
+
+// ---------------------------------------------------------------------------
+// Layers (Seedream 5 Pro Layerize, 2026-09-03 — probe-validated on a
+// synthetic take before any of this existed: docs/LAYERS_ACHIEVABILITY.md).
+// Two entry points, one shared core, the Upscale lane's shape exactly: a
+// finished image, or an uploaded one. Both create an ordinary generations
+// row (model_id "seedream-layerize", content_type "image", no character —
+// a split re-renders nobody and is never scored) plus a stage-"layers" job
+// row; the fal webhook and the reaper drive it to completion, the finish
+// handler stores every layer verbatim, and "if the provider refuses,
+// nothing is charged" is enforced by job-runner's force-refund on the
+// layers stage's failure and cancel paths.
+// ---------------------------------------------------------------------------
+
+type LayersStartResult = { error: string } | { generationId: string };
+
+function parseLayersTier(raw: FormDataEntryValue | null): LayersTier | null {
+  return raw === "1k" || raw === "2k" ? raw : null;
+}
+
+async function startLayersCore(params: {
+  userId: string;
+  sourceUrl: string;
+  tier: LayersTier;
+  sourceGenerationId: string | null;
+  sourceLabel: string;
+}): Promise<LayersStartResult> {
+  const supabase = await createClient();
+  const tierLabel = LAYERS_TIERS[params.tier].label;
+  const promptInput = `Split into layers at ${tierLabel}`;
+  const creditWeight = layersCreditCost(params.tier);
+
+  // Plan/purchased credits only — the free daily slot never covers a tool.
+  const allowance = await checkGenerationAllowance(supabase, params.userId, creditWeight);
+  if (allowance.error) return { error: allowance.error };
+  const consumePurchased = allowance.consumePurchased ?? 0;
+  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, creditWeight - consumePurchased);
+
+  const admin = createAdminClient();
+  const reservationRow = {
+    id: crypto.randomUUID(),
+    character_profile_id: null,
+    character_profile_ids: [],
+    prompt_input: promptInput,
+    content_type: "image",
+    status: "generating",
+    attempts: 0,
+    result_url: null,
+    pipeline_log: [],
+    video_model_id: null,
+    model_id: LAYERS_MODEL_ID,
+    video_duration_seconds: null,
+    video_aspect_ratio: null,
+    credits_used: creditWeight,
+    purchased_credits_used: consumePurchased,
+    free_generation_used: false,
+    source_generation_id: params.sourceGenerationId,
+  };
+
+  const { data: reservedId, error: reserveError } = await admin.rpc("reserve_generation", {
+    p_user_id: params.userId,
+    p_monthly_portion: monthlyPortion,
+    p_limit: allowance.monthlyLimit ?? 0,
+    p_since: allowance.periodStartIso ?? new Date(0).toISOString(),
+    p_row: reservationRow,
+  });
+  if (reserveError) {
+    console.error("reserve_generation failed for layers:", reserveError);
+    return { error: "Couldn't start the split — try again." };
+  }
+  if (!reservedId) {
+    return { error: "You've used all the credits included in your plan this month." };
+  }
+  const generationId = reservedId as string;
+
+  const purchasedOk = await consumePurchasedCredits(supabase, params.userId, consumePurchased);
+  if (!purchasedOk) {
+    const { error: releaseError } = await admin
+      .from("generations")
+      .update({ status: "failed", credits_used: 0, purchased_credits_used: 0, progress_stage: null })
+      .eq("id", generationId);
+    if (releaseError) {
+      console.error("Layers guarded-spend abort couldn't release the placeholder:", { generationId, error: releaseError.message });
+    }
+    return { error: "You're out of credits — top up under Settings → Usage (credit packs need no plan)." };
+  }
+
+  let pendingJob: QueuedJob | null = null;
+  try {
+    pendingJob = await submitLayerizeJob(params.sourceUrl, LAYERS_TIERS[params.tier].imageSize);
+    await saveLayersJob({
+      generationId,
+      userId: params.userId,
+      job: pendingJob,
+      tier: params.tier,
+      attempts: [
+        {
+          attempt: 1,
+          passed: true,
+          issues: [],
+          compiledPrompt: promptInput,
+          steps: [
+            {
+              step: "generate" as const,
+              detail: `Submitted ${params.sourceLabel} for a ${tierLabel} split (Seedream 5 Pro Layerize).`,
+            },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    if (pendingJob) await cancelQueuedJob(pendingJob);
+    const message = err instanceof Error ? err.message : "Couldn't start the split.";
+    await admin
+      .from("generations")
+      .update({
+        status: "failed",
+        progress_stage: null,
+        pipeline_log: [
+          { attempt: 1, passed: false, issues: [], compiledPrompt: promptInput, steps: [{ step: "generate" as const, detail: message }] },
+        ],
+      })
+      .eq("id", generationId);
+    try {
+      await refundGenerationCosts(generationId, { force: true });
+    } catch (refundErr) {
+      console.error(`layers submit-failure refund failed for ${generationId}:`, refundErr);
+    }
+    return { error: "Couldn't start the split — nothing was charged. Try again." };
+  }
+
+  // No revalidatePath: both callers push to the stack page at once, and the
+  // tool page and History are dynamic renders that read fresh on arrival.
+  return { generationId };
+}
+
+/** Split a finished image take into layers. */
+export async function startTakeLayers(formData: FormData): Promise<LayersStartResult> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const sourceId = String(formData.get("generation_id") ?? "");
+  if (!sourceId) return { error: "No image given." };
+
+  const { data: source } = await supabase
+    .from("generations")
+    .select("id, user_id, content_type, status, model_id, result_url, source_generation_id")
+    .eq("id", sourceId)
+    .eq("user_id", userData.user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!source) return { error: "That image is gone." };
+  if (takeLayersIneligibility(source)) return { error: "This image can't be split." };
+
+  const tier = parseLayersTier(formData.get("tier"));
+  if (!tier) return { error: "Pick a resolution." };
+
+  const stored = toMediaUrl(source.result_url as string | null);
+  if (!stored || !isRenderableUrl(stored)) return { error: "This image has nothing to split." };
+  const sourceUrl = absolutizeMediaUrl(stored, await getOrigin());
+
+  return startLayersCore({
+    userId: userData.user.id,
+    sourceUrl,
+    tier,
+    sourceGenerationId: source.id,
+    sourceLabel: "this image",
+  });
+}
+
+/** Reserve a storage path for an uploaded source image (chat-attachment shape). */
+export async function reserveLayersUploadPath(
+  formData: FormData,
+): Promise<{ error: string | null; path?: string }> {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  if (!data.user) return { error: "Your session expired — please log in again." };
+
+  const name = String(formData.get("name") ?? "");
+  const size = Number(formData.get("size") ?? 0);
+  if (!name) return { error: "No file provided." };
+  if (size > LAYERS_MAX_BYTES) return { error: "That image is over 20 MB." };
+  if (await rateLimited(data.user.id, "layers-upload", 600, 20)) {
+    return { error: "You're uploading a bit fast — wait a moment and try again." };
+  }
+  // Consecutive dots would survive the character filter and then trip the
+  // ".." traversal guard in the start action — after the upload had already
+  // happened. "cover..png" is a real file name; make it "cover.png".
+  const safeName = name.replace(/[^a-zA-Z0-9._-]/g, "_").replace(/\.{2,}/g, ".");
+  return { error: null, path: `${data.user.id}/${crypto.randomUUID()}-${safeName}` };
+}
+
+/** Split an uploaded image the browser has already put in storage. */
+export async function startUploadLayers(formData: FormData): Promise<LayersStartResult> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const path = String(formData.get("path") ?? "");
+  if (!path.startsWith(`${userData.user.id}/`) || path.includes("..")) return { error: "Not allowed." };
+
+  // THE MONEY PATH READS THE FILE, NOT THE FORM: the short side decides
+  // eligibility, and a client-claimed size would sidestep it. Image headers
+  // lead the file (unlike an MP4's moov, which is why the upscale lane reads
+  // the whole clip), so a 256 KB prefix is enough to probe, and the true
+  // size comes from Content-Range — no 20 MB round trip on the money path.
+  const admin = createAdminClient();
+  const { data: signed, error: signError } = await admin.storage
+    .from("layer-sources")
+    .createSignedUrl(path, 60 * 60 * 24);
+  if (signError || !signed?.signedUrl) return { error: "Couldn't prepare that upload — try again." };
+  let head: Uint8Array;
+  let totalBytes: number;
+  try {
+    const res = await fetch(signed.signedUrl, { headers: { range: "bytes=0-262143" } });
+    if (!res.ok) return { error: "Couldn't read that upload — try again." };
+    head = new Uint8Array(await res.arrayBuffer());
+    const range = res.headers.get("content-range"); // "bytes 0-262143/12345678"
+    const total = range ? Number(range.split("/")[1]) : Number(res.headers.get("content-length"));
+    totalBytes = Number.isFinite(total) && total > 0 ? total : head.length;
+  } catch {
+    return { error: "Couldn't read that upload — try again." };
+  }
+  const probe = probeImage(head);
+  if (!probe) return { error: "That file doesn't read as a PNG, JPEG or WebP." };
+  const ineligible = uploadLayersIneligibility({
+    bytes: totalBytes,
+    mimeType: probe.mimeType,
+    width: probe.width,
+    height: probe.height,
+  });
+  if (ineligible === "too-big") return { error: "That image is over 20 MB." };
+  if (ineligible === "too-small") return { error: "Too small — the short side needs 512 px or more." };
+  if (ineligible) return { error: "That file can't be split." };
+
+  const tier = parseLayersTier(formData.get("tier"));
+  if (!tier) return { error: "Pick a resolution." };
+
+  return startLayersCore({
+    userId: userData.user.id,
+    sourceUrl: signed.signedUrl,
+    tier,
+    sourceGenerationId: null,
+    sourceLabel: "an uploaded image",
   });
 }

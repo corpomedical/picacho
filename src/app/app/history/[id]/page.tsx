@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LAYERS_MODEL_ID } from "@/lib/generations/layers";
 import { QuietVideo } from "@/components/quiet-video";
 import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { redirect } from "next/navigation";
@@ -23,6 +24,7 @@ import {
   availableUpscaleTiers,
   takeSourceHeight,
   takeUpscaleIneligibility,
+  UPSCALE_MODEL_ID,
 } from "@/lib/generations/upscale";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -237,7 +239,10 @@ export default async function HistoryDetailPage({
                 used to be invisible unless someone expanded the attempt log.
                 One line of proof on every successful result — and proof is
                 the accent's job, in the numeral serif. */}
-            {generation.source_generation_id && (
+            {/* Which tool made this is a property of the model that ran,
+                not of the lineage column — Layers writes source_generation_id
+                too, and keyed on that a split wore the Upscaled badge. */}
+            {generation.model_id === UPSCALE_MODEL_ID && generation.source_generation_id && (
               <p className="mt-1 text-xs text-atelier-muted">
                 {h.upscaledBadge} ·{" "}
                 <Link
@@ -246,6 +251,21 @@ export default async function HistoryDetailPage({
                 >
                   {h.upscaleViewSource}
                 </Link>
+              </p>
+            )}
+            {generation.model_id === LAYERS_MODEL_ID && (
+              <p className="mt-1 text-xs text-atelier-muted">
+                <Link href={`/app/layers/${generation.id}`} className="underline hover:text-atelier-ink">
+                  {t.layers.stackTitle} →
+                </Link>
+                {generation.source_generation_id && (
+                  <>
+                    {" "}·{" "}
+                    <Link href={`/app/history/${generation.source_generation_id}`} className="underline hover:text-atelier-ink">
+                      {h.upscaleViewSource}
+                    </Link>
+                  </>
+                )}
               </p>
             )}
             {generation.status === "succeeded" && attempts.length > 0 && (

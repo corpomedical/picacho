@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.13.0",
+    build: 24,
+    date: "2026-09-03",
+    title: "Layers: any image, split into named transparent layers",
+    items: [
+      "A second tool joins Upscale in the sidebar. Bring any image — a finished take, a poster, a product shot, a photo from your phone — and split it into its elements: each one a transparent PNG with a name and a place in the stack, exactly as the model returns them. The stack page shows the composite rebuilt from the layers you leave visible, with every layer downloadable on its own or all together as a ZIP. Nothing is repainted: the layers are stored byte for byte, alpha intact.",
+      "Two resolutions, priced before the button like everything else: 1K for 2 credits, 2K for 4. The provider bills per layer and decides how many it returns — usually five to eight — so the price is fixed whatever comes back, and the tests pin that the fixed price covers sixteen. If the provider refuses the image, nothing is charged. It takes about a minute; the page waits with you and opens the stack when it lands.",
+      "Built the way the probe said to build it. Nineteen live runs came first, on a synthetic person, and three of them changed the design: the object-removal engine painted the subject back into an empty background, the cheaper layer model only ever returned 640-pixel layers, and the text engine dropped a letter at 1K. This first stage ships the split, the stack and the export; the next adds the part only Picacho can do — re-rendering the person layer against the character's identity photo, with the score beside it.",
+    ],
+  },
+  {
     version: "1.12.2",
     build: 23,
     date: "2026-09-03",

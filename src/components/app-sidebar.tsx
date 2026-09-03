@@ -187,6 +187,17 @@ function MediaIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function LayersIcon(props: SVGProps<SVGSVGElement>) {
+  // Three offset sheets — the layer stack, not Photoshop's diamond.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 3.5 3.5 8 12 12.5 20.5 8z" />
+      <path d="M3.5 12 12 16.5 20.5 12" />
+      <path d="M3.5 16 12 20.5 20.5 16" />
+    </svg>
+  );
+}
+
 function UpscaleIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -808,28 +819,39 @@ export function AppSidebar({
             {t.nav.tools}
           </p>
         )}
-        <Link
-          href="/app/upscale"
-          title={t.nav.upscale}
-          aria-label={t.nav.upscale}
-          className={cn(
-            "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
-            iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
-            isActive("/app/upscale")
-              ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-          )}
-        >
-          <UpscaleIcon className="h-4 w-4 flex-shrink-0" />
-          {!iconOnly && (
-            <>
-              <span className="flex-1 text-left">{t.nav.upscale}</span>
-              <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
-                {t.nav.newBadge}
-              </span>
-            </>
-          )}
-        </Link>
+        {/* The Tools rows, from one list: same chrome as the trailing items
+            plus a New badge while a tool is new. When the next tool lands,
+            drop the badge from the previous one here — one edit. */}
+        {[
+          { href: "/app/upscale", label: t.nav.upscale, Icon: UpscaleIcon, badge: t.nav.newBadge },
+          { href: "/app/layers", label: t.nav.layers, Icon: LayersIcon, badge: t.nav.newBadge },
+        ].map((tool) => (
+          <Link
+            key={tool.href}
+            href={tool.href}
+            title={tool.label}
+            aria-label={tool.label}
+            className={cn(
+              "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
+              iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
+              isActive(tool.href)
+                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+            )}
+          >
+            <tool.Icon className="h-4 w-4 flex-shrink-0" />
+            {!iconOnly && (
+              <>
+                <span className="flex-1 text-left">{tool.label}</span>
+                {tool.badge && (
+                  <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
+                    {tool.badge}
+                  </span>
+                )}
+              </>
+            )}
+          </Link>
+        ))}
 
         {TRAILING_NAV_ITEMS.map((item) => (
           <Link
