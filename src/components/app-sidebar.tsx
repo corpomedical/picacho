@@ -791,6 +791,46 @@ export function AppSidebar({
           </div>
         )}
 
+        {/* Tools — the utilities, gathered at the foot of the nav
+            (operator, 2026-09-03, in two passes: the group first sat between
+            Community and Media, which made Media read as a tool; then "move
+            Notes and admin to tools"). Everything above the heading is the
+            work — making a take and the material it comes from. Everything
+            below it is a side room you visit on purpose: Upscale video,
+            Notes, and Admin for the accounts that have it.
+
+            A heading claims every row after it until the next heading, so
+            this one must stay LAST and anything added that is not a utility
+            belongs above it. The collapsed rail drops the heading and just
+            stacks the icons, like every other group. */}
+        {!iconOnly && (
+          <p className="px-2.5 pb-1 pt-4 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
+            {t.nav.tools}
+          </p>
+        )}
+        <Link
+          href="/app/upscale"
+          title={t.nav.upscale}
+          aria-label={t.nav.upscale}
+          className={cn(
+            "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
+            iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
+            isActive("/app/upscale")
+              ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+          )}
+        >
+          <UpscaleIcon className="h-4 w-4 flex-shrink-0" />
+          {!iconOnly && (
+            <>
+              <span className="flex-1 text-left">{t.nav.upscale}</span>
+              <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
+                {t.nav.newBadge}
+              </span>
+            </>
+          )}
+        </Link>
+
         {TRAILING_NAV_ITEMS.map((item) => (
           <Link
             key={item.href}
@@ -827,45 +867,6 @@ export function AppSidebar({
           </Link>
         )}
 
-        {/* Tools group: a home for the features that refine a take rather
-            than make one. One member today — Upscale video — and the heading
-            is what makes it findable: a feature nobody looks for gets a room
-            with its name on the door, not a chevron that can hide it.
-            The collapsed rail shows the icon alone, like every other item.
-
-            LAST in the nav on purpose (operator, 2026-09-03: "Move Media to
-            the same place it was. I dont like it under tools"). A heading in
-            a list claims everything after it until the next one, so with the
-            group sitting mid-nav, Media, Notes and Admin all read as tools.
-            Anything added here from now on goes ABOVE this heading, never
-            below it, unless it is genuinely a tool. */}
-        {!iconOnly && (
-          <p className="px-2.5 pb-1 pt-4 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
-            {t.nav.tools}
-          </p>
-        )}
-        <Link
-          href="/app/upscale"
-          title={t.nav.upscale}
-          aria-label={t.nav.upscale}
-          className={cn(
-            "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
-            iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
-            isActive("/app/upscale")
-              ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-          )}
-        >
-          <UpscaleIcon className="h-4 w-4 flex-shrink-0" />
-          {!iconOnly && (
-            <>
-              <span className="flex-1 text-left">{t.nav.upscale}</span>
-              <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
-                {t.nav.newBadge}
-              </span>
-            </>
-          )}
-        </Link>
       </nav>
 
       {!iconOnly && (
