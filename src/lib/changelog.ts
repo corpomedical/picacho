@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.12.1",
+    build: 22,
+    date: "2026-09-03",
+    title: "A third of the Android app was code it could never run",
+    items: [
+      "The Android download is smaller. A billing library and the Amazon store SDK it depends on had been compiled into the app since an earlier plan to sell inside it — 3,237 of its 9,009 classes, about a third of the whole binary — for a store that was never switched on and could not have taken a payment if it had been. They are out. Buying credits and plans on the website is unchanged, and so is everything the app actually does.",
+    ],
+  },
+  {
     version: "1.12.0",
     build: 21,
     date: "2026-09-03",

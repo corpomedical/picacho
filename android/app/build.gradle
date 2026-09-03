@@ -18,7 +18,29 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
+        versionCode 11
+        // 11 = the dormant store leaves the binary (2026-09-03). Measured
+        // before deciding: @revenuecat/purchases-capacitor and the Amazon
+        // Appstore SDK it pulls were 3,237 of 9,009 classes in the release
+        // DEX — a third of the app — for a store that has never been able to
+        // transact, because the UI gates on the plugin AND a RevenueCat key
+        // that was never set. It also merged com.android.vending.BILLING
+        // into a reader-mode app's manifest. Excluded via
+        // android.includePlugins in capacitor.config.ts rather than an npm
+        // uninstall: src/lib/native/purchases.ts imports the package with a
+        // static specifier, so dropping the dependency would fail `next
+        // build` and take down the site every binary loads. The server half
+        // (the RevenueCat webhook, lib/play/products.ts, the SQL, the
+        // runbook) is untouched and reactivation is three steps — see
+        // PLAY_BILLING_SETUP.md. Measured after: 4,787 classes (down from
+        // 9,009; zero com.revenuecat.*, zero com.amazon.*), APK 5,453,433 →
+        // 4,205,649 bytes, AAB 6,601,430 → 4,535,254 bytes, and no BILLING
+        // permission in the merged manifest. Bridge verified alive on the
+        // Pixel_7 emulator: all nine plugins registered,
+        // isPluginAvailable("Purchases") returns false without throwing.
+        // 10 = BUILT AND SIGNED, NEVER UPLOADED — superseded by 11, which
+        // removed the very plugin this entry was cut to add. Kept verbatim
+        // as history; Play's live release is 9.
         // 10 = Play Billing returns (2026-09-02, operator: "we need to add
         // payment on the android app"): the RevenueCat Purchases plugin is
         // back in the binary — the deployed site's store UI self-gates on
@@ -69,7 +91,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.10.0"
+        versionName "1.12.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

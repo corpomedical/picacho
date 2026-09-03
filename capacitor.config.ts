@@ -64,6 +64,48 @@ const config = {
     backgroundColor: "#ffffff",
     // Play requires HTTPS for anything handling credentials.
     allowMixedContent: false,
+
+    // Which plugins are compiled into the Android binary (2026-09-03).
+    //
+    // Capacitor's default is "every Capacitor package in package.json", and
+    // that swept in @revenuecat/purchases-capacitor, whose transitive graph —
+    // purchases-android, the Play Billing client, the Amazon Appstore IAP
+    // SDK — measured 3,237 of 9,009 classes in the release DEX. A third of
+    // the app, for a store that cannot transact: it self-gates on
+    // isPluginAvailable("Purchases") AND NEXT_PUBLIC_REVENUECAT_GOOGLE_KEY,
+    // and that key has never been set. It also merged
+    // com.android.vending.BILLING into the manifest of a reader-mode app.
+    //
+    // THIS LIST, NOT AN UNINSTALL. The npm package must stay in
+    // package.json: src/lib/native/purchases.ts imports it with a static
+    // specifier, which Turbopack resolves at BUILD time, so removing the
+    // dependency fails `next build` and takes down the site every installed
+    // binary loads. Excluding it here removes it from the APK while leaving
+    // the web half — the store UI, the gate, the four locales' strings —
+    // intact and inert, which is what makes this a pause rather than a
+    // deletion.
+    //
+    // TO RESTORE PLAY BILLING: delete this array, run `npx cap sync android`,
+    // cut the next versionCode. Nothing else was removed — the RevenueCat
+    // webhook, lib/play/products.ts and PLAY_BILLING_SETUP.md are all still
+    // here.
+    //
+    // A NAME THAT IS NOT INSTALLED IS FATAL AT SYNC; a plugin merely LEFT OUT
+    // is dropped silently. After changing this list, check the generated
+    // android/app/src/main/assets/capacitor.plugins.json has exactly the
+    // entries you meant — Capacitor resolves plugins from it by string at
+    // runtime, and one wrong classpath takes the whole bridge down.
+    includePlugins: [
+      "@capacitor-community/in-app-review",
+      "@capacitor/app",
+      "@capacitor/camera",
+      "@capacitor/filesystem",
+      "@capacitor/haptics",
+      "@capacitor/push-notifications",
+      "@capacitor/share",
+      "@capacitor/splash-screen",
+      "@capacitor/status-bar",
+    ],
   },
 
   plugins: {

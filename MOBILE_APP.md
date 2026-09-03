@@ -156,13 +156,48 @@ survived, because both are JS calling a native plugin through the bridge:
 2. The status-bar icons match the theme. (StatusBar `setStyle`.)
 3. `adb logcat -d | grep -iE "ClassNotFoundException|NoSuchMethodException|FATAL"`
    is empty for `ai.picacho.app`.
-4. Every plugin class still owns its name in the mapping:
+4. Every registered plugin class still owns its name in the mapping. Read the
+   classpaths out of the APK — not the working tree, which can be ahead of the
+   binary — and check each one maps to itself:
    ```bash
-   grep -E "Plugin ->" app/build/outputs/mapping/release/mapping.txt | grep -v " -> \(.*\)\1:"
+   unzip -p app/build/outputs/apk/release/app-release.apk \
+     assets/capacitor.plugins.json > /tmp/pj.json
+   python3 -c "
+import json, re
+plugins = json.load(open('/tmp/pj.json'))
+renames = dict(re.findall(r'^(\S+) -> (\S+):\$',
+                          open('app/build/outputs/mapping/release/mapping.txt').read(), re.M))
+bad = [p['classpath'] for p in plugins if renames.get(p['classpath']) != p['classpath']]
+print('BROKEN:', bad) if bad else print('ok:', len(plugins), 'plugins resolvable by string')
+"
    ```
-   Each of the ten in `capacitor.plugins.json` must map to itself.
+   Two earlier versions of this check were both worthless and worth recording,
+   because each failed in the direction that reads as a pass. The first used a
+   BRE backreference under `grep -E`, which errors out and prints nothing. The
+   second matched any line containing `Plugin ->`, which flags Capacitor's own
+   base classes — `com.getcapacitor.Plugin` is renamed on every build, legally,
+   because nothing looks it up by string — so it printed four scary lines that
+   mean nothing while saying nothing about the nine that matter. Only the
+   classpaths named in `capacitor.plugins.json` are loaded by string, and only
+   those may not be renamed.
+5. Best of all, ask the running bridge what it actually registered. This needs
+   the debug variant (the release APK is not debuggable) but it is the only
+   check that tests the thing itself rather than a proxy for it — and it needs
+   no login, so it costs nothing:
+   ```bash
+   adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof ai.picacho.app)
+   # then over CDP: Runtime.evaluate
+   #   Object.keys(window.Capacitor.Plugins)
+   #   window.Capacitor.isPluginAvailable("Purchases")
+   ```
 
-Verified this way on the Pixel_7 emulator (API 37) for versionCode 10.
+Verified this way on the Pixel_7 emulator (API 37) for versionCode 11: splash
+dismissed and the site rendered, status-bar icons followed the dark theme, the
+app's own logcat carried no ClassNotFoundException / NoSuchMethodException /
+FATAL, all nine classpaths mapped to themselves, and the live bridge reported
+its nine plugins with `isPluginAvailable("Purchases") === false` — returned,
+not thrown, which is what keeps `playBillingAvailable()` from ever reaching the
+dynamic import.
 
 ## Known risks, honestly
 

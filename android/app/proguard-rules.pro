@@ -4,7 +4,7 @@
 # Capacitor AAR ships consumer rules that keep every class extending
 # com.getcapacitor.Plugin and the @CapacitorPlugin/@PluginMethod members it
 # reaches by reflection, AGP's proguard-android.txt keeps @JavascriptInterface
-# members, and Firebase and RevenueCat ship their own. What is left is what a
+# members, and Firebase ships its own. What is left is what a
 # consumer rule cannot know about us.
 
 # Readable crash reports. R8 rewrites stack traces to obfuscated names; Play
@@ -21,13 +21,14 @@
 
 # Capacitor loads plugin classes BY STRING from assets/capacitor.plugins.json
 # (PluginManager: Class.forName(classpath)). The AAR's own rule keeps
-# subclasses of com.getcapacitor.Plugin, which covers all ten of ours; this
+# subclasses of com.getcapacitor.Plugin, which covers all nine of ours; this
 # names the packages as well so a future plugin that registers differently —
 # or a library rule that regresses — still cannot be renamed out from under
 # the JSON.
 -keep class com.capacitorjs.plugins.** { *; }
 -keep class com.getcapacitor.community.** { *; }
--keep class com.revenuecat.purchases.capacitor.** { *; }
+# The RevenueCat rule that sat here left with the plugin at versionCode 11
+# (capacitor.config.ts android.includePlugins). It returns with it.
 
 # Capacitor passes plugin results as org.json objects across the bridge and
 # reads annotation metadata at runtime.

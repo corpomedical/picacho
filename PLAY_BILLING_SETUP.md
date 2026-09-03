@@ -1,3 +1,26 @@
+> ## ⏸ PAUSED — the plugin is not in the binary (2026-09-03, versionCode 11)
+>
+> This runbook is still correct and still the way back. What changed is the
+> starting point: `@revenuecat/purchases-capacitor` no longer ships in the
+> Android binary. It was excluded via `android.includePlugins` in
+> capacitor.config.ts because it and the Amazon Appstore SDK it pulls came to
+> 3,237 of 9,009 classes in the release DEX — a third of the app — for a store
+> that never sold anything, and it merged `com.android.vending.BILLING` into
+> the manifest of a reader-mode app.
+>
+> **Nothing was deleted.** The npm package stays in package.json (the web
+> build imports it), the store UI and its four locales' strings stay, and the
+> whole server half — the RevenueCat webhook, `lib/play/products.ts`, the
+> `plan_source` / `play_product_id` SQL — is untouched.
+>
+> **To restart, before step 0 below:** delete the `includePlugins` array in
+> capacitor.config.ts, run `npx cap sync android`, and cut the next
+> versionCode. Then continue with this runbook as written.
+>
+> Note while reading: passages naming **versionCode 10** as "the build that
+> carries it" describe an artifact that was built and signed but never
+> uploaded. Play's live release is 9.
+
 # Play Billing setup — operator runbook (2026-08-21, resumed 2026-09-02)
 
 The in-app purchase build (**versionCode 10** — the 08-21 pivot uninstalled
