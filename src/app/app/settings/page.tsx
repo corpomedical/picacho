@@ -131,10 +131,14 @@ export default async function SettingsPage({
     "That plan isn't available.": s.errorPlanUnavailable,
     "This plan isn't set up for checkout yet.": s.errorPlanNotConfigured,
     "Couldn't start checkout — try again.": s.errorCheckoutFailed,
+    "Checkout is unavailable right now — we've been alerted. Email support if you need credits today.":
+      s.errorCheckoutUnavailable,
     "That credit pack isn't available.": s.errorPackUnavailable,
     "Credit packs aren't set up for checkout yet.": s.errorPackNotConfigured,
     "No billing account yet — start with a plan below.": s.errorNoBillingAccount,
     "Couldn't open billing — try again.": s.errorBillingFailed,
+    "Billing is unavailable right now — we've been alerted. Email support and we'll sort it out.":
+      s.errorBillingUnavailable,
     "You already have a subscription — use Manage billing to change plans.": s.errorAlreadySubscribed,
     // deleteAccount's abort notice — the one message on this page that must
     // never collapse to the generic line: it's how the user learns the

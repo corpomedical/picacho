@@ -1,3 +1,4 @@
+import { reportSurface, REPORT_SURFACE_LABELS } from "@/lib/stripe/failure";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -536,7 +537,7 @@ export default async function AdminUserDetailPage({
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-xs font-medium text-neutral-700">
                         {r.generation_id === null && r.reason === "technical_error"
-                          ? "App crash / client error"
+                          ? (REPORT_SURFACE_LABELS[reportSurface(r.details)!] ?? "App crash / client error")
                           : r.reason.replace(/_/g, " ")}
                         <span className="ml-2 font-normal text-neutral-400">
                           {r.source === "auto" ? "auto-filed" : "filed by the user"} ·{" "}

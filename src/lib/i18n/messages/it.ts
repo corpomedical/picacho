@@ -1231,10 +1231,12 @@ const it = {
     errorPlanUnavailable: "Quel piano non è disponibile.",
     errorPlanNotConfigured: "Questo piano non è ancora configurato per il checkout.",
     errorCheckoutFailed: "Impossibile avviare il checkout — riprova.",
+    errorCheckoutUnavailable: "Il checkout non è disponibile al momento — siamo già stati avvisati. Scrivi al supporto se ti servono crediti oggi.",
     errorPackUnavailable: "Quel pacchetto di crediti non è disponibile.",
     errorPackNotConfigured: "I pacchetti di crediti non sono ancora configurati per il checkout.",
     errorNoBillingAccount: "Nessun account di fatturazione ancora — inizia con un piano qui sotto.",
     errorBillingFailed: "Impossibile aprire la fatturazione — riprova.",
+    errorBillingUnavailable: "La fatturazione non è disponibile al momento — siamo già stati avvisati. Scrivi al supporto e lo sistemiamo.",
     errorAlreadySubscribed: "Hai già un abbonamento — usa Gestisci fatturazione per cambiare piano.",
     errorDeletionAborted:
       "Non siamo riusciti ad annullare il tuo abbonamento in questo momento, quindi il tuo account NON è stato eliminato — riprova tra un minuto o contatta l'assistenza e lo sistemeremo.",

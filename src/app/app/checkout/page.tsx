@@ -35,6 +35,7 @@ export default async function CheckoutPage({
   const returnTo = typeof params.return_to === "string" ? params.return_to : "";
 
   let clientSecret: string | null = null;
+  let failure: "config" | "transient" | null | undefined = null;
   let summaryTitle = "";
   let summaryCredits = "";
   let summaryPrice = "";
@@ -48,8 +49,9 @@ export default async function CheckoutPage({
   const currencySymbol = (await isEUVisitor()) ? "€" : "$";
 
   if (planParam) {
-    const { clientSecret: cs } = await startPlanCheckout(planParam, interval, "embedded");
+    const { clientSecret: cs, failure: f } = await startPlanCheckout(planParam, interval, "embedded");
     clientSecret = cs;
+    failure = f;
     const tier = PRICING_TIERS.find((p) => p.id === planParam);
     if (tier) {
       const planId = tier.id as PlanId;
@@ -61,12 +63,13 @@ export default async function CheckoutPage({
           : formatMsg(c.priceMonthly, { price: `${currencySymbol}${tier.price}` });
     }
   } else if (packParam) {
-    const { clientSecret: cs, returnTo: safeReturn } = await startCreditCheckout(
-      packParam,
-      returnTo,
-      "embedded",
-    );
+    const {
+      clientSecret: cs,
+      returnTo: safeReturn,
+      failure: f,
+    } = await startCreditCheckout(packParam, returnTo, "embedded");
     clientSecret = cs;
+    failure = f;
     backHref = safeReturn;
     const pack = getCreditPack(packParam);
     if (pack) {
@@ -79,9 +82,15 @@ export default async function CheckoutPage({
   }
 
   if (!clientSecret) {
-    redirect(
-      `/app/settings?tab=usage&error=${encodeURIComponent("Couldn't start checkout — try again.")}`,
-    );
+    // A "config" failure is deterministic — the same click fails again, so
+    // "try again" is a false promise (it kept a real buyer retrying for days,
+    // 2026-09-03). Both strings are CODES mapped to localized copy in
+    // settings/page.tsx KNOWN_ERRORS.
+    const code =
+      failure === "config"
+        ? "Checkout is unavailable right now — we've been alerted. Email support if you need credits today."
+        : "Couldn't start checkout — try again.";
+    redirect(`/app/settings?tab=usage&error=${encodeURIComponent(code)}`);
   }
 
   const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "";

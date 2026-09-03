@@ -1307,10 +1307,12 @@ const en = {
     errorPlanUnavailable: "That plan isn't available.",
     errorPlanNotConfigured: "This plan isn't set up for checkout yet.",
     errorCheckoutFailed: "Couldn't start checkout — try again.",
+    errorCheckoutUnavailable: "Checkout is unavailable right now — we've been alerted. Email support if you need credits today.",
     errorPackUnavailable: "That credit pack isn't available.",
     errorPackNotConfigured: "Credit packs aren't set up for checkout yet.",
     errorNoBillingAccount: "No billing account yet — start with a plan below.",
     errorBillingFailed: "Couldn't open billing — try again.",
+    errorBillingUnavailable: "Billing is unavailable right now — we've been alerted. Email support and we'll sort it out.",
     errorAlreadySubscribed: "You already have a subscription — use Manage billing to change plans.",
     errorDeletionAborted:
       "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.",

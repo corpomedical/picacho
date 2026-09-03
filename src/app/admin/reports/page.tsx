@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { AdminErrorBanner } from "@/components/admin-error-banner";
 import { setGenerationReportStatus } from "@/lib/admin/actions";
+import { reportSurface, REPORT_SURFACE_LABELS } from "@/lib/stripe/failure";
 
 // Used both for the per-report "Error details" dropdown and the archive
 // section toggle below — a plain rotate-on-open chevron, no separate state
@@ -78,7 +79,14 @@ function ReportCard({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={report.status === "open" ? "warning" : "success"}>
-              {REASON_LABELS[report.reason] ?? report.reason}
+              {(() => {
+                // Money-path failures share this table with app crashes; the
+                // marker at the front of details (lib/stripe/failure.ts) is
+                // what tells an operator "someone could not pay" from
+                // "something threw".
+                const surface = reportSurface(report.details);
+                return surface ? REPORT_SURFACE_LABELS[surface] : (REASON_LABELS[report.reason] ?? report.reason);
+              })()}
             </Badge>
             {report.source === "auto" && <Badge tone="neutral">Auto-detected</Badge>}
             <p className="text-xs text-neutral-400">
@@ -97,7 +105,11 @@ function ReportCard({
               <p className="mt-1 text-sm text-neutral-400">Generation no longer exists.</p>
             )
           ) : (
-            <p className="mt-1 text-sm text-neutral-400">Not tied to a specific generation.</p>
+            <p className="mt-1 text-sm text-neutral-400">
+              {reportSurface(report.details)
+                ? "A payment step failed for this account — the Stripe error code is in the details."
+                : "Not tied to a specific generation."}
+            </p>
           )}
           {report.details && (
             <details className="group mt-2">

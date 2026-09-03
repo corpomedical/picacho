@@ -1231,10 +1231,12 @@ const es = {
     errorPlanUnavailable: "Ese plan no está disponible.",
     errorPlanNotConfigured: "Este plan aún no está configurado para el pago.",
     errorCheckoutFailed: "No se pudo iniciar el pago — inténtalo de nuevo.",
+    errorCheckoutUnavailable: "El pago no está disponible ahora mismo — ya estamos avisados. Escribe a soporte si necesitas créditos hoy.",
     errorPackUnavailable: "Ese paquete de créditos no está disponible.",
     errorPackNotConfigured: "Los paquetes de créditos aún no están configurados para el pago.",
     errorNoBillingAccount: "Aún no hay una cuenta de facturación — empieza con un plan más abajo.",
     errorBillingFailed: "No se pudo abrir la facturación — inténtalo de nuevo.",
+    errorBillingUnavailable: "La facturación no está disponible ahora mismo — ya estamos avisados. Escribe a soporte y lo resolvemos.",
     errorAlreadySubscribed: "Ya tienes una suscripción — usa Gestionar facturación para cambiar de plan.",
     errorDeletionAborted:
       "No pudimos cancelar tu suscripción en este momento, así que tu cuenta NO se eliminó — inténtalo de nuevo en un minuto o contacta con soporte y lo resolveremos.",

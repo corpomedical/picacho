@@ -8,6 +8,7 @@ import {
   blockInNativeApp,
   startPlanCheckout,
   startCreditCheckout,
+  reportCheckoutFailure,
 } from "@/lib/stripe/checkout-core";
 
 // The checkout machinery itself — every guard, the price geo-split, the
@@ -70,6 +71,7 @@ export async function createPortalSession() {
 
   const origin = await getOrigin();
   let portalUrl: string | null = null;
+  let failure: "config" | "transient" | null = null;
 
   try {
     const session = await stripe.billingPortal.sessions.create({
@@ -78,11 +80,24 @@ export async function createPortalSession() {
     });
     portalUrl = session.url;
   } catch (err) {
-    console.error("Stripe billing portal session creation failed:", err);
+    // Same sink as checkout: a portal outage is how a subscriber fails to fix
+    // a failed payment, and it used to be a log line nobody read.
+    failure = await reportCheckoutFailure(
+      userData.user.id,
+      "portal",
+      `portal customer=${profile.stripe_customer_id}`,
+      err,
+    );
   }
 
   if (!portalUrl) {
-    redirect(`/app/settings?tab=usage&error=${encodeURIComponent("Couldn't open billing — try again.")}`);
+    // Codes, not copy — mapped in settings/page.tsx KNOWN_ERRORS. A
+    // deterministic failure stops promising that a retry will help.
+    const code =
+      failure === "config"
+        ? "Billing is unavailable right now — we've been alerted. Email support and we'll sort it out."
+        : "Couldn't open billing — try again.";
+    redirect(`/app/settings?tab=usage&error=${encodeURIComponent(code)}`);
   }
 
   redirect(portalUrl);

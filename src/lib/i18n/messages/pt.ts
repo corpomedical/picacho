@@ -1231,10 +1231,12 @@ const pt = {
     errorPlanUnavailable: "Esse plano não está disponível.",
     errorPlanNotConfigured: "Este plano ainda não está configurado para checkout.",
     errorCheckoutFailed: "Não foi possível iniciar o checkout — tente novamente.",
+    errorCheckoutUnavailable: "O checkout está indisponível agora — já fomos avisados. Escreva ao suporte se precisar de créditos hoje.",
     errorPackUnavailable: "Esse pacote de créditos não está disponível.",
     errorPackNotConfigured: "Os pacotes de créditos ainda não estão configurados para checkout.",
     errorNoBillingAccount: "Ainda não há conta de cobrança — comece com um plano abaixo.",
     errorBillingFailed: "Não foi possível abrir a cobrança — tente novamente.",
+    errorBillingUnavailable: "A cobrança está indisponível agora — já fomos avisados. Escreva ao suporte e resolvemos.",
     errorAlreadySubscribed: "Você já tem uma assinatura — use Gerenciar cobrança para trocar de plano.",
     errorDeletionAborted:
       "Não conseguimos cancelar sua assinatura agora, então sua conta NÃO foi excluída — tente novamente em um minuto ou fale com o suporte que resolveremos.",

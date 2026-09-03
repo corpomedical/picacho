@@ -1,3 +1,5 @@
+import { REPORT_MARKERS } from "@/lib/stripe/failure";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
@@ -30,6 +32,23 @@ export default async function AdminBillingPage() {
       .order("created_at", { ascending: true })
       .range(from, to),
   );
+
+  // Buyers whose checkout could not even open, last 7 days — every other
+  // figure on this page is money that ARRIVED, which is exactly why a
+  // fifteen-day outage for new buyers read as "no demand" (2026-09-03). Rows
+  // are written by reportCheckoutFailure in lib/stripe/checkout-core.ts;
+  // portal failures carry their own marker and are not counted here.
+  const sevenDaysAgoDate = new Date();
+  sevenDaysAgoDate.setDate(sevenDaysAgoDate.getDate() - 7);
+  const { data: checkoutFailureRows } = await supabase
+    .from("generation_reports")
+    .select("user_id")
+    .eq("source", "auto")
+    .like("details", `${REPORT_MARKERS.checkout}%`)
+    .gte("created_at", sevenDaysAgoDate.toISOString())
+    .limit(1000);
+  const checkoutFailureAttempts = (checkoutFailureRows ?? []).length;
+  const checkoutFailureBuyers = new Set((checkoutFailureRows ?? []).map((r) => r.user_id)).size;
 
   const distribution = Object.fromEntries(
     (Object.keys(PLAN_LIMITS) as PlanId[]).map((plan) => [plan, 0]),
@@ -87,7 +106,7 @@ export default async function AdminBillingPage() {
         <h1 className="mt-1 font-numeral text-3xl text-atelier-ink">Billing</h1>
       </div>
 
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
+      <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Card>
           <p className="text-sm text-neutral-500">MRR</p>
           <p className="mt-1 text-2xl font-semibold text-neutral-900">
@@ -108,6 +127,17 @@ export default async function AdminBillingPage() {
           <p className="mt-1 text-2xl font-semibold text-neutral-900">{canceledCount}</p>
           <p className="mt-1 text-xs text-neutral-400">
             Snapshot, not a rate — a proper churn-rate needs a subscription-events log we don&apos;t have yet
+          </p>
+        </Card>
+        <Card>
+          <p className="text-sm text-neutral-500">Checkout failures</p>
+          <p className="mt-1 text-2xl font-semibold text-neutral-900">{checkoutFailureBuyers}</p>
+          <p className="mt-1 text-xs text-neutral-400">
+            Buyer{checkoutFailureBuyers === 1 ? "" : "s"} whose checkout could not open, last 7 days ·{" "}
+            {checkoutFailureAttempts} attempt{checkoutFailureAttempts === 1 ? "" : "s"} —{" "}
+            <Link href="/admin/reports" className="underline">
+              details in Reports
+            </Link>
           </p>
         </Card>
       </div>

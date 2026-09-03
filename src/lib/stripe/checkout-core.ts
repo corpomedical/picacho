@@ -13,6 +13,15 @@ import type { PlanId } from "@/lib/plans";
 import { getOrigin } from "@/lib/origin";
 import { isEUVisitor } from "@/lib/geo";
 import { isNativeApp } from "@/lib/native/server";
+import { after } from "next/server";
+import { notifyAdmins } from "@/lib/push/web-push";
+import {
+  classifyStripeFailure,
+  REPORT_MARKERS,
+  REPORT_SURFACE_LABELS,
+  type CheckoutFailureKind,
+  type ReportSurface,
+} from "@/lib/stripe/failure";
 
 // The ONE place checkout sessions are built — used by the hosted-redirect
 // server actions (lib/stripe/actions.ts) AND the embedded checkout page
@@ -26,7 +35,76 @@ import { isNativeApp } from "@/lib/native/server";
 // the in-page iframe, with return_url as the way home.
 
 export type CheckoutUi = "hosted" | "embedded";
-export type CheckoutStart = { url: string | null; clientSecret: string | null };
+export type CheckoutStart = {
+  url: string | null;
+  clientSecret: string | null;
+  /** Set when session creation failed: "config" = the same click will fail
+   *  again (our bug — tell the user we've been alerted), "transient" = worth
+   *  a retry. */
+  failure?: CheckoutFailureKind | null;
+};
+
+// Every money-path failure lands in Admin → Reports with a push, the same
+// sink every other failure class already has. Until 2026-09-03 the checkout
+// catch blocks were console.error-and-return-null: a total outage for new
+// buyers (customer_tax_location_invalid, see startPlanCheckout) ran for
+// fifteen days because nothing but a Vercel log line ever knew.
+//
+// The row is written on the request (it is the record); the push goes out
+// AFTER the response so a buyer's redirect never waits on twenty device
+// endpoints, and it is damped to one push per failure code per half hour —
+// a person retrying a deterministic failure files rows, not alarms. Never
+// throws; returns the failure kind for the caller's copy.
+export async function reportCheckoutFailure(
+  userId: string,
+  surface: ReportSurface,
+  what: string,
+  err: unknown,
+): Promise<CheckoutFailureKind> {
+  const failure = classifyStripeFailure(err);
+  const marker = REPORT_MARKERS[surface];
+  console.error(`Stripe ${surface} failed (${failure.code}) — ${what}:`, err);
+  try {
+    const admin = createAdminClient();
+    const { error } = await admin.from("generation_reports").insert({
+      generation_id: null,
+      user_id: userId,
+      reason: "technical_error",
+      // Marker first, then the diagnosis, then the ids — the PWA and the
+      // report drawer truncate, and the code is what an admin needs to see.
+      details: `${marker} ${failure.code} · ${what} — ${failure.message}`.slice(0, 1000),
+      source: "auto",
+    });
+    if (error) {
+      console.error("reportCheckoutFailure insert failed:", error.message);
+      return failure.kind;
+    }
+    after(async () => {
+      try {
+        const since = new Date();
+        since.setMinutes(since.getMinutes() - 30);
+        const { count } = await admin
+          .from("generation_reports")
+          .select("id", { count: "exact", head: true })
+          .eq("source", "auto")
+          .like("details", `${marker} ${failure.code}%`)
+          .gte("created_at", since.toISOString());
+        // Our own row is one of them; a second means an admin was already told.
+        if ((count ?? 0) > 1) return;
+        await notifyAdmins({
+          title: REPORT_SURFACE_LABELS[surface],
+          body: `${failure.code} — ${what}`.slice(0, 140),
+          path: "#content",
+        });
+      } catch (pushErr) {
+        console.error("reportCheckoutFailure push failed:", pushErr);
+      }
+    });
+  } catch (reportErr) {
+    console.error("reportCheckoutFailure failed:", reportErr);
+  }
+  return failure.kind;
+}
 
 // Reader-app policy (Apple App Store 3.1.1 / Google Play): inside the native
 // app we may NOT sell digital goods or open any purchase/billing flow —
@@ -59,7 +137,33 @@ export async function ensureStripeCustomer(
   email: string | null | undefined,
   existingCustomerId: string | null | undefined,
 ): Promise<string> {
-  if (existingCustomerId) return existingCustomerId;
+  if (existingCustomerId) {
+    // A stored id can be dead: the customer was deleted in the Stripe
+    // Dashboard. Trusting it blindly made every checkout for that account
+    // fail forever behind the generic error (2026-09-03 review). Stripe
+    // answers a deleted customer with a 200 `{ deleted: true }` stub — that
+    // is the ONLY signal we heal on. A thrown resource_missing means the id
+    // never existed under THIS key (other mode, other account) and is
+    // rethrown into the caller's catch, which reports it as a config
+    // failure WITHOUT touching the profile — healing on it would let a
+    // test key run against production clobber real customer ids. Tight
+    // budget on the read so it can't eat the create's.
+    const existing = await stripe.customers.retrieve(
+      existingCustomerId,
+      {},
+      { timeout: 10_000, maxNetworkRetries: 1 },
+    );
+    if (!("deleted" in existing && existing.deleted)) return existingCustomerId;
+    console.warn(`Stripe customer ${existingCustomerId} was deleted; re-creating for ${userId}`);
+    const { error: clearError } = await createAdminClient()
+      .from("profiles")
+      .update({ stripe_customer_id: null })
+      .eq("id", userId)
+      .eq("stripe_customer_id", existingCustomerId);
+    // If the clear failed, the NULL-claim below would lose to the dead id
+    // and hand it straight back — surface it instead.
+    if (clearError) throw new Error(`Could not clear dead Stripe customer: ${clearError.message}`);
+  }
 
   const customer = await stripe.customers.create({
     email: email ?? undefined,
@@ -166,9 +270,10 @@ export async function startPlanCheckout(
   }
 
   const origin = await getOrigin();
+  let customerId: string | null = null;
 
   try {
-    const customerId = await ensureStripeCustomer(
+    customerId = await ensureStripeCustomer(
       userData.user.id,
       userData.user.email,
       profile?.stripe_customer_id,
@@ -210,6 +315,20 @@ export async function startPlanCheckout(
       line_items: [lineItem as any],
       // Stripe Tax activated 2026-08-09 (Dashboard > Settings > Tax).
       automatic_tax: { enabled: true },
+      // REQUIRED alongside automatic_tax when `customer` is a pre-created
+      // record (2026-09-03, operator report "wigly gets an error each time
+      // it tries to get extra credit or get a plan"): Stripe refuses to open
+      // Checkout for a customer with no saved address —
+      // customer_tax_location_invalid — unless told to collect the billing
+      // address in the form and save it onto the customer. ensureStripeCustomer
+      // creates every new customer WITHOUT an address, so since the
+      // one-customer rule shipped, every first-time buyer hit this and saw
+      // "Couldn't start checkout"; only customers whose record already carried
+      // an address (the operator's own, from the pre-rule hosted checkout)
+      // could pay. Reproduced against live Stripe with the exact params, and
+      // fixed by this one field. name: "auto" rides along so invoices carry
+      // the buyer's name.
+      customer_update: { address: "auto", name: "auto" },
       // Stripe's own "Add promotion code" field — the promo system's entire
       // client-facing UI, in both hosted and embedded modes. Codes are
       // managed in Admin > Promo codes (see lib/admin/promo-actions.ts).
@@ -233,8 +352,13 @@ export async function startPlanCheckout(
     });
     return { url: session.url ?? null, clientSecret: session.client_secret ?? null };
   } catch (err) {
-    console.error("Stripe checkout session creation failed:", err);
-    return { url: null, clientSecret: null };
+    const failure = await reportCheckoutFailure(
+      userData.user.id,
+      "checkout",
+      `plan ${paidPlanId}/${interval} price=${priceId} customer=${customerId ?? profile?.stripe_customer_id ?? "none"}`,
+      err,
+    );
+    return { url: null, clientSecret: null, failure };
   }
 }
 
@@ -286,9 +410,10 @@ export async function startCreditCheckout(
     .single();
 
   const origin = await getOrigin();
+  let customerId: string | null = null;
 
   try {
-    const customerId = await ensureStripeCustomer(
+    customerId = await ensureStripeCustomer(
       userData.user.id,
       userData.user.email,
       profile?.stripe_customer_id,
@@ -302,6 +427,8 @@ export async function startCreditCheckout(
       client_reference_id: userData.user.id,
       line_items: [{ price: priceId, quantity: 1 }],
       automatic_tax: { enabled: true },
+      // Same requirement as startPlanCheckout above — see the comment there.
+      customer_update: { address: "auto", name: "auto" },
       // One-time payments create NO invoice by default — a business customer
       // buying a credit pack had nothing proper for their books. This mints a
       // real numbered invoice per pack purchase (2026-08-22, operator:
@@ -324,7 +451,12 @@ export async function startCreditCheckout(
     });
     return { url: session.url ?? null, clientSecret: session.client_secret ?? null, returnTo };
   } catch (err) {
-    console.error("Stripe credit checkout session creation failed:", err);
-    return { url: null, clientSecret: null, returnTo };
+    const failure = await reportCheckoutFailure(
+      userData.user.id,
+      "checkout",
+      `pack ${pack.id} price=${priceId} customer=${customerId ?? profile?.stripe_customer_id ?? "none"}`,
+      err,
+    );
+    return { url: null, clientSecret: null, returnTo, failure };
   }
 }
