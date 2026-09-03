@@ -374,11 +374,6 @@ export function AppSidebar({
   const TRAILING_NAV_ITEMS = getTrailingNavItems(t.nav);
   const MEDIA_ITEMS = getMediaItems(t.nav);
   const [mediaOpen, setMediaOpen] = useState(false);
-  // The Generate group (operator placement pick, 2026-09-03): Upscale nests
-  // under Generate behind a chevron — but EXPANDED by default, unlike Media.
-  // Media collapses to hide two archive views; this group exists to make a
-  // feature findable, and a closed chevron is where features go to hide.
-  const [generateOpen, setGenerateOpen] = useState(true);
   const themeLabel: Record<ThemeMode, string> = {
     default: s.themeDefault,
     light: s.themeLight,
@@ -536,7 +531,6 @@ export function AppSidebar({
   // hide the active page inside a collapsed submenu.
   const isMediaActive = isActive("/app/images") || isActive("/app/videos");
   const mediaExpanded = mediaOpen || isMediaActive;
-  const generateExpanded = generateOpen || isActive("/app/upscale");
 
   // Global voice command — "open characters" navigates, "new chat" clears
   // the Generate thread, and anything else is forwarded to Generate as a
@@ -687,81 +681,24 @@ export function AppSidebar({
       </div>
 
       <nav className={cn("mt-2 space-y-0.5", iconOnly && "flex flex-col items-center")}>
-        {/* Generate group — the studio link with Upscale nested under it.
-            The row itself still NAVIGATES (it is the app's front door); only
-            the chevron toggles. Collapsed-rail mode links straight through,
-            same as the Media group. */}
-        {iconOnly ? (
-          <Link
-            href="/app/generate"
-            title={t.nav.generate}
-            aria-label={t.nav.generate}
-            className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-control text-sm transition-colors",
-              isActive("/app/generate") || isActive("/app/upscale")
-                ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-            )}
-          >
-            <BoltIcon className="h-4 w-4 flex-shrink-0" />
-          </Link>
-        ) : (
-          <div>
-            {/* Link and chevron are SIBLINGS — a button inside an anchor is
-                invalid interactive nesting. The row still reads as one
-                control: link fills it, chevron sits flush at its end. */}
-            <div
-              className={cn(
-                "flex items-center whitespace-nowrap rounded-control pr-1 text-sm transition-colors",
-                isActive("/app/generate")
-                  ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                  : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-              )}
-            >
-              <Link
-                href="/app/generate"
-                title={t.nav.generate}
-                aria-label={t.nav.generate}
-                className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2"
-              >
-                <BoltIcon className="h-4 w-4 flex-shrink-0" />
-                <span className="flex-1 text-left">{t.nav.generate}</span>
-              </Link>
-              <button
-                type="button"
-                aria-label={t.nav.upscale}
-                aria-expanded={generateExpanded}
-                onClick={() => setGenerateOpen((v) => !v)}
-                className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-atelier-ink/10 hover:text-atelier-ink"
-              >
-                <ChevronDownIcon
-                  className={cn("h-3.5 w-3.5 transition-transform", generateExpanded && "rotate-180")}
-                />
-              </button>
-            </div>
-            {generateExpanded && (
-              <div className="ml-4 mt-0.5 space-y-0.5 border-l border-atelier-rule/70 pl-2">
-                <Link
-                  href="/app/upscale"
-                  title={t.nav.upscale}
-                  aria-label={t.nav.upscale}
-                  className={cn(
-                    "flex items-center gap-2.5 whitespace-nowrap rounded-control px-2.5 py-1.5 text-sm transition-colors",
-                    isActive("/app/upscale")
-                      ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
-                      : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
-                  )}
-                >
-                  <UpscaleIcon className="h-3.5 w-3.5 flex-shrink-0" />
-                  <span className="flex-1 text-left">{t.nav.upscale}</span>
-                  <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
-                    {t.nav.newBadge}
-                  </span>
-                </Link>
-              </div>
-            )}
-          </div>
-        )}
+        {/* Generate — the app's front door, a flat link again since 2026-09-03
+            (operator pick B on the design canvas): Upscale moved out from
+            under it into the Tools group below, so nothing here can fold. */}
+        <Link
+          href="/app/generate"
+          title={t.nav.generate}
+          aria-label={t.nav.generate}
+          className={cn(
+            "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
+            iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
+            isActive("/app/generate")
+              ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+          )}
+        >
+          <BoltIcon className="h-4 w-4 flex-shrink-0" />
+          {!iconOnly && t.nav.generate}
+        </Link>
 
         {NAV_ITEMS.map((item) => (
           <Link
@@ -790,6 +727,42 @@ export function AppSidebar({
             {!iconOnly && item.label}
           </Link>
         ))}
+
+        {/* Tools group (operator pick B, 2026-09-03): a home for the features
+            that refine a take rather than make one. One member today —
+            Upscale video — and the heading is what makes it findable: a
+            feature nobody looks for gets a room with its name on the door,
+            not a chevron that can hide it. The collapsed rail shows the
+            icon alone, like every other item. */}
+        {!iconOnly && (
+          <p className="px-2.5 pb-1 pt-4 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
+            {t.nav.tools}
+          </p>
+        )}
+        <Link
+          href="/app/upscale"
+          title={t.nav.upscale}
+          aria-label={t.nav.upscale}
+          className={cn(
+            "flex items-center gap-2.5 whitespace-nowrap rounded-control text-sm transition-colors",
+            iconOnly ? "h-9 w-9 justify-center" : "px-2.5 py-2",
+            isActive("/app/upscale")
+              ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink shadow-[inset_2px_0_0_var(--color-atelier-accent)]"
+              : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
+          )}
+        >
+          <UpscaleIcon className="h-4 w-4 flex-shrink-0" />
+          {!iconOnly && (
+            <>
+              <span className="flex-1 text-left">{t.nav.upscale}</span>
+              <span className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest text-atelier-accent">
+                {t.nav.newBadge}
+              </span>
+            </>
+          )}
+        </Link>
+        {/* Breathing room after the group, as on the board. */}
+        {!iconOnly && <div className="h-2" aria-hidden="true" />}
 
         {/* Media group — Images + Videos collapsed under one entry instead of
             two flat top-level items. Collapsed-rail (iconOnly) mode skips the

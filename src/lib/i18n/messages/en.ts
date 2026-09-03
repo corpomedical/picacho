@@ -33,7 +33,8 @@ const en = {
   },
   nav: {
     generate: "Generate",
-    upscale: "Upscale",
+    upscale: "Upscale video",
+    tools: "Tools",
     newBadge: "New",
     templates: "Templates",
     projects: "Projects",

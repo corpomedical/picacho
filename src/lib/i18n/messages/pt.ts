@@ -24,7 +24,8 @@ const pt = {
   },
   nav: {
     generate: "Gerar",
-    upscale: "Melhorar",
+    upscale: "Melhorar vídeo",
+    tools: "Ferramentas",
     newBadge: "Novo",
     templates: "Modelos",
     projects: "Projetos",
