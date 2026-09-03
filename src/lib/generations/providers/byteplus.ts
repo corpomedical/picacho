@@ -15,13 +15,13 @@
 // appear in this account's API list at all — see docs/BYTEPLUS_ENQUIRY.md.
 //
 // SHAPES ARE READ FROM THE VENDOR'S OWN DOCS, NOT GUESSED. Everything below
-// was transcribed from the ModelArk API reference on 2026-09-03. The one
-// function still missing is submitVideoJob, because the request body of
-// CreateContentsGenerationsTasks has not been read yet — and a money path
-// built on a guessed request shape is how you bill someone for a call that
-// was never going to work. It throws until that is filled in.
+// was transcribed from the ModelArk API reference on 2026-09-03, including
+// the reference-to-video request example that supplies the content-array
+// part shapes. Where the docs are silent the code says so rather than
+// inventing a field — see the model ids and the failed-task error shape.
 
 import type { QueuedJobState } from "@/lib/generations/providers/fal";
+import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 
 // Verified: the Bearer-token inference host, not the signed AK/SK OpenAPI
 // plane the management calls (ListModelRateLimit, GetApiKey) live on.
@@ -34,23 +34,35 @@ const TASKS_PATH = "/contents/generations/tasks";
 // pricing page quotes dreamina-seedance-2-0-260128 and the rights document is
 // titled "Dreamina Seedance Advanced Creation Rights".
 //
-// NOTE THE VERSION SUFFIX. ListModelRateLimit reports bare family names, but
-// CreateContentsGenerationsTasks wants a VERSIONED id — ByteDance's own
-// example passes seedance-1-0-pro-250528. Their pricing page quotes
-// dreamina-seedance-2-0-260128, so the suffix below is read from that; the
-// 2.5 suffix has not been seen yet and must be confirmed before a call is
-// made, which is why it is marked rather than invented.
+// ⚠ THESE IDS ARE NOT YET CONFIRMED ACCEPTED BY THE CREATE CALL, and the two
+// sources disagree in a way worth resolving before the first send rather
+// than after. The names below are FoundationModelNames, read from this
+// account's own ListModelRateLimit response, so the models certainly exist
+// here. But `model` on the create call is documented as a "Model ID" (or an
+// endpoint id) resolvable through the model list, and ByteDance's own sample
+// passes a version-suffixed id, seedance-1-0-pro-250528; their pricing page
+// quotes dreamina-seedance-2-0-260128 for the same family.
+//
+// So: bare family name and suffixed model id are two different identifiers,
+// and only one of them is what create wants. Rather than ship one guess for
+// 2.0 and a different guess for 2.5 — which is what the first draft did —
+// both stay in the form this account has actually seen, and the resolution
+// is a documented open question. Confirm against the model list, or by one
+// create call per id, before wiring this to a lane that charges anyone.
 export const ARK_MODELS = {
-  /** Our "seedance" — Seedance 2.5. SUFFIX UNCONFIRMED. */
+  /** Our "seedance" — Seedance 2.5. */
   seedance: "dreamina-seedance-2-5",
   /** Our "seedance-2" — Seedance 2.0. */
-  "seedance-2": "dreamina-seedance-2-0-260128",
+  "seedance-2": "dreamina-seedance-2-0",
 } as const;
 
-// "flex" is ByteDance's offline inference mode. Worth pricing before use:
-// this product is already fire-and-poll with a push notification at the end,
-// so it has no interactive latency to protect and could take the cheaper tier
-// wholesale — a lever a competitor selling real-time generation cannot pull.
+// The tier a task ran under, as reported by the list endpoint's
+// filter.service_tier. "flex" is ByteDance's offline inference mode, and it
+// is worth pricing: this product is already fire-and-poll with a push at the
+// end, so it has no interactive latency to protect and could take the
+// cheaper tier wholesale — a lever a competitor selling real-time generation
+// cannot pull. Read-only for now; see the note in submitArkVideoJob for why
+// nothing sets it yet.
 export type ArkServiceTier = "default" | "flex";
 
 // Verified enum from the task list reference. Cancelled rows are queryable
@@ -66,8 +78,19 @@ type ArkTask = {
   updated_at: string;
   content?: { video_url?: string };
   usage?: { completion_tokens?: number };
-  error?: { code?: string; message?: string };
 };
+
+// A 200 carrying HTML (a gateway error page, a captive portal) would
+// otherwise surface as a bare SyntaxError with no provider name in it,
+// which reads as an application bug rather than a provider one.
+async function parseJson<T>(res: Response): Promise<T> {
+  const text = await res.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new Error(`BytePlus ModelArk returned a non-JSON body: ${text.slice(0, 300)}`);
+  }
+}
 
 function apiKey(): string {
   const key = process.env.BYTEPLUS_ARK_API_KEY;
@@ -75,22 +98,24 @@ function apiKey(): string {
   return key;
 }
 
+// The shared helper, not a hand-rolled AbortController: it converts an abort
+// into FetchTimeoutError, and job-runner's isTransportError matches on that
+// name to decide whether a failure is retryable. A local controller throws a
+// raw AbortError instead, which falls through to the legacy message regex —
+// the exact prose coupling that helper exists to have removed.
 async function arkFetch(path: string, init: RequestInit, timeoutMs: number): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(`${ARK_BASE}${path}`, {
+  return fetchWithTimeout(
+    `${ARK_BASE}${path}`,
+    {
       ...init,
-      signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey()}`,
         ...(init.headers ?? {}),
       },
-    });
-  } finally {
-    clearTimeout(timer);
-  }
+    },
+    timeoutMs,
+  );
 }
 
 // The refusals worth naming, from the reference's error table. The three
@@ -104,8 +129,14 @@ export const ARK_CONTENT_REFUSALS = [
   "OutputVideoSensitiveContentDetected",
 ] as const;
 
-export function isArkContentRefusal(message: string): boolean {
-  return ARK_CONTENT_REFUSALS.some((code) => message.includes(code));
+// Deliberately a substring test over whatever text is available — an HTTP
+// error body, or a whole serialized task. The failed-task payload's error
+// shape is NOT documented (the reference's response example covers only the
+// success fields), so keying this on a specific field name would fail
+// silently the day the guess is wrong: a content refusal would read as an
+// unclassifiable outage, trip the model breaker, and skip the refund.
+export function isArkContentRefusal(text: string): boolean {
+  return ARK_CONTENT_REFUSALS.some((code) => text.includes(code));
 }
 
 /**
@@ -118,26 +149,58 @@ export async function checkArkTasks(taskIds: string[]): Promise<Map<string, Queu
   const out = new Map<string, QueuedJobState>();
   if (taskIds.length === 0) return out;
 
-  const params = new URLSearchParams({ page_num: "1", page_size: String(Math.min(taskIds.length, 500)) });
-  for (const id of taskIds) params.append("filter.task_ids", id);
-
-  const res = await arkFetch(`${TASKS_PATH}?${params.toString()}`, { method: "GET" }, 30_000);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`BytePlus ModelArk error (${res.status}): ${text.slice(0, 800)}`);
-  }
-
-  const body = (await res.json()) as { items?: ArkTask[] };
-  for (const task of body.items ?? []) {
-    out.set(task.id, taskState(task));
-  }
-  // A task the list does not return is gone — cancelled more than 24 hours
-  // ago, or deleted. Terminal, not pending: leaving it pending is how a job
-  // runner polls forever.
-  for (const id of taskIds) {
-    if (!out.has(id)) out.set(id, { state: "failed", error: "BytePlus ModelArk: task no longer exists." });
+  // Chunked, and paged within each chunk. The list endpoint bounds page_size
+  // at 500 and reports `total`, so a single unpaged request silently
+  // truncates — and the missing-means-gone rule below would then declare
+  // every id the page could not fit permanently failed, killing live renders
+  // and refunding nothing. Batch is well under the bound because these ids
+  // ride in the query string, which has its own length limit.
+  const BATCH = 50;
+  for (let i = 0; i < taskIds.length; i += BATCH) {
+    const batch = taskIds.slice(i, i + BATCH);
+    const seen = await listTaskPage(batch);
+    for (const [id, state] of seen) out.set(id, state);
+    // Only an id absent from a COMPLETE answer for its own batch is gone:
+    // cancelled more than 24 hours ago, or deleted. Terminal, not pending —
+    // leaving it pending is how a job runner polls forever.
+    for (const id of batch) {
+      if (!out.has(id)) {
+        out.set(id, { state: "failed", error: "BytePlus ModelArk: task no longer exists." });
+      }
+    }
   }
   return out;
+}
+
+/** Every page of one batch, so `total` is honoured rather than assumed. */
+async function listTaskPage(batch: string[]): Promise<Map<string, QueuedJobState>> {
+  const found = new Map<string, QueuedJobState>();
+  const pageSize = Math.min(batch.length, 500);
+  let page = 1;
+  let total = Infinity;
+  let fetched = 0;
+
+  while (fetched < total && page <= 500) {
+    const params = new URLSearchParams({ page_num: String(page), page_size: String(pageSize) });
+    for (const id of batch) params.append("filter.task_ids", id);
+
+    const res = await arkFetch(`${TASKS_PATH}?${params.toString()}`, { method: "GET" }, 30_000);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`BytePlus ModelArk error (${res.status}): ${text.slice(0, 800)}`);
+    }
+    const body = await parseJson<{ items?: ArkTask[]; total?: number }>(res);
+    const items = body.items ?? [];
+    for (const task of items) found.set(task.id, taskState(task));
+
+    total = typeof body.total === "number" ? body.total : items.length;
+    fetched += items.length;
+    // A page that returns nothing cannot advance the count; stop rather than
+    // spin against a server that disagrees with its own `total`.
+    if (items.length === 0) break;
+    page += 1;
+  }
+  return found;
 }
 
 function taskState(task: ArkTask): QueuedJobState {
@@ -153,28 +216,50 @@ function taskState(task: ArkTask): QueuedJobState {
       return { state: "failed", error: "BytePlus ModelArk: task was cancelled." };
     case "failed":
     default: {
-      const code = task.error?.code ?? "unknown";
-      const message = task.error?.message ?? "no message";
-      return { state: "failed", error: `BytePlus ModelArk error (${code}): ${message}` };
+      // The whole task is serialized into the message because its failure
+      // shape is undocumented: this way a refusal code survives into the
+      // attempt log wherever ByteDance chose to put it, and
+      // isArkContentRefusal can find it without knowing the field name.
+      return {
+        state: "failed",
+        error: `BytePlus ModelArk task failed: ${JSON.stringify(task).slice(0, 800)}`,
+      };
     }
   }
 }
 
-/** The finished file. Only meaningful once checkArkTasks reports completed. */
-export async function fetchArkVideoUrl(taskId: string): Promise<string> {
+/**
+ * The finished file, and what it cost.
+ *
+ * completion_tokens comes back too because ByteDance bills per million
+ * tokens — it is the only quantity that turns a render into a number, and
+ * the entire case for this module is a price comparison. Returning the URL
+ * alone would leave the 2x saving asserted from a list price rather than
+ * checkable against an invoice.
+ */
+export async function fetchArkVideo(taskId: string): Promise<{ url: string; completionTokens: number | null }> {
   const res = await arkFetch(`${TASKS_PATH}/${encodeURIComponent(taskId)}`, { method: "GET" }, 30_000);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`BytePlus ModelArk error (${res.status}): ${text.slice(0, 800)}`);
   }
-  const task = (await res.json()) as ArkTask;
+  const task = await parseJson<ArkTask>(res);
   const url = task.content?.video_url;
   if (!url) throw new Error("BytePlus ModelArk returned no video_url for a finished task.");
-  return url;
+  return { url, completionTokens: task.usage?.completion_tokens ?? null };
 }
 
-export async function cancelArkTask(taskId: string): Promise<void> {
-  await arkFetch(`${TASKS_PATH}/${encodeURIComponent(taskId)}`, { method: "DELETE" }, 15_000);
+/**
+ * DeleteContentsGenerationsTasks. Named for what the API calls it: whether
+ * deleting an in-flight task also stops the billing clock is not documented,
+ * so calling this "cancel" would promise a refund path it may not provide.
+ */
+export async function deleteArkTask(taskId: string): Promise<void> {
+  const res = await arkFetch(`${TASKS_PATH}/${encodeURIComponent(taskId)}`, { method: "DELETE" }, 15_000);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`BytePlus ModelArk error (${res.status}): ${text.slice(0, 400)}`);
+  }
 }
 
 // The multimodal `content` array, verified against ByteDance's reference-to-
@@ -204,7 +289,6 @@ export type ArkSubmitOptions = {
   ratio: string;
   /** ByteDance stamps a visible mark when true. Off in their own example. */
   watermark?: boolean;
-  serviceTier?: ArkServiceTier;
   /**
    * Identity references, in citation order — the caller is responsible for
    * the cap (our catalogue budgets Seedance at 4 images) and for writing a
@@ -218,10 +302,12 @@ export type ArkSubmitOptions = {
 /**
  * Create a video generation task.
  *
- * The envelope is verified against ByteDance's own request example: `model`
- * is a VERSIONED model id (their sample uses seedance-1-0-pro-250528), not an
- * inference endpoint id; `content` is an OpenAI-style array of typed parts;
- * ratio, duration and watermark sit alongside it at the top level.
+ * The envelope is verified against ByteDance's own request example: `content`
+ * is an OpenAI-style array of typed parts, and ratio, duration and watermark
+ * sit alongside it at the top level. `model` takes EITHER a model id (their
+ * sample passes the versioned seedance-1-0-pro-250528) or an inference
+ * endpoint id — worth remembering, because per-endpoint configuration is a
+ * plausible route to the consented-likeness setup this file exists to reach.
  *
  * Identity references ride as image_url parts carrying role
  * "reference_image", and a continuation clip as a video_url part with role
@@ -246,7 +332,12 @@ export async function submitArkVideoJob(options: ArkSubmitOptions): Promise<stri
     ratio: options.ratio,
     duration: options.durationSeconds,
     watermark: options.watermark ?? false,
-    ...(options.serviceTier ? { service_tier: options.serviceTier } : {}),
+    // NO service_tier. It is documented only as a LIST filter
+    // (filter.service_tier), which establishes that tasks HAVE a tier — not
+    // the name, nesting, or existence of a request-side field to set one.
+    // Sending an unrecognised key to a paid endpoint is a guess that bills
+    // to discover. Flex is worth real money on an already-async product;
+    // confirm the field before reaching for it. See docs/BYTEPLUS_ENQUIRY.md.
   };
 
   const res = await arkFetch(
