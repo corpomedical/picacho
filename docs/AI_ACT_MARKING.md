@@ -14,8 +14,10 @@ standard the industry has converged on, and the Commission's Code of Practice
 on Transparency of AI-generated Content (voluntary, but evidence of
 compliance) is written around that shape.
 
-Jeartecnica is established in Madrid and puts this system on the market under
-its own name, so the obligation lands on us regardless of where customers are.
+JEAR TECNICA S.A. is established in Madrid and puts this system on the market
+under its own name, so the obligation lands on us regardless of where customers
+are. (Legal name per src/lib/legal-entity.ts, which is what the site renders —
+earlier drafts here wrote "Jeartecnica".)
 
 ---
 

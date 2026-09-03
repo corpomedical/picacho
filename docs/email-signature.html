@@ -30,10 +30,14 @@
      you the code instead.</p>
 
   <div class="todo">
-    <b>Fill these in first</b>, by editing this file: <code>[SURNAME]</code>,
-    <code>[CIF]</code>, <code>[REGISTERED ADDRESS]</code>,
-    <code>[REGISTRO MERCANTIL]</code>. They are left blank on purpose — a
-    company registration number is not something to guess at.
+    <b>Fill this in first</b>, by editing this file: <code>[SURNAME]</code>.
+    It is the one value not in the repository. The entity line below is taken
+    from <code>src/lib/legal-entity.ts</code>, the same source the website's
+    footer and privacy policy render, so the signature and the site cannot
+    disagree. The Registro Mercantil line is absent here for the same reason
+    it is absent from the website: <code>registryLine</code> is empty until the
+    tomo/folio/hoja surfaces from the escritura, and the operator card renders
+    it conditionally so no placeholder ever ships.
   </div>
 
   <div class="label">Full — first message in a thread</div>
@@ -71,7 +75,7 @@
         </tr>
         <tr>
           <td colspan="2" style="padding:16px 0 0;font-size:11px;line-height:1.5;color:#a3a3a3;">
-            Picacho is a trading name of Jeartecnica S.A. · CIF [CIF] · [REGISTERED ADDRESS] · [REGISTRO MERCANTIL]
+            Picacho is operated by JEAR TECNICA S.A. · NIF A28847549 · Paseo de la Castellana 259, 28046 Madrid, Spain
           </td>
         </tr>
       </table>

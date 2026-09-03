@@ -1,4 +1,13 @@
-# BytePlus ModelArk — enquiry to send
+# BytePlus ModelArk — enquiry (SUPERSEDED)
+
+> **⚠ Superseded 2026-09-03 by `BYTEPLUS_FOLLOWUP.md`.** That draft is the one
+> to send: this one was written before the account existed and before the
+> provenance question became material, and adversarial review found four fatal
+> problems in it — an Article 50 self-characterisation, a consent claim we do
+> not verify, an unprompted report that our traffic trips their likeness
+> filter, and a DPA/DPIA commitment with no foundation in the product.
+> Kept for the pricing table and the per-question reasoning below, both of
+> which still hold.
 
 Send to BytePlus sales (Contact sales / live chat on any page of
 docs.byteplus.com, or partner enquiry via byteplus.com). Send from
@@ -12,7 +21,7 @@ saves the rest of the work — do not start engineering before they answer.
 Hello,
 
 I run Picacho (picacho.ai), an AI character-video product operated by
-Jeartecnica S.A., a company registered in Madrid, Spain. Our customers save a
+JEAR TECNICA S.A., a company registered in Madrid, Spain. Our customers save a
 "character" — a person, with their own reference photographs — and generate
 short video of that character across many scenes, with every render scored
 for facial consistency against the saved reference.
@@ -67,7 +76,7 @@ Best regards,
 
 Ahmad
 Picacho — picacho.ai
-Jeartecnica S.A., Madrid, Spain
+JEAR TECNICA S.A., Madrid, Spain
 hello@picacho.ai
 
 ---

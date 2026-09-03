@@ -7,6 +7,15 @@
 // NIF, registered address, and an effective means of contact — and the GDPR
 // requires the privacy policy to name its data controller. Until today the
 // site named nobody (found in the 2026-09-01 legal review).
+// ⚠ UNRESOLVED (2026-09-03): Stripe disagrees with this file. The Stripe
+// account's legal entity name is "Jeartecnica S.A." and its dashboard display
+// name is "Jeartecnica", while this constant — and therefore the site footer,
+// the operator card and the privacy policy in all four languages — says
+// "JEAR TECNICA S.A.". Stripe's name is the one printed on every invoice we
+// issue, so the two customer-facing surfaces name the company differently.
+// Only the escritura settles which is right; whichever it is, the other needs
+// changing. Read from the live account, not assumed:
+//   curl -s https://api.stripe.com/v1/account -u "$STRIPE_SECRET_KEY:"
 export const LEGAL_ENTITY = {
   name: "JEAR TECNICA S.A.",
   nif: "A28847549",

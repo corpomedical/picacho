@@ -433,7 +433,9 @@ export async function startCreditCheckout(
       // buying a credit pack had nothing proper for their books. This mints a
       // real numbered invoice per pack purchase (2026-08-22, operator:
       // "What about the invoice sent to customers?"); the account-level
-      // branding and the Jeartecnica/CIF footer apply to it automatically.
+      // branding and the account-level legal entity apply to it automatically
+      // — which is Stripe's own record, and it does not currently match
+      // lib/legal-entity.ts. See the warning at the top of that file.
       invoice_creation: { enabled: true },
       // The webhook credits the account off this, so it has to be present.
       // client_reference_id is also set above as a belt-and-braces second

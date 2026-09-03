@@ -21,17 +21,31 @@ Two reasons, both now fixed in the HTML file:
 Tables rather than divs throughout, for the same reason every email client
 guide says so: they survive sanitizers that rewrite layout CSS.
 
-## Fill these in first
+## Fill this in first
 
-Four values are not in this repo and were not guessed:
+One value: `[SURNAME]`. Edit it in `email-signature.html` before copying.
 
-`[SURNAME]` · `[CIF]` · `[REGISTERED ADDRESS]` · `[REGISTRO MERCANTIL]`
+Everything else in the entity line comes from `src/lib/legal-entity.ts` — the
+same constant the site footer and the privacy policy render in all four
+languages — so the signature cannot drift from what a recipient sees if they
+check picacho.ai. That line is not decoration: a Spanish S.A. owes that
+identification on its business correspondence, and the first use of this
+signature is an enquiry asking a vendor to admit you to a gated programme,
+where a verifiable entity is the part that makes the ask credible.
 
-Edit them in `email-signature.html` before copying. The registered-entity line
-is not decoration: a Spanish S.A. owes that identification on its business
-correspondence, and the first use of this signature is an enquiry asking a
-vendor to admit you to a gated programme, where a verifiable entity is the
-part that makes the ask credible.
+Two corrections were needed to get there, both found by cross-checking the
+draft emails against the code on 2026-09-03:
+
+- **The legal name is `JEAR TECNICA S.A.`**, as stored and as rendered on the
+  live site — not "Jeartecnica S.A.", which this file and the BytePlus enquiry
+  draft both used.
+- **The label is NIF, not CIF.** `legal-entity.ts` stores it as `nif` and the
+  footer renders "NIF A28847549"; CIF was replaced by NIF for Spanish entities
+  in 2008. A recipient cross-checking the site would have found two labels for
+  one number.
+
+The Registro Mercantil line stays absent, exactly as on the site: `registryLine`
+is empty until the tomo/folio/hoja surfaces from the escritura.
 
 ## Plain text, for clients that strip HTML
 
@@ -41,8 +55,8 @@ Founder, Picacho
 picacho.ai · hello@picacho.ai
 The same character, in every single frame.
 
-Picacho is a trading name of Jeartecnica S.A. · CIF [CIF]
-[REGISTERED ADDRESS] · [REGISTRO MERCANTIL]
+Picacho is operated by JEAR TECNICA S.A. · NIF A28847549
+Paseo de la Castellana 259, 28046 Madrid, Spain
 ```
 
 ## Notes
