@@ -28,7 +28,7 @@ const GUIDES = [
     date: "August 2026",
     title: "Seedance 2.0: the practical guide",
     blurb:
-      "Identity references vs first frames, the 2.5 photoreal rejection trap, exact outfit matching from a clothing photo, and real per-second economics — all verified in production.",
+      "Identity references vs first frames, the photoreal rejection fence on both Seedance lanes, exact outfit matching from a clothing photo, and real per-second economics — all verified in production.",
   },
   {
     href: "/guides/getting-started",

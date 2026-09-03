@@ -192,10 +192,25 @@ describe("seedance 2.5 photoreal lane (103-credit incident)", () => {
     );
   });
 
-  it("photorealFallback skips the model you are on and returns null when nothing accepts", () => {
-    expect(photorealFallback("seedance")).toBe("seedance-2");
-    expect(photorealFallback("seedance-2")).not.toBe("seedance-2");
-    expect(photorealFallback("zzz-unknown-model")).toBeTruthy();
+  it("photorealFallback skips the model you are on and never lands on a rejecting one", () => {
+    // Both Seedance lanes reject since 2026-09-03, so the remedy leaves the
+    // family entirely — this assertion is what caught the capability flip.
+    expect(photorealFallback("seedance")).toBe("kling-o3-pro");
+    expect(photorealFallback("seedance-2")).toBe("kling-o3-pro");
+    for (const from of ["seedance", "seedance-2", "zzz-unknown-model"]) {
+      const target = photorealFallback(from);
+      expect(target).toBeTruthy();
+      expect(target).not.toBe(from);
+      expect(
+        MODEL_CAPABILITIES[target as keyof typeof MODEL_CAPABILITIES].photorealPolicy,
+      ).toBe("accepts");
+    }
+  });
+
+  it("a photoreal character on 2.0 now warns too — the lane it used to escape to", () => {
+    const plan = resolveSendPlan({ ...base, modelId: "seedance-2" });
+    expect(issue(plan, "SEEDANCE25_PHOTOREAL")?.severity).toBe("warn");
+    expect(issue(plan, "SEEDANCE25_PHOTOREAL")?.params?.target).toBe("kling-o3-pro");
   });
 
   it("known-illustrated character on 2.5 passes clean — the heuristic's false positive dies with knowledge", () => {

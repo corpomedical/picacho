@@ -180,10 +180,17 @@ export const VIDEO_MODELS = [
     // exactly what tier, because the whole picture was researched rather than
     // inferred. Four facts worth not re-deriving:
     //
-    //   1. 2.0 IS NO LONGER SAFE EITHER. It refused a character's six
-    //      reference photos twice on 2026-09-03 — the same photos, unchanged
-    //      since 2026-08-15, that it accepted on 08-25. The line moves one
-    //      way. Platform-wide, 2.5 has never once succeeded here: 21
+    //   1. 2.0 IS NO LONGER SAFE EITHER, and as of 2026-09-03 the capability
+    //      table says so — photorealPolicy is "rejects" on BOTH Seedance
+    //      lanes. It refused a character's six reference photos twice that
+    //      day, the same photos, unchanged since 08-15, that it accepted on
+    //      08-25. Two refusals would have been thin evidence to warn a whole
+    //      model on; ByteDance's own documentation is not. Volcengine states
+    //      the Seedance 2.0 series does not support direct uploads of
+    //      reference images or videos containing real-person faces, and the
+    //      sanctioned path is the verified asset library instead. The
+    //      August successes were the permissive side of a moving line, not a
+    //      contract. Platform-wide, 2.5 has never once succeeded here: 21
     //      attempts, 18 policy refusals, 0 videos.
     //   2. THE SANCTIONED ROUTE TAKES ASSET IDs, NOT IMAGE URLs. ByteDance
     //      runs a private real-human asset library: the person passes a
@@ -218,7 +225,8 @@ export const VIDEO_MODELS = [
     //
     // Weights: cost / $0.28, rounded up ($1.51/5s → 6, $3.02/10s → 11,
     // $4.54/15s → 17).
-    description: "Identity-referenced clips of photoreal people, up to 15s (~$0.30/sec).",
+    description:
+      "Identity-referenced clips up to 15s — the provider blocks photoreal people. Premium (~$0.30/sec).",
     durations: [
       { seconds: 5, creditWeight: 6, default: true },
       { seconds: 10, creditWeight: 11 },
@@ -254,7 +262,7 @@ export const VIDEO_MODELS = [
     // ILLUSTRATED/MASCOT lane: a cartoon mascot sails through the same
     // filter (verified with a generated clip) and 2.5's 30-second takes are
     // exactly what mascot explainers want. Photoreal characters belong on
-    // Seedance 2.0 or Kling O3 Pro.
+    // Kling O3 Pro — the Seedance lanes both refuse them now.
     description:
       "Illustrated & mascot characters up to 30s — the provider blocks photoreal people. Premium (~$0.47/sec).",
     // fal's schema allows 4-30 seconds (or "auto"). This originally shipped

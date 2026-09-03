@@ -67,7 +67,14 @@ export type ModelCapabilities = {
   aspectControl: "param" | "reframe" | "none";
   /** provider-enforced bounds on the reference photo's own aspect (kling-o3 family) */
   refAspectBounds?: { min: number; max: number };
-  /** ByteDance 2.5 rejects photoreal people; everything else accepts */
+  /**
+   * Whether the provider will accept a reference image that reads as a real
+   * person. BOTH Seedance lanes reject as of 2026-09-03: 2.5 always has, and
+   * 2.0 joined it — not on the strength of two refusals, but on ByteDance's
+   * own documentation, which states the Seedance 2.0 series does not support
+   * direct uploads of reference images containing real-person faces and
+   * points at a verified asset library instead.
+   */
   photorealPolicy: "rejects" | "accepts";
   /** combined image budget across identity + outfit (seedance / o3-pro slice-to-4) */
   imageBudget?: number;
@@ -173,7 +180,7 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     storyboard: false,
     multiPerson: true,
     aspectControl: "param",
-    photorealPolicy: "accepts",
+    photorealPolicy: "rejects",
     imageBudget: 4,
   },
   veo: {

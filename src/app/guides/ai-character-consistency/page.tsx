@@ -98,17 +98,24 @@ export default async function CharacterConsistencyGuide() {
             one.
           </p>
 
-          <h2 className={H2}>3 · The photoreal policy trap (verified August 2026)</h2>
+          <h2 className={H2}>3 · The photoreal policy fence (updated September 2026)</h2>
           <p className={P}>
             A finding we verified with live requests, because nobody publishes it: ByteDance&apos;s
-            Seedance 2.5 endpoints <em>reject</em> reference images that look like real people —
-            the request fails with a content-policy error before generating. It&apos;s an
-            anti-deepfake fence, and it applies to photoreal AI-generated faces too, since the
-            filter can&apos;t tell the difference. Seedance 2.0 predates the tightening and accepts
-            the same faces; illustrated and mascot-style characters pass on both. If a tool tells
-            you Seedance &quot;doesn&apos;t work&quot; with your character, this policy split — not
-            your prompt — is usually why. (It&apos;s why Picacho runs Seedance 2.0 as its photoreal
-            lane and 2.5 for illustrated mascots, labeled as such.)
+            Seedance endpoints <em>reject</em> reference images that look like real people — the
+            request fails with a content-policy error before generating. It&apos;s an anti-deepfake
+            fence, and it applies to photoreal AI-generated faces too, since the filter can&apos;t
+            tell the difference. Illustrated and mascot-style characters pass without complaint.
+          </p>
+          <p className={P}>
+            When we first published this in August 2026 the fence was on 2.5 only, and Seedance 2.0
+            accepted the same faces. That gap has since closed: on 3 September 2026, 2.0 refused
+            reference photos it had accepted eleven days earlier, and ByteDance&apos;s own
+            documentation now states the Seedance 2.0 series does not support direct uploads of
+            reference images containing real-person faces — the sanctioned route is a verified
+            asset library instead. So if a tool tells you Seedance &quot;doesn&apos;t work&quot;
+            with your character, this fence — not your prompt — is usually why. Photoreal
+            characters belong on Kling O3 Pro; Picacho routes them there and warns before you
+            spend if you pick a Seedance lane.
           </p>
 
           <h2 className={H2}>4 · Keep the prompt&apos;s description block identical</h2>

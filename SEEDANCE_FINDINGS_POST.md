@@ -1,3 +1,19 @@
+> ## ⚠ SUPERSEDED — DO NOT POST AS WRITTEN (2026-09-03)
+>
+> This post's thesis is "Seedance 2.5 rejects photoreal faces, 2.0 doesn't."
+> The second half stopped being true. On 3 September 2026 Seedance 2.0 refused
+> reference photos it had accepted eleven days earlier, and ByteDance now
+> documents that the 2.0 series does not support direct uploads of reference
+> images containing real-person faces at all — the sanctioned route is a
+> verified asset library.
+>
+> Posting it unchanged would hand a community a confident, checkable, wrong
+> claim under your own name, which costs more credibility than the post earns.
+>
+> The finding is still worth publishing; it is just a different finding now —
+> that the fence closed across the whole family within two weeks, and what the
+> sanctioned path actually is. Rewrite before sending.
+
 # Community post — the Seedance likeness-policy findings
 
 The verified discovery (2026-08-21 live tests) written up as value-first

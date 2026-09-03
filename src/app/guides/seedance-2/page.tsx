@@ -90,19 +90,21 @@ export default async function SeedanceGuide() {
             </li>
           </ul>
 
-          <h2 className={H2}>The 2.5 trap: photoreal people get rejected</h2>
+          <h2 className={H2}>The photoreal fence: real faces get rejected</h2>
           <p className={P}>
-            The single most expensive thing to learn by surprise: ByteDance&apos;s newer{" "}
-            <b>Seedance 2.5</b> endpoints refuse reference images of photoreal people — the request
+            The single most expensive thing to learn by surprise: ByteDance&apos;s{" "}
+            <b>Seedance</b> endpoints refuse reference images of photoreal people — the request
             fails with a content-policy violation after you&apos;ve already queued it. We verified
-            this live on 21 August 2026 on both the reference and image-to-video endpoints, with
-            the same faces that <b>2.0 accepts without complaint</b> (2.0 predates the policy
-            tightening). The split, in practice:
+            it live on 21 August 2026, when the fence was on 2.5 alone and 2.0 took the same faces
+            happily. It is no longer a split: on 3 September 2026 <b>2.0 refused photos it had
+            accepted eleven days earlier</b>, and ByteDance now documents that the 2.0 series does
+            not support direct uploads of reference images containing real-person faces at all.
+            Where that leaves things:
           </p>
           <ul className="mt-4 space-y-2.5">
             <li className={LI}>
               <span className={DOT} />
-              <b>Photoreal humans → Seedance 2.0.</b> Same identity-reference contract, no policy
+              <b>Photoreal humans → Kling O3 Pro.</b> Both Seedance lanes now refuse them; no policy
               fence, up to 15-second clips.
             </li>
             <li className={LI}>
@@ -112,10 +114,11 @@ export default async function SeedanceGuide() {
             </li>
           </ul>
           <p className={P}>
-            If a tool doesn&apos;t route this for you, route it yourself — a 2.5 render of a
+            If a tool doesn&apos;t route this for you, route it yourself — a Seedance render of a
             photoreal character isn&apos;t a quality risk, it&apos;s a guaranteed rejection that
             still costs you the attempt on some platforms. (Picacho fences this before send: pick
-            2.5 with a photoreal character and a banner offers the one-tap switch to 2.0.)
+            either Seedance lane with a photoreal character and a banner offers the one-tap switch
+            to a model that accepts them.)
           </p>
 
           <h2 className={H2}>The outfit trick nobody uses</h2>
