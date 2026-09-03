@@ -128,6 +128,42 @@ on your servers. Be accurate — inconsistencies here get caught.
 
 ---
 
+## The release build is minified — what to re-test when it changes
+
+`minifyEnabled true` since 2026-09-03 (Play Console flagged the release DEX at
+2% obfuscation, deadline Feb 2027). R8 renames classes, and Capacitor finds
+every plugin by STRING — `assets/capacitor.plugins.json` holds a classpath per
+plugin and `PluginManager` resolves it with `Class.forName`, then dispatches
+each `@PluginMethod` reflectively. A missing keep rule therefore fails at
+RUNTIME, not at build time: the app compiles, installs, launches, and the
+bridge is simply dead. Nothing in the web test suite can see it.
+
+So any change to `android/app/proguard-rules.pro`, to `minifyEnabled`, or to
+the plugin list gets an actual signed release build on a device before it is
+uploaded:
+
+```bash
+cd android && ANDROID_HOME=~/Library/Android/sdk ./gradlew assembleRelease
+adb install -r app/build/outputs/apk/release/app-release.apk
+adb logcat -c && adb shell am start -n ai.picacho.app/.MainActivity
+```
+
+Then confirm, in this order — the first two are the ones that prove reflection
+survived, because both are JS calling a native plugin through the bridge:
+
+1. The splash dismisses and the site renders. (SplashScreen plugin: the live
+   site's inlined hide script calls it at first paint.)
+2. The status-bar icons match the theme. (StatusBar `setStyle`.)
+3. `adb logcat -d | grep -iE "ClassNotFoundException|NoSuchMethodException|FATAL"`
+   is empty for `ai.picacho.app`.
+4. Every plugin class still owns its name in the mapping:
+   ```bash
+   grep -E "Plugin ->" app/build/outputs/mapping/release/mapping.txt | grep -v " -> \(.*\)\1:"
+   ```
+   Each of the ten in `capacitor.plugins.json` must map to itself.
+
+Verified this way on the Pixel_7 emulator (API 37) for versionCode 10.
+
 ## Known risks, honestly
 
 1. **Guideline 4.2 rejection.** The single most likely outcome if Step 3 is

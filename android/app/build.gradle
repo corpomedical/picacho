@@ -89,7 +89,26 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
+            // R8 on (2026-09-03, Play Console "App optimization is below our
+            // threshold — Obfuscation (2%)", deadline Feb 2027): the release
+            // DEX shipped fully unobfuscated because this was false, and Play
+            // now treats any optimization category under 25% as something that
+            // "may impact your visibility and publishing capabilities".
+            //
+            // Safe here because the reflection this app depends on is declared
+            // by the libraries themselves: Capacitor resolves every plugin by
+            // name from assets/capacitor.plugins.json via Class.forName
+            // (PluginManager) and dispatches @PluginMethod by reflection, and
+            // its AAR ships the consumer rules that keep exactly those
+            // (-keep public class * extends com.getcapacitor.Plugin, plus the
+            // annotation rules). Verified on the emulator against a signed
+            // release build before this landed — see the smoke list in
+            // MOBILE_APP.md.
+            //
+            // shrinkResources stays OFF on purpose: no Play category asks for
+            // it, and resource stripping is the part that breaks quietly (a
+            // drawable named only from a theme or from JS). One risk at a time.
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
             if (keystorePropertiesFile.exists()) {
                 signingConfig signingConfigs.release
