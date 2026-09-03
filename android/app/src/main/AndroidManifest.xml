@@ -42,6 +42,30 @@
 
     <!-- Permissions -->
 
+    <!-- Package-visibility declarations (Android 11+). The web app's "Take
+         photo" control is <input type="file" capture="environment">, which
+         Capacitor CORE serves by resolving MediaStore.ACTION_IMAGE_CAPTURE
+         (BridgeWebChromeClient.showImageCapturePicker) — and on API 30+ that
+         resolve returns null unless the action is declared here, in which
+         case core logs "Media capture intent could not be launched" and
+         quietly opens the gallery instead. Until versionCode 12 these three
+         rode in on @capacitor/camera's manifest; that plugin was never called
+         and is now excluded (capacitor.config.ts), so the declarations live
+         where the feature that needs them lives. Measured, not assumed:
+         without this block the tap opened the Photopicker; with it, the
+         camera. -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.IMAGE_CAPTURE" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.GET_CONTENT" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.PICK" />
+        </intent>
+    </queries>
+
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Android 13+ (API 33) shows no notifications unless the app BOTH
          declares this permission and is granted it at runtime. The runtime

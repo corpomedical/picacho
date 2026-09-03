@@ -110,17 +110,18 @@ export function NativeChrome() {
       //   com.google.android.material.internal.EdgeToEdgeUtils
       //   com.google.android.material.bottomsheet.BottomSheetDialog (material 1.13.0)
       //   com.capacitorjs.plugins.statusbar.StatusBar  (status-bar 8.0.3)
-      //   io.ionic.libs...IONCAMRImageEditorActivity   (via @capacitor/camera)
       //
-      // All are current versions, and each guards the call by API level at
-      // runtime — Play's scan reads the bytecode, not the guard. R8 does not
-      // remove them. So there is no version bump that clears this today; the
-      // last three could only go by dropping plugins (the camera one is
-      // never called from here — see AndroidManifest, capture rides the web
-      // <input capture> bridge — so that one is a real option), and the first
-      // two cannot go at all. It is a recommendation with no deadline, unlike
-      // the obfuscation item. Revisit when AndroidX and Material ship
-      // releases without the legacy paths.
+      // Until versionCode 12 the list also held Material's EdgeToEdgeUtils and
+      // BottomSheetDialog and io.ionic.libs' IONCAMRImageEditorActivity — all
+      // three arrived via @capacitor/camera, a plugin nothing here ever called
+      // (capture rides the web <input capture> path through Capacitor core).
+      // Excluding it in capacitor.config.ts took those callers, Material's
+      // resource tables and 39% of the bundle with it. What remains is
+      // AndroidX, Capacitor core and Cordova, all at current versions, each
+      // guarding the call by API level at runtime — Play's scan reads the
+      // bytecode, not the guard, and R8 does not remove them. No version bump
+      // clears it today; it is a recommendation with no deadline. Revisit when
+      // AndroidX ships releases without the legacy paths.
       void statusBar?.setBackgroundColor?.({ color: dark ? "#1a1c24" : "#eef1f8" });
     };
     paintBars();

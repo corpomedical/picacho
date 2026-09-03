@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.12.2",
+    build: 23,
+    date: "2026-09-03",
+    title: "The Android app is under 3 MB, and Take photo still opens the camera",
+    items: [
+      "Play's dashboard for the new Android build listed deprecated display APIs at eight places and a bitmap warning at a ninth. Six of the nine were inside a camera plugin the app never calls — photos come in through the ordinary file picker, which is part of the app's core, not that plugin — and it was quietly carrying Google's Material component library and its resource tables along with it. It is out. The download is 2.6 MB against 4.3 MB for the previous build and 6.9 MB the week before; three screens that could never be opened are gone from the app's manifest.",
+      "Removing it would have broken one thing, and that was caught on the emulator before anything shipped: on Android 11 and newer, the Take photo option needs a declaration in the app's own manifest to be allowed to find the camera, and the plugin had been supplying it unnoticed. Without it the button opened the gallery instead — no error, just the wrong picker. The declaration now lives in the app itself, where the feature that needs it lives, and the tap was re-tested end to end: it opens the camera.",
+      "The remaining Play advisories were measured and left alone on purpose. Turning on R8's optimisation pass works — every plugin still answers, verified one by one — but buys 1.4% and is advisory for an app this size, so it waits for its own release rather than riding on this one. Resource shrinking and the Gradle-plugin upgrade were assessed and declined: small prize, quiet failure modes, and a Play rule that only binds apps with more than 10 MB of code, where this one has 3.4.",
+      "The send receipt no longer crushes its own warnings on a phone. Its three columns — the label, the receipt itself, the total — were two fixed widths and whatever was left, and on a 360-pixel screen whatever was left was about 120 pixels: an engine's warning wrapped one word per line and its action button sat across the text (operator's screenshot from a real device). On narrow screens the receipt now takes its own full-width row beneath the label, with the total keeping the right edge above it; on anything wider the layout is exactly the approved one.",
+    ],
+  },
+  {
     version: "1.12.1",
     build: 22,
     date: "2026-09-03",

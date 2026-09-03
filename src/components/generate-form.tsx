@@ -6169,15 +6169,27 @@ function GenerateFormInner({
                 (fidelity pass, 2026-09-02): a tinted strip fused into the
                 composer's top edge, headed SEND RECEIPT with the total on
                 the right, wrapping the same ReceiptStrip machinery
-                (inventory rows, one-tap remedies) unchanged. */}
+                (inventory rows, one-tap remedies) unchanged.
+
+                Two rows on a phone, one on anything wider (2026-09-03,
+                operator's screenshot from a real device): the band's three
+                columns — labels, strip, total — are two fixed widths and a
+                flex-1, which at 360px CSS left the strip about 120px. An
+                issue message wrapped one word per line and its action pill
+                overflowed across the text. Below `sm` the strip now takes
+                its own full-width row under the labels, the total keeps the
+                right edge of the first row, and the divider goes; from `sm`
+                up the DOM order and widths are exactly what the board
+                approved. `grow basis-*` rather than `flex-1` so the basis
+                switch is explicit instead of racing the shorthand. */}
             {(contentType === "video" || showImageReceipt) && (
               <div
                 className={cn(
-                  "-mx-4 -mt-4 mb-3 flex items-start gap-[18px] border-b border-atelier-rule/60 bg-atelier-accent/[0.06] px-4 pb-2.5 pt-2.5",
+                  "-mx-4 -mt-4 mb-3 flex flex-wrap items-start gap-x-[18px] gap-y-2 border-b border-atelier-rule/60 bg-atelier-accent/[0.06] px-4 pb-2.5 pt-2.5",
                   !composerBannerVisible && "rounded-t-[22px]",
                 )}
               >
-                <div className="flex flex-shrink-0 flex-col gap-0.5">
+                <div className="order-1 flex flex-shrink-0 flex-col gap-0.5">
                   <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
                     {g.receiptTitle}
                   </span>
@@ -6185,8 +6197,8 @@ function GenerateFormInner({
                     {g.receiptQuoted}
                   </span>
                 </div>
-                <span aria-hidden className="mt-0.5 h-7 w-px flex-shrink-0 bg-atelier-rule/80" />
-                <div className="min-w-0 flex-1">
+                <span aria-hidden className="order-2 mt-0.5 hidden h-7 w-px flex-shrink-0 bg-atelier-rule/80 sm:block" />
+                <div className="order-4 min-w-0 grow basis-full sm:order-3 sm:basis-0">
                   <ReceiptStrip
                     plan={sendPlanNow}
                     headline={null}
@@ -6204,7 +6216,7 @@ function GenerateFormInner({
                   />
                 </div>
                 {!willAsk && sendCreditCost > 0 && !freeTierClient && (
-                  <div className="flex flex-shrink-0 flex-col items-end gap-0.5">
+                  <div className="order-3 ml-auto flex flex-shrink-0 flex-col items-end gap-0.5 sm:order-4 sm:ml-0">
                     <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
                       {g.totalLabel}
                     </span>

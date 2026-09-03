@@ -10,6 +10,66 @@ worse than a short translation.
 
 ---
 
+## versionCode 12 · versionName 1.12.2
+
+**Context the notes do not say out loud.** A camera plugin the app never
+called was excluded; it had been carrying Material Components and its
+resource tables. Measured on the signed artifacts, same machine, same
+toolchain:
+
+| | AAB | |
+|---|---|---|
+| versionCode 11 | 4,535,254 B | 4.33 MB |
+| versionCode 12 | 2,766,077 B | 2.64 MB |
+| | **−1,769,177 B** | **−39.0%** |
+
+Eight plugins instead of nine; the "Take photo" path was re-verified end to
+end on the emulator after the `<queries>` move (see the ledger in
+`android/app/build.gradle`). Users may be coming from 9 (6.89 MB) or 11 —
+the notes quote both so the sentence is true for everyone.
+
+### en-US
+
+```
+Smaller again.
+
+The app is now 2.6 MB — down from 4.3 MB in the last release and 6.9 MB the week before. A camera library the app never used had been compiled in along with everything it depended on; it's gone. Taking a photo works exactly as before, through the phone's own camera.
+
+Nothing else changes.
+```
+
+### es-ES
+
+```
+Más ligera todavía.
+
+La app ocupa ahora 2,6 MB, frente a 4,3 MB en la versión anterior y 6,9 MB la semana pasada. Se había compilado una biblioteca de cámara que la app nunca usaba, junto con todo lo que arrastraba; ya no está. Hacer una foto funciona igual que antes, con la cámara del propio teléfono.
+
+Nada más cambia.
+```
+
+### pt-PT
+
+```
+Ainda mais leve.
+
+A app ocupa agora 2,6 MB, contra 4,3 MB na versão anterior e 6,9 MB na semana passada. Tinha sido compilada uma biblioteca de câmara que a app nunca usava, com tudo o que arrastava; já não está. Tirar uma fotografia funciona exatamente como antes, com a câmara do próprio telemóvel.
+
+Nada mais muda.
+```
+
+### it-IT
+
+```
+Ancora più leggera.
+
+L'app ora occupa 2,6 MB, contro i 4,3 MB della versione precedente e i 6,9 MB della settimana scorsa. Era stata compilata una libreria fotocamera che l'app non usava mai, insieme a tutto ciò che si portava dietro; è stata rimossa. Scattare una foto funziona esattamente come prima, con la fotocamera del telefono.
+
+Non cambia nient'altro.
+```
+
+---
+
 ## versionCode 11 · versionName 1.12.1
 
 **Context the notes do not say out loud.** The version users are upgrading

@@ -21,7 +21,7 @@
 
 # Capacitor loads plugin classes BY STRING from assets/capacitor.plugins.json
 # (PluginManager: Class.forName(classpath)). The AAR's own rule keeps
-# subclasses of com.getcapacitor.Plugin, which covers all nine of ours; this
+# subclasses of com.getcapacitor.Plugin, which covers all eight of ours; this
 # names the packages as well so a future plugin that registers differently —
 # or a library rule that regresses — still cannot be renamed out from under
 # the JSON.

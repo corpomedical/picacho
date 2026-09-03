@@ -18,7 +18,27 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 11
+        versionCode 12
+        // 12 = the camera plugin leaves the binary (2026-09-03, operator:
+        // "Fix whatever is wrong without reducing functionality or damaging
+        // the app", on Play's release-11 dashboard). Nothing in the web app
+        // calls @capacitor/camera: both photo paths are <input type="file">
+        // served by Capacitor core's file chooser. It was the only dependency
+        // pulling Material Components and its resource tables, and it
+        // declared three activities nothing could reach. Measured on the
+        // signed artifact: AAB 4,535,254 -> 2,766,078 bytes (-39.0%), APK
+        // 4,205,649 -> 2,278,072, DEX 4,787 -> 3,735 classes, manifest
+        // activities 6 -> 3. Five of Play's eight deprecated edge-to-edge
+        // call sites and its BitmapFactory warning were inside that stack.
+        // THE REGRESSION CAUGHT BEFORE SHIPPING: the plugin's manifest was
+        // the only source of the IMAGE_CAPTURE <queries> entry that core's
+        // "Take photo" path needs on Android 11+; without it the button
+        // silently opened the gallery. The three intents now live in our own
+        // AndroidManifest.xml — verified on the emulator: capture tap opens
+        // com.android.camera2 with the plugin gone. Excluded via
+        // android.includePlugins, same as RevenueCat at 11; the npm package
+        // stays. R8 optimization was measured (-1.4%, all plugins dispatch)
+        // and deliberately NOT stacked here — one risk per versionCode.
         // 11 = the dormant store leaves the binary (2026-09-03). Measured
         // before deciding: @revenuecat/purchases-capacitor and the Amazon
         // Appstore SDK it pulls were 3,237 of 9,009 classes in the release
@@ -91,7 +111,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.12.1"
+        versionName "1.12.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

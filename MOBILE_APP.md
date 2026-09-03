@@ -90,9 +90,19 @@ Apple rejects webview wrappers under guideline 4.2 ("minimum functionality").
 A shell around a website with no native capability will not pass. Two things
 carry the most weight, and both are genuinely useful here rather than box-ticking:
 
-- **Camera** — `@capacitor/camera` for capturing a character reference photo
-  directly instead of picking a file. This is the strongest single argument
-  that the app does something the website can't.
+- **Camera** — capturing a character reference photo directly instead of
+  picking a file. This is the strongest single argument that the app does
+  something the website can't. **How it actually works, measured 2026-09-03:**
+  the web app renders `<input type="file" capture="environment">` (the "Take
+  photo" item in the composer's + menu), and Capacitor CORE's file chooser
+  serves it by launching the system camera. `@capacitor/camera` was never
+  called — no import, no `Plugins.Camera`, nothing — and on Android it was
+  excluded at versionCode 12 (`android.includePlugins`), taking Material
+  Components, three unreachable activities and 39% of the bundle with it.
+  The one thing it had been providing silently was the `<queries>` entry for
+  `IMAGE_CAPTURE` that core needs on Android 11+ to find the camera; that now
+  lives in `android/app/src/main/AndroidManifest.xml`. The npm package stays
+  installed, so the install line above is still right.
 - **Push notifications** — generation takes minutes. Since the fire-and-poll
   rewrite the job survives backgrounding, so push is how someone learns it
   finished without watching the screen. Needs a Firebase project for Android
@@ -177,7 +187,7 @@ print('BROKEN:', bad) if bad else print('ok:', len(plugins), 'plugins resolvable
    second matched any line containing `Plugin ->`, which flags Capacitor's own
    base classes — `com.getcapacitor.Plugin` is renamed on every build, legally,
    because nothing looks it up by string — so it printed four scary lines that
-   mean nothing while saying nothing about the nine that matter. Only the
+   mean nothing while saying nothing about the ones that matter. Only the
    classpaths named in `capacitor.plugins.json` are loaded by string, and only
    those may not be renamed.
 5. Best of all, ask the running bridge what it actually registered. This needs
@@ -198,6 +208,18 @@ FATAL, all nine classpaths mapped to themselves, and the live bridge reported
 its nine plugins with `isPluginAvailable("Purchases") === false` — returned,
 not thrown, which is what keeps `playBillingAvailable()` from ever reaching the
 dynamic import.
+
+Verified again for versionCode 12 (camera plugin excluded, `<queries>` moved
+into our manifest), on the same emulator: release build boots and renders with
+a clean logcat; all eight classpaths map to themselves; the live bridge
+registers eight plugins with `isPluginAvailable("Camera") === false`; a real
+`@PluginMethod` answered on App, Filesystem, Haptics, PushNotifications, Share,
+SplashScreen and StatusBar; a hardware tap on `<input type="file"
+accept="image/*">` opened the system Photopicker; and the same tap on
+`<input capture="environment">` opened `com.android.camera2` with no
+"Media capture intent could not be launched" fallback in the log — the line
+that appeared before the `<queries>` move, and the regression this step
+exists to catch.
 
 ## Known risks, honestly
 

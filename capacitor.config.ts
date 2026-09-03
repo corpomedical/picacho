@@ -90,6 +90,24 @@ const config = {
     // webhook, lib/play/products.ts and PLAY_BILLING_SETUP.md are all still
     // here.
     //
+    // @capacitor/camera LEFT WITH versionCode 12 (2026-09-03). Nothing in
+    // src/ calls it — no import, no Plugins.Camera, no string lookup — and
+    // both photo paths are plain <input type="file"> served by Capacitor
+    // CORE's file chooser (BridgeWebChromeClient), not the plugin. It was the
+    // only dependency pulling Material Components and its resource tables:
+    // measured, the AAB went 4,535,254 -> 2,766,078 bytes (-39%), the DEX
+    // 4,787 -> 3,735 classes, and three never-reachable activities left the
+    // manifest. The npm package stays in package.json for the same
+    // reversibility as above, and because removing it buys nothing the
+    // exclusion does not.
+    //
+    // THE ONE THING IT WAS SILENTLY PROVIDING: the <queries> declarations for
+    // IMAGE_CAPTURE / GET_CONTENT / PICK. Core's "Take photo" path resolves
+    // the camera intent, and on Android 11+ that returns null without the
+    // declaration — no crash, the button just opens the gallery. Those three
+    // intents now live in android/app/src/main/AndroidManifest.xml. Restoring
+    // the plugin does not require removing them.
+    //
     // A NAME THAT IS NOT INSTALLED IS FATAL AT SYNC; a plugin merely LEFT OUT
     // is dropped silently. After changing this list, check the generated
     // android/app/src/main/assets/capacitor.plugins.json has exactly the
@@ -98,7 +116,6 @@ const config = {
     includePlugins: [
       "@capacitor-community/in-app-review",
       "@capacitor/app",
-      "@capacitor/camera",
       "@capacitor/filesystem",
       "@capacitor/haptics",
       "@capacitor/push-notifications",
