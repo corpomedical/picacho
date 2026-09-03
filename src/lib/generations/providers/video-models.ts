@@ -176,13 +176,42 @@ export const VIDEO_MODELS = [
     // test submissions), and fal reports the queue job as COMPLETED with the
     // policy error in the RESPONSE BODY — status alone will fool you.
     //
-    // It is an ACCESS TIER, not a model limit: ByteDance's own Volcengine
-    // Ark allows real-person references after per-user facial verification
-    // and portrait authorisation, and only for that user's OWN likeness —
-    // which is why a solo creator can demo it and why it does not fit a
-    // product whose users upload characters and other people's photos.
-    // 2.0 predates the tightening and accepts the same faces (verified
-    // end-to-end, with a generated clip). Same identity-reference contract
+    // It is an ACCESS TIER, not a model limit — and as of 2026-09-03 we know
+    // exactly what tier, because the whole picture was researched rather than
+    // inferred. Four facts worth not re-deriving:
+    //
+    //   1. 2.0 IS NO LONGER SAFE EITHER. It refused a character's six
+    //      reference photos twice on 2026-09-03 — the same photos, unchanged
+    //      since 2026-08-15, that it accepted on 08-25. The line moves one
+    //      way. Platform-wide, 2.5 has never once succeeded here: 21
+    //      attempts, 18 policy refusals, 0 videos.
+    //   2. THE SANCTIONED ROUTE TAKES ASSET IDs, NOT IMAGE URLs. ByteDance
+    //      runs a private real-human asset library: the person passes a
+    //      one-time liveness check, which yields an asset group (the person)
+    //      and asset ids (their images), and the model call cites
+    //      asset://<id>. fal's reference-to-video schema has no field for
+    //      that — its inputs are prompt, image_urls, video_urls, audio_urls,
+    //      resolution, duration, aspect_ratio, generate_audio, seed,
+    //      end_user_id — so no amount of work on this side of fal reaches it.
+    //   3. fal CHARGES EXACTLY 2.00x BYTEDANCE'S LIST. fal quotes Seedance
+    //      2.0 reference-to-video at $14.00/M tokens against BytePlus
+    //      ModelArk's $7.00/M; 2.5 is $21.40 against $10.70. The $0.3024/sec
+    //      below is a reseller price, not the market: direct is ~$0.152/sec,
+    //      which would put 2.0 beside Kling O3 Pro rather than at double it.
+    //      The credit weights below therefore all halve if the lane ever
+    //      moves to ModelArk direct.
+    //   4. A COMPETITOR'S "WORKING SEEDANCE" IS NOT A BETTER PAYLOAD.
+    //      Higgsfield runs an official BytePlus partnership with a custom
+    //      SKU, and routes real people through a trained identity layer
+    //      whose GENERATED portrait is what reaches the model. Neither is
+    //      reachable by tuning our request.
+    //
+    // See docs/BYTEPLUS_ENQUIRY.md for the four questions that decide whether
+    // Picacho can take the sanctioned route, and do not re-litigate this from
+    // memory: the answer has changed twice and both times the evidence was in
+    // production data, not in anyone's recollection.
+    //
+    // Same identity-reference contract
     // as 2.5 — image_urls cited as @Image1, schema is a compatible superset
     // (aspect_ratio, generate_audio, duration 4-15) — so fal.ts reuses one
     // request builder for both.
