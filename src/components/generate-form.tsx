@@ -57,13 +57,7 @@ import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { AgentMode } from "@/lib/agent/prices";
 import { parseSseFrames } from "@/lib/agent/sse";
 import { classifyMessage } from "@/lib/agent/intent";
-import {
-  CHARACTERLESS_MODEL_IDS,
-  MODEL_CAPABILITIES,
-  resolveSendPlan,
-  type AttachmentRole,
-  type PlanIssue,
-} from "@/lib/generations/send-plan";
+import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type AttachmentRole, type PlanIssue, photorealFallback } from "@/lib/generations/send-plan";
 import { CINEMA_PRESETS, isProvenPreset, type CinemaPresetCategory } from "@/lib/generations/cinema-presets";
 import { UpscaleButton } from "@/components/upscale-button";
 import {
@@ -97,7 +91,7 @@ import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "
 import { fanoutCreditCost, type ScenePlan } from "@/lib/generations/scene-plan";
 import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
-import { FEATURED_VIDEO_MODEL_IDS } from "@/lib/generations/providers/video-models";
+import { FEATURED_VIDEO_MODEL_IDS, VIDEO_MODELS, getVideoModel } from "@/lib/generations/providers/video-models";
 import {
   resolutionCreditWeight,
   videoResolutionOffers,
@@ -153,19 +147,34 @@ function rulesBlockOf(attempts: AttemptLog[]): string | null {
   return step ? step.detail : null;
 }
 
-// True when the failure was Seedance 2.5's likeness fence rejecting a
-// photoreal reference — the one failure with a known-good detour (the same
-// request on Seedance 2.0, which accepts photoreal people; verified live
-// 2026-08-21). Gates the one-tap retry button.
-function seedanceLikenessBlockOf(attempts: AttemptLog[]): boolean {
+// The one-tap retry after a provider's likeness fence refused a photoreal
+// reference — and WHERE that retry should go.
+//
+// Rewritten 2026-09-03. It used to match the literal "Seedance 2.5" and send
+// every retry to Seedance 2.0, on the strength of a live test from August. On
+// 2026-09-03 Seedance 2.0 refused reference photos it had accepted eleven
+// days earlier, which makes both halves of that unsafe: a 2.0 refusal showed
+// no button at all, and a 2.5 refusal offered a one-click resubmit — it
+// auto-submits, so it SPENDS — into a model that may now refuse the same
+// photos. So: recognise the refusal on any model, then ask the capability
+// table where to go. Returns the target model id, or null when there is no
+// accepting model left to offer (in which case no button renders and nothing
+// is auto-submitted).
+function photorealRetryTargetOf(attempts: AttemptLog[]): string | null {
   const last = attempts[attempts.length - 1];
-  if (!last) return false;
-  return (last.steps ?? []).some(
-    (s) =>
-      typeof s.detail === "string" &&
-      s.detail.includes("Seedance 2.5") &&
-      /likeness|content_policy/i.test(s.detail),
+  if (!last) return null;
+  const refusal = (last.steps ?? []).find(
+    (s) => typeof s.detail === "string" && /likeness|content_policy|partner_validation/i.test(s.detail),
   );
+  if (!refusal || typeof refusal.detail !== "string") return null;
+  // fal errors carry the model's display name: "fal.ai (Seedance 2.0) error (422)".
+  const named = refusal.detail.match(/fal\.ai \(([^)]+)\) error/);
+  const refusedBy = named
+    ? (VIDEO_MODELS.find((m) => m.name === named[1])?.id ?? null)
+    : null;
+  const target = photorealFallback(refusedBy ?? "");
+  // Never offer to retry on the model that just refused.
+  return target && target !== refusedBy ? target : null;
 }
 
 function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): string | null {
@@ -1547,7 +1556,7 @@ function SingleTurnBubble({
   turn,
   domId,
   onGenerateAnyway,
-  onRetrySeedance2,
+  onRetryPhotoreal,
 }: {
   turn: ChatTurn;
   domId?: string;
@@ -1556,7 +1565,7 @@ function SingleTurnBubble({
   onGenerateAnyway?: (turnPrompt: string) => void;
   // Offered only on Seedance 2.5 likeness rejections: same prompt, same
   // reference, on the model that accepts photoreal people.
-  onRetrySeedance2?: (turnPrompt: string) => void;
+  onRetryPhotoreal?: (turnPrompt: string, targetModelId: string) => void;
 }) {
   const { t } = useLocale();
   const g = t.generate;
@@ -1598,15 +1607,19 @@ function SingleTurnBubble({
                   {g.generateAnyway}
                 </button>
               )}
-              {onRetrySeedance2 && turn.prompt && seedanceLikenessBlockOf(turn.attempts) && (
-                <button
-                  type="button"
-                  onClick={() => onRetrySeedance2(turn.prompt)}
-                  className="rounded-full bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
-                >
-                  {g.retryOnSeedance2}
-                </button>
-              )}
+              {(() => {
+                const target = onRetryPhotoreal && turn.prompt ? photorealRetryTargetOf(turn.attempts) : null;
+                if (!target) return null;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onRetryPhotoreal!(turn.prompt, target)}
+                    className="rounded-full bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
+                  >
+                    {formatMsg(g.retryOnModel, { model: getVideoModel(target).name })}
+                  </button>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -4066,9 +4079,12 @@ function GenerateFormInner({
   // One-tap remedies for the strip's issue rows.
   function handlePlanAction(issue: PlanIssue) {
     switch (issue.action) {
-      case "switch-seedance-2":
-        setVideoModelId("seedance-2");
+      case "switch-photoreal-model": {
+        // send-plan only attaches this action when it resolved a target.
+        const target = issue.params?.target;
+        if (target) setVideoModelId(target);
         return false;
+      }
       case "clear-continuation":
         setContinueFromId(null);
         return false;
@@ -4721,14 +4737,17 @@ function GenerateFormInner({
     setTimeout(() => composerFormRef.current?.requestSubmit(), 80);
   }
 
-  // The likeness-fence detour: same prompt, same reference, on Seedance 2.0
-  // (which accepts photoreal people, at a cheaper rate). The rejected
-  // attempt already auto-refunded, so this is a clean fresh charge. The
-  // existing model-change effect re-clamps the duration to 2.0's ceiling
+  // The likeness-fence detour: same prompt, same reference, on whichever
+  // model the capability table still says accepts photoreal people — never
+  // on the one that just refused (photorealRetryTargetOf resolves it and
+  // returns null when there is no such model, in which case no button is
+  // rendered and this never runs). The rejected attempt already
+  // auto-refunded, so this is a clean fresh charge. The existing
+  // model-change effect re-clamps the duration to the target's ceiling
   // before the deferred submit fires.
-  function retryOnSeedance2(turnPrompt: string) {
+  function retryOnPhotorealModel(turnPrompt: string, targetModelId: string) {
     if (submitting) return;
-    setVideoModelId("seedance-2");
+    setVideoModelId(targetModelId);
     setPrompt(turnPrompt);
     // Same unfold-before-submit as generateAnyway above — the folded form
     // doesn't exist to receive requestSubmit.
@@ -5892,7 +5911,7 @@ function GenerateFormInner({
               item.kind === "ask" ? (
                 <AskTurnBubble key={item.id} item={item} onRenderThis={fillComposer} />
               ) : item.kind === "single" ? (
-                <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} onGenerateAnyway={generateAnyway} onRetrySeedance2={retryOnSeedance2} />
+                <SingleTurnBubble key={item.id} turn={item} domId={`take-${item.id}`} onGenerateAnyway={generateAnyway} onRetryPhotoreal={retryOnPhotorealModel} />
               ) : (
                 <MultiAngleTurnBubble key={item.groupId} item={item} domId={`take-${item.groupId}`} />
               ),
@@ -5986,15 +6005,22 @@ function GenerateFormInner({
                                 {g.generateAnyway}
                               </button>
                             )}
-                            {liveResult.attemptsLog && liveResult.prompt && seedanceLikenessBlockOf(liveResult.attemptsLog) && (
-                              <button
-                                type="button"
-                                onClick={() => retryOnSeedance2(liveResult.prompt)}
-                                className="rounded-full bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
-                              >
-                                {g.retryOnSeedance2}
-                              </button>
-                            )}
+                            {(() => {
+                              const target =
+                                liveResult.attemptsLog && liveResult.prompt
+                                  ? photorealRetryTargetOf(liveResult.attemptsLog)
+                                  : null;
+                              if (!target) return null;
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => retryOnPhotorealModel(liveResult.prompt!, target)}
+                                  className="rounded-full bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
+                                >
+                                  {formatMsg(g.retryOnModel, { model: getVideoModel(target).name })}
+                                </button>
+                              );
+                            })()}
                           </div>
                         )}
                       </>

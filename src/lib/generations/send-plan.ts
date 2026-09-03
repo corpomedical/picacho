@@ -448,7 +448,7 @@ export type PlanIssue = {
   code: IssueCode;
   params?: Record<string, string>;
   /** one-tap remedies the UI can wire */
-  action?: "switch-seedance-2" | "remove-attachment" | "clear-dialogue" | "clear-continuation" | "pick-character";
+  action?: "switch-photoreal-model" | "remove-attachment" | "clear-dialogue" | "clear-continuation" | "pick-character";
 };
 
 export type SendPlan = {
@@ -461,6 +461,37 @@ export type SendPlan = {
 // ---------------------------------------------------------------------------
 // The resolver
 // ---------------------------------------------------------------------------
+
+// Where a photoreal send goes when the selected model refuses real faces.
+//
+// Ordered by how much of the refused send survives the move, then by cost:
+// seedance-2 keeps the citation identity lane, outfit photos and clip
+// continuation; kling-o3-pro keeps 4 reference images and is less than half
+// the per-second price; the rest trade features for cheapness. The FIRST
+// entry whose table row still says "accepts" wins.
+//
+// A list, not a literal (2026-09-03). The remedy used to hardcode
+// "seedance-2" in three places, which was fine only while that row said
+// "accepts". The day a provider tightens its likeness filter, a hardcoded
+// remedy becomes a button offering to move you to the model that just
+// refused you — so the destination is now read from the same table the
+// warning is read from, and disappears when nothing accepts.
+const PHOTOREAL_FALLBACK_ORDER = [
+  "seedance-2",
+  "kling-o3-pro",
+  "kling-2.5",
+  "minimax-h3",
+  "kling",
+] as const;
+
+export function photorealFallback(fromModelId: string): string | null {
+  for (const id of PHOTOREAL_FALLBACK_ORDER) {
+    if (id === fromModelId) continue;
+    const caps = (MODEL_CAPABILITIES as Record<string, ModelCapabilities | undefined>)[id];
+    if (caps?.photorealPolicy === "accepts") return id;
+  }
+  return null;
+}
 
 export function resolveSendPlan(input: ResolveInput): SendPlan {
   const caps = (MODEL_CAPABILITIES as Record<string, ModelCapabilities | undefined>)[
@@ -744,11 +775,14 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
     const heuristic =
       (character?.photoreal == null && hasSavedPhotos) || attachedFaceMightBeReal;
     if (photorealKnown || heuristic) {
+      // No accepting model left = warn with no remedy, rather than a button
+      // that moves you nowhere useful.
+      const target = photorealFallback(input.modelId);
       issues.push({
         severity: "warn",
         code: "SEEDANCE25_PHOTOREAL",
-        params: { name: characterName },
-        action: "switch-seedance-2",
+        params: target ? { name: characterName, target } : { name: characterName },
+        ...(target ? { action: "switch-photoreal-model" as const } : {}),
       });
     }
   }

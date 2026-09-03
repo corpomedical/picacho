@@ -3,6 +3,7 @@
 import type { Messages } from "@/lib/i18n/messages";
 import type { PlanEntry, PlanIssue, SendPlan } from "@/lib/generations/send-plan";
 import { formatMsg } from "@/lib/i18n/format";
+import { getVideoModel } from "@/lib/generations/providers/video-models";
 import { cn } from "@/lib/cn";
 
 // The Send Receipt (P0 inventory + P1 issues): one always-mounted strip above
@@ -100,9 +101,16 @@ export function issueMessage(
       // The face can now arrive as an attachment with no character behind it
       // (2026-08-31), and this warning used to interpolate a name that does
       // not exist in that case — it read "if  is photoreal".
-      return name
-        ? formatMsg(g.seedance25Warn, { name })
-        : g.seedance25WarnNoCharacter;
+      // The destination is resolved from the capability table at plan time
+      // (send-plan photorealFallback), so the copy names whichever model is
+      // actually accepting today rather than a model hardcoded in a string.
+      {
+        const target = issue.params?.target ? getVideoModel(issue.params.target).name : null;
+        const warn = name
+          ? formatMsg(g.seedance25Warn, { name, model: modelName })
+          : formatMsg(g.seedance25WarnNoCharacter, { model: modelName });
+        return target ? `${warn} ${formatMsg(g.seedance25Instead, { model: target })}` : warn;
+      }
     case "REF_ASPECT_OUT_OF_RANGE":
       return g.referenceAspectError;
     case "MODEL_CANNOT_MULTI_PERSON":
@@ -127,8 +135,10 @@ function issueExplainer(issue: PlanIssue, g: Messages["generate"]): string | nul
 
 function actionLabel(issue: PlanIssue, g: Messages["generate"]): string | null {
   switch (issue.action) {
-    case "switch-seedance-2":
-      return g.seedance25Switch;
+    case "switch-photoreal-model":
+      return issue.params?.target
+        ? formatMsg(g.seedance25Switch, { model: getVideoModel(issue.params.target).name })
+        : null;
     case "remove-attachment":
       return g.attachAnchorRemove;
     case "clear-continuation":

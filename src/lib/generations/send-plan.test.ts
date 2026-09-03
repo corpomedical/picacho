@@ -5,12 +5,7 @@
 // in a later phase, the test changes IN THE SAME COMMIT, never silently.
 
 import { describe, expect, it } from "vitest";
-import {
-  CHARACTERLESS_MODEL_IDS,
-  MODEL_CAPABILITIES,
-  resolveSendPlan,
-  type ResolveInput,
-} from "./send-plan";
+import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type ResolveInput, photorealFallback } from "./send-plan";
 
 const base: ResolveInput = {
   contentType: "video",
@@ -180,8 +175,27 @@ describe("outfit honesty per model", () => {
 describe("seedance 2.5 photoreal lane (103-credit incident)", () => {
   it("photo-referenced character on 2.5 warns with the one-tap switch (heuristic, style unknown)", () => {
     const plan = resolveSendPlan({ ...base, modelId: "seedance" });
-    expect(issue(plan, "SEEDANCE25_PHOTOREAL")?.action).toBe("switch-seedance-2");
+    expect(issue(plan, "SEEDANCE25_PHOTOREAL")?.action).toBe("switch-photoreal-model");
     expect(issue(plan, "SEEDANCE25_PHOTOREAL")?.severity).toBe("warn");
+  });
+
+  // The destination is read from the capability table, not written into the
+  // remedy (2026-09-03). These pin the two properties that made the old
+  // hardcoded "seedance-2" unsafe when a provider tightened its filter.
+  it("the remedy names a target that actually accepts photoreal, and never the model being refused", () => {
+    const plan = resolveSendPlan({ ...base, modelId: "seedance" });
+    const target = issue(plan, "SEEDANCE25_PHOTOREAL")?.params?.target;
+    expect(target).toBeDefined();
+    expect(target).not.toBe("seedance");
+    expect(MODEL_CAPABILITIES[target as keyof typeof MODEL_CAPABILITIES].photorealPolicy).toBe(
+      "accepts",
+    );
+  });
+
+  it("photorealFallback skips the model you are on and returns null when nothing accepts", () => {
+    expect(photorealFallback("seedance")).toBe("seedance-2");
+    expect(photorealFallback("seedance-2")).not.toBe("seedance-2");
+    expect(photorealFallback("zzz-unknown-model")).toBeTruthy();
   });
 
   it("known-illustrated character on 2.5 passes clean — the heuristic's false positive dies with knowledge", () => {
