@@ -292,11 +292,11 @@ We pay 0.3024 USD/s for the same model through an aggregator today, so this numb
 
 **Ticket 2 — the per-person check** — superseded, see below.
 
-**FIRST — the per-person check (1102 chars).** Rewritten to stand alone;
-the earlier version opened "A second question" and followed price.
+**FIRST — the per-person check (998 chars).** Rewritten to stand alone; the
+earlier version opened "A second question" and followed price.
 
 ```
-Thank you — that answers what was blocking us, and we will complete the KYC to activate the Entry tier.
+Thank you — that unblocks us, and we will complete the KYC to activate the Entry tier.
 
 One question decides how we build, so it comes first.
 
@@ -306,9 +306,9 @@ Separately: when we add a real person to the asset library, must that individual
 
 1. If yes — can that step be embedded in our own onboarding so our customer completes it there (you confirmed they need no BytePlus account), and is there a callback with the result?
 
-2. If no such per-person check exists, please say so explicitly. It changes what consent and evidence we must collect and retain ourselves.
+2. If no such check exists, please say so explicitly; it changes what consent and evidence we must retain ourselves.
 
 This is the difference between a feature our customers use directly and one that only works for agencies enrolling people in person.
 
-We will also need a DPA with Standard Contractual Clauses, the region serving the library for an EU customer, and the retention period for any liveness image — happy to take those at contract stage.
+We will also need a DPA with SCCs, the region serving the library for an EU customer, and the retention period for any liveness image.
 ```
