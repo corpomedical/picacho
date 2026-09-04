@@ -162,8 +162,18 @@ export default async function AdminUserDetailPage({
         <AdminErrorBanner error={actionError} />
       </div>
 
+      {/* min-w-0 on BOTH tracks. A grid item's default min-width is `auto`,
+          which means it refuses to shrink below its widest content — and the
+          money table below carries min-w-[640px]. On a phone that sized the
+          whole column to 640px, so the PAGE scrolled sideways while the
+          table's own overflow-x-auto never engaged: measured at a 375px
+          viewport, document.scrollWidth was 722. With min-w-0 the track
+          shrinks to the viewport and the table scrolls inside its card,
+          which is what the wrapper was always for. Reported 2026-09-04:
+          "the user section has over flow tables the page scrolls left and
+          right." */}
       <div className="mt-4 grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
+        <Card className="min-w-0 lg:col-span-1">
           {/* Full name leads when we have it; the email is the identifier
               either way. */}
           {user.full_name ? (
@@ -390,7 +400,7 @@ export default async function AdminUserDetailPage({
           </div>
         </Card>
 
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           {/* Sign-in activity. Its own card rather than more lines in the
               identity block: these are the facts you actually come to this
               page to check when someone reports a problem. */}
