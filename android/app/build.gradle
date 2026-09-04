@@ -147,11 +147,36 @@ android {
             // release build before this landed — see the smoke list in
             // MOBILE_APP.md.
             //
-            // shrinkResources stays OFF on purpose: no Play category asks for
-            // it, and resource stripping is the part that breaks quietly (a
-            // drawable named only from a theme or from JS). One risk at a time.
+            // OPTIMIZATION ON (2026-09-04, Play Console release 12:
+            // "Optimization isn't enabled"). The -optimize default file is not
+            // a different ruleset — built both ways and diffed R8's own
+            // emitted configuration.txt, the entire merged configuration for
+            // this app differs by exactly two directives: -dontoptimize goes
+            // out, -allowaccessmodification comes in. Every keep rule,
+            // -keepattributes and -dontwarn from all 33 contributing files is
+            // byte-identical, so none of the protection below depends on which
+            // file is named. Note also that AGP 8.13's copy carries NO
+            // -optimizations filter and NO -optimizationpasses; advice written
+            // against older copies of this file describes something else.
+            //
+            // R8 full mode was already on (AGP's default since 8.0), so the
+            // aggressive-interpretation behaviours people attribute to
+            // "enabling optimization" were already in effect at versionCode 12.
+            //
+            // What this buys, measured on the artifact users download rather
+            // than on the AAB: compressed classes.dex -25.7%, APK -11.55%. The
+            // AAB itself moves only -1.9% because it carries the R8 mapping,
+            // which GROWS — that is the wrong denominator to quote.
+            //
+            // shrinkResources stays OFF, and now with a measurement behind it
+            // rather than caution: audited against the manifest, the themes,
+            // the library code and the release DEX, exactly ONE app-owned
+            // resource is referenced only dynamically (res/xml/config.xml, via
+            // Cordova's getIdentifier at every launch), and the measured saving
+            // did not justify a release of its own. Revisit with keep.xml if
+            // the resource table ever grows.
             minifyEnabled true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (keystorePropertiesFile.exists()) {
                 signingConfig signingConfigs.release
             }

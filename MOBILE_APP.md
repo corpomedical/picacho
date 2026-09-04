@@ -221,6 +221,25 @@ accept="image/*">` opened the system Photopicker; and the same tap on
 that appeared before the `<queries>` move, and the regression this step
 exists to catch.
 
+Verified again on 2026-09-04 for the R8 OPTIMIZATION change (the release
+build type moved from `proguard-android.txt` to `proguard-android-optimize.txt`,
+Play Console release 12: "Optimization isn't enabled"). Static first, on the
+emitted mapping: all 8 classpaths in `capacitor.plugins.json` map to
+themselves, and all 43 distinct `@PluginMethod` names across the 8 included
+plugins survive unrenamed — Java and Kotlin alike, which matters because the
+Kotlin ones are the half a Java-only check misses. Then on the Pixel_7: the
+signed release installs, boots, dismisses its splash and renders the site with
+the status-bar icons following the dark theme — and both of those are
+`@PluginMethod` calls dispatched by reflection, so the bridge is demonstrably
+alive under optimization — with no ClassNotFoundException,
+NoSuchMethodException or FATAL in the app's own logcat. Measured on the
+artifact users download: APK 2,278,080 -> 2,015,935 bytes, -11.51%.
+
+Note for the next person: CDP cannot be used to interrogate the bridge on a
+RELEASE build — WebView debugging is off — so the recipe above needs a debug
+APK, which has no R8 at all. For an R8 change the mapping check is the
+evidence, and the emulator run is the corroboration.
+
 ## Known risks, honestly
 
 1. **Guideline 4.2 rejection.** The single most likely outcome if Step 3 is

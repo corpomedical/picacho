@@ -96,32 +96,48 @@ export function NativeChrome() {
       // operator's 2026-08-21 "unify the color" fix is actually riding on.
       //
       // Play's release dashboard flags "deprecated APIs for edge-to-edge" on
-      // this build. None of it is ours: our res/ and manifest contain no
-      // statusBarColor, navigationBarColor, windowLightStatusBar or
-      // fitsSystemWindows. An earlier note here blamed @capacitor/status-bar
-      // alone; that was only the part visible from node_modules. Read out of
-      // the actual release DEX on 2026-09-03 (dexdump + the R8 mapping, which
-      // is the only way to see it — these are Gradle deps, not npm packages),
-      // every surviving caller of Window.set/getStatusBarColor and
-      // set/getNavigationBarColor is a library:
+      // this build. None of it is ours.
       //
-      //   androidx.activity.EdgeToEdgeApi23/26/29     (activity 1.11.0)
-      //   androidx.core.splashscreen.SplashScreen$Impl31 (core-splashscreen 1.2.0)
-      //   com.google.android.material.internal.EdgeToEdgeUtils
-      //   com.google.android.material.bottomsheet.BottomSheetDialog (material 1.13.0)
-      //   com.capacitorjs.plugins.statusbar.StatusBar  (status-bar 8.0.3)
+      // RE-AUDITED 2026-09-04, against the shipped versionCode 12 APK rather
+      // than from memory, because the list that stood here was wrong: it named
+      // five surviving callers, three of which are not in the binary at all
+      // (androidx.activity.EdgeToEdgeApi23/26/29 never appear in mapping.txt,
+      // and there is not one com.google.android.material class left), and the
+      // next paragraph then said two of them had been removed — the block
+      // contradicted itself.
       //
-      // Until versionCode 12 the list also held Material's EdgeToEdgeUtils and
-      // BottomSheetDialog and io.ionic.libs' IONCAMRImageEditorActivity — all
-      // three arrived via @capacitor/camera, a plugin nothing here ever called
-      // (capture rides the web <input capture> path through Capacitor core).
-      // Excluding it in capacitor.config.ts took those callers, Material's
-      // resource tables and 39% of the bundle with it. What remains is
-      // AndroidX, Capacitor core and Cordova, all at current versions, each
-      // guarding the call by API level at runtime — Play's scan reads the
-      // bytecode, not the guard, and R8 does not remove them. No version bump
-      // clears it today; it is a recommendation with no deadline. Revisit when
-      // AndroidX ships releases without the legacy paths.
+      // Dexdumped, the release DEX holds exactly FOUR references to the four
+      // bar-colour APIs, in TWO library classes, and none in ai.picacho.app:
+      //
+      //   com.capacitorjs.plugins.statusbar.StatusBar
+      //     .getStatusBarColorDeprecated  -> Window.getStatusBarColor
+      //     .setStatusBarColorDeprecated  -> Window.setStatusBarColor
+      //   androidx.core.splashscreen.SplashScreen$Impl31
+      //     .applyAppSystemUiTheme        -> Window.setStatusBarColor
+      //                                   -> Window.setNavigationBarColor
+      //
+      // Three things follow, and they are why this is recorded rather than
+      // fixed:
+      //
+      // 1. PLAY'S OWN SUGGESTED FIX WOULD MAKE IT WORSE. Its other
+      //    recommendation says to call enableEdgeToEdge(). Read in
+      //    activity-1.11.0's sources, EdgeToEdgeApi23/26/29 assign
+      //    window.statusBarColor and window.navigationBarColor, and the
+      //    highest implementation is Api30 — there is no API-35 subclass that
+      //    skips the assignment. Calling it would add SIX new deprecated call
+      //    sites to a binary that currently has none of its own.
+      // 2. THERE IS NOTHING TO UPGRADE TO. @capacitor/status-bar's latest is
+      //    8.0.3, which is what is installed; androidx.core:core-splashscreen's
+      //    latest is 1.2.0, which is what variables.gradle pins.
+      // 3. DELETING THE CALL BELOW WOULD CHANGE NOTHING. StatusBar.java's
+      //    constructor calls getStatusBarColorDeprecated() unconditionally, so
+      //    the bytecode Play scans is present whether or not any JS reaches it.
+      //
+      // The app is already inset-correct on Android 15 without any of it:
+      // Capacitor 8 core registers a built-in SystemBars plugin (Bridge.java)
+      // that installs a window-insets listener and hands real insets to the
+      // WebView, which is what the env(safe-area-inset-*) padding in
+      // globals.css consumes. It is a recommendation with no deadline.
       void statusBar?.setBackgroundColor?.({ color: dark ? "#1a1c24" : "#eef1f8" });
     };
     paintBars();
