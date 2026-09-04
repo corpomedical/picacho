@@ -1106,6 +1106,18 @@ const en = {
   },
   character: {
     eyebrow: "Studio",
+    eyebrowOne: "Character",
+    statRenders: "Renders",
+    statIdentity: "Mean identity",
+    statLastWorked: "Last worked",
+    statNever: "—",
+    agoMinutes: "{n}m",
+    agoHours: "{n}h",
+    agoDays: "{n}d",
+    agoWeeks: "{n}w",
+    foldLookVoice: "Look and voice",
+    foldSettings: "Character settings",
+    foldOpen: "Open",
     identityPhoto: "Identity photo",
     // Reference-set coaching (competitive research 2026-08-21): a tighter
     // identity lock comes from photo VARIETY, not just count.
@@ -1183,6 +1195,10 @@ const en = {
   },
   projects: {
     eyebrow: "Studio",
+    eyebrowOne: "Project",
+    theWork: "The work",
+    noWorkYet: "Nothing made in this project yet.",
+    showSettings: "Open",
     castCount: "characters",
     noCast: "No characters yet",
     statRenders: "Renders",
@@ -1216,7 +1232,7 @@ const en = {
     savingChanges: "Saving…",
     charactersInProject: "Characters in this project",
     newCharacter: "+ New character",
-    noCharactersYet: "None yet. Assign a character to this project from its edit page.",
+    noCharactersYet: "No characters in this project yet — add one below to start making work.",
     assignCharacter: "Assign an existing character",
     assignCharacterPlaceholder: "Choose a character…",
     assign: "Assign",

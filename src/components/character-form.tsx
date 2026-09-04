@@ -14,6 +14,8 @@ import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { VoicePreviewButton } from "@/components/voice-preview-button";
+import { LocalDate } from "@/components/local-date";
+import { QuietVideo } from "@/components/quiet-video";
 
 // `url` is the real file (lightbox, and the anchor a generation uses);
 // `thumbUrl` is the small version for the grid tile. Kept as two fields
@@ -30,6 +32,55 @@ const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atel
 const LABEL = "block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 const FIELD =
   "rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
+
+// THE FOLD (project + character redesign, direction A, operator pick
+// 2026-09-04). On an EXISTING character this page is a profile — portrait,
+// figures, the work — so the seven form sheets that used to BE the page
+// group into three disclosures a click away. While CREATING a character
+// there is no profile to show and nothing to fold: `folded` is false and
+// every section renders exactly as it did before.
+//
+// A closed <details> keeps its inputs in the DOM, so folding changes
+// nothing about what the form submits. It would change one thing —
+// browsers refuse to submit when a `required` field is hidden, and they do
+// it silently — which is why the one required field, the name, is never in
+// a fold: in edit mode it IS the masthead.
+function Fold({
+  folded,
+  title,
+  meta,
+  children,
+}: {
+  folded: boolean;
+  title: string;
+  meta: string;
+  children: React.ReactNode;
+}) {
+  if (!folded) return <>{children}</>;
+  return (
+    <details className="group border-t border-atelier-rule pt-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between py-1">
+        <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+          {title}
+        </h2>
+        <span className="flex items-center gap-2 text-xs text-atelier-muted">
+          {meta}
+          <svg
+            viewBox="0 0 24 24"
+            aria-hidden
+            className="h-3.5 w-3.5 transition-transform group-[[open]]:rotate-180"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </span>
+      </summary>
+      <div className="mt-4 space-y-6">{children}</div>
+    </details>
+  );
+}
 
 type Initial = {
   id?: string;
@@ -57,6 +108,7 @@ export function CharacterForm({
   projects = [],
   voices = [],
   recentRenders,
+  stats,
 }: {
   userId: string;
   initial?: Initial & { voice_id?: string | null; outfit_description?: string | null };
@@ -68,7 +120,10 @@ export function CharacterForm({
   // "In action" (2026-08-27 redesign, case 4): this character's recent
   // succeeded image renders, queried by the edit page. Empty array = show
   // the first-shot nudge; undefined/new-character = no strip at all.
-  recentRenders?: { id: string; url: string; score: number | null }[];
+  recentRenders?: { id: string; url: string; score: number | null; isVideo?: boolean }[];
+  /** The three figures on the masthead — see the project page for why the
+      counts are read separately from the grid they sit above. */
+  stats?: { renders: number; meanIdentity: number | null; lastWorkedAt: string | null };
 }) {
   const { t } = useLocale();
   const c = t.character;
@@ -416,9 +471,125 @@ export function CharacterForm({
     }
   }
 
+  // Lifted out of the JSX so it can render in two places without being
+  // written twice: FIRST while creating (the old order — name, then photos),
+  // and LAST when editing, inside the "Character settings" fold. The name
+  // field itself only appears here during creation; on an existing character
+  // the masthead carries it.
+  const basicsSection = (
+    <section className={SHEET}>
+      <h2 className={SHEET_TITLE}>{c.basics}</h2>
+      {/* Only while creating. On an existing character the masthead input
+          above IS this field — rendering both would put two required
+          controls with the same id on one page. */}
+      {!initial?.id && (
+        <div className="mt-4">
+          <label htmlFor="name" className={LABEL}>
+            {c.characterName}
+          </label>
+          <input
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            required
+            maxLength={120}
+            className={`mt-1 w-full ${FIELD}`}
+            placeholder={c.namePlaceholder}
+          />
+        </div>
+      )}
+      <div className="mt-4">
+        <label htmlFor="project" className={LABEL}>
+          {c.project}
+        </label>
+        <select
+          id="project"
+          value={projectId}
+          onChange={(e) => setProjectId(e.target.value)}
+          className={`mt-1 w-full ${FIELD}`}
+        >
+          <option value="">{c.noProject}</option>
+          {projects.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    </section>
+  );
+
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className={initial?.id ? "space-y-6" : "mx-auto max-w-2xl space-y-6"}>
     <form onSubmit={handleSubmit} className="space-y-6">
+      {initial?.id && (
+        /* MASTHEAD (direction A, 2026-09-04): the same Ledger head the
+           project shelf and the project page carry — eyebrow, the name set
+           in the serif, the three figures on the right. The name is an input
+           styled as the title: the field that used to sit in "Basics" is now
+           the heading you click and type into, which is also why no
+           `required` control ever ends up hidden inside a fold. */
+        <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-atelier-rule pb-5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+              {c.eyebrowOne}
+            </p>
+            <input
+              id="name"
+              aria-label={c.characterName}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+              maxLength={120}
+              placeholder={c.namePlaceholder}
+              className="-mx-1.5 mt-1 w-[calc(100%+0.75rem)] truncate rounded-control border border-transparent bg-transparent px-1.5 py-0.5 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink outline-none transition-colors hover:border-atelier-rule focus:border-atelier-accent"
+            />
+          </div>
+          {stats && (
+            <dl className="flex flex-shrink-0 gap-8">
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                  {c.statRenders}
+                </dt>
+                <dd className="mt-1 font-numeral text-[22px] font-semibold leading-none tabular-nums text-atelier-ink">
+                  {stats.renders}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                  {c.statIdentity}
+                </dt>
+                <dd
+                  className={
+                    stats.meanIdentity === null
+                      ? "mt-1 font-numeral text-[22px] font-semibold leading-none tabular-nums text-atelier-muted"
+                      : "mt-1 font-numeral text-[22px] font-semibold leading-none tabular-nums text-atelier-accent"
+                  }
+                >
+                  {stats.meanIdentity ?? "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                  {c.statLastWorked}
+                </dt>
+                <dd className="mt-1 font-numeral text-[22px] font-semibold leading-none tabular-nums text-atelier-ink">
+                  {stats.lastWorkedAt ? (
+                    <LocalDate
+                      date={stats.lastWorkedAt}
+                      mode="since"
+                      labels={{ minutes: c.agoMinutes, hours: c.agoHours, days: c.agoDays, weeks: c.agoWeeks }}
+                    />
+                  ) : (
+                    c.statNever
+                  )}
+                </dd>
+              </div>
+            </dl>
+          )}
+        </div>
+      )}
+
       {initial?.id && (
         /* Profile hero (2026-08-27 redesign, case 2): meet the character
            first, edit second. Portrait, live name, the lock meter, and the
@@ -436,8 +607,7 @@ export function CharacterForm({
             )}
           </span>
           <div className="min-w-0 flex-1 py-1">
-            <p className="truncate font-display text-2xl font-semibold text-atelier-ink">{name || "—"}</p>
-            <span aria-hidden className="mt-2.5 flex items-center gap-1">
+            <span aria-hidden className="flex items-center gap-1">
               {[0, 1, 2, 3, 4].map((i) => (
                 <span
                   key={i}
@@ -477,7 +647,7 @@ export function CharacterForm({
            pitch; the profile shows the character actually holding up. */
         <div>
           <div className="flex items-center justify-between">
-            <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
+            <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
               {c.inActionTitle}
             </h2>
             {recentRenders.length > 0 && (
@@ -489,29 +659,43 @@ export function CharacterForm({
           {recentRenders.length === 0 ? (
             <p className="mt-2 text-sm text-atelier-muted">{c.inActionEmpty}</p>
           ) : (
-            <div className="mt-2 grid grid-cols-4 gap-2.5 sm:grid-cols-6 lg:grid-cols-8">
+            <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
               {recentRenders.map((r) => (
                 <Link
                   key={r.id}
                   href={`/app/history/${r.id}`}
-                  className="group relative block aspect-square overflow-hidden rounded-[10px] bg-atelier-ink/5"
+                  className="group relative block aspect-[4/3] overflow-hidden rounded-media bg-atelier-stage"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={r.url}
-                    alt=""
-                    loading="lazy"
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.05]"
-                    // A receipt that can't paint isn't a receipt. Old rows can
-                    // hold externally-hosted URLs (pre-persist era) that rot —
-                    // drop the whole tile rather than show a broken image.
-                    onError={(e) => {
-                      (e.currentTarget.closest("a") as HTMLElement | null)?.style.setProperty("display", "none");
-                    }}
-                  />
+                  {r.isVideo ? (
+                    <QuietVideo
+                      pending="disc"
+                      src={`${r.url}#t=0.1`}
+                      muted
+                      playsInline
+                      preload="metadata"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={r.url}
+                      alt=""
+                      loading="lazy"
+                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                      // A receipt that can't paint isn't a receipt. Old rows can
+                      // hold externally-hosted URLs (pre-persist era) that rot —
+                      // drop the whole tile rather than show a broken image.
+                      onError={(e) => {
+                        (e.currentTarget.closest("a") as HTMLElement | null)?.style.setProperty("display", "none");
+                      }}
+                    />
+                  )}
                   {r.score !== null && (
-                    <span className="absolute bottom-1 right-1 rounded-full bg-black/55 px-1.5 py-0.5 font-numeral text-[9.5px] tabular-nums text-white">
-                      {r.score}%
+                    <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-[#1b1c20]/72 px-2 py-1 backdrop-blur-sm">
+                      <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#e0a468]" />
+                      <span className="font-numeral text-[11px] font-semibold tabular-nums text-[#f4ede4]">
+                        {r.score}
+                      </span>
                     </span>
                   )}
                 </Link>
@@ -521,44 +705,11 @@ export function CharacterForm({
         </div>
       )}
 
-      <section className={SHEET}>
-        <h2 className={SHEET_TITLE}>{c.basics}</h2>
-        <div className="mt-4">
-          <label htmlFor="name" className={LABEL}>
-            {c.characterName}
-          </label>
-          <input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            maxLength={120}
-            className={`mt-1 w-full ${FIELD}`}
-            placeholder={c.namePlaceholder}
-          />
-        </div>
-        <div className="mt-4">
-          <label htmlFor="project" className={LABEL}>
-            {c.project}
-          </label>
-          <select
-            id="project"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            className={`mt-1 w-full ${FIELD}`}
-          >
-            <option value="">{c.noProject}</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
+      {!initial?.id && basicsSection}
 
+      <Fold folded={!!initial?.id} title={c.referenceImages} meta={String(totalImages)}>
       <section className={SHEET}>
-        <h2 className={SHEET_TITLE}>{c.referenceImages}</h2>
+        {!initial?.id && <h2 className={SHEET_TITLE}>{c.referenceImages}</h2>}
         <p className="mt-1 text-sm text-atelier-muted">
           {c.referenceImagesSubtitle}
         </p>
@@ -752,7 +903,9 @@ export function CharacterForm({
           {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{genError}</p>}
         </div>
       </section>
+      </Fold>
 
+      <Fold folded={!!initial?.id} title={c.foldLookVoice} meta={c.foldOpen}>
       {/* Outfit photos (2026-08-24, from the bmazloum support case): clothing
           shots finally get their own home, so product photos never end up in
           the identity slots above — where a second person's photo (or a
@@ -957,6 +1110,13 @@ export function CharacterForm({
           />
         </div>
       </section>
+      </Fold>
+
+      {initial?.id && (
+        <Fold folded title={c.foldSettings} meta={c.foldOpen}>
+          {basicsSection}
+        </Fold>
+      )}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
+import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -56,12 +56,16 @@ export default async function EditCharacterPage({
   // "In action" (2026-08-27 redesign, case 4): the character's recent
   // succeeded image renders with their identity scores — the receipts of
   // the consistency promise, shown on the profile.
-  const { data: recentRows } = await supabase
+  // Video belongs on the strip too. It was images-only because nothing
+  // scored video until 2026-08-30; now that the middle frame is scored, a
+  // video render is exactly the same kind of receipt — and a character whose
+  // work is mostly video was looking at an empty profile.
+  const [{ data: recentRows }, { data: statRows }] = await Promise.all([
+    supabase
     .from("generations")
-    .select("id, result_url, match_score")
+    .select("id, result_url, match_score, content_type")
     .eq("user_id", userData.user.id)
     .eq("character_profile_id", id)
-    .eq("content_type", "image")
     .eq("status", "succeeded")
     // deleteGeneration soft-deletes the ROW but hard-deletes the FILE, so a
     // deleted render still matches every other clause here — and its media
@@ -70,14 +74,45 @@ export default async function EditCharacterPage({
     .is("deleted_at", null)
     .not("result_url", "is", null)
     .order("created_at", { ascending: false })
-    .limit(8);
+    .limit(15),
+    // The masthead figures describe the CHARACTER, not the page of work
+    // under them, so they are counted separately — bounded at 500 for the
+    // same reason the project page bounds its own.
+    supabase
+      .from("generations")
+      .select("match_score, created_at")
+      .eq("user_id", userData.user.id)
+      .eq("character_profile_id", id)
+      .eq("status", "succeeded")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(500),
+  ]);
   const recentRenders = (recentRows ?? [])
-    .map((r) => ({
-      id: r.id as string,
-      url: thumbUrl(toMediaUrl(r.result_url as string) ?? "", 320) ?? "",
-      score: (r.match_score ?? null) as number | null,
-    }))
+    .map((r) => {
+      const isVideo = r.content_type === "video";
+      const url = toMediaUrl(r.result_url as string) ?? "";
+      return {
+        id: r.id as string,
+        // thumbUrl on a video URL yields something no <img> and no <video>
+        // can play — the broken lineage tile, 2026-09-03. Videos keep the
+        // real file and are rendered by QuietVideo.
+        url: isRenderableUrl(url) ? (isVideo ? url : (thumbUrl(url, 640) ?? url)) : "",
+        score: (r.match_score ?? null) as number | null,
+        isVideo,
+      };
+    })
     .filter((r) => r.url);
+
+  const scored = (statRows ?? []).filter((r) => typeof r.match_score === "number");
+  const stats = {
+    renders: (statRows ?? []).length,
+    meanIdentity:
+      scored.length > 0
+        ? Math.round(scored.reduce((n, r) => n + (r.match_score as number), 0) / scored.length)
+        : null,
+    lastWorkedAt: ((statRows ?? [])[0]?.created_at as string | undefined) ?? null,
+  };
 
   return (
     <div>
@@ -85,6 +120,7 @@ export default async function EditCharacterPage({
         userId={userData.user.id}
         initial={profile}
         recentRenders={recentRenders}
+        stats={stats}
         existingImages={existingImages}
         existingOutfitImages={(profile.outfit_image_urls ?? []).map(toTile)}
         errorMessage={error}
