@@ -82,7 +82,16 @@ export type ArkServiceTier = "default" | "flex";
 // Verified enum from the task list reference. Cancelled rows are queryable
 // for 24 hours and then deleted, so a poller must treat "gone" as terminal
 // rather than retrying forever.
-type ArkTaskStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+type ArkTaskStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled"
+  // Documented on callback_url, not in the list endpoint's own enum: the task
+  // sat queued or running past execution_expires_after. Terminal, and not a
+  // refusal — the render never happened.
+  | "expired";
 
 type ArkTask = {
   id: string;
@@ -228,6 +237,11 @@ function taskState(task: ArkTask): QueuedJobState {
         : { state: "failed", error: "BytePlus ModelArk reported success with no video_url." };
     case "cancelled":
       return { state: "failed", error: "BytePlus ModelArk: task was cancelled." };
+    case "expired":
+      return {
+        state: "failed",
+        error: "BytePlus ModelArk: task expired before it ran (execution_expires_after).",
+      };
     case "failed":
     default: {
       // The whole task is serialized into the message because its failure
@@ -325,6 +339,12 @@ export type ArkSubmitOptions = {
   referenceImageUrls?: string[];
   /** A clip to continue from, cited in the prompt as "Video 1". */
   referenceVideoUrl?: string;
+  /**
+   * Where ModelArk should POST on every status change. Omitted entirely when
+   * null — sending an unreachable or unauthenticated address would have
+   * ModelArk retrying deliveries into nothing three times per transition.
+   */
+  callbackUrl?: string | null;
 };
 
 /**
@@ -364,6 +384,7 @@ export async function submitArkVideoJob(options: ArkSubmitOptions): Promise<stri
     duration: options.durationSeconds,
     generate_audio: options.generateAudio ?? true,
     watermark: options.watermark ?? false,
+    ...(options.callbackUrl ? { callback_url: options.callbackUrl } : {}),
     // NO service_tier. It turned out to be a real request field, defaulting
     // to "default" — but the Model list marks flex "Not supported" on every
     // Dreamina model, so there is nothing to switch to. Revisit only if that

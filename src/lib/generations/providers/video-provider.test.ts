@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  arkCallbackUrl,
   isByteplusCapable,
+  isTerminalArkStatus,
   providerFromPayload,
   providerKeyNameFor,
   videoProviderFor,
@@ -129,6 +131,53 @@ describe("providerKeyNameFor", () => {
     });
     withEnv({ [KEY]: undefined, [FLAG]: undefined }, () => {
       expect(providerKeyNameFor("seedance")).toBe("FAL_KEY");
+    });
+  });
+});
+
+describe("isTerminalArkStatus", () => {
+  // ModelArk calls back on EVERY transition and retries three times if we
+  // do not answer inside five seconds. Treating a "running" ping as terminal
+  // would poll ModelArk for a task we already know is unfinished, three times
+  // per transition, for every render on the lane.
+  it("acts only on the three end states", () => {
+    expect(isTerminalArkStatus("succeeded")).toBe(true);
+    expect(isTerminalArkStatus("failed")).toBe(true);
+    expect(isTerminalArkStatus("expired")).toBe(true);
+  });
+
+  it("ignores progress pings and anything unrecognised", () => {
+    for (const s of ["queued", "running", "cancelled", "", undefined, null, 7, {}]) {
+      expect(isTerminalArkStatus(s)).toBe(false);
+    }
+  });
+});
+
+describe("arkCallbackUrl", () => {
+  const SITE = "NEXT_PUBLIC_SITE_URL";
+  const SECRET = "BYTEPLUS_WEBHOOK_SECRET";
+
+  it("asks for no callback without a secret — ModelArk does not sign them", () => {
+    withEnv({ [SITE]: "https://picacho.ai", [SECRET]: undefined }, () => {
+      expect(arkCallbackUrl()).toBeNull();
+    });
+  });
+
+  it("asks for no callback ModelArk could not reach", () => {
+    withEnv({ [SITE]: "http://localhost:3000", [SECRET]: "s3cret" }, () => {
+      expect(arkCallbackUrl()).toBeNull();
+    });
+    withEnv({ [SITE]: "http://127.0.0.1:3000", [SECRET]: "s3cret" }, () => {
+      expect(arkCallbackUrl()).toBeNull();
+    });
+    withEnv({ [SITE]: undefined, [SECRET]: "s3cret" }, () => {
+      expect(arkCallbackUrl()).toBeNull();
+    });
+  });
+
+  it("carries the secret in the path, escaped, with no double slash", () => {
+    withEnv({ [SITE]: "https://picacho.ai/", [SECRET]: "a b/c" }, () => {
+      expect(arkCallbackUrl()).toBe("https://picacho.ai/api/webhooks/byteplus/a%20b%2Fc");
     });
   });
 });

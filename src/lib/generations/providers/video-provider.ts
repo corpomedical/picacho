@@ -62,3 +62,36 @@ export function providerFromPayload(payload: unknown): VideoProvider {
   const p = (payload as { provider?: unknown } | null | undefined)?.provider;
   return p === "byteplus" ? "byteplus" : "fal";
 }
+
+// --- ModelArk callbacks ----------------------------------------------------
+//
+// ModelArk POSTs the task object to `callback_url` on EVERY status change —
+// queued, running, succeeded, failed, expired — and retries three times if it
+// does not get a delivery confirmation within five seconds (their Video
+// Generation API reference, read 2026-09-04). Two consequences shape the
+// route: intermediate pings must be cheap no-ops, and a duplicate delivery of
+// a terminal one must be harmless.
+export const ARK_TERMINAL_STATUSES = ["succeeded", "failed", "expired"] as const;
+
+export function isTerminalArkStatus(status: unknown): boolean {
+  return (ARK_TERMINAL_STATUSES as readonly string[]).includes(String(status));
+}
+
+/**
+ * Where ModelArk should POST when a task changes state.
+ *
+ * Null — meaning "do not ask for callbacks, poll instead" — in three cases:
+ * no public origin, a localhost origin ModelArk cannot reach, or no shared
+ * secret. That last one is the important one: ModelArk does not sign its
+ * callbacks, so the ONLY thing separating a real delivery from anyone on the
+ * internet is the secret in this path. Without one we would be publishing an
+ * unauthenticated endpoint that does a database read and an outbound API call
+ * per request, so we would rather have no webhook at all.
+ */
+export function arkCallbackUrl(): string | null {
+  const base = process.env.NEXT_PUBLIC_SITE_URL;
+  if (!base || base.includes("localhost") || base.includes("127.0.0.1")) return null;
+  const secret = process.env.BYTEPLUS_WEBHOOK_SECRET;
+  if (!secret) return null;
+  return `${base.replace(/\/$/, "")}/api/webhooks/byteplus/${encodeURIComponent(secret)}`;
+}

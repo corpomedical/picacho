@@ -47,7 +47,12 @@ export {
   type ByteplusModelId,
   type VideoProvider,
 } from "./video-provider";
-import { videoProviderFor, type ByteplusModelId, type VideoProvider } from "./video-provider";
+import {
+  arkCallbackUrl,
+  videoProviderFor,
+  type ByteplusModelId,
+  type VideoProvider,
+} from "./video-provider";
 
 // Compile-time coupling in the direction that matters: if ARK_MODELS loses a
 // row or renames one, this assignment stops type-checking, so the hand-written
@@ -126,6 +131,10 @@ export async function submitVideoJob(
       watermark: false,
       referenceImageUrls: images,
       referenceVideoUrl: options.continueFromVideoUrl ?? undefined,
+      // Null in local development and whenever no shared secret is set — see
+      // arkCallbackUrl. Polling covers those cases, exactly as it does for
+      // fal's webhook.
+      callbackUrl: arkCallbackUrl(),
     });
     return {
       provider,
