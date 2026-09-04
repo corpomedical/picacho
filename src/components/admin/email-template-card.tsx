@@ -120,7 +120,7 @@ export function EmailTemplateCard({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-sm font-semibold text-neutral-900">{template.key}</span>
+            <span className="break-all font-mono text-sm font-semibold text-neutral-900">{template.key}</span>
           </div>
           <p className="mt-1 truncate text-sm text-neutral-700">{template.subject}</p>
           <p className="mt-0.5 text-xs text-neutral-500">

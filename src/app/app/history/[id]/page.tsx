@@ -603,7 +603,7 @@ export default async function HistoryDetailPage({
           saying so. */}
           <div className="mt-4 flex items-center justify-between gap-4">
             {isOwner && (
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <div className="relative flex min-w-0 flex-wrap items-center gap-2">
                 {generation.character_profile_id && (
                   <Link
                     href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}

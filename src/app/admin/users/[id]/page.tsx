@@ -179,10 +179,10 @@ export default async function AdminUserDetailPage({
           {user.full_name ? (
             <>
               <p className="text-base font-semibold text-neutral-900">{user.full_name}</p>
-              <p className="mt-0.5 text-sm text-neutral-600">{user.email}</p>
+              <p className="mt-0.5 text-sm break-words text-neutral-600">{user.email}</p>
             </>
           ) : (
-            <p className="text-sm font-medium text-neutral-900">{user.email}</p>
+            <p className="text-sm font-medium break-words text-neutral-900">{user.email}</p>
           )}
           {user.username && <p className="mt-0.5 text-xs text-neutral-500">@{user.username}</p>}
           {user.company && <p className="mt-0.5 text-xs text-neutral-500">{user.company}</p>}
@@ -208,7 +208,10 @@ export default async function AdminUserDetailPage({
             </div>
             <div className="flex gap-1.5">
               <dt>Came from:</dt>
-              <dd>
+              {/* break-all, not break-words: what lands here is a raw uuid or
+                  a referrer address, and an opaque identifier has no word to
+                  keep whole. */}
+              <dd className="break-all">
                 {/* Two different things that used to share one column: a
                     referring USER's id (resolved to their account), and a
                     promo rep's NAME. "Direct" = no referral recorded. */}

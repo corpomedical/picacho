@@ -79,8 +79,8 @@ export function PromoCodeCard({ promo, stats }: { promo: PromoCodeRow; stats: Pr
           </p>
         </div>
 
-        <div className="flex items-center gap-6">
-          <dl className="flex gap-6 text-xs">
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs">
             <div>
               <dt className="text-neutral-400">Clients</dt>
               <dd className="mt-0.5 text-sm font-semibold text-neutral-900">{stats?.count ?? 0}</dd>

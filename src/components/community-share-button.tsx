@@ -85,8 +85,20 @@ export function CommunityShareButton({
     );
   }
 
+  // The wrapper below is deliberately NOT relative. The sheet is 288px wide
+  // and anchored left-0, so with this wrapper as its positioning context it
+  // started at the BUTTON — and the button's x moves with how the action row
+  // wrapped, which depends on whether Layers and Upscale rendered for that
+  // generation. Measured at 375px with the trigger at x=177: the sheet ran to
+  // 465 and the page scrolled 89px sideways. Positioned against the action row
+  // instead (which the history page marks relative), it starts at the row's
+  // left edge and cannot leave the column.
+  //
+  // A phone bottom sheet was the alternative and was rejected: this popover
+  // contains a caption input, and a fixed bottom sheet is what the on-screen
+  // keyboard covers.
   return (
-    <div ref={boxRef} className={cn("relative inline-block", className)}>
+    <div ref={boxRef} className={cn("inline-block", className)}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

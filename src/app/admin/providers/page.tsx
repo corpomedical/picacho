@@ -129,7 +129,7 @@ export default async function AdminProvidersPage({
           All models run through the same fal.ai key — switching is instant, no new keys needed.
         </p>
 
-        <div className="mt-4 flex gap-2 border-b border-neutral-100">
+        <div className="mt-4 flex flex-wrap gap-2 border-b border-neutral-100">
           {VIDEO_MODELS.map((model) => (
             <form key={model.id} action={setVideoModel}>
               <input type="hidden" name="model_id" value={model.id} />
@@ -179,7 +179,7 @@ export default async function AdminProvidersPage({
           character&apos;s saved reference photo for consistency; Flux is faster and cheaper.
         </p>
 
-        <div className="mt-4 flex gap-2 border-b border-neutral-100">
+        <div className="mt-4 flex flex-wrap gap-2 border-b border-neutral-100">
           {IMAGE_MODELS.map((model) => (
             <form key={model.id} action={setImageModel}>
               <input type="hidden" name="model_id" value={model.id} />

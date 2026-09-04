@@ -249,7 +249,7 @@ export function ResultActions({
         </button>
       )}
 
-      <div ref={reportRef} className="relative">
+      <div ref={reportRef}>
         <button
           type="button"
           onClick={() => setReportOpen((v) => !v)}

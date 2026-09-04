@@ -89,7 +89,7 @@ function ReportCard({
               })()}
             </Badge>
             {report.source === "auto" && <Badge tone="neutral">Auto-detected</Badge>}
-            <p className="text-xs text-neutral-400">
+            <p className="break-all text-xs text-neutral-400">
               {email ?? "Unknown user"} · {new Date(report.created_at).toLocaleString()}
             </p>
           </div>
