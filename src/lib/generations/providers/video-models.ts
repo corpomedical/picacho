@@ -200,13 +200,32 @@ export const VIDEO_MODELS = [
     //      that — its inputs are prompt, image_urls, video_urls, audio_urls,
     //      resolution, duration, aspect_ratio, generate_audio, seed,
     //      end_user_id — so no amount of work on this side of fal reaches it.
-    //   3. fal CHARGES EXACTLY 2.00x BYTEDANCE'S LIST. fal quotes Seedance
-    //      2.0 reference-to-video at $14.00/M tokens against BytePlus
-    //      ModelArk's $7.00/M; 2.5 is $21.40 against $10.70. The $0.3024/sec
-    //      below is a reseller price, not the market: direct is ~$0.152/sec,
-    //      which would put 2.0 beside Kling O3 Pro rather than at double it.
-    //      The credit weights below therefore all halve if the lane ever
-    //      moves to ModelArk direct.
+    //   3. GOING DIRECT DOES NOT HALVE THIS. WITHDRAWN 2026-09-04.
+    //      This paragraph used to read: fal quotes Seedance 2.0
+    //      reference-to-video at $14.00/M tokens against BytePlus ModelArk's
+    //      $7.00/M ($21.40 vs $10.70 for 2.5), so "direct is ~$0.152/sec"
+    //      and "the credit weights below therefore all halve if the lane
+    //      ever moves to ModelArk direct."
+    //
+    //      BytePlus Technical Support, in writing on 2026-09-04, put the
+    //      documented rate for Seedance 2.0 on the enhanced line at
+    //      **USD 0.303 per second** of 720p output with no billable video
+    //      input. Against the $0.3024/sec below that is 0.198% MORE
+    //      expensive — parity, and the wrong side of it. Every weight in
+    //      this file is already correct for that rate; none of them halve.
+    //
+    //      They also refused the $0.462/sec this repo had derived for 2.5:
+    //      the 1.5251 factor is the 1080p RESOLUTION factor, not a 2.5 model
+    //      factor, so there is currently no rate of any kind for
+    //      dreamina-seedance-2-5 direct. Do not invent one — and note the
+    //      0.303 figure itself assumes a 720p factor of 1.0, which they
+    //      state nowhere.
+    //
+    //      What is still open is which line our own call would bill on:
+    //      they will not map a real-human-asset request to the enhanced
+    //      SKU without checking the account's own billing configuration.
+    //      Until they do, the token-list arithmetic above is a hypothesis,
+    //      not a price. See docs/BYTEPLUS_FOLLOWUP.md.
     //   4. A COMPETITOR'S "WORKING SEEDANCE" IS NOT A BETTER PAYLOAD.
     //      Higgsfield runs an official BytePlus partnership with a custom
     //      SKU, and routes real people through a trained identity layer
@@ -595,8 +614,17 @@ export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].so
 // job is keeping weights proportional across models so a minute of Veo costs
 // the user proportionally more allowance than a minute of Kling.
 //
-// It is emphatically NOT what a credit sells for. Plans work out at $0.499
-// (Elite) to $0.75 (Basic) per credit — see lib/pricing.ts.
+// It is emphatically NOT what a credit sells for. Divided out of
+// lib/pricing.ts on 2026-09-04, plans work out at $0.544 (Studio, 550 for
+// $299) to $0.750 (Basic, 12 for $9), with Elite at $0.665 (750 for $499),
+// Growth $0.564 (140/$79) and Starter $0.633 (30/$19).
+//
+// CORRECTED 2026-09-04. This line used to say "$0.499 (Elite) to $0.75
+// (Basic)", which outlived the 2026-08-31 cut of Elite from 1000 credits to
+// 750 at an unchanged $499: 499/750 is $0.665, not $0.499. It also named
+// Elite as the cheapest per credit when the arithmetic says Studio is —
+// the exact "anyone who does the division" problem plans.ts flags about the
+// ladder itself.
 //
 // CORRECTED 2026-08-30. This comment used to say "roughly $1.80-2.15 per
 // credit, so gross margin is around 85%". That was true until the 2026-08-19

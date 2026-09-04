@@ -225,6 +225,45 @@ second (they embed C2PA, and fal's delivery of the same model does not — see
 AI_ACT_MARKING.md), price third and now uncertain. A price parity finding
 does not weaken the case; it only removes a bonus.
 
+### ANSWERED 2026-09-04 — AND THE PRICE CASE IS DEAD
+
+BytePlus Technical Support replied to the price question. What it settles:
+
+- **USD 0.303/second is confirmed** for the documented Seedance 2.0 example
+  on the *enhanced* line, 720p, no billable video input. Against fal's
+  $0.3024/sec (video-models.ts:161) that is 0.198% MORE expensive — parity,
+  and the wrong side of it. A default 5-second render: $1.515 direct against
+  $1.512 through fal.
+- **The $0.462/s figure below is withdrawn by the vendor.** 1.5251 is the
+  **1080p resolution factor**, not a Seedance 2.5 model factor. The reading
+  in this file was wrong. There is now NO rate of any kind for
+  dreamina-seedance-2-5 direct — not $0.462, and not the $0.231 in
+  BYTEPLUS_ENQUIRY.md:107, which was already flagged unsafe.
+- **The capability question is answered, and this is the valuable half:**
+  "The real-human asset library officially supports authorized real-human
+  assets for video generation with both Seedance 2.0 and Seedance 2.5." That
+  is the first written vendor statement on the premise recorded as
+  inferred-never-confirmed at :94.
+- **Still open, and it is what would decide the price question:** they will
+  not map a real-human-asset request to the enhanced billing line without
+  checking our account's own endpoint and billing configuration. So the one
+  rate they will stand behind is for a scenario we may never run.
+
+Two things to hold onto when reading the reply. Their own conclusion assumes
+a **720p factor of 1.0** — they give the 1080p factor and state no 720p
+factor anywhere. And 1080p is not a product we could sell today regardless:
+fal.ts:452 hardcodes `resolution: "720p"` for both Seedance lanes and
+video-resolution.ts's OFFERS table has no Seedance entry at all.
+
+**Consequence for the decision: price comes out of the case entirely.** Not
+as a saving, not as a cost — it is parity to within a third of a cent, and
+every credit weight in the catalogue is already correct for the confirmed
+rate. What survives is capability, which the reply strengthens.
+
+The live-code claim that "the credit weights below therefore all halve if
+the lane ever moves to ModelArk direct" was withdrawn in
+video-models.ts:203 on the same day.
+
 ### THE PRICE CLAIM IN THIS FILE IS NO LONGER SAFE TO ACT ON
 
 The table above says $0.152/s for 2.0 and $0.231/s for 2.5, against fal's
@@ -234,6 +273,10 @@ availability (docs/Byteplus_LAS/video_gen_enhanced) states "Unit price: 0.303
 USD/second" for the enhanced version, with a duration conversion factor of 1.0
 at 720p for 2.0 and 1.525 for 2.5 — so about **$0.303/s and $0.462/s**, which
 is fal's price to within a fraction of a percent.
+
+> **WRONG, corrected 2026-09-04 by BytePlus themselves: 1.5251 is the 1080p
+> RESOLUTION factor, not a 2.5 model factor. The $0.462 derived here has no
+> basis and the vendor refuses it by name. See the section above.**
 
 Both cannot be right. The likeliest explanation is two product lines — a
 standard/fast Seedance around $0.15/s and an "enhanced" line around $0.30/s —
