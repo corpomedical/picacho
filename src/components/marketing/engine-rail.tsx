@@ -73,7 +73,7 @@ export async function EngineRail() {
       <div aria-hidden className="absolute inset-0 -z-10 bg-slate-950/70" />
 
       <div className="mx-auto max-w-6xl px-8 py-12">
-        <p className="mb-5 text-center text-[10.5px] font-semibold uppercase tracking-[0.16em] text-white/45">
+        <p className="mb-5 text-center text-[10.5px] font-semibold uppercase tracking-[0.16em] text-onmedia/45">
           {m.engineEyebrow}
         </p>
 
@@ -85,7 +85,7 @@ export async function EngineRail() {
             aria-hidden
             className="absolute inset-x-8 -bottom-6 h-12 rounded-[999px] bg-ochre/55 blur-2xl"
           />
-          <div className="relative overflow-hidden rounded-[999px] border border-white/15 bg-gradient-to-b from-white/[0.14] to-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-14px_30px_-18px_rgba(233,160,119,0.6),0_24px_60px_-26px_rgba(0,0,0,0.85)] backdrop-blur-md backdrop-saturate-150">
+          <div className="relative overflow-hidden rounded-[999px] border border-onmedia/15 bg-gradient-to-b from-onmedia/[0.14] to-black/25 shadow-[inset_0_1px_0_rgba(255,255,255,0.28),inset_0_-14px_30px_-18px_rgba(233,160,119,0.6),0_24px_60px_-26px_rgba(0,0,0,0.85)] backdrop-blur-md backdrop-saturate-150">
             {/* Rim light along the top edge, fading at both ends. */}
             <div
               aria-hidden
@@ -145,10 +145,10 @@ export async function EngineRail() {
 function EngineName({ name, capability }: { name: string; capability: string }) {
   return (
     <span className="group whitespace-nowrap px-5 text-center transition-transform duration-200 hover:-translate-y-px">
-      <span className="block font-display text-[14.5px] font-semibold tracking-[-0.01em] text-[rgb(244,239,233)] transition-colors group-hover:text-white">
+      <span className="block font-display text-[14.5px] font-semibold tracking-[-0.01em] text-[rgb(244,239,233)] transition-colors group-hover:text-onmedia">
         {name}
       </span>
-      <span className="mt-0.5 block text-[8.5px] font-medium uppercase tracking-[0.13em] text-white/40 transition-colors group-hover:text-ochre">
+      <span className="mt-0.5 block text-[8.5px] font-medium uppercase tracking-[0.13em] text-onmedia/40 transition-colors group-hover:text-ochre">
         {capability}
       </span>
     </span>

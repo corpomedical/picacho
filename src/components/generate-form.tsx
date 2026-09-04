@@ -5175,7 +5175,7 @@ function GenerateFormInner({
                         {Array.from({ length: 5 }).map((_, i) => (
                           <span
                             key={i}
-                            className={cn("h-[3px] flex-1 rounded-full", i < lockBars ? "bg-[#e0a468]" : "bg-white/25")}
+                            className={cn("h-[3px] flex-1 rounded-full", i < lockBars ? "bg-[#e0a468]" : "bg-onmedia/25")}
                           />
                         ))}
                       </span>
@@ -5608,7 +5608,7 @@ function GenerateFormInner({
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3 px-6 py-10 text-center">
-              <div className="flex h-12 w-12 items-center justify-center rounded-media bg-white/10 text-[#cfc8ba]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-media bg-onmedia/10 text-[#cfc8ba]">
                 {contentType === "video" ? <VideoIcon className="h-5 w-5" /> : <ImageIcon className="h-5 w-5" />}
               </div>
               <div>
@@ -5641,7 +5641,7 @@ function GenerateFormInner({
                 history-resumed takes render text-only). */}
             <div
               className={cn(
-                "pointer-events-none absolute left-[18px] flex items-center gap-3.5 rounded-[12px] border border-white/[0.08] bg-[#141519]/[0.66] p-3 pr-[18px] backdrop-blur-[10px]",
+                "pointer-events-none absolute left-[18px] flex items-center gap-3.5 rounded-[12px] border border-onmedia/[0.08] bg-[#141519]/[0.66] p-3 pr-[18px] backdrop-blur-[10px]",
                 stageTakeIsVideo ? "bottom-14" : "bottom-4",
               )}
             >
@@ -5655,20 +5655,20 @@ function GenerateFormInner({
               )}
               {stageTake.kind === "single" && typeof stageTake.matchScore === "number" ? (
                 <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-white/55">
+                  <p className="text-[10px] font-medium uppercase tracking-widest text-onmedia/55">
                     {g.identityMatchLabel}
                   </p>
                   <p className="flex items-baseline gap-2">
                     <span className="font-numeral text-2xl font-semibold tabular-nums text-[#e0a468]">
                       {stageTake.matchScore}%
                     </span>
-                    <span className="text-xs lowercase text-white/75">
+                    <span className="text-xs lowercase text-onmedia/75">
                       {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
                     </span>
                   </p>
                 </div>
               ) : (
-                <p className="text-[11px] text-white/75">
+                <p className="text-[11px] text-onmedia/75">
                   {stageTake.kind === "multi"
                     ? formatMsg(g.takesAngles, { n: stageTake.angles.length })
                     : stageTakeIsVideo
@@ -5688,7 +5688,7 @@ function GenerateFormInner({
                 lifts it clear of the control bar. */}
             <div
               className={cn(
-                "pointer-events-none absolute right-[18px] text-[11.5px] tracking-[0.02em] text-white/[0.66]",
+                "pointer-events-none absolute right-[18px] text-[11.5px] tracking-[0.02em] text-onmedia/[0.66]",
                 stageTakeIsVideo ? "bottom-14" : "bottom-5",
               )}
             >
@@ -5714,7 +5714,7 @@ function GenerateFormInner({
                   onClick={() => stageVideoRef.current?.requestFullscreen?.()}
                   title={g.expandStage}
                   aria-label={g.expandStage}
-                  className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-white/10 text-white/85 transition-colors hover:bg-white/20"
+                  className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-onmedia/10 text-onmedia/85 transition-colors hover:bg-onmedia/20"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]">
                     <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />

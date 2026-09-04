@@ -113,7 +113,7 @@ export default async function PricingPage({
               <span
                 className={
                   interval === "annual"
-                    ? "rounded-full bg-ochre px-1.5 py-0.5 text-[10px] font-semibold text-white"
+                    ? "rounded-full bg-ochre px-1.5 py-0.5 text-[10px] font-semibold text-onmedia"
                     : "hidden"
                 }
               >

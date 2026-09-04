@@ -42,7 +42,7 @@ function Endpoint({
   return (
     <section className="border-t border-slate-200 py-8">
       <div className="flex flex-wrap items-center gap-2.5">
-        <span className="rounded-[6px] bg-ochre px-2 py-1 font-mono text-[11px] font-bold text-white">
+        <span className="rounded-[6px] bg-ochre px-2 py-1 font-mono text-[11px] font-bold text-onmedia">
           {method}
         </span>
         <span className="font-mono text-sm font-semibold text-slate-900">{path}</span>

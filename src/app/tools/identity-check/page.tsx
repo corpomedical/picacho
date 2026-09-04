@@ -28,7 +28,7 @@ export default function IdentityCheckPage() {
 
       <main className="mx-auto max-w-3xl px-6 pb-24 pt-14">
         <p className="text-xs font-semibold uppercase tracking-[0.13em] text-ochre">Free tool</p>
-        <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-900 sm:text-4xl dark:text-white">
+        <h1 className="mt-3 text-3xl font-bold tracking-tight text-neutral-900 sm:text-4xl">
           Did it actually keep the face?
         </h1>
         <p className="mt-4 max-w-xl text-base leading-relaxed text-neutral-600 dark:text-neutral-400">
@@ -45,7 +45,7 @@ export default function IdentityCheckPage() {
         </div>
 
         <section className="mt-14 border-t border-neutral-200 pt-10 dark:border-neutral-800">
-          <h2 className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">
+          <h2 className="text-lg font-semibold tracking-tight text-neutral-900">
             How to read the number
           </h2>
           <dl className="mt-5 space-y-4 text-sm leading-relaxed">
@@ -74,7 +74,7 @@ export default function IdentityCheckPage() {
         </section>
 
         <section className="mt-12 rounded-[18px] bg-neutral-50 p-7 dark:bg-neutral-900">
-          <h2 className="text-lg font-semibold tracking-tight text-neutral-900 dark:text-white">
+          <h2 className="text-lg font-semibold tracking-tight text-neutral-900">
             Why we built this
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-neutral-600 dark:text-neutral-400">

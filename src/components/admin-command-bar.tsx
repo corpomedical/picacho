@@ -83,7 +83,7 @@ function NotificationBadge({ count }: { count: number }) {
   return (
     <span
       aria-label={`${count} notification${count === 1 ? "" : "s"}`}
-      className="absolute -right-2.5 -top-2.5 z-10 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#FF3B30] px-[3px] text-[10px] font-bold leading-none text-white ring-[1.5px] ring-white"
+      className="absolute -right-2.5 -top-2.5 z-10 flex h-[16px] min-w-[16px] items-center justify-center rounded-full bg-[#FF3B30] px-[3px] text-[10px] font-bold leading-none text-onmedia ring-[1.5px] ring-white"
     >
       {count > 9 ? "9+" : count}
     </span>
@@ -542,7 +542,7 @@ export function AdminCommandBar({
                               "absolute -right-2 -top-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-bold leading-none ring-[1.5px]",
                               active
                                 ? "bg-white text-neutral-900 ring-neutral-900"
-                                : "bg-[#FF3B30] text-white ring-white",
+                                : "bg-[#FF3B30] text-onmedia ring-white",
                             )}
                           >
                             {count > 9 ? "9+" : count}

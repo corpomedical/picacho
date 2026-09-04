@@ -175,7 +175,7 @@ export default async function CharacterConsistencyGuide() {
             </p>
             <Link
               href="/signup"
-              className="mt-6 inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-ochre-deep"
+              className="mt-6 inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-semibold text-onmedia transition-colors hover:bg-ochre-deep"
             >
               Try it with your character
             </Link>

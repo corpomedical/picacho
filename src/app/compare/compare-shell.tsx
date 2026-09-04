@@ -270,7 +270,7 @@ export async function ComparePage({ competitor }: { competitor: CompetitorId }) 
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
           <Link
             href="/signup"
-            className="inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-semibold text-white shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
+            className="inline-flex items-center justify-center rounded-[10px] bg-ochre px-6 py-3 text-sm font-semibold text-onmedia shadow-[0_1px_1px_rgba(0,0,0,0.08)] transition-colors hover:bg-ochre-deep"
           >
             {c.ctaSignup}
           </Link>

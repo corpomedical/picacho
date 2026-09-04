@@ -108,7 +108,7 @@ export function ShowcaseVideoPlayer({
   }
 
   return (
-    <div className="relative overflow-hidden rounded-[28px] border border-white shadow-[0_30px_60px_-20px_rgba(30,64,175,0.35)]">
+    <div className="relative overflow-hidden rounded-[28px] border border-onmedia shadow-[0_30px_60px_-20px_rgba(30,64,175,0.35)]">
       <video
         ref={videoRef}
         src={src}
@@ -128,7 +128,7 @@ export function ShowcaseVideoPlayer({
         preload="none"
         onClick={togglePlay}
       />
-      <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
+      <span className="pointer-events-none absolute bottom-3 left-3 rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-onmedia backdrop-blur-sm">
         {badge}
       </span>
       <div className="absolute bottom-3 right-3 flex items-center gap-2">
@@ -137,7 +137,7 @@ export function ShowcaseVideoPlayer({
           onClick={togglePlay}
           aria-label={playing ? pauseLabel : playLabel}
           title={playing ? pauseLabel : playLabel}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-colors hover:bg-black/70"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-onmedia backdrop-blur-sm transition-colors hover:bg-black/70"
         >
           {playing ? <PauseIcon className="h-4 w-4" /> : <PlayIcon className="h-4 w-4" />}
         </button>
@@ -147,7 +147,7 @@ export function ShowcaseVideoPlayer({
             onClick={toggleMute}
             aria-label={muted ? unmuteLabel : muteLabel}
             title={muted ? unmuteLabel : muteLabel}
-            className="flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm transition-colors hover:bg-black/70"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-onmedia backdrop-blur-sm transition-colors hover:bg-black/70"
           >
             {muted ? <SpeakerOffIcon className="h-4 w-4" /> : <SpeakerOnIcon className="h-4 w-4" />}
           </button>

@@ -654,7 +654,7 @@ function CalloutBox({ callout }: { callout: Callout }) {
       ? "bg-amber-500/10 text-amber-900"
       : "bg-ochre/10 text-neutral-700";
   const labelStyles =
-    callout.kind === "warn" ? "bg-amber-700 text-amber-50" : "bg-ochre text-white";
+    callout.kind === "warn" ? "bg-amber-700 text-amber-50" : "bg-ochre text-onmedia";
   return (
     <aside className={`mt-4 flex items-start gap-2.5 rounded-xl px-4 py-3 text-sm leading-relaxed ${styles}`}>
       <span
@@ -730,7 +730,7 @@ export default async function GettingStartedCourse() {
             {chapter.steps.map((step, si) => (
               <div key={si} className="mt-10">
                 <div className="flex items-center gap-3">
-                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-ochre text-sm font-bold text-white">
+                  <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-ochre text-sm font-bold text-onmedia">
                     {si + 1}
                   </span>
                   <h3 className="font-display text-lg font-semibold tracking-[-0.01em] text-neutral-900">
@@ -761,7 +761,7 @@ export default async function GettingStartedCourse() {
 
       <section className="mx-auto max-w-2xl px-8 pb-24">
         <div className="rounded-[22px] bg-slate-900 px-8 py-10 text-center">
-          <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-white">
+          <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-onmedia">
             Ready to meet your character?
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-300">
@@ -770,7 +770,7 @@ export default async function GettingStartedCourse() {
           </p>
           <Link
             href="/signup"
-            className="mt-6 inline-flex items-center justify-center rounded-full bg-ochre px-7 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            className="mt-6 inline-flex items-center justify-center rounded-full bg-ochre px-7 py-3 text-sm font-semibold text-onmedia transition-opacity hover:opacity-90"
           >
             Start free
           </Link>

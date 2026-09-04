@@ -161,7 +161,7 @@ export default async function AdminModerationPage({
                     )
                   ) : null}
                   {isVideo && (
-                    <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-white">
+                    <span className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-black/60 text-onmedia">
                       <PlayGlyph className="ml-px h-2.5 w-2.5" />
                     </span>
                   )}

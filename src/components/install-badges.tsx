@@ -201,7 +201,7 @@ function InstallModal({ kind, onClose }: { kind: ModalKind; onClose: () => void 
             <h3 className="text-[15px] font-bold tracking-[-0.01em] text-neutral-900">{m.iosTitle}</h3>
             {[m.iosStep1, m.iosStep2].map((step, i) => (
               <div key={i} className="mt-3 flex items-start gap-2.5">
-                <span className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-ochre text-xs font-bold text-white">
+                <span className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-full bg-ochre text-xs font-bold text-onmedia">
                   {i + 1}
                 </span>
                 <p className="pt-0.5 text-xs leading-relaxed text-neutral-700">{step}</p>

@@ -131,7 +131,7 @@ export function VoiceRecorderButton({
           "flex flex-shrink-0 items-center justify-center rounded-full transition-colors disabled:opacity-50",
           dim,
           status === "recording"
-            ? "animate-pulse bg-red-500 text-white"
+            ? "animate-pulse bg-red-500 text-onmedia"
             : "bg-atelier-ink/5 text-atelier-muted hover:bg-atelier-ink/10 hover:text-atelier-ink",
           className,
         )}

@@ -156,7 +156,7 @@ export function DownloadButton({
       // here and constants are right.
       className={
         variant === "ghost"
-          ? "flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-white/10 text-white/85 transition-colors hover:bg-white/20"
+          ? "flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-onmedia/10 text-onmedia/85 transition-colors hover:bg-onmedia/20"
           : "absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-[#17150f]/70 text-[#f5f1e9] shadow-sm backdrop-blur-sm transition-colors hover:bg-[#17150f]/85"
       }
     >
