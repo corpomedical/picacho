@@ -18,7 +18,23 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 12
+        versionCode 13
+        // 13 = the build itself, on Play's release-12 dashboard (2026-09-04,
+        // operator: "I need all 3 issues resolved in any way possible"). R8
+        // optimization on (the -optimize default file), resource shrinking on
+        // with a keep rule for the one dynamically-resolved resource, and AGP
+        // 8.13.0 -> 9.4.0 with Gradle 9.7.1. Together those are the three
+        // bullets Play lists under "Improve your app's memory and performance
+        // with R8 optimization", and the APK went 2,278,080 -> 1,884,759
+        // bytes, -17.3%. No plugin removed, no device dropped: minSdk stays 24
+        // and all 8 plugin classpaths plus 62 @PluginMethod names survive R8
+        // identity-mapped, verified on the Pixel_7 against a signed build.
+        //
+        // The two edge-to-edge recommendations are NOT addressed and cannot
+        // honestly be: see the note in src/components/native-chrome.tsx. Both
+        // remaining deprecated callers are library code, Play's own suggested
+        // fix would add six more, and clearing them needs a hand-written
+        // native splash plugin on the cold-start path.
         // 12 = the camera plugin leaves the binary (2026-09-03, operator:
         // "Fix whatever is wrong without reducing functionality or damaging
         // the app", on Play's release-11 dashboard). Nothing in the web app
@@ -111,7 +127,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.12.2"
+        versionName "1.13.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -168,14 +184,18 @@ android {
             // AAB itself moves only -1.9% because it carries the R8 mapping,
             // which GROWS — that is the wrong denominator to quote.
             //
-            // shrinkResources stays OFF, and now with a measurement behind it
-            // rather than caution: audited against the manifest, the themes,
-            // the library code and the release DEX, exactly ONE app-owned
-            // resource is referenced only dynamically (res/xml/config.xml, via
-            // Cordova's getIdentifier at every launch), and the measured saving
-            // did not justify a release of its own. Revisit with keep.xml if
-            // the resource table ever grows.
+            // shrinkResources ON (2026-09-04). It was held back on payoff —
+            // the measured saving is small — and that argument stopped
+            // applying when the goal became clearing Play's card, which lists
+            // all three bullets together and clears for none of them alone.
+            // It was already proven safe: audited against the manifest, the
+            // themes, the library code and the release DEX, exactly ONE
+            // app-owned resource is referenced only dynamically
+            // (res/xml/config.xml, which Cordova resolves by getIdentifier at
+            // every launch), and res/raw/keep.xml now states that as a fact
+            // rather than leaving it to AGP's safe-mode heuristic.
             minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (keystorePropertiesFile.exists()) {
                 signingConfig signingConfigs.release

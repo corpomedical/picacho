@@ -7,7 +7,7 @@ buildscript {
         mavenCentral()
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.13.0'
+        classpath 'com.android.tools.build:gradle:9.4.0'
         classpath 'com.google.gms:google-services:4.4.4'
 
         // NOTE: Do not place your application dependencies here; they belong
@@ -21,6 +21,46 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+    }
+}
+
+// AGP 9 (2026-09-04, Play Console release 12: "Upgrade your Android Gradle
+// plugin to version 9.0 or higher").
+//
+// The obstacle everyone predicted — Capacitor's ten Gradle subprojects using
+// the lintOptions DSL "removed in AGP 9" — does not exist. AGP 9.4.0 still
+// accepts lintOptions and does not even warn: with this hook in place, all
+// eleven subprojects that use it configure and run lintVitalAnalyzeRelease.
+//
+// The one real blocker is this: AGP 9 hard-errors on
+// getDefaultProguardFile('proguard-android.txt'), because that file carries
+// -dontoptimize. Exactly ONE subproject in the whole tree still asks for it —
+// @capacitor-community/in-app-review — and its build.gradle lives in
+// node_modules, which every npm install replaces. So the call is intercepted
+// here, in a tracked file, rather than by patching theirs.
+//
+// It is a no-op for the shipped binary: those proguardFiles apply only when the
+// LIBRARY itself is minified, and that library sets minifyEnabled false. What a
+// library contributes to OUR R8 run is consumerProguardFiles, untouched here.
+//
+// Survivability was tested, not assumed: node_modules is byte-identical after
+// this change, and `npx cap sync android` leaves both edited files with
+// identical md5s — the CLI writes capacitor.settings.gradle,
+// app/capacitor.build.gradle, cordova.variables.gradle and marker-scoped
+// regions of the cordova plugins file, and never this one.
+subprojects { sub ->
+    sub.plugins.withId('com.android.library') {
+        def androidExt = sub.extensions.findByName('android')
+        if (androidExt != null) {
+            def original = androidExt.metaClass.getMetaMethod('getDefaultProguardFile', [String] as Class[])
+            if (original != null) {
+                androidExt.metaClass.getDefaultProguardFile = { String name ->
+                    original.invoke(androidExt, name == 'proguard-android.txt'
+                        ? 'proguard-android-optimize.txt'
+                        : name)
+                }
+            }
+        }
     }
 }
 

@@ -10,6 +10,84 @@ worse than a short translation.
 
 ---
 
+## versionCode 13 · versionName 1.13.0
+
+**Context the notes do not say out loud.** Play's release-12 dashboard listed
+three recommendations. The R8 one had three bullets and all three are now done:
+optimization enabled (the `-optimize` default file), resource shrinking enabled
+with a keep rule for `res/xml/config.xml` — the one resource Cordova resolves by
+name at every launch — and AGP 8.13.0 to 9.4.0 on Gradle 9.7.1. The AGP upgrade
+needed one hook in the tracked root `build.gradle`, because exactly one vendored
+subproject still asks for `proguard-android.txt`, which AGP 9 rejects.
+
+| | APK | |
+|---|---|---|
+| versionCode 12 | 2,278,080 B | 2.17 MB |
+| versionCode 13 | 1,884,759 B | 1.80 MB |
+| | **−393,321 B** | **−17.3%** |
+
+Nothing was removed and no device was dropped: minSdk stays 24, all 8 plugin
+classpaths and 62 `@PluginMethod` names survive R8 identity-mapped, and the
+signed build was booted on the Pixel_7 before this shipped.
+
+The two edge-to-edge recommendations are deliberately NOT addressed — see the
+note in `src/components/native-chrome.tsx`. Both remaining callers are library
+code, Play's own suggested fix would add six more deprecated call sites, and
+clearing them needs a hand-written native splash plugin on the cold-start path.
+
+The notes also mention the dark-mode and narrow-phone fixes from the same day,
+because those are what a user would actually notice.
+
+### en-US
+
+```
+Smaller and faster to start.
+
+The app is now 1.8 MB — down from 2.2 MB. The build now strips unused code and unused resources, and moved to a newer Android build toolchain. Nothing was removed: every feature, every screen and every phone we supported before is still supported.
+
+Also in this release: text that was unreadable in dark mode on the Characters screen, and a few screens that scrolled sideways on narrow phones.
+```
+
+(423 characters, limit 500)
+
+### es-419
+
+```
+Más pequeña y de inicio más rápido.
+
+La app ocupa ahora 1,8 MB, frente a 2,2 MB. La compilación elimina el código y los recursos que no se usan, y pasó a una cadena de herramientas de Android más reciente. No se quitó nada: todas las funciones, pantallas y teléfonos compatibles lo siguen siendo.
+
+También: texto ilegible en modo oscuro en la pantalla Personajes, y pantallas que se desplazaban en horizontal en móviles estrechos.
+```
+
+(430 characters, limit 500)
+
+### pt-BR
+
+```
+Menor e com início mais rápido.
+
+O app agora ocupa 1,8 MB, contra 2,2 MB. A compilação remove código e recursos não utilizados e passou a usar uma cadeia de ferramentas Android mais recente. Nada foi retirado: todos os recursos, telas e aparelhos compatíveis continuam iguais.
+
+Também: texto ilegível no modo escuro na tela Personagens e telas que rolavam na horizontal em celulares estreitos.
+```
+
+(393 characters, limit 500)
+
+### it-IT
+
+```
+Più leggera e più rapida ad avviarsi.
+
+L'app ora occupa 1,8 MB, contro 2,2 MB. La build elimina codice e risorse inutilizzati ed è passata a una toolchain Android più recente. Non è stato rimosso nulla: tutte le funzioni, le schermate e i telefoni supportati restano invariati.
+
+Inoltre: testo illeggibile in modalità scura nella schermata Personaggi e schermate che scorrevano in orizzontale su telefoni stretti.
+```
+
+(413 characters, limit 500)
+
+---
+
 ## versionCode 12 · versionName 1.12.2
 
 **Context the notes do not say out loud.** A camera plugin the app never

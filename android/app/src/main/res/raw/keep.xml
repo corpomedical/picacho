@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The one resource in this app that nothing references statically.
+
+  Cordova's ConfigXmlParser resolves it by NAME on every single launch —
+  getIdentifier("config", "xml", packageName), from Bridge.Builder.create() —
+  so the resource shrinker cannot see the reference and would be free to strip
+  it. AGP's safe-mode heuristic happens to protect it today because the app
+  calls getIdentifier at all, but that is a heuristic about the whole app, not
+  a fact about this file. This makes it a fact.
+
+  Audited 2026-09-04 against the manifest, the themes, the library sources and
+  the release DEX: every other app-owned resource — both splash drawables, all
+  28 animation frames, the four mipmap names, both colors, xml/file_paths,
+  app_name, title_activity_main and all three styles — is statically reachable
+  from the merged manifest or the launch theme. This is the only one that is
+  not.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@xml/config" />
