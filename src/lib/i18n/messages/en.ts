@@ -869,6 +869,7 @@ const en = {
     issueContinueSeedance: "Continuing a clip works on the Seedance models — switch model, or clear the continuation.",
     issueDialogueVoice: "Dialogue needs a character with a voice — assign one in Character settings, or clear the dialogue.",
     issueDialogueTooLong: "That line is about {spoken}s of speech and the clip is {clip}s — the dialogue will be cut off at {clip}s. Shorten the line or pick a longer clip.",
+    issueDialogueCuePastClip: "The line is cued at {start}s and the clip ends at {clip}s — whatever doesn't fit before {clip}s is cut.",
     issueMultiPerson: "{model} renders one person at a time — pick Kling O3 Pro or Seedance for a cast.",
     issueActClear: "Clear",
     receiptScene: "Scene: described from your photo",

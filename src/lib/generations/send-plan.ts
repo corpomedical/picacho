@@ -448,6 +448,7 @@ export type IssueCode =
   | "DIALOGUE_NEEDS_VOICE"
   | "SEEDANCE25_PHOTOREAL"
   | "DIALOGUE_LONGER_THAN_CLIP"
+  | "DIALOGUE_CUE_PAST_CLIP"
   | "REF_ASPECT_OUT_OF_RANGE"
   | "MODEL_CANNOT_MULTI_PERSON";
 
@@ -469,6 +470,11 @@ export type IssueCode =
  */
 export const SPEECH_FIXED_SECONDS = 0.8;
 export const SPEECH_WORDS_PER_SECOND = 3.4;
+
+// Relative, not "@/": this module is loaded by vitest, which resolves no
+// aliases here — the same trap provider-url.ts documents.
+export { parseDialogueCue } from "./dialogue-cue";
+import { parseDialogueCue } from "./dialogue-cue";
 
 export function estimateSpeechSeconds(text: string): number {
   const words = text.trim().split(/\s+/).filter(Boolean).length;
@@ -780,16 +786,32 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
     //
     // A warn rather than a block, and no one-tap remedy: the honest fixes
     // are edits only the person can make.
-    const spokenSeconds = estimateSpeechSeconds(input.dialogueText);
-    if (input.durationSeconds && spokenSeconds > input.durationSeconds) {
-      issues.push({
-        severity: "warn",
-        code: "DIALOGUE_LONGER_THAN_CLIP",
-        params: {
-          spoken: String(Math.round(spokenSeconds)),
-          clip: String(input.durationSeconds),
-        },
-      });
+    // A leading "(11s)" cue moves the line, so the thing measured against the
+    // clip is where the line ENDS: cue + speech. The estimator sees only the
+    // words — the cue is stripped before TTS and becomes leading silence at
+    // lipsync time (job-runner), so it is placement, not speech.
+    const cue = parseDialogueCue(input.dialogueText);
+    const spokenSeconds = estimateSpeechSeconds(cue.spokenText);
+    if (input.durationSeconds) {
+      if (cue.startSeconds && cue.startSeconds + spokenSeconds > input.durationSeconds) {
+        issues.push({
+          severity: "warn",
+          code: "DIALOGUE_CUE_PAST_CLIP",
+          params: {
+            start: String(cue.startSeconds),
+            clip: String(input.durationSeconds),
+          },
+        });
+      } else if (!cue.startSeconds && spokenSeconds > input.durationSeconds) {
+        issues.push({
+          severity: "warn",
+          code: "DIALOGUE_LONGER_THAN_CLIP",
+          params: {
+            spoken: String(Math.round(spokenSeconds)),
+            clip: String(input.durationSeconds),
+          },
+        });
+      }
     }
   }
 

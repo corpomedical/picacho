@@ -742,3 +742,52 @@ describe("a dialogue line longer than the clip", () => {
     expect(issue(plan, "DIALOGUE_LONGER_THAN_CLIP")).toBeUndefined();
   });
 });
+
+describe("a timing cue on the dialogue line", () => {
+  it("warns when the cue plus the line runs past the clip", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      dialogueText: "(11s) " + Array.from({ length: 20 }, () => "word").join(" "),
+      dialogueVoiceAssigned: true,
+      durationSeconds: 15,
+    });
+    const i = issue(plan, "DIALOGUE_CUE_PAST_CLIP");
+    expect(i?.severity).toBe("warn");
+    expect(i?.params?.start).toBe("11");
+    expect(i?.params?.clip).toBe("15");
+    // the plain too-long warn must not double up on the same line
+    expect(issue(plan, "DIALOGUE_LONGER_THAN_CLIP")).toBeUndefined();
+  });
+
+  it("warns when the cue alone is past the clip's end", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      dialogueText: "(20s) hi",
+      dialogueVoiceAssigned: true,
+      durationSeconds: 15,
+    });
+    expect(issue(plan, "DIALOGUE_CUE_PAST_CLIP")?.severity).toBe("warn");
+  });
+
+  it("stays quiet when the cued line fits — the operator's own example", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      dialogueText: '(11-13s) "still me."',
+      dialogueVoiceAssigned: true,
+      durationSeconds: 15,
+    });
+    expect(issue(plan, "DIALOGUE_CUE_PAST_CLIP")).toBeUndefined();
+    expect(issue(plan, "DIALOGUE_LONGER_THAN_CLIP")).toBeUndefined();
+  });
+
+  it("estimates on the words, not the cue characters", () => {
+    // a stage direction is not a cue and stays spoken text
+    const plan = resolveSendPlan({
+      ...base,
+      dialogueText: "(laughs) hello there",
+      dialogueVoiceAssigned: true,
+      durationSeconds: 5,
+    });
+    expect(issue(plan, "DIALOGUE_CUE_PAST_CLIP")).toBeUndefined();
+  });
+});

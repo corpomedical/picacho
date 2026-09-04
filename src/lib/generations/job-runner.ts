@@ -25,7 +25,9 @@ import {
   type QueuedVideoJob,
 } from "@/lib/generations/providers/video-queue";
 import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
-import { mp3DurationSeconds } from "@/lib/generations/providers/audio-duration";
+import { mp3DurationSeconds, padMp3WithSilence } from "@/lib/generations/providers/audio-duration";
+import { parseDialogueCue } from "@/lib/generations/dialogue-cue";
+import { mediaUrl } from "@/lib/media/url";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
@@ -1399,7 +1401,14 @@ export async function advanceGeneration(
       }
 
       phase = "submit";
-      const speech = await submitSpeechJob(row.resume.dialogueText!.trim(), row.resume.dialogueVoiceId!);
+      // The timing cue is for the PLACEMENT stage below, not for the voice —
+      // spoken, "(11s)" is noise. Stripped here; re-parsed at lipsync time
+      // from the same persisted resume text, so nothing new needs storing.
+      const spokenLine = parseDialogueCue(row.resume.dialogueText!.trim()).spokenText.trim();
+      const speech = await submitSpeechJob(
+        spokenLine.length > 0 ? spokenLine : row.resume.dialogueText!.trim(),
+        row.resume.dialogueVoiceId!,
+      );
       // mustUpdate, not fire-and-forget: the paid TTS job above is already
       // submitted, and if this transition silently failed the row would keep
       // saying stage "video" — so every 90s lease expiry another caller would
@@ -1467,13 +1476,49 @@ export async function advanceGeneration(
       // which can only err toward a longer video, never a truncated line.
       let syncMode: "silence" | "cut_off" = "silence";
       let audioSeconds: number | null = null;
+      let lipsyncAudioUrl = audioUrl;
+      const cue = parseDialogueCue(row.resume.dialogueText ?? "");
       try {
         const res = await fetch(audioUrl);
         if (res.ok) {
-          const buf = new Uint8Array(await res.arrayBuffer());
+          let buf: Uint8Array = new Uint8Array(await res.arrayBuffer());
           // Dialogue audio is small (30s ≈ 480KB at 128kbps); anything huge
           // is not what we think it is, so leave it unmeasured.
-          if (buf.byteLength <= 6 * 1024 * 1024) audioSeconds = mp3DurationSeconds(buf);
+          if (buf.byteLength <= 6 * 1024 * 1024) {
+            // THE TIMING CUE (2026-09-05): "(11s) still me." places the line
+            // at second 11. The lipsync endpoint has no timing field, so the
+            // cue becomes literal leading silence — real encoded silent
+            // frames from the same encoder, spliced ahead of the speech —
+            // and the padded file is what gets synced and measured, which is
+            // what lets the clip-length rule below apply to the line's END
+            // position rather than its raw duration.
+            if (cue.startSeconds) {
+              const padded = padMp3WithSilence(buf, cue.startSeconds);
+              if (padded) {
+                const path = `${row.user_id}/${crypto.randomUUID()}.mp3`;
+                const { error: upErr } = await admin.storage
+                  .from("generated-videos")
+                  .upload(path, padded, { contentType: "audio/mpeg" });
+                if (!upErr) {
+                  buf = padded;
+                  lipsyncAudioUrl = providerDownloadUrl(mediaUrl("generated-videos", path));
+                  row.resume.attempts = appendStep(
+                    row.resume.attempts ?? [],
+                    `The line is placed at ${cue.startSeconds}s, as cued.`,
+                    "lipsync",
+                  );
+                }
+              }
+              if (lipsyncAudioUrl === audioUrl) {
+                row.resume.attempts = appendStep(
+                  row.resume.attempts ?? [],
+                  `The (${cue.startSeconds}s) cue couldn't be applied — the line plays from the start.`,
+                  "lipsync",
+                );
+              }
+            }
+            audioSeconds = mp3DurationSeconds(buf);
+          }
         }
       } catch {
         // Unmeasured is fine — the fallback mode is the safe one.
@@ -1504,7 +1549,7 @@ export async function advanceGeneration(
       // relative — it is also what the salvage branch delivers to the user.
       const lipsync = await submitLipSyncJob(
         providerDownloadUrl(row.payload.videoUrl!),
-        audioUrl,
+        lipsyncAudioUrl,
         syncMode,
       );
       // Recorded into resume BEFORE the transition write so the persisted

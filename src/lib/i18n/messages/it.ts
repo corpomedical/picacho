@@ -801,6 +801,7 @@ const it = {
     issueContinueSeedance: "Continuare una clip funziona con i modelli Seedance — cambia modello o rimuovi la continuazione.",
     issueDialogueVoice: "Il dialogo richiede un personaggio con una voce — assegnala nelle impostazioni del personaggio o cancella il dialogo.",
     issueDialogueTooLong: "Quella battuta dura circa {spoken}s e la clip è di {clip}s: il dialogo verrà tagliato a {clip}s. Accorcia la battuta o scegli una clip più lunga.",
+    issueDialogueCuePastClip: "La battuta è fissata al secondo {start} e la clip termina a {clip}s: ciò che non rientra prima dei {clip}s viene tagliato.",
     issueMultiPerson: "{model} genera una sola persona — scegli Kling O3 Pro o Seedance per un cast.",
     issueActClear: "Rimuovi",
     receiptScene: "Scena: descritta dalla tua foto",

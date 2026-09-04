@@ -46,3 +46,56 @@ describe("mp3DurationSeconds", () => {
     expect(mp3DurationSeconds(s)!).toBeLessThan(11.8);
   });
 });
+
+
+// A mono 128k/44.1 stream cloned from the same header shape as the embedded
+// silent frame (FF FB 90 | mono mode bits), for the padder tests.
+function silentBase(frames = 50): Uint8Array {
+  const frame = new Uint8Array(417);
+  frame.set([0xff, 0xfb, 0x90, 0xc0]);
+  const out = new Uint8Array(417 * frames);
+  for (let i = 0; i < frames; i++) out.set(frame, i * 417);
+  return out;
+}
+
+describe("padMp3WithSilence", () => {
+  // The embedded silent frame is 128kbps/44.1kHz MONO — header FF FB 90 C0-ish.
+  // The synthetic stream in cbrStream() above is stereo (byte 3 = 0x00), so it
+  // exercises the mode-mismatch guard; a matching stream must copy the real
+  // frame's header nibbles.
+  it("refuses a stream whose shape does not match the silent frame", async () => {
+    const { padMp3WithSilence } = await import("./audio-duration");
+    expect(padMp3WithSilence(cbrStream(10), 2)).toBeNull(); // stereo vs mono
+    expect(padMp3WithSilence(new Uint8Array(2000), 2)).toBeNull(); // garbage
+    expect(padMp3WithSilence(cbrStream(10), 0)).toBeNull(); // no cue
+  });
+
+  it("prepends the right amount of silence and the result still parses as CBR", async () => {
+    const { padMp3WithSilence, mp3DurationSeconds } = await import("./audio-duration");
+    // Build a mono stream by cloning the silent frame itself 50 times
+    // (~1.31s) — by construction it matches the embedded frame's shape.
+    const stream = silentBase(50);
+    const before = mp3DurationSeconds(stream)!;
+    const padded = padMp3WithSilence(stream, 3)!;
+    expect(padded).not.toBeNull();
+    const after = mp3DurationSeconds(padded)!;
+    expect(after - before).toBeGreaterThan(2.9);
+    expect(after - before).toBeLessThan(3.1);
+    // and the original bytes ride along untouched at the tail
+    expect(padded.subarray(padded.length - stream.length)).toEqual(stream);
+  });
+
+  it("skips a leading ID3 tag so the splice is frame-to-frame", async () => {
+    const { padMp3WithSilence, mp3DurationSeconds } = await import("./audio-duration");
+    const stream = silentBase(50);
+    const tag = new Uint8Array(10 + 20);
+    tag.set([0x49, 0x44, 0x33, 3, 0, 0, 0, 0, 0, 20]);
+    const withTag = new Uint8Array(tag.length + stream.length);
+    withTag.set(tag); withTag.set(stream, tag.length);
+    const padded = padMp3WithSilence(withTag, 2)!;
+    expect(padded).not.toBeNull();
+    // no ID3 survives inside the spliced stream
+    expect(padded[0]).toBe(0xff);
+    expect(mp3DurationSeconds(padded)! - mp3DurationSeconds(stream)!).toBeCloseTo(2, 1);
+  });
+});

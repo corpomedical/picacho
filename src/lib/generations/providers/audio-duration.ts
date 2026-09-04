@@ -53,3 +53,52 @@ export function mp3DurationSeconds(bytes: Uint8Array): number | null {
   if (!second || second.bitrateKbps !== first.bitrateKbps) return null;
   return ((bytes.length - at) * 8) / (first.bitrateKbps * 1000);
 }
+
+// One genuinely encoded SILENT frame — mono, 128kbps, 44.1kHz, 417 bytes,
+// main_data_begin = 0 — lifted from the lead-in of a real ElevenLabs clip on
+// 2026-09-05, i.e. produced by the exact encoder whose output it will be
+// spliced onto. Self-contained (it references no bit-reservoir data), so any
+// number of copies in a row decode as silence, and the original stream's own
+// first frame (always main_data_begin 0) decodes unchanged after them.
+const SILENT_FRAME_MONO_128_44100 = Uint8Array.from(atob("//uQxAACECj/Ike8wYqysqIRp425AidgFsG+S801EEMAgBgEsLmaZpmmaaHoeh6vAAACCBAgQIECZMmTJ20RfaCEREXd3d3dwQIECBAgQQJk07u7u4iIiIiLu7uyd2hEREREXd3d3dxEREREXd3d3doAAAAAAeHh4eGAAAAAAeHh4eGAAAACA8PDw8MAAAAAA8PDw8MAASAVRhp4Bw3Bq1Bx/h+1xiThILEIBc6mpbVYrXX9VLpiZYzEplUfzNvDE4tS2QAMInV20nRChvDqQpXMzExVevVKjZ6KFkpGhRnJmxaetdRVAQFUY4xnIYVVUKAq+rRpvD6dKFWy29jb+9v7/mZFDnNmYraXe7Mx84qrVUqpxjhyNVVVqqrMzBmZgIKAiQoKCgwUFBQUCgoKCgwUFBQUCgoKCgwUFBQUCgoKCgwAQBhaUYJqAJgK2TAMc4dTByKHYcPDh16LqkcPe6nns/YXkFWvFEpWE7k4QWpomsk2tPHiDZYlSr1yxxYVGRJtZ8rg5ltAsaEpxTHWXlpOrKJVDWA00IZQGyMRLSFx"), (c) => c.charCodeAt(0));
+const SILENT_FRAME_SECONDS = 1152 / 44100; // samples per MPEG1 Layer III frame
+
+/**
+ * Prepend `seconds` of silence to a CBR MP3, for the dialogue timing cue.
+ *
+ * Returns null rather than guessing whenever the stream is not the one shape
+ * the embedded frame matches — mono 128kbps/44.1kHz, which is what ElevenLabs
+ * returns (both probes measured it) — or is not parseable at all. The caller
+ * treats null as "no cue": the line plays from the start, and a log step says
+ * so. A wrongly spliced file handed to the lipsync provider would fail a paid
+ * job; a cue quietly not applied costs a re-render at worst.
+ */
+export function padMp3WithSilence(bytes: Uint8Array, seconds: number): Uint8Array | null {
+  if (!(seconds > 0)) return null;
+  let start = 0;
+  if (bytes.length > 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+    start =
+      10 +
+      (((bytes[6] & 0x7f) << 21) |
+        ((bytes[7] & 0x7f) << 14) |
+        ((bytes[8] & 0x7f) << 7) |
+        (bytes[9] & 0x7f));
+  }
+  // The stream must match the silent frame exactly: same sync, bitrate index
+  // (128k), sample rate index (44.1k) and channel mode nibble.
+  if (start + 4 > bytes.length) return null;
+  if (
+    bytes[start] !== 0xff ||
+    (bytes[start + 1] & 0xfe) !== 0xfa ||
+    (bytes[start + 2] & 0xfc) !== (SILENT_FRAME_MONO_128_44100[2] & 0xfc) ||
+    (bytes[start + 3] & 0xc0) !== (SILENT_FRAME_MONO_128_44100[3] & 0xc0)
+  ) {
+    return null;
+  }
+  const frames = Math.round(seconds / SILENT_FRAME_SECONDS);
+  const audio = bytes.subarray(start); // drop the ID3 tag; pure frames splice cleanly
+  const out = new Uint8Array(frames * SILENT_FRAME_MONO_128_44100.length + audio.length);
+  for (let i = 0; i < frames; i++) out.set(SILENT_FRAME_MONO_128_44100, i * SILENT_FRAME_MONO_128_44100.length);
+  out.set(audio, frames * SILENT_FRAME_MONO_128_44100.length);
+  return out;
+}

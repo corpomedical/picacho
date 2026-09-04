@@ -101,6 +101,11 @@ export function issueMessage(
     // trims, so nothing is lost. It is a warning that the clip will not be
     // the length that was chosen: output is max(video, audio), verified
     // against the real endpoint on 2026-09-04.
+    case "DIALOGUE_CUE_PAST_CLIP":
+      return formatMsg(g.issueDialogueCuePastClip, {
+        start: issue.params?.start ?? "?",
+        clip: issue.params?.clip ?? "?",
+      });
     case "DIALOGUE_LONGER_THAN_CLIP":
       return formatMsg(g.issueDialogueTooLong, {
         spoken: issue.params?.spoken ?? "?",
