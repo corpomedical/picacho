@@ -1,9 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
+import { formatMsg } from "@/lib/i18n/format";
+import { Pager } from "@/components/pager";
+import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
 
-export default async function ImagesPage() {
+export default async function ImagesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const raw = await searchParams;
+  const page = parsePage(raw.page);
+  const size = PAGE_SIZES.images;
+  const { from, to } = pageRange(page, size);
   const { t } = await getServerMessages();
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -22,14 +33,18 @@ export default async function ImagesPage() {
     // placeholder tile is how a just-fired render shows up at all.
     .neq("status", "failed")
     .order("created_at", { ascending: false })
-    .limit(60);
+    .range(from, to);
 
   if (error) console.error("Failed to load images:", error);
 
   // Same rule at the row level: a "succeeded" row with nothing the browser
   // can render (old mock runs stored result_url "mock://…") has no image to
   // hang a tile on — History keeps it, the gallery skips it.
-  const rows = (generations ?? []).filter(
+  // The probe row the range asked for comes off BEFORE the renderable
+  // filter, so "is there a next page" answers about rows the query returned,
+  // not about how many of them happened to have a picture.
+  const { rows: pageRows, hasNext } = takePage(generations ?? [], size);
+  const rows = pageRows.filter(
     (g) => g.status !== "succeeded" || isRenderableUrl(toMediaUrl(g.result_url)),
   );
 
@@ -72,6 +87,16 @@ export default async function ImagesPage() {
           angleCountOther: t.history.angleCountOther,
         }}
       />
+
+      {items.length > 0 && (
+        <Pager
+          prevHref={page > 1 ? pageHref("/app/images", raw, page - 1) : null}
+          nextHref={hasNext ? pageHref("/app/images", raw, page + 1) : null}
+          label={formatMsg(t.history.pageRange, pageBounds(page, size, items.length))}
+          prevLabel={t.common.prev}
+          nextLabel={t.common.next}
+        />
+      )}
     </div>
   );
 }

@@ -1,9 +1,20 @@
 import { createClient } from "@/lib/supabase/server";
+import { formatMsg } from "@/lib/i18n/format";
+import { Pager } from "@/components/pager";
+import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
 import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
 
-export default async function VideosPage() {
+export default async function VideosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
+  const raw = await searchParams;
+  const page = parsePage(raw.page);
+  const size = PAGE_SIZES.videos;
+  const { from, to } = pageRange(page, size);
   const { t } = await getServerMessages();
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -26,14 +37,18 @@ export default async function VideosPage() {
     // fetched, so the surviving angle becomes the tile's representative.
     .neq("status", "failed")
     .order("created_at", { ascending: false })
-    .limit(60);
+    .range(from, to);
 
   if (error) console.error("Failed to load videos:", error);
 
   // Same rule at the row level: a "succeeded" row with nothing the browser
   // can render (old mock runs stored result_url "mock://…") has no video to
   // hang a tile on — History keeps it, the gallery skips it.
-  const visibleRows = (generations ?? []).filter(
+  // The probe row comes off BEFORE the renderable filter, so "is there a
+  // next page" answers about rows the query returned, not about how many of
+  // them happened to have a video.
+  const { rows: pageRows, hasNext } = takePage(generations ?? [], size);
+  const visibleRows = pageRows.filter(
     (g) => g.status !== "succeeded" || isRenderableUrl(toMediaUrl(g.result_url)),
   );
 
@@ -92,6 +107,16 @@ export default async function VideosPage() {
           angleCountOther: t.history.angleCountOther,
         }}
       />
+
+      {items.length > 0 && (
+        <Pager
+          prevHref={page > 1 ? pageHref("/app/videos", raw, page - 1) : null}
+          nextHref={hasNext ? pageHref("/app/videos", raw, page + 1) : null}
+          label={formatMsg(t.history.pageRange, pageBounds(page, size, items.length))}
+          prevLabel={t.common.prev}
+          nextLabel={t.common.next}
+        />
+      )}
     </div>
   );
 }

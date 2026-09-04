@@ -2,6 +2,8 @@ import type { Messages } from "./en";
 
 const it = {
   common: {
+    prev: "Precedente",
+    next: "Successivo",
     toggleOn: "ON",
     toggleOff: "OFF",
     webPurchaseCta: "Piani e crediti sul nostro sito",
@@ -913,6 +915,7 @@ const it = {
     viewInHistory: "Vedi nella Cronologia",
   },
   history: {
+    pageRange: "{first}–{last} mostrati",
     eyebrow: "Libreria",
     upscaleCta: "Migliora",
     upscaleReceipt: "Ricevuta di upscale",

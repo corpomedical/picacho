@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { Card } from "@/components/ui/card";
 import { useRouter } from "next/navigation";
 import { editLayer } from "@/lib/generations/actions";
 import { thumbUrl } from "@/lib/media/url";
@@ -59,7 +60,7 @@ export function LayerStack({ layers, tierLabel, generationId }: {
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {/* Composite */}
-      <div className="rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+      <Card pad="sm">
         <div className="flex items-baseline justify-between px-1">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted">{L.composite}</p>
           <p className="font-numeral text-[11px] tabular-nums text-atelier-muted">
@@ -93,10 +94,10 @@ export function LayerStack({ layers, tierLabel, generationId }: {
             );
           })}
         </div>
-      </div>
+      </Card>
 
       {/* Stack — top layer first, the way every editor lists them. */}
-      <div className="rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+      <Card pad="sm">
         <div className="flex items-baseline justify-between px-1">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted">{L.stackTitle}</p>
           <a
@@ -182,7 +183,7 @@ export function LayerStack({ layers, tierLabel, generationId }: {
             onDone={() => setEditing(null)}
           />
         )}
-      </div>
+      </Card>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { ProjectRow } from "@/components/project-row";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -53,15 +54,15 @@ export default async function ProjectsPage({
       </div>
 
       {error ? (
-        <div className="mt-6 rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center">
+        <Card className="mt-6 text-center">
           <p className="text-sm text-red-600 dark:text-red-400">{p.couldntLoad}</p>
-        </div>
+        </Card>
       ) : !projects || projects.length === 0 ? (
-        <div className="mt-6 rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center">
+        <Card className="mt-6 text-center">
           <p className="text-sm text-atelier-muted">
             {showArchived ? p.noArchivedProjects : p.noProjectsYet}
           </p>
-        </div>
+        </Card>
       ) : (
         <div className="mt-6 space-y-3">
           {projects.map((project) => (

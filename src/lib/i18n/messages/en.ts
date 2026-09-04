@@ -10,6 +10,8 @@
 
 const en = {
   common: {
+    prev: "Previous",
+    next: "Next",
     toggleOn: "ON",
     toggleOff: "OFF",
     // US-only native handoff to website checkout (lib/native/external-purchase).
@@ -981,6 +983,7 @@ const en = {
     viewInHistory: "View in History",
   },
   history: {
+    pageRange: "{first}–{last} shown",
     eyebrow: "Library",
     upscaleCta: "Upscale",
     upscaleReceipt: "Upscale receipt",

@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { Card } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import {
@@ -78,10 +79,7 @@ export default async function UpscalePage() {
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {takes.map((take) => (
-              <div
-                key={take.id}
-                className="flex flex-col rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)]"
-              >
+              <Card key={take.id} pad="sm" className="flex flex-col">
                 <div className="relative aspect-video overflow-hidden rounded-[10px] bg-atelier-stage">
                   <QuietVideo
                     pending="spinner"
@@ -109,7 +107,7 @@ export default async function UpscalePage() {
                 <div className="mt-2.5">
                   <UpscaleButton generationId={take.id} seconds={take.seconds} tiers={take.tiers} />
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         </>

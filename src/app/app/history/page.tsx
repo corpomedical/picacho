@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Card } from "@/components/ui/card";
 import type { ReactNode, SVGProps } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
@@ -297,11 +298,11 @@ export default async function HistoryPage({
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         {error ? (
-          <div className="col-span-full rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+          <Card className="col-span-full text-center">
             <p className="text-sm text-red-600 dark:text-red-400">{h.couldntLoad}</p>
-          </div>
+          </Card>
         ) : cards.length === 0 ? (
-          <div className="col-span-full rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+          <Card className="col-span-full text-center">
             {filtered ? (
               // Empty because of the active filters, not an empty account —
               // say so, and hand back the unfiltered view in one click.
@@ -326,7 +327,7 @@ export default async function HistoryPage({
                 .
               </p>
             )}
-          </div>
+          </Card>
         ) : (
           cards.map((g) => (
             <Link key={g.id} href={`/app/history/${g.id}`} className="group block">

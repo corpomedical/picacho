@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Card } from "@/components/ui/card";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
@@ -96,7 +97,7 @@ export default async function LayersPage() {
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {sources.map((src) => (
-              <div key={src.id} className="flex flex-col rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
+              <Card key={src.id} pad="sm" className="flex flex-col">
                 <div className="relative aspect-square overflow-hidden rounded-[10px] bg-atelier-stage">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={thumbUrl(src.url, 640) ?? src.url!} alt={src.prompt} className="h-full w-full object-cover" loading="lazy" />
@@ -115,7 +116,7 @@ export default async function LayersPage() {
                 <div className="mt-2.5">
                   <LayersButton generationId={src.id} />
                 </div>
-              </div>
+              </Card>
             ))}
           </div>
         </>

@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { Pager } from "@/components/pager";
+import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
+import { formatMsg } from "@/lib/i18n/format";
 import type { ReactNode } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
@@ -31,10 +34,13 @@ function FilterPill({ href, active, children }: { href: string; active: boolean;
 export default async function MediaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string }>;
+  searchParams: Promise<{ type?: string; page?: string }>;
 }) {
   const raw = await searchParams;
   const type = raw.type === "video" || raw.type === "image" ? raw.type : undefined;
+  const page = parsePage(raw.page);
+  const size = PAGE_SIZES.media;
+  const { from, to } = pageRange(page, size);
 
   const { t } = await getServerMessages();
   const supabase = await createClient();
@@ -52,13 +58,17 @@ export default async function MediaPage({
     // 2026-08-20); in-flight rows keep their placeholder tile.
     .neq("status", "failed")
     .order("created_at", { ascending: false })
-    .limit(90);
+    .range(from, to);
   if (type) query = query.eq("content_type", type);
 
   const { data: generations, error } = await query;
   if (error) console.error("Failed to load media:", error);
 
-  const visibleRows = (generations ?? []).filter(
+  // The probe row comes off BEFORE the renderable filter, so "is there a
+  // next page" answers about rows the query returned, not about how many of
+  // them happened to have a picture.
+  const { rows: pageRows, hasNext } = takePage(generations ?? [], size);
+  const visibleRows = pageRows.filter(
     (g) => g.status !== "succeeded" || isRenderableUrl(toMediaUrl(g.result_url)),
   );
 
@@ -136,6 +146,16 @@ export default async function MediaPage({
           angleCountOther: t.history.angleCountOther,
         }}
       />
+
+      {items.length > 0 && (
+        <Pager
+          prevHref={page > 1 ? pageHref("/app/media", raw, page - 1) : null}
+          nextHref={hasNext ? pageHref("/app/media", raw, page + 1) : null}
+          label={formatMsg(t.history.pageRange, pageBounds(page, size, items.length))}
+          prevLabel={t.common.prev}
+          nextLabel={t.common.next}
+        />
+      )}
     </div>
   );
 }
