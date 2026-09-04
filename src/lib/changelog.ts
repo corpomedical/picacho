@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.17.0",
+    build: 30,
+    date: "2026-09-04",
+    title: "Projects show who is in them and whether they are alive",
+    items: [
+      "A project used to be a folder icon, a name and \"3 characters\" — a database row wearing an icon. Now each one leads with the faces of the characters actually in it, and answers the only question a list of projects has to answer: how many renders, how well the identity is holding across them, and how long since anyone touched it. Picked from three directions on the design canvas.",
+      "Projects can be paged. It was the only library page with no limit at all — every project you have ever made, loaded at once — and now it pages twelve at a time with the same Previous and Next the rest of the library got, and the page number in the address bar.",
+      "Characters keeps its cast wall exactly as it was and gains the studio masthead the rest of the app now wears, five across instead of four. The wall was rebuilt in August and works; only its heading and width were out of step.",
+    ],
+  },
+  {
     version: "1.16.2",
     build: 29,
     date: "2026-09-04",

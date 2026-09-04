@@ -27,7 +27,15 @@ type ActionResult = { error: string | null };
 
 function FolderIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
     </svg>
   );
@@ -43,9 +51,20 @@ function MoreIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-function StarIcon({ filled, ...props }: SVGProps<SVGSVGElement> & { filled?: boolean }) {
+function StarIcon({
+  filled,
+  ...props
+}: SVGProps<SVGSVGElement> & { filled?: boolean }) {
   return (
-    <svg viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill={filled ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
       <path d="M12 2.5l2.9 6.3 6.9.7-5.2 4.7 1.5 6.8-6.1-3.6-6.1 3.6 1.5-6.8-5.2-4.7 6.9-.7z" />
     </svg>
   );
@@ -53,7 +72,15 @@ function StarIcon({ filled, ...props }: SVGProps<SVGSVGElement> & { filled?: boo
 
 function PinIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
       <path d="M12 17v5" />
       <path d="M8 3h8l-1 6 3 3v2H6v-2l3-3-1-6Z" />
     </svg>
@@ -62,7 +89,15 @@ function PinIcon(props: SVGProps<SVGSVGElement>) {
 
 function PencilIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
       <path d="M12 20h9" />
       <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
     </svg>
@@ -71,7 +106,15 @@ function PencilIcon(props: SVGProps<SVGSVGElement>) {
 
 function ArchiveIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
       <rect x="3" y="4" width="18" height="4" rx="1" />
       <path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8" />
       <path d="M10 12h4" />
@@ -81,7 +124,15 @@ function ArchiveIcon(props: SVGProps<SVGSVGElement>) {
 
 function TrashIcon(props: SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
       <path d="M4 7h16" />
       <path d="M9 7V4h6v3" />
       <path d="M6 7l1 13a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-13" />
@@ -123,7 +174,7 @@ export function ProjectRow({
   characterCount,
 }: {
   project: Project;
-  variant?: "sidebar" | "card";
+  variant?: "sidebar" | "card" | "menu";
   characterCount?: number;
 }) {
   const { t } = useLocale();
@@ -155,7 +206,10 @@ export function ProjectRow({
     if (renaming) inputRef.current?.focus();
   }, [renaming]);
 
-  async function runAction(action: (fd: FormData) => Promise<ActionResult>, extra: Record<string, string>) {
+  async function runAction(
+    action: (fd: FormData) => Promise<ActionResult>,
+    extra: Record<string, string>,
+  ) {
     setMenuOpen(false);
     setPending(true);
     const fd = new FormData();
@@ -184,7 +238,9 @@ export function ProjectRow({
 
   function handleRemove() {
     setMenuOpen(false);
-    const ok = window.confirm(formatMsg(p.removeConfirm, { name: project.name }));
+    const ok = window.confirm(
+      formatMsg(p.removeConfirm, { name: project.name }),
+    );
     if (!ok) return;
     runAction(removeProject, {});
   }
@@ -215,12 +271,18 @@ export function ProjectRow({
           <MenuAction
             icon={StarIcon}
             label={project.is_starred ? p.unstar : p.star}
-            onClick={() => runAction(toggleProjectStar, { starred: String(project.is_starred) })}
+            onClick={() =>
+              runAction(toggleProjectStar, {
+                starred: String(project.is_starred),
+              })
+            }
           />
           <MenuAction
             icon={PinIcon}
             label={project.is_pinned ? p.unpin : p.pin}
-            onClick={() => runAction(toggleProjectPin, { pinned: String(project.is_pinned) })}
+            onClick={() =>
+              runAction(toggleProjectPin, { pinned: String(project.is_pinned) })
+            }
           />
           <MenuAction
             icon={PencilIcon}
@@ -233,18 +295,65 @@ export function ProjectRow({
           <MenuAction
             icon={ArchiveIcon}
             label={project.is_archived ? p.unarchive : p.archive}
-            onClick={() => runAction(toggleProjectArchive, { archived: String(project.is_archived) })}
+            onClick={() =>
+              runAction(toggleProjectArchive, {
+                archived: String(project.is_archived),
+              })
+            }
           />
           <div className="my-1 h-px bg-atelier-rule/60" />
-          <MenuAction icon={TrashIcon} label={p.remove} destructive onClick={handleRemove} />
+          <MenuAction
+            icon={TrashIcon}
+            label={p.remove}
+            destructive
+            onClick={handleRemove}
+          />
         </div>
       )}
     </div>
   );
 
+  // "menu" is the options control ALONE — the Shelf card (direction A,
+  // 2026-09-04) draws its own body as a server component and needs only this
+  // part, which is where every project action lives. Sharing the control
+  // rather than re-wiring rename/star/pin/archive/delete beside it is the
+  // whole point: five actions implemented twice is five that can drift.
+  if (variant === "menu") {
+    return (
+      <div className={cn("group relative", pending && "opacity-60")}>
+        {renaming ? (
+          <input
+            ref={inputRef}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onBlur={submitRename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                submitRename();
+              }
+              if (e.key === "Escape") {
+                setName(project.name);
+                setRenaming(false);
+              }
+            }}
+            className="w-44 rounded-control border border-atelier-rule bg-atelier-paper px-2 py-1 text-sm text-atelier-ink outline-none transition-colors focus:border-atelier-accent"
+          />
+        ) : (
+          menu
+        )}
+      </div>
+    );
+  }
+
   if (compact) {
     return (
-      <div className={cn("group relative flex items-center gap-1", pending && "opacity-60")}>
+      <div
+        className={cn(
+          "group relative flex items-center gap-1",
+          pending && "opacity-60",
+        )}
+      >
         {renaming ? (
           <input
             ref={inputRef}
@@ -273,11 +382,16 @@ export function ProjectRow({
                 : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink",
             )}
           >
-            {project.is_pinned && <PinIcon className="h-3 w-3 flex-shrink-0 text-atelier-muted" />}
+            {project.is_pinned && (
+              <PinIcon className="h-3 w-3 flex-shrink-0 text-atelier-muted" />
+            )}
             <FolderIcon className="h-3.5 w-3.5 flex-shrink-0" />
             <span className="truncate">{project.name}</span>
             {project.is_starred && (
-              <StarIcon filled className="h-3 w-3 flex-shrink-0 text-atelier-accent" />
+              <StarIcon
+                filled
+                className="h-3 w-3 flex-shrink-0 text-atelier-accent"
+              />
             )}
           </Link>
         )}
@@ -314,10 +428,15 @@ export function ProjectRow({
       ) : (
         <Link href={`/app/projects/${project.id}`} className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 truncate text-sm font-medium text-atelier-ink">
-            {project.is_pinned && <PinIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-muted" />}
+            {project.is_pinned && (
+              <PinIcon className="h-3.5 w-3.5 flex-shrink-0 text-atelier-muted" />
+            )}
             <span className="truncate">{project.name}</span>
             {project.is_starred && (
-              <StarIcon filled className="h-3.5 w-3.5 flex-shrink-0 text-atelier-accent" />
+              <StarIcon
+                filled
+                className="h-3.5 w-3.5 flex-shrink-0 text-atelier-accent"
+              />
             )}
           </p>
           <p className="mt-0.5 truncate text-xs text-atelier-muted">
@@ -329,7 +448,9 @@ export function ProjectRow({
       <div className="flex flex-shrink-0 items-center gap-2">
         {characterCount !== undefined && (
           <span className="rounded-full border border-atelier-rule bg-atelier-paper px-2.5 py-1 text-xs font-medium text-atelier-muted">
-            {characterCount === 1 ? p.characterCountOne : formatMsg(p.characterCountOther, { n: characterCount })}
+            {characterCount === 1
+              ? p.characterCountOne
+              : formatMsg(p.characterCountOther, { n: characterCount })}
           </span>
         )}
         {menu}

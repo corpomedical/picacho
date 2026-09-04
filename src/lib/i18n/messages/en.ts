@@ -1105,6 +1105,7 @@ const en = {
     generateOne: "Generate one",
   },
   character: {
+    eyebrow: "Studio",
     identityPhoto: "Identity photo",
     // Reference-set coaching (competitive research 2026-08-21): a tighter
     // identity lock comes from photo VARIETY, not just count.
@@ -1181,6 +1182,18 @@ const en = {
     lightboxAlt: "Reference photo (full size)",
   },
   projects: {
+    eyebrow: "Studio",
+    castCount: "characters",
+    noCast: "No characters yet",
+    statRenders: "Renders",
+    statIdentity: "Mean identity",
+    statLastWorked: "Last worked",
+    statNever: "—",
+    pinnedLabel: "Pinned",
+    agoMinutes: "{n}m",
+    agoHours: "{n}h",
+    agoDays: "{n}d",
+    agoWeeks: "{n}w",
     title: "Projects",
     archivedTitle: "Archived projects",
     newProject: "New project",

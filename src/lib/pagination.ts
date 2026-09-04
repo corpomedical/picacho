@@ -18,6 +18,7 @@
 
 /** Rows per page, per surface. Matches what each page used to cap at. */
 export const PAGE_SIZES = {
+  projects: 12,
   history: 48,
   media: 90,
   images: 60,
