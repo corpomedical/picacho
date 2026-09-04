@@ -131,3 +131,68 @@ ADDED, all from reviewer gaps
 20. A one-line confidentiality request on the endpoint list.
 
 CUT FOR TONE, per the recipient reviewer: "so an engineer can answer line by line rather than in prose" (instructing the reader on their job), "so this isn't a discovery call" (sales jargon plus a pre-emptive accusation), "the one that matters most operationally" (verbal tic contradicting the new ordering). I also thinned the negation-then-correction construction the draft leaned on five times, keeping it only where the contrast is load-bearing.
+
+---
+
+## Cut to ticket size, 2026-09-04 — and sharpened by a measurement
+
+The long draft above is ~5,000 characters and was written before we had the
+one piece of evidence that makes this email answerable. On 2026-09-04 we
+probed one delivered video from every endpoint on the account and found that
+**bytedance/seedance-2.0/reference-to-video arrives with no C2PA manifest,
+while ByteDance state in writing that the model embeds one.** That turns a
+general question about policy into a specific question about fal's delivery
+path, which is the kind an engineer can answer in one line.
+
+So it splits like the BytePlus pair: the answerable question alone and first,
+the per-endpoint audit second. Send from hello@picacho.ai.
+
+Two things deliberately NOT in either: any claim about fal's own legal
+obligations, and any statement of our compliance status. Both were cut from
+the long draft for the reasons recorded in its rationale, and neither has
+become safer to say since.
+
+**Ticket 1 — the re-encode question (1002 chars)**
+
+```
+We are a fal customer (Picacho, an AI character-video product). A factual question about delivery, with our measurement first.
+
+We probed one delivered video from every endpoint we use, reading the first 1 MiB at its result URL for a C2PA manifest. Two of nine carry one:
+
+  minimax/h3/reference-to-video ............ present
+  google/gemini-omni-flash/v1.1 ref-to-vid . present
+  bytedance/seedance-2.0/reference-to-video  NONE
+  the six kling / veo / wan / flux lanes ... none
+
+The Seedance line is why we are writing. ByteDance state in writing that video from that model carries embedded C2PA provenance. The file we receive through fal does not: top-level boxes ftyp/moov/free/mdat, no uuid box, where both marked files have one.
+
+Do you re-encode, transcode, re-containerise or rewrite metadata anywhere between a model's output and the file on our download URL — on that endpoint, or on the queue and CDN path generally?
+
+If the bytes pass through untouched, say so and we will take it upstream.
+```
+
+**Ticket 2 — the per-endpoint audit (941 chars)**
+
+```
+Following our re-encoding question, the same topic from the other side.
+
+1. Which of these embed a C2PA manifest today? Yes or no per line is all we need.
+
+  kling-video/o3/pro/reference-to-video
+  kling-video/o3/standard/image-to-video
+  kling-video/v2.5-turbo/pro/image-to-video
+  kling-video/v1.6/standard/text-to-video
+  bytedance/seedance-2.0 and 2.5 /reference-to-video
+  veo3.1 and veo3.1/image-to-video
+  wan/v2.2-a14b/text-to-video/turbo
+  blackforestlabs/flux-video-upscale
+  sync-lipsync/v2/pro
+  elevenlabs/tts/eleven-v3
+  flux-2-pro and flux-2-pro/edit
+
+2. Where one is absent, is there a request-side flag to turn it on? We mean a machine-readable manifest, not a visible overlay.
+
+3. When the model behind an endpoint changes version, is that announced anywhere we can subscribe to — a changelog, a version field on the response, or a dated alias we can pin?
+
+Happy to share our measurements across the list once we have them.
+```
