@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { USER_STORAGE_BUCKETS } from "@/lib/profile/actions";
+import { USER_STORAGE_BUCKETS } from "@/lib/profile/storage-buckets";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";

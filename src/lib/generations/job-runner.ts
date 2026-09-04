@@ -24,6 +24,7 @@ import {
   providerFromPayload,
   type QueuedVideoJob,
 } from "@/lib/generations/providers/video-queue";
+import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
@@ -606,6 +607,14 @@ function jobHandle(row: JobRow): QueuedVideoJob {
     // fallback covers rows saved before 2026-08-19 — it misattributed a
     // Seedance 422 during that render's post-mortem, which is why the real
     // label is stored now.
+    //
+    // The dialogue stages overwrite payload.label as they transition, so a
+    // Sync Labs or ElevenLabs failure names ElevenLabs/Sync Labs rather than
+    // the video model. Until 2026-09-04 they did not, and payload.label was
+    // therefore ALWAYS set to the video model — making the stage-based
+    // defaults below dead code on every real row and reporting a lip-sync
+    // 422 as a MiniMax fault. They now only cover rows in flight across that
+    // deploy and rows older than 2026-08-19.
     label:
       row.payload?.label ??
       (row.stage === "video"
@@ -991,7 +1000,11 @@ async function finish(
       if (identityPath) {
         const [{ data: signedIdentity }, frameUrl] = await Promise.all([
           admin.storage.from("character-references").createSignedUrl(identityPath, 600),
-          extractVideoFrame(outcome.resultUrl),
+          // Absolute, because fal downloads it from its own network — the
+          // stored form is a relative /api/media path and canExtractFrameFrom
+          // rejects it, which is how scoring silently no-op'd from 2026-09-04.
+          // Only the wire value changes; result_url above stays relative.
+          extractVideoFrame(providerDownloadUrl(outcome.resultUrl)),
         ]);
         if (signedIdentity?.signedUrl && frameUrl) {
           const traitSummary = [
@@ -1401,7 +1414,14 @@ export async function advanceGeneration(
             status_url: speech.statusUrl,
             response_url: speech.responseUrl,
             cancel_url: speech.cancelUrl,
-            payload: { ...row.payload, videoUrl },
+            // label follows the stage, not the row's history. Spreading
+            // ...row.payload alone kept the VIDEO model's name for the rest of
+            // the run, so jobHandle() reported an ElevenLabs/Sync Labs failure
+            // under "MiniMax" or "Gemini" — which is precisely why the silent-
+            // dialogue evidence read as a video-model fault for a whole day.
+            // (It also made the stage-based defaults at jobHandle unreachable:
+            // payload.label was always set.) videoUrl stays RELATIVE here.
+            payload: { ...row.payload, videoUrl, label: "ElevenLabs TTS" },
             // The billed moment: fal has delivered the video and the run
             // continues into dialogue. This exact wording is what
             // refund-rules' VIDEO_RENDERED matches — a later failure in the
@@ -1436,7 +1456,12 @@ export async function advanceGeneration(
     if (row.stage === "dialogue_tts") {
       const audioUrl = await fetchQueuedAudioUrl(jobHandle(row));
       phase = "submit";
-      const lipsync = await submitLipSyncJob(row.payload.videoUrl!, audioUrl);
+      // Absolute, for the same reason: fal fetches this video_url server-side.
+      // Handing it the relative /api/media path gets the submit ACCEPTED and
+      // then fails the download, so the run ends on the salvage branch and
+      // every spoken line shipped silent. payload.videoUrl itself stays
+      // relative — it is also what the salvage branch delivers to the user.
+      const lipsync = await submitLipSyncJob(providerDownloadUrl(row.payload.videoUrl!), audioUrl);
       // Recorded into resume BEFORE the transition write so the persisted
       // pipeline_log ends up complete — this used to be appended to the
       // in-memory copy only, after the UPDATE, so the "Generated dialogue
@@ -1457,7 +1482,7 @@ export async function advanceGeneration(
             status_url: lipsync.statusUrl,
             response_url: lipsync.responseUrl,
             cancel_url: lipsync.cancelUrl,
-            payload: { ...row.payload, audioUrl },
+            payload: { ...row.payload, audioUrl, label: "Sync Lipsync" },
             resume: { ...row.resume, attempts: attemptsWithSpeech } satisfies ResumeState,
             updated_at: new Date().toISOString(),
             // Release the claim for the final stage's own advance.

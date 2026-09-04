@@ -8,28 +8,10 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
 import { getOrigin } from "@/lib/origin";
 import { rateLimited } from "@/lib/rate-limit";
+// Moved out of this file 2026-09-04: a "use server" module may export only
+// async functions, and exporting this array broke `next build`.
+import { USER_STORAGE_BUCKETS } from "@/lib/profile/storage-buckets";
 
-// Every file a user ever uploaded or generated lives under a `${userId}/...`
-// path in each of these buckets. Deleting the account previously only
-// removed the database rows (which cascade automatically) — the actual files
-// were never touched, so they sat in Storage, permanently orphaned and
-// permanently billed, with no record left anywhere to ever find them again.
-// EXPORTED so the admin's delete-a-user path can import it rather than keep
-// its own copy. It kept one, and that is exactly how "generated-videos" came
-// to be missing from one list and not the other for a day — a duplicated
-// literal is a list that only gets half-updated.
-export const USER_STORAGE_BUCKETS = [
-  "character-references",
-  "generated-images",
-  // Added 2026-09-04, the day finished videos started being copied into our
-  // own storage (persistGeneratedVideo). Without it, deleting an account
-  // cascaded the rows away and left every rendered video sitting under the
-  // deleted user's id — video of a real person's face surviving an erasure
-  // request, with no row left to find it by. schema.sql already claimed this
-  // bucket was covered here; now it is.
-  "generated-videos",
-  "chat-attachments",
-];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function removeAllUserFiles(admin: any, userId: string) {
