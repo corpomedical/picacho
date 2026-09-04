@@ -21,39 +21,76 @@ earlier drafts here wrote "Jeartecnica".)
 
 ---
 
-## What our output actually carries (measured 2026-09-03)
+## What our output actually carries
 
-Not assumed — fetched and inspected byte by byte.
+### The full video roster, measured 2026-09-04
 
-| Surface | C2PA manifest | Evidence |
-|---|---|---|
-| Images (all engines) | **YES** | Stored PNG from `generated-images` carries `c2pa`, `jumd`, `trainedAlgorithmicMedia` |
-| Video — minimax-h3 | **YES** | `ftyp uuid moov free mdat`; manifest names `fal-ai/minimax_h3`, `digitalSourceType: trainedAlgorithmicMedia` |
-| Video — gemini-omni | **NO** | no `uuid` box, no markers |
-| Video — flux upscale | **NO** | `ftyp moov free mdat` — no `uuid` box at all |
-| Marketing copies in `public/` | **NO** | re-encoded to x264; the manifest was stripped |
+Every engine that has ever produced a finished video on this account, one
+render each, fetched from the delivered URL and probed for the JUMBF label —
+the same scan `hasC2paManifest` runs, plus the top-level MP4 box order as
+structural corroboration.
+
+| Engine | C2PA | Top-level boxes | Renders on this account |
+|---|---|---|---|
+| gemini-omni | **YES** | `ftyp uuid moov free mdat` | 1 |
+| minimax-h3 | **YES** | `ftyp uuid moov free mdat` | 1 |
+| kling-o3-pro | no | `ftyp moov free mdat` | 15 |
+| kling | no | `ftyp free mdat` | 12 |
+| **seedance-2** | **no** | `ftyp moov free mdat` | 11 |
+| kling-o3 | no | `ftyp moov free mdat` | 11 |
+| flux-upscale | no | `ftyp moov free mdat` | 2 |
+| (older rows, no model recorded) | no | `ftyp free mdat` | 5 |
+
+**56 of 58 finished videos — 97% — carry no manifest at all.** The earlier
+sample of three made this look engine-dependent and roughly balanced. Across
+the whole roster it is not balanced: marking is the exception, and the two
+engines that have it account for two renders.
+
+### Two corrections to the 2026-09-03 table
+
+**gemini-omni was recorded as unmarked, and it is marked.** There is exactly
+one gemini-omni render on the account, so both measurements are of the same
+file: the earlier one was simply wrong. Today's reads a `uuid` box sitting
+between `ftyp` and `moov`, which is where a C2PA manifest store lives — that
+is structure, not a substring coincidence. The row is corrected above and the
+lesson is recorded rather than quietly fixed: a probe that reads a prefix can
+report absence for a reason that has nothing to do with the file.
+
+**Seedance was never measured, and it is the interesting one.** BytePlus
+Technical Support state, in writing on 2026-09-04, that "the generated video
+includes embedded C2PA provenance metadata". The same ByteDance model
+delivered through fal has **no manifest**. Both can be true, and the
+difference is the delivery path: either fal re-encodes or re-containerises on
+the way to us, or ByteDance embeds only on its own platform.
+
+That has two consequences. It is direct evidence for the first question in
+`FAL_C2PA_ENQUIRY.md` — do they re-encode between the model's output and our
+download URL — and it is now the strongest non-price argument for going to
+ModelArk direct: it would **add** marking to eleven renders' worth of lane
+that currently ships bare, at a moment when the price advantage that
+justified the migration has itself come into doubt.
+
+### Images
+
+Images (all engines) carry a manifest: a stored PNG from `generated-images`
+contains `c2pa`, `jumd` and `trainedAlgorithmicMedia`. That is load-bearing
+and accidental — `persistGeneratedImage` (core.ts) stores provider bytes
+verbatim, so any future thumbnailing, compression or format conversion in
+that path silently destroys compliance.
 
 ### What that means
 
-**Images are already compliant, by accident rather than design.** The provider
-embeds the manifest and `persistGeneratedImage` (core.ts:379) stores the bytes
-verbatim — no re-encode — so it survives into our own bucket. Worth knowing
-that this is load-bearing: any future thumbnailing, compression or format
-conversion in that path silently destroys compliance.
+**Video is not "a coin flip". It is unmarked, with two exceptions.** Whether a
+customer's render carries provenance depends on an engine choice we neither
+surface nor control, and for 97% of them the answer is no.
 
-**Video is a coin flip.** Some fal endpoints embed a manifest and others do
-not. Whether a given customer's render is marked depends on which engine they
-happened to pick, which we neither surface nor control. "It depends on the
-model" is not a compliance position.
+**We store no video at all.** `result_url` points at fal's CDN, so the file a
+customer downloads is the provider's, served by the provider — which is why
+these probes fetch from `v3b.fal.media` rather than our own bucket. Marking on
+delivery would therefore mean storing video for the first time.
 
-**Our own upscale lane produces unmarked output**, and that is the worst of
-the three, because it is a Picacho feature rather than a provider default. A
-customer takes a marked or unmarked clip, upscales it, and receives something
-carrying no provenance at all.
-
-**Re-encoding destroys manifests.** Proven by our own marketing files, which
-went through x264 and came out clean. Any pipeline step that touches video
-bytes has to be assumed to strip provenance unless it is written not to.
+**Re-encoding destroys manifests**, proven by our own marketing files, which
+went through x264 and came out clean.
 
 ---
 
