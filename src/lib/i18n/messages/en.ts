@@ -981,6 +981,7 @@ const en = {
     viewInHistory: "View in History",
   },
   history: {
+    eyebrow: "Library",
     upscaleCta: "Upscale",
     upscaleReceipt: "Upscale receipt",
     upscaleSource: "Source",

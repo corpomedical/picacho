@@ -199,7 +199,10 @@ export function ProjectRow({
         onClick={() => setMenuOpen((v) => !v)}
         aria-label={p.projectOptions}
         className={cn(
-          "flex items-center justify-center rounded-control text-atelier-muted opacity-0 transition-opacity hover:bg-atelier-ink/5 hover:text-atelier-ink group-hover:opacity-100 focus:opacity-100",
+          // Visible on a coarse pointer: this is the ONLY way to rename,
+          // star, pin, archive or delete a project, so hiding it behind
+          // group-hover made all five impossible on a phone (2026-09-04).
+          "flex items-center justify-center rounded-control text-atelier-muted opacity-100 transition-opacity hover:bg-atelier-ink/5 hover:text-atelier-ink focus:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100",
           compact ? "h-6 w-6" : "h-7 w-7",
           menuOpen && "bg-atelier-ink/10 opacity-100",
         )}

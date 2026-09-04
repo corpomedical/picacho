@@ -178,12 +178,30 @@ export default async function HistoryDetailPage({
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="flex items-center justify-between gap-4">
-        <Link href="/app/history" className="text-sm text-atelier-muted hover:text-atelier-ink">
-          ← {h.backToHistory}
-        </Link>
+      {/* This page had NO h1 and nothing larger than text-sm on it — the page
+          for a render someone spent credits to make had no title at all
+          (found in the 2026-09-04 design review). The eyebrow + serif title
+          is the Ledger's masthead, the same one History's grid now wears.
+          The prompt itself is the title: it is what the render IS. */}
+      <Link
+        href="/app/history"
+        className="text-sm text-atelier-muted transition-colors hover:text-atelier-ink"
+      >
+        ← {h.backToHistory}
+      </Link>
+      <p className="mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+        {typeLabel}
+      </p>
+      <h1 className="mt-1 font-numeral text-2xl font-semibold leading-tight tracking-tight text-atelier-ink [text-wrap:pretty]">
+        {generation.prompt_input}
+      </h1>
+      {/* flex-wrap, and min-w-0 on the row: five controls in a nowrap flex
+          overflowed a 328px phone column and pushed the app's one scroller
+          sideways, so Upscale, Share and Delete sat off-screen with nothing
+          saying so. */}
+      <div className="mt-4 flex items-center justify-between gap-4">
         {isOwner && (
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             {generation.character_profile_id && (
               <Link
                 href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}

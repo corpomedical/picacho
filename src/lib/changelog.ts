@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.15.0",
+    build: 26,
+    date: "2026-09-04",
+    title: "History becomes a contact sheet, and the phone stops hiding things",
+    items: [
+      "History is a grid of the actual renders instead of a list of 64-pixel stamps. The old page was a 672-pixel column: on a laptop that left more than half the screen empty and showed every render too small to judge, which is the one job a library has. Now it is four across on a desktop and two on a phone, each on its dark stage with the identity score sitting on the image itself, the length bottom-right, and the prompt in two readable lines underneath. Picked from three directions on the design canvas.",
+      "On a phone the old row was worse than small: the score, the status chip and two buttons took most of a 328-pixel row, leaving the prompt — the only thing that says which render this is — about five pixels. All three lines of text truncated to nothing together. The grid reflows instead of crushing, so the same layout fixes both screens.",
+      "Things you could not reach on a phone, you can now. Delete and Continue-in-chat on a History card, the caption on every tile in Media, Images and Videos, and rename, star, pin, archive and delete on a project were all hidden behind mouse-hover — which a phone does not have. Worse, they were invisible but still tappable, so a stray thumb at the edge of a row could open something. They are visible on touch now and still fade in on a mouse.",
+      "The page for a single render finally has a title. It had no heading at all and nothing on it larger than body text; it now opens with its own prompt set in the studio's serif, and its row of buttons wraps instead of running off the side of a phone.",
+    ],
+  },
+  {
     version: "1.14.0",
     build: 25,
     date: "2026-09-04",

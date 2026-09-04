@@ -157,10 +157,16 @@ export function MediaGallery({
               </span>
             )}
 
-            {/* group-focus-visible alongside hover: hover doesn't exist on
-                touch or for keyboard users — tabbing to a tile reveals the
-                same overlay a mouse hover does. */}
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17150f]/85 to-transparent p-2.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+            {/* ALWAYS visible on a coarse pointer, revealed on hover where
+                there is one. The previous version hid this behind
+                group-hover with group-focus-visible "covering touch" — it
+                does not: focus-visible fires for keyboard focus, not for a
+                tap. So on every phone, and in the Android shell, this grid
+                was a wall of unlabelled black squares with no prompt, no
+                character and no date, ever (found 2026-09-04). The bracket
+                variant is the pattern app-sidebar.tsx and character-form.tsx
+                already use. */}
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17150f]/85 to-transparent p-2.5 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-visible:opacity-100">
               <p className="truncate text-[11px] font-medium text-[#f5f1e9]">{item.prompt_input}</p>
               {/* Caps-label voice for on-media metadata (uppercase is a CSS
                   transform — the rendered string bytes are untouched). */}

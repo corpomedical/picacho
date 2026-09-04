@@ -188,7 +188,8 @@ export function ResultActions({
   return (
     <div
       className={cn(
-        "relative mt-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 focus-within:opacity-100",
+        // Same rule as the rest of the app: no hover, no hiding.
+        "relative mt-2 flex items-center gap-1 opacity-100 transition-opacity focus-within:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100",
         reportOpen && "!opacity-100",
         className,
       )}

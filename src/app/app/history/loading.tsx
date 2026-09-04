@@ -1,30 +1,33 @@
 // Inline rather than ui/SkeletonPage: History's cards are Atelier sheets
 // (warm surface + hairline rule), so the skeleton shows the same sheets in
-// the same places — title, the usage card, the filter-chip row, then the
-// thumbnail-led rows — instead of gray slabs that repaint on arrival. Each
-// row ghost carries its charcoal stage square so the contact-sheet rhythm
-// is already there before the data lands.
+// the same places. Updated with the contact-sheet redesign (2026-09-04) —
+// a skeleton that mirrors the OLD row geometry would flash a list and then
+// repaint as a grid, which reads as a bug even though nothing failed.
 export default function Loading() {
   return (
-    <div className="mx-auto max-w-2xl">
-      <div className="h-6 w-40 skeleton-shimmer rounded-control bg-atelier-ink/10" />
-      <div className="mt-6 h-28 skeleton-shimmer rounded-control border border-atelier-rule bg-atelier-surface" />
-      <div className="mt-6 flex gap-2">
+    <div>
+      <div className="flex items-end justify-between gap-6">
+        <div>
+          <div className="h-3 w-20 skeleton-shimmer rounded-control bg-atelier-ink/10" />
+          <div className="mt-2 h-8 w-40 skeleton-shimmer rounded-control bg-atelier-ink/10" />
+        </div>
+        <div className="h-12 w-24 skeleton-shimmer rounded-control bg-atelier-ink/10" />
+      </div>
+      <div className="mt-5 h-px bg-atelier-rule" />
+      <div className="mt-5 flex gap-2">
         <div className="h-8 w-44 skeleton-shimmer rounded-full border border-atelier-rule bg-atelier-surface" />
         <div className="h-8 w-44 skeleton-shimmer rounded-full border border-atelier-rule bg-atelier-surface" />
       </div>
-      <div className="mt-4 space-y-3">
-        {Array.from({ length: 5 }).map((_, i) => (
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        {Array.from({ length: 8 }).map((_, i) => (
           <div
             key={i}
-            className="flex skeleton-shimmer items-center gap-4 rounded-control border border-atelier-rule bg-atelier-surface p-3"
+            className="skeleton-shimmer rounded-[18px] border border-atelier-rule bg-atelier-surface p-2.5"
           >
-            <div className="h-16 w-16 flex-shrink-0 rounded-media bg-atelier-stage" />
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="h-3.5 w-3/4 rounded-control bg-atelier-ink/10" />
-              <div className="h-2.5 w-1/2 rounded-control bg-atelier-ink/5" />
-              <div className="h-2.5 w-1/3 rounded-control bg-atelier-ink/5" />
-            </div>
+            <div className="aspect-[4/3] w-full rounded-media bg-atelier-stage" />
+            <div className="mt-2.5 h-3 w-11/12 rounded-control bg-atelier-ink/10" />
+            <div className="mt-1.5 h-2.5 w-2/3 rounded-control bg-atelier-ink/5" />
+            <div className="mt-1 h-2.5 w-1/2 rounded-control bg-atelier-ink/5" />
           </div>
         ))}
       </div>

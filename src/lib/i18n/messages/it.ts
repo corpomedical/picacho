@@ -913,6 +913,7 @@ const it = {
     viewInHistory: "Vedi nella Cronologia",
   },
   history: {
+    eyebrow: "Libreria",
     upscaleCta: "Migliora",
     upscaleReceipt: "Ricevuta di upscale",
     upscaleSource: "Origine",
