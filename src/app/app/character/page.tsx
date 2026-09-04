@@ -2,7 +2,7 @@ import Link from "next/link";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
-import { DeleteCharacterButton } from "@/components/delete-character-button";
+import { CastCard } from "@/components/cast-card";
 
 export default async function CharacterListPage() {
   const { t } = await getServerMessages();
@@ -97,74 +97,18 @@ export default async function CharacterListPage() {
               ? (projectNameById.get(profile.project_id) ?? null)
               : null;
             return (
-              /* The cast wall (2026-08-27 redesign, case 1): photo-first
-                 portrait cards — the page's first job is "these are your
-                 stars", not "here is a database row". The whole card opens
-                 the profile via a stretched link; Generate and Delete sit
-                 above it as siblings (never nested anchors). Tags/project
-                 render only when they exist — the old "No tags yet · No
-                 project" placeholder noise is gone. */
-              <div
+              <CastCard
                 key={profile.id}
-                className="group relative aspect-[3/4] overflow-hidden rounded-[16px] border border-atelier-rule bg-atelier-ink"
-              >
-                {profile.thumbnailUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={profile.thumbnailUrl}
-                    alt=""
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-atelier-ink to-[#3a3f4c] font-display text-5xl font-semibold text-atelier-paper/60">
-                    {profile.name?.[0]?.toUpperCase() ?? "?"}
-                  </div>
-                )}
-                <div
-                  aria-hidden
-                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-transparent"
-                />
-                <Link
-                  href={`/app/character/${profile.id}`}
-                  aria-label={profile.name}
-                  className="absolute inset-0 z-[1]"
-                />
-                <div className="pointer-events-none absolute inset-x-3 bottom-2.5 z-[2]">
-                  <p className="truncate text-sm font-semibold text-white">
-                    {profile.name}
-                  </p>
-                  <span aria-hidden className="mt-1.5 flex items-center gap-1">
-                    {[0, 1, 2, 3, 4].map((i) => (
-                      <span
-                        key={i}
-                        className={
-                          i < photoCount
-                            ? "h-1 w-4 rounded-full bg-atelier-accent"
-                            : "h-1 w-4 rounded-full bg-white/25"
-                        }
-                      />
-                    ))}
-                  </span>
-                  {(profile.voice_tone_tags?.length || projectName) && (
-                    <p className="mt-1 truncate text-[10.5px] text-white/70">
-                      {[profile.voice_tone_tags?.join(", "), projectName]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </p>
-                  )}
-                </div>
-                <Link
-                  href={`/app/generate?character=${encodeURIComponent(profile.id)}`}
-                  className="absolute right-2 top-2 z-[2] rounded-full bg-black/50 px-3 py-1.5 text-[11px] font-medium text-white backdrop-blur transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
-                >
-                  {t.nav.generate}
-                </Link>
-                <DeleteCharacterButton
-                  id={profile.id}
-                  name={profile.name}
-                  className="absolute left-2 top-2 z-[2] h-8 w-8 rounded-full bg-black/40 text-white backdrop-blur"
-                />
-              </div>
+                id={profile.id}
+                name={profile.name}
+                thumbnailUrl={profile.thumbnailUrl ?? null}
+                photoCount={photoCount}
+                subtitle={
+                  [profile.voice_tone_tags?.join(", "), projectName].filter(Boolean).join(" · ") ||
+                  null
+                }
+                generateLabel={t.nav.generate}
+              />
             );
           })}
           <Link

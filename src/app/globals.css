@@ -77,6 +77,20 @@
   /* Atelier radii: small on controls; larger radii are for media only. */
   --radius-control: 6px;
   --radius-media: 12px;
+
+  /* WHITE THAT STAYS WHITE.
+     --color-white is deliberately INVERTED under .dark below, so that every
+     bg-white card repaints for dark mode without a dark: variant. That trick
+     is right for surfaces and wrong for anything sitting on a PHOTOGRAPH: a
+     name over a portrait, a control floating on a video, the empty pips of a
+     meter. Those flipped to near-black in dark mode and disappeared — the
+     cast wall, reported 2026-09-04 with a screenshot ("on dark mode the text
+     is unreadable"), and before that the download button, which worked around
+     it locally with a hex constant.
+     This token is declared here and NEVER under .dark, so text-onmedia,
+     bg-onmedia/35 and ring-onmedia/20 mean the same thing in both themes.
+     Use it for anything painted over media; keep bg-white for surfaces. */
+  --color-onmedia: #ffffff;
 }
 
 /* Dark theme — re-declares the neutral scale (and white, used throughout as
@@ -97,6 +111,8 @@
   /* neutral-950 is intentionally left alone — a fixed near-black anchor for
      things that should always stay dark (e.g. video letterboxing). */
 
+  /* Inverted on purpose — see the note on --color-onmedia in @theme. If you
+     are painting over a photo or a video, this is NOT the colour you want. */
   --color-white: oklch(20.5% 0 none);
 
   --color-paper: oklch(14.5% 0 none);
