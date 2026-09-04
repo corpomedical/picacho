@@ -312,3 +312,98 @@ This is the difference between a feature our customers use directly and one that
 
 We will also need a DPA with SCCs, the region serving the library for an EU customer, and the retention period for any liveness image.
 ```
+
+---
+
+## READ THE DOCS FIRST — 2026-09-04, operator: "what if this information you are requesting is available on their website?"
+
+It was, and the ticket would have shown we had not looked. Recorded here so the
+next person does not repeat it. (The reason I missed it the first time is worth
+naming too: the earlier attempt used a plain HTTP fetch on a JavaScript-rendered
+docs site and got only the navigation chrome, which reads exactly like "the page
+does not say".)
+
+Source: **Add real-human assets to asset library**,
+https://docs.byteplus.com/en/docs/ModelArk/2315856 (last updated 2026-08-31).
+
+### The per-person question is ANSWERED, and the answer contradicts support
+
+> "To protect artist permissions and facilitate subsequent management of their
+> own portraits, **real-person verification currently requires logging in to a
+> BytePlus account.** A single BytePlus account supports creating multiple real
+> portraits or portraits of multiple people."
+
+BytePlus Technical Support told us on 2026-09-04: "Videos generated through the
+API do not require the end user to hold a BytePlus account." Both can be true
+and they answer different questions — GENERATING from an already-verified asset
+needs nothing from the end user, but ENROLLING that person does. Support
+answered the question we asked; the documentation answers the one we meant.
+
+### The actual enrolment flow, from the docs
+
+1. **We** generate an authorization QR code in the ModelArk Playground
+   (My assets > Real-human > Add real-human assets > Create an asset group;
+   the account must have completed real-human or enterprise authentication).
+   We set the authorization validity period and accept the Personal
+   Information Processing Rules.
+2. **The person** scans it, **logs in to their own personal BytePlus account**,
+   confirms the authorization subject and purpose, agrees to the facial
+   information processing rules, and completes real-person verification —
+   a liveness check that "may occasionally be affected by lighting, angles and
+   other factors, resulting in failure".
+3. They upload a full-body portrait-orientation image and a face close-up
+   (face about two-thirds of the frame), which pass a **face consistency
+   check** against the verification; anything that fails is not stored.
+4. **We** accept the asset in the console; status goes Active. Reject is
+   permanent for that asset.
+
+One authorization per person, not per shoot: "Human actors only need to
+authorize once; subsequent additions of makeup and styling do not require
+repeating the real-person verification process." One asset group = one person;
+mixing people in a group is unsupported.
+
+### So this is the agency shape, not the consumer shape
+
+A customer cannot be enrolled invisibly inside our onboarding. The minimum
+journey is: we generate a QR, they scan it on a phone, they sign in to or
+create a BytePlus account, they pass a face scan, we accept. That is a real
+hand-off to a third party mid-flow, and it decides the feature's audience —
+which is exactly what this question was for.
+
+It does not kill it. It means the honest framing is "verified likeness", a
+one-time setup a serious customer will do, rather than something that happens
+behind the scenes.
+
+### Two of the five technical questions are also answered
+
+**The create call with a verified asset** — question 5 of the pending
+Technical Support ticket:
+
+```json
+{ "type": "image_url",
+  "image_url": { "url": "asset://asset-20260222234430-mxpgh" },
+  "role": "reference_image" }
+```
+
+**Asset format limits**: images jpeg/png/webp/bmp/tiff/gif/heic, aspect ratio
+0.4–2.5, 300–6000 px per side, under 30 MB. Video mp4/mov, 2–30 s, 24–60 fps,
+up to 200 MB. Audio wav/mp3, 2–30 s, up to 15 MB.
+
+### And the tier table is more precise than we recorded
+
+| Tier | Price | Real-person via Console | via Assets API | Quota | QPM |
+|---|---|---|---|---|---|
+| Basic (free) | Free | ✅ console only | ❌ | 50 / 50 | 3 |
+| **Advanced (Entry)** | **Free** | ✅ | **✅** | 50 / 50 | 3 |
+| Advanced | $14,000/yr or $1,400/mo | ✅ | ✅ | 1M / 1M | 120 |
+| Premium | $42,000/yr or $4,200/mo | ✅ | ✅ | 5M / 5M | 300 |
+
+Entry is the tier that unlocks the Assets API, and it is free — the free
+**Basic** tier is console-only, which would not work for us. Prerequisites are
+enterprise verification plus Organization real-name authentication with a
+corporate registration certificate, and acceptance of four legal documents
+including the "BytePlus Real Person Verification H5/API - Usage Rules".
+
+Expiry has teeth worth knowing before anyone subscribes above Entry: 15 days
+after a paid package lapses, assets created **during** that paid period are
+deleted permanently. Assets created before it, or in the 15-day grace, survive.
