@@ -157,3 +157,118 @@ Building a client for POST /contents/generations/tasks (Seedance). Five points t
 
 Thank you.
 ```
+
+---
+
+## THEIR REPLY, 2026-09-04 — three answers, and one new problem
+
+BytePlus Technical Support answered the General Inquiry. Verbatim points:
+
+**1. Availability — YES.** "Spain is within ModelArk's supported service
+regions, so your Spain-registered account can use dreamina-seedance-2-0 and
+dreamina-seedance-2-5." They add that ListModelRateLimit returning the models
+"indicates that the corresponding rate-limit metadata is available" — which is
+them agreeing with our own reading that capacity is not permission, and then
+granting the permission separately. No "Restricted Model" tag was raised.
+
+**2. Asset library — SELF-SERVE, and the end user needs no BytePlus account.**
+"The Entry tier is free of charge and is available to enterprise customers who
+have completed the required KYC verification." That KYC is three steps on an
+H5 page — compliance risk assessment, read and accept a letter of commitment,
+mobile phone verification — done ONCE, and "remains valid for subsequent
+purchases or configuration changes". Activation link:
+https://ai.byteplus.com/ark/region:ap-southeast-1/openManagement?LLM=%7B%7D&advancedActiveKey=mediaAsset
+And the sentence that decides the product's shape: **"Videos generated through
+the API do not require the end user to hold a BytePlus account."**
+
+**3. Provenance — C2PA IS EMBEDDED, and the watermark is separate.** "The
+generated video includes embedded C2PA provenance metadata." With
+`watermark: true` the video "also includes a visible 'AI-generated' watermark
+in the lower-right corner. Therefore, this setting produces a visible overlay
+in addition to the embedded C2PA metadata."
+
+This is the best possible answer for us and it reverses a risk this file
+recorded: migrating the Seedance lane would NOT lose the marking we currently
+get for free. We can keep `watermark: false` — which every plan's no-watermark
+promise requires — and still receive C2PA. To be verified on real output the
+day we have access, with `hasC2paManifest` (lib/media/c2pa-probe.ts).
+
+### THE PRICE CLAIM IN THIS FILE IS NO LONGER SAFE TO ACT ON
+
+The table above says $0.152/s for 2.0 and $0.231/s for 2.5, against fal's
+$0.3024 and $0.4730 — a 2x saving, and the main commercial reason to migrate.
+Re-reading on 2026-09-04, the page **BytePlus themselves cited** for
+availability (docs/Byteplus_LAS/video_gen_enhanced) states "Unit price: 0.303
+USD/second" for the enhanced version, with a duration conversion factor of 1.0
+at 720p for 2.0 and 1.525 for 2.5 — so about **$0.303/s and $0.462/s**, which
+is fal's price to within a fraction of a percent.
+
+Both cannot be right. The likeliest explanation is two product lines — a
+standard/fast Seedance around $0.15/s and an "enhanced" line around $0.30/s —
+and that the reference-to-video lane with the asset library is the enhanced
+one, i.e. the expensive one. Their public pricing is also quoted per MILLION
+TOKENS ($4.3–$7.0 per 1M at 720p depending on video input), not per second, so
+every per-second figure in circulation is somebody's conversion.
+
+**Nothing should be built on the 2x number until BytePlus states the rate for
+the exact model ids they just confirmed, in the reference-to-video lane, in
+writing.** If the real answer is parity, the case for migrating is no longer
+price — it is the asset library and the C2PA marking, which are still real but
+are a different argument and a different priority.
+
+### Still unanswered
+
+- The five API-reference questions (model id form on create, request-side
+  service_tier, the error object, whether deleting an in-flight task stops
+  billing, the create shape with a verified asset) — sent as a separate
+  Technical Support ticket, no reply yet.
+- **Who completes the per-person check.** Their KYC (risk assessment, letter
+  of commitment, phone) reads as ACCOUNT-level enterprise verification. The
+  real-human asset library normally also requires a per-person portrait-rights
+  or liveness check on the individual whose likeness is used. "The end user
+  does not need a BytePlus account" answers the account question and not that
+  one. Until it is answered we do not know whether a customer can enrol a
+  person from inside our onboarding, which was the question that decides
+  whether this is a consumer feature or an agency one.
+- Data protection: region for an EU customer, DPA with SCCs, retention of any
+  liveness reference image. Deliberately deferred to contract stage, still open.
+
+### The reply to send — two tickets, split by who answers
+
+The form caps at 1,000 characters and one combined reply is ~2,000, so it
+splits the way the first pair did, with the question that decides the
+migration alone and first.
+
+**Ticket 1 — price (912 chars)**
+
+```
+Thank you — that answers what was blocking us, and we will complete the KYC to activate the Entry tier.
+
+One follow-up decides whether we migrate: the price of the exact lane we would use.
+
+The availability page you linked (Byteplus_LAS/video_gen_enhanced) states "Unit price: 0.303 USD/second", with a duration conversion factor of 1.0 for 2.0 and 1.525 for 2.5 at 720p — about 0.303 and 0.462 USD/s. Other BytePlus pricing is quoted per million tokens, so every per-second figure in circulation is someone's conversion.
+
+For dreamina-seedance-2-0 and dreamina-seedance-2-5, at 720p, reference-to-video using a verified real-human asset, could you confirm:
+
+1. the rate we would actually be billed, in USD per second of delivered output;
+2. whether that lane is the "enhanced" line the 0.303 figure refers to.
+
+We pay 0.3024 USD/s for the same model through an aggregator today, so this number decides the move.
+```
+
+**Ticket 2 — the per-person check (908 chars)**
+
+```
+A second question, on the real-human asset library.
+
+The KYC you describe — risk assessment, letter of commitment, mobile verification — reads as account-level verification of us, the enterprise.
+
+Separately: when we add a real person to the library, must that individual complete a portrait-rights or liveness check of their own?
+
+1. If yes — can that step be embedded in our own onboarding so our customer completes it there (you confirmed they need no BytePlus account), and is there a callback with the result?
+2. If no such per-person check exists, please say so explicitly; it changes what we must collect and retain ourselves.
+
+This decides whether the feature works for consumers or only for agencies.
+
+We will also need a DPA with Standard Contractual Clauses, the region serving the library for an EU customer, and the retention period for any liveness image — happy to take that at contract stage.
+```

@@ -86,13 +86,23 @@ release.
 
 ## This interacts with the BytePlus migration
 
-If the Seedance lane moves to ModelArk direct, **we may lose marking we
-currently get for free**. ByteDance's create call has a `watermark` boolean
-which their own example sets to `false`, and a visible watermark is not the
-same thing as a machine-readable manifest in any case. Before that migration
-ships, establish whether ModelArk output carries C2PA and what `watermark:
-true` actually does. That question belongs in the same enquiry as the asset
-library and flex pricing.
+~~If the Seedance lane moves to ModelArk direct, **we may lose marking we
+currently get for free**.~~ **ANSWERED 2026-09-04, and the answer is good.**
+BytePlus Technical Support, in writing: "The generated video includes embedded
+C2PA provenance metadata", and `watermark: true` adds "a visible 'AI-generated'
+watermark in the lower-right corner ... in addition to the embedded C2PA
+metadata."
+
+So the two are independent. ModelArk marks by default, and we can keep
+`watermark: false` — which every plan's no-watermark promise requires — while
+still receiving a machine-readable manifest. A ModelArk migration would
+therefore IMPROVE our Article 50 position on that lane rather than risk it,
+because today the same lane's marking depends on which fal endpoint ran.
+
+Not yet verified on real bytes: run `hasC2paManifest` over the first ModelArk
+delivery we get. A vendor's sentence is a good reason to expect a manifest and
+not evidence that one is there — the same standard applied to fal, where the
+measurement is what produced the table above.
 
 ---
 
