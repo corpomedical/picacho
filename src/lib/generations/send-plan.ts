@@ -770,24 +770,16 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
       });
     }
 
-    // A line longer than the clip makes a LONGER VIDEO, not a clipped line.
+    // THE DIALOGUE NEVER SETS THE VIDEO'S LENGTH (operator rule, 2026-09-05:
+    // "The Dialogue box does not define the length of the video, period").
+    // job-runner enforces it at lipsync time by measuring the real audio and
+    // cutting it at the clip's end when it runs long. This warning is the
+    // courtesy that goes with that rule: it fires BEFORE the send, names both
+    // numbers, and lets the person shorten the line or lengthen the clip
+    // while it is still free to do either.
     //
-    // Measured on 2026-09-04 against fal-ai/sync-lipsync/v2/pro with
-    // sync_mode "silence" (the mode this product pins): a 5.04s clip carrying
-    // 11.55s of speech came back 11.58 SECONDS long, and its bytes-per-second
-    // matched the source almost exactly, so the picture keeps moving rather
-    // than freezing on a held frame. Output length is max(video, audio) and
-    // nothing is lost at either end.
-    //
-    // So this is not a warning about damage. It is a warning that the video
-    // will not be the length that was chosen and paid for: pick five seconds,
-    // write twenty seconds of script, and a twenty-second video comes back.
-    // Worth saying BEFORE the send, which is the only moment it is cheap.
-    //
-    // A warn rather than a block, and no one-tap remedy: the honest fixes are
-    // "write less" or "choose a longer clip", both of which are edits the
-    // person has to make themselves, and neither is a button we can press for
-    // them without changing what they asked for.
+    // A warn rather than a block, and no one-tap remedy: the honest fixes
+    // are edits only the person can make.
     const spokenSeconds = estimateSpeechSeconds(input.dialogueText);
     if (input.durationSeconds && spokenSeconds > input.durationSeconds) {
       issues.push({

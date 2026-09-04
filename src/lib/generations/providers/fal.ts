@@ -1063,33 +1063,28 @@ export async function submitSpeechJob(text: string, elevenLabsVoiceId: string): 
   );
 }
 
-export async function submitLipSyncJob(videoUrl: string, audioUrl: string): Promise<QueuedJob> {
+export async function submitLipSyncJob(
+  videoUrl: string,
+  audioUrl: string,
+  // Which input's length wins when they differ. Both measured against the
+  // real endpoint on 2026-09-04/05 with a 5.04s clip and 11.55s of speech:
+  //   cut_off  -> output 5.04s   (the SHORTER input's length)
+  //   silence  -> output 11.58s  (the LONGER input's length, picture moving)
+  // The PRODUCT RULE (operator, 2026-09-05) is that the dialogue box never
+  // defines the video's length — the selected duration does, period. The
+  // caller enforces that by measuring the audio and picking the mode where
+  // the VIDEO's length is the one that survives: silence when the audio is
+  // shorter (pad it), cut_off when the audio is longer (cut it at the clip's
+  // end). "silence" stays the default so a caller that cannot measure
+  // degrades to a longer video, never to a wrongly truncated one.
+  syncMode: "silence" | "cut_off" = "silence",
+): Promise<QueuedJob> {
   return submitToQueue(
     SYNC_LIPSYNC_ENDPOINT,
     {
       video_url: videoUrl,
       audio_url: audioUrl,
-      // sync_mode DECIDES WHOSE LENGTH WINS, and its default is the wrong one
-      // for us. Read from the endpoint's own schema on 2026-09-04:
-      //   enum ['cut_off','loop','bounce','silence','remap'], default 'cut_off'
-      //   "Lipsync mode when audio and video durations are out of sync."
-      //
-      // cut_off trims the VIDEO down to the audio. The first render to get
-      // through lipsync after the download fix — b2983dc6, a 10-second
-      // gemini-omni clip with a short line — came back 0.92 SECONDS long,
-      // measured off its own mvhd box, and was billed 10 credits. The
-      // customer pays by video seconds, so the video's length is the one that
-      // must survive.
-      //
-      // 'silence' keeps the video and pads the audio, which is what a spoken
-      // line over a longer clip should do. Not 'loop' or 'bounce', which
-      // repeat the line; not 'remap', which retimes the picture to fit speech.
-      //
-      // ASYMMETRY WORTH KNOWING: this fixes audio SHORTER than video, the
-      // common case. Nothing here validates a line too LONG for the clip —
-      // dialogue is not measured before the render is queued, so a
-      // twenty-second script on a five-second video will still lose its tail.
-      sync_mode: "silence",
+      sync_mode: syncMode,
     },
     "Sync Lipsync",
     requireApiKey(),

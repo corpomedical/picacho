@@ -25,6 +25,7 @@ import {
   type QueuedVideoJob,
 } from "@/lib/generations/providers/video-queue";
 import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
+import { mp3DurationSeconds } from "@/lib/generations/providers/audio-duration";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
@@ -1456,12 +1457,56 @@ export async function advanceGeneration(
     if (row.stage === "dialogue_tts") {
       const audioUrl = await fetchQueuedAudioUrl(jobHandle(row));
       phase = "submit";
+
+      // THE DIALOGUE NEVER SETS THE VIDEO'S LENGTH (operator rule,
+      // 2026-09-05). The lipsync endpoint's cut_off mode ends the output at
+      // the SHORTER input and silence at the LONGER one — both measured — so
+      // the clip's length wins in both directions by measuring the audio and
+      // choosing accordingly: shorter line, pad it; longer line, cut it at
+      // the clip's end. Every failure on this path falls back to "silence",
+      // which can only err toward a longer video, never a truncated line.
+      let syncMode: "silence" | "cut_off" = "silence";
+      let audioSeconds: number | null = null;
+      try {
+        const res = await fetch(audioUrl);
+        if (res.ok) {
+          const buf = new Uint8Array(await res.arrayBuffer());
+          // Dialogue audio is small (30s ≈ 480KB at 128kbps); anything huge
+          // is not what we think it is, so leave it unmeasured.
+          if (buf.byteLength <= 6 * 1024 * 1024) audioSeconds = mp3DurationSeconds(buf);
+        }
+      } catch {
+        // Unmeasured is fine — the fallback mode is the safe one.
+      }
+      if (audioSeconds !== null) {
+        const { data: genRow } = await admin
+          .from("generations")
+          .select("video_duration_seconds")
+          .eq("id", generationId)
+          .maybeSingle<{ video_duration_seconds: number | null }>();
+        const clipSeconds = Number(genRow?.video_duration_seconds) || 0;
+        if (clipSeconds > 0 && audioSeconds > clipSeconds) {
+          syncMode = "cut_off";
+          // Into the attempt log, so the render page can say why the line
+          // ends where it does instead of leaving it a mystery.
+          row.resume.attempts = appendStep(
+            row.resume.attempts ?? [],
+            `The line runs about ${Math.round(audioSeconds)}s against a ${clipSeconds}s clip — the dialogue is cut at ${clipSeconds}s.`,
+            "lipsync",
+          );
+        }
+      }
+
       // Absolute, for the same reason: fal fetches this video_url server-side.
       // Handing it the relative /api/media path gets the submit ACCEPTED and
       // then fails the download, so the run ends on the salvage branch and
       // every spoken line shipped silent. payload.videoUrl itself stays
       // relative — it is also what the salvage branch delivers to the user.
-      const lipsync = await submitLipSyncJob(providerDownloadUrl(row.payload.videoUrl!), audioUrl);
+      const lipsync = await submitLipSyncJob(
+        providerDownloadUrl(row.payload.videoUrl!),
+        audioUrl,
+        syncMode,
+      );
       // Recorded into resume BEFORE the transition write so the persisted
       // pipeline_log ends up complete — this used to be appended to the
       // in-memory copy only, after the UPDATE, so the "Generated dialogue
