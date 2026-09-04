@@ -1066,7 +1066,31 @@ export async function submitSpeechJob(text: string, elevenLabsVoiceId: string): 
 export async function submitLipSyncJob(videoUrl: string, audioUrl: string): Promise<QueuedJob> {
   return submitToQueue(
     SYNC_LIPSYNC_ENDPOINT,
-    { video_url: videoUrl, audio_url: audioUrl },
+    {
+      video_url: videoUrl,
+      audio_url: audioUrl,
+      // sync_mode DECIDES WHOSE LENGTH WINS, and its default is the wrong one
+      // for us. Read from the endpoint's own schema on 2026-09-04:
+      //   enum ['cut_off','loop','bounce','silence','remap'], default 'cut_off'
+      //   "Lipsync mode when audio and video durations are out of sync."
+      //
+      // cut_off trims the VIDEO down to the audio. The first render to get
+      // through lipsync after the download fix — b2983dc6, a 10-second
+      // gemini-omni clip with a short line — came back 0.92 SECONDS long,
+      // measured off its own mvhd box, and was billed 10 credits. The
+      // customer pays by video seconds, so the video's length is the one that
+      // must survive.
+      //
+      // 'silence' keeps the video and pads the audio, which is what a spoken
+      // line over a longer clip should do. Not 'loop' or 'bounce', which
+      // repeat the line; not 'remap', which retimes the picture to fit speech.
+      //
+      // ASYMMETRY WORTH KNOWING: this fixes audio SHORTER than video, the
+      // common case. Nothing here validates a line too LONG for the clip —
+      // dialogue is not measured before the render is queued, so a
+      // twenty-second script on a five-second video will still lose its tail.
+      sync_mode: "silence",
+    },
     "Sync Lipsync",
     requireApiKey(),
   );
