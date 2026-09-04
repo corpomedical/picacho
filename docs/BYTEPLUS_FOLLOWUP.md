@@ -225,6 +225,43 @@ second (they embed C2PA, and fal's delivery of the same model does not — see
 AI_ACT_MARKING.md), price third and now uncertain. A price parity finding
 does not weaken the case; it only removes a bonus.
 
+### THE FIVE API QUESTIONS, ANSWERED 2026-09-04
+
+Technical Support came back on the second ticket. All five, and two of them
+change code.
+
+1. **Model id on create.** "Model supports entering the model name or EP ID" —
+   either the model id or an endpoint id. The versioned ids we send are the
+   right form, and that is now confirmed as well as proven by a real call.
+
+2. **Pricing.** "The seedance2.x series models are only related to video
+   resolution and whether there is an input video, and have nothing to do with
+   priority." That is the cleanest statement anyone has given us, and it
+   corroborates the measurement below rather than the earlier support answer:
+   there is no separate "enhanced" tier to land on, only resolution and whether
+   a video went in. At 720p with no input video the account billed 87,300
+   tokens for 4 seconds, i.e. $0.153/s.
+
+3. **Error codes.** Documented at ModelArk/1299023.
+
+4. **Deleting an in-flight task — and this contradicted our code.** "Tasks
+   currently in progress cannot be deleted; you can only delete tasks in the
+   queue or those that have been completed. Deleting tasks in the queue will
+   not incur any charges." Their status table: queued deletes and becomes
+   cancelled; succeeded/failed/expired delete but only lose the RECORD;
+   **running cannot be deleted, and neither can cancelled**.
+
+   Our cancel path called DELETE unconditionally and threw on any non-2xx,
+   which would have turned a documented refusal into a provider outage.
+   deleteArkTask now returns false on a 4xx instead, and the Stop button's
+   meaning is written down where it belongs: it stops the work only if we got
+   there before the render started. After that the customer has stopped
+   waiting, not stopped paying.
+
+5. **The asset library call shape.** `asset://<asset_ID>` in the content part's
+   url field — the same thing the public docs showed, now confirmed by support.
+   Reference: ModelArk/2333589.
+
 ### MEASURED 2026-09-04 ON THE RECHARGED ACCOUNT — AND IT CONTRADICTS SUPPORT
 
 The account was topped up and the four Dreamina models activated, so the

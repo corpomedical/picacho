@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { probeImage } from "@/lib/media/image-probe";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
-import { persistImageBytes } from "@/lib/generations/core";
+import { persistGeneratedVideo, persistImageBytes } from "@/lib/generations/core";
 import { LAYERS_TIERS, layerStoragePath, type LayersTier } from "@/lib/generations/layers";
 import { forceRefundEligible, isProviderRejection } from "@/lib/generations/refund-rules";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -1349,7 +1349,9 @@ export async function advanceGeneration(
       // purpose: an upscale regenerates pixels, nothing re-measured the
       // face, and a fabricated score would be the exact dishonesty the
       // scoring system exists to prevent).
-      const upscaledUrl = await fetchQueuedVideoUrl(jobHandle(row));
+      const providerUpscaledUrl = await fetchQueuedVideoUrl(jobHandle(row));
+      const upscaledUrl =
+        (await persistGeneratedVideo(admin, userId, providerUpscaledUrl)) ?? providerUpscaledUrl;
       await finish(generationId, userId, {
         status: "succeeded",
         resultUrl: upscaledUrl,
@@ -1363,7 +1365,13 @@ export async function advanceGeneration(
     }
 
     if (row.stage === "video") {
-      const videoUrl = await fetchVideoUrl(jobHandle(row));
+      const providerVideoUrl = await fetchVideoUrl(jobHandle(row));
+      // Ours from here, or theirs if the copy fails — see
+      // persistGeneratedVideo. A render that plays from the provider beats a
+      // success with a dead link, and the lifecycle header means their copy
+      // no longer expires, which is what makes that fallback honest.
+      const videoUrl =
+        (await persistGeneratedVideo(admin, userId, providerVideoUrl)) ?? providerVideoUrl;
       collectedVideoUrl = videoUrl;
       const wantsDialogue = Boolean(row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId);
 
@@ -1469,7 +1477,9 @@ export async function advanceGeneration(
     }
 
     // dialogue_lipsync — the last stage. Its output replaces the silent video.
-    const syncedUrl = await fetchQueuedVideoUrl(jobHandle(row));
+    const providerSyncedUrl = await fetchQueuedVideoUrl(jobHandle(row));
+    const syncedUrl =
+      (await persistGeneratedVideo(admin, userId, providerSyncedUrl)) ?? providerSyncedUrl;
     await finish(generationId, userId, {
       status: "succeeded",
       resultUrl: syncedUrl,

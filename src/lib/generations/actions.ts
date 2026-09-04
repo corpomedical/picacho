@@ -3458,6 +3458,19 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
     await supabase.storage.from("generated-images").remove(imagePaths);
   }
 
+  // Videos, since 2026-09-04. Rows written before that hold a provider CDN URL
+  // rather than one of ours; extractStoragePath returns null for those, so they
+  // simply fall out of the list — there is nothing of ours to delete, and the
+  // provider's copy is not ours to remove.
+  const videoPaths = rows
+    .filter((r) => r.content_type === "video")
+    .map((r) => extractStoragePath(r.result_url as string | null, "generated-videos"))
+    .filter((p): p is string => Boolean(p));
+
+  if (videoPaths.length > 0) {
+    await supabase.storage.from("generated-videos").remove(videoPaths);
+  }
+
   revalidatePath("/app", "layout");
   revalidatePath("/app/history");
   revalidatePath("/app/images");

@@ -205,8 +205,13 @@ export async function fetchVideoUrl(job: QueuedVideoJob): Promise<string> {
 
 export async function cancelVideoJob(job: QueuedVideoJob): Promise<void> {
   if (job.provider === "fal") return cancelFalJob(job);
-  // Whether this stops the billing clock or only removes the record is an
-  // open question with the vendor (docs/BYTEPLUS_FOLLOWUP.md). It is still
-  // the right call to make: leaving the task running bills for certain.
+  // ANSWERED 2026-09-04. A queued task really is cancelled and not billed; a
+  // RUNNING one cannot be deleted at all, and a finished one only loses its
+  // record. So this call stops the work only if we got there before it
+  // started. deleteArkTask returns false rather than throwing in that case,
+  // because a documented refusal is not a provider fault — the caller's own
+  // row still finishes as cancelled, which is the honest outcome: the customer
+  // has stopped waiting, and if it was already running they were always going
+  // to be billed for it.
   await deleteArkTask(job.requestId);
 }

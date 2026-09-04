@@ -22,7 +22,16 @@ import crypto from "crypto";
 // Server-only module (crypto + service key) — never import from a client
 // component. Client components only ever see the finished URL strings.
 
-const MEDIA_BUCKETS = new Set(["character-references", "generated-images", "chat-attachments"]);
+const MEDIA_BUCKETS = new Set([
+  "character-references",
+  "generated-images",
+  // Finished videos, copied off the provider's CDN since 2026-09-04 — see
+  // persistGeneratedVideo. Rows written before that still hold provider URLs
+  // and pass through toMediaUrl untouched, which is why both forms have to
+  // keep working.
+  "generated-videos",
+  "chat-attachments",
+]);
 
 function hmac(input: string): string {
   // Prefer a dedicated signing secret over the service-role key. Every media

@@ -344,6 +344,9 @@ alter table public.character_profiles
 --
 --   character-references  — character reference photos
 --   generated-images      — AI-generated scene images
+--   generated-videos      — finished videos, copied off the provider's CDN
+--                           (2026-09-04; before that result_url pointed at
+--                           the provider, whose default guarantee was 7 days)
 --   chat-attachments      — files attached in the Generate composer
 -- =====================================================================
 
@@ -372,6 +375,12 @@ create policy "Users can manage their own generated images"
   to authenticated
   using (bucket_id = 'generated-images' and (storage.foldername(name))[1] = auth.uid()::text)
   with check (bucket_id = 'generated-images' and (storage.foldername(name))[1] = auth.uid()::text);
+
+create policy "Users can manage their own generated videos"
+  on storage.objects for all
+  to authenticated
+  using (bucket_id = 'generated-videos' and (storage.foldername(name))[1] = auth.uid()::text)
+  with check (bucket_id = 'generated-videos' and (storage.foldername(name))[1] = auth.uid()::text);
 
 create policy "Users can manage their own chat attachments"
   on storage.objects for all

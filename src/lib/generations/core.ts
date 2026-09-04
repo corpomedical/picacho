@@ -396,6 +396,75 @@ export async function persistGeneratedImage(
 }
 
 /**
+ * Copy a finished VIDEO off the provider's CDN into our own bucket, and hand
+ * back the stable media URL.
+ *
+ * WHY THIS EXISTS (2026-09-04). Until today a finished video was never copied
+ * anywhere: the collect path wrote the provider's own CDN URL straight into
+ * generations.result_url. fal support then told us, asked directly, that "if
+ * not set, by default we can only guarantee 7 days" — so every video in every
+ * customer's History was a link with a week's promise behind it. A lifecycle
+ * header now asks fal for no expiration, which stopped the bleeding, but a
+ * promise from someone else's CDN is not the same as owning the file. This is.
+ *
+ * NEVER LOSES A RENDER. Every failure path returns null and the caller keeps
+ * the provider URL — a video that plays from fal is strictly better than a
+ * generation that reports success with a dead link. That fallback is only
+ * honest because of the lifecycle header; without it, falling back would be
+ * choosing the seven-day version.
+ *
+ * The size cap is a memory guard, not a policy: this buffers the whole file to
+ * upload it, and a serverless invocation that tries to hold a 30-second 1080p
+ * render can die in a way that takes the terminal write with it.
+ */
+const MAX_PERSISTED_VIDEO_BYTES = 200 * 1024 * 1024;
+
+export async function persistGeneratedVideo(
+  supabase: SupabaseClient,
+  userId: string,
+  providerUrl: string,
+): Promise<string | null> {
+  try {
+    const res = await fetch(providerUrl);
+    if (!res.ok) {
+      console.warn(`persistGeneratedVideo: provider returned ${res.status}; keeping their URL.`);
+      return null;
+    }
+    // Trust the header when it is there, and check the real length after the
+    // read as well — a chunked response carries no content-length.
+    const declared = Number(res.headers.get("content-length") ?? "0");
+    if (declared > MAX_PERSISTED_VIDEO_BYTES) {
+      console.warn(`persistGeneratedVideo: ${declared} bytes is over the cap; keeping their URL.`);
+      return null;
+    }
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.byteLength > MAX_PERSISTED_VIDEO_BYTES) {
+      console.warn(`persistGeneratedVideo: ${bytes.byteLength} bytes is over the cap; keeping their URL.`);
+      return null;
+    }
+
+    const contentType = res.headers.get("content-type") ?? "video/mp4";
+    // .mov only when the provider says so — ModelArk's 2.5 can return it.
+    const ext = contentType.includes("quicktime") ? "mov" : "mp4";
+    const path = `${userId}/${crypto.randomUUID()}.${ext}`;
+
+    const { error } = await supabase.storage
+      .from("generated-videos")
+      .upload(path, bytes, { contentType, upsert: false });
+    if (error) {
+      console.warn(`persistGeneratedVideo: upload failed (${error.message}); keeping their URL.`);
+      return null;
+    }
+    return mediaUrl("generated-videos", path);
+  } catch (err) {
+    console.warn(
+      `persistGeneratedVideo: ${err instanceof Error ? err.message : String(err)}; keeping their URL.`,
+    );
+    return null;
+  }
+}
+
+/**
  * Store image bytes at a CHOSEN path in generated-images and return the
  * stable media URL. Layers need deterministic paths
  * (userId/layers/generationId/zN.png) so a stack can be re-read by

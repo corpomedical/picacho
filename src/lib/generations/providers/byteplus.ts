@@ -296,12 +296,33 @@ export async function fetchArkVideo(taskId: string): Promise<{ url: string; comp
  * deleting an in-flight task also stops the billing clock is not documented,
  * so calling this "cancel" would promise a refund path it may not provide.
  */
-export async function deleteArkTask(taskId: string): Promise<void> {
+/**
+ * Ask ModelArk to drop a task. Returns whether the work was actually stopped.
+ *
+ * A RUNNING TASK CANNOT BE DELETED. BytePlus support, 2026-09-04, with their
+ * own status table: queued can be deleted (it leaves the queue, becomes
+ * cancelled, and "deleting tasks in the queue will not incur any charges");
+ * succeeded, failed and expired can be deleted, but that only removes the
+ * RECORD, since the work is already done and billed; running cannot be deleted
+ * at all, and neither can an already-cancelled one.
+ *
+ * So this is not a stop button in the general case, and the caller must not
+ * pretend otherwise: a customer who hits Stop while the render is running has
+ * stopped waiting for it, not stopped paying for it. Returning false rather
+ * than throwing is what lets the caller finish its own row honestly instead of
+ * treating a documented refusal as a provider outage.
+ */
+export async function deleteArkTask(taskId: string): Promise<boolean> {
   const res = await arkFetch(`${TASKS_PATH}/${encodeURIComponent(taskId)}`, { method: "DELETE" }, 15_000);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`BytePlus ModelArk error (${res.status}): ${text.slice(0, 400)}`);
+  if (res.ok) return true;
+  const text = await res.text();
+  // 4xx here is ModelArk applying that table — the task is running, or already
+  // gone. Either way there is nothing to stop and nothing has broken.
+  if (res.status >= 400 && res.status < 500) {
+    console.warn(`BytePlus ModelArk would not delete task ${taskId} (${res.status}): ${text.slice(0, 200)}`);
+    return false;
   }
+  throw new Error(`BytePlus ModelArk error (${res.status}): ${text.slice(0, 400)}`);
 }
 
 // The multimodal `content` array, verified against ByteDance's reference-to-
