@@ -96,6 +96,53 @@ went through x264 and came out clean.
 
 ## Options
 
+## ANSWERED BY FAL, 2026-09-04
+
+The ticket came back, and it closes option A for the engines that matter.
+
+> "We've enabled watermarking and metadata tagging on any models we host; all
+> have c2pa, where it is not provided natively by the Model Lab itself. For
+> partner models, it depends on them directly; for Kling, we confirmed they are
+> not providing it, and we're following up with them. For Seedance, they apply
+> an invisible watermark."
+
+So the 97% measured above is explained rather than mysterious. Every video
+engine in this catalogue is a PARTNER model, not a fal-hosted one, which is why
+fal's own C2PA never reaches our output — and **Kling is confirmed as not
+providing it at all**, which is decisive here because Kling 1.6 is the default
+engine and the Kling family is most of our video. Seedance's "invisible
+watermark" is not C2PA and is not a provenance manifest; it is a detection aid
+for ByteDance, readable by them and not by us or by a regulator's tool.
+
+Option A is therefore closed for the default lane. What remains is B (mark on
+delivery ourselves) or C (detect and refuse to ship unmarked), and B now has a
+second reason to exist — see below.
+
+## AND A SEPARATE, MORE URGENT FINDING FROM THE SAME REPLY
+
+> "As for data retention, you can configure how long you want it to be with the
+> headers described here ... If not set, by default we can only guarantee 7
+> days, even though they may stay longer."
+
+A finished video is never copied anywhere. job-runner's collect path writes
+fal's own CDN URL straight into `generations.result_url`; there is a
+`generated-images` bucket and no video equivalent, which this file already
+noted in passing ("we currently store none — result_url points at the
+provider"). Put together with the sentence above: **every video in every
+customer's History is a link to fal's CDN with a seven-day guarantee.**
+
+Stopgap applied the same day: every fal submit now sends
+`X-Fal-Object-Lifecycle-Preference: {"expiration_duration_seconds": null}` —
+no expiration, per fal's Data Retention page — and the header was verified
+accepted against a real queue submit before it shipped. That stops the bleeding
+for everything rendered from now on. It does nothing for rows already written,
+and it is not the fix: the fix is to persist video the way images already are.
+
+Two things to look at next, both from the same page: the header also takes an
+`initial_acl`, and these are PUBLIC CDN URLs holding video of real people; and
+`X-Fal-Store-IO: 0` would stop fal retaining our request payloads, which
+otherwise sit for 30 days and contain the prompts and the reference-image URLs.
+
 **A. Require it upstream.** Ask fal which endpoints embed C2PA and whether it
 can be enabled across all of them. Cheapest by far, and it is their business
 to be able to answer. Weakness: we would be depending on a supplier for a duty

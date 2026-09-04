@@ -979,6 +979,27 @@ function webhookUrl(): string | null {
   return `${base.replace(/\/$/, "")}/api/webhooks/fal`;
 }
 
+// KEEP WHAT WE MADE. fal support, 2026-09-04, asked directly: "If not set, by
+// default we can only guarantee 7 days, even though they may stay longer."
+//
+// That is a live data-loss problem for this product and not a hypothetical
+// one, because a finished VIDEO is never copied anywhere: job-runner's collect
+// path writes fal's own CDN URL straight into generations.result_url (there is
+// a "generated-images" bucket and no video equivalent), so every video in every
+// customer's History is a link to fal's CDN. On the default guarantee those
+// links start dying a week after the render.
+//
+// null means no expiration, per fal's Data Retention page — the same header
+// also takes an initial_acl, which is the next thing to look at, because these
+// are PUBLIC CDN URLs holding video of real people.
+//
+// This is a stopgap, not the fix. The fix is to persist video the way images
+// are already persisted; this stops the bleeding for everything rendered from
+// today, and it does nothing for rows already written.
+const OBJECT_LIFECYCLE_HEADER = {
+  "X-Fal-Object-Lifecycle-Preference": JSON.stringify({ expiration_duration_seconds: null }),
+} as const;
+
 async function submitToQueue(
   endpoint: string,
   body: Record<string, unknown>,
@@ -994,7 +1015,11 @@ async function submitToQueue(
     submitUrl,
     {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Key ${apiKey}` },
+      headers: {
+        "content-type": "application/json",
+        authorization: `Key ${apiKey}`,
+        ...OBJECT_LIFECYCLE_HEADER,
+      },
       body: JSON.stringify(body),
     },
     30_000, // just queuing the job — this itself should be fast
