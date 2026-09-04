@@ -17,6 +17,13 @@ import {
   type QueuedJob,
   fetchQueuedLayers,
 } from "@/lib/generations/providers/fal";
+import {
+  cancelVideoJob,
+  checkVideoJob,
+  fetchVideoUrl,
+  providerFromPayload,
+  type QueuedVideoJob,
+} from "@/lib/generations/providers/video-queue";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { FetchTimeoutError } from "@/lib/generations/providers/fetch-with-timeout";
 import { isRawProviderError } from "@/lib/generations/user-facing-error";
@@ -583,8 +590,13 @@ async function refundDialogueSurcharge(generationId: string): Promise<void> {
   }
 }
 
-function jobHandle(row: JobRow): QueuedJob {
+function jobHandle(row: JobRow): QueuedVideoJob {
   return {
+    // Which provider is holding this render. Read from the payload the submit
+    // wrote; a row from before that existed has no key and reads "fal", which
+    // is what it is — so renders in flight across the deploy keep being polled
+    // against the provider that actually has them.
+    provider: providerFromPayload(row.payload),
     requestId: row.provider_request_id ?? "",
     statusUrl: row.status_url ?? "",
     responseUrl: row.response_url ?? "",
@@ -685,7 +697,8 @@ export async function saveLayersJob(params: {
 export async function saveVideoJob(params: {
   generationId: string;
   userId: string;
-  job: QueuedJob;
+  /** Carries the provider, so the poll goes back where the submit went. */
+  job: QueuedVideoJob;
   dialogueText?: string;
   dialogueVoiceId?: string | null;
   attempts: AttemptLog[];
@@ -702,7 +715,11 @@ export async function saveVideoJob(params: {
     // label: which model this render actually runs on — read back by
     // jobHandle so poll/webhook-side provider errors are attributed to the
     // right model instead of the old hardcoded "Kling".
-    payload: { label: params.job.label },
+    // label: which model this render actually runs on — read back by
+    // jobHandle so poll/webhook-side provider errors are attributed to the
+    // right model. provider: which service is holding it, so the poll,
+    // collect and cancel verbs go back to the same place the submit went.
+    payload: { label: params.job.label, provider: params.job.provider },
     resume: {
       dialogueText: params.dialogueText,
       dialogueVoiceId: params.dialogueVoiceId ?? undefined,
@@ -1088,7 +1105,7 @@ export async function advanceGeneration(
     // for either way, so the honest outcome is to deliver it.
     let finished = false;
     try {
-      const late = await checkQueuedJob(jobHandle(row));
+      const late = await checkVideoJob(jobHandle(row));
       finished = late.state === "completed";
     } catch {
       // Couldn't reach fal — fall through and treat it as a normal stop
@@ -1102,7 +1119,7 @@ export async function advanceGeneration(
       if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
         return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
       }
-      await cancelQueuedJob(jobHandle(row));
+      await cancelVideoJob(jobHandle(row));
       const didCancelTransition = await finish(generationId, userId, {
         status: "failed",
         attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
@@ -1127,7 +1144,7 @@ export async function advanceGeneration(
 
   let status;
   try {
-    status = await checkQueuedJob(jobHandle(row));
+    status = await checkVideoJob(jobHandle(row));
   } catch {
     // Transport hiccup reaching fal — not a job failure. Leave everything as
     // it is and let the next poll try again; last_polled_at was already
@@ -1346,7 +1363,7 @@ export async function advanceGeneration(
     }
 
     if (row.stage === "video") {
-      const videoUrl = await fetchQueuedVideoUrl(jobHandle(row));
+      const videoUrl = await fetchVideoUrl(jobHandle(row));
       collectedVideoUrl = videoUrl;
       const wantsDialogue = Boolean(row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId);
 

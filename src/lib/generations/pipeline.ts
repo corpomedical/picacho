@@ -11,9 +11,16 @@ import {
   generateVideo,
   generateSpeech,
   lipSyncVideo,
-  submitVideoJob,
   type QueuedJob,
 } from "@/lib/generations/providers/fal";
+// The provider-dispatching submit, not fal's. Both paid video submit sites
+// import it from here — this one and the multi-angle one in actions.ts — so
+// neither lane can be left behind on fal when the Seedance lane is on.
+import {
+  submitVideoJob,
+  videoProviderFor,
+  type QueuedVideoJob,
+} from "@/lib/generations/providers/video-queue";
 import { getVideoModel } from "@/lib/generations/providers/video-models";
 import {
   generateImage,
@@ -93,7 +100,8 @@ export type PipelineResult = {
   // has been handed to fal.ai's queue and this is the handle to poll it with.
   // `succeeded` is false and `resultUrl` null in this case — the job isn't
   // done, it's in flight. See job-runner.ts, which owns it from here.
-  pendingVideoJob?: QueuedJob;
+  /** Carries which provider took it — see video-queue.ts. */
+  pendingVideoJob?: QueuedVideoJob;
 };
 
 // Polled between attempts (and once per attempt, right before the slow
@@ -401,11 +409,29 @@ export function runPipeline(
   return { attempts, succeeded: false, finalPrompt, resultUrl: null };
 }
 
-export function missingRealProviderKeys(contentType: ContentType, imageModelId?: string): string[] {
+export function missingRealProviderKeys(
+  contentType: ContentType,
+  imageModelId?: string,
+  videoModelId?: string,
+): string[] {
   const missing: string[] = [];
   if (!process.env.ANTHROPIC_API_KEY) missing.push("ANTHROPIC_API_KEY");
   if (!process.env.OPENAI_API_KEY) missing.push("OPENAI_API_KEY");
+  // FAL_KEY stays required for every video even when the render itself runs
+  // at BytePlus: the identity scorer pulls a frame through fal's ffmpeg
+  // endpoint after collection, and dialogue TTS and lipsync are fal's too.
   if (contentType === "video" && !process.env.FAL_KEY) missing.push("FAL_KEY");
+  // And the render's own provider, if it is not fal. Checked HERE, before any
+  // credit is reserved — byteplus.ts throws on a missing key inside the
+  // submit, which is after the charge.
+  if (
+    contentType === "video" &&
+    videoModelId &&
+    videoProviderFor(videoModelId) === "byteplus" &&
+    !process.env.BYTEPLUS_ARK_API_KEY
+  ) {
+    missing.push("BYTEPLUS_ARK_API_KEY");
+  }
   if (contentType === "image") {
     const model = getImageModel(imageModelId ?? "gpt-image");
     if (model.provider === "fal" && !process.env.FAL_KEY) missing.push("FAL_KEY");

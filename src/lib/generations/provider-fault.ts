@@ -22,6 +22,14 @@ export function isProviderFault(message: string): boolean {
   const requestFault =
     m.includes("content policy") ||
     m.includes("content_policy") ||
+    // ModelArk's spelling of the same event. Its three refusal codes —
+    // InputImageSensitiveContentDetected, InputTextSensitiveContentDetected,
+    // OutputVideoSensitiveContentDetected — share this substring and share
+    // none of the tokens above, so without it a BytePlus likeness refusal
+    // would count as the MODEL being down and march Seedance toward the
+    // breaker on nothing but rejected photos. That is the exact bug this
+    // list was rewritten to fix for fal on 2026-08-31.
+    m.includes("sensitivecontentdetected") ||
     m.includes("moderation") ||
     m.includes("nsfw") ||
     m.includes("safety") ||

@@ -58,9 +58,12 @@ import {
 import { probeMp4 } from "@/lib/media/mp4-probe";
 import { rateLimited } from "@/lib/rate-limit";
 import { getAnglePreset, angleSortIndex, sceneShotKey } from "@/lib/generations/angles";
-import { submitVideoJob, submitUpscaleJob, cancelQueuedJob, type QueuedJob,
+import { submitUpscaleJob, cancelQueuedJob, type QueuedJob,
   submitLayerizeJob,
 } from "@/lib/generations/providers/fal";
+// Multi-angle bypasses the pipeline and submits directly, so it takes the
+// dispatching submit too — see the note in video-queue.ts.
+import { submitVideoJob } from "@/lib/generations/providers/video-queue";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { resolveModel } from "@/lib/generations/model-health";
 
@@ -1151,7 +1154,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   }
 
   if (useRealProviders) {
-    const missingKeys = missingRealProviderKeys(contentType, imageModelId);
+    const missingKeys = missingRealProviderKeys(contentType, imageModelId, videoModelId);
     if (missingKeys.length > 0) {
       return {
         error:
@@ -2702,7 +2705,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   let consumePurchased = multiAllowance.consumePurchased;
 
   if (useRealProviders) {
-    const missingKeys = missingRealProviderKeys("video");
+    // videoModelId is resolved above (line ~2555); the breaker's substitution
+    // runs later and only ever moves DOWN the price ladder, away from the
+    // Seedance rows, so checking the requested model here is the right gate.
+    const missingKeys = missingRealProviderKeys("video", undefined, videoModelId);
     if (missingKeys.length > 0) {
       return {
         error:
