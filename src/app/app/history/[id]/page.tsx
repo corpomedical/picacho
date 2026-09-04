@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { LAYERS_MODEL_ID, takeLayersIneligibility } from "@/lib/generations/layers";
+import { LineageChain, lineageThumb, type LineageNode } from "@/components/lineage-chain";
+import { LAYERS_MODEL_ID, takeLayersIneligibility, LAYER_EDIT_MODEL_ID } from "@/lib/generations/layers";
 import { QuietVideo } from "@/components/quiet-video";
-import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
+import { toMediaUrl, isRenderableUrl, thumbUrl, mediaUrl } from "@/lib/media/url";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
@@ -87,10 +88,39 @@ export default async function HistoryDetailPage({
   const { data: character } = generation.character_profile_id
     ? await supabase
         .from("character_profiles")
-        .select("name")
+        .select("name, reference_image_urls")
         .eq("id", generation.character_profile_id)
         .single()
     : { data: null };
+
+  // LINEAGE (direction C, operator pick 2026-09-04). What this render came
+  // from, and what came out of it. Every competitor's detail page is a dead
+  // end; this studio actually records the chain — source_generation_id is
+  // written by the upscale lane, the layers split and the layer edit — so
+  // the page can show it.
+  //
+  // Both queries are the caller's OWN rows even for an admin viewing someone
+  // else's generation: a lineage panel is a convenience, not a reason to
+  // widen what an admin can enumerate.
+  const [{ data: parentRow }, { data: childRows }] = await Promise.all([
+    generation.source_generation_id
+      ? supabase
+          .from("generations")
+          .select("id, prompt_input, result_url, content_type, model_id, created_at")
+          .eq("id", generation.source_generation_id as string)
+          .eq("user_id", userData.user.id)
+          .is("deleted_at", null)
+          .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("generations")
+      .select("id, prompt_input, result_url, content_type, model_id, credits_used, created_at")
+      .eq("source_generation_id", id)
+      .eq("user_id", userData.user.id)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .limit(8),
+  ]);
 
   const { data: angleSiblings } = generation.angle_group_id
     ? await supabase
@@ -176,6 +206,63 @@ export default async function HistoryDetailPage({
     sharedToCommunity = Boolean(post);
   }
 
+  // The chain, left to right: the character's identity photo, the take this
+  // was made from, this one, then everything made FROM it. Each node is only
+  // added when it genuinely exists — LineageChain renders nothing at all for
+  // a chain of one, which is most renders.
+  const identityPath = (character?.reference_image_urls as string[] | null)?.[0];
+  const derivativeLabel = (modelId: string | null): string =>
+    modelId === LAYERS_MODEL_ID
+      ? t.layers.stackTitle
+      : modelId === UPSCALE_MODEL_ID
+        ? h.upscaledBadge
+        : modelId === LAYER_EDIT_MODEL_ID
+          ? t.layers.change
+          : typeLabel;
+  const lineageNodes: LineageNode[] = [
+    ...(identityPath
+      ? [
+          {
+            id: `identity-${generation.character_profile_id}`,
+            href: `/app/character/${generation.character_profile_id}`,
+            thumb: thumbUrl(mediaUrl("character-references", identityPath), 320),
+            label: h.lineageIdentityPhoto,
+            detail: character?.name ?? null,
+          },
+        ]
+      : []),
+    ...(parentRow
+      ? [
+          {
+            id: parentRow.id as string,
+            href: `/app/history/${parentRow.id}`,
+            thumb: lineageThumb(parentRow.result_url as string | null, parentRow.content_type as string | null),
+            label: h.lineageSource,
+            detail: (parentRow.prompt_input as string | null)?.slice(0, 28) ?? null,
+          },
+        ]
+      : []),
+    {
+      id: generation.id as string,
+      href: null,
+      thumb: lineageThumb(generation.result_url as string | null, generation.content_type as string | null),
+      label: h.lineageThisTake,
+      detail: typeof generation.match_score === "number" ? String(generation.match_score) : null,
+      current: true,
+    },
+    ...(childRows ?? []).map((c) => ({
+      id: c.id as string,
+      // A split's own page is the layer stack, not another render page.
+      href: c.model_id === LAYERS_MODEL_ID ? `/app/layers/${c.id}` : `/app/history/${c.id}`,
+      thumb: lineageThumb(c.result_url as string | null, c.content_type as string | null),
+      label: derivativeLabel(c.model_id as string | null),
+      detail:
+        typeof c.credits_used === "number" && c.credits_used > 0
+          ? formatMsg(t.generate.creditsShortN, { n: c.credits_used })
+          : null,
+    })),
+  ];
+
   return (
     <div className="mx-auto max-w-2xl">
       {/* This page had NO h1 and nothing larger than text-sm on it — the page
@@ -189,12 +276,167 @@ export default async function HistoryDetailPage({
       >
         ← {h.backToHistory}
       </Link>
+
+      {/* THE RENDER FIRST (direction C, operator pick 2026-09-04). It was
+          the third thing on this page — under the facts sheet and the
+          attempt log — on a page whose entire subject is this one image. */}
+      {sortedAngleRows.length > 1 ? (
+        <AngleResultViewer
+          rows={sortedAngleRows.map((r) => ({
+            ...r,
+            // Same admin-only gating as the single-generation log above.
+            pipeline_log: sanitizeAttempts((r.pipeline_log ?? []) as AttemptLog[]),
+            reported: reportedIds.has(r.id),
+          }))}
+        />
+      ) : (
+        <>
+          {/* THE RENDER IS THE PAGE (direction C, 2026-09-04). It used to
+              be the third sheet down — under the facts and the attempt log —
+              on a page whose entire subject is this one image. No sheet, no
+              "Result" heading: the picture needs no label. */}
+          <div className="group">
+            {generation.status === "succeeded" ? (
+              <>
+                {isRenderableUrl(generation.result_url) ? (
+                  generation.content_type === "image" ? (
+                    // Darkroom easel: the render sits inset on a warm-charcoal
+                    // mat — the same charcoal in both themes — so it glows on
+                    // the paper chrome instead of butting against it.
+                    <div className="relative overflow-hidden rounded-[18px] bg-atelier-stage p-2">
+                      <ZoomableImage
+                        src={generation.result_url}
+                        alt={generation.prompt_input || t.generate.resultAlt}
+                        className="w-full rounded-[6px] object-cover"
+                        downloadUrl={generation.result_url}
+                        generationId={generation.id}
+                        ownerActions
+                        redirectAfterDelete="/app/history"
+                      />
+                      <DownloadButton url={generation.result_url} contentType="image" />
+                    </div>
+                  ) : (
+                    <div className="relative overflow-hidden rounded-[18px] bg-atelier-stage p-2">
+                      <QuietVideo
+                        pending="spinner"
+                        src={generation.result_url}
+                        controls
+                        aria-label={generation.prompt_input}
+                        className="aspect-video w-full rounded-[6px] bg-neutral-950"
+                      />
+                      <DownloadButton url={generation.result_url} contentType="video" />
+                    </div>
+                  )
+                ) : (
+                  <>
+                    <div className="flex aspect-video items-center justify-center rounded-[18px] bg-atelier-stage text-center">
+                      {/* Fixed Darkroom muted — the stage never flips themes. */}
+                      <p className="max-w-xs px-4 text-xs text-[#a39a88]">
+                        {formatMsg(t.generate.simulatedResult, { type: typeLabel.toLowerCase() })}
+                      </p>
+                    </div>
+                    <div className="mt-4">
+                      <Button variant="secondary" disabled>
+                        {h.downloadUnavailable}
+                      </Button>
+                    </div>
+                  </>
+                )}
+                {isOwner && isRenderableUrl(generation.result_url) && (
+                  <ResultActions
+                    generationId={generation.id}
+                    copyText={finalPrompt}
+                    promotable={generation.content_type === "image"}
+                    initialFeedback={(generation.feedback ?? null) as GenerationFeedback}
+                    initialReported={reportedIds.has(generation.id)}
+                  />
+                )}
+              </>
+            ) : generation.status === "generating" ? (
+              // Same rule as the multi-angle viewer: a render still in flight
+              // is not a failed one, and must not be described as one.
+              <StillRendering startedAt={generation.created_at as string} />
+            ) : (
+              <p className="mt-2 text-sm text-atelier-muted">
+                {h.noResult}
+              </p>
+            )}
+          </div>
+          {/* Printed-proof-sheet voice: engraved serif attempt stamps, caps
+              step labels, a hairline left rule. A failed attempt's stamp goes
+              calm semantic red — the styling varies by state, the text bytes
+              never do. */}
+
+      {/* Title, facts and score as one masthead UNDER the render, the way
+          a caption sits under a plate. The score is the page's one large
+          number: proof, in the accent's one sanctioned job. */}
+      <div className="mt-5 flex flex-wrap items-start justify-between gap-x-8 gap-y-3">
+        <div className="min-w-0 flex-1">
       <p className="mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
         {typeLabel}
       </p>
       <h1 className="mt-1 font-numeral text-2xl font-semibold leading-tight tracking-tight text-atelier-ink [text-wrap:pretty]">
         {generation.prompt_input}
       </h1>
+        </div>
+        {typeof generation.match_score === "number" && (
+          <div className="flex-shrink-0 text-right">
+            <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+              {h.identityLabel}
+            </p>
+            <p
+              title={formatMsg(t.generate.identityMatch, { n: generation.match_score })}
+              className="mt-1 font-numeral text-[34px] font-semibold leading-none tabular-nums text-atelier-accent"
+            >
+              {generation.match_score}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* The facts as a CAPTION, not a sheet. They used to sit in their own
+          p-8 card between the title and the actions, which put a box around
+          four short lines and pushed everything below it further down. The
+          lineage links this block used to carry — "Upscaled · view source",
+          "Layer stack →" — are gone: the chain below says all of that, with
+          pictures, and saying it twice was how the prompt ended up rendered
+          twice in the first place.
+
+          The type and status badges now appear ONLY when the render did not
+          succeed. A finished render says so by being a picture, exactly as
+          the History grid decided. */}
+      <p className="mt-2.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+        {[
+          generation.character_profile_id
+            ? (character?.name ?? h.unknownCharacter)
+            : h.noCharacter,
+          typeLabel,
+          sortedAngleRows.length > 1
+            ? formatMsg(h.angleCountOther, { n: sortedAngleRows.length })
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      <p className="mt-1 text-xs text-atelier-muted">
+        <LocalDate date={generation.created_at} mode="datetime" />
+      </p>
+      {generation.status === "succeeded" && attempts.length > 0 && (
+        /* The validation pipeline is the product's whole pitch and used to be
+           invisible unless someone expanded the log. One line of proof on
+           every successful result, in the accent's serif. */
+        <p className="mt-2 font-numeral text-xs font-medium tabular-nums text-atelier-accent">
+          {attempts.length === 1
+            ? h.validatedFirstTry
+            : formatMsg(h.validatedAfterRetries, { n: attempts.length })}
+        </p>
+      )}
+      {generation.status !== "succeeded" && (
+        <div className="mt-2.5 flex items-center gap-2">
+          <Badge tone={generation.status === "failed" ? "danger" : "neutral"}>{statusLabel}</Badge>
+        </div>
+      )}
+
       {/* flex-wrap, and min-w-0 on the row: five controls in a nowrap flex
           overflowed a 328px phone column and pushed the app's one scroller
           sideways, so Upscale, Share and Delete sat off-screen with nothing
@@ -252,82 +494,20 @@ export default async function HistoryDetailPage({
         )}
       </div>
 
-      <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-sm font-medium text-atelier-ink">{generation.prompt_input}</p>
-            <p className="mt-1 text-xs text-atelier-muted">
-              {generation.character_profile_id ? (character?.name ?? h.unknownCharacter) : h.noCharacter} ·{" "}
-              <LocalDate date={generation.created_at} mode="datetime" />
-              {sortedAngleRows.length > 1 && ` · ${formatMsg(h.angleCountOther, { n: sortedAngleRows.length })}`}
-            </p>
-            {/* The validation pipeline is the product's whole pitch, but it
-                used to be invisible unless someone expanded the attempt log.
-                One line of proof on every successful result — and proof is
-                the accent's job, in the numeral serif. */}
-            {/* Which tool made this is a property of the model that ran,
-                not of the lineage column — Layers writes source_generation_id
-                too, and keyed on that a split wore the Upscaled badge. */}
-            {generation.model_id === UPSCALE_MODEL_ID && generation.source_generation_id && (
-              <p className="mt-1 text-xs text-atelier-muted">
-                {h.upscaledBadge} ·{" "}
-                <Link
-                  href={`/app/history/${generation.source_generation_id}`}
-                  className="underline hover:text-atelier-ink"
-                >
-                  {h.upscaleViewSource}
-                </Link>
-              </p>
-            )}
-            {generation.model_id === LAYERS_MODEL_ID && (
-              <p className="mt-1 text-xs text-atelier-muted">
-                <Link href={`/app/layers/${generation.id}`} className="underline hover:text-atelier-ink">
-                  {t.layers.stackTitle} →
-                </Link>
-                {generation.source_generation_id && (
-                  <>
-                    {" "}·{" "}
-                    <Link href={`/app/history/${generation.source_generation_id}`} className="underline hover:text-atelier-ink">
-                      {h.upscaleViewSource}
-                    </Link>
-                  </>
-                )}
-              </p>
-            )}
-            {generation.status === "succeeded" && attempts.length > 0 && (
-              <p className="mt-1.5 font-numeral text-xs font-medium tabular-nums text-atelier-accent">
-                {attempts.length === 1
-                  ? h.validatedFirstTry
-                  : formatMsg(h.validatedAfterRetries, { n: attempts.length })}
-              </p>
-            )}
-          </div>
-          <div className="flex flex-shrink-0 items-center gap-2">
-            <Badge tone="neutral">{typeLabel}</Badge>
-            <Badge tone={generation.status === "succeeded" ? "success" : "danger"}>
-              {statusLabel}
-            </Badge>
-          </div>
-        </div>
-      </div>
+      <LineageChain nodes={lineageNodes} title={h.lineage} />
 
-      {sortedAngleRows.length > 1 ? (
-        <AngleResultViewer
-          rows={sortedAngleRows.map((r) => ({
-            ...r,
-            // Same admin-only gating as the single-generation log above.
-            pipeline_log: sanitizeAttempts((r.pipeline_log ?? []) as AttemptLog[]),
-            reported: reportedIds.has(r.id),
-          }))}
-        />
-      ) : (
-        <>
-          {/* Printed-proof-sheet voice: engraved serif attempt stamps, caps
-              step labels, a hairline left rule. A failed attempt's stamp goes
-              calm semantic red — the styling varies by state, the text bytes
-              never do. */}
-          <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
-            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-atelier-muted">{h.pipelineLog}</h2>
+          {/* Folded, not stacked. The pipeline is the product's pitch and
+              worth keeping, but it is proof you consult — not the second
+              thing you should meet on the way to your own render. */}
+          <details className="group/log mt-6 border-t border-atelier-rule pt-5">
+            <summary className="flex cursor-pointer list-none items-center justify-between">
+              <h2 className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                {h.pipelineLog}
+              </h2>
+              <span className="text-xs text-atelier-muted">
+                {formatMsg(h.attemptCountOther, { n: attempts.length })}
+              </span>
+            </summary>
             <ol className="mt-4 space-y-5">
               {attempts.map((attempt) => (
                 <li key={attempt.attempt}>
@@ -350,81 +530,7 @@ export default async function HistoryDetailPage({
                 </li>
               ))}
             </ol>
-          </div>
-
-          <div className="group mt-4 rounded-control border border-atelier-rule bg-atelier-surface p-8 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
-            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-atelier-muted">{h.result}</h2>
-            {generation.status === "succeeded" ? (
-              <>
-                {isRenderableUrl(generation.result_url) ? (
-                  generation.content_type === "image" ? (
-                    // Darkroom easel: the render sits inset on a warm-charcoal
-                    // mat — the same charcoal in both themes — so it glows on
-                    // the paper chrome instead of butting against it.
-                    <div className="relative mt-3 overflow-hidden rounded-media bg-atelier-stage p-2">
-                      <ZoomableImage
-                        src={generation.result_url}
-                        alt={generation.prompt_input || t.generate.resultAlt}
-                        className="w-full rounded-[6px] object-cover"
-                        downloadUrl={generation.result_url}
-                        generationId={generation.id}
-                        ownerActions
-                        redirectAfterDelete="/app/history"
-                      />
-                      <DownloadButton url={generation.result_url} contentType="image" />
-                    </div>
-                  ) : (
-                    <div className="relative mt-3 overflow-hidden rounded-media bg-atelier-stage p-2">
-                      <QuietVideo
-                        pending="spinner"
-                        src={generation.result_url}
-                        controls
-                        aria-label={generation.prompt_input}
-                        className="aspect-video w-full rounded-[6px] bg-neutral-950"
-                      />
-                      <DownloadButton url={generation.result_url} contentType="video" />
-                    </div>
-                  )
-                ) : (
-                  <>
-                    <div className="mt-3 flex aspect-video items-center justify-center rounded-media bg-atelier-stage text-center">
-                      {/* Fixed Darkroom muted — the stage never flips themes. */}
-                      <p className="max-w-xs px-4 text-xs text-[#a39a88]">
-                        {formatMsg(t.generate.simulatedResult, { type: typeLabel.toLowerCase() })}
-                      </p>
-                    </div>
-                    <div className="mt-4">
-                      <Button variant="secondary" disabled>
-                        {h.downloadUnavailable}
-                      </Button>
-                    </div>
-                  </>
-                )}
-                {typeof generation.match_score === "number" && (
-                  <p className="mt-2 font-numeral text-xs tabular-nums text-atelier-accent">
-                    {formatMsg(t.generate.identityMatch, { n: generation.match_score })}
-                  </p>
-                )}
-                {isOwner && isRenderableUrl(generation.result_url) && (
-                  <ResultActions
-                    generationId={generation.id}
-                    copyText={finalPrompt}
-                    promotable={generation.content_type === "image"}
-                    initialFeedback={(generation.feedback ?? null) as GenerationFeedback}
-                    initialReported={reportedIds.has(generation.id)}
-                  />
-                )}
-              </>
-            ) : generation.status === "generating" ? (
-              // Same rule as the multi-angle viewer: a render still in flight
-              // is not a failed one, and must not be described as one.
-              <StillRendering startedAt={generation.created_at as string} />
-            ) : (
-              <p className="mt-2 text-sm text-atelier-muted">
-                {h.noResult}
-              </p>
-            )}
-          </div>
+          </details>
         </>
       )}
     </div>

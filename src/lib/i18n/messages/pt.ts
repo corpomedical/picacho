@@ -915,6 +915,11 @@ const pt = {
     viewInHistory: "Ver no Histórico",
   },
   history: {
+    identityLabel: "Identidade",
+    lineage: "Origem",
+    lineageIdentityPhoto: "Foto de identidade",
+    lineageThisTake: "Esta take",
+    lineageSource: "Feito a partir de",
     pageRange: "{first}–{last} mostrados",
     eyebrow: "Biblioteca",
     upscaleCta: "Melhorar",

@@ -983,6 +983,11 @@ const en = {
     viewInHistory: "View in History",
   },
   history: {
+    identityLabel: "Identity",
+    lineage: "Lineage",
+    lineageIdentityPhoto: "Identity photo",
+    lineageThisTake: "This take",
+    lineageSource: "Made from",
     pageRange: "{first}–{last} shown",
     eyebrow: "Library",
     upscaleCta: "Upscale",

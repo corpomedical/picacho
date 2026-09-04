@@ -915,6 +915,11 @@ const es = {
     viewInHistory: "Ver en el Historial",
   },
   history: {
+    identityLabel: "Identidad",
+    lineage: "Origen",
+    lineageIdentityPhoto: "Foto de identidad",
+    lineageThisTake: "Esta toma",
+    lineageSource: "Hecho a partir de",
     pageRange: "{first}–{last} mostrados",
     eyebrow: "Biblioteca",
     upscaleCta: "Mejorar",

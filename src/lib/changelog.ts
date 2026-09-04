@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.16.0",
+    build: 27,
+    date: "2026-09-04",
+    title: "The render page shows the render first, and where it came from",
+    items: [
+      "Opening a render from History used to show it third. The page led with a card of facts, then the attempt log, then — below the fold — the actual picture, each boxed in its own sheet in a narrow column. Now the render opens the page, large, on its dark stage. The prompt reads as the title underneath it like a caption under a plate, with the identity score beside it as the one big number on the page, and the facts as a single line rather than a card.",
+      "New: the lineage of a render. A chain under the picture showing where it came from and what came out of it — the character's identity photo, the take it was made from, this one, then its layer split, its upscale, its edited layers — each a thumbnail you can click along. The studio has recorded this all along and nothing ever showed it, so a render page was a dead end in a product whose whole structure is one thing derived from another. Renders with no history show nothing at all rather than an empty heading.",
+      "The prompt was being printed twice — once as the new title, once in the facts card left over beneath it. That was our own bug from yesterday, found while designing this page's replacement, and it is gone along with the card. The attempt log is now folded away behind a heading you can open, instead of standing between you and your own render.",
+    ],
+  },
+  {
     version: "1.15.0",
     build: 26,
     date: "2026-09-04",
