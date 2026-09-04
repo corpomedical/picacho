@@ -193,6 +193,38 @@ get for free. We can keep `watermark: false` — which every plan's no-watermark
 promise requires — and still receive C2PA. To be verified on real output the
 day we have access, with `hasC2paManifest` (lib/media/c2pa-probe.ts).
 
+### FIRST, THE FRAMING — PRICE WAS NEVER THE REASON
+
+Operator, 2026-09-04: "Remember that we decided to go straight to the source
+to avoid restrictions from using images of people to create videos."
+
+That is right and this file had drifted off it. The reason for going direct is
+that **the Seedance lane cannot render a real person at all through fal**, and
+the asset library is ByteDance's own sanctioned route to doing so with
+verified portrait rights. Price was a secondary attraction; C2PA was a
+question we asked while we were there. Neither is the case.
+
+Measured on the account, 2026-09-04:
+
+- **10 of 20 failed video renders — half of every video failure we have — are
+  likeness refusals**, all Seedance: 7 on 2.5, 3 on 2.0. The provider's own
+  words in the log: "The images or videos provided may contain likenesses of
+  real people", `content_policy_violation`.
+- **13 of 20 video failures are Seedance**, an engine that is 11 of 58
+  successes. It fails more than it delivers.
+- And the count UNDERSTATES the loss, because the product now prevents the
+  attempt: `send-plan.ts` marks both `seedance` and `seedance-2` as
+  `photorealPolicy: "rejects"`, so a photoreal character picking either gets
+  a warning and a one-tap switch to another engine before spending anything.
+  Those ten failures are what happened BEFORE the fence went up. Since then
+  the lane simply is not offered for the product's central case.
+
+So the ranking is: **capability first** (a saved character is a real person,
+and this is the only route that makes Seedance usable for one), provenance
+second (they embed C2PA, and fal's delivery of the same model does not — see
+AI_ACT_MARKING.md), price third and now uncertain. A price parity finding
+does not weaken the case; it only removes a bonus.
+
 ### THE PRICE CLAIM IN THIS FILE IS NO LONGER SAFE TO ACT ON
 
 The table above says $0.152/s for 2.0 and $0.231/s for 2.5, against fal's
