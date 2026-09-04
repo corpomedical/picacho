@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { QuietVideo } from "@/components/quiet-video";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 
 // The lineage chain — direction C, operator pick 2026-09-04.
@@ -17,6 +18,8 @@ export type LineageNode = {
   /** null for the identity photo, which is not a generation. */
   href: string | null;
   thumb: string | null;
+  /** Videos cannot be drawn by <img>; they need the poster-frame treatment. */
+  isVideo?: boolean;
   label: string;
   detail: string | null;
   /** The node the page is about, drawn in the accent. */
@@ -31,7 +34,13 @@ export type LineageNode = {
   derivative?: boolean;
 };
 
-export function LineageChain({ nodes, title }: { nodes: LineageNode[]; title: string }) {
+export function LineageChain({
+  nodes,
+  title,
+}: {
+  nodes: LineageNode[];
+  title: string;
+}) {
   // One node is just "this render" — a chain of one is not a chain.
   if (nodes.length < 2) return null;
 
@@ -50,7 +59,10 @@ export function LineageChain({ nodes, title }: { nodes: LineageNode[]; title: st
           const previous = nodes[i - 1];
           const showArrow = i > 0 && !(node.derivative && previous?.derivative);
           return (
-            <li key={node.id} className="flex flex-shrink-0 items-center gap-2.5">
+            <li
+              key={node.id}
+              className="flex flex-shrink-0 items-center gap-2.5"
+            >
               {showArrow && (
                 <span aria-hidden className="text-sm text-atelier-muted">
                   →
@@ -74,11 +86,52 @@ function Node({ node }: { node: LineageNode }) {
           : "flex items-center gap-2.5 rounded-[12px] border border-atelier-rule bg-atelier-surface p-1.5 pr-3 transition-colors hover:border-atelier-muted"
       }
     >
-      <div className="h-11 w-14 flex-shrink-0 overflow-hidden rounded-[8px] bg-atelier-stage">
+      <div className="relative h-11 w-14 flex-shrink-0 overflow-hidden rounded-[8px] bg-atelier-stage">
         {node.thumb && isRenderableUrl(node.thumb) ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={node.thumb} alt="" className="h-full w-full object-cover" loading="lazy" />
-        ) : null}
+          node.isVideo ? (
+            // A video URL in an <img> is a guaranteed broken image, and an
+            // upscale — the commonest derivative — is always a video, so the
+            // last node in a chain broke every time (operator, 2026-09-04).
+            // The #t=0.1 fragment is the same one the History grid uses to
+            // make Android's WebView paint a real frame instead of a grey
+            // system play tile.
+            <QuietVideo
+              pending="disc"
+              src={`${node.thumb}#t=0.1`}
+              muted
+              playsInline
+              preload="metadata"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={node.thumb}
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+            />
+          )
+        ) : (
+          // Nothing to show — a split still rendering, or one that failed.
+          // An empty charcoal square reads as broken; a glyph reads as "not
+          // yet", which is what it is.
+          <span
+            aria-hidden
+            className="absolute inset-0 flex items-center justify-center text-[#a39a88]"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={1.5}
+              className="h-4 w-4"
+            >
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="m5 17 4.5-4.5 3.5 3.5 3-3 3 4" />
+            </svg>
+          </span>
+        )}
       </div>
       <div className="min-w-0">
         <p
@@ -114,7 +167,10 @@ function Node({ node }: { node: LineageNode }) {
 }
 
 /** Media thumb for a lineage node, or null when the row has nothing to show. */
-export function lineageThumb(resultUrl: string | null, contentType: string | null): string | null {
+export function lineageThumb(
+  resultUrl: string | null,
+  contentType: string | null,
+): string | null {
   const url = toMediaUrl(resultUrl);
   if (!url || !isRenderableUrl(url)) return null;
   // Videos keep the stable URL (a <video> poster frame is not worth a second

@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.16.2",
+    build: 29,
+    date: "2026-09-04",
+    title: "The broken thumbnail at the end of the lineage, and what the render was actually made with",
+    items: [
+      "The last picture in the lineage was always broken, and the reason is that it was usually an upscale — which is a video, drawn with an image tag, which can only ever fail. Video steps now show a real frame from the clip, the same way History's grid does. A step that has nothing to show yet, because it is still rendering or it failed, now shows a quiet placeholder instead of an empty black square that read as broken too.",
+      "The render page now says what made it: engine, length, aspect, credits spent and how many attempts it took. Anything that does not apply is left out rather than shown as a dash, so an image is not asked to have a duration.",
+    ],
+  },
+  {
     version: "1.16.1",
     build: 28,
     date: "2026-09-04",

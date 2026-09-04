@@ -915,6 +915,11 @@ const pt = {
     viewInHistory: "Ver no Histórico",
   },
   history: {
+    factEngine: "Motor",
+    factDuration: "Duração",
+    factAspect: "Formato",
+    factCredits: "Créditos",
+    factAttempts: "Tentativas",
     promptMore: "Ver prompt completo",
     promptLess: "Ver menos",
     identityLabel: "Identidade",

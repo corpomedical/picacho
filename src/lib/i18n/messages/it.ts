@@ -915,6 +915,11 @@ const it = {
     viewInHistory: "Vedi nella Cronologia",
   },
   history: {
+    factEngine: "Motore",
+    factDuration: "Durata",
+    factAspect: "Formato",
+    factCredits: "Crediti",
+    factAttempts: "Tentativi",
     promptMore: "Mostra il prompt completo",
     promptLess: "Mostra meno",
     identityLabel: "Identità",

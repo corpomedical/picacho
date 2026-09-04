@@ -983,6 +983,11 @@ const en = {
     viewInHistory: "View in History",
   },
   history: {
+    factEngine: "Engine",
+    factDuration: "Length",
+    factAspect: "Aspect",
+    factCredits: "Credits",
+    factAttempts: "Attempts",
     promptMore: "Show full prompt",
     promptLess: "Show less",
     identityLabel: "Identity",

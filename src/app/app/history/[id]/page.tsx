@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
 import { ExpandablePrompt } from "@/components/expandable-prompt";
 import {
   LineageChain,
@@ -9,6 +10,7 @@ import {
   LAYERS_MODEL_ID,
   takeLayersIneligibility,
   LAYER_EDIT_MODEL_ID,
+  LAYERIZE_LABEL,
 } from "@/lib/generations/layers";
 import { QuietVideo } from "@/components/quiet-video";
 import {
@@ -47,6 +49,7 @@ import {
   takeSourceHeight,
   takeUpscaleIneligibility,
   UPSCALE_MODEL_ID,
+  UPSCALE_LABEL,
 } from "@/lib/generations/upscale";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -256,6 +259,22 @@ export default async function HistoryDetailPage({
         : modelId === LAYER_EDIT_MODEL_ID
           ? t.layers.change
           : typeLabel;
+  // The engine's own NAME, not its id. Video models carry a catalogue entry;
+  // the tool lanes (upscale, layers, layer edit) are post-processes with no
+  // composer entry, so they are named from their own contract modules.
+  const engineName = ((): string | null => {
+    const catalogued = generation.video_model_id
+      ? VIDEO_MODELS.find((m) => m.id === generation.video_model_id)
+      : undefined;
+    if (catalogued) return catalogued.name;
+    if (generation.model_id === UPSCALE_MODEL_ID) return UPSCALE_LABEL;
+    if (generation.model_id === LAYERS_MODEL_ID) return LAYERIZE_LABEL;
+    if (generation.model_id === LAYER_EDIT_MODEL_ID) return t.layers.change;
+    // An id with no catalogue entry is still better than nothing — an old row
+    // recorded "gpt-image" long before any of these tables existed.
+    return (generation.model_id as string | null) ?? null;
+  })();
+
   const lineageNodes: LineageNode[] = [
     ...(identityPath
       ? [
@@ -493,6 +512,71 @@ export default async function HistoryDetailPage({
           <p className="mt-1 text-xs text-atelier-muted">
             <LocalDate date={generation.created_at} mode="datetime" />
           </p>
+
+          {/* WHAT MADE IT (operator, 2026-09-04: "more info is needed, like the
+              engine used and settings selected"). The caption above says whose
+              face and what kind; this says how it was produced. Every value is
+              read from the row, and a field with nothing in it is OMITTED
+              rather than printed as a dash — so the strip never pads itself
+              with placeholders for settings that do not apply to this content
+              type (an image has no duration or aspect). */}
+          <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-3 border-t border-atelier-rule pt-3.5">
+            {[
+              {
+                label: h.factEngine,
+                value: engineName,
+                numeral: false,
+                accent: false,
+              },
+              {
+                label: h.factDuration,
+                value: generation.video_duration_seconds
+                  ? `${generation.video_duration_seconds}s`
+                  : null,
+                numeral: true,
+                accent: false,
+              },
+              {
+                label: h.factAspect,
+                value: (generation.video_aspect_ratio as string | null) ?? null,
+                numeral: true,
+                accent: false,
+              },
+              {
+                label: h.factCredits,
+                value:
+                  typeof generation.credits_used === "number" &&
+                  generation.credits_used > 0
+                    ? String(generation.credits_used)
+                    : null,
+                numeral: true,
+                accent: true,
+              },
+              {
+                label: h.factAttempts,
+                value: attempts.length > 0 ? String(attempts.length) : null,
+                numeral: true,
+                accent: false,
+              },
+            ]
+              .filter((f) => f.value)
+              .map((f) => (
+                <div key={f.label}>
+                  <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                    {f.label}
+                  </dt>
+                  <dd
+                    className={
+                      f.numeral
+                        ? `mt-1 font-numeral text-[15px] font-semibold tabular-nums ${f.accent ? "text-atelier-accent" : "text-atelier-ink"}`
+                        : "mt-1 text-sm text-atelier-ink"
+                    }
+                  >
+                    {f.value}
+                  </dd>
+                </div>
+              ))}
+          </dl>
           {generation.status === "succeeded" && attempts.length > 0 && (
             /* The validation pipeline is the product's whole pitch and used to be
            invisible unless someone expanded the log. One line of proof on
