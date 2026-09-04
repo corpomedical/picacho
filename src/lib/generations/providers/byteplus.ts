@@ -28,32 +28,46 @@ import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout
 const ARK_BASE = "https://ark.ap-southeast.bytepluses.com/api/v3";
 const TASKS_PATH = "/contents/generations/tasks";
 
-// Confirmed present and unrestricted on this account (ListModelRateLimit,
-// 2026-09-03): 10 concurrent requests, 600 CreateTask RPM each. The
-// "dreamina-" family is the line ByteDance attaches portrait rights to — its
-// pricing page quotes dreamina-seedance-2-0-260128 and the rights document is
-// titled "Dreamina Seedance Advanced Creation Rights".
+// RESOLVED 2026-09-04, from ModelArk's own Model list page. The create call
+// takes a VERSION-SUFFIXED model id; the bare family names this block used to
+// carry ("dreamina-seedance-2-0") are FoundationModelNames from
+// ListModelRateLimit, and would have failed on the first send. The open
+// question that stood here — bare name or suffixed id — is answered: suffixed.
 //
-// ⚠ THESE IDS ARE NOT YET CONFIRMED ACCEPTED BY THE CREATE CALL, and the two
-// sources disagree in a way worth resolving before the first send rather
-// than after. The names below are FoundationModelNames, read from this
-// account's own ListModelRateLimit response, so the models certainly exist
-// here. But `model` on the create call is documented as a "Model ID" (or an
-// endpoint id) resolvable through the model list, and ByteDance's own sample
-// passes a version-suffixed id, seedance-1-0-pro-250528; their pricing page
-// quotes dreamina-seedance-2-0-260128 for the same family.
+// The full roster on that page, with the limits that matter to us:
 //
-// So: bare family name and suffixed model id are two different identifiers,
-// and only one of them is what create wants. Rather than ship one guess for
-// 2.0 and a different guess for 2.5 — which is what the first draft did —
-// both stay in the form this account has actually seen, and the resolution
-// is a documented open question. Confirm against the model list, or by one
-// create call per id, before wiring this to a lane that charges anyone.
+//   dreamina-seedance-2-5-260628   480p / 720p / 1080p(10-bit), 24fps,
+//                                  duration 4-30s, .mp4/.mov
+//   dreamina-seedance-2-0-260128   480p / 720p / 1080p / 4K, 24fps,
+//                                  duration 4-15s, .mp4
+//   dreamina-seedance-2-0-fast-...  480p / 720p only, 4-15s
+//   dreamina-seedance-2-0-mini-...  480p / 720p only, 4-15s
+//
+// So our catalogue's ladders both fit: 2.0 offers 5/10/15 against a 4-15
+// ceiling, and 2.5 offers 5/10/15/20/30 against 4-30. The "Seedance accepts
+// 4-15" note this file used to carry was the 2.0 limit applied to both.
+//
+// FLEX IS NOT AVAILABLE HERE. The same page lists "flex: Not supported" for
+// every Dreamina model, so the offline-inference discount this file once
+// hoped to price is not a lever on this lane, however async the product is.
+// service_tier does exist as a request field (default "default"), which the
+// API reference confirms — it is simply not honoured by these models.
+//
+// The fast and mini variants are the same family at a fraction of the price
+// (their promotional 720p rates on 2026-09-04 were ~$0.09/s and ~$0.03/s
+// against fal's $0.3024/s for 2.0) but they are DIFFERENT MODELS, not tiers,
+// and nobody here has looked at their output. They are recorded, not wired.
 export const ARK_MODELS = {
   /** Our "seedance" — Seedance 2.5. */
-  seedance: "dreamina-seedance-2-5",
+  seedance: "dreamina-seedance-2-5-260628",
   /** Our "seedance-2" — Seedance 2.0. */
-  "seedance-2": "dreamina-seedance-2-0",
+  "seedance-2": "dreamina-seedance-2-0-260128",
+} as const;
+
+/** Same family, far cheaper, unevaluated. Not reachable from the catalogue. */
+export const ARK_MODELS_UNEVALUATED = {
+  "seedance-2-fast": "dreamina-seedance-2-0-fast-260128",
+  "seedance-2-mini": "dreamina-seedance-2-0-mini-260615",
 } as const;
 
 // The tier a task ran under, as reported by the list endpoint's
@@ -283,10 +297,24 @@ export type ArkSubmitOptions = {
   /** Versioned model id, e.g. "dreamina-seedance-2-0-260128". See ARK_MODELS. */
   model: string;
   prompt: string;
-  /** Whole seconds. Seedance accepts 4-15. */
+  /** Whole seconds. 2.0 accepts 4-15; 2.5 accepts 4-30. */
   durationSeconds: number;
   /** e.g. "16:9", "9:16", "1:1". */
   ratio: string;
+  /**
+   * "480p" | "720p" | "1080p" (2.0 also does 4K). SEND IT. The API reference
+   * lists no default for this field, and the one time this product let a
+   * provider pick the resolution it billed at more than double the rate the
+   * credit weights were built for (see the MiniMax H3 note in
+   * video-models.ts). fal's Seedance body pins "720p"; so does this.
+   */
+  resolution: string;
+  /**
+   * Defaults to TRUE at ModelArk — the API reference says so explicitly —
+   * which is the same default fal's branch applies, so passing the caller's
+   * choice through keeps the two providers delivering the same thing.
+   */
+  generateAudio?: boolean;
   /** ByteDance stamps a visible mark when true. Off in their own example. */
   watermark?: boolean;
   /**
@@ -329,15 +357,17 @@ export async function submitArkVideoJob(options: ArkSubmitOptions): Promise<stri
   const body: Record<string, unknown> = {
     model: options.model,
     content,
+    resolution: options.resolution,
     ratio: options.ratio,
+    // Integer here, unlike fal's branch, which sends the same number as a
+    // string. Both are what the respective reference asks for.
     duration: options.durationSeconds,
+    generate_audio: options.generateAudio ?? true,
     watermark: options.watermark ?? false,
-    // NO service_tier. It is documented only as a LIST filter
-    // (filter.service_tier), which establishes that tasks HAVE a tier — not
-    // the name, nesting, or existence of a request-side field to set one.
-    // Sending an unrecognised key to a paid endpoint is a guess that bills
-    // to discover. Flex is worth real money on an already-async product;
-    // confirm the field before reaching for it. See docs/BYTEPLUS_ENQUIRY.md.
+    // NO service_tier. It turned out to be a real request field, defaulting
+    // to "default" — but the Model list marks flex "Not supported" on every
+    // Dreamina model, so there is nothing to switch to. Revisit only if that
+    // line changes.
   };
 
   const res = await arkFetch(
