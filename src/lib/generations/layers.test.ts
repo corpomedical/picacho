@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  LAYER_EDIT_MAX_PIXELS,
+  layerEditCreditCost,
   LAYER_EDIT_MAX_PROMPT,
   layerEditIneligibility,
   newestLayers,
@@ -97,6 +99,52 @@ describe("layerEditIneligibility", () => {
   });
   it("refuses a split that has not finished", () => {
     expect(layerEditIneligibility({ ...ok, parentStatus: "generating" })).toBe("not-succeeded");
+  });
+});
+
+describe("layerEditCreditCost", () => {
+  it("charges one credit for an ordinary layer", () => {
+    // The measured case: a 605x1088 hiker, 0.66 MP.
+    expect(layerEditCreditCost(605, 1088)).toBe(1);
+  });
+  it("charges two once the layer is big enough to cost real money", () => {
+    // ~2.6 MP at 2K: about $0.22 with the gate's free retry, which one
+    // credit ($0.28) covers too thinly.
+    expect(layerEditCreditCost(1210, 2176)).toBe(2);
+  });
+  it("keeps a real margin at both tiers, worst case (free retry spent)", () => {
+    // fal, read 2026-09-04: $0.03 first output MP + $0.015 per extra MP of
+    // input and output, ceiled. Small: 4 MP -> $0.075, x2 = $0.15 + $0.01
+    // score. Large: 6 MP -> $0.105, x2 = $0.21 + $0.01.
+    expect(layerEditCreditCost(605, 1088) * 0.28).toBeGreaterThan(0.15 + 0.01);
+    expect(layerEditCreditCost(1210, 2176) * 0.28).toBeGreaterThan(0.21 + 0.01);
+  });
+  it("treats unknown dimensions as the cheap tier", () => {
+    expect(layerEditCreditCost(null, null)).toBe(1);
+  });
+});
+
+describe("layer edit size cap", () => {
+  it("refuses a layer past the cap", () => {
+    const over = Math.ceil(Math.sqrt(LAYER_EDIT_MAX_PIXELS)) + 10;
+    expect(
+      layerEditIneligibility({ prompt: "red", zIndex: 1, parentStatus: "succeeded", width: over, height: over }),
+    ).toBe("too-large");
+  });
+  it("accepts a full-canvas 2K layer, which is what a 2K split delivers", () => {
+    expect(
+      layerEditIneligibility({ prompt: "red", zIndex: 1, parentStatus: "succeeded", width: 2048, height: 2048 }),
+    ).toBeNull();
+  });
+});
+
+describe("layerStoragePath versions", () => {
+  it("keeps v1 at the unversioned name every stage-1 split already wrote", () => {
+    expect(layerStoragePath("u1", "g1", 4)).toBe("u1/layers/g1/z4.png");
+    expect(layerStoragePath("u1", "g1", 4, 1)).toBe("u1/layers/g1/z4.png");
+  });
+  it("gives every later version its own object, never a rewrite", () => {
+    expect(layerStoragePath("u1", "g1", 4, 2)).toBe("u1/layers/g1/z4-v2.png");
   });
 });
 

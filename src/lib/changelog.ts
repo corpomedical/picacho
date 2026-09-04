@@ -28,6 +28,7 @@ export const RELEASES: Release[] = [
       "Layers can now be changed, not just separated. Pick any layer in the stack, say what should be different — \"make the jacket red\", \"swap the background for a rainy street\" — and it comes back re-rendered in about fifteen seconds, still transparent, still sitting exactly where it sat. One credit. The original is kept as v1 and stays downloadable, so an edit is never destructive.",
       "When the layer is your character, the new face is scored against their identity photo and the number sits beside the layer. Below the bar it re-renders once, free, and keeps whichever attempt scored higher — the same rule the generate page already follows. This is the part a general image editor cannot do, and the measurements say why: on the same edit our engine held identity at 96 where the two engines the competition runs on scored 86 and 83.",
       "The hard part was invisible and worth naming. A layer is a transparent crop; the editing engine hands back an opaque picture at its own size, having invented a background. So every edit is re-cut to transparency, then resized back to the layer's exact pixels. Measured on a real layer: the subject lands within 0.1% of where it was, and the scorer called the result the same person at 100.",
+      "Price is quoted before the button, as everywhere: one credit for an ordinary layer, two for a large one, because at 2K a single credit covered the cost too thinly once the free re-render is counted. Every way this can fail returns the credit.",
     ],
   },
   {

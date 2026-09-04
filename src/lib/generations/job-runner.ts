@@ -1264,21 +1264,44 @@ export async function advanceGeneration(
         } catch (err) {
           throw new CriticalWriteError(`storing layer ${layer.zIndex}: ${err instanceof Error ? err.message : String(err)}`);
         }
-        const { error: layerError } = await admin.from("generation_layers").upsert(
-          {
-            generation_id: generationId,
-            user_id: userId,
-            z_index: layer.zIndex,
-            name: layer.name,
-            description: layer.description,
-            bbox: layer.boundingBox ?? null,
-            storage_path: path,
-            width: measured?.width ?? null,
-            height: measured?.height ?? null,
-          },
-          { onConflict: "generation_id,z_index" },
-        );
-        if (layerError) throw new CriticalWriteError(`recording layer ${layer.zIndex}: ${layerError.message}`);
+        // Insert, and treat "already there" as done rather than naming a
+        // conflict target. An upsert's onConflict must match a unique index
+        // EXACTLY, so it silently ties this write to whichever unique the
+        // table happens to carry — and the stage-2 migration replaces
+        // (generation_id, z_index) with (generation_id, z_index, version).
+        // Named either way, a split would fail its layer write in the window
+        // between the SQL and the deploy, throw CriticalWriteError, and retry
+        // behind a spinner forever. This is idempotent under the retry that
+        // matters (a transport blip re-runs the pass) without depending on
+        // the schema's shape at all.
+        const layerRow = {
+          generation_id: generationId,
+          user_id: userId,
+          z_index: layer.zIndex,
+          version: 1,
+          name: layer.name,
+          description: layer.description,
+          bbox: layer.boundingBox ?? null,
+          storage_path: path,
+          width: measured?.width ?? null,
+          height: measured?.height ?? null,
+        };
+        const { error: layerError } = await admin.from("generation_layers").insert(layerRow);
+        if (layerError) {
+          const duplicate = layerError.code === "23505" || /duplicate key/i.test(layerError.message);
+          if (!duplicate) {
+            throw new CriticalWriteError(`recording layer ${layer.zIndex}: ${layerError.message}`);
+          }
+          // The earlier pass got this far; bring the row up to date and move on.
+          const { error: updateError } = await admin
+            .from("generation_layers")
+            .update(layerRow)
+            .eq("generation_id", generationId)
+            .eq("z_index", layer.zIndex);
+          if (updateError) {
+            throw new CriticalWriteError(`updating layer ${layer.zIndex}: ${updateError.message}`);
+          }
+        }
         stored.push({ zIndex: layer.zIndex, url });
       };
       for (let i = 0; i < layers.length; i += 4) {

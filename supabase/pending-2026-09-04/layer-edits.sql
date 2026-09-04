@@ -18,6 +18,15 @@ alter table public.generation_layers
 
 -- The old unique was (generation_id, z_index), which is exactly what a second
 -- version of one layer collides with.
+--
+-- SAFE IN EITHER DEPLOY ORDER, and that took a fix on the code side to be
+-- true: the stage-1 collector used to upsert with onConflict
+-- "generation_id,z_index", which PostgREST resolves against a unique index of
+-- exactly that shape — so dropping this constraint before the new code
+-- deployed would have failed every new split's layer write, thrown
+-- CriticalWriteError, and left it retrying behind a spinner. The collector
+-- now inserts and treats a duplicate as done, naming no constraint at all,
+-- so it works before and after this runs.
 alter table public.generation_layers
   drop constraint if exists generation_layers_generation_id_z_index_key;
 

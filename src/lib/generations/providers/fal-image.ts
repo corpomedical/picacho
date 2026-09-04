@@ -27,6 +27,16 @@ export class FluxSafetyRejection extends Error {
 export async function generateImageWithFlux(
   prompt: string,
   referenceImageUrl?: string | string[] | null,
+  /**
+   * Layer edits only. The endpoint's defaults are wrong for a layer in two
+   * ways, both measured 2026-09-04: output_format defaults to JPEG, whose
+   * ringing along a cut-out silhouette is exactly what the matting model
+   * then traces into the new alpha; and image_size defaults to "auto", which
+   * returned 592x1088 for a 605x1088 layer, a 2% squash that has to be
+   * resized back out. Every other caller keeps the behaviour it has always
+   * had — this argument is absent for all of them.
+   */
+  options?: { outputFormat?: "png" | "jpeg"; size?: { width: number; height: number } | null },
 ): Promise<string> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) {
@@ -52,7 +62,11 @@ export async function generateImageWithFlux(
   if (model.provider !== "fal") throw new Error("Flux model config is misconfigured.");
 
   const endpoint = referenceUrls.length ? model.falImageToImage : model.falTextToImage;
-  const body = referenceUrls.length ? { prompt, image_urls: referenceUrls } : { prompt };
+  const body: Record<string, unknown> = referenceUrls.length
+    ? { prompt, image_urls: referenceUrls }
+    : { prompt };
+  if (options?.outputFormat) body.output_format = options.outputFormat;
+  if (options?.size) body.image_size = { width: options.size.width, height: options.size.height };
 
   const res = await fetchWithTimeout(
     `https://fal.run/${endpoint}`,

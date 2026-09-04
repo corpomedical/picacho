@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { editLayer } from "@/lib/generations/actions";
 import { thumbUrl } from "@/lib/media/url";
-import { layerFileName, type LayerBox } from "@/lib/generations/layers";
+import { layerEditCreditCost, layerFileName, type LayerBox } from "@/lib/generations/layers";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -45,6 +45,7 @@ export function LayerStack({ layers, tierLabel, generationId }: {
   // Any layer already carrying a score means this stack came from a
   // character, so an edit here will be measured too.
   const scoredStack = layers.some((l) => l.identityScore !== null);
+  const editingLayer = editing ? (layers.find((l) => l.id === editing) ?? null) : null;
   const toggle = (id: string) =>
     setHidden((prev) => {
       const next = new Set(prev);
@@ -172,11 +173,12 @@ export function LayerStack({ layers, tierLabel, generationId }: {
             );
           })}
         </ul>
-        {editing && (
+        {editingLayer && (
           <LayerEditor
-            key={editing}
-            layerId={editing}
-            scored={Boolean(ordered.find((l) => l.id === editing)?.identityScore !== null) || scoredStack}
+            key={editingLayer.id}
+            layerId={editingLayer.id}
+            credits={layerEditCreditCost(editingLayer.width, editingLayer.height)}
+            scored={scoredStack}
             onDone={() => setEditing(null)}
           />
         )}
@@ -188,7 +190,14 @@ export function LayerStack({ layers, tierLabel, generationId }: {
 // The edit sheet for one layer: say what to change, spend one credit, get a
 // new version. Synchronous — about fifteen seconds — so the button holds its
 // pending state rather than the page polling for a job.
-function LayerEditor({ layerId, scored, onDone }: { layerId: string; scored: boolean; onDone: () => void }) {
+function LayerEditor({ layerId, credits, scored, onDone }: {
+  layerId: string;
+  /** Quoted before the button, like every other spend — the layer's own
+   *  megapixels decide whether an edit is one credit or two. */
+  credits: number;
+  scored: boolean;
+  onDone: () => void;
+}) {
   const { t } = useLocale();
   const L = t.layers;
   const router = useRouter();
@@ -234,7 +243,7 @@ function LayerEditor({ layerId, scored, onDone }: { layerId: string; scored: boo
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="text-[11px] leading-snug text-atelier-muted">
-          {scored ? L.changeScoredNote : L.changeNote}
+          {formatMsg(scored ? L.changeScoredNote : L.changeNote, { n: credits })}
         </p>
         <div className="flex flex-shrink-0 gap-2">
           <button
@@ -251,7 +260,7 @@ function LayerEditor({ layerId, scored, onDone }: { layerId: string; scored: boo
             disabled={pending || !prompt.trim()}
             className="rounded-full bg-atelier-ink px-3.5 py-1.5 text-[11px] font-semibold text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? L.changeWorking : L.changeGo}
+            {pending ? L.changeWorking : formatMsg(L.changeGo, { n: credits })}
           </button>
         </div>
       </div>

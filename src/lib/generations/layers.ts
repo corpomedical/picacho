@@ -118,8 +118,15 @@ export function uploadLayersIneligibility(meta: {
  *  checks only the HMAC capability, so a layer URL is shareable exactly like
  *  every other generated image — ownership is enforced by the pages and the
  *  ZIP route, never by /api/media. */
-export function layerStoragePath(userId: string, generationId: string, zIndex: number): string {
-  return `${userId}/layers/${generationId}/z${zIndex}.png`;
+export function layerStoragePath(
+  userId: string,
+  generationId: string,
+  zIndex: number,
+  version = 1,
+): string {
+  // v1 keeps the unversioned name every stage-1 split already wrote.
+  const suffix = version > 1 ? `-v${version}` : "";
+  return `${userId}/layers/${generationId}/z${zIndex}${suffix}.png`;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,11 +154,47 @@ export function layerStoragePath(userId: string, generationId: string, zIndex: n
 export const LAYER_RECUT_ENDPOINT = "fal-ai/birefnet/v2";
 export const LAYER_RECUT_MODEL = "Portrait";
 export const LAYER_RECUT_RESOLUTION = "2048x2048";
-export const LAYER_EDIT_CREDITS = 1;
+/**
+ * The model id a layer EDIT records — deliberately not LAYERS_MODEL_ID.
+ *
+ * An edit creates its own generations row so the credit and any refund land
+ * on the edit rather than the split. If that row wore the split's model id,
+ * History would link it to /app/layers/<edit id>, the stack page would accept
+ * it, find no layers under it, and sit polling — the failure that cost a real
+ * ten minutes on 2026-09-04. A distinct id keeps every surface honest about
+ * what the row is.
+ */
+export const LAYER_EDIT_MODEL_ID = "layer-edit";
+
+/**
+ * What one edit costs, by the layer's own size.
+ *
+ * fal bills flux-2-pro/edit at "$0.03 for the first megapixel of output, plus
+ * $0.015 per extra megapixel of input and output, rounded up" (read
+ * 2026-09-04). A 0.66 MP layer with an identity reference bills about 4 MP —
+ * $0.075 — and about $0.16 if the gate spends its one free retry; a 2K layer
+ * near 2.6 MP bills about 6 MP, $0.105, or $0.22 with the retry. At the house
+ * $0.28/credit that is 1.75x on the small case and only 1.27x on the large
+ * one, so the large one carries a second credit rather than eating the
+ * margin. Quoted before the button either way — the layer's pixels are known.
+ */
+export const LAYER_EDIT_CREDIT_MP_BREAK = 1_500_000;
+/** Past this a single edit stops being reliably profitable at two credits. */
+export const LAYER_EDIT_MAX_PIXELS = 4_400_000;
+
+export function layerEditCreditCost(width: number | null, height: number | null): number {
+  const pixels = (width ?? 0) * (height ?? 0);
+  return pixels > LAYER_EDIT_CREDIT_MP_BREAK ? 2 : 1;
+}
 /** Longest prompt accepted for one layer edit. */
 export const LAYER_EDIT_MAX_PROMPT = 500;
 
-export type LayerEditIneligibility = "no-prompt" | "prompt-too-long" | "not-succeeded" | "base-layer";
+export type LayerEditIneligibility =
+  | "no-prompt"
+  | "prompt-too-long"
+  | "not-succeeded"
+  | "base-layer"
+  | "too-large";
 
 /**
  * Whether one layer may be re-rendered. Pure, so the stack (which decides
@@ -166,12 +209,15 @@ export function layerEditIneligibility(input: {
   prompt: string;
   zIndex: number;
   parentStatus: string | null;
+  width?: number | null;
+  height?: number | null;
 }): LayerEditIneligibility | null {
   const prompt = input.prompt.trim();
   if (!prompt) return "no-prompt";
   if (prompt.length > LAYER_EDIT_MAX_PROMPT) return "prompt-too-long";
   if (input.parentStatus !== "succeeded") return "not-succeeded";
   if (input.zIndex === 0) return "base-layer";
+  if ((input.width ?? 0) * (input.height ?? 0) > LAYER_EDIT_MAX_PIXELS) return "too-large";
   return null;
 }
 

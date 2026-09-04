@@ -310,3 +310,30 @@ saved character, end to end in production. The probe proved the mechanism on
 a character-less layer (identity 100 against the original) and the scoring
 path is the one the generate page runs daily, but the two have not yet met on
 live data.
+
+### Reviewed after building, before shipping
+
+The mapping pass finished after stage 2 was written and found two defects
+that would have broken what already works. Both verified against the code,
+both fixed before any of it deployed:
+
+1. **The migration would have broken every new split.** It drops
+   `unique (generation_id, z_index)`, which is exactly the conflict target
+   stage 1's collector upserted against — after the SQL ran, each new split's
+   layer write would fail, throw `CriticalWriteError`, and retry behind a
+   spinner. The 2026-09-04 incident, reintroduced by my own migration. The
+   collector now inserts and treats a duplicate as done, naming no constraint,
+   so it is correct in either deploy order.
+2. **An edit row wearing the split's model id** would have been linked from
+   History to a stack page that accepts it, finds no layers under it, and
+   polls forever. Edits now record `LAYER_EDIT_MODEL_ID`.
+
+Three more, smaller: the shared image lane sends no `output_format`, so the
+edit was getting **JPEG** — whose ringing along a cut-out silhouette is what
+the matting model then traces into the new alpha (the probe used PNG
+explicitly, which is why it looked clean); the output size is now pinned to
+the layer's own dimensions, removing the 605→592 squash at the source rather
+than only correcting it afterwards; and the price is no longer flat, because
+at 2K with the free retry one credit covers about $0.22 of provider cost too
+thinly — layers over 1.5 MP cost two, quoted before the button, with a hard
+cap above 4.4 MP.

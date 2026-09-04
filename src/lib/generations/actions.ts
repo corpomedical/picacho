@@ -12,8 +12,10 @@ import {
   takeLayersIneligibility,
   uploadLayersIneligibility,
   type LayersTier,
-  LAYER_EDIT_CREDITS,
   layerEditIneligibility,
+  LAYER_EDIT_MODEL_ID,
+  layerEditCreditCost,
+  layerStoragePath,
 } from "@/lib/generations/layers";
 import { probeImage } from "@/lib/media/image-probe";
 import { forceRefundEligible } from "@/lib/generations/refund-rules";
@@ -4270,13 +4272,16 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
     prompt,
     zIndex: layer.z_index as number,
     parentStatus: split.status as string | null,
+    width: layer.width as number | null,
+    height: layer.height as number | null,
   });
   if (ineligible === "no-prompt") return { error: "Say what to change." };
   if (ineligible === "prompt-too-long") return { error: "That's longer than this takes — trim it." };
   if (ineligible === "base-layer") return { error: "The base layer can't be edited — it's what the others sit on." };
+  if (ineligible === "too-large") return { error: "That layer is too big to edit." };
   if (ineligible) return { error: "This layer can't be edited." };
 
-  const creditWeight = LAYER_EDIT_CREDITS;
+  const creditWeight = layerEditCreditCost(layer.width as number | null, layer.height as number | null);
   const allowance = await checkGenerationAllowance(supabase, userId, creditWeight);
   if (allowance.error) return { error: allowance.error };
   const consumePurchased = allowance.consumePurchased ?? 0;
@@ -4337,7 +4342,9 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
       result_url: null,
       pipeline_log: [],
       video_model_id: null,
-      model_id: LAYERS_MODEL_ID,
+      // Its own id, not the split's: a row wearing LAYERS_MODEL_ID would be
+      // linked from History to a stack page that finds no layers under it.
+      model_id: LAYER_EDIT_MODEL_ID,
       credits_used: creditWeight,
       purchased_credits_used: consumePurchased,
       free_generation_used: false,
@@ -4362,8 +4369,13 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
     `same framing and scale, same position in frame. Plain background.`;
   const references = [layerUrl, ...(identityUrl ? [identityUrl] : [])];
 
+  const layerWidth = layer.width as number | null;
+  const layerHeight = layer.height as number | null;
   const runOnce = async (): Promise<{ url: string; score: number | null }> => {
-    const editedUrl = await generateImageWithFlux(editPrompt, references);
+    const editedUrl = await generateImageWithFlux(editPrompt, references, {
+      outputFormat: "png",
+      size: layerWidth && layerHeight ? { width: layerWidth, height: layerHeight } : null,
+    });
     let score: number | null = null;
     if (identityUrl) {
       try {
@@ -4434,16 +4446,27 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
 
   // Opaque frame -> alpha -> the original layer's exact pixels.
   let storedUrl: string;
-  const nextVersion = ((layer.version as number) ?? 1) + 1;
+  // From the table, not from the row the client happened to hold: two tabs
+  // editing the same layer would both compute the same next version.
+  const { data: latest } = await admin
+    .from("generation_layers")
+    .select("version")
+    .eq("generation_id", layer.generation_id as string)
+    .eq("z_index", layer.z_index as number)
+    .order("version", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextVersion = (((latest?.version as number | null) ?? (layer.version as number) ?? 1) as number) + 1;
   try {
     const cutUrl = await recutAlphaWithBiRefNet(attempt.url);
     const res = await fetchWithTimeout(cutUrl, {}, 60_000);
     if (!res.ok) throw new Error(`Couldn't fetch the re-cut layer (${res.status}).`);
     let bytes: Uint8Array<ArrayBuffer> = new Uint8Array(await res.arrayBuffer());
-    const width = layer.width as number | null;
-    const height = layer.height as number | null;
-    if (width && height) bytes = await fitLayerToOriginal(bytes, width, height);
-    const path = `${userId}/layers/${layer.generation_id}/z${layer.z_index}-v${nextVersion}.png`;
+    // Belt and braces: the size is pinned on the request now, but the matting
+    // step can still hand back its own canvas, and a layer that does not match
+    // its box is the one visible failure this lane has.
+    if (layerWidth && layerHeight) bytes = await fitLayerToOriginal(bytes, layerWidth, layerHeight);
+    const path = layerStoragePath(userId, layer.generation_id as string, layer.z_index as number, nextVersion);
     storedUrl = await persistImageBytes(admin, userId, path, bytes);
 
     const { data: inserted, error: insertError } = await admin
@@ -4457,8 +4480,8 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
         description: layer.description,
         bbox: layer.bbox,
         storage_path: path,
-        width,
-        height,
+        width: layerWidth,
+        height: layerHeight,
         identity_score: attempt.score,
         source_layer_id: layer.id,
         prompt,
