@@ -225,7 +225,52 @@ second (they embed C2PA, and fal's delivery of the same model does not — see
 AI_ACT_MARKING.md), price third and now uncertain. A price parity finding
 does not weaken the case; it only removes a bonus.
 
-### ANSWERED 2026-09-04 — AND THE PRICE CASE IS DEAD
+### MEASURED 2026-09-04 ON THE RECHARGED ACCOUNT — AND IT CONTRADICTS SUPPORT
+
+The account was topped up and the four Dreamina models activated, so the
+questions below stopped needing an answer from anyone. Two API calls settled
+them.
+
+**The lane works.** `dreamina-seedance-2-0-260128`, 4s, 720p, text-to-video,
+generate_audio false: the create call was accepted (`cgt-20260904165259-b69q9`),
+the list endpoint with `filter.task_ids` reported running -> succeeded exactly
+as `checkArkTasks` parses it, and the finished task carried
+`content.video_url`. Every field our client sends was accepted as sent.
+
+**The real rate is HALF what support quoted, and half what we pay fal.** That
+render reported `usage.completion_tokens` 87,300 (`total_tokens` identical —
+no input tokens on a t2v call). At ModelArk's recorded $7.00/M for Seedance
+2.0: 87,300 x $7.00/1e6 = $0.6111 for 4 seconds = **$0.1528 per second**.
+
+  fal today, video-models.ts:161 ....... $0.3024/s
+  BytePlus support, "enhanced" line .... $0.3030/s
+  MEASURED on our own account .......... $0.1528/s   (-49.5%)
+
+So the 2x saving this file recorded and then withdrew was right, and the
+withdrawal was wrong. Support answered about a published billing example; the
+account bills something else. A default 5-second render is $1.512 through fal
+against $0.764 direct.
+
+TWO HONEST LIMITS ON THAT NUMBER. It is text-to-video; the product's lane is
+reference-to-video, whose token cost stays unmeasured for the reason below.
+And $7.00/M is this repo's recorded list price from 2026-09-03, not re-read
+today.
+
+**And the likeness fence is confirmed on our own key.** The same model, same
+size, with one `reference_image` part pointing at a public photograph of a real
+person, returned HTTP 400:
+
+  InputImageSensitiveContentDetected.PrivacyInformation
+  "The request failed because the input image 'content[1]' may contain real
+   person."
+
+That is the claim the whole migration rests on, no longer inferred from a
+comment. Going direct does not put a customer's face on screen. The verified
+real-human asset library is still the only route, and this account still does
+not have it. The refusal is free — a 400 at submit, nothing queued, nothing
+billed — which is worth knowing: the fence costs us nothing to hit.
+
+### SUPERSEDED — what support said on 2026-09-04
 
 BytePlus Technical Support replied to the price question. What it settles:
 

@@ -7,12 +7,26 @@
 // asset ids ByteDance's consented-likeness route requires, so the feature our
 // customers actually want is not reachable through it at any price.
 //
-// WHAT THIS DOES NOT FIX. The likeness fence follows us here: ModelArk answers
-// a real face in an input image with 400 InputImageSensitiveContentDetected,
-// which is the same refusal fal reports as content_policy_violation. Moving
-// the lane halves the bill; it does not put a customer's face on screen. That
-// still needs the private real-human asset library, which as of today does not
-// appear in this account's API list at all — see docs/BYTEPLUS_ENQUIRY.md.
+// WHAT THIS DOES NOT FIX. The likeness fence follows us here, and this is no
+// longer inferred: on 2026-09-04, against this account's own key with the
+// models activated, a reference_image part pointing at a photograph of a real
+// person returned HTTP 400
+//   InputImageSensitiveContentDetected.PrivacyInformation
+//   "the input image 'content[1]' may contain real person"
+// — the same refusal fal reports as content_policy_violation. Moving the lane
+// halves the bill; it does not put a customer's face on screen. That still
+// needs the private real-human asset library, which this account does not have.
+// The refusal costs nothing: it is a 400 at submit, so no task is queued.
+//
+// WHAT IT DOES FIX, measured the same day rather than quoted. A 4s 720p
+// text-to-video on dreamina-seedance-2-0-260128 reported usage.completion_tokens
+// 87,300 (total_tokens identical — no input tokens on t2v). At the $7.00/M
+// below that is $0.6111, i.e. $0.1528 PER SECOND — half fal's $0.3024/s, and
+// half the $0.303/s BytePlus support confirmed for the "enhanced" line. Support
+// answered about a published billing example; the account bills something else.
+// The caveat that keeps this honest: it is t2v, and the product's lane is
+// reference-to-video, whose token cost cannot be measured while every real face
+// is refused. See docs/BYTEPLUS_FOLLOWUP.md.
 //
 // SHAPES ARE READ FROM THE VENDOR'S OWN DOCS, NOT GUESSED. Everything below
 // was transcribed from the ModelArk API reference on 2026-09-03, including
