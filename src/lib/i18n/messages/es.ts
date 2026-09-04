@@ -900,6 +900,7 @@ const es = {
     changeWorking: "Trabajando…",
     changeCancel: "Cancelar",
     sourceScored: "personaje",
+    pageAllImages: "Todas las imágenes →",
     stackTitle: "Pila de capas",
     stackSub: "{n} capas · {res}",
     base: "Base",

@@ -900,6 +900,7 @@ const pt = {
     changeWorking: "A trabalhar…",
     changeCancel: "Cancelar",
     sourceScored: "personagem",
+    pageAllImages: "Todas as imagens →",
     stackTitle: "Pilha de camadas",
     stackSub: "{n} camadas · {res}",
     base: "Base",

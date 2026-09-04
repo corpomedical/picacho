@@ -900,6 +900,7 @@ const it = {
     changeWorking: "In corso…",
     changeCancel: "Annulla",
     sourceScored: "personaggio",
+    pageAllImages: "Tutte le immagini →",
     stackTitle: "Pila di livelli",
     stackSub: "{n} livelli · {res}",
     base: "Base",

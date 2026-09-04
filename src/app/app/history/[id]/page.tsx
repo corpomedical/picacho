@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { LAYERS_MODEL_ID } from "@/lib/generations/layers";
+import { LAYERS_MODEL_ID, takeLayersIneligibility } from "@/lib/generations/layers";
 import { QuietVideo } from "@/components/quiet-video";
 import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { redirect } from "next/navigation";
@@ -20,6 +20,7 @@ import { LocalDate } from "@/components/local-date";
 import type { GenerationFeedback } from "@/lib/generations/actions";
 import { getServerMessages } from "@/lib/i18n/server";
 import { UpscaleButton } from "@/components/upscale-button";
+import { LayersButton } from "@/components/layers-button";
 import {
   availableUpscaleTiers,
   takeSourceHeight,
@@ -211,6 +212,13 @@ export default async function HistoryDetailPage({
                   </Button>
                 </Link>
               )}
+            {/* Split into layers, on the image itself. The tool page shows a
+                recent handful; this is what makes EVERY finished image a
+                source (operator, 2026-09-04: "It only gives me 8 images to
+                choose from"). Same eligibility rule the action re-runs. */}
+            {isOwner && takeLayersIneligibility(generation) === null && (
+              <LayersButton generationId={generation.id} />
+            )}
             {upscaleTiers.length > 0 && (
               <UpscaleButton
                 generationId={generation.id}

@@ -38,7 +38,7 @@ export default async function LayersPage() {
       // takeLayersIneligibility does the same comparison in JS, where
       // null === "seedream-layerize" is simply false and the row survives,
       // so the rule lives there and here we merely over-fetch a little.
-      .limit(24),
+      .limit(60),
     supabase
       .from("generations")
       .select("id, prompt_input, status, result_url, created_at")
@@ -62,7 +62,11 @@ export default async function LayersPage() {
       score: (g.match_score as number | null) ?? null,
     }))
     .filter((g) => isRenderableUrl(g.url))
-    .slice(0, 8);
+    // Was 8, copied from the Upscale page — where a handful of recent clips
+    // genuinely is the shortlist. An image library is not: this account had
+    // 47 finished images and saw eight of them. Anything older is reachable
+    // from the image's own page in History, which now carries the action.
+    .slice(0, 24);
 
   const priceLine = (["1k", "2k"] as const)
     .map((tier) => `${LAYERS_TIERS[tier].label} ${formatMsg(t.generate.creditsShortN, { n: layersCreditCost(tier) })}`)
@@ -83,8 +87,14 @@ export default async function LayersPage() {
           <div className="mt-8 flex items-center gap-3.5">
             <p className="whitespace-nowrap text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{L.pagePick}</p>
             <div className="h-px flex-1 bg-atelier-rule" />
+            <Link
+              href="/app/images"
+              className="whitespace-nowrap text-[11px] font-medium text-atelier-muted underline-offset-2 hover:text-atelier-ink hover:underline"
+            >
+              {L.pageAllImages}
+            </Link>
           </div>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {sources.map((src) => (
               <div key={src.id} className="flex flex-col rounded-control border border-atelier-rule bg-atelier-surface p-3 shadow-[0_1px_2px_rgba(33,29,22,0.04)]">
                 <div className="relative aspect-square overflow-hidden rounded-[10px] bg-atelier-stage">

@@ -968,6 +968,7 @@ const en = {
     changeWorking: "Working…",
     changeCancel: "Cancel",
     sourceScored: "character",
+    pageAllImages: "All images →",
     stackTitle: "Layer stack",
     stackSub: "{n} layers · {res}",
     base: "Base",
