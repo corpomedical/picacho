@@ -447,8 +447,34 @@ export type IssueCode =
   | "CONTINUE_NEEDS_SEEDANCE"
   | "DIALOGUE_NEEDS_VOICE"
   | "SEEDANCE25_PHOTOREAL"
+  | "DIALOGUE_LONGER_THAN_CLIP"
   | "REF_ASPECT_OUT_OF_RANGE"
   | "MODEL_CANNOT_MULTI_PERSON";
+
+/**
+ * Roughly how long a dialogue line will take to say, in seconds.
+ *
+ * MEASURED, not guessed. Two real ElevenLabs v3 renders on 2026-09-04, timed
+ * off their own MP3 frame headers:
+ *   "Hello."                       1 word,  6 chars  -> 1.07 s
+ *   a 37-word sentence           37 words, 198 chars -> 11.55 s
+ * Fitting a line through those two gives 3.44 words/second with a 0.78 s
+ * fixed cost — the lead-in and tail silence a one-word clip is almost
+ * entirely made of.
+ *
+ * It is a TWO-POINT fit and it is only ever used to decide whether to show a
+ * warning, never to bill, block or trim anything. v3 is expressive: emotion
+ * tags, punctuation and language all move the real number. Treat ±20% as
+ * ordinary and keep the copy hedged ("about").
+ */
+export const SPEECH_FIXED_SECONDS = 0.8;
+export const SPEECH_WORDS_PER_SECOND = 3.4;
+
+export function estimateSpeechSeconds(text: string): number {
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  if (words === 0) return 0;
+  return SPEECH_FIXED_SECONDS + words / SPEECH_WORDS_PER_SECOND;
+}
 
 export type PlanIssue = {
   severity: "block" | "warn";
@@ -741,6 +767,36 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
         code: "DIALOGUE_NEEDS_VOICE",
         params: { name: characterName },
         action: "clear-dialogue",
+      });
+    }
+
+    // A line longer than the clip makes a LONGER VIDEO, not a clipped line.
+    //
+    // Measured on 2026-09-04 against fal-ai/sync-lipsync/v2/pro with
+    // sync_mode "silence" (the mode this product pins): a 5.04s clip carrying
+    // 11.55s of speech came back 11.58 SECONDS long, and its bytes-per-second
+    // matched the source almost exactly, so the picture keeps moving rather
+    // than freezing on a held frame. Output length is max(video, audio) and
+    // nothing is lost at either end.
+    //
+    // So this is not a warning about damage. It is a warning that the video
+    // will not be the length that was chosen and paid for: pick five seconds,
+    // write twenty seconds of script, and a twenty-second video comes back.
+    // Worth saying BEFORE the send, which is the only moment it is cheap.
+    //
+    // A warn rather than a block, and no one-tap remedy: the honest fixes are
+    // "write less" or "choose a longer clip", both of which are edits the
+    // person has to make themselves, and neither is a button we can press for
+    // them without changing what they asked for.
+    const spokenSeconds = estimateSpeechSeconds(input.dialogueText);
+    if (input.durationSeconds && spokenSeconds > input.durationSeconds) {
+      issues.push({
+        severity: "warn",
+        code: "DIALOGUE_LONGER_THAN_CLIP",
+        params: {
+          spoken: String(Math.round(spokenSeconds)),
+          clip: String(input.durationSeconds),
+        },
       });
     }
   }

@@ -97,6 +97,15 @@ export function issueMessage(
       return g.issueContinueSeedance;
     case "DIALOGUE_NEEDS_VOICE":
       return g.issueDialogueVoice;
+    // Not a warning about damage — sync_mode "silence" pads rather than
+    // trims, so nothing is lost. It is a warning that the clip will not be
+    // the length that was chosen: output is max(video, audio), verified
+    // against the real endpoint on 2026-09-04.
+    case "DIALOGUE_LONGER_THAN_CLIP":
+      return formatMsg(g.issueDialogueTooLong, {
+        spoken: issue.params?.spoken ?? "?",
+        clip: issue.params?.clip ?? "?",
+      });
     case "SEEDANCE25_PHOTOREAL":
       // The face can now arrive as an attachment with no character behind it
       // (2026-08-31), and this warning used to interpolate a name that does

@@ -5,7 +5,14 @@
 // in a later phase, the test changes IN THE SAME COMMIT, never silently.
 
 import { describe, expect, it } from "vitest";
-import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type ResolveInput, photorealFallback } from "./send-plan";
+import {
+  CHARACTERLESS_MODEL_IDS,
+  MODEL_CAPABILITIES,
+  estimateSpeechSeconds,
+  resolveSendPlan,
+  type ResolveInput,
+  photorealFallback,
+} from "./send-plan";
 
 const base: ResolveInput = {
   contentType: "video",
@@ -666,5 +673,72 @@ describe("a full storyboard fits inside the server's prompt cap", () => {
       `Shot ${i + 1} (5s): ${"x".repeat(MAX_SHOT_CHARS)}`,
     ).join("\n");
     expect(twoShots.length).toBeGreaterThan(2000);
+  });
+});
+
+describe("a dialogue line longer than the clip", () => {
+  // The estimator's two constants come from real ElevenLabs v3 renders timed
+  // off their own MP3 frame headers on 2026-09-04: "Hello." at 1.07s and a
+  // 37-word sentence at 11.55s. These bounds pin the SHAPE of that fit, not
+  // the vendor's exact speed — if it is ever re-measured they move with it,
+  // deliberately and in the same commit.
+  it("lands near the two clips it was fitted to", () => {
+    expect(estimateSpeechSeconds("Hello.")).toBeGreaterThan(0.85);
+    expect(estimateSpeechSeconds("Hello.")).toBeLessThan(1.35);
+    const thirtySeven = Array.from({ length: 37 }, () => "word").join(" ");
+    expect(estimateSpeechSeconds(thirtySeven)).toBeGreaterThan(9.5);
+    expect(estimateSpeechSeconds(thirtySeven)).toBeLessThan(13.5);
+  });
+
+  it("is zero for an empty field, so a blank line can never warn", () => {
+    expect(estimateSpeechSeconds("")).toBe(0);
+    expect(estimateSpeechSeconds("   \n  ")).toBe(0);
+  });
+
+  it("warns with both numbers when the line outruns the clip", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      dialogueText: Array.from({ length: 60 }, () => "word").join(" "),
+      dialogueVoiceAssigned: true,
+      durationSeconds: 5,
+    });
+    const i = issue(plan, "DIALOGUE_LONGER_THAN_CLIP");
+    expect(i?.severity).toBe("warn");
+    expect(i?.params?.clip).toBe("5");
+    expect(Number(i?.params?.spoken)).toBeGreaterThan(5);
+    // No one-tap remedy on purpose: the honest fixes are "write less" or
+    // "choose a longer clip", and both are edits only the person can make.
+    expect(i?.action).toBeUndefined();
+  });
+
+  it("stays quiet when the line fits inside the clip", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      dialogueText: "Hello.",
+      dialogueVoiceAssigned: true,
+      durationSeconds: 10,
+    });
+    expect(issue(plan, "DIALOGUE_LONGER_THAN_CLIP")).toBeUndefined();
+  });
+
+  it("stays quiet when no duration is known, rather than inventing one", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      dialogueText: Array.from({ length: 60 }, () => "word").join(" "),
+      dialogueVoiceAssigned: true,
+      durationSeconds: undefined,
+    });
+    expect(issue(plan, "DIALOGUE_LONGER_THAN_CLIP")).toBeUndefined();
+  });
+
+  it("never fires on an image, which has no clip to outrun", () => {
+    const plan = resolveSendPlan({
+      ...base,
+      contentType: "image",
+      dialogueText: Array.from({ length: 60 }, () => "word").join(" "),
+      dialogueVoiceAssigned: true,
+      durationSeconds: 5,
+    });
+    expect(issue(plan, "DIALOGUE_LONGER_THAN_CLIP")).toBeUndefined();
   });
 });

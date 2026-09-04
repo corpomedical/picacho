@@ -868,6 +868,7 @@ const en = {
     issueNeedsCharacter: "{model} needs a character with a reference photo — pick one, or switch to Veo for a character-free render.",
     issueContinueSeedance: "Continuing a clip works on the Seedance models — switch model, or clear the continuation.",
     issueDialogueVoice: "Dialogue needs a character with a voice — assign one in Character settings, or clear the dialogue.",
+    issueDialogueTooLong: "That line is about {spoken}s of speech and the clip is {clip}s — the video will come back about {spoken}s long, not {clip}s. Shorten the line or pick a longer clip.",
     issueMultiPerson: "{model} renders one person at a time — pick Kling O3 Pro or Seedance for a cast.",
     issueActClear: "Clear",
     receiptScene: "Scene: described from your photo",
