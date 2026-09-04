@@ -273,21 +273,24 @@ the per-person check goes FIRST, because capability is the case and price is
 a bonus. Send as a reply on the answered General Inquiry thread, not a new
 ticket.
 
-**Second, once the above is answered — price (912 chars)**
+**Second — price (984 chars).** REWRITTEN 2026-09-04. The earlier version
+opened with the same "thank you, we will complete the KYC" as the contradiction
+ticket (duplicated on one thread) and closed with "this number decides the
+move", which the corrected framing makes false — capability decides it, price
+is a bonus.
 
 ```
-Thank you — that answers what was blocking us, and we will complete the KYC to activate the Entry tier.
+A separate question, on billing — for planning rather than as a condition.
 
-One follow-up decides whether we migrate: the price of the exact lane we would use.
-
-The availability page you linked (Byteplus_LAS/video_gen_enhanced) states "Unit price: 0.303 USD/second", with a duration conversion factor of 1.0 for 2.0 and 1.525 for 2.5 at 720p — about 0.303 and 0.462 USD/s. Other BytePlus pricing is quoted per million tokens, so every per-second figure in circulation is someone's conversion.
+The availability page you linked (Byteplus_LAS/video_gen_enhanced) states "Unit price: 0.303 USD/second", with a duration conversion factor of 1.0 for 2.0 and 1.525 for 2.5 at 720p — about 0.303 and 0.462 USD/s. Other BytePlus pricing is quoted per million tokens, so every per-second figure around is someone's conversion.
 
 For dreamina-seedance-2-0 and dreamina-seedance-2-5, at 720p, reference-to-video using a verified real-human asset, could you confirm:
 
 1. the rate we would actually be billed, in USD per second of delivered output;
+
 2. whether that lane is the "enhanced" line the 0.303 figure refers to.
 
-We pay 0.3024 USD/s for the same model through an aggregator today, so this number decides the move.
+Why we ask precisely: we pay 0.3024 USD/s for the same model through an aggregator today, so we are sizing the change rather than shopping. The reason we are moving is the real-human asset library — that lane refuses reference images of real people for us today, and that is our core use case.
 ```
 
 **Ticket 2 — the per-person check** — superseded, see below.
