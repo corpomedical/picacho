@@ -915,6 +915,8 @@ const es = {
     viewInHistory: "Ver en el Historial",
   },
   history: {
+    promptMore: "Ver prompt completo",
+    promptLess: "Ver menos",
     identityLabel: "Identidad",
     lineage: "Origen",
     lineageIdentityPhoto: "Foto de identidad",

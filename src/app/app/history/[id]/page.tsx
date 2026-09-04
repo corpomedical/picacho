@@ -1,14 +1,34 @@
 import Link from "next/link";
-import { LineageChain, lineageThumb, type LineageNode } from "@/components/lineage-chain";
-import { LAYERS_MODEL_ID, takeLayersIneligibility, LAYER_EDIT_MODEL_ID } from "@/lib/generations/layers";
+import { ExpandablePrompt } from "@/components/expandable-prompt";
+import {
+  LineageChain,
+  lineageThumb,
+  type LineageNode,
+} from "@/components/lineage-chain";
+import {
+  LAYERS_MODEL_ID,
+  takeLayersIneligibility,
+  LAYER_EDIT_MODEL_ID,
+} from "@/lib/generations/layers";
 import { QuietVideo } from "@/components/quiet-video";
-import { toMediaUrl, isRenderableUrl, thumbUrl, mediaUrl } from "@/lib/media/url";
+import {
+  toMediaUrl,
+  isRenderableUrl,
+  thumbUrl,
+  mediaUrl,
+} from "@/lib/media/url";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { type AttemptLog, type PipelineStepLog } from "@/lib/generations/pipeline";
-import { isRawProviderError, isBudgetExhaustedDetail } from "@/lib/generations/user-facing-error";
+import {
+  type AttemptLog,
+  type PipelineStepLog,
+} from "@/lib/generations/pipeline";
+import {
+  isRawProviderError,
+  isBudgetExhaustedDetail,
+} from "@/lib/generations/user-facing-error";
 import { angleSortIndex } from "@/lib/generations/angles";
 import { AngleResultViewer } from "@/components/angle-result-viewer";
 import { StillRendering } from "@/components/still-rendering";
@@ -67,9 +87,8 @@ export default async function HistoryDetailPage({
     .select("*")
     .eq("id", id)
     .is("deleted_at", null);
-  const { data: generation } = await (isAdmin
-    ? generationQuery
-    : generationQuery.eq("user_id", userData.user.id)
+  const { data: generation } = await (
+    isAdmin ? generationQuery : generationQuery.eq("user_id", userData.user.id)
   ).single();
 
   // Back to the list rather than a 404. Reported 2026-08-10: deleting a
@@ -106,7 +125,9 @@ export default async function HistoryDetailPage({
     generation.source_generation_id
       ? supabase
           .from("generations")
-          .select("id, prompt_input, result_url, content_type, model_id, created_at")
+          .select(
+            "id, prompt_input, result_url, content_type, model_id, created_at",
+          )
           .eq("id", generation.source_generation_id as string)
           .eq("user_id", userData.user.id)
           .is("deleted_at", null)
@@ -114,7 +135,9 @@ export default async function HistoryDetailPage({
       : Promise.resolve({ data: null }),
     supabase
       .from("generations")
-      .select("id, prompt_input, result_url, content_type, model_id, credits_used, created_at")
+      .select(
+        "id, prompt_input, result_url, content_type, model_id, credits_used, created_at",
+      )
       .eq("source_generation_id", id)
       .eq("user_id", userData.user.id)
       .is("deleted_at", null)
@@ -125,7 +148,9 @@ export default async function HistoryDetailPage({
   const { data: angleSiblings } = generation.angle_group_id
     ? await supabase
         .from("generations")
-        .select("id, angle, status, result_url, pipeline_log, feedback, created_at")
+        .select(
+          "id, angle, status, result_url, pipeline_log, feedback, created_at",
+        )
         .eq("angle_group_id", generation.angle_group_id)
         // Siblings can be individually deleted; their files are gone even
         // though the soft-deleted rows still carry this group id.
@@ -146,7 +171,9 @@ export default async function HistoryDetailPage({
     .from("generation_reports")
     .select("generation_id")
     .in("generation_id", reportableIds);
-  const reportedIds = new Set((existingReports ?? []).map((r) => r.generation_id));
+  const reportedIds = new Set(
+    (existingReports ?? []).map((r) => r.generation_id),
+  );
 
   // Raw provider dumps in pipeline_log never render here — for ANYONE,
   // admin included (operator decision, 2026-08-19: History is a product
@@ -165,8 +192,13 @@ export default async function HistoryDetailPage({
       ),
     }));
 
-  const attempts = sanitizeAttempts((generation.pipeline_log ?? []) as AttemptLog[]);
-  const finalPrompt = attempts[attempts.length - 1]?.compiledPrompt || generation.prompt_input || "";
+  const attempts = sanitizeAttempts(
+    (generation.pipeline_log ?? []) as AttemptLog[],
+  );
+  const finalPrompt =
+    attempts[attempts.length - 1]?.compiledPrompt ||
+    generation.prompt_input ||
+    "";
 
   const statusLabel =
     generation.status === "succeeded"
@@ -174,7 +206,8 @@ export default async function HistoryDetailPage({
       : generation.status === "failed"
         ? h.statusFailed
         : h.statusDrafted;
-  const typeLabel = generation.content_type === "image" ? t.generate.image : t.generate.video;
+  const typeLabel =
+    generation.content_type === "image" ? t.generate.image : t.generate.video;
   // An admin reviewing someone else's flagged generation shouldn't see
   // actions that only work on your own rows — those writes would just fail
   // against RLS (there's no admin bypass for editing/deleting other users'
@@ -195,7 +228,9 @@ export default async function HistoryDetailPage({
   // button's state). Soft-fails to "not shared" if the community SQL hasn't
   // been applied yet — supabase-js returns an error, not a throw.
   const canShareToCommunity =
-    isOwner && generation.status === "succeeded" && isRenderableUrl(generation.result_url);
+    isOwner &&
+    generation.status === "succeeded" &&
+    isRenderableUrl(generation.result_url);
   let sharedToCommunity = false;
   if (canShareToCommunity) {
     const { data: post } = await supabase
@@ -210,7 +245,9 @@ export default async function HistoryDetailPage({
   // was made from, this one, then everything made FROM it. Each node is only
   // added when it genuinely exists — LineageChain renders nothing at all for
   // a chain of one, which is most renders.
-  const identityPath = (character?.reference_image_urls as string[] | null)?.[0];
+  const identityPath = (
+    character?.reference_image_urls as string[] | null
+  )?.[0];
   const derivativeLabel = (modelId: string | null): string =>
     modelId === LAYERS_MODEL_ID
       ? t.layers.stackTitle
@@ -225,7 +262,10 @@ export default async function HistoryDetailPage({
           {
             id: `identity-${generation.character_profile_id}`,
             href: `/app/character/${generation.character_profile_id}`,
-            thumb: thumbUrl(mediaUrl("character-references", identityPath), 320),
+            thumb: thumbUrl(
+              mediaUrl("character-references", identityPath),
+              320,
+            ),
             label: h.lineageIdentityPhoto,
             detail: character?.name ?? null,
           },
@@ -236,25 +276,42 @@ export default async function HistoryDetailPage({
           {
             id: parentRow.id as string,
             href: `/app/history/${parentRow.id}`,
-            thumb: lineageThumb(parentRow.result_url as string | null, parentRow.content_type as string | null),
+            thumb: lineageThumb(
+              parentRow.result_url as string | null,
+              parentRow.content_type as string | null,
+            ),
             label: h.lineageSource,
-            detail: (parentRow.prompt_input as string | null)?.slice(0, 28) ?? null,
+            detail:
+              (parentRow.prompt_input as string | null)?.slice(0, 28) ?? null,
           },
         ]
       : []),
     {
       id: generation.id as string,
       href: null,
-      thumb: lineageThumb(generation.result_url as string | null, generation.content_type as string | null),
+      thumb: lineageThumb(
+        generation.result_url as string | null,
+        generation.content_type as string | null,
+      ),
       label: h.lineageThisTake,
-      detail: typeof generation.match_score === "number" ? String(generation.match_score) : null,
+      detail:
+        typeof generation.match_score === "number"
+          ? String(generation.match_score)
+          : null,
       current: true,
     },
     ...(childRows ?? []).map((c) => ({
+      derivative: true,
       id: c.id as string,
       // A split's own page is the layer stack, not another render page.
-      href: c.model_id === LAYERS_MODEL_ID ? `/app/layers/${c.id}` : `/app/history/${c.id}`,
-      thumb: lineageThumb(c.result_url as string | null, c.content_type as string | null),
+      href:
+        c.model_id === LAYERS_MODEL_ID
+          ? `/app/layers/${c.id}`
+          : `/app/history/${c.id}`,
+      thumb: lineageThumb(
+        c.result_url as string | null,
+        c.content_type as string | null,
+      ),
       label: derivativeLabel(c.model_id as string | null),
       detail:
         typeof c.credits_used === "number" && c.credits_used > 0
@@ -285,7 +342,9 @@ export default async function HistoryDetailPage({
           rows={sortedAngleRows.map((r) => ({
             ...r,
             // Same admin-only gating as the single-generation log above.
-            pipeline_log: sanitizeAttempts((r.pipeline_log ?? []) as AttemptLog[]),
+            pipeline_log: sanitizeAttempts(
+              (r.pipeline_log ?? []) as AttemptLog[],
+            ),
             reported: reportedIds.has(r.id),
           }))}
         />
@@ -313,7 +372,10 @@ export default async function HistoryDetailPage({
                         ownerActions
                         redirectAfterDelete="/app/history"
                       />
-                      <DownloadButton url={generation.result_url} contentType="image" />
+                      <DownloadButton
+                        url={generation.result_url}
+                        contentType="image"
+                      />
                     </div>
                   ) : (
                     <div className="relative overflow-hidden rounded-[18px] bg-atelier-stage p-2">
@@ -324,7 +386,10 @@ export default async function HistoryDetailPage({
                         aria-label={generation.prompt_input}
                         className="aspect-video w-full rounded-[6px] bg-neutral-950"
                       />
-                      <DownloadButton url={generation.result_url} contentType="video" />
+                      <DownloadButton
+                        url={generation.result_url}
+                        contentType="video"
+                      />
                     </div>
                   )
                 ) : (
@@ -332,7 +397,9 @@ export default async function HistoryDetailPage({
                     <div className="flex aspect-video items-center justify-center rounded-[18px] bg-atelier-stage text-center">
                       {/* Fixed Darkroom muted — the stage never flips themes. */}
                       <p className="max-w-xs px-4 text-xs text-[#a39a88]">
-                        {formatMsg(t.generate.simulatedResult, { type: typeLabel.toLowerCase() })}
+                        {formatMsg(t.generate.simulatedResult, {
+                          type: typeLabel.toLowerCase(),
+                        })}
                       </p>
                     </div>
                     <div className="mt-4">
@@ -347,7 +414,9 @@ export default async function HistoryDetailPage({
                     generationId={generation.id}
                     copyText={finalPrompt}
                     promotable={generation.content_type === "image"}
-                    initialFeedback={(generation.feedback ?? null) as GenerationFeedback}
+                    initialFeedback={
+                      (generation.feedback ?? null) as GenerationFeedback
+                    }
                     initialReported={reportedIds.has(generation.id)}
                   />
                 )}
@@ -357,9 +426,7 @@ export default async function HistoryDetailPage({
               // is not a failed one, and must not be described as one.
               <StillRendering startedAt={generation.created_at as string} />
             ) : (
-              <p className="mt-2 text-sm text-atelier-muted">
-                {h.noResult}
-              </p>
+              <p className="mt-2 text-sm text-atelier-muted">{h.noResult}</p>
             )}
           </div>
           {/* Printed-proof-sheet voice: engraved serif attempt stamps, caps
@@ -367,34 +434,39 @@ export default async function HistoryDetailPage({
               calm semantic red — the styling varies by state, the text bytes
               never do. */}
 
-      {/* Title, facts and score as one masthead UNDER the render, the way
+          {/* Title, facts and score as one masthead UNDER the render, the way
           a caption sits under a plate. The score is the page's one large
           number: proof, in the accent's one sanctioned job. */}
-      <div className="mt-5 flex flex-wrap items-start justify-between gap-x-8 gap-y-3">
-        <div className="min-w-0 flex-1">
-      <p className="mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
-        {typeLabel}
-      </p>
-      <h1 className="mt-1 font-numeral text-2xl font-semibold leading-tight tracking-tight text-atelier-ink [text-wrap:pretty]">
-        {generation.prompt_input}
-      </h1>
-        </div>
-        {typeof generation.match_score === "number" && (
-          <div className="flex-shrink-0 text-right">
-            <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
-              {h.identityLabel}
-            </p>
-            <p
-              title={formatMsg(t.generate.identityMatch, { n: generation.match_score })}
-              className="mt-1 font-numeral text-[34px] font-semibold leading-none tabular-nums text-atelier-accent"
-            >
-              {generation.match_score}
-            </p>
+          <div className="mt-5 flex flex-wrap items-start justify-between gap-x-8 gap-y-3">
+            <div className="min-w-0 flex-1">
+              <p className="mt-4 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                {typeLabel}
+              </p>
+              <ExpandablePrompt
+                text={generation.prompt_input || ""}
+                className="mt-1 font-numeral text-2xl font-semibold leading-tight tracking-tight text-atelier-ink [text-wrap:pretty]"
+                moreLabel={h.promptMore}
+                lessLabel={h.promptLess}
+              />
+            </div>
+            {typeof generation.match_score === "number" && (
+              <div className="flex-shrink-0 text-right">
+                <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+                  {h.identityLabel}
+                </p>
+                <p
+                  title={formatMsg(t.generate.identityMatch, {
+                    n: generation.match_score,
+                  })}
+                  className="mt-1 font-numeral text-[34px] font-semibold leading-none tabular-nums text-atelier-accent"
+                >
+                  {generation.match_score}
+                </p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {/* The facts as a CAPTION, not a sheet. They used to sit in their own
+          {/* The facts as a CAPTION, not a sheet. They used to sit in their own
           p-8 card between the title and the actions, which put a box around
           four short lines and pushed everything below it further down. The
           lineage links this block used to carry — "Upscaled · view source",
@@ -405,96 +477,107 @@ export default async function HistoryDetailPage({
           The type and status badges now appear ONLY when the render did not
           succeed. A finished render says so by being a picture, exactly as
           the History grid decided. */}
-      <p className="mt-2.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
-        {[
-          generation.character_profile_id
-            ? (character?.name ?? h.unknownCharacter)
-            : h.noCharacter,
-          typeLabel,
-          sortedAngleRows.length > 1
-            ? formatMsg(h.angleCountOther, { n: sortedAngleRows.length })
-            : null,
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      </p>
-      <p className="mt-1 text-xs text-atelier-muted">
-        <LocalDate date={generation.created_at} mode="datetime" />
-      </p>
-      {generation.status === "succeeded" && attempts.length > 0 && (
-        /* The validation pipeline is the product's whole pitch and used to be
+          <p className="mt-2.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+            {[
+              generation.character_profile_id
+                ? (character?.name ?? h.unknownCharacter)
+                : h.noCharacter,
+              typeLabel,
+              sortedAngleRows.length > 1
+                ? formatMsg(h.angleCountOther, { n: sortedAngleRows.length })
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </p>
+          <p className="mt-1 text-xs text-atelier-muted">
+            <LocalDate date={generation.created_at} mode="datetime" />
+          </p>
+          {generation.status === "succeeded" && attempts.length > 0 && (
+            /* The validation pipeline is the product's whole pitch and used to be
            invisible unless someone expanded the log. One line of proof on
            every successful result, in the accent's serif. */
-        <p className="mt-2 font-numeral text-xs font-medium tabular-nums text-atelier-accent">
-          {attempts.length === 1
-            ? h.validatedFirstTry
-            : formatMsg(h.validatedAfterRetries, { n: attempts.length })}
-        </p>
-      )}
-      {generation.status !== "succeeded" && (
-        <div className="mt-2.5 flex items-center gap-2">
-          <Badge tone={generation.status === "failed" ? "danger" : "neutral"}>{statusLabel}</Badge>
-        </div>
-      )}
+            <p className="mt-2 font-numeral text-xs font-medium tabular-nums text-atelier-accent">
+              {attempts.length === 1
+                ? h.validatedFirstTry
+                : formatMsg(h.validatedAfterRetries, { n: attempts.length })}
+            </p>
+          )}
+          {generation.status !== "succeeded" && (
+            <div className="mt-2.5 flex items-center gap-2">
+              <Badge
+                tone={generation.status === "failed" ? "danger" : "neutral"}
+              >
+                {statusLabel}
+              </Badge>
+            </div>
+          )}
 
-      {/* flex-wrap, and min-w-0 on the row: five controls in a nowrap flex
+          {/* flex-wrap, and min-w-0 on the row: five controls in a nowrap flex
           overflowed a 328px phone column and pushed the app's one scroller
           sideways, so Upscale, Share and Delete sat off-screen with nothing
           saying so. */}
-      <div className="mt-4 flex items-center justify-between gap-4">
-        {isOwner && (
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            {generation.character_profile_id && (
-              <Link
-                href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}
-              >
-                <Button variant="secondary" size="sm">
-                  {h.continueChat}
-                </Button>
-              </Link>
-            )}
-            {/* Clip continuation (2026-08-21): hands the composer this clip
+          <div className="mt-4 flex items-center justify-between gap-4">
+            {isOwner && (
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                {generation.character_profile_id && (
+                  <Link
+                    href={`/app/generate?character=${encodeURIComponent(generation.character_profile_id)}&type=${generation.content_type}&resume=${encodeURIComponent(generation.id)}`}
+                  >
+                    <Button variant="secondary" size="sm">
+                      {h.continueChat}
+                    </Button>
+                  </Link>
+                )}
+                {/* Clip continuation (2026-08-21): hands the composer this clip
                 as a Seedance @Video1 reference — the next shot picks up the
                 same world instead of reinventing it. Finished videos only. */}
-            {isOwner &&
-              generation.content_type === "video" &&
-              generation.status === "succeeded" &&
-              isRenderableUrl(generation.result_url) && (
-                <Link
-                  // continue_s carries the source clip's length so the
-                  // composer can show continuation's real price BEFORE the
-                  // send — the server re-reads it from the row regardless,
-                  // so a tampered value changes only the preview.
-                  href={`/app/generate?continue=${encodeURIComponent(generation.id)}&continue_s=${generation.video_duration_seconds ?? ""}`}
-                >
-                  <Button variant="secondary" size="sm">
-                    {h.continueClipCta}
-                  </Button>
-                </Link>
-              )}
-            {/* Split into layers, on the image itself. The tool page shows a
+                {isOwner &&
+                  generation.content_type === "video" &&
+                  generation.status === "succeeded" &&
+                  isRenderableUrl(generation.result_url) && (
+                    <Link
+                      // continue_s carries the source clip's length so the
+                      // composer can show continuation's real price BEFORE the
+                      // send — the server re-reads it from the row regardless,
+                      // so a tampered value changes only the preview.
+                      href={`/app/generate?continue=${encodeURIComponent(generation.id)}&continue_s=${generation.video_duration_seconds ?? ""}`}
+                    >
+                      <Button variant="secondary" size="sm">
+                        {h.continueClipCta}
+                      </Button>
+                    </Link>
+                  )}
+                {/* Split into layers, on the image itself. The tool page shows a
                 recent handful; this is what makes EVERY finished image a
                 source (operator, 2026-09-04: "It only gives me 8 images to
                 choose from"). Same eligibility rule the action re-runs. */}
-            {isOwner && takeLayersIneligibility(generation) === null && (
-              <LayersButton generationId={generation.id} />
+                {isOwner && takeLayersIneligibility(generation) === null && (
+                  <LayersButton generationId={generation.id} />
+                )}
+                {upscaleTiers.length > 0 && (
+                  <UpscaleButton
+                    generationId={generation.id}
+                    seconds={generation.video_duration_seconds as number}
+                    tiers={upscaleTiers}
+                  />
+                )}
+                {canShareToCommunity && (
+                  <CommunityShareButton
+                    generationId={generation.id}
+                    initialShared={sharedToCommunity}
+                  />
+                )}
+                <DeleteGenerationButton
+                  id={generation.id}
+                  variant="full"
+                  redirectAfter="/app/history"
+                />
+              </div>
             )}
-            {upscaleTiers.length > 0 && (
-              <UpscaleButton
-                generationId={generation.id}
-                seconds={generation.video_duration_seconds as number}
-                tiers={upscaleTiers}
-              />
-            )}
-            {canShareToCommunity && (
-              <CommunityShareButton generationId={generation.id} initialShared={sharedToCommunity} />
-            )}
-            <DeleteGenerationButton id={generation.id} variant="full" redirectAfter="/app/history" />
           </div>
-        )}
-      </div>
 
-      <LineageChain nodes={lineageNodes} title={h.lineage} />
+          <LineageChain nodes={lineageNodes} title={h.lineage} />
 
           {/* Folded, not stacked. The pipeline is the product's pitch and
               worth keeping, but it is proof you consult — not the second
@@ -523,7 +606,9 @@ export default async function HistoryDetailPage({
                         <p className="text-xs font-medium uppercase tracking-wider text-atelier-ink">
                           {stepLabels[step.step]}
                         </p>
-                        <p className="text-xs text-atelier-muted">{step.detail}</p>
+                        <p className="text-xs text-atelier-muted">
+                          {step.detail}
+                        </p>
                       </li>
                     ))}
                   </ul>

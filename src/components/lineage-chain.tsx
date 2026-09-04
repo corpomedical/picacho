@@ -21,6 +21,14 @@ export type LineageNode = {
   detail: string | null;
   /** The node the page is about, drawn in the accent. */
   current?: boolean;
+  /**
+   * Made FROM the current node. Derivatives are SIBLINGS of each other, not a
+   * sequence: a split and an upscale both come from this take, neither from
+   * the other. So no arrow is drawn between two of them — the first
+   * implementation put one between every pair and thereby claimed the upscale
+   * was made from the split, which is simply untrue of the data.
+   */
+  derivative?: boolean;
 };
 
 export function LineageChain({ nodes, title }: { nodes: LineageNode[]; title: string }) {
@@ -35,16 +43,23 @@ export function LineageChain({ nodes, title }: { nodes: LineageNode[]; title: st
       {/* Scrolls on its own rather than widening the page: the app has one
           scroller and a long chain must not make the whole page pan. */}
       <ol className="mt-3 flex items-center gap-2.5 overflow-x-auto pb-1">
-        {nodes.map((node, i) => (
-          <li key={node.id} className="flex flex-shrink-0 items-center gap-2.5">
-            {i > 0 && (
-              <span aria-hidden className="text-sm text-atelier-muted">
-                →
-              </span>
-            )}
-            <Node node={node} />
-          </li>
-        ))}
+        {nodes.map((node, i) => {
+          // An arrow means "made from the thing on its left". True along the
+          // upstream chain and into the first derivative; false between two
+          // derivatives, which are siblings.
+          const previous = nodes[i - 1];
+          const showArrow = i > 0 && !(node.derivative && previous?.derivative);
+          return (
+            <li key={node.id} className="flex flex-shrink-0 items-center gap-2.5">
+              {showArrow && (
+                <span aria-hidden className="text-sm text-atelier-muted">
+                  →
+                </span>
+              )}
+              <Node node={node} />
+            </li>
+          );
+        })}
       </ol>
     </section>
   );

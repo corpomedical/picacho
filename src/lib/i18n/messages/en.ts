@@ -983,6 +983,8 @@ const en = {
     viewInHistory: "View in History",
   },
   history: {
+    promptMore: "Show full prompt",
+    promptLess: "Show less",
     identityLabel: "Identity",
     lineage: "Lineage",
     lineageIdentityPhoto: "Identity photo",

@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.16.1",
+    build: 28,
+    date: "2026-09-04",
+    title: "A long prompt no longer swallows the page, and the lineage stops implying things that are not true",
+    items: [
+      "A long prompt now shows two lines with a link to see the rest. Prompts here run to a hundred words, and setting one as the page's title meant a wall of serif text pushing the render's own details off the screen it was supposed to describe. The full text is still on the page, so selecting it, searching it in the browser, or reading it with a screen reader all work exactly as before — only the display is shortened, and the link appears only when there is genuinely more to show.",
+      "The lineage strip drew an arrow between every step, which quietly claimed something untrue: that an upscale was made from a layer split. Both are made from the same take. Things made from a render now sit side by side, and an arrow means only what it looks like — this came from that.",
+    ],
+  },
+  {
     version: "1.16.0",
     build: 27,
     date: "2026-09-04",
