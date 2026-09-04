@@ -292,7 +292,7 @@ We pay 0.3024 USD/s for the same model through an aggregator today, so this numb
 
 **Ticket 2 — the per-person check** — superseded, see below.
 
-**FIRST — the per-person check (1182 chars).** Rewritten to stand alone;
+**FIRST — the per-person check (1102 chars).** Rewritten to stand alone;
 the earlier version opened "A second question" and followed price.
 
 ```
@@ -300,15 +300,15 @@ Thank you — that answers what was blocking us, and we will complete the KYC to
 
 One question decides how we build, so it comes first.
 
-The KYC you describe — compliance risk assessment, letter of commitment, mobile verification — reads as account-level verification of us, the enterprise.
+The KYC you describe — risk assessment, letter of commitment, mobile verification — reads as account-level verification of us, the enterprise.
 
 Separately: when we add a real person to the asset library, must that individual complete a portrait-rights or liveness check of their own?
 
-1. If yes — can that step be embedded in our own product's onboarding, so our customer completes it there (you have confirmed they need no BytePlus account), and is there a callback telling us the result?
+1. If yes — can that step be embedded in our own onboarding so our customer completes it there (you confirmed they need no BytePlus account), and is there a callback with the result?
 
-2. If no per-person check exists at all, please say so explicitly. It changes what consent and evidence we must collect and retain ourselves.
+2. If no such per-person check exists, please say so explicitly. It changes what consent and evidence we must collect and retain ourselves.
 
-This is the difference between a feature our customers can use directly and one that only works for agencies enrolling people in person, so we would rather know before building.
+This is the difference between a feature our customers use directly and one that only works for agencies enrolling people in person.
 
 We will also need a DPA with Standard Contractual Clauses, the region serving the library for an EU customer, and the retention period for any liveness image — happy to take those at contract stage.
 ```
