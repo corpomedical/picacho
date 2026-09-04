@@ -268,10 +268,12 @@ are a different argument and a different priority.
 ### The reply to send — two tickets, split by who answers
 
 The form caps at 1,000 characters and one combined reply is ~2,000, so it
-splits the way the first pair did, with the question that decides the
-migration alone and first.
+splits. ORDER CHANGED 2026-09-04 after the operator corrected the framing:
+the per-person check goes FIRST, because capability is the case and price is
+a bonus. Send as a reply on the answered General Inquiry thread, not a new
+ticket.
 
-**Ticket 1 — price (912 chars)**
+**Second, once the above is answered — price (912 chars)**
 
 ```
 Thank you — that answers what was blocking us, and we will complete the KYC to activate the Entry tier.
@@ -288,19 +290,25 @@ For dreamina-seedance-2-0 and dreamina-seedance-2-5, at 720p, reference-to-video
 We pay 0.3024 USD/s for the same model through an aggregator today, so this number decides the move.
 ```
 
-**Ticket 2 — the per-person check (908 chars)**
+**Ticket 2 — the per-person check** — superseded, see below.
+
+**FIRST — the per-person check (1182 chars).** Rewritten to stand alone;
+the earlier version opened "A second question" and followed price.
 
 ```
-A second question, on the real-human asset library.
+Thank you — that answers what was blocking us, and we will complete the KYC to activate the Entry tier.
 
-The KYC you describe — risk assessment, letter of commitment, mobile verification — reads as account-level verification of us, the enterprise.
+One question decides how we build, so it comes first.
 
-Separately: when we add a real person to the library, must that individual complete a portrait-rights or liveness check of their own?
+The KYC you describe — compliance risk assessment, letter of commitment, mobile verification — reads as account-level verification of us, the enterprise.
 
-1. If yes — can that step be embedded in our own onboarding so our customer completes it there (you confirmed they need no BytePlus account), and is there a callback with the result?
-2. If no such per-person check exists, please say so explicitly; it changes what we must collect and retain ourselves.
+Separately: when we add a real person to the asset library, must that individual complete a portrait-rights or liveness check of their own?
 
-This decides whether the feature works for consumers or only for agencies.
+1. If yes — can that step be embedded in our own product's onboarding, so our customer completes it there (you have confirmed they need no BytePlus account), and is there a callback telling us the result?
 
-We will also need a DPA with Standard Contractual Clauses, the region serving the library for an EU customer, and the retention period for any liveness image — happy to take that at contract stage.
+2. If no per-person check exists at all, please say so explicitly. It changes what consent and evidence we must collect and retain ourselves.
+
+This is the difference between a feature our customers can use directly and one that only works for agencies enrolling people in person, so we would rather know before building.
+
+We will also need a DPA with Standard Contractual Clauses, the region serving the library for an EU customer, and the retention period for any liveness image — happy to take those at contract stage.
 ```
