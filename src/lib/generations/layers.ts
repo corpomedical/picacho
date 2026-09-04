@@ -121,3 +121,66 @@ export function uploadLayersIneligibility(meta: {
 export function layerStoragePath(userId: string, generationId: string, zIndex: number): string {
   return `${userId}/layers/${generationId}/z${zIndex}.png`;
 }
+
+// ---------------------------------------------------------------------------
+// Stage 2 — re-rendering ONE layer from a prompt, with the character's face
+// verified if that layer is the character. This is the part a generic image
+// editor cannot do: measured 2026-09-03, our FLUX.2 edit lane held identity
+// at 96 against the character photo where Seedream 5 Pro scored 86 and Nano
+// Banana Pro 83 — the two engines Higgsfield's Layers runs on.
+//
+// THE PIPELINE, and why it has three steps rather than one. A layer is a
+// TRANSPARENT crop of its bounding box; the edit endpoint returns an OPAQUE
+// image at its own dimensions. Measured on a real layer (2026-09-04, a
+// 605×1088 hiker): the edit came back 592×1088 and fully opaque, having
+// invented a background. So the edit is re-cut with BiRefNet (Portrait, 2K —
+// 1.1 s, clean hair edges) and then resized back to the layer's exact pixel
+// size. Registration after that: 0.1% drift, opaque coverage 38.1% → 38.8%,
+// and the scorer called the result the same person at 100. The original
+// bounding box is therefore still correct and is carried over unchanged.
+//
+// MONEY (fal pages, read 2026-09-03): flux-2-pro/edit is $0.03 for the first
+// megapixel of output plus $0.015 per extra megapixel of input and output —
+// about $0.045 for a layer this size — and birefnet/v2 is fractions of a
+// cent. One credit ($0.28) covers the edit, the re-cut, the score, and the
+// gate's one free retry (~$0.095 worst case) with room over.
+export const LAYER_RECUT_ENDPOINT = "fal-ai/birefnet/v2";
+export const LAYER_RECUT_MODEL = "Portrait";
+export const LAYER_RECUT_RESOLUTION = "2048x2048";
+export const LAYER_EDIT_CREDITS = 1;
+/** Longest prompt accepted for one layer edit. */
+export const LAYER_EDIT_MAX_PROMPT = 500;
+
+export type LayerEditIneligibility = "no-prompt" | "prompt-too-long" | "not-succeeded" | "base-layer";
+
+/**
+ * Whether one layer may be re-rendered. Pure, so the stack (which decides
+ * whether to offer the control) and the action (which decides whether to
+ * take the credit) run the same rule.
+ *
+ * The base layer is excluded: z 0 is the flattened original that every other
+ * layer sits on top of, so editing it would change the picture underneath a
+ * stack that still shows the old elements over it.
+ */
+export function layerEditIneligibility(input: {
+  prompt: string;
+  zIndex: number;
+  parentStatus: string | null;
+}): LayerEditIneligibility | null {
+  const prompt = input.prompt.trim();
+  if (!prompt) return "no-prompt";
+  if (prompt.length > LAYER_EDIT_MAX_PROMPT) return "prompt-too-long";
+  if (input.parentStatus !== "succeeded") return "not-succeeded";
+  if (input.zIndex === 0) return "base-layer";
+  return null;
+}
+
+/** The newest version of each layer, which is what the stack renders. */
+export function newestLayers<T extends { zIndex: number; version: number }>(rows: T[]): T[] {
+  const best = new Map<number, T>();
+  for (const row of rows) {
+    const current = best.get(row.zIndex);
+    if (!current || row.version > current.version) best.set(row.zIndex, row);
+  }
+  return [...best.values()].sort((a, b) => a.zIndex - b.zIndex);
+}

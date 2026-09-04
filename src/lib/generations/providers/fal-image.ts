@@ -1,4 +1,9 @@
 import { getImageModel } from "@/lib/generations/providers/image-models";
+import {
+  LAYER_RECUT_ENDPOINT,
+  LAYER_RECUT_MODEL,
+  LAYER_RECUT_RESOLUTION,
+} from "@/lib/generations/layers";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 
 // Thrown when Flux's own safety checker flags the result. fal.ai does NOT
@@ -81,5 +86,46 @@ export async function generateImageWithFlux(
     data?.images?.[0]?.url ?? data?.image?.url ?? data?.output?.image?.url ?? data?.url;
 
   if (!url) throw new Error("fal.ai (Flux) response didn't include an image URL.");
+  return url;
+}
+
+/**
+ * Cut a subject back out of an opaque image, returning a transparent PNG.
+ *
+ * The layer edit lane's second step: flux-2-pro/edit answers with an opaque
+ * frame (it invents a background), so the subject is re-matted before the
+ * result can go back into a layer stack. BiRefNet's Portrait model at 2K was
+ * the probe's pick on 2026-09-03 — clean hair edges, ~1-2 s — over Bria,
+ * which hard-cut stray strands and caps at 1024².
+ *
+ * refine_foreground matters and is not a default: without it the matte's
+ * semi-transparent pixels keep the old background's colour, which fringes
+ * every edge when the layer is composited over something new.
+ */
+export async function recutAlphaWithBiRefNet(imageUrl: string): Promise<string> {
+  const apiKey = process.env.FAL_KEY;
+  if (!apiKey) throw new Error("FAL_KEY is not set.");
+  const res = await fetchWithTimeout(
+    `https://fal.run/${LAYER_RECUT_ENDPOINT}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Key ${apiKey}` },
+      body: JSON.stringify({
+        image_url: imageUrl,
+        model: LAYER_RECUT_MODEL,
+        operating_resolution: LAYER_RECUT_RESOLUTION,
+        refine_foreground: true,
+        output_format: "png",
+      }),
+    },
+    120_000,
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`fal.ai (BiRefNet) error (${res.status}): ${text.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  const url: string | undefined = data?.image?.url ?? data?.images?.[0]?.url;
+  if (!url) throw new Error("fal.ai (BiRefNet) response didn't include an image URL.");
   return url;
 }

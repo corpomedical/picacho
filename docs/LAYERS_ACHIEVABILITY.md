@@ -266,3 +266,47 @@ whole file, but the two should agree on what they accept.
 FLUX.2 edit lane with the character's identity references, gated and scored
 (`runImageIdentityGate`); cut out / plate / transparent-upscale a layer; text
 regeneration at 2K with read-back; "use as first frame"; History chip.
+
+---
+
+## Built — stage 2 (2026-09-04): the layer edit
+
+Operator: "Start Building." The design call that mattered was settled by
+measurement on a real layer from the first production split (a 605×1088
+hiker, box [341,81,852,999] on a 1024² base), not by reasoning:
+
+| Step | Engine | Time | Result |
+|---|---|---|---|
+| Edit the transparent layer | `fal-ai/flux-2-pro/edit` | 13.6 s | **592×1088, fully opaque** — alpha gone, background invented |
+| Re-cut to alpha | `fal-ai/birefnet/v2` Portrait 2K, `refine_foreground` | 1.1 s | coverage back to 38.8% (was 38.1%) |
+| Fit to the original | sharp, `fit: "fill"` | — | 592 → 605 px |
+
+**Registration drift: 0.1%.** Composited back at its unchanged bounding box,
+the edited layer lands where the original sat — verified visually, and the
+scorer called the edited subject the same person at **100**.
+
+So the pipeline is **edit → re-cut → fit**, the bounding box is carried over
+untouched, and a re-render is a **new version row**, never an overwrite: the
+media route serves objects immutable for a year, so rewriting bytes at a live
+path would ship stale pixels for months.
+
+Synchronous in a server action — ~15 s, well inside the 300 s ceiling even
+with the free retry — so no job stage, no webhook, no polling.
+
+**Money:** 1 credit ($0.28) against ~$0.045 for the edit, fractions of a cent
+for the re-cut, and ~$0.002 to score. The gate's free retry worst case is
+~$0.095, still under a third of the credit.
+
+**Identity:** when the split's source generation had a character, its identity
+photo rides as a second reference and the result is scored against it. The
+gate's own pure policy (`identityGateDecision`, `betterAttemptScore`,
+`resolveIdentityThresholdSetting`) is reused unchanged — only the renderer
+differs — so the threshold, the one free retry, the keep-the-better rule and
+the double-miss refund all behave exactly as they do on the generate page.
+The gate stays OFF until the admin threshold is set, same as everywhere.
+
+**Not verified before shipping:** an edit of a layer belonging to a real
+saved character, end to end in production. The probe proved the mechanism on
+a character-less layer (identity 100 against the original) and the scoring
+path is the one the generate page runs daily, but the two have not yet met on
+live data.

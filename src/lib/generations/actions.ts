@@ -1,6 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
+import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
 import {
   LAYERS_MAX_BYTES,
   LAYERS_MODEL_ID,
@@ -9,6 +12,8 @@ import {
   takeLayersIneligibility,
   uploadLayersIneligibility,
   type LayersTier,
+  LAYER_EDIT_CREDITS,
+  layerEditIneligibility,
 } from "@/lib/generations/layers";
 import { probeImage } from "@/lib/media/image-probe";
 import { forceRefundEligible } from "@/lib/generations/refund-rules";
@@ -16,7 +21,7 @@ import { baselineIdentityReferences, resolveSendPlan } from "@/lib/generations/s
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
 import { resolvePresetBlocks } from "@/lib/generations/cinema-presets";
 import { getOrigin } from "@/lib/origin";
-import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl } from "@/lib/media/url";
+import { toMediaUrl, absolutizeMediaUrl, isRenderableUrl, isAllowedFetchUrl, mediaUrl } from "@/lib/media/url";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
@@ -103,8 +108,7 @@ import { autoReportFailedGeneration } from "@/lib/generations/reports";
 import { newProviderBudget } from "@/lib/generations/providers/image";
 import {
   gateLogLine,
-  resolveIdentityThresholdSetting,
-} from "@/lib/generations/identity-gate";
+  resolveIdentityThresholdSetting, identityGateDecision, betterAttemptScore } from "@/lib/generations/identity-gate";
 import {
   runImageIdentityGate,
   type GateOutcome,
@@ -118,8 +122,7 @@ import {
   consumeFreeGeneration,
   consumePurchasedCredits,
   getMonthlyUsageWith,
-  persistGeneratedImage,
-} from "@/lib/generations/core";
+  persistGeneratedImage, fitLayerToOriginal, persistImageBytes } from "@/lib/generations/core";
 
 // Account-level brand/compliance rules, read straight from the table rather
 // than via the brand-rules server action — a "use server" export is a
@@ -4214,4 +4217,273 @@ export async function startUploadLayers(formData: FormData): Promise<LayersStart
     sourceGenerationId: null,
     sourceLabel: "an uploaded image",
   });
+}
+
+
+// ---------------------------------------------------------------------------
+// Layer edit (stage 2, 2026-09-04). Re-render ONE layer from a prompt and,
+// when that layer is the character, prove the face survived.
+//
+// Synchronous, like the image lane it borrows from: measured end to end at
+// about fifteen seconds (edit 13.6 s + re-cut 1.1 s), well inside the 300 s
+// ceiling even with the gate's one free retry, so this needs no job stage,
+// no webhook and no polling.
+//
+// The three steps and why, in full, are in lib/generations/layers.ts. The
+// short version: edit returns an opaque frame at its own size, so it is
+// re-cut to alpha and resized back to the layer's exact pixels; the bounding
+// box is unchanged, verified at 0.1% registration drift.
+// ---------------------------------------------------------------------------
+
+type LayerEditResult = { error: string } | { layerId: string; score: number | null };
+
+export async function editLayer(formData: FormData): Promise<LayerEditResult> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+  const userId = userData.user.id;
+
+  const layerId = String(formData.get("layer_id") ?? "");
+  const prompt = String(formData.get("prompt") ?? "").trim();
+  if (!layerId) return { error: "No layer given." };
+
+  // The layer, its split, and the split's SOURCE — the source is where a
+  // character lives, since a split row carries none of its own.
+  const { data: layer } = await supabase
+    .from("generation_layers")
+    .select("id, generation_id, z_index, version, name, description, bbox, storage_path, width, height")
+    .eq("id", layerId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!layer) return { error: "That layer is gone." };
+
+  const { data: split } = await supabase
+    .from("generations")
+    .select("id, status, model_id, source_generation_id")
+    .eq("id", layer.generation_id as string)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!split) return { error: "That split is gone." };
+
+  const ineligible = layerEditIneligibility({
+    prompt,
+    zIndex: layer.z_index as number,
+    parentStatus: split.status as string | null,
+  });
+  if (ineligible === "no-prompt") return { error: "Say what to change." };
+  if (ineligible === "prompt-too-long") return { error: "That's longer than this takes — trim it." };
+  if (ineligible === "base-layer") return { error: "The base layer can't be edited — it's what the others sit on." };
+  if (ineligible) return { error: "This layer can't be edited." };
+
+  const creditWeight = LAYER_EDIT_CREDITS;
+  const allowance = await checkGenerationAllowance(supabase, userId, creditWeight);
+  if (allowance.error) return { error: allowance.error };
+  const consumePurchased = allowance.consumePurchased ?? 0;
+  const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, creditWeight - consumePurchased);
+
+  const admin = createAdminClient();
+  const origin = await getOrigin();
+  const layerUrl = absolutizeMediaUrl(mediaUrl("generated-images", layer.storage_path as string), origin);
+
+  // The character behind this picture, if there is one: the split's source
+  // generation is the render that had one. Its identity photo rides as a
+  // second reference so the edit has the face to hold, and is what the score
+  // is measured against afterwards.
+  let identityUrl: string | null = null;
+  let traitSummary = "";
+  if (split.source_generation_id) {
+    const { data: source } = await supabase
+      .from("generations")
+      .select("character_profile_id")
+      .eq("id", split.source_generation_id as string)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (source?.character_profile_id) {
+      const { data: character } = await supabase
+        .from("character_profiles")
+        .select("reference_image_urls, traits")
+        .eq("id", source.character_profile_id as string)
+        .maybeSingle();
+      const identityPath = (character?.reference_image_urls as string[] | null)?.[0];
+      if (identityPath) {
+        const { data: signed } = await supabase.storage
+          .from("character-references")
+          .createSignedUrl(identityPath, 600);
+        identityUrl = signed?.signedUrl ?? null;
+        const traits = character?.traits as { hair?: string; distinguishing_features?: string } | null;
+        traitSummary = [
+          traits?.hair ? `hair: ${traits.hair}` : null,
+          traits?.distinguishing_features ? `distinguishing features: ${traits.distinguishing_features}` : null,
+        ].filter(Boolean).join("; ");
+      }
+    }
+  }
+
+  // Money moves only once the work is provably possible.
+  const { data: reservedId, error: reserveError } = await admin.rpc("reserve_generation", {
+    p_user_id: userId,
+    p_monthly_portion: monthlyPortion,
+    p_limit: allowance.monthlyLimit ?? 0,
+    p_since: allowance.periodStartIso ?? new Date(0).toISOString(),
+    p_row: {
+      id: crypto.randomUUID(),
+      character_profile_id: null,
+      character_profile_ids: [],
+      prompt_input: `Layer edit: ${prompt}`,
+      content_type: "image",
+      status: "generating",
+      attempts: 0,
+      result_url: null,
+      pipeline_log: [],
+      video_model_id: null,
+      model_id: LAYERS_MODEL_ID,
+      credits_used: creditWeight,
+      purchased_credits_used: consumePurchased,
+      free_generation_used: false,
+      source_generation_id: layer.generation_id,
+    },
+  });
+  if (reserveError || !reservedId) {
+    return { error: reserveError ? "Couldn't start that edit — try again." : "You've used all the credits included in your plan this month." };
+  }
+  const editGenerationId = reservedId as string;
+  const purchasedOk = await consumePurchasedCredits(supabase, userId, consumePurchased);
+  if (!purchasedOk) {
+    await admin.from("generations").update({ status: "failed", credits_used: 0, purchased_credits_used: 0 }).eq("id", editGenerationId);
+    return { error: "You're out of credits — top up under Settings → Usage (credit packs need no plan)." };
+  }
+
+  // The instruction the engine sees. The layer arrives with its own alpha,
+  // and the model will fill a background regardless — saying so keeps it
+  // from inventing a scene that the re-cut then has to fight.
+  const editPrompt =
+    `${prompt}. Keep the subject identical in every other respect — same person, same pose, ` +
+    `same framing and scale, same position in frame. Plain background.`;
+  const references = [layerUrl, ...(identityUrl ? [identityUrl] : [])];
+
+  const runOnce = async (): Promise<{ url: string; score: number | null }> => {
+    const editedUrl = await generateImageWithFlux(editPrompt, references);
+    let score: number | null = null;
+    if (identityUrl) {
+      try {
+        const verdict = await scoreIdentityMatch(editedUrl, identityUrl, traitSummary);
+        score = verdict?.score ?? null;
+      } catch {
+        // Best-effort, exactly as everywhere else: a scoring hiccup must
+        // never cost the user the edit they paid for.
+      }
+    }
+    return { url: editedUrl, score };
+  };
+
+  let attempt: { url: string; score: number | null };
+  let refunded = false;
+  try {
+    attempt = await runOnce();
+    // The gate's policy, unchanged — only the renderer differs. Scored
+    // layers get the same one free retry and the same "keep the better
+    // attempt" rule as a scored render.
+    if (identityUrl) {
+      const { data: settingRow } = await admin
+        .from("app_settings")
+        .select("value")
+        .eq("key", "identity_gate_threshold")
+        .maybeSingle();
+      // Absent row means the migration is unapplied, which the resolver
+      // reads as OFF — the same fail-safe the render lane relies on.
+      const threshold = resolveIdentityThresholdSetting(
+        settingRow ? { value: settingRow.value as string | null } : null,
+      );
+      const first = attempt;
+      const decision = identityGateDecision({ score: first.score, threshold, retriesUsed: 0 });
+      if (decision.action === "retry") {
+        const second = await runOnce();
+        const settle = identityGateDecision({
+          score: second.score,
+          threshold,
+          retriesUsed: 1,
+          previousScore: first.score,
+        });
+        const keepFirst =
+          (settle.action === "settle" && settle.keepPrevious) ||
+          (settle.action === "pass" && settle.keepPrevious) ||
+          betterAttemptScore(first.score, second.score) === "first";
+        attempt = keepFirst ? first : second;
+        if (settle.action === "settle") {
+          try {
+            await refundGenerationCosts(editGenerationId, { force: true });
+            refunded = true;
+          } catch (refundErr) {
+            console.error(`layer edit settle refund failed for ${editGenerationId}:`, refundErr);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "The edit failed.";
+    await admin.from("generations").update({ status: "failed", progress_stage: null }).eq("id", editGenerationId);
+    try {
+      // Nothing was delivered, so nothing was earned.
+      await refundGenerationCosts(editGenerationId, { force: true });
+    } catch (refundErr) {
+      console.error(`layer edit failure refund failed for ${editGenerationId}:`, refundErr);
+    }
+    return { error: `${message.slice(0, 160)} Nothing was charged.` };
+  }
+
+  // Opaque frame -> alpha -> the original layer's exact pixels.
+  let storedUrl: string;
+  const nextVersion = ((layer.version as number) ?? 1) + 1;
+  try {
+    const cutUrl = await recutAlphaWithBiRefNet(attempt.url);
+    const res = await fetchWithTimeout(cutUrl, {}, 60_000);
+    if (!res.ok) throw new Error(`Couldn't fetch the re-cut layer (${res.status}).`);
+    let bytes: Uint8Array<ArrayBuffer> = new Uint8Array(await res.arrayBuffer());
+    const width = layer.width as number | null;
+    const height = layer.height as number | null;
+    if (width && height) bytes = await fitLayerToOriginal(bytes, width, height);
+    const path = `${userId}/layers/${layer.generation_id}/z${layer.z_index}-v${nextVersion}.png`;
+    storedUrl = await persistImageBytes(admin, userId, path, bytes);
+
+    const { data: inserted, error: insertError } = await admin
+      .from("generation_layers")
+      .insert({
+        generation_id: layer.generation_id,
+        user_id: userId,
+        z_index: layer.z_index,
+        version: nextVersion,
+        name: layer.name,
+        description: layer.description,
+        bbox: layer.bbox,
+        storage_path: path,
+        width,
+        height,
+        identity_score: attempt.score,
+        source_layer_id: layer.id,
+        prompt,
+      })
+      .select("id")
+      .single();
+    if (insertError || !inserted) throw new Error(insertError?.message ?? "Couldn't record the new layer.");
+
+    await admin
+      .from("generations")
+      .update({ status: "succeeded", result_url: storedUrl, progress_stage: null })
+      .eq("id", editGenerationId);
+
+    revalidatePath(`/app/layers/${layer.generation_id}`);
+    return { layerId: inserted.id as string, score: attempt.score };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Couldn't save the edited layer.";
+    await admin.from("generations").update({ status: "failed", progress_stage: null }).eq("id", editGenerationId);
+    if (!refunded) {
+      try {
+        await refundGenerationCosts(editGenerationId, { force: true });
+      } catch (refundErr) {
+        console.error(`layer edit store-failure refund failed for ${editGenerationId}:`, refundErr);
+      }
+    }
+    return { error: `${message.slice(0, 160)} Nothing was charged.` };
+  }
 }

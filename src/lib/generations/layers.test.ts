@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  LAYER_EDIT_MAX_PROMPT,
+  layerEditIneligibility,
+  newestLayers,
   LAYERS_COVERED_LAYERS,
   LAYERS_MAX_LAYERS,
   LAYERS_MODEL_ID,
@@ -73,5 +76,44 @@ describe("uploadLayersIneligibility", () => {
 describe("layerStoragePath", () => {
   it("keeps every layer under the owner's folder", () => {
     expect(layerStoragePath("u1", "g1", 4)).toBe("u1/layers/g1/z4.png");
+  });
+});
+
+describe("layerEditIneligibility", () => {
+  const ok = { prompt: "make the jacket red", zIndex: 3, parentStatus: "succeeded" };
+  it("accepts a real prompt on a non-base layer of a finished split", () => {
+    expect(layerEditIneligibility(ok)).toBeNull();
+  });
+  it("refuses an empty or whitespace prompt", () => {
+    expect(layerEditIneligibility({ ...ok, prompt: "" })).toBe("no-prompt");
+    expect(layerEditIneligibility({ ...ok, prompt: "   " })).toBe("no-prompt");
+  });
+  it("refuses a prompt past the cap", () => {
+    expect(layerEditIneligibility({ ...ok, prompt: "x".repeat(LAYER_EDIT_MAX_PROMPT + 1) })).toBe("prompt-too-long");
+    expect(layerEditIneligibility({ ...ok, prompt: "x".repeat(LAYER_EDIT_MAX_PROMPT) })).toBeNull();
+  });
+  it("refuses the base layer — everything else composites over it", () => {
+    expect(layerEditIneligibility({ ...ok, zIndex: 0 })).toBe("base-layer");
+  });
+  it("refuses a split that has not finished", () => {
+    expect(layerEditIneligibility({ ...ok, parentStatus: "generating" })).toBe("not-succeeded");
+  });
+});
+
+describe("newestLayers", () => {
+  const rows = [
+    { zIndex: 0, version: 1, tag: "base" },
+    { zIndex: 1, version: 1, tag: "sky-v1" },
+    { zIndex: 1, version: 2, tag: "sky-v2" },
+    { zIndex: 2, version: 1, tag: "hiker" },
+  ];
+  it("keeps the highest version of each layer, in z order", () => {
+    expect(newestLayers(rows).map((r) => r.tag)).toEqual(["base", "sky-v2", "hiker"]);
+  });
+  it("does not care what order the rows arrive in", () => {
+    expect(newestLayers([...rows].reverse()).map((r) => r.tag)).toEqual(["base", "sky-v2", "hiker"]);
+  });
+  it("is empty for no rows", () => {
+    expect(newestLayers([])).toEqual([]);
   });
 });

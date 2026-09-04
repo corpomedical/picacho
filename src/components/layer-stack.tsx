@@ -1,6 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { editLayer } from "@/lib/generations/actions";
 import { thumbUrl } from "@/lib/media/url";
 import { layerFileName, type LayerBox } from "@/lib/generations/layers";
 import { useLocale } from "@/lib/i18n/provider";
@@ -24,6 +26,10 @@ export type StackLayer = {
   identityScore: number | null;
   /** Where the layer sits on the base, from the provider; null = the base. */
   box: LayerBox | null;
+  /** 1 for a layer as delivered; higher once it has been re-rendered. */
+  version: number;
+  /** What was asked for, on an edited layer. */
+  prompt: string | null;
 };
 
 export function LayerStack({ layers, tierLabel, generationId }: {
@@ -35,6 +41,10 @@ export function LayerStack({ layers, tierLabel, generationId }: {
   const L = t.layers;
   const ordered = useMemo(() => [...layers].sort((a, b) => a.zIndex - b.zIndex), [layers]);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<string | null>(null);
+  // Any layer already carrying a score means this stack came from a
+  // character, so an edit here will be measured too.
+  const scoredStack = layers.some((l) => l.identityScore !== null);
   const toggle = (id: string) =>
     setHidden((prev) => {
       const next = new Set(prev);
@@ -132,9 +142,25 @@ export function LayerStack({ layers, tierLabel, generationId }: {
                     {layer.identityScore !== null ? (
                       <span className="font-numeral tabular-nums text-atelier-accent"> · {layer.identityScore}</span>
                     ) : null}
-                    {layer.description ? <span> · {layer.description}</span> : null}
+                    {layer.version > 1 ? (
+                      <span className="font-numeral tabular-nums"> · v{layer.version}</span>
+                    ) : null}
+                    {layer.prompt ? <span> · “{layer.prompt}”</span> : layer.description ? <span> · {layer.description}</span> : null}
                   </p>
                 </div>
+                {/* The base is what every other layer sits on, so editing
+                    it would change the picture underneath a stack still
+                    showing the old elements over it. */}
+                {layer.zIndex !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setEditing(editing === layer.id ? null : layer.id)}
+                    aria-expanded={editing === layer.id}
+                    className="flex-shrink-0 rounded-full bg-atelier-accent/10 px-2.5 py-1 text-[11px] font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)] transition-colors hover:bg-atelier-accent/15"
+                  >
+                    {L.change}
+                  </button>
+                )}
                 <a
                   href={layer.url}
                   download={layerFileName(layer.zIndex, layer.name)}
@@ -146,7 +172,90 @@ export function LayerStack({ layers, tierLabel, generationId }: {
             );
           })}
         </ul>
+        {editing && (
+          <LayerEditor
+            key={editing}
+            layerId={editing}
+            scored={Boolean(ordered.find((l) => l.id === editing)?.identityScore !== null) || scoredStack}
+            onDone={() => setEditing(null)}
+          />
+        )}
       </div>
+    </div>
+  );
+}
+
+// The edit sheet for one layer: say what to change, spend one credit, get a
+// new version. Synchronous — about fifteen seconds — so the button holds its
+// pending state rather than the page polling for a job.
+function LayerEditor({ layerId, scored, onDone }: { layerId: string; scored: boolean; onDone: () => void }) {
+  const { t } = useLocale();
+  const L = t.layers;
+  const router = useRouter();
+  const [prompt, setPrompt] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  const submit = () => {
+    if (!prompt.trim() || pending) return;
+    setError(null);
+    startTransition(async () => {
+      const form = new FormData();
+      form.set("layer_id", layerId);
+      form.set("prompt", prompt.trim());
+      const result = await editLayer(form);
+      if ("error" in result) {
+        setError(result.error);
+        return;
+      }
+      onDone();
+      router.refresh();
+    });
+  };
+
+  return (
+    <div className="mt-3 rounded-control border border-atelier-rule bg-atelier-ink/[0.03] p-3">
+      <label className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted" htmlFor="layer-edit-prompt">
+        {L.changeLabel}
+      </label>
+      <textarea
+        id="layer-edit-prompt"
+        autoFocus
+        rows={2}
+        value={prompt}
+        onChange={(e) => setPrompt(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) submit();
+          if (e.key === "Escape") onDone();
+        }}
+        placeholder={L.changePlaceholder}
+        disabled={pending}
+        className="mt-1.5 w-full resize-none rounded-control border border-atelier-rule bg-atelier-paper px-3 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 focus:border-atelier-muted disabled:opacity-60"
+      />
+      <div className="mt-2 flex items-center justify-between gap-3">
+        <p className="text-[11px] leading-snug text-atelier-muted">
+          {scored ? L.changeScoredNote : L.changeNote}
+        </p>
+        <div className="flex flex-shrink-0 gap-2">
+          <button
+            type="button"
+            onClick={onDone}
+            disabled={pending}
+            className="rounded-full border border-atelier-rule px-3 py-1.5 text-[11px] font-semibold text-atelier-muted transition-colors hover:text-atelier-ink disabled:opacity-50"
+          >
+            {L.changeCancel}
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={pending || !prompt.trim()}
+            className="rounded-full bg-atelier-ink px-3.5 py-1.5 text-[11px] font-semibold text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {pending ? L.changeWorking : L.changeGo}
+          </button>
+        </div>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
     </div>
   );
 }

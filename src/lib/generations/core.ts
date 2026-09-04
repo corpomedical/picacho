@@ -432,3 +432,32 @@ export async function persistImageBytes(
   }
   return mediaUrl("generated-images", path);
 }
+
+/**
+ * Resize a re-cut layer back to the pixel size of the layer it replaces.
+ *
+ * The edit endpoint normalises dimensions — a 605×1088 layer came back
+ * 592×1088 on 2026-09-04 — so a straight swap would squash the subject by
+ * about 2% against its bounding box. The silhouette fills its frame the same
+ * way before and after (measured: 0.1% drift), so scaling to the original's
+ * exact width and height restores registration without touching the box.
+ *
+ * `fit: "fill"` on purpose: the aspect difference IS the correction. Any
+ * other fit would letterbox or crop, which is what moves a subject.
+ */
+export async function fitLayerToOriginal(
+  bytes: Uint8Array,
+  width: number,
+  height: number,
+): Promise<Uint8Array<ArrayBuffer>> {
+  const sharp = (await import("sharp")).default;
+  const out = await sharp(bytes)
+    .resize(width, height, { fit: "fill" })
+    .png()
+    .toBuffer();
+  // Copy into a plain ArrayBuffer: Buffer's is ArrayBufferLike, which the
+  // storage client's Uint8Array<ArrayBuffer> parameter will not take.
+  const copy = new Uint8Array(new ArrayBuffer(out.byteLength));
+  copy.set(out);
+  return copy;
+}

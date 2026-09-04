@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
-import { LAYERS_MODEL_ID, parseLayerBox } from "@/lib/generations/layers";
+import { LAYERS_MODEL_ID, newestLayers, parseLayerBox } from "@/lib/generations/layers";
 import { LayerStack, type StackLayer } from "@/components/layer-stack";
 import { LayersProgress } from "@/components/layers-progress";
 import { getServerMessages } from "@/lib/i18n/server";
@@ -29,23 +29,31 @@ export default async function LayerStackPage({ params }: { params: Promise<{ id:
       .maybeSingle(),
     supabase
       .from("generation_layers")
-      .select("id, z_index, name, description, bbox, storage_path, width, height, identity_score")
+      .select("id, z_index, version, prompt, name, description, bbox, storage_path, width, height, identity_score")
       .eq("generation_id", id)
-      .order("z_index", { ascending: true }),
+      .order("z_index", { ascending: true })
+      .order("version", { ascending: true }),
   ]);
   if (!gen || gen.model_id !== LAYERS_MODEL_ID) notFound();
 
-  const layers: StackLayer[] = (rows ?? []).map((r) => ({
-    id: r.id as string,
-    zIndex: r.z_index as number,
-    name: (r.name as string | null) ?? null,
-    description: (r.description as string | null) ?? null,
-    url: mediaUrl("generated-images", r.storage_path as string),
-    width: (r.width as number | null) ?? null,
-    height: (r.height as number | null) ?? null,
-    identityScore: (r.identity_score as number | null) ?? null,
-    box: parseLayerBox(r.bbox),
-  }));
+  // Every version is fetched, then the newest of each layer is what the
+  // stack shows — an edit adds a row rather than replacing one, so the
+  // original stays downloadable and the change stays reversible.
+  const layers: StackLayer[] = newestLayers(
+    (rows ?? []).map((r) => ({
+      id: r.id as string,
+      zIndex: r.z_index as number,
+      version: (r.version as number | null) ?? 1,
+      prompt: (r.prompt as string | null) ?? null,
+      name: (r.name as string | null) ?? null,
+      description: (r.description as string | null) ?? null,
+      url: mediaUrl("generated-images", r.storage_path as string),
+      width: (r.width as number | null) ?? null,
+      height: (r.height as number | null) ?? null,
+      identityScore: (r.identity_score as number | null) ?? null,
+      box: parseLayerBox(r.bbox),
+    })),
+  );
 
   // The resolution label is the measured truth — the stored base's long
   // side — not a parse of the prompt line above it.
