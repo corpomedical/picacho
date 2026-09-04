@@ -145,7 +145,14 @@ general question about policy into a specific question about fal's delivery
 path, which is the kind an engineer can answer in one line.
 
 So it splits like the BytePlus pair: the answerable question alone and first,
-the per-endpoint audit second. Send from hello@picacho.ai.
+the per-endpoint audit second. Send from hello@picacho.ai, as a NEW ticket —
+nothing has ever been sent to fal on this, so there is no thread to reply to.
+
+The subject lines lead with the question fal can answer rather than with the
+topic. "C2PA provenance" as a subject gets triaged to whoever owns compliance
+questions; "do you re-encode delivered video" gets read by someone who knows
+the answer, and the endpoint in the second half is the detail that makes them
+open it.
 
 Two things deliberately NOT in either: any claim about fal's own legal
 obligations, and any statement of our compliance status. Both were cut from
@@ -153,6 +160,8 @@ the long draft for the reasons recorded in its rationale, and neither has
 become safer to say since.
 
 **Ticket 1 — the re-encode question (993 chars)**
+
+Subject: `Does fal re-encode delivered video? bytedance/seedance-2.0 arrives without its C2PA manifest`
 
 ```
 We are a fal customer (Picacho, an AI character-video product). A factual question about delivery, with our measurement first.
@@ -172,6 +181,8 @@ If the bytes pass through untouched, say so and we will take it upstream.
 ```
 
 **Ticket 2 — the per-endpoint audit (941 chars)**
+
+Subject: `Which endpoints embed a C2PA manifest, and is there a request-side flag?`
 
 ```
 Following our re-encoding question, the same topic from the other side.
