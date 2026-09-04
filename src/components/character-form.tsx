@@ -524,7 +524,10 @@ export function CharacterForm({
            nothing to count yet, simply do not render. */}
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-atelier-rule pb-5">
           <div className="min-w-0 flex-1">
-            <p className={EYEBROW}>{initial?.id ? c.eyebrowOne : c.newTitle}</p>
+            <h1 className="sr-only">{initial?.id ? name || c.eyebrowOne : c.newTitle}</h1>
+            <p className={EYEBROW} aria-hidden>
+              {initial?.id ? c.eyebrowOne : c.newTitle}
+            </p>
             <input
               id="name"
               aria-label={c.characterName}
@@ -827,6 +830,15 @@ export function CharacterForm({
             <input
               value={genPrompt}
               onChange={(e) => setGenPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter here means "generate this description", never
+                // "save the character" — which is what the form's default
+                // submit button would otherwise do, ending the visit on a
+                // character with no face.
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                if (!generating && totalImages < 5) void handleGenerateReference();
+              }}
               disabled={generating || totalImages >= 5}
               placeholder={c.describePlaceholder}
               // min-w-0 overrides the browser's default intrinsic min-width
@@ -852,6 +864,7 @@ export function CharacterForm({
                  would have shown if it were clickable. */
               <p className="mt-1.5 text-xs text-atelier-muted">{c.maxImages}</p>
             )}
+          {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{genError}</p>}
 
           {/* Perspective (2026-08-27): the one-tap reference sheet — front,
               three-quarter, profile, full-body — through the same generate
@@ -898,7 +911,6 @@ export function CharacterForm({
             <p className="mt-1.5 text-xs text-atelier-muted">{c.perspectiveHint}</p>
           </div>
 
-          {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{genError}</p>}
         </div>
       </section>
       </Fold>
@@ -1113,9 +1125,15 @@ export function CharacterForm({
       </section>
       </Fold>
 
-      <Fold folded title={c.foldSettings} meta={initial?.id ? c.foldOpen : c.foldOptional}>
-        {basicsSection}
-      </Fold>
+      {projects.length > 0 && (
+        <Fold
+          folded
+          title={c.foldSettings}
+          meta={projects.find((pr) => pr.id === projectId)?.name ?? c.noProject}
+        >
+          {basicsSection}
+        </Fold>
+      )}
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 
