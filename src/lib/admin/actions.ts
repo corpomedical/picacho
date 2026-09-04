@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { USER_STORAGE_BUCKETS } from "@/lib/profile/actions";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
@@ -174,7 +175,7 @@ export async function deleteUser(formData: FormData) {
   // flow in profile/actions.ts. Best-effort: a storage hiccup must not block
   // the actual account deletion below.
   const PAGE = 1000;
-  for (const bucket of ["character-references", "generated-images", "chat-attachments"]) {
+  for (const bucket of USER_STORAGE_BUCKETS) {
     try {
       // Page through the full listing rather than deleting a single 1000-object
       // page — a prolific user can have far more than that, and a single page
