@@ -29,7 +29,14 @@ export default async function LayerStackPage({ params }: { params: Promise<{ id:
       .maybeSingle(),
     supabase
       .from("generation_layers")
-      .select("id, z_index, version, prompt, name, description, bbox, storage_path, width, height, identity_score")
+      // select("*") rather than a column list, deliberately. A named column
+      // that does not exist yet makes PostgREST 400 the whole query, which
+      // this page reads as "no layers" and answers with a spinner — the
+      // stack looked broken for its owner between the stage-2 deploy and the
+      // stage-2 SQL (2026-09-04). A star select returns whatever the table
+      // has, and every stage-2 field below is already read defensively, so
+      // the page degrades to stage-1 behaviour instead of failing.
+      .select("*")
       .eq("generation_id", id)
       .order("z_index", { ascending: true })
       .order("version", { ascending: true }),

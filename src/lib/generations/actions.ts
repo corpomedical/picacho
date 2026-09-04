@@ -4253,7 +4253,7 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   // character lives, since a split row carries none of its own.
   const { data: layer } = await supabase
     .from("generation_layers")
-    .select("id, generation_id, z_index, version, name, description, bbox, storage_path, width, height")
+    .select("*")
     .eq("id", layerId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -4280,6 +4280,16 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   if (ineligible === "base-layer") return { error: "The base layer can't be edited — it's what the others sit on." };
   if (ineligible === "too-large") return { error: "That layer is too big to edit." };
   if (ineligible) return { error: "This layer can't be edited." };
+
+  // Versioning is what makes an edit non-destructive, and it lives in
+  // columns a manual migration adds. Without them the insert below would
+  // fail AFTER the provider had been paid, so this is checked before any
+  // money moves — and it is a column check, not a table check: stage 1's
+  // preflight asked only whether generation_layers existed, which was true
+  // in exactly the window this broke (2026-09-04).
+  if ((layer as Record<string, unknown>).version === undefined) {
+    return { error: "Editing layers isn't switched on yet — nothing was charged." };
+  }
 
   const creditWeight = layerEditCreditCost(layer.width as number | null, layer.height as number | null);
   const allowance = await checkGenerationAllowance(supabase, userId, creditWeight);
