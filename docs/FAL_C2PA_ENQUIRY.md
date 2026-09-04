@@ -152,7 +152,7 @@ obligations, and any statement of our compliance status. Both were cut from
 the long draft for the reasons recorded in its rationale, and neither has
 become safer to say since.
 
-**Ticket 1 — the re-encode question (1002 chars)**
+**Ticket 1 — the re-encode question (993 chars)**
 
 ```
 We are a fal customer (Picacho, an AI character-video product). A factual question about delivery, with our measurement first.
@@ -166,7 +166,7 @@ We probed one delivered video from every endpoint we use, reading the first 1 Mi
 
 The Seedance line is why we are writing. ByteDance state in writing that video from that model carries embedded C2PA provenance. The file we receive through fal does not: top-level boxes ftyp/moov/free/mdat, no uuid box, where both marked files have one.
 
-Do you re-encode, transcode, re-containerise or rewrite metadata anywhere between a model's output and the file on our download URL — on that endpoint, or on the queue and CDN path generally?
+Do you re-encode, transcode, re-containerise or rewrite metadata between a model's output and the file on our download URL — on that endpoint, or on the queue and CDN path generally?
 
 If the bytes pass through untouched, say so and we will take it upstream.
 ```
