@@ -967,6 +967,7 @@ const en = {
     changeGo: "Change it — {n} credits",
     changeWorking: "Working…",
     changeCancel: "Cancel",
+    sourceScored: "character",
     stackTitle: "Layer stack",
     stackSub: "{n} layers · {res}",
     base: "Base",

@@ -899,6 +899,7 @@ const pt = {
     changeGo: "Alterar — {n} créditos",
     changeWorking: "A trabalhar…",
     changeCancel: "Cancelar",
+    sourceScored: "personagem",
     stackTitle: "Pilha de camadas",
     stackSub: "{n} camadas · {res}",
     base: "Base",

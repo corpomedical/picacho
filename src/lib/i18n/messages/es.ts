@@ -899,6 +899,7 @@ const es = {
     changeGo: "Cambiarla — {n} créditos",
     changeWorking: "Trabajando…",
     changeCancel: "Cancelar",
+    sourceScored: "personaje",
     stackTitle: "Pila de capas",
     stackSub: "{n} capas · {res}",
     base: "Base",

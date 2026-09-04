@@ -24,15 +24,21 @@ export default async function LayersPage() {
   const [{ data: recent }, { data: splits }] = await Promise.all([
     supabase
       .from("generations")
-      .select("id, prompt_input, status, content_type, model_id, result_url, source_generation_id, created_at")
+      .select("id, prompt_input, status, content_type, model_id, result_url, source_generation_id, created_at, character_profile_id, match_score")
       .eq("user_id", userData.user.id)
       .eq("content_type", "image")
       .eq("status", "succeeded")
-      .neq("model_id", LAYERS_MODEL_ID)
       .not("result_url", "is", null)
       .is("deleted_at", null)
       .order("created_at", { ascending: false })
-      .limit(10),
+      // NO SQL FILTER ON model_id, and that is the whole point: `model_id
+      // <> 'seedream-layerize'` is NULL — not true — for every row written
+      // before that column existed, so PostgREST dropped them. It hid 45 of
+      // this account's 47 images and left two to choose from (2026-09-04).
+      // takeLayersIneligibility does the same comparison in JS, where
+      // null === "seedream-layerize" is simply false and the row survives,
+      // so the rule lives there and here we merely over-fetch a little.
+      .limit(24),
     supabase
       .from("generations")
       .select("id, prompt_input, status, result_url, created_at")
@@ -49,6 +55,11 @@ export default async function LayersPage() {
       id: g.id as string,
       prompt: (g.prompt_input as string | null) ?? "",
       url: toMediaUrl(g.result_url as string | null),
+      // A split only carries identity forward if its source had a character:
+      // that is what makes a later layer edit scoreable, so it is worth
+      // seeing before spending rather than after.
+      scored: Boolean(g.character_profile_id),
+      score: (g.match_score as number | null) ?? null,
     }))
     .filter((g) => isRenderableUrl(g.url))
     .slice(0, 8);
@@ -81,7 +92,16 @@ export default async function LayersPage() {
                   <img src={thumbUrl(src.url, 640) ?? src.url!} alt={src.prompt} className="h-full w-full object-cover" loading="lazy" />
                 </div>
                 <p className="mt-2.5 min-w-0 truncate text-xs font-medium text-atelier-ink">{src.prompt}</p>
-                <p className="mt-1 font-numeral text-[11px] tabular-nums text-atelier-muted">{priceLine}</p>
+                <p className="mt-1 font-numeral text-[11px] tabular-nums text-atelier-muted">
+                  {priceLine}
+                  {src.scored && (
+                    <span className="text-atelier-accent">
+                      {" · "}
+                      {L.sourceScored}
+                      {src.score !== null ? ` ${src.score}` : ""}
+                    </span>
+                  )}
+                </p>
                 <div className="mt-2.5">
                   <LayersButton generationId={src.id} />
                 </div>

@@ -899,6 +899,7 @@ const it = {
     changeGo: "Modifica — {n} crediti",
     changeWorking: "In corso…",
     changeCancel: "Annulla",
+    sourceScored: "personaggio",
     stackTitle: "Pila di livelli",
     stackSub: "{n} livelli · {res}",
     base: "Base",

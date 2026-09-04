@@ -96,7 +96,13 @@ export function takeLayersIneligibility(row: {
 }): LayersIneligibility | null {
   if (row.content_type !== "image") return "not-image";
   if (row.status !== "succeeded") return "not-succeeded";
-  if (row.model_id === LAYERS_MODEL_ID) return "already-layered";
+  // Both tool outputs are images and would otherwise offer themselves as
+  // sources. Written as an equality test on purpose: a NULL model_id — every
+  // row from before that column existed — must PASS, which is exactly what
+  // an SQL `neq` would have got wrong.
+  if (row.model_id === LAYERS_MODEL_ID || row.model_id === LAYER_EDIT_MODEL_ID) {
+    return "already-layered";
+  }
   return null;
 }
 

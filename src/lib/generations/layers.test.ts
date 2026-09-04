@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  LAYER_EDIT_MODEL_ID,
   LAYER_EDIT_MAX_PIXELS,
   layerEditCreditCost,
   LAYER_EDIT_MAX_PROMPT,
@@ -53,6 +54,18 @@ describe("takeLayersIneligibility", () => {
   const base = { content_type: "image", status: "succeeded", model_id: "flux", source_generation_id: null };
   it("accepts a finished image", () => {
     expect(takeLayersIneligibility(base)).toBeNull();
+  });
+  it("accepts a row whose model_id is NULL — every image predating that column", () => {
+    // The bug this pins: as SQL, `model_id <> 'seedream-layerize'` is NULL
+    // for these rows, so a PostgREST .neq() dropped 45 of 47 images and left
+    // the picker with two. In JS the comparison is simply false and the row
+    // survives, which is why the rule lives here.
+    expect(takeLayersIneligibility({ ...base, model_id: null })).toBeNull();
+    expect(takeLayersIneligibility({ content_type: "image", status: "succeeded" })).toBeNull();
+  });
+  it("refuses the tool's own outputs as sources", () => {
+    expect(takeLayersIneligibility({ ...base, model_id: LAYERS_MODEL_ID })).toBe("already-layered");
+    expect(takeLayersIneligibility({ ...base, model_id: LAYER_EDIT_MODEL_ID })).toBe("already-layered");
   });
   it("refuses video, unfinished and already-split rows", () => {
     expect(takeLayersIneligibility({ ...base, content_type: "video" })).toBe("not-image");
