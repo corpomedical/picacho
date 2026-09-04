@@ -1107,6 +1107,8 @@ const en = {
   character: {
     eyebrow: "Studio",
     eyebrowOne: "Character",
+    nameTitlePlaceholder: "Name your character",
+    foldOptional: "Optional",
     statRenders: "Renders",
     statIdentity: "Mean identity",
     statLastWorked: "Last worked",
@@ -1122,6 +1124,8 @@ const en = {
     // Reference-set coaching (competitive research 2026-08-21): a tighter
     // identity lock comes from photo VARIETY, not just count.
     lockStrength: "Lock strength",
+    lockTipNone: "No photos yet. The first one becomes the face on every generation.",
+    perspectiveNeedsSaved: "Perspective works from a stored photo — save the character first, then run it from the profile.",
     lockTipOne: "One photo anchors the face. Add a three-quarter angle and a full-body shot to strengthen the lock.",
     lockTipFew: "Strong. An expression shot or full-body photo tightens the lock further.",
     lockTipMax: "Strongest — the model sees your character from several angles and expressions.",

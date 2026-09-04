@@ -1038,6 +1038,8 @@ const it = {
   character: {
     eyebrow: "Studio",
     eyebrowOne: "Personaggio",
+    nameTitlePlaceholder: "Dai un nome al personaggio",
+    foldOptional: "Facoltativo",
     statRenders: "Render",
     statIdentity: "Identità media",
     statLastWorked: "Ultima volta",
@@ -1051,6 +1053,8 @@ const it = {
     foldOpen: "Apri",
     identityPhoto: "Foto identità",
     lockStrength: "Forza dell'ancoraggio",
+    lockTipNone: "Ancora nessuna foto. La prima diventa il volto di ogni generazione.",
+    perspectiveNeedsSaved: "Prospettiva parte da una foto già salvata: salva il personaggio ed eseguila dal suo profilo.",
     lockTipOne: "Una foto ancora il volto. Aggiungi un angolo di tre quarti e una figura intera per rafforzare l'ancoraggio.",
     lockTipFew: "Forte. Una foto di espressione o a figura intera lo rafforza ulteriormente.",
     lockTipMax: "Massimo — il modello vede il personaggio da più angolazioni ed espressioni.",

@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { isRenderableUrl, mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
-import { getServerMessages } from "@/lib/i18n/server";
 
 export default async function EditCharacterPage({
   params,
@@ -11,7 +10,6 @@ export default async function EditCharacterPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ error?: string }>;
 }) {
-  const { t } = await getServerMessages();
   const { id } = await params;
   const { error } = await searchParams;
   const supabase = await createClient();

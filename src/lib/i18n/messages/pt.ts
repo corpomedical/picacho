@@ -1038,6 +1038,8 @@ const pt = {
   character: {
     eyebrow: "Estúdio",
     eyebrowOne: "Personagem",
+    nameTitlePlaceholder: "Dê um nome à personagem",
+    foldOptional: "Opcional",
     statRenders: "Renders",
     statIdentity: "Identidade média",
     statLastWorked: "Última vez",
@@ -1051,6 +1053,8 @@ const pt = {
     foldOpen: "Abrir",
     identityPhoto: "Foto de identidade",
     lockStrength: "Força da ancoragem",
+    lockTipNone: "Ainda não há fotos. A primeira será o rosto em todas as gerações.",
+    perspectiveNeedsSaved: "Perspectiva parte de uma foto já salva: salve o personagem e execute-a no perfil dele.",
     lockTipOne: "Uma foto ancora o rosto. Adicione um ângulo de três quartos e uma foto de corpo inteiro para reforçar a ancoragem.",
     lockTipFew: "Forte. Uma foto de expressão ou de corpo inteiro reforça ainda mais.",
     lockTipMax: "Máxima — o modelo vê seu personagem de vários ângulos e expressões.",

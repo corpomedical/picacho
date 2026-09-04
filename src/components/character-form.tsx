@@ -29,6 +29,9 @@ type ExistingImage = { path: string; url: string; thumbUrl?: string };
 // control radius. Accent only ever marks focus; photos keep the media radius.
 const SHEET = "rounded-control border border-atelier-rule bg-atelier-surface p-8";
 const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
+// The Ledger eyebrow — the masthead and every fold heading use it, so a
+// bare section can carry a heading without wearing a card.
+const EYEBROW = "text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted";
 const LABEL = "block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 const FIELD =
   "rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
@@ -306,7 +309,12 @@ export function CharacterForm({
       // Perspective RENDERS the same person from new angles — with no saved
       // photo there is no person to anchor to, and four unanchored renders
       // would be four strangers (the exact bug the anchor exists to stop).
-      setGenError(c.perspectiveNeedsPhoto);
+      //
+      // An UPLOADED photo is not a saved one: onFilesSelected puts files in
+      // `newFiles` and they only reach storage on submit. Telling someone to
+      // "add a photo first" while their photo is on the screen reads as a
+      // broken button, so say the real thing.
+      setGenError(newFiles.length > 0 ? c.perspectiveNeedsSaved : c.perspectiveNeedsPhoto);
       return;
     }
     const slots = 5 - totalImages;
@@ -478,26 +486,6 @@ export function CharacterForm({
   // the masthead carries it.
   const basicsSection = (
     <section className={SHEET}>
-      <h2 className={SHEET_TITLE}>{c.basics}</h2>
-      {/* Only while creating. On an existing character the masthead input
-          above IS this field — rendering both would put two required
-          controls with the same id on one page. */}
-      {!initial?.id && (
-        <div className="mt-4">
-          <label htmlFor="name" className={LABEL}>
-            {c.characterName}
-          </label>
-          <input
-            id="name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            maxLength={120}
-            className={`mt-1 w-full ${FIELD}`}
-            placeholder={c.namePlaceholder}
-          />
-        </div>
-      )}
       <div className="mt-4">
         <label htmlFor="project" className={LABEL}>
           {c.project}
@@ -520,20 +508,23 @@ export function CharacterForm({
   );
 
   return (
-    <div className={initial?.id ? "space-y-6" : "mx-auto max-w-2xl space-y-6"}>
+    <div className={initial?.id ? "space-y-6" : "mx-auto max-w-3xl space-y-6"}>
     <form onSubmit={handleSubmit} className="space-y-6">
-      {initial?.id && (
-        /* MASTHEAD (direction A, 2026-09-04): the same Ledger head the
+      {/* MASTHEAD (direction A, 2026-09-04): the same Ledger head the
            project shelf and the project page carry — eyebrow, the name set
            in the serif, the three figures on the right. The name is an input
            styled as the title: the field that used to sit in "Basics" is now
            the heading you click and type into, which is also why no
-           `required` control ever ends up hidden inside a fold. */
+           `required` control ever ends up hidden inside a fold.
+
+           It renders while CREATING too (2026-09-04, operator: "the create
+           new character page still has the same UI"). There, naming the
+           character IS the first move, so the empty serif field with its own
+           prompt is the whole top of the page — and the figures, which have
+           nothing to count yet, simply do not render. */}
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-atelier-rule pb-5">
           <div className="min-w-0 flex-1">
-            <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
-              {c.eyebrowOne}
-            </p>
+            <p className={EYEBROW}>{initial?.id ? c.eyebrowOne : c.newTitle}</p>
             <input
               id="name"
               aria-label={c.characterName}
@@ -541,7 +532,7 @@ export function CharacterForm({
               onChange={(e) => setName(e.target.value)}
               required
               maxLength={120}
-              placeholder={c.namePlaceholder}
+              placeholder={initial?.id ? c.namePlaceholder : c.nameTitlePlaceholder}
               className="-mx-1.5 mt-1 w-[calc(100%+0.75rem)] truncate rounded-control border border-transparent bg-transparent px-1.5 py-0.5 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink outline-none transition-colors hover:border-atelier-rule focus:border-atelier-accent"
             />
           </div>
@@ -588,7 +579,6 @@ export function CharacterForm({
             </dl>
           )}
         </div>
-      )}
 
       {initial?.id && (
         /* Profile hero (2026-08-27 redesign, case 2): meet the character
@@ -705,11 +695,13 @@ export function CharacterForm({
         </div>
       )}
 
-      {!initial?.id && basicsSection}
-
+      {/* The photos never fold while creating: giving the character a face is
+          the one thing that cannot be put off, and on a fresh page it is the
+          only section that is open. Bare rather than in a card, so the page
+          reads masthead → the work → two quiet folds. */}
       <Fold folded={!!initial?.id} title={c.referenceImages} meta={String(totalImages)}>
-      <section className={SHEET}>
-        {!initial?.id && <h2 className={SHEET_TITLE}>{c.referenceImages}</h2>}
+      <section className={initial?.id ? SHEET : ""}>
+        {!initial?.id && <h2 className={EYEBROW}>{c.referenceImages}</h2>}
         <p className="mt-1 text-sm text-atelier-muted">
           {c.referenceImagesSubtitle}
         </p>
@@ -790,7 +782,7 @@ export function CharacterForm({
             find it in a blog. Coach it right where the photos live. The
             meter is count-based (we can't classify pose from pixels); the
             tip supplies the variety advice. */}
-        {totalImages > 0 && !initial?.id && (
+        {!initial?.id && (
           <div className="mt-3">
             <div className="flex items-center gap-2.5">
               <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
@@ -810,7 +802,13 @@ export function CharacterForm({
               </span>
             </div>
             <p className="mt-1.5 text-xs text-atelier-muted">
-              {totalImages <= 1 ? c.lockTipOne : totalImages <= 3 ? c.lockTipFew : c.lockTipMax}
+              {totalImages === 0
+                ? c.lockTipNone
+                : totalImages <= 1
+                  ? c.lockTipOne
+                  : totalImages <= 3
+                    ? c.lockTipFew
+                    : c.lockTipMax}
             </p>
           </div>
         )}
@@ -905,7 +903,10 @@ export function CharacterForm({
       </section>
       </Fold>
 
-      <Fold folded={!!initial?.id} title={c.foldLookVoice} meta={c.foldOpen}>
+      {/* Everything below is refinement — an outfit, traits, a voice — and
+          none of it is needed to save a character for the first time. Folded
+          in BOTH modes; while creating, the meta says so out loud. */}
+      <Fold folded title={c.foldLookVoice} meta={initial?.id ? c.foldOpen : c.foldOptional}>
       {/* Outfit photos (2026-08-24, from the bmazloum support case): clothing
           shots finally get their own home, so product photos never end up in
           the identity slots above — where a second person's photo (or a
@@ -1112,11 +1113,9 @@ export function CharacterForm({
       </section>
       </Fold>
 
-      {initial?.id && (
-        <Fold folded title={c.foldSettings} meta={c.foldOpen}>
-          {basicsSection}
-        </Fold>
-      )}
+      <Fold folded title={c.foldSettings} meta={initial?.id ? c.foldOpen : c.foldOptional}>
+        {basicsSection}
+      </Fold>
 
       {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
 

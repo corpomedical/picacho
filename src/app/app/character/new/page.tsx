@@ -1,14 +1,12 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { CharacterForm } from "@/components/character-form";
-import { getServerMessages } from "@/lib/i18n/server";
 
 export default async function NewCharacterPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
-  const { t } = await getServerMessages();
   const { error } = await searchParams;
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -25,9 +23,8 @@ export default async function NewCharacterPage({
 
   return (
     <div>
-      <h1 className="mx-auto mb-6 max-w-2xl text-lg font-semibold text-atelier-ink">
-        {t.character.newTitle}
-      </h1>
+      {/* No <h1> here any more: the form's masthead carries the eyebrow and
+          the name field that used to sit under this heading. */}
       <CharacterForm
         userId={data.user.id}
         errorMessage={error}

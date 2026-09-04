@@ -1038,6 +1038,8 @@ const es = {
   character: {
     eyebrow: "Estudio",
     eyebrowOne: "Personaje",
+    nameTitlePlaceholder: "Nombra tu personaje",
+    foldOptional: "Opcional",
     statRenders: "Renders",
     statIdentity: "Identidad media",
     statLastWorked: "Última vez",
@@ -1051,6 +1053,8 @@ const es = {
     foldOpen: "Abrir",
     identityPhoto: "Foto de identidad",
     lockStrength: "Fuerza del anclaje",
+    lockTipNone: "Aún no hay fotos. La primera será la cara en todas las generaciones.",
+    perspectiveNeedsSaved: "Perspectiva parte de una foto ya guardada: guarda el personaje y ejecútala desde su perfil.",
     lockTipOne: "Una foto ancla la cara. Añade un ángulo de tres cuartos y una foto de cuerpo entero para reforzar el anclaje.",
     lockTipFew: "Fuerte. Una foto de expresión o de cuerpo entero lo refuerza aún más.",
     lockTipMax: "Máximo — el modelo ve a tu personaje desde varios ángulos y expresiones.",
