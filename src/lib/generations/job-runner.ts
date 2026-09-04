@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { probeImage } from "@/lib/media/image-probe";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { persistImageBytes } from "@/lib/generations/core";
 import { LAYERS_TIERS, layerStoragePath, type LayersTier } from "@/lib/generations/layers";
@@ -1252,6 +1253,10 @@ export async function advanceGeneration(
           throw new Error(`fal.ai (${row.payload?.label ?? "Layerize"}) error (${res.status}): couldn't fetch layer ${layer.zIndex}`);
         }
         const bytes = new Uint8Array(await res.arrayBuffer());
+        // fal reports null dimensions on this endpoint, and the stack needs
+        // real ones (the composite's aspect ratio, the resolution label), so
+        // the bytes in hand are measured rather than asked about again.
+        const measured = probeImage(bytes);
         const path = layerStoragePath(userId, generationId, layer.zIndex);
         let url: string;
         try {
@@ -1268,8 +1273,8 @@ export async function advanceGeneration(
             description: layer.description,
             bbox: layer.boundingBox ?? null,
             storage_path: path,
-            width: layer.width,
-            height: layer.height,
+            width: measured?.width ?? null,
+            height: measured?.height ?? null,
           },
           { onConflict: "generation_id,z_index" },
         );

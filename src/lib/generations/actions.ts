@@ -3960,6 +3960,26 @@ export async function startUploadUpscale(formData: FormData): Promise<UpscaleSta
 
 type LayersStartResult = { error: string } | { generationId: string };
 
+// The collector writes generation_layers when the split lands. If that table
+// is not there — supabase/pending-2026-09-03/layers.sql is a manual step and
+// deploy does not wait for it — the job submits, bills, completes at fal, and
+// then retries its collection behind a spinner until the 45-minute write-off.
+// That happened on 2026-09-04, ten minutes of "loading" for a split that had
+// already succeeded. Money must not move for work that cannot land, so the
+// schema is checked first; once present it never goes away, so a positive
+// answer is remembered for the life of the process.
+let layersSchemaReady = false;
+async function layersSchemaIsReady(admin: ReturnType<typeof createAdminClient>): Promise<boolean> {
+  if (layersSchemaReady) return true;
+  const { error } = await admin.from("generation_layers").select("id").limit(1);
+  if (error) {
+    console.error("Layers is deployed but generation_layers is missing — run supabase/pending-2026-09-03/layers.sql:", error.message);
+    return false;
+  }
+  layersSchemaReady = true;
+  return true;
+}
+
 function parseLayersTier(raw: FormDataEntryValue | null): LayersTier | null {
   return raw === "1k" || raw === "2k" ? raw : null;
 }
@@ -3976,13 +3996,17 @@ async function startLayersCore(params: {
   const promptInput = `Split into layers at ${tierLabel}`;
   const creditWeight = layersCreditCost(params.tier);
 
+  const admin = createAdminClient();
+  if (!(await layersSchemaIsReady(admin))) {
+    return { error: "Layers isn't switched on yet — nothing was charged. Try again shortly." };
+  }
+
   // Plan/purchased credits only — the free daily slot never covers a tool.
   const allowance = await checkGenerationAllowance(supabase, params.userId, creditWeight);
   if (allowance.error) return { error: allowance.error };
   const consumePurchased = allowance.consumePurchased ?? 0;
   const monthlyPortion = allowance.isAdmin ? 0 : Math.max(0, creditWeight - consumePurchased);
 
-  const admin = createAdminClient();
   const reservationRow = {
     id: crypto.randomUUID(),
     character_profile_id: null,

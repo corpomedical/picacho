@@ -1165,13 +1165,16 @@ export async function submitLayerizeJob(
   );
 }
 
-/** One delivered layer, as fal returns it (shape read from the probe,
- *  2026-09-03). z_index 0 is the base; bounding_box carries both absolute
- *  and normalized boxes and is stored verbatim. */
+/** One delivered layer, as fal returns it. z_index 0 is the base;
+ *  bounding_box carries both absolute and normalized boxes and is stored
+ *  verbatim.
+ *
+ *  NO DIMENSIONS: this endpoint answers `image.width`/`image.height` as
+ *  null (verified on a live result, 2026-09-04 — the probe's figures came
+ *  from reading the PNG headers, not from fal). The collector measures the
+ *  bytes it downloads instead, so the stack has real sizes. */
 export type FalLayer = {
   url: string;
-  width: number | null;
-  height: number | null;
   zIndex: number;
   name: string | null;
   description: string | null;
@@ -1192,8 +1195,6 @@ export async function fetchQueuedLayers(job: QueuedJob): Promise<FalLayer[]> {
     .filter((l) => typeof l?.image?.url === "string")
     .map((l, i) => ({
       url: l.image!.url as string,
-      width: typeof l.image?.width === "number" ? l.image.width : null,
-      height: typeof l.image?.height === "number" ? l.image.height : null,
       zIndex: typeof l.z_index === "number" ? l.z_index : i,
       name: l.name ?? null,
       description: l.description ?? null,
