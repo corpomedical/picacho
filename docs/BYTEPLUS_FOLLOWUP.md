@@ -292,26 +292,8 @@ We pay 0.3024 USD/s for the same model through an aggregator today, so this numb
 
 **Ticket 2 — the per-person check** — superseded, see below.
 
-**FIRST — the per-person check (998 chars).** Rewritten to stand alone; the
-earlier version opened "A second question" and followed price.
-
-```
-Thank you — that unblocks us, and we will complete the KYC to activate the Entry tier.
-
-One question decides how we build, so it comes first.
-
-The KYC you describe — risk assessment, letter of commitment, mobile verification — reads as account-level verification of us, the enterprise.
-
-Separately: when we add a real person to the asset library, must that individual complete a portrait-rights or liveness check of their own?
-
-1. If yes — can that step be embedded in our own onboarding so our customer completes it there (you confirmed they need no BytePlus account), and is there a callback with the result?
-
-2. If no such check exists, please say so explicitly; it changes what consent and evidence we must retain ourselves.
-
-This is the difference between a feature our customers use directly and one that only works for agencies enrolling people in person.
-
-We will also need a DPA with SCCs, the region serving the library for an EU customer, and the retention period for any liveness image.
-```
+**FIRST — the per-person check** — WITHDRAWN 2026-09-04. The docs answer
+it; see the replacement at the end of this file.
 
 ---
 
@@ -407,3 +389,27 @@ including the "BytePlus Real Person Verification H5/API - Usage Rules".
 Expiry has teeth worth knowing before anyone subscribes above Entry: 15 days
 after a paid package lapses, assets created **during** that paid period are
 deleted permanently. Assets created before it, or in the 15-day grace, survive.
+
+### The ticket to actually send (998 chars)
+
+The original per-person ticket is withdrawn: the documentation answers it.
+What remains is a genuine contradiction between their written reply and their
+own guide — and asking that shows we read both rather than neither.
+
+```
+Thank you — we have since read "Add real-human assets to asset library" (docs/ModelArk/2315856), which answers most of what we were going to ask. One point where it and your reply appear to differ, and it decides how we build.
+
+You wrote: "Videos generated through the API do not require the end user to hold a BytePlus account."
+
+The guide says: "real-person verification currently requires logging in to a BytePlus account", with the actor scanning our QR code, signing in, and verifying on their phone.
+
+We read these as answering different questions: generating from a verified asset needs nothing from the end user, but enrolling that person does. Could you confirm?
+
+For onboarding a new person today:
+
+1. Is the QR-plus-login flow the only route, or does the Assets API on the Entry tier expose real-person verification we could host in our own product?
+
+2. Does "currently" mean an API-hosted flow is planned?
+
+We can build around either answer, and would rather build around the right one.
+```
