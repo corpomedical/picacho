@@ -33,6 +33,12 @@ export default async function EditCharacterPage({
   // would be the last thing you saw. Send people back to the list instead.
   if (!profile) redirect("/app/character");
 
+  // Never sign a path outside the owner's folder, whatever the row says. The
+  // DB trigger enforces this for reference_image_urls; outfit_image_urls was
+  // added later WITHOUT trigger coverage (pending-2026-09-05 closes that), so
+  // a direct PostgREST write could plant another user's storage path here —
+  // and this page would then mint a valid /api/media capability for it.
+  const owned = (path: string) => path.startsWith(`${userData.user.id}/`);
   const toTile = (path: string) => ({
     path,
     url: mediaUrl("character-references", path),
@@ -42,7 +48,7 @@ export default async function EditCharacterPage({
   });
   const [existingImages, { data: projects }, { data: voices }] = await Promise.all([
     // Stable capability URLs — cacheable, no per-photo storage round trip.
-    (profile.reference_image_urls ?? []).map(toTile),
+    (profile.reference_image_urls ?? []).filter(owned).map(toTile),
     supabase
       .from("projects")
       .select("id, name")
@@ -120,7 +126,7 @@ export default async function EditCharacterPage({
         recentRenders={recentRenders}
         stats={stats}
         existingImages={existingImages}
-        existingOutfitImages={(profile.outfit_image_urls ?? []).map(toTile)}
+        existingOutfitImages={(profile.outfit_image_urls ?? []).filter(owned).map(toTile)}
         errorMessage={error}
         projects={projects ?? []}
         voices={voices ?? []}

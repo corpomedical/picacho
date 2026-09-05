@@ -598,6 +598,15 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'reference_image_urls must all be under the owner''s storage folder';
   END IF;
+  -- outfit_image_urls rides the same rule (added 2026-09-05: the column was
+  -- introduced 2026-08-24 "under the same ownership rules" but the trigger
+  -- was never extended, leaving a cross-user capability-minting hole).
+  IF NEW.outfit_image_urls IS NOT NULL AND EXISTS (
+    SELECT 1 FROM unnest(NEW.outfit_image_urls) u
+    WHERE u IS NULL OR position((NEW.user_id::text || '/') in u) <> 1
+  ) THEN
+    RAISE EXCEPTION 'outfit_image_urls must all be under the owner''s storage folder';
+  END IF;
   RETURN NEW;
 END $$;
 DROP TRIGGER IF EXISTS trg_enforce_reference_paths_owned ON public.character_profiles;
