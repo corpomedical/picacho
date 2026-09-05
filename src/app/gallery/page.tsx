@@ -1,13 +1,12 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import type { SVGProps } from "react";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
-import { formatMsg } from "@/lib/i18n/format";
-import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
+import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
+import { GalleryShowcase, type ShowcaseItem } from "@/components/gallery-showcase";
 
 // The public "Made with Picacho" gallery: real featured renders, anonymous-
 // readable. Rows get here ONLY through the admin Feature toggle
@@ -50,39 +49,18 @@ export async function generateMetadata(): Promise<Metadata> {
 // (Here it also means a newly featured render shows up on the next request.)
 export const dynamic = "force-dynamic";
 
-// Same generic play-in-a-circle glyph the app's own galleries pin on video
-// tiles (see media-gallery.tsx PlayIcon) — hand-rolled inline SVG, the
-// house convention, not a new icon dependency.
-function PlayIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M8 5v14l11-7Z" />
-    </svg>
-  );
-}
-
-type FeaturedItem = {
-  id: string;
-  prompt: string;
-  /** Re-signed /api/media capability URL, or a provider URL — always renderable. */
-  url: string;
-  contentType: "image" | "video";
-  /** The row's REAL match_score (0-100, rounded), or null — never invented. */
-  score: number | null;
-};
-
 // Service-client read — the rows belong to their (admin) owners, not to the
 // anonymous visitor, exactly how lib/showcase.ts serves the homepage proof.
 // Best-effort by design: this page must render with or without data (and
 // before the featured_at migration is applied), so any failure returns an
 // empty list and the localized empty state shows — never an error page.
-async function getFeaturedItems(): Promise<FeaturedItem[]> {
+async function getFeaturedItems(): Promise<ShowcaseItem[]> {
   try {
     const admin = createAdminClient();
     const { data, error } = await admin
       .from("generations")
       .select(
-        "id, prompt_input, result_url, content_type, match_score, featured_at, profiles!inner(role)",
+        "id, prompt_input, result_url, poster_url, content_type, match_score, featured_at, profiles!inner(role)",
       )
       .eq("status", "succeeded")
       .not("featured_at", "is", null)
@@ -96,7 +74,7 @@ async function getFeaturedItems(): Promise<FeaturedItem[]> {
       .limit(60);
     if (error || !data) return [];
 
-    const items: FeaturedItem[] = [];
+    const items: ShowcaseItem[] = [];
     for (const row of data) {
       // toMediaUrl re-signs stored /api/media and legacy signed URLs under
       // the current key and passes provider URLs (fal.media video results)
@@ -109,6 +87,7 @@ async function getFeaturedItems(): Promise<FeaturedItem[]> {
         id: row.id,
         prompt: typeof row.prompt_input === "string" ? row.prompt_input.trim() : "",
         url,
+        posterUrl: toMediaUrl(row.poster_url),
         contentType: row.content_type === "video" ? "video" : "image",
         score:
           typeof rawScore === "number" && Number.isFinite(rawScore) ? Math.round(rawScore) : null,
@@ -125,108 +104,40 @@ export default async function GalleryPage() {
   const m = t.marketing.gallery;
   const items = await getFeaturedItems();
 
+  // The 2026-09-05 redesign: the gallery is a DARKROOM, matching the
+  // homepage's own dark shell — renders glow on warm charcoal instead of
+  // sitting on office white, the score chips read like printed labels, and
+  // every video opens in a real viewer (GalleryShowcase) instead of the v1
+  // page's inert first-frame tiles.
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-[#17150f]">
       <MarketingHeader />
 
-      <section className="mx-auto max-w-3xl px-8 pb-4 pt-20 text-center">
-        <h1 className="font-display text-3xl font-bold tracking-[-0.03em] text-neutral-900 sm:text-4xl">
+      <section className="mx-auto max-w-6xl px-6 pb-4 pt-20 sm:px-8">
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-ochre">
+          Picacho
+        </p>
+        <h1 className="mt-2 max-w-2xl font-display text-3xl font-bold tracking-[-0.03em] text-[#f7f6f4] sm:text-4xl">
           {m.title}
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-sm text-neutral-500">{m.subtitle}</p>
+        <p className="mt-4 max-w-xl text-sm leading-relaxed text-[#a39a88]">{m.subtitle}</p>
       </section>
 
-      <section className="mx-auto max-w-6xl px-8 pb-24 pt-10">
+      <section className="mx-auto max-w-6xl px-6 pb-24 pt-10 sm:px-8">
         {items.length === 0 ? (
-          <div className="flex flex-col items-center justify-center rounded-[18px] border border-dashed border-neutral-200 py-20 text-center">
-            <p className="text-sm text-neutral-500">{m.emptyState}</p>
+          <div className="flex flex-col items-center justify-center rounded-[18px] border border-dashed border-onmedia/15 py-20 text-center">
+            <p className="text-sm text-[#a39a88]">{m.emptyState}</p>
             <Link
               href="/"
-              className="mt-3 text-sm font-medium text-neutral-900 underline decoration-neutral-300 underline-offset-4 transition-colors hover:decoration-neutral-500"
+              className="mt-3 text-sm font-medium text-[#f7f6f4] underline decoration-[#a39a88]/50 underline-offset-4 transition-colors hover:decoration-[#f7f6f4]"
             >
               {m.backHome}
             </Link>
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {items.map((item) => {
-                // Full-sentence score title/aria — the chip itself shows the
-                // house signature (white/95 chip, ochre number; same words as
-                // the homepage score band, key reused rather than duplicated).
-                const scoreTitle =
-                  item.score !== null
-                    ? formatMsg(t.generate.identityMatch, { n: item.score })
-                    : undefined;
-                return (
-                  <figure key={item.id} className="min-w-0">
-                    {/* Darkroom stage, same as the app's own galleries
-                        (media-gallery.tsx): every render sits on the same
-                        warm charcoal, mounted-slide ground. The atelier
-                        tokens are defined globally in globals.css, so they
-                        carry to marketing pages too. */}
-                    <div className="relative aspect-square overflow-hidden rounded-media border border-[#eae6dc]/10 bg-atelier-stage">
-                      {item.contentType === "image" ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={thumbUrl(item.url, 640) ?? item.url}
-                          alt={item.prompt}
-                          loading="lazy"
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        // Cheap v1 video treatment: first frame via
-                        // preload="metadata" plus the play glyph — the same
-                        // treatment the app's video grid uses. No autoplay,
-                        // no hover-play client component, no controls.
-                        <video
-                          // #t fragment: forces a painted first frame in
-                          // Android WebView too — see history/page.tsx.
-                          src={`${item.url}#t=0.1`}
-                          muted
-                          playsInline
-                          preload="metadata"
-                          className="h-full w-full object-cover"
-                        />
-                      )}
-
-                      {item.contentType === "video" && (
-                        // The scrim-disc video marker — onmedia over black,
-                        // constant across themes, like media-gallery.tsx.
-                        <span
-                          aria-hidden
-                          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]"
-                        >
-                          <PlayIcon className="h-3 w-3" />
-                        </span>
-                      )}
-
-                      {item.score !== null && (
-                        // The REAL identity score, straight off the row —
-                        // white/95 + ochre, the house signature. The label
-                        // hides on the tightest (2-col phone) tiles; the
-                        // full sentence stays in title/aria either way.
-                        <span
-                          title={scoreTitle}
-                          aria-label={scoreTitle}
-                          className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-full bg-white/95 px-2.5 py-1 text-[10px] font-semibold text-neutral-800 shadow-sm"
-                        >
-                          <span className="hidden sm:inline">{t.marketing.home.scoreBandMatch}</span>
-                          <span className="text-ochre">{item.score}%</span>
-                        </span>
-                      )}
-                    </div>
-                    <figcaption
-                      title={item.prompt}
-                      className="mt-2 truncate text-xs text-neutral-500"
-                    >
-                      {item.prompt}
-                    </figcaption>
-                  </figure>
-                );
-              })}
-            </div>
-            <p className="mt-10 text-center text-xs text-neutral-400">{m.realNote}</p>
+            <GalleryShowcase items={items} />
+            <p className="mt-10 text-center text-xs text-[#a39a88]/70">{m.realNote}</p>
           </>
         )}
       </section>

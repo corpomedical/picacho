@@ -15,6 +15,7 @@ import { REPORT_REASONS, type ReportReason } from "@/lib/generations/report-cons
 import { formatMsg } from "@/lib/i18n/format";
 import { cn } from "@/lib/cn";
 import { QuietVideo } from "@/components/quiet-video";
+import { PicachoMark } from "@/components/picacho-mark";
 import { EmptyState } from "@/components/ui/empty-state";
 
 // Community, social-media shaped (operator-directed 2026-08-22, from a
@@ -427,9 +428,14 @@ export function CommunityFeed({
                    shows it's a video"). The previous bare 16px glyph vanished
                    on bright footage — a scrim disc guarantees contrast on any
                    frame, the way every video grid on earth marks its clips. */
-                <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]">
-                  <PlayIcon className="ml-0.5 h-3.5 w-3.5" />
-                </span>
+                <>
+                  <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]">
+                    <PlayIcon className="ml-0.5 h-3.5 w-3.5" />
+                  </span>
+                  {/* The Picacho mark on every public video (operator,
+                      2026-09-05) — see picacho-mark.tsx. */}
+                  <PicachoMark size="sm" />
+                </>
               )}
               {isHidden && (
                 <span className="absolute left-2 top-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-semibold text-onmedia">
@@ -481,27 +487,34 @@ export function CommunityFeed({
                     />
                   )}
                   {post.contentType === "video" ? (
-                    <QuietVideo
-                      pending="spinner"
-                      ref={(el) => {
-                        if (el) {
-                          el.muted = feedMutedRef.current;
-                          videoRefs.current.set(i, el);
-                        } else videoRefs.current.delete(i);
-                      }}
-                      src={post.displayUrl}
-                      muted
-                      loop
-                      playsInline
-                      onClick={(e) => {
-                        // Tap the video to pause/resume — the Instagram
-                        // gesture, no controls chrome needed.
-                        const v = e.currentTarget;
-                        if (v.paused) void v.play().catch(() => {});
-                        else v.pause();
-                      }}
-                      className="relative max-h-full max-w-full"
-                    />
+                    // The wrapper shrinks to the video's own box, so the
+                    // Picacho mark pins to the picture's corner rather than
+                    // the letterboxed slide (operator, 2026-09-05: public
+                    // videos carry the mark, bottom right).
+                    <div className="relative flex max-h-full max-w-full">
+                      <QuietVideo
+                        pending="spinner"
+                        ref={(el) => {
+                          if (el) {
+                            el.muted = feedMutedRef.current;
+                            videoRefs.current.set(i, el);
+                          } else videoRefs.current.delete(i);
+                        }}
+                        src={post.displayUrl}
+                        muted
+                        loop
+                        playsInline
+                        onClick={(e) => {
+                          // Tap the video to pause/resume — the Instagram
+                          // gesture, no controls chrome needed.
+                          const v = e.currentTarget;
+                          if (v.paused) void v.play().catch(() => {});
+                          else v.pause();
+                        }}
+                        className="relative max-h-full max-w-full"
+                      />
+                      <PicachoMark />
+                    </div>
                   ) : (
                     <div className="relative flex h-full w-full items-center justify-center">
                       <ResilientImage
