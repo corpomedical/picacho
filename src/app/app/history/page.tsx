@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import type { ReactNode, SVGProps } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { getMonthlyUsage } from "@/lib/generations/actions";
+import { getMonthlyUsage, reapAbandonedGenerations } from "@/lib/generations/actions";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { VIDEO_MODELS } from "@/lib/generations/providers/video-models";
@@ -92,6 +92,15 @@ export default async function HistoryPage({
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return null;
+
+  // Same housekeeping the Generate page runs: the stuck-job reaper used to
+  // fire ONLY from /app/generate, so the "if it stalls we clean it up"
+  // promise depended on the user happening to open one specific page.
+  // History is where people actually wait for a render — it reaps too now.
+  // Fire-and-forget with its own catch so it can never poison the render.
+  void reapAbandonedGenerations().catch((err) => {
+    console.error("reapAbandonedGenerations failed:", err);
+  });
 
   // URL params, not client state (the pricing billing-toggle pattern): the
   // server renders exactly the filtered list, nothing hydrates, and the

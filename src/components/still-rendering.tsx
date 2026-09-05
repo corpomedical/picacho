@@ -70,7 +70,7 @@ export function StillRendering({ startedAt }: { startedAt: string | Date }) {
           {/* The reassurance that matters most is that leaving is safe. Since
               the fire-and-poll rewrite the job genuinely does survive the page
               closing, so this is a promise the system can actually keep. */}
-          {formatMsg(h.stillRenderingBody, { minutes: 10 })}
+          {h.stillRenderingBody}
         </p>
       </div>
     </div>

@@ -1583,7 +1583,13 @@ function SingleTurnBubble({
               <ResultMedia succeeded={turn.succeeded} resultUrl={turn.resultUrl} contentType={turn.contentType} prompt={turn.prompt} />
               <div className="mt-3 flex items-center gap-2">
                 <Badge tone={live ? "success" : "neutral"}>{live ? g.live : g.simulated}</Badge>
-                <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.passedOnAttempt, { n: turn.attempts.length })}</p>
+                {/* Only when the gate actually retried — "passed on attempt 1
+                    of 3" on a take that never went through a gate implied a
+                    guarantee the identity gate (switched off today, and
+                    image-only by design) never made. Audit 2026-09-05. */}
+                {turn.attempts.length > 1 && (
+                  <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.passedOnAttempt, { n: turn.attempts.length })}</p>
+                )}
                 {typeof turn.matchScore === "number" && (
                   <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.identityMatch, { n: turn.matchScore })}</p>
                 )}
@@ -1668,7 +1674,11 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
             <>
               <div className="mt-3 flex items-center gap-2">
                 <Badge tone={isLive ? "success" : "neutral"}>{isLive ? g.live : g.simulated}</Badge>
-                <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.passedOnAttempt, { n: active.attempts.length })}</p>
+                {/* Same rule as the turn plate above: attempt copy only when
+                    a retry actually happened. */}
+                {active.attempts.length > 1 && (
+                  <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(g.passedOnAttempt, { n: active.attempts.length })}</p>
+                )}
               </div>
               <ResultActions key={active.id} generationId={active.id} copyText={active.finalPrompt || prompt || ""} />
             </>
@@ -3507,7 +3517,11 @@ function GenerateFormInner({
     notifyIfHidden(
       anyAngleSucceeded ? g.notifyReadyTitle : g.notifyFailedTitle,
       anyAngleSucceeded
-        ? formatMsg(g.passedOnAttempt, { n: angles[0]?.attempts.length ?? 1 })
+        ? // Attempt copy only when a retry actually happened — see the
+          // result-plate rule.
+          ((angles[0]?.attempts.length ?? 1) > 1
+            ? formatMsg(g.passedOnAttempt, { n: angles[0]?.attempts.length ?? 1 })
+            : "")
         : (summarizeFailure(angles[0]?.attempts ?? [], g) ?? g.noPassingResultOne),
     );
     // The send was accepted and has run to completion. confirmScene reads
@@ -4541,7 +4555,9 @@ function GenerateFormInner({
     notifyIfHidden(
       succeeded ? g.notifyReadyTitle : g.notifyFailedTitle,
       succeeded
-        ? formatMsg(g.passedOnAttempt, { n: result.attempts.length })
+        ? // Attempt copy only when a retry actually happened — see the
+          // result-plate rule.
+          (result.attempts.length > 1 ? formatMsg(g.passedOnAttempt, { n: result.attempts.length }) : "")
         : (failureReason ??
             (result.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: result.attempts.length }))),
     );
@@ -5702,9 +5718,11 @@ function GenerateFormInner({
                     <span className="font-numeral text-2xl font-semibold tabular-nums text-[#e0a468]">
                       {stageTake.matchScore}%
                     </span>
-                    <span className="text-xs lowercase text-onmedia/75">
-                      {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
-                    </span>
+                    {stageTake.attempts.length > 1 && (
+                      <span className="text-xs lowercase text-onmedia/75">
+                        {formatMsg(g.passedOnAttempt, { n: stageTake.attempts.length })}
+                      </span>
+                    )}
                   </p>
                 </div>
               ) : (

@@ -5,6 +5,7 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
+import { formatMsg } from "@/lib/i18n/format";
 import { localeAlternates } from "@/lib/i18n/metadata";
 import { isNativeApp } from "@/lib/native/server";
 
@@ -108,8 +109,10 @@ export default async function PricingPage({
               }
             >
               {p.billingAnnual}
-              {/* Matches the real annualPrice discount in lib/pricing.ts
-                  (~15% since 2026-08-19; was -25%) — change both together. */}
+              {/* The real annualPrice discounts in lib/pricing.ts run 11-20%
+                  by tier (the cards each show their own exact number), so a
+                  flat "-15%" sat beside cards saying 11 and 20 — "up to" is
+                  the one label all five tiers make true. Change together. */}
               <span
                 className={
                   interval === "annual"
@@ -117,7 +120,7 @@ export default async function PricingPage({
                     : "hidden"
                 }
               >
-                -15%
+                {formatMsg(p.saveUpTo, { n: 20 })}
               </span>
             </Link>
             <Link
