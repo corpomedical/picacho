@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ComparePage } from "../compare-shell";
-import { localeAlternates } from "@/lib/i18n/metadata";
+import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 
 // English-only metadata, same convention as the sibling competitor pages.
 // Dated in the description on purpose: the page's competitor claims are
@@ -10,12 +10,16 @@ import { localeAlternates } from "@/lib/i18n/metadata";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
+const TITLE = "Picacho vs ImagineArt (2026)";
+const DESCRIPTION =
+  "Picacho vs ImagineArt, honestly compared: a broad creative suite with reference-based consistency vs a saved character with per-output identity scoring, privacy defaults, failed-render economics, and pricing — verified from ImagineArt's public pricing page, August 2026.";
+
 export async function generateMetadata(): Promise<Metadata> {
   return {
-  title: "Picacho vs ImagineArt (2026)",
-  description:
-    "Picacho vs ImagineArt, honestly compared: a broad creative suite with reference-based consistency vs a saved character with per-output identity scoring, privacy defaults, failed-render economics, and pricing — verified from ImagineArt's public pricing page, August 2026.",
+    title: TITLE,
+    description: DESCRIPTION,
     alternates: await localeAlternates("/compare/imagineart"),
+    ...marketingSocial("/compare/imagineart", TITLE, DESCRIPTION),
   };
 }
 

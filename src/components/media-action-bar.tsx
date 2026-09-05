@@ -13,8 +13,8 @@ import { cn } from "@/lib/cn";
 // The control pill for the expanded media viewer — share / copy / download /
 // report / delete, the row every phone gallery puts under an opened photo
 // (operator-requested 2026-08-21, straight from an Android screenshot).
-// Colors are fixed Darkroom constants like the viewer itself: this floats on
-// the charcoal stage in both themes.
+// Chrome rides the onmedia family: this floats on the shared black viewer
+// backdrop in both themes, so theme-mapped colors would be wrong here.
 //
 // Report and delete only render when a generationId is provided AND the
 // caller says the viewer's user owns it — the server actions re-check
@@ -273,12 +273,12 @@ export function MediaActionBar({
   };
 
   const btn =
-    "flex h-10 w-10 items-center justify-center rounded-full text-[#f5f1e9]/90 transition-colors hover:bg-[#f5f1e9]/10 hover:text-[#f5f1e9]";
+    "flex h-10 w-10 items-center justify-center rounded-full text-onmedia/90 transition-colors hover:bg-onmedia/10 hover:text-onmedia";
 
   return (
     <div className={cn("relative flex flex-col items-center", className)}>
       {toast && (
-        <div className="pointer-events-none absolute -top-9 whitespace-nowrap rounded-full bg-[#17150f]/90 px-3 py-1 text-xs text-[#f5f1e9] backdrop-blur-sm">
+        <div className="pointer-events-none absolute -top-9 whitespace-nowrap rounded-full bg-black/90 px-3 py-1 text-xs text-onmedia backdrop-blur-sm">
           {toast}
         </div>
       )}
@@ -327,7 +327,7 @@ export function MediaActionBar({
       )}
       <div
         onClick={(e) => e.stopPropagation()}
-        className="flex items-center gap-1 rounded-full bg-[#17150f]/85 px-2 py-1.5 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.55)] backdrop-blur-md"
+        className="flex items-center gap-1 rounded-full bg-black/85 px-2 py-1.5 shadow-[0_12px_32px_-8px_rgba(0,0,0,0.55)] backdrop-blur-md"
       >
         <button type="button" onClick={handleShare} aria-label={g.shareResult} title={g.shareResult} className={btn}>
           <ShareIcon className="h-[18px] w-[18px]" />

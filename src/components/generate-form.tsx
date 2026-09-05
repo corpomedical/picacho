@@ -1002,11 +1002,18 @@ function InsufficientCreditsBanner({
   seconds,
   kind,
   allowExternalPurchase,
+  freeReturnsTomorrow,
 }: {
   needed: number;
   available: number;
   modelName: string;
   seconds: number;
+  // Free-plan account whose daily slot is already spent (2026-09-05 flaw
+  // hunt): the homepage sells "a free generation every day", but once
+  // today's was used this banner was a bare buy-credits wall — the one
+  // sentence saying the slot returns tomorrow lived in a server rejection
+  // reached only by pressing Render anyway. Now the promise leads.
+  freeReturnsTomorrow: boolean;
   // Which message template to use. Image mode has no user-facing model name
   // or duration — "{model} at {seconds}s" printed the VIDEO picker's
   // selection over an image send (caught 2026-08-26 during the Another-shot
@@ -1079,6 +1086,7 @@ function InsufficientCreditsBanner({
         {kind === "image"
           ? formatMsg(g.insufficientCreditsImage, { needed, available })
           : formatMsg(g.insufficientCredits, { model: modelName, seconds, needed, available })}{" "}
+        {freeReturnsTomorrow && <>{g.freeReturnsTomorrow}{" "}</>}
         {/* An inline underlined action, matching the usage strip's link. A
             filled button here reads as an interruption; this reads as the
             next thing you might do. */}
@@ -1350,7 +1358,7 @@ function PendingAttachmentChip({
         onClick={onRemove}
         title={t.generate.removeAttachment}
         aria-label={t.generate.removeAttachment}
-        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-neutral-950/70 text-[#faf8f3] opacity-0 transition-opacity group-hover:opacity-100 [@media(hover:none)]:opacity-100"
+        className="absolute right-0.5 top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-black/70 text-onmedia opacity-0 transition-opacity group-hover:opacity-100 [@media(hover:none)]:opacity-100"
       >
         <XIcon className="h-2.5 w-2.5" />
       </button>
@@ -4483,7 +4491,7 @@ function GenerateFormInner({
       // continuation send without a character — "it seemed it glitched and
       // nothing registered" until Pull up to edit).
       setComposerFolded(false);
-      if (shouldSpeak) speak(formatMsg(g.speakError, { error: message }));
+      if (shouldSpeak) speak(formatMsg(g.speakError, { error: localizeServerText(message, t) }));
       if (stale) setTimeout(() => window.location.reload(), 1800);
       return;
     }
@@ -4510,7 +4518,10 @@ function GenerateFormInner({
       setSubmitting(false);
       // Same unfold-on-rejection as the network-failure path above.
       setComposerFolded(false);
-      if (shouldSpeak) speak(formatMsg(g.speakError, { error: result.error }));
+      // Through the same display-time translator the toast uses — the spoken
+      // sentence was localized while the server's words inside it stayed
+      // English (the last untranslated voice in the product, 2026-09-05).
+      if (shouldSpeak) speak(formatMsg(g.speakError, { error: localizeServerText(result.error, t) }));
       return;
     }
 
@@ -5351,8 +5362,8 @@ function GenerateFormInner({
                         {c.name?.[0]?.toUpperCase() ?? "?"}
                       </span>
                     )}
-                    <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17150f]/85 to-transparent px-2 pb-1.5 pt-6">
-                      <span className="block truncate text-[11px] font-semibold text-[#f5f1e9]">{c.name}</span>
+                    <span className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent px-2 pb-1.5 pt-6">
+                      <span className="block truncate text-[11px] font-semibold text-onmedia">{c.name}</span>
                       <span className="mt-0.5 flex gap-[2.5px]">
                         {Array.from({ length: 5 }).map((_, i) => (
                           <span
@@ -5368,7 +5379,7 @@ function GenerateFormInner({
                       </span>
                     )}
                     {isMultiCharacter && c.id === characterId && (
-                      <span className="absolute left-1.5 top-1.5 rounded-full bg-[#17150f]/70 px-1.5 py-0.5 text-[9px] font-semibold text-[#f5f1e9]">
+                      <span className="absolute left-1.5 top-1.5 rounded-full bg-black/70 px-1.5 py-0.5 text-[9px] font-semibold text-onmedia">
                         {g.primaryCharacter}
                       </span>
                     )}
@@ -6309,6 +6320,10 @@ function GenerateFormInner({
             modelName={selectedVideoModel.name}
             seconds={videoDurationSeconds}
             kind={contentType === "image" ? "image" : "video"}
+            // A free-plan account (no monthly allowance) whose daily slot is
+            // spent: creditsLimit stays 0 only off-plan, and dailyFreeAvailable
+            // is the server's own answer about today's slot.
+            freeReturnsTomorrow={creditsLimit === 0 && !dailyFreeAvailable}
           />
         ) : approachingLimit && !isHero ? (
           <UsageBanner used={creditsUsed} limit={creditsLimit} currentPeriodEnd={currentPeriodEnd} g={g} />

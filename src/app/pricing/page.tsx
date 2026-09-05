@@ -6,7 +6,7 @@ import { PricingCard } from "@/components/marketing/pricing-card";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
-import { localeAlternates } from "@/lib/i18n/metadata";
+import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 import { isNativeApp } from "@/lib/native/server";
 
 // Renders as "Pricing | Picacho" via the title.template set in the root
@@ -25,12 +25,16 @@ import { isNativeApp } from "@/lib/native/server";
 // translated SEO strings without them being reviewed would be worse than
 // leaving these until they are. Localize them by moving these two strings
 // into the message files.
+const TITLE = "Pricing";
+const DESCRIPTION =
+  "Simple, transparent pricing for consistent AI character photos and videos. Compare plans and find the right fit, from casual creators to studios.";
+
 export async function generateMetadata(): Promise<Metadata> {
   return {
-    title: "Pricing",
-    description:
-      "Simple, transparent pricing for consistent AI character photos and videos. Compare plans and find the right fit, from casual creators to studios.",
+    title: TITLE,
+    description: DESCRIPTION,
     alternates: await localeAlternates("/pricing"),
+    ...marketingSocial("/pricing", TITLE, DESCRIPTION),
   };
 }
 

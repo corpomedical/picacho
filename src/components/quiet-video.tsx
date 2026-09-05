@@ -33,13 +33,13 @@ export function QuietVideo({
       {!ready && (
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
           {pending === "disc" ? (
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#f5f1e9]/10">
-              <svg viewBox="0 0 24 24" fill="#f5f1e9" fillOpacity={0.5} className="ml-0.5 h-4 w-4">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-onmedia/10">
+              <svg viewBox="0 0 24 24" fill="currentColor" fillOpacity={0.5} className="ml-0.5 h-4 w-4 text-onmedia">
                 <path d="M8 5v14l11-7Z" />
               </svg>
             </span>
           ) : (
-            <span className="h-8 w-8 animate-spin rounded-full border-2 border-[#f5f1e9]/20 border-t-[#f5f1e9]/80" />
+            <span className="h-8 w-8 animate-spin rounded-full border-2 border-onmedia/20 border-t-onmedia/80" />
           )}
         </span>
       )}

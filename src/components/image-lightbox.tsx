@@ -83,9 +83,10 @@ export function ImageLightbox({
 
   return (
     <div
-      // Warm-charcoal darkroom scrim (a fixed literal — the Darkroom is the
-      // same in both themes), not the cool neutral overlay.
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#17150f]/85 p-6"
+      // The shared viewer backdrop — bg-black/90, same as the zoom and media
+      // viewers (black never flips themes; each viewer used to hand-pick its
+      // own near-black).
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-6"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -105,9 +106,10 @@ export function ImageLightbox({
           onClick={onClose}
           aria-label={c.closeLightbox}
           title={c.closeLightbox}
-          // The white/95-chip voice, in constants: on the fixed charcoal
-          // scrim a theme-mapped bg-white would go dark in dark mode.
-          className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-[#faf8f3] text-[#6f6656] shadow-[0_4px_12px_-2px_rgba(0,0,0,0.3)] hover:text-[#211d16]"
+          // onmedia, not bg-white: on the fixed black scrim a theme-mapped
+          // white would go dark in dark mode. Same frosted chip as the zoom
+          // and media viewers' close buttons.
+          className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-onmedia/10 text-onmedia backdrop-blur-sm transition-colors hover:bg-onmedia/20"
         >
           <CloseIcon className="h-4 w-4" />
         </button>

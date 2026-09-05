@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { createClient } from "@/lib/supabase/server";
 import {
   ProjectShelfCard,
@@ -201,11 +202,13 @@ export default async function ProjectsPage({
           </p>
         </Card>
       ) : shelf.length === 0 ? (
-        <Card className="mt-5 text-center">
-          <p className="text-sm text-atelier-muted">
-            {showArchived ? p.noArchivedProjects : p.noProjectsYet}
-          </p>
-        </Card>
+        <EmptyState
+          className="mt-5"
+          message={showArchived ? p.noArchivedProjects : p.noProjectsYet}
+          action={
+            showArchived ? undefined : { href: "/app/projects/new", label: p.newProject }
+          }
+        />
       ) : (
         <>
           <div className="mt-5 grid gap-4 lg:grid-cols-2">

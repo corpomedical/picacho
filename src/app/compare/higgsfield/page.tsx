@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ComparePage } from "../compare-shell";
-import { localeAlternates } from "@/lib/i18n/metadata";
+import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 
 // Same conventions as /compare/heygen: English-only metadata, competitor
 // claims verified from Higgsfield's own pricing page and dated in the
@@ -11,12 +11,16 @@ import { localeAlternates } from "@/lib/i18n/metadata";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
+const TITLE = "Picacho vs Higgsfield (2026)";
+const DESCRIPTION =
+  "Picacho vs Higgsfield, honestly compared: a multi-model creative suite vs a character-first pipeline, per-output identity scoring, failed-render economics, watermark policy, and pricing — verified from Higgsfield's public pricing page, August 2026.";
+
 export async function generateMetadata(): Promise<Metadata> {
   return {
-  title: "Picacho vs Higgsfield (2026)",
-  description:
-    "Picacho vs Higgsfield, honestly compared: a multi-model creative suite vs a character-first pipeline, per-output identity scoring, failed-render economics, watermark policy, and pricing — verified from Higgsfield's public pricing page, August 2026.",
+    title: TITLE,
+    description: DESCRIPTION,
     alternates: await localeAlternates("/compare/higgsfield"),
+    ...marketingSocial("/compare/higgsfield", TITLE, DESCRIPTION),
   };
 }
 

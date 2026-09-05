@@ -58,10 +58,10 @@ export default async function UpscalePage() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">
+      <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
         {h.upscalePageEyebrow}
       </p>
-      <h1 className="mt-1 text-xl font-semibold tracking-tight text-atelier-ink">{t.nav.upscale}</h1>
+      <h1 className="mt-1 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">{t.nav.upscale}</h1>
       <p className="mt-1 text-sm text-atelier-muted">{h.upscalePageSub}</p>
 
       <div className="mt-6">
@@ -87,7 +87,7 @@ export default async function UpscalePage() {
                     className="h-full w-full object-cover"
                     aria-label={take.prompt}
                   />
-                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-[#1b1c20]/70 px-2 py-0.5 font-numeral text-[11px] tabular-nums text-[#f7f6f4]/85">
+                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/70 px-2 py-0.5 font-numeral text-[11px] tabular-nums text-onmedia/85">
                     {take.seconds}s
                   </span>
                 </div>

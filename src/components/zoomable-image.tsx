@@ -10,10 +10,10 @@ import { MediaActionBar } from "@/components/media-action-bar";
 // (operator-reported, 2026-08-21: "clicking on a generated picture, the
 // picture does not expand"). Web gets it too; there it's simply a bonus.
 //
-// Deliberately dependency-free: a fixed sheet on the Darkroom stage color,
-// object-contain, tap anywhere (or Escape) to close. Colors are fixed
-// literals for the same reason the stage itself is — a viewer never flips
-// with the theme.
+// Deliberately dependency-free: a fixed sheet on the shared bg-black/90
+// viewer backdrop, object-contain, tap anywhere (or Escape) to close. Chrome
+// rides the onmedia family for the same reason the stage itself is a
+// constant — a viewer never flips with the theme.
 export function ZoomableImage({
   src,
   alt = "",
@@ -71,7 +71,7 @@ export function ZoomableImage({
           role="dialog"
           aria-modal="true"
           onClick={() => setOpen(false)}
-          className="fixed inset-0 z-[95] flex items-center justify-center bg-[#17150f]/95 p-4"
+          className="fixed inset-0 z-[95] flex items-center justify-center bg-black/90 p-4"
           style={{
             paddingTop: "calc(env(safe-area-inset-top) + 1rem)",
             paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
@@ -95,7 +95,7 @@ export function ZoomableImage({
             type="button"
             aria-label={t.common.close}
             onClick={() => setOpen(false)}
-            className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#f5f1e9]/10 text-[#f5f1e9] backdrop-blur-sm"
+            className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-onmedia/10 text-onmedia backdrop-blur-sm"
             style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">

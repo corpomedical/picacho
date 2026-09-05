@@ -33,3 +33,43 @@ export async function localeAlternates(basePath: string): Promise<Metadata["alte
 
   return { canonical: localizedHref(basePath, urlLocale), languages };
 }
+
+/**
+ * Social-share (Open Graph + Twitter) block for a marketing page (2026-09-05
+ * flaw hunt). Next does NOT deep-merge these with the root layout's: a page
+ * that set nothing inherited the HOMEPAGE card wholesale — homepage title,
+ * homepage description, and an og:url pointing back at "/" — so sharing
+ * /pricing or a guide produced a homepage preview linking to the homepage.
+ * And a page that set any single og field would silently drop the layout's
+ * siteName and image. So pages pass their own title/description/path here
+ * and get the complete block, siteName and image restated.
+ *
+ * `basePath` is the ENGLISH path — marketing metadata is English-only (same
+ * convention as each caller's title/description), so the share URL is the
+ * English canonical, the same URL hreflang x-default names. The root
+ * layout's title.template ("%s | Picacho") applies only to the <title> tag,
+ * never to og/twitter titles, so the suffix is appended here to match.
+ */
+export function marketingSocial(
+  basePath: string,
+  title: string,
+  description: string,
+): Pick<Metadata, "openGraph" | "twitter"> {
+  const full = `${title} | Picacho`;
+  return {
+    openGraph: {
+      type: "website",
+      url: basePath,
+      siteName: "Picacho",
+      title: full,
+      description,
+      images: [{ url: "/og-image.png", width: 1200, height: 630, alt: "Picacho" }],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: full,
+      description,
+      images: ["/og-image.png"],
+    },
+  };
+}

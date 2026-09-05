@@ -22,6 +22,12 @@ const PADS = {
 
 export type CardPad = keyof typeof PADS;
 
+// The recipe on its own, for the rare host that cannot be a div — a Next
+// <Link> that must stay an anchor, say. Padding is the caller's problem
+// there; everything else still has exactly one home.
+export const CARD_SHEET =
+  "rounded-control border border-atelier-rule bg-atelier-surface shadow-[0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)]";
+
 export function Card({
   className,
   pad = "lg",
@@ -29,11 +35,7 @@ export function Card({
 }: HTMLAttributes<HTMLDivElement> & { pad?: CardPad }) {
   return (
     <div
-      className={cn(
-        "rounded-control border border-atelier-rule bg-atelier-surface shadow-[0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)]",
-        PADS[pad],
-        className,
-      )}
+      className={cn(CARD_SHEET, PADS[pad], className)}
       {...props}
     />
   );

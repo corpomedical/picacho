@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
+import { marketingSocial } from "@/lib/i18n/metadata";
 
 // SEO guide #2 (2026-08-28, from the operator's "our Search Console
 // performance is embarrassing" push): the camera-movement vocabulary,
@@ -16,11 +17,15 @@ import { MarketingFooter } from "@/components/marketing/footer";
 //  2. Every claim was verified by firing the movement as a real render
 //     (the 2026-08-26 preset validation matrix) and judging it by eye.
 //  3. One CTA band at the end.
+const TITLE = "AI Video Camera Movements: The Director's Cheat Sheet (2026)";
+const DESCRIPTION =
+  "Nine camera movements that actually work in AI video — crash zoom, dolly-in, orbit, crane reveal, bullet time and more — each shown as a real generated clip, with the exact prompt wording that produces it and the shots it's for.";
+
 export const metadata: Metadata = {
-  title: "AI Video Camera Movements: The Director's Cheat Sheet (2026)",
-  description:
-    "Nine camera movements that actually work in AI video — crash zoom, dolly-in, orbit, crane reveal, bullet time and more — each shown as a real generated clip, with the exact prompt wording that produces it and the shots it's for.",
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: "/guides/ai-camera-movements" },
+  ...marketingSocial("/guides/ai-camera-movements", TITLE, DESCRIPTION),
 };
 
 export const dynamic = "force-dynamic";

@@ -3,6 +3,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
+import { marketingSocial } from "@/lib/i18n/metadata";
+import { createClient } from "@/lib/supabase/server";
 
 // The Picacho course (2026-08-25, operator: "a course on how to use our
 // website with screenshots with mouse pointer and everything") — nine
@@ -27,11 +29,15 @@ import { MarketingFooter } from "@/components/marketing/footer";
 // Every replaced screenshot recaptured live on the same course-demo
 // account; the café render in ch3 is a fresh real generation from that
 // session (its free daily slot).
+const TITLE = "The Picacho Course: First Login to First Video";
+const DESCRIPTION =
+  "Learn Picacho in nine short chapters, every step photographed on the live product: create a consistent AI character, generate images and videos that keep their face, and fix the few things that go wrong.";
+
 export const metadata: Metadata = {
-  title: "The Picacho Course: First Login to First Video",
-  description:
-    "Learn Picacho in nine short chapters, every step photographed on the live product: create a consistent AI character, generate images and videos that keep their face, and fix the few things that go wrong.",
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: "/guides/getting-started" },
+  ...marketingSocial("/guides/getting-started", TITLE, DESCRIPTION),
 };
 
 export const dynamic = "force-dynamic";
@@ -668,6 +674,14 @@ function CalloutBox({ callout }: { callout: Callout }) {
 }
 
 export default async function GettingStartedCourse() {
+  // The dashboard's "3-minute course" card sends SIGNED-IN newcomers here,
+  // and the closing band used to tell them "Start free" → /signup — asking
+  // someone who just signed up to sign up. With a session, the band points
+  // back into the studio instead; signed-out readers keep the signup CTA.
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getUser();
+  const isLoggedIn = Boolean(data.user);
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <MarketingHeader />
@@ -769,10 +783,10 @@ export default async function GettingStartedCourse() {
             first chapter takes three minutes.
           </p>
           <Link
-            href="/signup"
+            href={isLoggedIn ? "/app/generate" : "/signup"}
             className="mt-6 inline-flex items-center justify-center rounded-full bg-ochre px-7 py-3 text-sm font-semibold text-onmedia transition-opacity hover:opacity-90"
           >
-            Start free
+            {isLoggedIn ? "Open the studio" : "Start free"}
           </Link>
         </div>
       </section>

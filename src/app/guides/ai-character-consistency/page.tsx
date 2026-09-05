@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
+import { marketingSocial } from "@/lib/i18n/metadata";
 
 // The flagship SEO guide, targeting the head term the whole category
 // searches for. Written from what this codebase actually proved in
@@ -16,11 +17,15 @@ import { MarketingFooter } from "@/components/marketing/footer";
 //  2. Claims about model behavior are things we verified ourselves (the
 //     Seedance 2.5/2.0 likeness split was live-tested 2026-08-21).
 //  3. One CTA band at the end. No popups, no content gating.
+const TITLE = "AI Character Consistency: The Practical Guide (2026)";
+const DESCRIPTION =
+  "How to keep the same AI character across images and videos: reference-set composition, identity references vs first-frame anchors, prompt trait blocks, the photoreal policy trap, and how to measure the lock instead of hoping.";
+
 export const metadata: Metadata = {
-  title: "AI Character Consistency: The Practical Guide (2026)",
-  description:
-    "How to keep the same AI character across images and videos: reference-set composition, identity references vs first-frame anchors, prompt trait blocks, the photoreal policy trap, and how to measure the lock instead of hoping.",
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: "/guides/ai-character-consistency" },
+  ...marketingSocial("/guides/ai-character-consistency", TITLE, DESCRIPTION),
 };
 
 export const dynamic = "force-dynamic";

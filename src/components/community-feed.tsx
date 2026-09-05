@@ -15,6 +15,7 @@ import { REPORT_REASONS, type ReportReason } from "@/lib/generations/report-cons
 import { formatMsg } from "@/lib/i18n/format";
 import { cn } from "@/lib/cn";
 import { QuietVideo } from "@/components/quiet-video";
+import { EmptyState } from "@/components/ui/empty-state";
 
 // Community, social-media shaped (operator-directed 2026-08-22, from a
 // mocked design he approved: "Start building, I love it!!"):
@@ -135,7 +136,7 @@ function ResilientImage({
     <>
       {phase === "loading" && (
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#f5f1e9]/20 border-t-[#f5f1e9]/80" />
+          <span className="h-6 w-6 animate-spin rounded-full border-2 border-onmedia/20 border-t-onmedia/80" />
         </span>
       )}
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -376,9 +377,11 @@ export function CommunityFeed({
 
   if (posts.length === 0) {
     return (
-      <div className="mt-10 flex flex-col items-center justify-center rounded-media border border-dashed border-atelier-rule py-16 text-center">
-        <p className="text-sm text-atelier-muted">{c.empty}</p>
-      </div>
+      <EmptyState
+        className="mt-10"
+        message={c.empty}
+        action={{ href: "/app/history", label: t.nav.history }}
+      />
     );
   }
 
@@ -424,16 +427,16 @@ export function CommunityFeed({
                    shows it's a video"). The previous bare 16px glyph vanished
                    on bright footage — a scrim disc guarantees contrast on any
                    frame, the way every video grid on earth marks its clips. */
-                <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-[#17150f]/60 text-[#f5f1e9] backdrop-blur-[2px]">
+                <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]">
                   <PlayIcon className="ml-0.5 h-3.5 w-3.5" />
                 </span>
               )}
               {isHidden && (
-                <span className="absolute left-2 top-2 rounded-full bg-[#17150f]/80 px-2 py-0.5 text-[10px] font-semibold text-[#f5f1e9]">
+                <span className="absolute left-2 top-2 rounded-full bg-black/80 px-2 py-0.5 text-[10px] font-semibold text-onmedia">
                   {c.hiddenBadge}
                 </span>
               )}
-              <span className="absolute bottom-1.5 left-2 flex items-center gap-1 text-[11px] font-semibold tabular-nums text-[#f5f1e9] drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+              <span className="absolute bottom-1.5 left-2 flex items-center gap-1 text-[11px] font-semibold tabular-nums text-onmedia drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
                 <HeartIcon
                   className={cn("h-3.5 w-3.5", hearted.has(post.id) && "text-[#e0a468]")}
                   fill={hearted.has(post.id) ? "currentColor" : "none"}
@@ -447,7 +450,7 @@ export function CommunityFeed({
 
       {/* The feed: full-screen vertical swipe pager. */}
       {feedOpen && (
-        <div ref={pagerRef} role="dialog" aria-modal="true" aria-label={c.title} className="fixed inset-0 z-[95] bg-[#0c0d11]">
+        <div ref={pagerRef} role="dialog" aria-modal="true" aria-label={c.title} className="fixed inset-0 z-[95] bg-black">
           <div
             ref={scrollerRef}
             className="h-full w-full snap-y snap-mandatory overflow-y-auto overscroll-contain"
@@ -510,8 +513,8 @@ export function CommunityFeed({
                     </div>
                   )}
 
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#08090c]/85 to-transparent" />
-                  <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-[#08090c]/60 to-transparent" />
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/85 to-transparent" />
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/60 to-transparent" />
 
                   {/* Right rail. */}
                   <div
@@ -525,21 +528,21 @@ export function CommunityFeed({
                         aria-pressed={hearted.has(post.id)}
                         aria-label={c.sortTop}
                         className={cn(
-                          "flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec] backdrop-blur-md transition-transform active:scale-90",
+                          "flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-onmedia backdrop-blur-md transition-transform active:scale-90",
                           hearted.has(post.id) && "text-[#e0a468]",
                         )}
                       >
                         <HeartIcon className="h-5 w-5" fill={hearted.has(post.id) ? "currentColor" : "none"} />
                       </button>
-                      <span className="mt-1 text-[10.5px] font-bold tabular-nums text-[#f2f0ec] drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+                      <span className="mt-1 text-[10.5px] font-bold tabular-nums text-onmedia drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
                         {heartsOf(post)}
                       </span>
                     </div>
                     <div className="flex flex-col items-center">
-                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec] backdrop-blur-md">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-onmedia backdrop-blur-md">
                         <EyeIcon className="h-5 w-5" />
                       </span>
-                      <span className="mt-1 text-[10.5px] font-bold tabular-nums text-[#f2f0ec] drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+                      <span className="mt-1 text-[10.5px] font-bold tabular-nums text-onmedia drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
                         {post.views + (viewedIds.has(post.id) ? 1 : 0)}
                       </span>
                     </div>
@@ -549,7 +552,7 @@ export function CommunityFeed({
                         onClick={() => setFeedMuted((v) => !v)}
                         aria-pressed={feedMuted}
                         aria-label={feedMuted ? c.unmuteLabel : c.muteLabel}
-                        className="flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec] backdrop-blur-md transition-transform active:scale-90"
+                        className="flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-onmedia backdrop-blur-md transition-transform active:scale-90"
                       >
                         {feedMuted ? (
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
@@ -568,7 +571,7 @@ export function CommunityFeed({
                       type="button"
                       onClick={() => sharePost(post)}
                       aria-label={g.shareResult}
-                      className="flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec] backdrop-blur-md transition-transform active:scale-90"
+                      className="flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-onmedia backdrop-blur-md transition-transform active:scale-90"
                     >
                       {sharedTick === post.id ? (
                         <span className="text-[9px] font-bold">{g.linkCopied}</span>
@@ -585,7 +588,7 @@ export function CommunityFeed({
                         }}
                         aria-label={g.reportProblem}
                         className={cn(
-                          "flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec]/85 backdrop-blur-md",
+                          "flex h-11 w-11 items-center justify-center rounded-full bg-black/55 text-onmedia/85 backdrop-blur-md",
                           reportedIds.has(post.id) && "text-amber-400",
                         )}
                       >
@@ -598,8 +601,8 @@ export function CommunityFeed({
                         onClick={() => toggleHidden(post)}
                         aria-label={isHidden ? c.unhide : c.hide}
                         className={cn(
-                          "flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 backdrop-blur-md",
-                          isHidden ? "text-amber-400" : "text-[#f2f0ec]/85",
+                          "flex h-11 w-11 items-center justify-center rounded-full bg-black/55 backdrop-blur-md",
+                          isHidden ? "text-amber-400" : "text-onmedia/85",
                         )}
                       >
                         <EyeOffIcon className="h-4.5 w-4.5" />
@@ -612,11 +615,11 @@ export function CommunityFeed({
                     className="absolute left-3 right-16"
                     style={{ bottom: "calc(env(safe-area-inset-bottom) + 18px)" }}
                   >
-                    <p className="text-[13.5px] font-extrabold text-[#f2f0ec] drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+                    <p className="text-[13.5px] font-extrabold text-onmedia drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
                       {post.username ? `@${post.username}` : "—"}
                     </p>
                     {(post.caption ?? post.prompt) && (
-                      <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-[#f2f0ec]/85 drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
+                      <p className="mt-1 line-clamp-2 text-[12px] leading-relaxed text-onmedia/85 drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]">
                         {post.caption ?? post.prompt}
                       </p>
                     )}
@@ -628,7 +631,7 @@ export function CommunityFeed({
                         </span>
                       )}
                       {post.characterName && (
-                        <span className="rounded-full bg-[#101116]/55 px-2.5 py-1 text-[10px] font-semibold text-[#d6d3cd] backdrop-blur-md">
+                        <span className="rounded-full bg-black/55 px-2.5 py-1 text-[10px] font-semibold text-onmedia/80 backdrop-blur-md">
                           {post.characterName} · {post.contentType === "video" ? g.video : g.image}
                         </span>
                       )}
@@ -686,7 +689,7 @@ export function CommunityFeed({
             type="button"
             aria-label={t.common.close}
             onClick={() => setFeedIndex(null)}
-            className="absolute right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec] backdrop-blur-md"
+            className="absolute right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-onmedia backdrop-blur-md"
             style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">

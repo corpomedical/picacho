@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
+import { marketingSocial } from "@/lib/i18n/metadata";
 
 // SEO guide #3 (2026-08-28): the model-specific guide for Seedance 2.0 —
 // model-name queries are how practitioners search, and this is the model
@@ -12,11 +13,15 @@ import { MarketingFooter } from "@/components/marketing/footer";
 //
 // Editorial rules (same as the other guides): useful without Picacho;
 // verified claims only; one CTA band.
+const TITLE = "Seedance 2.0: The Practical Guide (2026)";
+const DESCRIPTION =
+  "How Seedance 2.0 actually behaves in production: identity references vs first frames, the 2.5 photoreal policy trap, exact outfit matching with a clothing photo, durations and real per-second pricing, and prompt patterns that hold a face.";
+
 export const metadata: Metadata = {
-  title: "Seedance 2.0: The Practical Guide (2026)",
-  description:
-    "How Seedance 2.0 actually behaves in production: identity references vs first frames, the 2.5 photoreal policy trap, exact outfit matching with a clothing photo, durations and real per-second pricing, and prompt patterns that hold a face.",
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: "/guides/seedance-2" },
+  ...marketingSocial("/guides/seedance-2", TITLE, DESCRIPTION),
 };
 
 export const dynamic = "force-dynamic";

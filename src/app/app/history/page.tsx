@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { ReactNode, SVGProps } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { getMonthlyUsage, reapAbandonedGenerations } from "@/lib/generations/actions";
@@ -322,32 +323,21 @@ export default async function HistoryPage({
             <p className="text-sm text-red-600 dark:text-red-400">{h.couldntLoad}</p>
           </Card>
         ) : cards.length === 0 ? (
-          <Card className="col-span-full text-center">
-            {filtered ? (
-              // Empty because of the active filters, not an empty account —
-              // say so, and hand back the unfiltered view in one click.
-              <p className="text-sm text-atelier-muted">
-                {h.emptyFiltered}{" "}
-                <Link
-                  href="/app/history"
-                  className="font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2"
-                >
-                  {h.showAll}
-                </Link>
-              </p>
-            ) : (
-              <p className="text-sm text-atelier-muted">
-                {h.noGenerationsYet}{" "}
-                <Link
-                  href="/app/generate"
-                  className="font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2"
-                >
-                  {h.tryOne}
-                </Link>
-                .
-              </p>
-            )}
-          </Card>
+          filtered ? (
+            // Empty because of the active filters, not an empty account —
+            // say so, and hand back the unfiltered view in one click.
+            <EmptyState
+              className="col-span-full"
+              message={h.emptyFiltered}
+              action={{ href: "/app/history", label: h.showAll }}
+            />
+          ) : (
+            <EmptyState
+              className="col-span-full"
+              message={h.noGenerationsYet}
+              action={{ href: "/app/generate", label: h.tryOne }}
+            />
+          )
         ) : (
           cards.map((g) => (
             <Link key={g.id} href={`/app/history/${g.id}`} className="group block">
@@ -375,7 +365,7 @@ export default async function HistoryPage({
                           preload="metadata"
                           className="h-full w-full object-cover"
                         />
-                        <span className="absolute inset-0 m-auto flex h-9 w-9 items-center justify-center rounded-full bg-[#faf8f3]/95 text-[#211d16] shadow-sm">
+                        <span className="absolute inset-0 m-auto flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]">
                           <PlayIcon className="h-3.5 w-3.5" />
                         </span>
                       </>
@@ -393,10 +383,10 @@ export default async function HistoryPage({
                   {typeof g.matchScore === "number" && (
                     <span
                       title={formatMsg(t.generate.identityMatch, { n: g.matchScore })}
-                      className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-[#1b1c20]/72 px-2 py-1 backdrop-blur-sm"
+                      className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-black/72 px-2 py-1 backdrop-blur-sm"
                     >
                       <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#e0a468]" />
-                      <span className="font-numeral text-[11px] font-semibold tabular-nums text-[#f4ede4]">
+                      <span className="font-numeral text-[11px] font-semibold tabular-nums text-onmedia">
                         {g.matchScore}
                       </span>
                     </span>
@@ -416,7 +406,7 @@ export default async function HistoryPage({
                   )}
 
                   {(g.durationSeconds || g.angleCount) && (
-                    <span className="absolute bottom-2 right-2 rounded-full bg-[#1b1c20]/72 px-2 py-0.5 font-numeral text-[10.5px] tabular-nums text-[#f4ede4] backdrop-blur-sm">
+                    <span className="absolute bottom-2 right-2 rounded-full bg-black/72 px-2 py-0.5 font-numeral text-[10.5px] tabular-nums text-onmedia backdrop-blur-sm">
                       {g.angleCount
                         ? formatMsg(h.angleCountOther, { n: g.angleCount })
                         : `${g.durationSeconds}s`}
@@ -434,12 +424,12 @@ export default async function HistoryPage({
                         characterId={g.character_profile_id}
                         contentType={g.content_type}
                         generationId={g.id}
-                        className="h-9 w-9 rounded-full bg-[#faf8f3]/92 text-[#211d16] shadow-sm"
+                        className="h-9 w-9 rounded-full bg-black/60 text-onmedia ring-1 ring-onmedia/20 backdrop-blur hover:bg-black/60 hover:text-onmedia"
                       />
                     )}
                     <DeleteGenerationButton
                       id={g.id}
-                      className="h-9 w-9 rounded-full bg-[#faf8f3]/92 text-[#211d16] shadow-sm"
+                      className="h-9 w-9 rounded-full bg-black/60 text-onmedia ring-1 ring-onmedia/20 backdrop-blur"
                     />
                   </div>
                 </div>

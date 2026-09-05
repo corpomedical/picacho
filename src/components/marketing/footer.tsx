@@ -102,6 +102,11 @@ export async function MarketingFooter({ dark = false }: { dark?: boolean } = {})
               <Link href="/guides" className={subLink}>
                 {t.marketing.footer.guides}
               </Link>
+              {/* The free identity checker — works without an account, and
+                  until 2026-09-05 was reachable only through the sitemap. */}
+              <Link href="/tools/identity-check" className={subLink}>
+                {t.marketing.footer.identityCheck}
+              </Link>
               <span>{t.marketing.footer.compare}:</span>
               <Link href="/compare/heygen" className={subLink}>
                 Picacho vs HeyGen

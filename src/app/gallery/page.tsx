@@ -7,7 +7,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
-import { localeAlternates } from "@/lib/i18n/metadata";
+import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 
 // The public "Made with Picacho" gallery: real featured renders, anonymous-
 // readable. Rows get here ONLY through the admin Feature toggle
@@ -28,12 +28,16 @@ import { localeAlternates } from "@/lib/i18n/metadata";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
+const TITLE = "Gallery";
+const DESCRIPTION =
+  "Real renders made with Picacho — AI character images and video, generated, validated, and identity-scored by the same pipeline every plan gets. Every score shown is a real measurement.";
+
 export async function generateMetadata(): Promise<Metadata> {
   return {
-  title: "Gallery",
-  description:
-    "Real renders made with Picacho — AI character images and video, generated, validated, and identity-scored by the same pipeline every plan gets. Every score shown is a real measurement.",
+    title: TITLE,
+    description: DESCRIPTION,
     alternates: await localeAlternates("/gallery"),
+    ...marketingSocial("/gallery", TITLE, DESCRIPTION),
   };
 }
 
@@ -187,11 +191,11 @@ export default async function GalleryPage() {
                       )}
 
                       {item.contentType === "video" && (
-                        // Fixed near-white/95 chip on the fixed stage —
+                        // The scrim-disc video marker — onmedia over black,
                         // constant across themes, like media-gallery.tsx.
                         <span
                           aria-hidden
-                          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#faf8f3]/95 text-[#211d16] shadow-sm"
+                          className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]"
                         >
                           <PlayIcon className="h-3 w-3" />
                         </span>

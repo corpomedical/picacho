@@ -4,6 +4,7 @@ import Link from "next/link";
 import { QuietVideo } from "@/components/quiet-video";
 import { useEffect, useRef, useState, type SVGProps } from "react";
 import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 import { LocalDate } from "@/components/local-date";
 import { MediaActionBar } from "@/components/media-action-bar";
 import { formatMsg } from "@/lib/i18n/format";
@@ -92,12 +93,11 @@ export function MediaGallery({
 
   if (visibleItems.length === 0) {
     return (
-      <div className="mt-10 flex flex-col items-center justify-center rounded-media border border-dashed border-atelier-rule py-16 text-center">
-        <p className="text-sm text-atelier-muted">{emptyLabel}</p>
-        <Link href="/app/generate" className="mt-3 text-sm font-medium text-atelier-ink underline decoration-atelier-accent/50 underline-offset-2">
-          {labels.generateOne}
-        </Link>
-      </div>
+      <EmptyState
+        className="mt-10"
+        message={emptyLabel}
+        action={{ href: "/app/generate", label: labels.generateOne }}
+      />
     );
   }
 
@@ -148,16 +148,16 @@ export function MediaGallery({
         const overlays = (
           <>
             {isVideo && hasRealMedia && (
-              // The same white/95 chip the marketing score band and identity
-              // labels use — a printed label pinned on the render, constant
-              // across themes (bg-white would repaint dark in dark mode).
-              <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#faf8f3]/95 text-[#211d16] shadow-sm">
+              // The same scrim-disc video marker the community grid uses —
+              // onmedia over black, constant across themes (bg-white would
+              // repaint dark in dark mode).
+              <span className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]">
                 <PlayIcon className="h-3 w-3" />
               </span>
             )}
 
             {item.angleCount && item.angleCount > 1 ? (
-              <span className="absolute bottom-2 right-2 rounded-full bg-[#faf8f3]/95 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-[#211d16] shadow-sm">
+              <span className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-semibold tabular-nums text-onmedia backdrop-blur-[2px]">
                 {formatMsg(labels.angleCountOther, { n: item.angleCount })}
               </span>
             ) : null}
@@ -179,11 +179,11 @@ export function MediaGallery({
                 character and no date, ever (found 2026-09-04). The bracket
                 variant is the pattern app-sidebar.tsx and character-form.tsx
                 already use. */}
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#17150f]/85 to-transparent p-2.5 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-visible:opacity-100">
-              <p className="truncate text-[11px] font-medium text-[#f5f1e9]">{item.prompt_input}</p>
+            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-2.5 opacity-100 transition-opacity [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 [@media(hover:hover)]:group-focus-visible:opacity-100">
+              <p className="truncate text-[11px] font-medium text-onmedia">{item.prompt_input}</p>
               {/* Caps-label voice for on-media metadata (uppercase is a CSS
                   transform — the rendered string bytes are untouched). */}
-              <p className="truncate text-[9px] font-medium uppercase tracking-wider text-[#cfc7b6]">
+              <p className="truncate text-[9px] font-medium uppercase tracking-wider text-onmedia/70">
                 {item.characterName} · <LocalDate date={item.created_at} />
               </p>
             </div>
@@ -221,7 +221,7 @@ export function MediaGallery({
         role="dialog"
         aria-modal="true"
         onClick={() => setViewer(null)}
-        className="fixed inset-0 z-[95] flex items-center justify-center bg-[#17150f]/95 p-4"
+        className="fixed inset-0 z-[95] flex items-center justify-center bg-black/90 p-4"
         style={{
           paddingTop: "calc(env(safe-area-inset-top) + 1rem)",
           paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)",
@@ -261,7 +261,7 @@ export function MediaGallery({
           type="button"
           aria-label={t.common.close}
           onClick={() => setViewer(null)}
-          className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#f5f1e9]/10 text-[#f5f1e9] backdrop-blur-sm"
+          className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-onmedia/10 text-onmedia backdrop-blur-sm"
           style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="h-4 w-4">

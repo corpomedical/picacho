@@ -38,7 +38,10 @@ export function HeroReel({ sources, badge }: { sources: string[]; badge: string 
         // Single-clip degenerate case: behave exactly like the old band.
         loop={sources.length === 1}
       />
-      <span className="absolute bottom-4 left-4 rounded-full bg-slate-900/80 px-3 py-1 text-xs font-medium text-white shadow-sm sm:bottom-6 sm:left-6">
+      {/* onmedia, not text-white — this rides ON the video, and text-white
+          repaints near-black in dark mode (the cast-wall lesson, 1fb95ba).
+          Same chip recipe as ShowcaseVideoPlayer's caption. */}
+      <span className="absolute bottom-4 left-4 rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-onmedia backdrop-blur-sm sm:bottom-6 sm:left-6">
         {badge}
       </span>
     </section>
@@ -124,9 +127,9 @@ export function HeroBackdropReel({
       )}
       {captions && (
         <div className="pointer-events-none absolute bottom-8 right-4 z-10 hidden items-center gap-4 sm:bottom-10 sm:right-8 sm:flex lg:right-[max(2rem,calc((100%-72rem)/2))]">
-          <span className="text-[12px] tracking-[0.02em] text-[#f7f6f4]/60">{captions[index]}</span>
+          <span className="text-[12px] tracking-[0.02em] text-onmedia/60">{captions[index]}</span>
           {pillLabel && (
-            <span className="inline-flex items-center gap-[7px] rounded-full border border-[#f7f6f4]/[0.14] bg-[#101014]/60 px-3.5 py-[7px] text-[12px] text-[#f7f6f4]/85">
+            <span className="inline-flex items-center gap-[7px] rounded-full border border-onmedia/[0.14] bg-black/60 px-3.5 py-[7px] text-[12px] text-onmedia/85">
               <svg viewBox="0 0 24 24" fill="currentColor" className="h-[11px] w-[11px]" aria-hidden>
                 <path d="M8 5v14l11-7z" />
               </svg>

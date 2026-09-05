@@ -93,7 +93,12 @@ export default async function VideosPage({
 
   return (
     <div>
-      <h1 className="text-lg font-semibold text-atelier-ink">{t.gallery.videosTitle}</h1>
+      <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+        {t.gallery.eyebrow}
+      </p>
+      <h1 className="mt-1 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
+        {t.gallery.videosTitle}
+      </h1>
       <p className="mt-1 text-sm text-atelier-muted">{t.gallery.videosSubtitle}</p>
 
       <MediaGallery

@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { IdentityCheckTool } from "@/components/marketing/identity-check-tool";
+import { marketingSocial } from "@/lib/i18n/metadata";
 
 // The free public identity checker (2026-08-30).
 //
@@ -10,11 +11,15 @@ import { IdentityCheckTool } from "@/components/marketing/identity-check-tool";
 // same rule as the guides: an English page under a Spanish URL is a thin
 // duplicate, which ranks worse than not ranking. Add it there once the copy
 // is translated.
+const TITLE = "AI character consistency checker";
+const DESCRIPTION =
+  "Free tool: upload a reference photo and any AI-generated image, and get a 0-100 identity match score. Works on output from any generator — Kling, Midjourney, Sora, Veo or Picacho. No account needed.";
+
 export const metadata: Metadata = {
-  title: "AI character consistency checker",
-  description:
-    "Free tool: upload a reference photo and any AI-generated image, and get a 0-100 identity match score. Works on output from any generator — Kling, Midjourney, Sora, Veo or Picacho. No account needed.",
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: "/tools/identity-check" },
+  ...marketingSocial("/tools/identity-check", TITLE, DESCRIPTION),
 };
 
 // Same reasoning as every other marketing page: never serve a stale

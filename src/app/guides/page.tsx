@@ -2,15 +2,20 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
+import { marketingSocial } from "@/lib/i18n/metadata";
 
 // The guides hub — one card per published guide, newest first. Same
 // English-only-body convention as the guides themselves; grows a card per
 // article, nothing dynamic to maintain.
+const TITLE = "Guides";
+const DESCRIPTION =
+  "Practical, verified guides on AI character work: consistency, reference sets, identity scoring, and multi-shot video — from the team building Picacho.";
+
 export const metadata: Metadata = {
-  title: "Guides",
-  description:
-    "Practical, verified guides on AI character work: consistency, reference sets, identity scoring, and multi-shot video — from the team building Picacho.",
+  title: TITLE,
+  description: DESCRIPTION,
   alternates: { canonical: "/guides" },
+  ...marketingSocial("/guides", TITLE, DESCRIPTION),
 };
 
 export const dynamic = "force-dynamic";

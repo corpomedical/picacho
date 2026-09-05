@@ -173,9 +173,9 @@ export async function ProjectWorkbench({
                   <img src={r.url} alt="" className="h-full w-full object-cover" loading="lazy" />
                 )}
                 {typeof r.score === "number" && (
-                  <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-[#1b1c20]/72 px-2 py-1 backdrop-blur-sm">
+                  <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-black/72 px-2 py-1 backdrop-blur-sm">
                     <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#e0a468]" />
-                    <span className="font-numeral text-[11px] font-semibold tabular-nums text-[#f4ede4]">
+                    <span className="font-numeral text-[11px] font-semibold tabular-nums text-onmedia">
                       {r.score}
                     </span>
                   </span>

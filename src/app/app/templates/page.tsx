@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { CARD_SHEET } from "@/components/ui/card";
+import { cn } from "@/lib/cn";
 import { getServerMessages } from "@/lib/i18n/server";
 import { TEMPLATES, TEMPLATE_CATEGORIES, type TemplateCategory } from "@/lib/templates";
 
@@ -28,7 +30,12 @@ export default async function TemplatesPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <h1 className="font-display text-2xl font-semibold text-atelier-ink">{tp.title}</h1>
+      <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+        {tp.eyebrow}
+      </p>
+      <h1 className="mt-1 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
+        {tp.title}
+      </h1>
       <p className="mt-1 text-sm text-atelier-muted">{tp.subtitle}</p>
 
       {TEMPLATE_CATEGORIES.map((category) => {
@@ -44,7 +51,10 @@ export default async function TemplatesPage() {
                 <Link
                   key={tpl.id}
                   href={`/app/generate?prompt=${encodeURIComponent(tpl.prompt)}&type=${tpl.contentType}`}
-                  className="group flex flex-col overflow-hidden rounded-control border border-atelier-rule bg-atelier-surface shadow-[0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)] transition-[border-color,box-shadow] hover:border-atelier-muted/50 hover:shadow-[0_1px_2px_rgba(33,29,22,0.05),0_20px_48px_-20px_rgba(33,29,22,0.2)]"
+                  className={cn(
+                    CARD_SHEET,
+                    "group flex flex-col overflow-hidden transition-[border-color,box-shadow] hover:border-atelier-muted/50 hover:shadow-[0_1px_2px_rgba(33,29,22,0.05),0_20px_48px_-20px_rgba(33,29,22,0.2)]",
+                  )}
                 >
                   {/* Sample render (2026-08-26): a real generation of this
                       exact template prompt with the brand character — same

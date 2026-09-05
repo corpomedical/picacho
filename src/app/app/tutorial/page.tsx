@@ -27,8 +27,13 @@ export default async function TutorialPage() {
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-8">
-        <h1 className="text-lg font-semibold text-neutral-900">{tu.title}</h1>
-        <p className="mt-1 text-sm text-neutral-500">{tu.subtitle}</p>
+        <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+          {tu.eyebrow}
+        </p>
+        <h1 className="mt-1 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
+          {tu.title}
+        </h1>
+        <p className="mt-1 text-sm text-atelier-muted">{tu.subtitle}</p>
         {/* Cross-link to the photographed course (2026-08-25) — this page
             stays the never-stale i18n'd overview; the course is the deep
             walkthrough with real screenshots. */}
@@ -82,10 +87,10 @@ function Section({
 }) {
   return (
     <Card>
-      <h2 className="text-sm font-semibold text-neutral-900">{heading}</h2>
+      <h2 className="text-sm font-semibold text-atelier-ink">{heading}</h2>
       <div className="mt-2 space-y-2.5">
         {paragraphs.map((p, i) => (
-          <p key={i} className="text-sm leading-relaxed text-neutral-600">
+          <p key={i} className="text-sm leading-relaxed text-atelier-muted">
             {p}
           </p>
         ))}
@@ -103,7 +108,7 @@ function Section({
 // character staying consistent, so the visuals had better practice it.
 function Portrait({ className = "" }: { className?: string }) {
   return (
-    <div className={"relative overflow-hidden rounded-[10px] " + className}>
+    <div className={"relative overflow-hidden rounded-[12px] " + className}>
       <div className="absolute inset-0 bg-gradient-to-br from-amber-50 via-orange-100 to-rose-100" />
       <svg viewBox="0 0 64 64" className="absolute inset-0 h-full w-full">
         {/* shoulders */}
@@ -122,17 +127,9 @@ function Portrait({ className = "" }: { className?: string }) {
   );
 }
 
-function CheckDot() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-emerald-600" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M20 6 9 17l-5-5" />
-    </svg>
-  );
-}
-
 function ArrowDown() {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4 text-neutral-300" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg viewBox="0 0 24 24" className="h-4 w-4 text-atelier-muted/50" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14" />
       <path d="m6 13 6 6 6-6" />
     </svg>
@@ -143,22 +140,22 @@ function ArrowDown() {
 function FlowVisual({ t }: { t: Msgs }) {
   const tu = t.tutorial;
   return (
-    <div className="flex flex-col items-center gap-2.5 rounded-[14px] border border-neutral-100 bg-neutral-50 p-5">
+    <div className="frost-ground flex flex-col items-center gap-2.5 rounded-[12px] border border-atelier-rule p-5">
       <div className="flex items-end gap-2">
         <Portrait className="h-20 w-20" />
-        <span className="mb-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-neutral-700 shadow-sm">
+        <span className="mb-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-2 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-ink">
           {t.character.identityPhoto}
         </span>
       </div>
       <ArrowDown />
       {/* the user's message, exactly as the chat renders one */}
-      <div className="max-w-[280px] rounded-[18px] rounded-br-[6px] bg-neutral-900 px-4 py-2.5 text-xs leading-relaxed text-white">
+      <div className="max-w-[280px] rounded-[18px] rounded-br-[6px] bg-atelier-surface px-4 py-2.5 text-xs leading-relaxed text-atelier-ink shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
         {tu.visPromptSample}
       </div>
       <ArrowDown />
       <div className="flex items-end gap-2">
         <Portrait className="h-20 w-20" />
-        <span className="mb-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 shadow-sm">
+        <span className="mb-1 rounded-full bg-atelier-surface/95 px-2 py-0.5 font-numeral text-[10px] font-medium tabular-nums text-atelier-accent shadow-[0_0_0_1px_var(--frost-ring)]">
           {formatMsg(t.generate.identityMatch, { n: 92 })}
         </span>
       </div>
@@ -170,32 +167,32 @@ function FlowVisual({ t }: { t: Msgs }) {
 function CharacterVisual({ t }: { t: Msgs }) {
   const tu = t.tutorial;
   return (
-    <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 p-5">
-      <div className="rounded-[18px] border border-neutral-100 bg-white p-5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-        <p className="text-sm font-semibold text-neutral-900">Nova</p>
-        <p className="mt-0.5 text-xs text-neutral-500">{t.character.referenceImages}</p>
+    <div className="frost-ground rounded-[12px] border border-atelier-rule p-5">
+      <div className="rounded-control border border-atelier-rule bg-atelier-surface p-5">
+        <p className="text-sm font-semibold text-atelier-ink">Nova</p>
+        <p className="mt-0.5 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{t.character.referenceImages}</p>
         <div className="mt-3 flex gap-2.5">
           <div className="relative">
             <Portrait className="h-[72px] w-[72px]" />
-            <span className="absolute bottom-1 left-1 rounded-full bg-white/95 px-1.5 py-0.5 text-[9px] font-medium text-neutral-700 shadow-sm">
+            <span className="absolute bottom-1 left-1 rounded-full border border-atelier-rule bg-atelier-surface/95 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-ink">
               {t.character.identityPhoto}
             </span>
           </div>
           {[0.85, 0.7].map((op) => (
             <div key={op} className="relative" style={{ opacity: op }}>
               <Portrait className="h-[72px] w-[72px]" />
-              <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-white/90 text-[9px] text-neutral-600 shadow-sm">
+              <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full border border-atelier-rule bg-atelier-surface/95 text-[9px] text-atelier-ink">
                 ✕
               </span>
             </div>
           ))}
         </div>
-        <div className="mt-4 space-y-1.5 border-t border-neutral-100 pt-3 text-xs text-neutral-600">
+        <div className="mt-4 space-y-1.5 border-t border-atelier-rule pt-3 text-xs text-atelier-muted">
           <p>{tu.visHair}</p>
           <p>{tu.visFeatures}</p>
           <p className="flex items-center gap-1.5">
             {tu.visOutfit}
-            <span className="rounded-full border border-neutral-200 bg-neutral-50 px-1.5 py-0.5 text-[9px] text-neutral-500">
+            <span className="rounded-full border border-atelier-rule bg-atelier-paper px-1.5 py-0.5 text-[9px] text-atelier-muted">
               {tu.visDefaultTag}
             </span>
           </p>
@@ -205,29 +202,39 @@ function CharacterVisual({ t }: { t: Msgs }) {
   );
 }
 
-/* 3 — the composer, same bones as the real one in generate-form */
+/* 3 — the composer, same bones as the real one in generate-form: a
+   borderless floating glass dock, its edge drawn by the frost shadow ring */
 function ComposerVisual({ tu }: { tu: Tu }) {
   return (
-    <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 p-5">
-      <div className="rounded-[24px] border border-neutral-200 bg-white p-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-        <div className="flex items-center gap-2 px-1 pb-2.5">
-          <Portrait className="h-6 w-6 rounded-full" />
-          <span className="text-xs font-medium text-neutral-700">Nova</span>
+    <div className="frost-ground rounded-[12px] border border-atelier-rule p-5">
+      <div className="rounded-[22px] bg-atelier-surface/90 p-3.5 shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] backdrop-blur-xl">
+        {/* the loadout row: the character chip with its face-lock meter */}
+        <div className="flex items-center pb-2.5">
+          <span className="flex items-center gap-2 rounded-full bg-atelier-ink/[0.045] py-1 pl-1 pr-2.5">
+            <Portrait className="h-6 w-6 rounded-full" />
+            <span className="text-xs font-medium text-atelier-ink">Nova</span>
+            <span className="flex items-center gap-[2.5px]">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <span key={i} className={"h-[9px] w-[3px] rounded-[2px] " + (i < 3 ? "bg-atelier-accent" : "bg-atelier-accent/25")} />
+              ))}
+            </span>
+            <svg viewBox="0 0 24 24" className="h-3 w-3 text-atelier-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6" /></svg>
+          </span>
         </div>
-        <p className="px-1 pb-3 text-sm text-neutral-800">{tu.visPromptSample}</p>
-        <div className="flex items-center justify-between border-t border-neutral-100 pt-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-500">
+        <p className="px-1 pb-3 text-sm text-atelier-ink">{tu.visPromptSample}</p>
+        <div className="flex items-center justify-between pt-1">
+          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-atelier-rule text-atelier-muted">
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1.5">
             {/* angles + storyboard, as on the video composer */}
-            <span className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]">
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 8 10 6 10-6" /><path d="m2 12 10 6 10-6" /></svg>
             </span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full text-neutral-400">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]">
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="14" height="12" rx="2" /><path d="M7 3h14v12" /></svg>
             </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-900 text-white">
+            <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-atelier-ink text-atelier-paper shadow-[0_8px_18px_-8px_rgba(35,37,45,0.5)]">
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>
             </span>
           </div>
@@ -242,25 +249,25 @@ function ResultVisual({ t }: { t: Msgs }) {
   const tu = t.tutorial;
   const steps = [tu.visDrafted, tu.visValidated, tu.visGenerated];
   return (
-    <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 p-5">
-      <div className="max-w-[380px] rounded-[18px] rounded-bl-[6px] border border-neutral-100 bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+    <div className="frost-ground rounded-[12px] border border-atelier-rule p-5">
+      <div className="max-w-[380px] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4 py-3.5 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
         <div className="flex flex-wrap items-center gap-2.5">
           {steps.map((label, i) => (
             <span key={label} className="flex items-center gap-1.5">
-              <CheckDot />
-              <span className="text-[11px] font-medium text-neutral-700">{label}</span>
-              {i < steps.length - 1 && <span className="ml-1 h-px w-3 bg-neutral-200" />}
+              <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-atelier-rule" />
+              <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{label}</span>
+              {i < steps.length - 1 && <span className="ml-1 h-px w-3 bg-atelier-rule" />}
             </span>
           ))}
         </div>
         <Portrait className="mt-3 h-36 w-full" />
         <div className="mt-2.5 flex items-center gap-2">
           <Badge tone="success">{t.generate.live}</Badge>
-          <p className="text-xs text-neutral-500">{formatMsg(t.generate.passedOnAttempt, { n: 1 })}</p>
+          <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(t.generate.passedOnAttempt, { n: 1 })}</p>
         </div>
-        <p className="mt-1 text-xs text-neutral-500">{formatMsg(t.generate.identityMatch, { n: 92 })}</p>
+        <p className="mt-1 font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(t.generate.identityMatch, { n: 92 })}</p>
         {/* the hover action row: copy · like · dislike · use as reference · report */}
-        <div className="mt-2 flex items-center gap-1 text-neutral-400">
+        <div className="mt-2 flex items-center gap-1 text-atelier-muted">
           <span className="flex h-7 w-7 items-center justify-center rounded-full">
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
           </span>
@@ -270,7 +277,7 @@ function ResultVisual({ t }: { t: Msgs }) {
           <span className="flex h-7 w-7 items-center justify-center rounded-full">
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V3" /><path d="M17 14 13 21a2 2 0 0 1-2-2v-4H5.5a2 2 0 0 1-1.94-2.49l1.6-6.5A2 2 0 0 1 7.1 4H14a3 3 0 0 1 3 3v7Z" /></svg>
           </span>
-          <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-neutral-100 text-neutral-700">
+          <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-atelier-ink/5 text-atelier-ink">
             <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /><circle cx="9" cy="9" r="2" /><path d="M16 5h6" /><path d="M19 2v6" /></svg>
           </span>
           <span className="flex h-7 w-7 items-center justify-center rounded-full">
@@ -279,8 +286,8 @@ function ResultVisual({ t }: { t: Msgs }) {
         </div>
         {/* callout onto the highlighted button */}
         <div className="mt-1.5 flex items-center gap-1.5 pl-[84px]">
-          <svg viewBox="0 0 24 24" className="h-3 w-3 -scale-y-100 text-neutral-400" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>
-          <span className="text-[10px] text-neutral-500">{t.generate.useAsReference}</span>
+          <svg viewBox="0 0 24 24" className="h-3 w-3 -scale-y-100 text-atelier-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>
+          <span className="text-[10px] text-atelier-muted">{t.generate.useAsReference}</span>
         </div>
       </div>
     </div>
@@ -290,14 +297,14 @@ function ResultVisual({ t }: { t: Msgs }) {
 /* 5 — multi-angle: one scene, three cameras */
 function AnglesVisual() {
   return (
-    <div className="rounded-[14px] border border-neutral-100 bg-neutral-50 p-5">
-      <div className="flex justify-center gap-1 pb-3">
+    <div className="frost-ground rounded-[12px] border border-atelier-rule p-5">
+      <div className="flex justify-center gap-1.5 pb-3">
         {["A", "B", "C"].map((label, i) => (
           <span
             key={label}
             className={
-              "rounded-full px-3 py-1 text-[11px] font-medium " +
-              (i === 0 ? "bg-neutral-900 text-white" : "text-neutral-500")
+              "rounded-full border px-3 py-1 text-[11px] font-medium uppercase tracking-widest " +
+              (i === 0 ? "border-atelier-ink bg-atelier-ink text-atelier-paper" : "border-atelier-rule text-atelier-muted")
             }
           >
             {label}
@@ -318,17 +325,17 @@ function AnglesVisual() {
 /* 6 — the usage meter from Settings, plus the refund promise */
 function CreditsVisual({ tu }: { tu: Tu }) {
   return (
-    <div className="space-y-3 rounded-[14px] border border-neutral-100 bg-neutral-50 p-5">
-      <div className="rounded-[18px] border border-neutral-100 bg-white p-4">
-        <div className="flex items-center justify-between text-xs text-neutral-600">
+    <div className="frost-ground space-y-3 rounded-[12px] border border-atelier-rule p-5">
+      <div className="rounded-control border border-atelier-rule bg-atelier-surface p-4">
+        <div className="flex items-center justify-between text-xs text-atelier-muted">
           <span>{tu.visCredits}</span>
-          <span className="font-medium text-neutral-900">34 / 50</span>
+          <span className="font-numeral font-medium tabular-nums text-atelier-ink">34 / 50</span>
         </div>
-        <div className="mt-2 h-2 overflow-hidden rounded-full bg-neutral-100">
-          <div className="h-full w-[68%] rounded-full bg-neutral-900" />
+        <div className="mt-2 h-2 overflow-hidden rounded-full bg-atelier-ink/10">
+          <div className="h-full w-[68%] rounded-full bg-atelier-accent" />
         </div>
       </div>
-      <span className="inline-block rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700">
+      <span className="inline-block rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
         {tu.visRefunded}
       </span>
     </div>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { ComparePage } from "../compare-shell";
-import { localeAlternates } from "@/lib/i18n/metadata";
+import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 
 // English-only metadata, same convention as /pricing (the root layout's
 // title.template appends "| Picacho"). Dated in the description on purpose:
@@ -10,12 +10,16 @@ import { localeAlternates } from "@/lib/i18n/metadata";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
+const TITLE = "Picacho vs Hedra (2026)";
+const DESCRIPTION =
+  "Picacho vs Hedra, honestly compared: talking-character clips vs persistent multi-scene identity, per-clip price, identity scoring, watermarks, and API access — verified from Hedra's public pricing page, August 2026.";
+
 export async function generateMetadata(): Promise<Metadata> {
   return {
-  title: "Picacho vs Hedra (2026)",
-  description:
-    "Picacho vs Hedra, honestly compared: talking-character clips vs persistent multi-scene identity, per-clip price, identity scoring, watermarks, and API access — verified from Hedra's public pricing page, August 2026.",
+    title: TITLE,
+    description: DESCRIPTION,
     alternates: await localeAlternates("/compare/hedra"),
+    ...marketingSocial("/compare/hedra", TITLE, DESCRIPTION),
   };
 }
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
+import { marketingSocial } from "@/lib/i18n/metadata";
 
 // Public API reference.
 //
@@ -16,10 +17,17 @@ import { MarketingFooter } from "@/components/marketing/footer";
 // known-valid ids to probe with, and a customer pasting the example got a
 // confusing "not yours" 404 instead of an obviously-placeholder error.
 
+// Bare "API" — the root layout's title.template appends "| Picacho", and
+// the old "API — Picacho" rendered doubled as "API — Picacho | Picacho".
+const TITLE = "API";
+const DESCRIPTION =
+  "Generate character-consistent images from your own software. Four endpoints, one API key.";
+
 export const metadata: Metadata = {
-  title: "API — Picacho",
-  description:
-    "Generate character-consistent images from your own software. Four endpoints, one API key.",
+  title: TITLE,
+  description: DESCRIPTION,
+  alternates: { canonical: "/docs/api" },
+  ...marketingSocial("/docs/api", TITLE, DESCRIPTION),
 };
 
 function Code({ children }: { children: string }) {

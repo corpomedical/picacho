@@ -4,7 +4,7 @@ import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { getServerMessages } from "@/lib/i18n/server";
 import privacyDoc from "@/lib/i18n/legal/privacy";
-import { localeAlternates } from "@/lib/i18n/metadata";
+import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 import { OperatorCard } from "@/components/marketing/operator-card";
 
 // generateMetadata rather than a static object (2026-08-30): the canonical
@@ -12,11 +12,15 @@ import { OperatorCard } from "@/components/marketing/operator-card";
 // emitted on all four. The static canonical this replaces would have pinned
 // every locale to the English page — the standard way to make Google discard
 // the translations as duplicates.
+const TITLE = "Privacy Policy";
+const DESCRIPTION = "How Picacho collects, uses, and protects your data.";
+
 export async function generateMetadata(): Promise<Metadata> {
   return {
-  title: "Privacy Policy",
-  description: "How Picacho collects, uses, and protects your data.",
+    title: TITLE,
+    description: DESCRIPTION,
     alternates: await localeAlternates("/privacy"),
+    ...marketingSocial("/privacy", TITLE, DESCRIPTION),
   };
 }
 

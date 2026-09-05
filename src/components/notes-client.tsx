@@ -6,6 +6,7 @@ import { createNote, saveNote, deleteNote } from "@/lib/notes/actions";
 import { useLocale } from "@/lib/i18n/provider";
 import { LocalDate } from "@/components/local-date";
 import { formatMsg } from "@/lib/i18n/format";
+import { EmptyState } from "@/components/ui/empty-state";
 
 type Note = {
   id: string;
@@ -205,16 +206,13 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
             />
           </>
         ) : (
-          <div className="flex h-full min-h-[50vh] flex-col items-center justify-center text-center">
-            <p className="text-sm text-atelier-muted">{nt.noNotesYet}</p>
-            <button
-              type="button"
-              onClick={handleNewNote}
-              className="mt-3 rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90"
-            >
-              {nt.writeFirstNote}
-            </button>
-          </div>
+          // The editor sheet is already the frame here.
+          <EmptyState
+            frame={false}
+            className="h-full min-h-[50vh]"
+            message={nt.noNotesYet}
+            action={{ label: nt.writeFirstNote, onClick: handleNewNote }}
+          />
         )}
       </div>
     </div>

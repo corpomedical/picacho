@@ -3,6 +3,7 @@ import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { CastCard } from "@/components/cast-card";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default async function CharacterListPage() {
   const { t } = await getServerMessages();
@@ -86,9 +87,11 @@ export default async function CharacterListPage() {
           </p>
         </div>
       ) : withThumbnails.length === 0 ? (
-        <div className="mt-5 rounded-control border border-atelier-rule bg-atelier-surface p-8 text-center">
-          <p className="text-sm text-atelier-muted">{c.noneYet}</p>
-        </div>
+        <EmptyState
+          className="mt-5"
+          message={c.noneYet}
+          action={{ href: "/app/character/new", label: c.newCharacter }}
+        />
       ) : (
         <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
           {withThumbnails.map((profile) => {
