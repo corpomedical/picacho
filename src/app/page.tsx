@@ -242,6 +242,12 @@ export default async function Home({
       <section className="isolate relative overflow-hidden">
         <HeroBackdropReel
           sources={["/hero-band-4.mp4", "/hero-band.mp4", "/hero-band-2.mp4", "/hero-band-3.mp4"]}
+          posters={[
+            "/hero-band-4-poster.jpg",
+            "/hero-band-poster.jpg",
+            "/hero-band-2-poster.jpg",
+            "/hero-band-3-poster.jpg",
+          ]}
           // Per-clip provenance, verified before it was written down:
           // hero-band-4 is the Seedance 2.0 15s space trailer (DB row,
           // 2026-08-23), hero-band-3 was committed as "operator's Seedance

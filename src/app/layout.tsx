@@ -10,6 +10,7 @@ import { NativeChrome, SPLASH_HIDE_SCRIPT } from "@/components/native-chrome";
 import { NativeIntro } from "@/components/native-intro";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
+import { getMessages } from "@/lib/i18n/messages";
 import { isNativeApp } from "@/lib/native/server";
 
 
@@ -164,7 +165,9 @@ export default async function RootLayout({
       </head>
       <body className="antialiased">
         <ThemeProvider>
-          <LocaleProvider initialLocale={locale}>
+          {/* One dictionary, serialized server-side — the provider used to
+              pull all four catalogs into the client bundle (114KB gz). */}
+          <LocaleProvider initialLocale={locale} messages={getMessages(locale)}>
             <NativeChrome />
             {native && <NativeIntro />}
             <PageViewTracker />

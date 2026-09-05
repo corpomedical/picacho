@@ -9,6 +9,7 @@ import { MediaActionBar } from "@/components/media-action-bar";
 import { formatMsg } from "@/lib/i18n/format";
 import { useLocale } from "@/lib/i18n/provider";
 import { useModalFocus } from "@/lib/use-modal-focus";
+import { thumbUrl } from "@/lib/media/url";
 
 export type GalleryItem = {
   id: string;
@@ -102,6 +103,11 @@ export function MediaGallery({
 
   const viewerIsVideo = viewer ? (viewer.content_type ?? contentType) === "video" : false;
   const viewerUrl = viewer ? (viewer.full_url ?? viewer.result_url) : null;
+  // The IMAGE viewer shows the 1600-wide resize — the same split the
+  // community feed already ships ("beats shipping multi-MB PNG originals");
+  // originals of 24MP+ renders broke outright on the platform's response
+  // limit. Download and video keep the untouched viewerUrl.
+  const viewerImageUrl = viewerUrl ? (thumbUrl(viewerUrl, 1600) ?? viewerUrl) : null;
 
   return (
     <>
@@ -234,7 +240,7 @@ export function MediaGallery({
           />
         ) : (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={viewerUrl} alt={viewer.prompt_input} className="max-h-full max-w-full rounded-media object-contain" />
+          <img src={viewerImageUrl ?? undefined} alt={viewer.prompt_input} className="max-h-full max-w-full rounded-media object-contain" />
         )}
         <div
           className="absolute inset-x-0 z-10 flex justify-center"

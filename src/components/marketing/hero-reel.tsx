@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Full-width homepage reel: plays each clip to the end, then the next,
 // looping the whole set forever — added 2026-08-19 when the band grew from
@@ -61,36 +61,67 @@ export function HeroReel({ sources, badge }: { sources: string[]; badge: string 
 export function HeroBackdropReel({
   sources,
   poster,
+  posters,
   captions,
   pillLabel,
 }: {
   sources: string[];
   poster?: string;
+  // Per-clip first-frame stills (2026-09-05 audit — the docstring above
+  // promised a poster and the call site never wired one, so the hero opened
+  // on a black hole for exactly the visitors with the slowest connections).
+  posters?: string[];
   captions?: string[];
   pillLabel?: string;
 }) {
   const [index, setIndex] = useState(0);
   const ref = useRef<HTMLVideoElement | null>(null);
+  // Data-saver / reduced-motion visitors get the still, not ~8MB of
+  // autoplaying video (2026-09-05 audit: video autoplay was the one motion
+  // surface the reduced-motion gating forgot, and Save-Data was never
+  // consulted at all). Decided in an effect so the server render — which is
+  // what everyone's first paint comes from — always shows the poster
+  // territory and upgrades to video only when the client says it's welcome.
+  const [videoWelcome, setVideoWelcome] = useState(false);
+  useEffect(() => {
+    const saveData = (navigator as { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setVideoWelcome(!saveData && !reducedMotion);
+  }, []);
+
+  const currentPoster = posters?.[index] ?? poster;
 
   return (
     <>
-      <video
-        ref={(el) => {
-          ref.current = el;
-          if (el) el.muted = true;
-        }}
-        key={sources[index]}
-        src={sources[index]}
-        poster={poster}
-        autoPlay
-        muted
-        playsInline
-        preload="metadata"
-        aria-hidden
-        className="absolute inset-0 h-full w-full object-cover"
-        onEnded={() => setIndex((i) => (i + 1) % sources.length)}
-        loop={sources.length === 1}
-      />
+      {videoWelcome ? (
+        <video
+          ref={(el) => {
+            ref.current = el;
+            if (el) el.muted = true;
+          }}
+          key={sources[index]}
+          src={sources[index]}
+          poster={currentPoster}
+          autoPlay
+          muted
+          playsInline
+          preload="metadata"
+          aria-hidden
+          className="absolute inset-0 h-full w-full object-cover"
+          onEnded={() => setIndex((i) => (i + 1) % sources.length)}
+          loop={sources.length === 1}
+        />
+      ) : (
+        currentPoster && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={currentPoster}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        )
+      )}
       {captions && (
         <div className="pointer-events-none absolute bottom-8 right-4 z-10 hidden items-center gap-4 sm:bottom-10 sm:right-8 sm:flex lg:right-[max(2rem,calc((100%-72rem)/2))]">
           <span className="text-[12px] tracking-[0.02em] text-[#f7f6f4]/60">{captions[index]}</span>

@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { createAdminClient } from "@/lib/supabase/server";
 
 // The homepage hero grid: one real character (Eva) across six real scenes.
@@ -112,7 +113,25 @@ const EMPTY_PROOF: ShowcaseProof = { scores: SHOWCASE.map(() => null), tryIt: []
 // path matches either. Best-effort by design: the homepage must render
 // with or without this data, so any failure returns the empty shape and
 // the chips/widget simply don't appear — never a made-up number.
+// Cached for a day (2026-09-05 audit): these 5-6 leading-wildcard LIKE
+// queries — unindexable table scans — ran on EVERY homepage request for
+// proof numbers that essentially never change, and were a measurable slice
+// of the 0.5-1.1s TTFB on the marketing front door. The showcase changes
+// when the operator re-features something; a day of staleness on a score
+// chip costs nothing.
+const loadShowcaseProofCached = unstable_cache(loadShowcaseProof, ["showcase-proof"], {
+  revalidate: 86_400,
+});
+
 export async function getShowcaseProof(): Promise<ShowcaseProof> {
+  try {
+    return await loadShowcaseProofCached();
+  } catch {
+    return EMPTY_PROOF;
+  }
+}
+
+async function loadShowcaseProof(): Promise<ShowcaseProof> {
   try {
     const admin = createAdminClient();
     const rows = await Promise.all(
