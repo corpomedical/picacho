@@ -101,13 +101,15 @@ export async function GET(
   }
 
   try {
-    const admin = createAdminClient();
-    const { data: blob, error } = await admin.storage.from(bucket).download(path);
-    if (error || !blob) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
     const ext = path.split(".").pop()?.toLowerCase() ?? "";
 
     if (width && RESIZABLE.has(ext)) {
+      // The resize genuinely needs the whole image — this is the ONE branch
+      // that still buffers the full object. Video and full-size passthrough
+      // stream below without ever holding the file.
+      const admin = createAdminClient();
+      const { data: blob, error } = await admin.storage.from(bucket).download(path);
+      if (error || !blob) return NextResponse.json({ error: "Not found" }, { status: 404 });
       // Resize is strictly best-effort. Every failure path below falls
       // through to serving the original bytes, so the worst case is what
       // this route did before thumbnails existed — a big file, but never a
@@ -147,12 +149,18 @@ export async function GET(
       }
     }
 
-    // Range support (2026-08-31 inspection). iOS Safari will not play a
-    // <video> from a server that answers a Range request with a plain 200 —
-    // it probes with "bytes=0-1" and treats the full-body answer as a
-    // broken source. Video attachments are served through this route, so
-    // they were poster frames that never played on iPhones. Only the
-    // passthrough branch needs this; thumbnails are images.
+    // Passthrough STREAMS from storage with the Range header forwarded
+    // (2026-09-05 audit). The old version downloaded the ENTIRE object into
+    // the lambda and sliced it for the 206 — so every seek in a 100MB video
+    // re-pulled all 100MB from storage per request, the single worst cost
+    // that scales with success. Supabase storage answers Range itself; the
+    // 206/content-range/content-length come straight from upstream and the
+    // body is piped, never buffered.
+    //
+    // Range support itself is load-bearing (2026-08-31 inspection): iOS
+    // Safari will not play a <video> from a server that answers a Range
+    // request with a plain 200 — it probes with "bytes=0-1" and treats the
+    // full-body answer as a broken source.
     const range = request.headers.get("range");
     const contentType = CONTENT_TYPES[ext] ?? "application/octet-stream";
     const baseHeaders: Record<string, string> = {
@@ -164,15 +172,43 @@ export async function GET(
     };
     if (ext === "svg") baseHeaders["content-security-policy"] = SVG_CSP;
 
-    if (range) {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    const encodedPath = path.split("/").map(encodeURIComponent).join("/");
+    const upstreamHeaders: Record<string, string> = {
+      apikey: serviceKey,
+      authorization: `Bearer ${serviceKey}`,
+    };
+    if (range) upstreamHeaders.range = range;
+
+    const upstream = await fetch(`${supabaseUrl}/storage/v1/object/${bucket}/${encodedPath}`, {
+      headers: upstreamHeaders,
+    });
+
+    if (upstream.status === 416) {
+      return new NextResponse(null, {
+        status: 416,
+        headers: { "content-range": upstream.headers.get("content-range") ?? "bytes */*" },
+      });
+    }
+    if (!upstream.ok) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    // Defensive: if a range was asked for but upstream answered 200 anyway
+    // (a storage tier that ignores Range), synthesize the slice rather than
+    // hand iOS the full-body 200 it treats as broken. Slow path, correctness
+    // guaranteed; with a Range-honoring upstream it never runs.
+    if (range && upstream.status === 200) {
+      const buf = Buffer.from(await upstream.arrayBuffer());
       const m = range.match(/^bytes=(\d*)-(\d*)$/);
-      const size = blob.size;
+      const size = buf.byteLength;
       if (m && (m[1] || m[2])) {
         const start = m[1] ? Number(m[1]) : Math.max(0, size - Number(m[2]));
         const end = m[1] && m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
         if (start <= end && start < size) {
-          const slice = blob.slice(start, end + 1);
-          return new NextResponse(slice.stream(), {
+          return new NextResponse(new Uint8Array(buf.subarray(start, end + 1)), {
             status: 206,
             headers: {
               ...baseHeaders,
@@ -188,9 +224,12 @@ export async function GET(
       });
     }
 
-    return new NextResponse(blob.stream(), {
-      headers: { ...baseHeaders, "content-length": String(blob.size) },
-    });
+    const headers: Record<string, string> = { ...baseHeaders };
+    for (const name of ["content-range", "content-length"]) {
+      const value = upstream.headers.get(name);
+      if (value) headers[name] = value;
+    }
+    return new NextResponse(upstream.body, { status: upstream.status, headers });
   } catch {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

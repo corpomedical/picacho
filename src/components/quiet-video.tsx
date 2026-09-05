@@ -44,6 +44,10 @@ export function QuietVideo({
         </span>
       )}
       <video
+        // Default, not forced (callers can still override): a grid of tiles
+        // used to mount full mp4s — with the media route now honoring Range,
+        // metadata preload means a tile costs the moov atom, not the movie.
+        preload="metadata"
         {...props}
         ref={ref}
         onLoadedData={(e) => {
