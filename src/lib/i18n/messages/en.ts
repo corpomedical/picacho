@@ -1520,7 +1520,7 @@ const en = {
   dashboard: {
     yourCharacters: "Your characters",
     newCharacter: "New character",
-    recentCreations: "Recent creations",
+    recentCreations: "Recent takes",
     seeAll: "See all",
     quickImage: "Create an image",
     quickVideo: "Create a video",
@@ -1532,7 +1532,7 @@ const en = {
     creditsTitle: "Credits used this month",
     creditsPurchased: "+{n} purchased credits",
     continueCreating: "Continue creating",
-    emptyRecent: "Your creations will appear here — make your first one.",
+    emptyRecent: "Your takes will appear here — make your first one.",
     installTitle: "Install the Picacho app",
     installBody: "Full-screen, from your home screen — no app store needed.",
     installCta: "Install app",

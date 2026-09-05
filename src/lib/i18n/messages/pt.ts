@@ -1434,7 +1434,7 @@ const pt = {
   dashboard: {
     yourCharacters: "Seus personagens",
     newCharacter: "Novo personagem",
-    recentCreations: "Criações recentes",
+    recentCreations: "Takes recentes",
     seeAll: "Ver tudo",
     quickImage: "Criar uma imagem",
     quickVideo: "Criar um vídeo",
@@ -1446,7 +1446,7 @@ const pt = {
     creditsTitle: "Créditos usados neste mês",
     creditsPurchased: "+{n} créditos comprados",
     continueCreating: "Continuar criando",
-    emptyRecent: "Suas criações aparecerão aqui — faça a primeira.",
+    emptyRecent: "Seus takes aparecerão aqui — faça o primeiro.",
     installTitle: "Instale o app do Picacho",
     installBody: "Em tela cheia, direto da sua tela inicial — sem loja de aplicativos.",
     installCta: "Instalar app",
