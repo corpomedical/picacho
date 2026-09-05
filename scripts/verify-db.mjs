@@ -83,6 +83,7 @@ const RPCS = [
   "report_community_post",
   "username_available",
   "auth_email_status",
+  "blast_recipient_emails",
 ];
 
 // Storage buckets both code rosters expect (see truth-contracts.test.ts).

@@ -167,21 +167,28 @@ export async function deleteUser(formData: FormData) {
     );
   }
 
-  // Purge the user's Storage files before deleting the account. Every file a
-  // user uploads or generates lives under a `${userId}/...` path in the user
-  // buckets. The DB rows cascade automatically when the auth user is deleted,
-  // but Storage objects don't — without this they'd sit orphaned and billed
-  // with no record left to find them by. THE SAME sweep as account
-  // self-deletion, by construction: this used to be a hand-copied loop that
-  // had already drifted from profile/actions.ts' copy (neither recursed into
-  // the Layers subfolder). Best-effort inside: a storage hiccup must not
-  // block the actual account deletion below.
-  await removeAllUserStorage(admin, userId);
-
+  // Auth delete BEFORE the storage purge — the same fail-loudly-first
+  // ordering the self-serve path earned (round-two audit): the purge is
+  // irreversible and needs only the userId prefix, never the DB rows, so
+  // running it first meant a transient deleteUser failure left a LIVE
+  // account whose Stripe billing was already cancelled and whose every file
+  // was already gone — with an error banner naming none of that. The
+  // flipped worst case (account gone, files briefly orphaned) is what the
+  // sweep's own best-effort contract already accepts.
   const { error } = await admin.auth.admin.deleteUser(userId);
   if (error) {
-    redirect(`/admin/users/${userId}?error=${encodeURIComponent(error.message)}`);
+    redirect(
+      `/admin/users/${userId}?error=${encodeURIComponent(
+        `Couldn't delete the account (${error.message}). Their Stripe billing WAS already cancelled — retry the deletion, or restore their plan manually if they should stay.`,
+      )}`,
+    );
   }
+
+  // Storage sweep after the account is really gone. Every file lives under
+  // a `${userId}/...` prefix in the user buckets; DB rows cascaded with the
+  // auth user. THE SAME sweep as account self-deletion, by construction —
+  // this used to be a hand-copied loop that had already drifted.
+  await removeAllUserStorage(admin, userId);
 
   revalidatePath("/admin/users");
   redirect("/admin/users?message=" + encodeURIComponent("User deleted."));
@@ -519,16 +526,39 @@ export async function setUserPlan(formData: FormData) {
     redirect(`${redirectTo}?error=${encodeURIComponent("Invalid plan.")}`);
   }
 
+  // A Play-billed account can't be comped over (round-two audit): writing
+  // plan_status=null here left plan_source='play' with a null status — the
+  // ONE combination the Play guards in deleteUser and deleteAccount don't
+  // match, so the comped account could later be deleted while Google kept
+  // charging it. Same rule, same instruction as the deletion guard.
+  const { data: current } = await admin
+    .from("profiles")
+    .select("plan_source, plan_status")
+    .eq("id", userId)
+    .maybeSingle();
+  if (
+    current?.plan_source === "play" &&
+    (current.plan_status === "active" || current.plan_status === "past_due")
+  ) {
+    redirect(
+      `${redirectTo}?error=${encodeURIComponent(
+        "This account is billed through Google Play — comping over it would hide a live Google subscription. Have them cancel in the Play Store first, then set the plan.",
+      )}`,
+    );
+  }
+
   // plan_status is reset to NULL alongside the comp. The allowance gate
   // (checkGenerationAllowance in generations/core.ts) only honours a plan's
   // monthly credits while plan_status is NULL or "active" — a deliberate
   // grant is exactly what NULL means there. Without this reset, comping a
   // plan onto an account whose Stripe subscription had lapsed (past_due /
   // canceled) handed them a plan whose credits stayed paused: the admin
-  // screen said Growth, the composer said "your payment failed".
+  // screen said Growth, the composer said "your payment failed". plan_source
+  // is cleared too — a comp is not a billing source, and a stale 'play'
+  // marker with a null status is exactly the guard-defeating state above.
   const { error } = await admin
     .from("profiles")
-    .update({ plan, plan_status: null })
+    .update({ plan, plan_status: null, plan_source: null })
     .eq("id", userId);
   if (error) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);

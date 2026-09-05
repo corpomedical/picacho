@@ -122,6 +122,7 @@ export async function signup(formData: FormData) {
   // 'unconfirmed' deliberately falls through — that person never finished
   // signing up, and letting signUp() resend their confirmation email is
   // exactly the behaviour they need.
+  let existingUnconfirmed = false;
   try {
     const admin = createAdminClient();
     const { data: status } = await admin.rpc("auth_email_status", { p_email: email });
@@ -132,6 +133,10 @@ export async function signup(formData: FormData) {
         )}`,
       );
     }
+    // Remembered for below: on 'unconfirmed', signUp() RESENDS confirmation
+    // for the EXISTING account and returns the victim's real user — the
+    // profile write and referral attribution must not run against it.
+    existingUnconfirmed = status === "unconfirmed";
   } catch (err) {
     // redirect() signals by throwing — never swallow it as a lookup failure.
     if (err && typeof err === "object" && "digest" in err && typeof (err as { digest?: unknown }).digest === "string" && (err as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {
@@ -197,7 +202,18 @@ export async function signup(formData: FormData) {
   // which runs synchronously within signUp() — safe to update it here. The
   // trigger only sets a provisional username derived from the email; this
   // writes the one the person actually chose, plus name and company.
-  if (data.user) {
+  //
+  // ONLY for a user this call actually created (2026-09-05 round-two audit):
+  // in the unconfirmed-resend case, data.user is the EXISTING account, and
+  // this block used to overwrite the victim's name, username, company and
+  // consent timestamp with attacker-chosen values — and then hand the
+  // attacker referral attribution over the victim's account. Two independent
+  // signals gate it: the status lookup above, and the account's own
+  // created_at (a resend returns the original creation time; the lookup can
+  // fail open, the timestamp cannot lie about an old account).
+  const createdJustNow =
+    !!data.user?.created_at && Date.now() - new Date(data.user.created_at).getTime() < 60_000;
+  if (data.user && !existingUnconfirmed && createdJustNow) {
     const admin = createAdminClient();
     const { error: profileError } = await admin
       .from("profiles")

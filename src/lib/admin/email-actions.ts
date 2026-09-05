@@ -276,6 +276,25 @@ export async function sendEmailBlast(formData: FormData) {
     if (data.length < PAGE) break;
   }
 
+  // CONFIRMED addresses only, at the CURRENT address (round-two audit):
+  // profiles.email is written once at signup and drifts after an email
+  // change, and profiles alone cannot see email_confirmed_at — the drip's
+  // own rule ("marketing must only ever go to CONFIRMED addresses") lives
+  // in auth.users. One definer RPC resolves both. Fails closed until the
+  // pending SQL is applied — a blast to unconfirmed strangers is worse
+  // than a refused blast.
+  const { data: confirmedRows, error: confirmError } = await admin.rpc("blast_recipient_emails", {
+    p_user_ids: recipients.map((r) => r.id),
+  });
+  if (confirmError) {
+    fail(
+      `Couldn't resolve confirmed addresses (apply supabase/pending-2026-09-05/email-truth.sql first): ${confirmError.message.slice(0, 120)}`,
+    );
+  }
+  const confirmedEmailById = new Map(
+    ((confirmedRows ?? []) as { id: string; email: string }[]).map((r) => [r.id, r.email]),
+  );
+
   // Render PER RECIPIENT — the variables (and the signed unsubscribe link)
   // differ for every one of them, which is the whole point of templates.
   // Service notices go through the IDENTICAL render, footer and
@@ -285,7 +304,11 @@ export async function sendEmailBlast(formData: FormData) {
   // deceptive regardless of its legal category.
   const messages: { to: string; subject: string; html: string; unsubscribeUrl?: string }[] = [];
   for (const recipient of recipients) {
-    if (!recipient.email) continue; // NOT NULL in schema, but never send to ""
+    // Unconfirmed (or address-less) members of the audience silently drop —
+    // the count shown to the admin is an upper bound, the audit row records
+    // the real number sent.
+    const to = confirmedEmailById.get(recipient.id);
+    if (!to) continue;
     const rendered = renderTemplate(
       template!.subject,
       template!.body,
@@ -293,7 +316,7 @@ export async function sendEmailBlast(formData: FormData) {
       await unsubscribeUrl(recipient.id),
     );
     messages.push({
-      to: recipient.email,
+      to,
       subject: rendered.subject,
       html: rendered.html,
       // One-click headers per recipient — a Gmail/Yahoo bulk-sender
