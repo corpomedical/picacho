@@ -4,6 +4,7 @@ import { reapStaleJobs } from "@/lib/generations/job-runner";
 import { persistGeneratedVideo, persistImageBytes } from "@/lib/generations/core";
 import { extractVideoFrame } from "@/lib/generations/providers/fal";
 import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
+import { toMediaUrl } from "@/lib/media/url";
 
 // The daily reconcile (2026-09-05, closing a round-one audit coverage edge):
 // until now the stuck-job reaper ran ONLY inside page loads — /app/generate
@@ -139,7 +140,14 @@ export async function GET(request: Request) {
     for (const row of bare ?? []) {
       if (Date.now() > deadline) break;
       try {
-        const frameUrl = await extractVideoFrame(providerDownloadUrl(row.result_url as string));
+        // Re-signed BEFORE handing to fal (2026-09-06): four rows written
+        // during a 2026-09-04 signing-env window carry stale embedded
+        // signatures — every display path survives because toMediaUrl
+        // re-mints at read time, and this consumer must do the same or fal
+        // gets a 403 it reports as "failed to download". This is why those
+        // four stayed posterless through two clean-looking runs.
+        const freshUrl = toMediaUrl(row.result_url as string) ?? (row.result_url as string);
+        const frameUrl = await extractVideoFrame(providerDownloadUrl(freshUrl));
         if (!frameUrl) continue;
         const res = await fetch(frameUrl, { signal: AbortSignal.timeout(15_000) });
         if (!res.ok) continue;
