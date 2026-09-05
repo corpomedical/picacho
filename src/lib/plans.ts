@@ -274,3 +274,34 @@ export const PLAN_REFERENCE_IMAGE_LIMITS = {
   studio: 200,
   elite: 400,
 } as const satisfies Record<PlanId, number>;
+
+// THE daily-free-lane eligibility, in one place (2026-09-05 audit: "is the
+// free lane open, and for whom" was re-derived in FIVE places — the SQL
+// guard, core.ts, actions.ts, the generate page's SSR copy and the composer
+// — each with a slightly different clause set, and each self-described as a
+// "mirror" of another). The SQL guard in spend_daily_free_generation stays
+// authoritative for the SPEND (its guarded UPDATE is what is atomic);
+// everything JS-side derives its decision and its display from these two,
+// and plans.test.ts pins the UTC-midnight semantics to the RPC's
+// date_trunc('day', now()) behavior.
+export function onDailyFreeTier(
+  plan: string | null | undefined,
+  bonusCredits: number | null | undefined,
+): boolean {
+  return (plan ?? "none") === "none" && (bonusCredits ?? 0) === 0;
+}
+
+// Mirror of the spend RPC's own guard (free_generation_last_at IS NULL OR
+// < date_trunc('day', now()), UTC on Supabase). Reads here are only ever
+// the DECISION — the RPC's guarded UPDATE is what makes the spend atomic
+// under concurrency — so clock skew costs at most a less precise message,
+// never a double spend.
+export function freeSlotOpen(
+  freeGenerationLastAt: string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!freeGenerationLastAt) return true;
+  const utcDayStart = new Date(now);
+  utcDayStart.setUTCHours(0, 0, 0, 0);
+  return new Date(freeGenerationLastAt) < utcDayStart;
+}

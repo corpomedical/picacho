@@ -1,24 +1,13 @@
 import { headers } from "next/headers";
-
-// The one domain we ever want a Stripe redirect (or anything else built from
-// getOrigin) to land on when the real host can't be trusted — see the guard
-// below. Both picacho.io and picacho.ai are live/canonical, but picacho.io
-// is the one NEXT_PUBLIC_SITE_URL is documented to be set to.
-const CANONICAL_ORIGIN = "https://picacho.io";
+// One source for every domain fact — this file used to carry its own copy
+// of both, with a comment claiming NEXT_PUBLIC_SITE_URL is picacho.io while
+// the incident note below records it is picacho.ai. See lib/domains.ts.
+import { CANONICAL_ORIGIN, KNOWN_APP_HOSTS as KNOWN_HOSTS } from "@/lib/domains";
 
 // Best-effort current origin for building absolute redirect URLs (e.g. for
-// Stripe Checkout success/cancel URLs). Prefers NEXT_PUBLIC_SITE_URL when
-// it's set (production), otherwise reads the incoming request's Host header
-// so this also works correctly during local dev, before that env var exists.
-// Every hostname we actually serve the app on. A redirect built for a
-// visitor already on one of these must stay on that exact host — see the
-// incident note in getOrigin().
-const KNOWN_HOSTS = [
-  "picacho.io",
-  "www.picacho.io",
-  "picacho.ai",
-  "www.picacho.ai",
-];
+// Stripe Checkout success/cancel URLs). Reads the incoming request's Host
+// header first (see the incident note below), then the env var, then the
+// canonical fallback.
 
 export async function getOrigin() {
   const host = (await headers()).get("host");

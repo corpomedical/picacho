@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { PURCHASE_ORIGIN } from "@/lib/domains";
 import { isNativeApp } from "@/lib/native/server";
 
 // May THIS request's native app show a link out to the website's purchase
@@ -38,4 +39,4 @@ export async function allowExternalPurchaseLink(): Promise<boolean> {
 // it bounces out of the WebView into the system browser, which is exactly
 // the "external link" shape the injunction describes (and keeps the
 // purchase flow out of the app's own frame).
-export const EXTERNAL_PURCHASE_URL = "https://picacho.io/pricing";
+export const EXTERNAL_PURCHASE_URL = `${PURCHASE_ORIGIN}/pricing`;

@@ -1,11 +1,10 @@
 import type { MetadataRoute } from "next";
+import { CANONICAL_ORIGIN } from "@/lib/domains";
 
-// Reads the real production domain from the environment so it can never be
-// silently forgotten at deploy time — falls back to the picacho.app
-// placeholder only when NEXT_PUBLIC_SITE_URL isn't set (e.g. local dev).
-// Set NEXT_PUBLIC_SITE_URL in the production environment once the real
-// domain is live.
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || "https://picacho.app";
+// Env var first (production sets it), canonical fallback for local dev.
+// The old fallback was a third domain the product never
+// shipped on (2026-09-05 audit); one source of truth now: lib/domains.ts.
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || CANONICAL_ORIGIN;
 
 export default function robots(): MetadataRoute.Robots {
   return {

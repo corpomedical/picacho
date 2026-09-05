@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
-import { PLAN_LABELS, PLAN_LIMITS, type PlanId } from "@/lib/plans";
+import { PLAN_LABELS, PLAN_LIMITS, onDailyFreeTier, freeSlotOpen, type PlanId } from "@/lib/plans";
 import { FREE_TIER_GENERATION_CREDITS } from "@/lib/generations/providers/video-models";
 
 // Generation credits, and where a generated image is written.
@@ -182,16 +182,11 @@ export async function checkGenerationAllowance(
   // billing periods). Accounts that have been granted bonus credits fall
   // through to the normal path instead — those are a deliberate gift and
   // shouldn't be capped at one a day.
-  if (plan === "none" && (profile?.bonus_credits ?? 0) === 0) {
-    // Mirror of the spend RPC's own guard (spend_daily_free_generation:
-    // free_generation_last_at IS NULL OR < date_trunc('day', now()), UTC on
-    // Supabase). This read is only the DECISION — the RPC's guarded UPDATE
-    // is what makes the spend atomic under concurrency — so clock skew here
-    // costs at most a less precise error message, never a double spend.
-    const lastFreeAt = profile?.free_generation_last_at as string | null | undefined;
-    const utcDayStart = new Date();
-    utcDayStart.setUTCHours(0, 0, 0, 0);
-    const freeSlotOpen = !lastFreeAt || new Date(lastFreeAt) < utcDayStart;
+  if (onDailyFreeTier(plan, profile?.bonus_credits as number | null | undefined)) {
+    // Eligibility and the UTC-midnight arithmetic live in plans.ts now (the
+    // audit found five hand-kept copies of this rule) — the RPC's guarded
+    // UPDATE remains what makes the actual spend atomic.
+    const slotOpen = freeSlotOpen(profile?.free_generation_last_at as string | null | undefined);
     // The day's slot only ever covers a request no bigger than the trial's
     // own pinned shape — the free model at its default duration, whose
     // weight is FREE_TIER_GENERATION_CREDITS (derived from the catalog,
@@ -211,7 +206,7 @@ export async function checkGenerationAllowance(
     // pure trial account is never blocked by this: the composer only ever
     // sends it the pinned shape, and if a direct call asks for more, the
     // top-up error below is the honest answer.
-    if (freeSlotOpen && requestedCredits <= FREE_TIER_GENERATION_CREDITS) {
+    if (slotOpen && requestedCredits <= FREE_TIER_GENERATION_CREDITS) {
       return { error: null, plan, isAdmin, consumeFree: true, periodStartIso };
     }
 
@@ -240,7 +235,7 @@ export async function checkGenerationAllowance(
             // trial generation covers (only reachable by a direct call — the
             // composer pins trial accounts to the trial shape): say what the
             // trial actually covers rather than falsely claiming it's used up.
-            freeSlotOpen
+            slotOpen
             ? `That would use ${requestedCredits} credits (some models cost more than 1 per video) — the free trial only covers generations of up to ${FREE_TIER_GENERATION_CREDITS} credit${FREE_TIER_GENERATION_CREDITS === 1 ? "" : "s"}. Top up credits or pick a plan to use this one.`
             : `You've used today's free generation — it comes back tomorrow. Pick a plan or top up credits to keep going — ` +
               `your characters and history stay exactly as they are.`,

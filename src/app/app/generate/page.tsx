@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getReliabilityStats, reapAbandonedGenerations } from "@/lib/generations/actions";
 import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
+import { onDailyFreeTier, freeSlotOpen } from "@/lib/plans";
 import { GenerateForm } from "@/components/generate-form";
 import { TranscriptToggle } from "@/components/transcript-toggle";
 import { Card } from "@/components/ui/card";
@@ -117,14 +118,12 @@ export default async function GeneratePage() {
   // notice (guardrail after the 2026-08-21 confused-new-user incident).
   // Mirrors canGenerate's read in lib/generations/core.ts — display only,
   // the RPC's guarded UPDATE remains the source of truth on spend.
-  const utcDayStart = new Date();
-  utcDayStart.setUTCHours(0, 0, 0, 0);
-  const onDailyFreeTier =
-    (onboardingProfile?.plan ?? "none") === "none" && (onboardingProfile?.bonus_credits ?? 0) === 0;
+  // The shared eligibility from plans.ts — this page carried its own copy
+  // of the tier test AND the UTC-midnight arithmetic (the audit's
+  // five-copies finding). Display only; the RPC still owns the spend.
   const dailyFreeAvailable =
-    onDailyFreeTier &&
-    (!onboardingProfile?.free_generation_last_at ||
-      new Date(onboardingProfile.free_generation_last_at) < utcDayStart);
+    onDailyFreeTier(onboardingProfile?.plan, onboardingProfile?.bonus_credits) &&
+    freeSlotOpen(onboardingProfile?.free_generation_last_at);
 
   if (!hasCharacter) {
     return (

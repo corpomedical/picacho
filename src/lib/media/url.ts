@@ -22,7 +22,11 @@ import crypto from "crypto";
 // Server-only module (crypto + service key) — never import from a client
 // component. Client components only ever see the finished URL strings.
 
-const MEDIA_BUCKETS = new Set([
+// Exported for the roster contract test (truth-contracts.test.ts): every
+// bucket served here must also be in USER_STORAGE_BUCKETS, or account
+// deletion leaves served media orphaned — the exact half-update that
+// stranded generated-videos for a day.
+export const MEDIA_BUCKETS = new Set([
   "character-references",
   "generated-images",
   // Finished videos, copied off the provider's CDN since 2026-09-04 — see
