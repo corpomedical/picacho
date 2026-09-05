@@ -46,8 +46,9 @@ const COLUMNS = {
     "angle_group_id", "angle", "attachments", "cancel_requested", "deleted_at",
     "featured_at", "match_score", "video_model_id", "model_id",
     "video_duration_seconds", "purchased_credits_used", "free_generation_used",
-    "pipeline_log", "progress_stage",
+    "pipeline_log", "progress_stage", "poster_url",
   ],
+  push_tokens: ["token", "platform", "last_seen_at", "locale"],
   character_profiles: [
     "reference_image_urls", "outfit_image_urls", "outfit_description",
     "render_style", "voice_id", "voice_tone_tags", "motion_style", "project_id",
