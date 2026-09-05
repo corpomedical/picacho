@@ -6087,7 +6087,13 @@ function GenerateFormInner({
           // Docked: the composer floats at the approved board's width —
           // narrower than the stage above it, centered — instead of
           // spanning the whole container (fidelity pass, 2026-09-02).
-          isHero ? "mx-auto w-full max-w-5xl" : "sticky bottom-4 mx-auto w-full max-w-[880px]",
+          // The bottom offset folds in the native shell's fixed tab bar
+          // (--native-tab-bar, published by NativeTabBar; 0 on the web) —
+          // without it the z-40 bar covered the docked composer's bottom
+          // control row, send button included, whenever it was pinned.
+          isHero
+            ? "mx-auto w-full max-w-5xl"
+            : "sticky bottom-[calc(1rem+var(--native-tab-bar,0px))] mx-auto w-full max-w-[880px]",
         )}
       >
         {/* Sits directly on top of the form with no gap, sharing its

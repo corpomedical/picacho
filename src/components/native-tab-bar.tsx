@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type SVGProps } from "react";
+import { useEffect, useRef, useState, type SVGProps } from "react";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { useLocale } from "@/lib/i18n/provider";
 import { cn } from "@/lib/cn";
@@ -98,6 +98,29 @@ export function NativeTabBar() {
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   useEffect(() => setPendingHref(null), [pathname]);
 
+  // Publish the bar's REAL height (font scale and safe-area inset included)
+  // so sticky elements can stay above it. The docked composer is `sticky
+  // bottom-*` inside the app scroller, and this bar is `fixed z-40` OVER the
+  // same scroller — without the offset the bar covered the composer's whole
+  // bottom control row (the send button included) whenever the composer was
+  // pinned, and taps landed on the tab Links instead. Measured, not
+  // hardcoded: 59px was only ever true at default font scale.
+  const barRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!isNative) return;
+    const el = barRef.current;
+    if (!el) return;
+    const publish = () =>
+      document.documentElement.style.setProperty("--native-tab-bar", `${el.offsetHeight}px`);
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty("--native-tab-bar");
+    };
+  }, [isNative]);
+
   if (!isNative) return null;
 
   // Six tabs — one over the stated five-tab comfort ceiling, accepted with
@@ -117,6 +140,7 @@ export function NativeTabBar() {
 
   return (
     <nav
+      ref={barRef}
       // pb keeps the row clear of the home indicator on gesture-navigation
       // phones; without it the last few pixels of the tabs are unreachable.
       className="fixed inset-x-0 bottom-0 z-40 flex border-t border-atelier-rule bg-atelier-surface/80 backdrop-blur-xl"
