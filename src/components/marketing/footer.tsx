@@ -3,6 +3,31 @@ import { InstallBadges } from "@/components/install-badges";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
 import { LEGAL_ENTITY } from "@/lib/legal-entity";
+import { createAdminClient } from "@/lib/supabase/server";
+
+// Whether the public gallery has anything to show — the sitewide "Made with
+// Picacho" link landing on an EMPTY page was the audit's cheapest
+// trust-killer: a proof link that proves nothing. Same filters as the
+// gallery page's own query, as a head-count. Best-effort: on any failure
+// the link renders (the page itself has an honest empty state), so this can
+// only ever hide a dead end, never break the footer. Featuring a render in
+// Admin makes the link reappear on the next request.
+async function galleryHasItems(): Promise<boolean> {
+  try {
+    const admin = createAdminClient();
+    const { count, error } = await admin
+      .from("generations")
+      .select("id, profiles!inner(role)", { count: "exact", head: true })
+      .eq("status", "succeeded")
+      .not("featured_at", "is", null)
+      .is("deleted_at", null)
+      .eq("profiles.role", "admin");
+    if (error) return true;
+    return (count ?? 0) > 0;
+  } catch {
+    return true;
+  }
+}
 
 // `dark` (2026-09-02): the homepage went full dark — the footer follows
 // with pinned literals there (the .dark theme remap must not touch it),
@@ -12,6 +37,7 @@ export async function MarketingFooter({ dark = false }: { dark?: boolean } = {})
   // Hide the Pricing footer link in the native app (Apple 3.1.1 / Google
   // Play) — even a footer link to pricing counts as a purchase entry point.
   const native = await isNativeApp();
+  const showGallery = await galleryHasItems();
   const link = dark ? "transition-colors hover:text-[#f7f6f4]" : "hover:text-neutral-900";
   const subLink = dark ? "transition-colors hover:text-[#f7f6f4]/70" : "hover:text-neutral-700";
 
@@ -39,10 +65,13 @@ export async function MarketingFooter({ dark = false }: { dark?: boolean } = {})
               </Link>
             )}
             {/* Public showcase gallery — safe inside the native app too:
-                it's proof-of-output, not a purchase entry point. */}
-            <Link href="/gallery" className={link}>
-              {t.marketing.footer.madeWith}
-            </Link>
+                it's proof-of-output, not a purchase entry point. Hidden
+                while the gallery is empty (see galleryHasItems above). */}
+            {showGallery && (
+              <Link href="/gallery" className={link}>
+                {t.marketing.footer.madeWith}
+              </Link>
+            )}
             <Link href="/login" className={link}>
               {t.marketing.nav.login}
             </Link>

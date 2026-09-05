@@ -1142,7 +1142,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   if (wantsAdvancedVideoOptions && videoModelId !== "kling") {
     return {
       error:
-        "Multi-image reference and storyboard need Kling 1.6 as the selected video model — " +
+        "Multi-image reference and start & end frames need Kling 1.6 as the selected video model — " +
         "switch models, or turn these options off.",
     };
   }
