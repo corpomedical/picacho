@@ -66,7 +66,7 @@ export type PlanId = keyof typeof PLAN_LIMITS;
 //
 // Use-it-or-lose-it, no rollover. The slot is a timestamp
 // (profiles.free_generation_last_at, spent atomically via
-// spend_daily_free_generation — see supabase/pending-2026-08-19/
+// spend_daily_free_generation — see supabase/applied/2026-08-19/
 // daily-trial.sql), not a balance, so there is nothing to hoard and a
 // returning burst can never cost more than one render.
 //

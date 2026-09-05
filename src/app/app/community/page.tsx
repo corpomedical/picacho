@@ -11,7 +11,7 @@ import { CommunityFeed, type CommunityPostView } from "@/components/community-fe
 // The community feed — opt-in shared renders from every account, hearts +
 // views, newest or top. Reads are a single RLS-guarded select over
 // community_posts (the row snapshots everything the feed shows — see
-// supabase/pending-2026-08-21/community.sql for why); media URLs are
+// supabase/applied/2026-08-21/community.sql for why); media URLs are
 // re-derived through the same non-expiring signed proxy the media library
 // uses. Tolerates the SQL not being applied yet: an error just renders the
 // empty state.
@@ -32,7 +32,7 @@ function FilterPill({ href, active, children }: { href: string; active: boolean;
   );
 }
 
-// match_score + character_name arrive with pending-2026-08-22/
+// match_score + character_name arrive with applied/2026-08-22/
 // community-feed.sql — apply it BEFORE deploying this select.
 const POST_COLUMNS =
   "id, user_id, username, caption, prompt, media_url, content_type, hearts_count, views_count, created_at, hidden_at, match_score, character_name";
@@ -125,9 +125,14 @@ export default async function CommunityPage({
 
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-atelier-ink">{c.title}</h1>
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+            {c.eyebrow}
+          </p>
+          <h1 className="mt-1 font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
+            {c.title}
+          </h1>
           <p className="mt-1 text-sm text-atelier-muted">{c.subtitle}</p>
         </div>
         <div className="inline-flex items-center gap-0.5 rounded-full border border-atelier-rule bg-atelier-surface p-1">

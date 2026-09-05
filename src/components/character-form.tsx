@@ -191,6 +191,49 @@ export function CharacterForm({
 
   const totalImages = keptImages.length + newFiles.length;
 
+  // NEW-page draft photos (2026-09-05 audit, bug-audit-36). On the create
+  // page there is no row yet, so a generated AI photo lives only in this
+  // form's state — abandoning the page (or Android killing the app) orphaned
+  // the already-paid files and, for a free account, could burn both lifetime
+  // AI photos for nothing. The photos themselves are already uploaded and
+  // their capability URLs are stable, so a tiny {path,url} draft in
+  // localStorage makes them survive: restored on the next visit to the
+  // create page, cleared the moment the character actually saves. Edit pages
+  // never need this — their generations append to the row server-side.
+  const DRAFT_PHOTOS_KEY = "picacho:new-character-draft-photos";
+  const isNewPage = !initial?.id;
+  useEffect(() => {
+    if (!isNewPage) return;
+    try {
+      const raw = window.localStorage.getItem(DRAFT_PHOTOS_KEY);
+      if (!raw) return;
+      const draft = JSON.parse(raw) as { path?: unknown; url?: unknown }[];
+      const restorable = draft.filter(
+        (d): d is { path: string; url: string } =>
+          typeof d.path === "string" && typeof d.url === "string",
+      );
+      if (restorable.length) {
+        setKeptImages((prev) => [
+          ...prev,
+          ...restorable.filter((d) => !prev.some((p) => p.path === d.path)),
+        ]);
+      }
+    } catch {
+      // A blocked or corrupt store must never break the form.
+    }
+    // Mount-only on purpose: this seeds state once from the stash.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (!isNewPage) return;
+    try {
+      if (keptImages.length === 0) window.localStorage.removeItem(DRAFT_PHOTOS_KEY);
+      else window.localStorage.setItem(DRAFT_PHOTOS_KEY, JSON.stringify(keptImages));
+    } catch {
+      // Same rule: storage is a convenience, never a dependency.
+    }
+  }, [isNewPage, keptImages]);
+
   // What the ROW already holds. Starts as the photos the page loaded with;
   // grows when a generated photo auto-persists (result.saved). Anything in
   // the form beyond this baseline is unsaved work the guards below protect.
@@ -490,6 +533,15 @@ export function CharacterForm({
         return;
       }
 
+      // The photos are on the saved row now — the draft stash has done its
+      // job and must not resurrect them into the NEXT new character.
+      try {
+        window.localStorage.removeItem(DRAFT_PHOTOS_KEY);
+      } catch {
+        // Ignore — worst case the next create page restores photos that are
+        // also on this saved character, and removing them there is one tap.
+      }
+
       // A full navigation here (rather than router.push) guarantees the
       // destination page re-fetches from the database instead of showing a
       // cached, pre-save version. For a brand-new character, send the user
@@ -717,9 +769,9 @@ export function CharacterForm({
                     />
                   )}
                   {r.score !== null && (
-                    <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-[#1b1c20]/72 px-2 py-1 backdrop-blur-sm">
+                    <span className="absolute left-2 top-2 inline-flex items-center gap-1.5 rounded-full bg-black/72 px-2 py-1 backdrop-blur-sm">
                       <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-[#e0a468]" />
-                      <span className="font-numeral text-[11px] font-semibold tabular-nums text-[#f4ede4]">
+                      <span className="font-numeral text-[11px] font-semibold tabular-nums text-onmedia">
                         {r.score}
                       </span>
                     </span>

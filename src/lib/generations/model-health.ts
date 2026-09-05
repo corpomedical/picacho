@@ -53,7 +53,7 @@ export { isProviderFault };
 // Records a failed generation. Trips the breaker on the third in a row.
 //
 // The increment is atomic (record_model_failure RPC, advisory-locked — see
-// supabase/pending-2026-08-19/pipeline.sql). It used to be a read-modify-write
+// supabase/applied/2026-08-19/pipeline.sql). It used to be a read-modify-write
 // here in JS, which loses counts under concurrency — and concurrent failures
 // are exactly what an outage produces: three simultaneous failures could all
 // read consecutive_failures=0, all write 1, and the breaker that exists for

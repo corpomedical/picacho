@@ -15,7 +15,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 //      database call, so it still works when the database is the thing that
 //      is wrong. An instant off from the Vercel dashboard.
 //   2. feature_flags.chat_agent. One toggle in Admin > Feature flags, no
-//      deploy. Inserted disabled by pending-2026-08-30/agent-chat.sql.
+//      deploy. Inserted disabled by applied/2026-08-30/agent-chat.sql.
 //   3. A missing ANTHROPIC_API_KEY, same as draftWithClaude already treats it.
 //
 // DELIBERATELY NOT REUSING voice_mode. That flag gates a different,

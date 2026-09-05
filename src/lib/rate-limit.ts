@@ -19,7 +19,7 @@ export function hashedRateKey(value: string | null | undefined, scope: string): 
 
 // Shared per-user, per-feature rate limiter over public.api_rate_check —
 // the atomic advisory-lock check-and-insert in schema.sql, extended with a
-// scope column in supabase/pending-2026-08-19/auth-admin.sql (section 4).
+// scope column in supabase/applied/2026-08-19/auth-admin.sql (section 4).
 //
 // Why scopes exist: api_rate_hits originally had no scope, so the six
 // features that reused the limiter — public API (30/min), voice preview
@@ -62,7 +62,7 @@ export async function rateLimited(
   if (isMissingFunctionError(error)) {
     console.warn(
       `rate-limit: 4-arg api_rate_check is missing — apply ` +
-        `supabase/pending-2026-08-19/auth-admin.sql (section 4). Falling back ` +
+        `supabase/applied/2026-08-19/auth-admin.sql (section 4). Falling back ` +
         `to the legacy shared bucket for scope "${scope}" until then.`,
     );
     const { data: legacyAllowed, error: legacyError } = await admin.rpc("api_rate_check", {

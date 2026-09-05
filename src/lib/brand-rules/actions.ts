@@ -90,7 +90,7 @@ export async function addBrandRule(formData: FormData): Promise<{ error: string 
   // A rulebook is fed to the draft model in full on every generation, so an
   // unbounded list would quietly inflate both the prompt and its cost. The
   // cap is enforced atomically (insert_brand_rules_capped, in
-  // supabase/pending-2026-08-19/user-actions.sql): the old count-then-insert
+  // supabase/applied/2026-08-19/user-actions.sql): the old count-then-insert
   // raced, so a concurrent burst all counted under the limit and all
   // inserted. Same advisory-lock pattern as record_prompt_assist; EXECUTE
   // revoked from `authenticated`, so it runs through the service-role client.

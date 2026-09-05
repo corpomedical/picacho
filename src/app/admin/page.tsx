@@ -160,7 +160,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default async function AdminDashboard() {
   // Re-checked here, not just in the admin layout: this page calls the
   // admin_traffic_daily RPC (SECURITY DEFINER over the whole page_views
-  // table — hardened with its own role check in supabase/pending-2026-08-19/
+  // table — hardened with its own role check in supabase/applied/2026-08-19/
   // auth-admin.sql), so the page verifies the caller's role itself as well
   // rather than trusting that the layout gate can never be sidestepped.
   await requireAdmin();

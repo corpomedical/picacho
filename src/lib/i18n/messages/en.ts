@@ -57,6 +57,7 @@ const en = {
     community: "Community",
   },
   community: {
+    eyebrow: "Shared renders",
     title: "Community",
     subtitle: "What people are making with their characters.",
     sortNew: "New",
@@ -89,6 +90,7 @@ const en = {
     securedNote: "Payments are processed securely by Stripe. Card details never touch Picacho's servers.",
   },
   templates: {
+    eyebrow: "Studio",
     title: "Templates",
     subtitle: "Ready-made scenes for your character. Tap one, tweak the [brackets], and send.",
     use: "Use template",
@@ -123,6 +125,9 @@ const en = {
       // literal in the component, like the engine names on the homepage.
       compare: "Compare",
       guides: "Guides",
+      // The free /tools/identity-check tool — label matches that page's
+      // own title.
+      identityCheck: "AI character consistency checker",
       madeWith: "Made with Picacho",
     },
     home: {
@@ -499,6 +504,28 @@ const en = {
       signupLink: "Sign up",
       forgotPassword: "Forgot password?",
     },
+    // Login/signup errors travel as CODES in the URL (?error=invalid), never
+    // as text — the pages used to print whatever a crafted link put there, in
+    // the site's own error styling, on the page where people type passwords
+    // (2026-09-05 flaw hunt). Unknown codes fall back to `failed`.
+    errors: {
+      throttled: "Too many attempts — wait a bit and try again.",
+      invalid: "That email and password don't match — try again, or reset your password.",
+      unconfirmed: "This email hasn't been confirmed yet — check your inbox for the confirmation link.",
+      failed: "Couldn't sign you in — please try again.",
+      link: "That confirmation link is invalid or has expired — sign in, or sign up again.",
+      oauth: "Couldn't sign you in with that provider — please try again.",
+      closed: "New signups are currently closed.",
+      name: "Please enter your name.",
+      username: "Username must be 3-24 characters: lowercase letters, numbers, and underscores.",
+      company: "Company name is too long.",
+      terms: "You must agree to the Terms of Service, Privacy Policy, and Content Policy to create an account.",
+      exists: "An account with this email already exists. Log in instead, or reset your password if you've forgotten it.",
+      password: "The password needs to be at least 6 characters.",
+      bademail: "That doesn't look like a valid email address.",
+      disposable: "Disposable email addresses can't be used here — sign up with an address you'll keep.",
+      signupFailed: "Couldn't create the account — please try again.",
+    },
     forgotPassword: {
       title: "Reset your password",
       subtitle: "Enter your email and we'll send you a link to set a new password.",
@@ -804,7 +831,8 @@ const en = {
     askFree: "Ask — free",
     thisTakeCredits: "This take · {n} credits",
     sendTotalCredits: "{k} renders · {n} credits",
-    creditsLabel: "Credits",
+    creditsLabel: "Credits left",
+    freeReturnsTomorrow: "Your daily free generation comes back tomorrow — your characters and history stay exactly as they are.",
     uploadFailedFile: "{name} couldn't be uploaded — it may be too large or the connection dropped.",
     uploadErrSession: "Your session expired — please log in again.",
     uploadErrTooLarge: "{name} is larger than 25MB.",
@@ -1088,6 +1116,7 @@ const en = {
     continueChat: "Continue chat",
   },
   notes: {
+    eyebrow: "Studio",
     title: "Notes",
     subtitle:
       "Free-text notes tied to your account — jot down ideas, prompts, or anything worth remembering.",
@@ -1103,6 +1132,7 @@ const en = {
     writeFirstNote: "Write your first note",
   },
   gallery: {
+    eyebrow: "Library",
     imagesTitle: "Images",
     imagesSubtitle: "Your finished images, newest first — failed generations stay in History.",
     mediaSubtitle: "Your finished images and videos, newest first — failed generations stay in History.",
@@ -1268,6 +1298,7 @@ const en = {
       "Remove \"{name}\"? Its characters won't be deleted — they'll just go back to having no project.",
   },
   tutorial: {
+    eyebrow: "Guide",
     title: "How to use Picacho",
     courseLink: "Want the full walkthrough with real screenshots? Take the course →",
     subtitle: "Everything from your first character to videos, credits, and fixing wonky results.",
@@ -1319,6 +1350,7 @@ const en = {
     inviteCopy: "Copy link",
     inviteCopied: "Copied",
     inviteShare: "Share",
+    eyebrow: "Account",
     title: "Settings",
     subtitle: "Everything about your account, in one place.",
     savedNotice: "Saved.",
@@ -1497,7 +1529,7 @@ const en = {
     courseCardBody: "Every step photographed on the real app: your character's face in every frame, your first video without wasted credits.",
     courseCardCta: "Start the course",
     quickTutorial: "How it works",
-    creditsTitle: "Credits this month",
+    creditsTitle: "Credits used this month",
     creditsPurchased: "+{n} purchased credits",
     continueCreating: "Continue creating",
     emptyRecent: "Your creations will appear here — make your first one.",
@@ -1629,6 +1661,19 @@ const en = {
   // (lib/i18n/server-text.ts) maps the known ones here at the render sites.
   // A truth-contract test pins every mapped string against the server
   // source, so an edit to either side alone fails the suite.
+  // Push notifications — resolved PER DEVICE from push_tokens.locale by
+  // lib/push/send.ts, because a push arrives while no screen is open to
+  // translate it (the last English-only voice after the 2026-09-05
+  // server-string localization).
+  push: {
+    videoReadyTitle: "Your video is ready",
+    videoReadyBody: "Tap to watch it.",
+    videoFailedTitle: "That generation did not finish",
+    videoFailedBody: "Tap to see what happened.",
+    videoFailedRefundedBody: "Tap to see what happened — the credits it used were released.",
+    layersReadyTitle: "Your layers are ready",
+    layersReadyBody: "{n} layers — tap to open the stack.",
+  },
   serverText: {
     stageVideo: "Rendering your video",
     stageVoice: "Generating the voice",

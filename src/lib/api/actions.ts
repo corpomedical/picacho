@@ -41,7 +41,7 @@ export async function createApiKey(
   // unlimited keys are just unlimited things to leak.
   //
   // The cap is enforced atomically by create_api_key_capped (supabase/
-  // pending-2026-08-19/auth-admin.sql): count-and-insert under a per-user
+  // applied/2026-08-19/auth-admin.sql): count-and-insert under a per-user
   // advisory lock (key 41), same pattern as reserve_generation and friends.
   // The old count-then-insert here was two separate statements, so a
   // concurrent burst all counted 4 and all inserted — an unbounded pile of

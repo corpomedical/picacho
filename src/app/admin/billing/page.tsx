@@ -74,7 +74,7 @@ export default async function AdminBillingPage() {
       const plan = (p.plan ?? "none") as PlanId;
       // plan_currency / plan_interval are snapshotted by the webhook straight
       // off the subscription's price object (added 2026-08-19, see
-      // supabase/pending-2026-08-19/billing.sql). They exist because annual
+      // supabase/applied/2026-08-19/billing.sql). They exist because annual
       // subscriptions bill on an INLINE price with no entry in
       // PLAN_PRICE_IDS, so currencyForPriceId() bucketed every EUR annual
       // subscriber as USD and the sum valued annual subscribers at the full

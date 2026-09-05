@@ -6,7 +6,7 @@ import { sendEmail, unsubscribeUrl } from "@/lib/email/send";
 // The onboarding drip — fired once a day by Vercel cron (vercel.json).
 // Eligibility (confirmed address, opt-out respected, day windows, dedup) is
 // computed in ONE definer function in the database (drip_candidates —
-// supabase/pending-2026-08-21/drip-emails.sql); this route just renders and
+// supabase/applied/2026-08-21/drip-emails.sql); this route just renders and
 // sends. Idempotency: the dedup row is inserted BEFORE sending (primary-key
 // insert, so two overlapping runs can't double-send) and removed if the
 // send itself fails, so tomorrow's run retries that person.

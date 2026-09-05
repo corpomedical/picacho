@@ -28,6 +28,19 @@ export default async function AdminLayout({
     redirect("/app");
   }
 
+  // Second factor (2026-09-05 flaw hunt): one compromised password used to
+  // grant unlimited credit edits, plan changes, mass email, and every
+  // customer's data. Once an admin has ENROLLED a TOTP factor (Admin →
+  // Security), a session that hasn't presented it this sign-in
+  // (nextLevel aal2, currentLevel below it) is walked to the challenge page
+  // before any admin surface renders. Deliberately not forced on accounts
+  // with no factor yet — a gate that locks the operator out the moment it
+  // ships is how an emergency gets worse — so enrollment is the switch.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    redirect("/admin-verify");
+  }
+
   // Badge counts for the nav — computed here (Server Component) so the
   // first paint never shows a flash of zero badges, then handed to
   // AdminCommandBar as its seed value. From there the command bar polls

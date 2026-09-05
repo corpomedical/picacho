@@ -47,7 +47,7 @@ type UploadResult = {
 // Generous enough for a handful of photos or a short clip, without letting
 // someone accidentally upload something enormous through the chat composer.
 // NOTE: this cap (and the mime types the composer accepts) is mirrored at the
-// bucket itself in supabase/pending-2026-08-19/user-actions.sql — storage RLS
+// bucket itself in supabase/applied/2026-08-19/user-actions.sql — storage RLS
 // lets clients upload directly, so an action-side check alone is advisory.
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 

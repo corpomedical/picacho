@@ -108,7 +108,7 @@ export async function updateUsername(formData: FormData): Promise<ActionResult> 
   }
 
   // Friendly pre-check only — the real guarantee is the unique index on
-  // lower(username) (supabase/pending-2026-08-19/auth-admin.sql). Note the
+  // lower(username) (supabase/applied/2026-08-19/auth-admin.sql). Note the
   // escaping: ilike treats `_` as a single-character wildcard, and usernames
   // may legitimately contain underscores — unescaped, checking "a_c" matched
   // "abc"/"axc" too, reporting real usernames as taken (and, the reverse
@@ -169,7 +169,7 @@ export async function setSkipAiRefinement(enabled: boolean): Promise<ActionResul
 // The write goes through the SERVICE-ROLE client on purpose:
 // profiles.marketing_opt_out is deliberately absent from the authenticated
 // UPDATE column grant (see the section-3 posture comment in
-// supabase/pending-2026-08-19/email.sql and the 2026-08-18 lockdown at the
+// supabase/applied/2026-08-19/email.sql and the 2026-08-18 lockdown at the
 // bottom of schema.sql), and widening that grant for one toggle would
 // reopen the column to every authenticated PostgREST caller. So: identity
 // comes from the verified session, then the service role writes that one

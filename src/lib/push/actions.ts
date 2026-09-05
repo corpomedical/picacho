@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { getLocale } from "@/lib/i18n/server";
 
 // Registering and forgetting a device for push notifications.
 //
@@ -36,7 +37,7 @@ export async function registerPushToken(
   // forgetPushToken exists to prevent. Owner-scoped RLS can't express that
   // one write (it would either reject the re-registration or have to let any
   // user rewrite anyone's rows), so RLS stays strict (see
-  // supabase/pending-2026-08-19/user-actions.sql: authenticated keeps only
+  // supabase/applied/2026-08-19/user-actions.sql: authenticated keeps only
   // owner-scoped SELECT/DELETE) and this single cross-owner write happens
   // server-side, keyed on the exact token string the device itself presented
   // — a caller can only ever claim a device they physically hold the token
@@ -47,6 +48,11 @@ export async function registerPushToken(
       user_id: userData.user.id,
       platform,
       last_seen_at: new Date().toISOString(),
+      // The language this person is using RIGHT NOW, so the push sender can
+      // speak it later — a push arrives with no screen open to translate it.
+      // Re-registered every app launch, so a language switch follows within
+      // a day.
+      locale: await getLocale(),
     },
     { onConflict: "token" },
   );

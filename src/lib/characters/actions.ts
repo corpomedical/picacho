@@ -428,7 +428,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   // burst all read the same count, all passed, and all called OpenAI/fal:
   // unlimited free paid-API generations, the same bug class the composer
   // fixed with reserve_generation (commits 538a2ee / 4a4e3ee). Both RPCs
-  // (supabase/pending-2026-08-19/user-actions.sql) serialize check-and-record
+  // (supabase/applied/2026-08-19/user-actions.sql) serialize check-and-record
   // per user; EXECUTE is revoked from `authenticated`, so they run through
   // the service-role client. An RPC error fails closed, like the voice
   // preview's rate limiter: better a retry than an unmetered paid call.

@@ -36,6 +36,7 @@ const NAV_ITEMS = [
   { href: "/admin/voices", label: "Voices", icon: MicIcon },
   { href: "/admin/flags", label: "Feature flags", icon: ToggleIcon },
   { href: "/admin/settings", label: "Settings", icon: GearIcon },
+  { href: "/admin/security", label: "Security", icon: ShieldIcon },
   { href: "/admin/updates", label: "Updates", icon: SparklesIcon },
 ] as const;
 

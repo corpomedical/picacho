@@ -54,7 +54,7 @@ describe("freeSlotOpen mirrors the RPC's UTC-midnight guard", () => {
 describe("the SQL guard this mirrors still says what we mirror", () => {
   it("spend_daily_free_generation keeps the date_trunc day guard", () => {
     const sql = readFileSync(
-      new URL("../../supabase/pending-2026-08-19/daily-trial.sql", import.meta.url),
+      new URL("../../supabase/applied/2026-08-19/daily-trial.sql", import.meta.url),
       "utf8",
     );
     expect(sql).toContain("free_generation_last_at");

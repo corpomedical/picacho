@@ -362,7 +362,7 @@ export async function consumeFreeGeneration(
   // generations can't all pass a stale read and run several free paid
   // renders in one day. The caller aborts before any paid work when this
   // returns false — which is also what happens while the RPC doesn't exist
-  // yet (supabase/pending-2026-08-19/daily-trial.sql not applied): no data
+  // yet (supabase/applied/2026-08-19/daily-trial.sql not applied): no data
   // reads as false, so the path fails closed rather than unmetered.
   const admin = createAdminClient();
   const { data } = await admin.rpc("spend_daily_free_generation", {

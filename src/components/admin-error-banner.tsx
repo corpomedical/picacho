@@ -107,11 +107,11 @@ const PREFIX_SUMMARIES: [string, string][] = [
   ],
   [
     "Couldn't count the audience",
-    "Couldn't load the audience — check that supabase/pending-2026-08-19/email.sql has been applied. Details are in the server log.",
+    "Couldn't load the audience — check that supabase/applied/2026-08-19/email.sql has been applied. Details are in the server log.",
   ],
   [
     "Couldn't load the audience",
-    "Couldn't load the audience — check that supabase/pending-2026-08-19/email.sql has been applied. Details are in the server log.",
+    "Couldn't load the audience — check that supabase/applied/2026-08-19/email.sql has been applied. Details are in the server log.",
   ],
   [
     "That audience has ",

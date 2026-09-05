@@ -15,7 +15,7 @@ import { rateLimited } from "@/lib/rate-limit";
 // (confirmation, reset) are a separate system this never touches.
 //
 // email_templates / email_sends are service-role-only tables (RLS enabled
-// with no policies + grants revoked — see supabase/pending-2026-08-19/
+// with no policies + grants revoked — see supabase/applied/2026-08-19/
 // email.sql), so every read/write here goes through the admin client AFTER
 // requireAdmin() — verify the privilege first, then act with it, the same
 // order require-admin.ts documents.
@@ -289,7 +289,7 @@ export async function sendEmailBlast(formData: FormData) {
   });
   if (confirmError) {
     fail(
-      `Couldn't resolve confirmed addresses (apply supabase/pending-2026-09-05/email-truth.sql first): ${confirmError.message.slice(0, 120)}`,
+      `Couldn't resolve confirmed addresses (apply supabase/applied/2026-09-05/email-truth.sql first): ${confirmError.message.slice(0, 120)}`,
     );
   }
   const confirmedEmailById = new Map(

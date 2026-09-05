@@ -35,7 +35,7 @@ export default async function EditCharacterPage({
 
   // Never sign a path outside the owner's folder, whatever the row says. The
   // DB trigger enforces this for reference_image_urls; outfit_image_urls was
-  // added later WITHOUT trigger coverage (pending-2026-09-05 closes that), so
+  // added later WITHOUT trigger coverage (applied/2026-09-05 closes that), so
   // a direct PostgREST write could plant another user's storage path here —
   // and this page would then mint a valid /api/media capability for it.
   const owned = (path: string) => path.startsWith(`${userData.user.id}/`);

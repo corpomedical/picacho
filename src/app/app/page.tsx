@@ -8,6 +8,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import { mediaUrl, toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { InviteCard } from "@/components/invite-card";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export const maxDuration = 300;
 
@@ -69,7 +70,7 @@ export default async function AppHome() {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
         {profile?.has_completed_onboarding !== true && <FirstRunTour />}
-        <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-atelier-ink">
+        <h1 className="font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
           {formatMsg(d.greeting, { name })}
         </h1>
         <p className="mt-2 max-w-sm text-sm text-atelier-muted">{d.setupCharacterBody}</p>
@@ -98,7 +99,7 @@ export default async function AppHome() {
       {/* Greeting + credits, one glance. */}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-2xl font-bold tracking-[-0.02em] text-atelier-ink">
+          <h1 className="font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
             {formatMsg(d.greeting, { name })}
           </h1>
           <p className="mt-1 text-xs text-atelier-muted">
@@ -204,9 +205,10 @@ export default async function AppHome() {
           </Link>
         </div>
         {recentTiles.length === 0 ? (
-          <p className="rounded-control border border-dashed border-atelier-rule p-6 text-center text-xs text-atelier-muted">
-            {d.emptyRecent}
-          </p>
+          <EmptyState
+            message={d.emptyRecent}
+            action={{ href: "/app/generate", label: t.gallery.generateOne }}
+          />
         ) : (
           <div className="grid grid-cols-3 gap-3">
             {recentTiles.map((g) => (

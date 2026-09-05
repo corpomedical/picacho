@@ -404,7 +404,7 @@ export async function savePrompt(
   }
 
   // Cap enforced atomically (insert_saved_prompt_capped, in
-  // supabase/pending-2026-08-19/user-actions.sql): count-then-insert here
+  // supabase/applied/2026-08-19/user-actions.sql): count-then-insert here
   // raced — a concurrent burst all counted under the limit and all inserted,
   // sailing past SAVED_PROMPT_LIMIT. Same advisory-lock check-and-insert
   // pattern as record_prompt_assist; EXECUTE revoked from `authenticated`, so

@@ -1,4 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { getMessages } from "@/lib/i18n/messages";
+import { formatMsg } from "@/lib/i18n/format";
+import { DEFAULT_LOCALE, isLocale } from "@/lib/i18n/locales";
 
 // Sending a push notification when a generation finishes.
 //
@@ -15,13 +18,41 @@ import { createAdminClient } from "@/lib/supabase/server";
 
 const FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects";
 
+// Callers hand over a MESSAGE KEY, not text (2026-09-05): a push arrives
+// while no screen is open to translate it, so the words are resolved here,
+// per device, from the locale the device registered with (push_tokens.locale
+// — re-written on every app launch, so it follows a language switch). A
+// device from before the locale column, or one whose value is unreadable,
+// gets English, exactly what it got before.
+export type PushMessage = {
+  key: "videoReady" | "videoFailed" | "videoFailedRefunded" | "layersReady";
+  params?: Record<string, string | number>;
+};
+
 type Notification = {
-  title: string;
-  body: string;
+  message: PushMessage;
   // Deep link, so tapping the notification opens the generation rather than
   // dumping the person on the home screen to find it themselves.
   path: string;
 };
+
+function resolvePushText(
+  message: PushMessage,
+  locale: string | null | undefined,
+): { title: string; body: string } {
+  const t = getMessages(isLocale(locale) ? locale : DEFAULT_LOCALE).push;
+  const params = message.params ?? {};
+  switch (message.key) {
+    case "videoReady":
+      return { title: t.videoReadyTitle, body: t.videoReadyBody };
+    case "videoFailed":
+      return { title: t.videoFailedTitle, body: t.videoFailedBody };
+    case "videoFailedRefunded":
+      return { title: t.videoFailedTitle, body: t.videoFailedRefundedBody };
+    case "layersReady":
+      return { title: t.layersReadyTitle, body: formatMsg(t.layersReadyBody, params) };
+  }
+}
 
 // Google requires a short-lived OAuth token minted from the service account,
 // not a static key — the old legacy server key was retired. Cached in module
@@ -87,7 +118,7 @@ export async function notifyUser(userId: string, notification: Notification): Pr
   const admin = createAdminClient();
   const { data: devices } = await admin
     .from("push_tokens")
-    .select("token")
+    .select("token, locale")
     .eq("user_id", userId)
     .limit(10);
 
@@ -96,6 +127,7 @@ export async function notifyUser(userId: string, notification: Notification): Pr
   await Promise.all(
     devices.map(async (device) => {
       try {
+        const text = resolvePushText(notification.message, device.locale as string | null);
         const res = await fetch(`${FCM_ENDPOINT}/${projectId}/messages:send`, {
           method: "POST",
           headers: {
@@ -105,7 +137,7 @@ export async function notifyUser(userId: string, notification: Notification): Pr
           body: JSON.stringify({
             message: {
               token: device.token,
-              notification: { title: notification.title, body: notification.body },
+              notification: { title: text.title, body: text.body },
               // Read by the app to route the tap. Kept in data rather than the
               // notification payload because only data survives to the handler
               // when the app opens from a cold start.

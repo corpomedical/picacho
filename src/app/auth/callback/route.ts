@@ -71,7 +71,7 @@ export async function GET(request: Request) {
           await createAdminClient().auth.admin.deleteUser(user.id);
           await supabase.auth.signOut();
           return NextResponse.redirect(
-            `${origin}/login?error=${encodeURIComponent("New signups are currently closed.")}`,
+            `${origin}/login?error=closed`,
           );
         }
 
@@ -114,9 +114,8 @@ export async function GET(request: Request) {
     }
   }
 
-  const message = oauthError
-    ? `Couldn't sign you in: ${oauthError}`
-    : "Couldn't sign you in — please try again.";
-
-  return NextResponse.redirect(`${origin}/login?error=${encodeURIComponent(message)}`);
+  // The provider's raw error detail goes to the server log, never to the
+  // page — the login page shows its own translated line for the code.
+  if (oauthError) console.error("oauth callback error:", oauthError);
+  return NextResponse.redirect(`${origin}/login?error=oauth`);
 }

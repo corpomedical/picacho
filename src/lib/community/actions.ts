@@ -5,7 +5,7 @@ import { rateLimited } from "@/lib/rate-limit";
 import { persistGeneratedVideo } from "@/lib/generations/core";
 
 // Community feed actions — thin wrappers over the SQL in
-// supabase/pending-2026-08-21/community.sql. Sharing and reporting go
+// supabase/applied/2026-08-21/community.sql. Sharing and reporting go
 // through SECURITY DEFINER functions (the definer is where the ownership
 // and validity checks live); hearts, unshare and moderation ride plain RLS
 // with the caller's own session. Nothing here touches the service role.

@@ -1234,7 +1234,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       //
       // Safe before the column exists: reserve_generation builds its row with
       // jsonb_populate_record, which silently drops keys that match no
-      // column. If pending-2026-08-30/identity-scoring.sql hasn't run yet this
+      // column. If applied/2026-08-30/identity-scoring.sql hasn't run yet this
       // is a no-op rather than a failed insert.
       //
       // Records the SELECTED model. The image lane can fall back GPT → FLUX
@@ -1253,7 +1253,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // Until now the row recorded nothing about them, so deleting a
       // generation could never clean its uploads and the bucket only ever
       // grew. Same pre-SQL safety as model_id above: jsonb_populate_record
-      // drops the key until pending-2026-08-31/hygiene.sql adds the column.
+      // drops the key until applied/2026-08-31/hygiene.sql adds the column.
       attachments: attachmentStoragePaths,
     };
 
@@ -1958,7 +1958,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             : {}),
           // The gate's own two columns are written ONLY once the gate has
           // actually done something — which cannot happen before the
-          // operator has applied pending-2026-09-01/identity-gate.sql AND
+          // operator has applied applied/2026-09-01/identity-gate.sql AND
           // raised the threshold above 0.
           //
           // This is a deploy-ORDER safety net, not tidiness. Every other
@@ -3787,7 +3787,7 @@ async function startUpscaleCore(params: {
     purchased_credits_used: consumePurchased,
     free_generation_used: false,
     // Dropped silently by jsonb_populate_record until
-    // pending-2026-09-02/upscale.sql runs — the insert still succeeds, only
+    // applied/2026-09-02/upscale.sql runs — the insert still succeeds, only
     // the lineage link is lost, so pre-SQL behavior fails soft.
     source_generation_id: params.sourceGenerationId,
   };
@@ -4042,7 +4042,7 @@ export async function startUploadUpscale(formData: FormData): Promise<UpscaleSta
 type LayersStartResult = { error: string } | { generationId: string };
 
 // The collector writes generation_layers when the split lands. If that table
-// is not there — supabase/pending-2026-09-03/layers.sql is a manual step and
+// is not there — supabase/applied/2026-09-03/layers.sql is a manual step and
 // deploy does not wait for it — the job submits, bills, completes at fal, and
 // then retries its collection behind a spinner until the 45-minute write-off.
 // That happened on 2026-09-04, ten minutes of "loading" for a split that had
@@ -4054,7 +4054,7 @@ async function layersSchemaIsReady(admin: ReturnType<typeof createAdminClient>):
   if (layersSchemaReady) return true;
   const { error } = await admin.from("generation_layers").select("id").limit(1);
   if (error) {
-    console.error("Layers is deployed but generation_layers is missing — run supabase/pending-2026-09-03/layers.sql:", error.message);
+    console.error("Layers is deployed but generation_layers is missing — run supabase/applied/2026-09-03/layers.sql:", error.message);
     return false;
   }
   layersSchemaReady = true;

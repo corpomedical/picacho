@@ -276,7 +276,7 @@ export async function POST(request: Request) {
                     // trigger reads as a user id, which made that account's
                     // every future render abort its own terminal write —
                     // paid for, billed by fal, and stranded at 'generating'
-                    // forever. See pending-2026-08-31/referral-column-type.sql.
+                    // forever. See applied/2026-08-31/referral-column-type.sql.
                     .update({ promo_code: promo.code, promo_rep: promo.rep_name })
                     .eq("id", userId);
                 }

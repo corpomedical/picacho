@@ -13,9 +13,9 @@ import { Logo } from "@/components/logo";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; message?: string }>;
+  searchParams: Promise<{ error?: string }>;
 }) {
-  const { error, message } = await searchParams;
+  const { error } = await searchParams;
 
   // Already signed in — no reason to show the form and make them
   // re-authenticate, just send them straight back into the app.
@@ -25,6 +25,18 @@ export default async function LoginPage({
 
   const { t } = await getServerMessages();
   const a = t.auth.login;
+
+  // ?error is a CODE mapped to this page's own translated wording — never
+  // text (2026-09-05 flaw hunt: the page printed whatever a crafted link put
+  // there, official-looking, on the page where people type passwords). Any
+  // unrecognized non-empty value gets the generic line, so an old
+  // bookmarked link still shows something honest.
+  const errors = t.auth.errors;
+  const errorText = error
+    ? Object.prototype.hasOwnProperty.call(errors, error)
+      ? errors[error as keyof typeof errors]
+      : errors.failed
+    : null;
 
   // OAuth is web-only for now: inside the Capacitor shell the provider
   // redirect isn't allowNavigation-listed, so it bounces to the system
@@ -72,8 +84,7 @@ export default async function LoginPage({
               <Input id="password" name="password" type="password" required />
             </div>
 
-            {message && <p className="text-sm text-neutral-600">{message}</p>}
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {errorText && <p className="text-sm text-red-600">{errorText}</p>}
 
             <SubmitButton className="w-full" pendingLabel={a.submit}>
               {a.submit}

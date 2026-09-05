@@ -40,7 +40,7 @@ export const LAYERS_MAX_LAYERS = 17;
 export const LAYERS_COVERED_LAYERS = 16;
 
 // Upload-lane caps, enforced here BEFORE any money moves and at the bucket
-// as the backstop (pending-2026-09-03/layers.sql). 20 MB and the three
+// as the backstop (applied/2026-09-03/layers.sql). 20 MB and the three
 // browser image types; a short side under 512 px produces layers too soft
 // to be worth 2 credits.
 export const LAYERS_MAX_BYTES = 20 * 1024 * 1024;

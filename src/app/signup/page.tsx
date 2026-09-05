@@ -43,6 +43,16 @@ export default async function SignupPage({
   const { t } = await getServerMessages();
   const a = t.auth.signup;
 
+  // ?error is a CODE mapped to translated wording, never printed text — same
+  // rule as the login page (see lib/auth/actions.ts). Unknown codes get the
+  // generic signup line.
+  const errors = t.auth.errors;
+  const errorText = error
+    ? Object.prototype.hasOwnProperty.call(errors, error)
+      ? errors[error as keyof typeof errors]
+      : errors.signupFailed
+    : null;
+
   // OAuth is web-only for now — same gate as the login page: inside the
   // Capacitor shell the provider redirect bounces to the system browser and
   // the session strands in Chrome, never reaching the app.
@@ -194,7 +204,7 @@ export default async function SignupPage({
               </span>
             </label>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {errorText && <p className="text-sm text-red-600">{errorText}</p>}
 
             <SubmitButton className="w-full" pendingLabel={a.submit}>
               {a.submit}

@@ -35,7 +35,7 @@ import type { AttemptLog } from "@/lib/generations/pipeline";
 import { getDialogueCreditWeight } from "@/lib/generations/providers/video-models";
 
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
-import { notifyUser } from "@/lib/push/send";
+import { notifyUser, type PushMessage } from "@/lib/push/send";
 
 // Fire-and-poll orchestrator.
 //
@@ -190,7 +190,9 @@ const ADVANCE_LEASE_SECONDS = 90;
 // this propagate so the webhook 500s (fal retries), the client poll errors and
 // retries, and the reaper leaves the row for the next pass.
 /** A lane's own notification copy and deep link, for finish(). */
-type LaneNotice = { title: string; body: string; path: string };
+// A message KEY, not words — the push sender resolves the text per device
+// from the locale it registered with (see lib/push/send.ts).
+type LaneNotice = { message: PushMessage; path: string };
 
 class CriticalWriteError extends Error {
   constructor(message: string) {
@@ -949,16 +951,13 @@ async function finish(
   // Every lane before Layers produced a video, so the copy was hardcoded;
   // an image lane hands finish() its own words and its own deep link.
   void notifyUser(userId, {
-    title:
-      outcome.notify?.title ??
-      (outcome.status === "succeeded" ? "Your video is ready" : "That generation didn't finish"),
-    body:
-      outcome.notify?.body ??
+    message:
+      outcome.notify?.message ??
       (outcome.status === "succeeded"
-        ? "Tap to watch it."
+        ? { key: "videoReady" }
         : refunded
-          ? "Tap to see what happened — the credits it used were released."
-          : "Tap to see what happened."),
+          ? { key: "videoFailedRefunded" }
+          : { key: "videoFailed" }),
     path: outcome.notify?.path ?? `/app/history/${generationId}`,
   });
 
@@ -1013,31 +1012,65 @@ async function finish(
   // credit when the retry also misses, which is a product decision and a
   // billing change, not a scoring change. Recording it first is what makes
   // that decision answerable with data instead of opinion.
-  if (outcome.status === "succeeded" && kind === "video" && gen?.character_profile_id) {
+  if (outcome.status === "succeeded" && kind === "video") {
     try {
-      const { data: character } = await admin
-        .from("character_profiles")
-        .select("reference_image_urls, traits")
-        .eq("id", gen.character_profile_id)
-        .maybeSingle<{
-          reference_image_urls: string[] | null;
-          traits: { hair?: string; distinguishing_features?: string } | null;
-        }>();
+      // One frame grab serves two jobs: the identity score below, and the
+      // poster (2026-09-05 flaw hunt: video tiles had no thumbnails — the
+      // scoring pipeline extracted a perfect still from every clip and threw
+      // it away). Absolute URL, because fal downloads it from its own
+      // network — the stored form is a relative /api/media path and
+      // canExtractFrameFrom rejects it, which is how scoring silently
+      // no-op'd from 2026-09-04. Only the wire value changes; result_url
+      // above stays relative.
+      const frameUrl = await extractVideoFrame(providerDownloadUrl(outcome.resultUrl));
+
+      // The poster: the frame's bytes, stored at a deterministic path in
+      // generated-images (already served by the media route and swept by
+      // account deletion) and recorded on the row so grids can paint a still
+      // instead of mounting a video element. Best-effort like everything
+      // else here; the daily reconcile cron backfills any row this misses.
+      if (frameUrl) {
+        try {
+          const frameRes = await fetch(frameUrl, { signal: AbortSignal.timeout(15_000) });
+          if (frameRes.ok) {
+            const posterUrl = await persistImageBytes(
+              admin,
+              userId,
+              `${userId}/posters/${generationId}.jpg`,
+              new Uint8Array(await frameRes.arrayBuffer()),
+              frameRes.headers.get("content-type") ?? "image/jpeg",
+            );
+            const { error: posterError } = await admin
+              .from("generations")
+              .update({ poster_url: posterUrl })
+              .eq("id", generationId);
+            if (posterError) console.warn("Couldn't save the poster url:", posterError.message);
+          }
+        } catch (err) {
+          console.warn("Poster save failed; the render is unaffected.", err);
+        }
+      }
+
+      const { data: character } = gen?.character_profile_id
+        ? await admin
+            .from("character_profiles")
+            .select("reference_image_urls, traits")
+            .eq("id", gen.character_profile_id)
+            .maybeSingle<{
+              reference_image_urls: string[] | null;
+              traits: { hair?: string; distinguishing_features?: string } | null;
+            }>()
+        : { data: null };
 
       // Photo #1 is the identity anchor, matching the image lane exactly —
       // scoring against a different photo than the one the product calls
       // "the identity photo" would make the two numbers incomparable.
       const identityPath = character?.reference_image_urls?.[0];
-      if (identityPath) {
-        const [{ data: signedIdentity }, frameUrl] = await Promise.all([
-          admin.storage.from("character-references").createSignedUrl(identityPath, 600),
-          // Absolute, because fal downloads it from its own network — the
-          // stored form is a relative /api/media path and canExtractFrameFrom
-          // rejects it, which is how scoring silently no-op'd from 2026-09-04.
-          // Only the wire value changes; result_url above stays relative.
-          extractVideoFrame(providerDownloadUrl(outcome.resultUrl)),
-        ]);
-        if (signedIdentity?.signedUrl && frameUrl) {
+      if (identityPath && frameUrl) {
+        const { data: signedIdentity } = await admin.storage
+          .from("character-references")
+          .createSignedUrl(identityPath, 600);
+        if (signedIdentity?.signedUrl) {
           const traitSummary = [
             character?.traits?.hair ? `hair: ${character.traits.hair}` : null,
             character?.traits?.distinguishing_features
@@ -1408,8 +1441,7 @@ export async function advanceGeneration(
           "generate",
         ),
         notify: {
-          title: "Your layers are ready",
-          body: `${layers.length} layers — tap to open the stack.`,
+          message: { key: "layersReady", params: { n: layers.length } },
           path: `/app/layers/${generationId}`,
         },
       });

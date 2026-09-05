@@ -59,9 +59,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(
-    `${origin}/login?error=${encodeURIComponent(
-      "That confirmation link is invalid or has expired — please sign in, or sign up again.",
-    )}`,
-  );
+  // A code, not text — the login page maps it to its own translated wording
+  // (see lib/auth/actions.ts for why the pages never print URL text).
+  return NextResponse.redirect(`${origin}/login?error=link`);
 }

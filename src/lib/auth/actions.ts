@@ -6,6 +6,7 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getOrigin } from "@/lib/origin";
 import { notifyAdmins } from "@/lib/push/web-push";
 import { rateLimited, hashedRateKey } from "@/lib/rate-limit";
+import { isDisposableEmail } from "@/lib/auth/disposable-domains";
 
 // Pre-auth throttling (2026-09-05 audit). These are server actions, so the
 // auth request Supabase sees comes from VERCEL'S egress address — its
@@ -18,6 +19,13 @@ async function callerIp(): Promise<string | null> {
   return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
 }
 
+// Errors travel to /login and /signup as CODES, never as text (2026-09-05
+// flaw hunt): the pages used to print whatever ?error= carried — a crafted
+// link could put attacker-chosen wording in the site's own error slot on the
+// exact page where people type passwords, and real failures leaked the
+// provider's raw English internals. The pages map each code to their own
+// translated wording (t.auth.errors) and show a generic line for anything
+// unrecognized.
 export async function login(formData: FormData) {
   const supabase = await createClient();
 
@@ -28,20 +36,27 @@ export async function login(formData: FormData) {
   // account trips the second bucket even when each attacking address stays
   // under the first. 10/15min per email is far above any human retyping a
   // password and matches the password-verify ceiling's reasoning.
-  const throttledMessage = "Too many attempts — wait a minute and try again.";
   const ip = await callerIp();
   if (await rateLimited(hashedRateKey(ip, "login-ip"), "login-ip", 60, 10)) {
-    redirect(`/login?error=${encodeURIComponent(throttledMessage)}`);
+    redirect("/login?error=throttled");
   }
   const emailKey = String(email ?? "").trim().toLowerCase();
   if (await rateLimited(hashedRateKey(emailKey, "login-email"), "login-email", 15 * 60, 10)) {
-    redirect(`/login?error=${encodeURIComponent(throttledMessage)}`);
+    redirect("/login?error=throttled");
   }
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
   if (error) {
-    redirect(`/login?error=${encodeURIComponent(error.message)}`);
+    // The two answers a person can act on get their own codes; everything
+    // else — outages, config drift — is one generic retry line rather than
+    // provider internals that leak account-state differences.
+    const code = /invalid login credentials/i.test(error.message)
+      ? "invalid"
+      : /email not confirmed/i.test(error.message)
+        ? "unconfirmed"
+        : "failed";
+    redirect(`/login?error=${code}`);
   }
 
   redirect("/app");
@@ -54,7 +69,7 @@ export async function signup(formData: FormData) {
   // further down both cost a query, and the distinct "already exists"
   // answer was bulk-harvestable at line speed without this.
   if (await rateLimited(hashedRateKey(await callerIp(), "signup-ip"), "signup-ip", 60 * 60, 10)) {
-    redirect(`/signup?error=${encodeURIComponent("Too many attempts — wait a while and try again.")}`);
+    redirect("/signup?error=throttled");
   }
 
   // Re-checked here, not just hidden in the UI — the signup page itself
@@ -67,7 +82,7 @@ export async function signup(formData: FormData) {
     .eq("key", "signups_enabled")
     .maybeSingle();
   if (flag?.enabled === false) {
-    redirect(`/signup?error=${encodeURIComponent("New signups are currently closed.")}`);
+    redirect("/signup?error=closed");
   }
 
   const email = formData.get("email") as string;
@@ -78,17 +93,21 @@ export async function signup(formData: FormData) {
   const company = ((formData.get("company") as string) ?? "").trim();
 
   if (!fullName || fullName.length > 80) {
-    redirect(`/signup?error=${encodeURIComponent("Please enter your name.")}`);
+    redirect("/signup?error=name");
   }
   if (!/^[a-z0-9_]{3,24}$/.test(username)) {
-    redirect(
-      `/signup?error=${encodeURIComponent(
-        "Username must be 3-24 characters: lowercase letters, numbers, and underscores.",
-      )}`,
-    );
+    redirect("/signup?error=username");
   }
   if (company.length > 120) {
-    redirect(`/signup?error=${encodeURIComponent("Company name is too long.")}`);
+    redirect("/signup?error=company");
+  }
+
+  // Disposable-address screen (2026-09-05 flaw hunt: free-account farming
+  // needs nothing but a throwaway inbox). High-confidence list only, and it
+  // fails open — see disposable-domains.ts. Checked before any query is
+  // spent on this address.
+  if (isDisposableEmail(email)) {
+    redirect("/signup?error=disposable");
   }
 
   // Required checkbox gates account creation — see the Content Policy's
@@ -97,11 +116,7 @@ export async function signup(formData: FormData) {
   // affirmative record that the person agreed before we ever let them
   // generate anything.
   if (!agreed) {
-    redirect(
-      `/signup?error=${encodeURIComponent(
-        "You must agree to the Terms of Service, Privacy Policy, and Content Policy to create an account.",
-      )}`,
-    );
+    redirect("/signup?error=terms");
   }
 
   // Authoritative already-registered check, BEFORE spending a signUp call.
@@ -127,11 +142,7 @@ export async function signup(formData: FormData) {
     const admin = createAdminClient();
     const { data: status } = await admin.rpc("auth_email_status", { p_email: email });
     if (status === "confirmed") {
-      redirect(
-        `/signup?error=${encodeURIComponent(
-          "An account with this email already exists. Log in instead, or reset your password if you've forgotten it.",
-        )}`,
-      );
+      redirect("/signup?error=exists");
     }
     // Remembered for below: on 'unconfirmed', signUp() RESENDS confirmation
     // for the EXISTING account and returns the victim's real user — the
@@ -170,7 +181,14 @@ export async function signup(formData: FormData) {
   });
 
   if (error) {
-    redirect(`/signup?error=${encodeURIComponent(error.message)}`);
+    // Same code treatment as login: the two actionable answers by name,
+    // everything else generic instead of the provider's raw wording.
+    const code = /password/i.test(error.message)
+      ? "password"
+      : /email/i.test(error.message) && /invalid|validate/i.test(error.message)
+        ? "bademail"
+        : "signupFailed";
+    redirect(`/signup?error=${code}`);
   }
 
   // Supabase does NOT return an error when the email already belongs to a
@@ -191,11 +209,7 @@ export async function signup(formData: FormData) {
   // identity attached, so it falls through to the "check your email" screen
   // and Supabase resends the confirmation, which is exactly right.
   if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
-    redirect(
-      `/signup?error=${encodeURIComponent(
-        "An account with this email already exists. Log in instead, or reset your password if you've forgotten it.",
-      )}`,
-    );
+    redirect("/signup?error=exists");
   }
 
   // The profiles row is created by a database trigger on auth.users insert,

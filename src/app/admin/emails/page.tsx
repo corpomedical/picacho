@@ -62,7 +62,7 @@ export default async function AdminEmailsPage({
     supabase.from("profiles").select("email, username, plan").eq("id", userId).single(),
   ]);
 
-  // The tables ship in supabase/pending-2026-08-19/email.sql — until it's
+  // The tables ship in supabase/applied/2026-08-19/email.sql — until it's
   // applied, say so plainly instead of rendering a page where every button
   // fails with a generic banner.
   if (templatesRes.error) {
@@ -75,7 +75,7 @@ export default async function AdminEmailsPage({
         <Card className="mt-6 border-amber-200 bg-amber-50">
           <p className="text-sm text-amber-800">
             The email tables aren&apos;t in the database yet. Apply{" "}
-            <code className="font-mono text-[13px]">supabase/pending-2026-08-19/email.sql</code> to
+            <code className="font-mono text-[13px]">supabase/applied/2026-08-19/email.sql</code> to
             the live project, then reload this page.
           </p>
         </Card>
