@@ -1,16 +1,42 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getOrigin } from "@/lib/origin";
 import { notifyAdmins } from "@/lib/push/web-push";
+import { rateLimited, hashedRateKey } from "@/lib/rate-limit";
+
+// Pre-auth throttling (2026-09-05 audit). These are server actions, so the
+// auth request Supabase sees comes from VERCEL'S egress address — its
+// built-in per-IP limits cannot tell an attacker from everyone else, and
+// nothing else limited login, signup, or the username probe at all
+// (credential stuffing, signup farming, and account enumeration all ran at
+// line speed). The limiter fails closed, same policy as every other caller.
+async function callerIp(): Promise<string | null> {
+  const h = await headers();
+  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || null;
+}
 
 export async function login(formData: FormData) {
   const supabase = await createClient();
 
   const email = formData.get("email") as string;
   const password = formData.get("password") as string;
+
+  // Per-IP first, then per-target-email — distributed stuffing against one
+  // account trips the second bucket even when each attacking address stays
+  // under the first. 10/15min per email is far above any human retyping a
+  // password and matches the password-verify ceiling's reasoning.
+  const throttledMessage = "Too many attempts — wait a minute and try again.";
+  const ip = await callerIp();
+  if (await rateLimited(hashedRateKey(ip, "login-ip"), "login-ip", 60, 10)) {
+    redirect(`/login?error=${encodeURIComponent(throttledMessage)}`);
+  }
+  const emailKey = String(email ?? "").trim().toLowerCase();
+  if (await rateLimited(hashedRateKey(emailKey, "login-email"), "login-email", 15 * 60, 10)) {
+    redirect(`/login?error=${encodeURIComponent(throttledMessage)}`);
+  }
 
   const { error } = await supabase.auth.signInWithPassword({ email, password });
 
@@ -23,6 +49,13 @@ export async function login(formData: FormData) {
 
 export async function signup(formData: FormData) {
   const supabase = await createClient();
+
+  // Before anything else — the flag read below and the email-status probe
+  // further down both cost a query, and the distinct "already exists"
+  // answer was bulk-harvestable at line speed without this.
+  if (await rateLimited(hashedRateKey(await callerIp(), "signup-ip"), "signup-ip", 60 * 60, 10)) {
+    redirect(`/signup?error=${encodeURIComponent("Too many attempts — wait a while and try again.")}`);
+  }
 
   // Re-checked here, not just hidden in the UI — the signup page itself
   // already gates on this, but this is the actual enforcement in case
@@ -233,11 +266,16 @@ export async function signup(formData: FormData) {
   redirect("/signup?sent=1");
 }
 
-// Live username check for the signup form. Boolean only, and rate-limited
-// by the debounce client-side; the database function re-validates the
-// format, so garbage input can't probe anything.
+// Live username check for the signup form. Boolean only; the database
+// function re-validates the format, so garbage input can't probe anything.
+// The client debounce is a courtesy, not a limit — the real ceiling is the
+// per-IP bucket below (a limited caller sees "taken", which blocks nothing:
+// signup itself re-validates).
 export async function checkUsernameAvailability(username: string): Promise<boolean> {
   if (typeof username !== "string" || !/^[a-z0-9_]{3,24}$/.test(username)) return false;
+  if (await rateLimited(hashedRateKey(await callerIp(), "username-check"), "username-check", 60, 30)) {
+    return false;
+  }
   const supabase = await createClient();
   const { data } = await supabase.rpc("username_available", { p_username: username });
   return data === true;

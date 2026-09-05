@@ -1,4 +1,21 @@
+import { createHash } from "node:crypto";
 import { createAdminClient } from "@/lib/supabase/server";
+
+// A stable, salted UUID for a pre-auth caller — their network address, or
+// for the per-email buckets the address they are trying to sign in AS — so
+// endpoints with no user id (login, signup, the username probe) can use the
+// same limiter, whose key column is uuid-typed. Hashed and salted, never
+// raw: api_rate_hits must not become a table of visitor IPs or attempted
+// emails. Same construction the public identity-check tool has used since
+// 2026-08-30. An unknown value still limits (one shared bucket) rather than
+// passing unlimited traffic.
+export function hashedRateKey(value: string | null | undefined, scope: string): string {
+  const salt = process.env.SUPABASE_SERVICE_ROLE_KEY ?? "picacho";
+  const h = createHash("sha256")
+    .update(`${scope}:${salt}:${value || "unknown"}`)
+    .digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20, 32)}`;
+}
 
 // Shared per-user, per-feature rate limiter over public.api_rate_check —
 // the atomic advisory-lock check-and-insert in schema.sql, extended with a
