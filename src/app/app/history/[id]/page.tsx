@@ -390,7 +390,13 @@ export default async function HistoryDetailPage({
                     // the paper chrome instead of butting against it.
                     <div className="relative overflow-hidden rounded-[18px] bg-atelier-stage p-2">
                       <ZoomableImage
-                        src={generation.result_url}
+                        // Displayed at screen size through the resizing route
+                        // (2026-09-05 slowness check: this was the raw stored
+                        // PNG — 1.5-2.3MB for the page's main image, several
+                        // seconds of paint on an ordinary connection, on the
+                        // page every render lands on). ~150KB webp instead;
+                        // the download below keeps the untouched original.
+                        src={thumbUrl(generation.result_url, 1600) ?? generation.result_url}
                         alt={generation.prompt_input || t.generate.resultAlt}
                         className="w-full rounded-[6px] object-cover"
                         downloadUrl={generation.result_url}

@@ -114,10 +114,14 @@ export async function GET(request: Request) {
 
   // Poster backfill (2026-09-05): finished videos now save a poster frame at
   // collect time, but everything rendered before today has none, and the
-  // collect path's save is best-effort. Twenty-five a day at fal's
-  // $0.0002/second frame price is under three cents — the whole history
-  // grows stills within a couple of weeks. Newest first, because those are
-  // the tiles people actually scroll past.
+  // collect path's save is best-effort. Raised from 25 to 300 per run the
+  // same day (operator slowness report): a posterless video TILE mounts a
+  // <video> whose moov index sits at the file's tail — header probe, tail
+  // fetch, then the frame, three uncacheable range trips through a function
+  // per tile — so every poster is a grid paint fixed. 300 covers the whole
+  // current backlog in one run for well under a dollar at fal's
+  // $0.0002/second frame price. Newest first, because those are the tiles
+  // people actually scroll past.
   let postersFilled = 0;
   try {
     const { data: bare } = await admin
@@ -127,8 +131,13 @@ export async function GET(request: Request) {
       .eq("status", "succeeded")
       .is("poster_url", null)
       .order("created_at", { ascending: false })
-      .limit(25);
+      .limit(300);
+    // Frame grabs run a few seconds each, so 300 can outlast the function's
+    // own 300s ceiling — stop with headroom and let tomorrow's run take the
+    // remainder rather than being cut mid-write.
+    const deadline = Date.now() + 220_000;
     for (const row of bare ?? []) {
+      if (Date.now() > deadline) break;
       try {
         const frameUrl = await extractVideoFrame(providerDownloadUrl(row.result_url as string));
         if (!frameUrl) continue;
