@@ -4,7 +4,7 @@ import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
-import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
+import { toMediaUrl, mediaUrl, isRenderableUrl } from "@/lib/media/url";
 import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
 import { GalleryShowcase, type ShowcaseItem } from "@/components/gallery-showcase";
 
@@ -74,14 +74,42 @@ async function getFeaturedItems(): Promise<ShowcaseItem[]> {
       .limit(60);
     if (error || !data) return [];
 
+    // Watermark policy (operator, 2026-09-06): the mark is burned into
+    // PUBLIC copies only — owners keep pristine originals everywhere else in
+    // the product. Branded videos live at <user>/wm/<file> next to the
+    // original; the gallery serves the branded copy when one exists and
+    // falls back to the original when it doesn't (legacy features, or the
+    // burn not run yet). One storage list per owner folder — featured rows
+    // are admin-owned, so this is typically a single call.
+    const wmByUser = new Map<string, Set<string>>();
+    async function wmSet(user: string): Promise<Set<string>> {
+      const cached = wmByUser.get(user);
+      if (cached) return cached;
+      const { data: files } = await admin.storage
+        .from("generated-videos")
+        .list(`${user}/wm`, { limit: 200 });
+      const set = new Set((files ?? []).map((f) => f.name));
+      wmByUser.set(user, set);
+      return set;
+    }
+
     const items: ShowcaseItem[] = [];
     for (const row of data) {
       // toMediaUrl re-signs stored /api/media and legacy signed URLs under
       // the current key and passes provider URLs (fal.media video results)
       // through untouched; anything not renderable is skipped, never a
       // broken tile.
-      const url = toMediaUrl(row.result_url);
+      let url = toMediaUrl(row.result_url);
       if (!url || !isRenderableUrl(url)) continue;
+      if (row.content_type === "video") {
+        const m = url.match(/^\/api\/media\/generated-videos\/([^/]+)\/([^/?]+)/);
+        if (m) {
+          const [, user, file] = m;
+          if ((await wmSet(user)).has(decodeURIComponent(file))) {
+            url = mediaUrl("generated-videos", `${user}/wm/${decodeURIComponent(file)}`);
+          }
+        }
+      }
       const rawScore = row.match_score;
       items.push({
         id: row.id,
