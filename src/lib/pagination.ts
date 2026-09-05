@@ -25,6 +25,10 @@ export const PAGE_SIZES = {
   media: 90,
   images: 60,
   videos: 60,
+  // Added 2026-09-05 (audit): the feed was a bare .limit(48) with no pager,
+  // so any post older than the 48 newest — including one behind a shared
+  // permalink — simply vanished from the product.
+  community: 48,
 } as const;
 
 export type PagedSurface = keyof typeof PAGE_SIZES;

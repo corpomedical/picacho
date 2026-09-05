@@ -1,7 +1,8 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
+import { persistGeneratedVideo } from "@/lib/generations/core";
 
 // Community feed actions — thin wrappers over the SQL in
 // supabase/pending-2026-08-21/community.sql. Sharing and reporting go
@@ -16,6 +17,41 @@ export async function shareToCommunity(
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again.", postId: null };
+
+  // The RPC snapshots the generation's media url into the post FOREVER, and
+  // a video row can still hold a raw provider-CDN url: pre-2026-09-04 rows
+  // were backfilled, but the live persist path falls back to the provider on
+  // any failure (the Free-plan 50MB storage cap included). Snapshotting that
+  // bakes a link with no persistence promise into the public feed, where it
+  // eventually dies for every viewer and nothing ever re-derives it. Move
+  // the file into our bucket first; if the copy fails, share what exists
+  // today rather than blocking the share.
+  const { data: gen } = await supabase
+    .from("generations")
+    .select("result_url, content_type")
+    .eq("id", generationId)
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  if (
+    gen?.content_type === "video" &&
+    typeof gen.result_url === "string" &&
+    /^https?:\/\//.test(gen.result_url)
+  ) {
+    const admin = createAdminClient();
+    const persisted = await persistGeneratedVideo(admin, userData.user.id, gen.result_url);
+    if (persisted) {
+      const { error: repointError } = await admin
+        .from("generations")
+        .update({ result_url: persisted })
+        .eq("id", generationId)
+        .eq("user_id", userData.user.id);
+      if (repointError) {
+        // The RPC below would then snapshot the old url — log loudly, the
+        // share itself still goes through.
+        console.error("shareToCommunity couldn't repoint the persisted video:", repointError.message);
+      }
+    }
+  }
 
   const { data, error } = await supabase.rpc("share_to_community", {
     p_generation_id: generationId,
