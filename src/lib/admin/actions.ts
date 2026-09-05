@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { USER_STORAGE_BUCKETS } from "@/lib/profile/storage-buckets";
+import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
@@ -168,35 +168,15 @@ export async function deleteUser(formData: FormData) {
   }
 
   // Purge the user's Storage files before deleting the account. Every file a
-  // user uploads or generates lives under a `${userId}/...` path in these
+  // user uploads or generates lives under a `${userId}/...` path in the user
   // buckets. The DB rows cascade automatically when the auth user is deleted,
   // but Storage objects don't — without this they'd sit orphaned and billed
-  // with no record left to find them by. Mirrors the account self-deletion
-  // flow in profile/actions.ts. Best-effort: a storage hiccup must not block
-  // the actual account deletion below.
-  const PAGE = 1000;
-  for (const bucket of USER_STORAGE_BUCKETS) {
-    try {
-      // Page through the full listing rather than deleting a single 1000-object
-      // page — a prolific user can have far more than that, and a single page
-      // would orphan everything past the first 1000 (billed storage with no DB
-      // row left to find it by). Collect all keys against the unchanged bucket,
-      // then delete in batches; deleting per-page would shift the offset window
-      // and skip files. Mirrors profile/actions.ts removeAllUserFiles.
-      const paths: string[] = [];
-      for (let offset = 0; ; offset += PAGE) {
-        const { data: files } = await admin.storage.from(bucket).list(userId, { limit: PAGE, offset });
-        if (!files || files.length === 0) break;
-        for (const f of files as { name: string }[]) paths.push(`${userId}/${f.name}`);
-        if (files.length < PAGE) break;
-      }
-      for (let i = 0; i < paths.length; i += PAGE) {
-        await admin.storage.from(bucket).remove(paths.slice(i, i + PAGE));
-      }
-    } catch {
-      // swallow — proceed to delete the account regardless
-    }
-  }
+  // with no record left to find them by. THE SAME sweep as account
+  // self-deletion, by construction: this used to be a hand-copied loop that
+  // had already drifted from profile/actions.ts' copy (neither recursed into
+  // the Layers subfolder). Best-effort inside: a storage hiccup must not
+  // block the actual account deletion below.
+  await removeAllUserStorage(admin, userId);
 
   const { error } = await admin.auth.admin.deleteUser(userId);
   if (error) {

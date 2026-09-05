@@ -3492,6 +3492,47 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
     await supabase.storage.from("generated-videos").remove(videoPaths);
   }
 
+  // Layers (since 2026-09-03): a Layerize generation additionally owns
+  // per-layer PNGs at `${userId}/layers/${generationId}/z<N>[-vM].png` plus
+  // generation_layers rows — and because the delete above is SOFT, the ON
+  // DELETE CASCADE on generation_layers never fires, the exact trap
+  // community_posts hit and got hand-fixed for. Without this, the cut-outs
+  // (often a person lifted out of their own photo) stayed in storage,
+  // fetchable forever through their capability URLs. The folder is LISTED
+  // rather than reconstructed from rows so edited versions and stragglers go
+  // too; the row delete needs the admin client because generation_layers has
+  // no client write policy on purpose — ownership is already proven by the
+  // user-scoped generations select these ids came from.
+  const { data: layerRows } = await supabase
+    .from("generation_layers")
+    .select("generation_id")
+    .in(
+      "generation_id",
+      rows.map((r) => r.id),
+    );
+  const layerGenIds = [...new Set((layerRows ?? []).map((l) => l.generation_id as string))];
+  if (layerGenIds.length > 0) {
+    for (const genId of layerGenIds) {
+      const folder = `${userData.user.id}/layers/${genId}`;
+      const { data: layerFiles } = await supabase.storage
+        .from("generated-images")
+        .list(folder, { limit: 1000 });
+      if (layerFiles && layerFiles.length > 0) {
+        await supabase.storage
+          .from("generated-images")
+          .remove(layerFiles.map((f) => `${folder}/${f.name}`));
+      }
+    }
+    const { error: layerRowsError } = await createAdminClient()
+      .from("generation_layers")
+      .delete()
+      .in("generation_id", layerGenIds);
+    if (layerRowsError) {
+      // Files are gone either way; log loudly rather than fail the action.
+      console.error("deleteGeneration couldn't remove layer rows:", layerRowsError.message);
+    }
+  }
+
   revalidatePath("/app", "layout");
   revalidatePath("/app/history");
   revalidatePath("/app/images");

@@ -9,46 +9,11 @@ import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
 import { getOrigin } from "@/lib/origin";
 import { rateLimited } from "@/lib/rate-limit";
 // Moved out of this file 2026-09-04: a "use server" module may export only
-// async functions, and exporting this array broke `next build`.
-import { USER_STORAGE_BUCKETS } from "@/lib/profile/storage-buckets";
-
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function removeAllUserFiles(admin: any, userId: string) {
-  // Storage list() returns at most `limit` names per call, so a single
-  // list({ limit: 1000 }) silently stops at 1000 — an account with more than
-  // that many generated images (easily reached over time) would leave every
-  // file past the first page permanently orphaned and billed, and, being a
-  // deletion, unrecoverable.
-  //
-  // Collect every path FIRST by paging with an advancing offset, then remove.
-  // Removing as we page would be wrong: deleting a page shifts every later
-  // object forward in the listing, so the next offset window would skip a
-  // page's worth of files. Reading the whole list against the unchanged bucket
-  // and deleting afterwards avoids that.
-  const PAGE = 1000;
-  for (const bucket of USER_STORAGE_BUCKETS) {
-    try {
-      const paths: string[] = [];
-      for (let offset = 0; ; offset += PAGE) {
-        const { data: files } = await admin.storage
-          .from(bucket)
-          .list(userId, { limit: PAGE, offset });
-        if (!files || files.length === 0) break;
-        for (const f of files as { name: string }[]) paths.push(`${userId}/${f.name}`);
-        if (files.length < PAGE) break;
-      }
-      // remove() also caps the number of keys it accepts per call, so delete
-      // in batches rather than handing it the whole list at once.
-      for (let i = 0; i < paths.length; i += PAGE) {
-        await admin.storage.from(bucket).remove(paths.slice(i, i + PAGE));
-      }
-    } catch {
-      // Best-effort — a storage hiccup here shouldn't block account deletion
-      // itself. Worst case, a follow-up cleanup pass can catch anything missed.
-    }
-  }
-}
+// async functions, and exporting this array broke `next build`. The sweep
+// itself followed 2026-09-05, when the audit found this file's copy and
+// admin/actions.ts' copy already differed in what they could see (neither
+// recursed into the Layers subfolder) — one implementation now serves both.
+import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
 
 type ActionResult = { error: string | null };
 
@@ -474,7 +439,7 @@ export async function deleteAccount() {
     );
   }
 
-  await removeAllUserFiles(admin, userId);
+  await removeAllUserStorage(admin, userId);
 
   const { error } = await admin.auth.admin.deleteUser(userId);
 
