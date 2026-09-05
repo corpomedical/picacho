@@ -41,9 +41,18 @@
   --color-atelier-paper: #f1f1ef;   /* solid fallback ground (chips, banner tops) */
   --color-atelier-surface: rgba(255, 255, 255, 0.85); /* glass sheet: cards, popovers */
   --color-atelier-ink: #23252d;     /* primary ink */
-  --color-atelier-muted: #7b7f8b;   /* secondary ink: labels, inactive nav */
+  /* Darkened from #7b7f8b (2026-09-05 audit): that value was 3.54:1 on paper
+     and 3.94:1 on the glass sheet — below the 4.5:1 AA floor — and it is the
+     app's ENTIRE secondary voice, 555 uses, two thirds of them at xs/sm.
+     #666a73 measures 4.79:1 on paper and 5.34:1 on glass, same cool-neutral
+     hue. Dark theme untouched (its twin already measured 6.6:1+). */
+  --color-atelier-muted: #666a73;   /* secondary ink: labels, inactive nav */
   --color-atelier-rule: rgba(35, 37, 45, 0.1); /* hairlines over glass */
-  --color-atelier-accent: #b45a28;  /* ochre — reserved for proof: scores, credits, active states */
+  /* Was #b45a28 — 4.19:1 on paper, failing AA for the xs-size proof numbers
+     (scores, credits) that are this color's whole job. #a84e24 measures
+     4.91:1/5.47:1 AND is the marketing site's --color-ochre, which closes
+     the long-parked "two ochres, one decision" item in marketing's favor. */
+  --color-atelier-accent: #a84e24;  /* ochre — reserved for proof: scores, credits, active states */
   --frost-gradient: linear-gradient(135deg, #eef1f8 0%, #f7f1ea 55%, #f0ece2 100%);
   --frost-top: #eef1f8;             /* the gradient's origin — status-bar strip color */
   /* Borderless surfaces (the composer, per operator: "remove the lines, add

@@ -87,6 +87,11 @@ export function ShowcaseVideoPlayer({
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+    // The one motion surface the reduced-motion pass forgot: every CSS
+    // animation in globals.css is gated, but the largest, longest-running
+    // motion on the page — autoplaying video — wasn't. Reduced-motion users
+    // keep the poster and the play button; nothing starts on its own.
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries.some((e) => e.isIntersecting)) {

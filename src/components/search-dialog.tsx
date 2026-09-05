@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useTransition, type SVGProps } from "react
 import { useRouter } from "next/navigation";
 import { searchAll, type SearchResults } from "@/lib/search/actions";
 import { useBackCloser } from "@/lib/native/back-stack";
+import { useModalFocus } from "@/lib/use-modal-focus";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -74,31 +75,10 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, onClose]);
 
-  // Basic focus trap — previously Tab could escape the dialog into the page
-  // behind it while the dialog was still visually "open" and modal-like.
-  useEffect(() => {
-    if (!open) return;
-    function onKeyDown(e: KeyboardEvent) {
-      if (e.key !== "Tab") return;
-      const dialog = dialogRef.current;
-      if (!dialog) return;
-      const focusable = dialog.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open]);
+  // The shared aria-modal focus contract — trap AND restore-on-close (the
+  // hand-rolled trap this replaced never handed focus back, so closing the
+  // dialog dropped a keyboard user at the top of the page).
+  useModalFocus(open, dialogRef);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -151,7 +131,7 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={se.placeholder}
-            className="flex-1 bg-transparent text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/60"
+            className="flex-1 bg-transparent text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80"
           />
           <button
             type="button"

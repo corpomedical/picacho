@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useBackCloser } from "@/lib/native/back-stack";
+import { useModalFocus } from "@/lib/use-modal-focus";
 import { useLocale } from "@/lib/i18n/provider";
 import {
   recordCommunityView,
@@ -207,6 +208,9 @@ export function CommunityFeed({
   // Android hardware back closes the full-screen viewer instead of leaving
   // the community page underneath it.
   useBackCloser(feedOpen, () => setFeedIndex(null));
+  // aria-modal's focus contract — see lib/use-modal-focus.ts.
+  const pagerRef = useRef<HTMLDivElement>(null);
+  useModalFocus(feedOpen, pagerRef);
 
   // Deep link: open once, on mount, if the post is in the loaded set.
   useEffect(() => {
@@ -391,7 +395,7 @@ export function CommunityFeed({
               key={post.id}
               type="button"
               onClick={() => setFeedIndex(i)}
-              aria-label={post.caption ?? post.prompt ?? "Community post"}
+              aria-label={post.caption ?? post.prompt ?? t.common.communityPost}
               className={cn(
                 "group relative overflow-hidden bg-atelier-stage text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-atelier-accent",
                 featured ? "col-span-2 row-span-2" : "cv-auto aspect-square",
@@ -442,7 +446,7 @@ export function CommunityFeed({
 
       {/* The feed: full-screen vertical swipe pager. */}
       {feedOpen && (
-        <div role="dialog" aria-modal="true" aria-label={c.title} className="fixed inset-0 z-[95] bg-[#0c0d11]">
+        <div ref={pagerRef} role="dialog" aria-modal="true" aria-label={c.title} className="fixed inset-0 z-[95] bg-[#0c0d11]">
           <div
             ref={scrollerRef}
             className="h-full w-full snap-y snap-mandatory overflow-y-auto overscroll-contain"
@@ -657,7 +661,7 @@ export function CommunityFeed({
                         placeholder={g.reportDetailsPlaceholder}
                         rows={2}
                         maxLength={1000}
-                        className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/70 focus:border-atelier-accent focus:outline-none"
+                        className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/80 focus:border-atelier-accent focus:outline-none"
                       />
                       <button
                         type="button"
@@ -679,7 +683,7 @@ export function CommunityFeed({
 
           <button
             type="button"
-            aria-label="Close"
+            aria-label={t.common.close}
             onClick={() => setFeedIndex(null)}
             className="absolute right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec] backdrop-blur-md"
             style={{ top: "calc(env(safe-area-inset-top) + 12px)" }}

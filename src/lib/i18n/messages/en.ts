@@ -12,6 +12,10 @@ const en = {
   common: {
     prev: "Previous",
     next: "Next",
+    close: "Close",
+    dismiss: "Dismiss",
+    language: "Language",
+    communityPost: "Community post",
     toggleOn: "ON",
     toggleOff: "OFF",
     // US-only native handoff to website checkout (lib/native/external-purchase).

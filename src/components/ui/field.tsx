@@ -6,7 +6,7 @@ import { cn } from "@/lib/cn";
 // only ever marks focus. Transparent background so the field sits on
 // whatever ground it's printed on — paper page or surface sheet.
 const fieldStyles =
-  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
+  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
 
 export function Label({ className, ...props }: LabelHTMLAttributes<HTMLLabelElement>) {
   return (

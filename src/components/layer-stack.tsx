@@ -240,7 +240,7 @@ function LayerEditor({ layerId, credits, scored, onDone }: {
         }}
         placeholder={L.changePlaceholder}
         disabled={pending}
-        className="mt-1.5 w-full resize-none rounded-control border border-atelier-rule bg-atelier-paper px-3 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/70 focus:border-atelier-muted disabled:opacity-60"
+        className="mt-1.5 w-full resize-none rounded-control border border-atelier-rule bg-atelier-paper px-3 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 focus:border-atelier-muted disabled:opacity-60"
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="text-[11px] leading-snug text-atelier-muted">

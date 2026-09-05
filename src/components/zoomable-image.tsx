@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useBackCloser } from "@/lib/native/back-stack";
+import { useLocale } from "@/lib/i18n/provider";
 import { MediaActionBar } from "@/components/media-action-bar";
 
 // A result image that expands to a fullscreen viewer on tap — the thing
@@ -35,6 +36,7 @@ export function ZoomableImage({
   ownerActions?: boolean;
   redirectAfterDelete?: string;
 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   // Android hardware back closes the zoom instead of navigating under it.
   useBackCloser(open, () => setOpen(false));
@@ -91,7 +93,7 @@ export function ZoomableImage({
           </div>
           <button
             type="button"
-            aria-label="Close"
+            aria-label={t.common.close}
             onClick={() => setOpen(false)}
             className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#f5f1e9]/10 text-[#f5f1e9] backdrop-blur-sm"
             style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}

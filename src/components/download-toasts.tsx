@@ -85,7 +85,7 @@ export function DownloadToasts() {
           </span>
           <button
             type="button"
-            aria-label="Dismiss"
+            aria-label={t.common.dismiss}
             onClick={() => setToasts((prev) => prev.filter((x) => x.id !== toast.id))}
             className="flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
           >

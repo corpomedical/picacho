@@ -92,7 +92,7 @@ export function FeedbackLink({
                 rows={3}
                 maxLength={2000}
                 autoFocus
-                className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent"
+                className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent"
               />
               {error && <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
               <button

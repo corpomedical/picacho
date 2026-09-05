@@ -116,7 +116,7 @@ export function CommunityShareButton({
             onChange={(e) => setCaption(e.target.value)}
             placeholder={c.captionPlaceholder}
             maxLength={200}
-            className="mt-2 w-full rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/70 focus:border-atelier-accent focus:outline-none"
+            className="mt-2 w-full rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/80 focus:border-atelier-accent focus:outline-none"
           />
           {error && <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
           <button

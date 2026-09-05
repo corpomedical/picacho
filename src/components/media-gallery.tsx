@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { QuietVideo } from "@/components/quiet-video";
-import { useEffect, useState, type SVGProps } from "react";
+import { useEffect, useRef, useState, type SVGProps } from "react";
 import { Badge } from "@/components/ui/badge";
 import { LocalDate } from "@/components/local-date";
 import { MediaActionBar } from "@/components/media-action-bar";
 import { formatMsg } from "@/lib/i18n/format";
+import { useLocale } from "@/lib/i18n/provider";
+import { useModalFocus } from "@/lib/use-modal-focus";
 
 export type GalleryItem = {
   id: string;
@@ -61,7 +63,12 @@ export function MediaGallery({
     angleCountOther: string;
   };
 }) {
+  const { t } = useLocale();
   const [viewer, setViewer] = useState<GalleryItem | null>(null);
+  // aria-modal's focus contract — into the dialog, trapped, restored on
+  // close. See lib/use-modal-focus.ts.
+  const viewerRef = useRef<HTMLDivElement>(null);
+  useModalFocus(viewer !== null, viewerRef);
   // Rows deleted from inside the viewer, hidden without a server round-trip —
   // the next server render won't include them anyway (deleted_at filter).
   const [hiddenIds, setHiddenIds] = useState<Set<string>>(new Set());
@@ -204,6 +211,7 @@ export function MediaGallery({
 
     {viewer && viewerUrl && (
       <div
+        ref={viewerRef}
         role="dialog"
         aria-modal="true"
         onClick={() => setViewer(null)}
@@ -245,7 +253,7 @@ export function MediaGallery({
         </div>
         <button
           type="button"
-          aria-label="Close"
+          aria-label={t.common.close}
           onClick={() => setViewer(null)}
           className="absolute right-4 flex h-9 w-9 items-center justify-center rounded-full bg-[#f5f1e9]/10 text-[#f5f1e9] backdrop-blur-sm"
           style={{ top: "calc(env(safe-area-inset-top) + 1rem)" }}

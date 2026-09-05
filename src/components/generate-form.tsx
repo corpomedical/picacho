@@ -2789,6 +2789,26 @@ function GenerateFormInner({
     return () => document.removeEventListener("mousedown", onClick);
   }, [durationMenuOpen]);
 
+  // Escape closes whichever popup is open (2026-09-05 audit): the triggers
+  // advertise aria-haspopup, promising standard popup behavior, but the four
+  // menus above closed ONLY on an outside mousedown — a keyboard user who
+  // opened the model picker with Enter had no way to dismiss it. These are
+  // lightweight popovers, not modals, so no focus trap: for a keyboard user
+  // the trigger is usually still the focused element, which is exactly
+  // where Escape should leave them.
+  useEffect(() => {
+    if (!characterMenuOpen && !plusMenuOpen && !videoModelMenuOpen && !durationMenuOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      setCharacterMenuOpen(false);
+      setPlusMenuOpen(false);
+      setVideoModelMenuOpen(false);
+      setDurationMenuOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [characterMenuOpen, plusMenuOpen, videoModelMenuOpen, durationMenuOpen]);
+
   // Composer + menu — "Create image"/"Create video" set the content type
   // directly (Picacho has no separate style-template gallery like Gemini's,
   // it generates from the character + prompt) and flip on the small mode
@@ -7083,10 +7103,13 @@ function GenerateFormInner({
                             prev.map((s) => (s.id === shot.id ? { ...s, prompt: e.target.value } : s)),
                           )
                         }
+                        // The visible "Shot N" span isn't programmatically
+                        // associated — this is its accessible twin.
+                        aria-label={formatMsg(g.storyboardShotLabel, { n: i + 1 })}
                         placeholder={g.storyboardShotPlaceholder}
                         disabled={submitting}
                         maxLength={1200}
-                        className="min-w-0 flex-1 rounded-control border border-atelier-rule bg-transparent px-2.5 py-1.5 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/60 focus:border-atelier-muted disabled:opacity-60"
+                        className="min-w-0 flex-1 rounded-control border border-atelier-rule bg-transparent px-2.5 py-1.5 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 focus:border-atelier-muted disabled:opacity-60"
                       />
                       <div className="flex flex-shrink-0 items-center gap-0.5">
                         <button
@@ -7183,7 +7206,7 @@ function GenerateFormInner({
                 }
                 disabled={submitting || asking}
                 maxLength={COMPOSER_MAX_CHARS}
-                className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-[15px] text-atelier-ink outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
+                className="max-h-36 w-full resize-none border-none bg-transparent px-3.5 py-3 text-[15px] text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
               />
               </>
               )}
@@ -7205,8 +7228,11 @@ function GenerateFormInner({
                     onChange={(e) => setDialogueText(e.target.value)}
                     disabled={submitting}
                     maxLength={500}
+                    // A placeholder is not a name — once text is typed this
+                    // field had NO accessible name at all (2026-09-05 audit).
+                    aria-label={formatMsg(g.dialoguePlaceholder, { name: currentCharacter.name })}
                     placeholder={formatMsg(g.dialoguePlaceholder, { name: currentCharacter.name })}
-                    className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-atelier-ink/90 outline-none placeholder:text-atelier-muted/70 disabled:opacity-60"
+                    className="min-w-0 flex-1 border-none bg-transparent text-[13px] text-atelier-ink/90 outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
                   />
                   {/* Only once there's actually dialogue to charge for —
                       showing a surcharge against an empty field would read

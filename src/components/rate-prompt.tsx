@@ -148,7 +148,7 @@ export function RatePrompt() {
                 rows={3}
                 maxLength={2000}
                 placeholder={chosen >= 4 ? r.placeholderPositive : r.placeholderCritical}
-                className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent"
+                className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent"
               />
               <button
                 type="button"

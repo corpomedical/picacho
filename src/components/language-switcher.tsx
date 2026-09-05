@@ -19,7 +19,7 @@ function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
 // LocaleProvider, which persists the choice in a cookie server-rendered
 // pages read on their next request.
 export function LanguageSwitcher({ compact = false, triggerClassName }: { compact?: boolean; triggerClassName?: string }) {
-  const { locale, setLocale } = useLocale();
+  const { locale, setLocale, t } = useLocale();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -40,7 +40,7 @@ export function LanguageSwitcher({ compact = false, triggerClassName }: { compac
         type="button"
         onClick={() => setOpen((v) => !v)}
         title="Language"
-        aria-label="Language"
+        aria-label={t.common.language}
         className={cn(
           "flex items-center gap-1.5 rounded-[10px] text-sm transition-colors",
           // Callers on a pinned-dark surface (the front page's header) pass

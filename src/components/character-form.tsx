@@ -34,7 +34,7 @@ const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atel
 const EYEBROW = "text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted";
 const LABEL = "block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 const FIELD =
-  "rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
+  "rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
 
 // THE FOLD (project + character redesign, direction A, operator pick
 // 2026-09-04). On an EXISTING character this page is a profile — portrait,
@@ -1151,7 +1151,7 @@ export function CharacterForm({
             }}
             onBlur={addTag}
             placeholder={c.tagPlaceholder}
-            className="min-w-[140px] flex-1 rounded-control border border-atelier-rule bg-transparent px-3 py-1.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent"
+            className="min-w-[140px] flex-1 rounded-control border border-atelier-rule bg-transparent px-3 py-1.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent"
           />
         </div>
       </section>

@@ -17,7 +17,7 @@ import { formatMsg } from "@/lib/i18n/format";
 // components/project-workbench.tsx — see the note there for the redesign.
 const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 const FIELD =
-  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
+  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
 
 export default async function ProjectDetailPage({
   params,

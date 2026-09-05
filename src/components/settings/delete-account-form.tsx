@@ -9,7 +9,7 @@ import { useLocale } from "@/lib/i18n/provider";
 // here stays sentence-case rather than the caps treatment: it's a full
 // sentence with the username embedded, not a short field name.
 const FIELD =
-  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/60 outline-none transition-colors focus:border-atelier-accent";
+  "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
 
 export function DeleteAccountForm({ username }: { username: string }) {
   const { t } = useLocale();

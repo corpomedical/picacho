@@ -58,10 +58,13 @@ export function HomeComposer({
               go();
             }
           }}
+          // A placeholder is not a name — once text is typed this field had
+          // no accessible name at all (2026-09-05 audit).
+          aria-label={d.composerPlaceholder}
           placeholder={d.composerPlaceholder}
           autoFocus
           disabled={disabled}
-          className="min-w-0 flex-1 border-none bg-transparent px-2.5 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/60 disabled:opacity-60"
+          className="min-w-0 flex-1 border-none bg-transparent px-2.5 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
         />
         <VoiceRecorderButton
           onTranscript={(text) => setValue((prev) => (prev ? `${prev} ${text}` : text))}

@@ -4,6 +4,10 @@ const pt = {
   common: {
     prev: "Anterior",
     next: "Seguinte",
+    close: "Fechar",
+    dismiss: "Dispensar",
+    language: "Idioma",
+    communityPost: "Publicação da comunidade",
     toggleOn: "ON",
     toggleOff: "OFF",
     webPurchaseCta: "Planos e créditos no nosso site",

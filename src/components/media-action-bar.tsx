@@ -313,7 +313,7 @@ export function MediaActionBar({
             placeholder={g.reportDetailsPlaceholder}
             rows={2}
             maxLength={1000}
-            className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/70 focus:border-atelier-accent focus:outline-none"
+            className="mt-2 w-full resize-none rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/80 focus:border-atelier-accent focus:outline-none"
           />
           <button
             type="button"
