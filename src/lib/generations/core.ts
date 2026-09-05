@@ -2,6 +2,7 @@ import crypto from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl } from "@/lib/media/url";
+import { faststartRemux } from "@/lib/media/faststart";
 import { PLAN_LABELS, PLAN_LIMITS, onDailyFreeTier, freeSlotOpen, type PlanId } from "@/lib/plans";
 import { FREE_TIER_GENERATION_CREDITS } from "@/lib/generations/providers/video-models";
 
@@ -444,6 +445,16 @@ export async function persistGeneratedVideo(
       return null;
     }
 
+    // Move the moov index to the front while the whole file is in hand
+    // (2026-09-05 slowness check: some providers deliver it at the TAIL, so
+    // playback — and every posterless <video preload="metadata"> — paid a
+    // header probe plus a tail fetch before the first byte of picture).
+    // Pure atom shuffle, no re-encode, byte-identical samples; the remuxer
+    // returns null for anything it isn't certain about (already-faststarted
+    // files included) and the original bytes ship unchanged — a video that
+    // starts one trip slower beats any risk to a render someone paid for.
+    const arranged = faststartRemux(bytes) ?? bytes;
+
     const contentType = res.headers.get("content-type") ?? "video/mp4";
     // .mov only when the provider says so — ModelArk's 2.5 can return it.
     const ext = contentType.includes("quicktime") ? "mov" : "mp4";
@@ -451,7 +462,7 @@ export async function persistGeneratedVideo(
 
     const { error } = await supabase.storage
       .from("generated-videos")
-      .upload(path, bytes, { contentType, upsert: false });
+      .upload(path, arranged, { contentType, upsert: false });
     if (error) {
       console.warn(`persistGeneratedVideo: upload failed (${error.message}); keeping their URL.`);
       return null;
