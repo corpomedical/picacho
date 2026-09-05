@@ -139,6 +139,9 @@ describe("job-runner wiring", () => {
     // video model's name — the misattribution that sent this investigation at
     // MiniMax and Gemini first.
     expect(src).toMatch(/videoUrl, label: "ElevenLabs TTS"/);
-    expect(src).toMatch(/audioUrl, label: "Sync Lipsync"/);
+    // The cueAudioUrl spread (2026-09-05, intermediate-file cleanup) sits
+    // between audioUrl and the label now — the pin cares that the SAME
+    // payload write records the audio and relabels, not about adjacency.
+    expect(src).toMatch(/audioUrl, .*label: "Sync Lipsync"/);
   });
 });

@@ -3155,7 +3155,12 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             if (stopError) {
               console.error("Multi-angle per-angle stop couldn't fail the row:", stopError.message);
             }
-            await refundGenerationCosts(rowId);
+            // force, like the group-level stop and the compile-failure path
+            // above: nothing was submitted to any provider for this angle,
+            // so the provider cost is provably zero — without the flag the
+            // automatic_refunds kill switch (off in production) kept the
+            // full charge for a render that never existed.
+            await refundGenerationCosts(rowId, { force: true });
             return {
               angleId,
               id: rowId,
@@ -3447,7 +3452,15 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
   // CASCADE on community_posts never fires, so a shared render stayed on the
   // public feed forever — pointing at a storage object the next lines
   // remove, i.e. a permanently dead public image (2026-08-31 inspection).
-  const { error: unshareError } = await supabase
+  // Admin client, NOT the user's: the owner-DELETE RLS policy carries
+  // `hidden_at IS NULL`, so for a post an admin had hidden this delete
+  // matched zero rows without an error — and the code went on to remove the
+  // storage objects the post's media_url snapshot points at. That stranded
+  // an unremovable dead post: the owner's delete is blocked by policy, the
+  // soft delete means the FK cascade never fires, and the admin's only
+  // verb (Unhide) would republish dead media. Ownership stays enforced by
+  // the same user_id filter, against ids read from the caller's own rows.
+  const { error: unshareError } = await createAdminClient()
     .from("community_posts")
     .delete()
     .eq("user_id", userData.user.id)

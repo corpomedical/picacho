@@ -439,13 +439,20 @@ export async function deleteAccount() {
     );
   }
 
-  await removeAllUserStorage(admin, userId);
-
+  // deleteUser BEFORE the storage sweep — the same fail-loudly-first
+  // ordering the Stripe step above earned. The purge is irreversible, and
+  // running it first meant a transient deleteUser failure left a LIVE
+  // account with every DB row intact and every file gone: characters
+  // pointing at deleted photos, a History of dead links, no retry path. The
+  // flipped order's worst case is the account gone with its files briefly
+  // orphaned — which the sweep's own best-effort contract already accepts.
   const { error } = await admin.auth.admin.deleteUser(userId);
 
   if (error) {
     redirect(`/app/settings?error=${encodeURIComponent(`Couldn't delete your account: ${error.message}`)}`);
   }
+
+  await removeAllUserStorage(admin, userId);
 
   await supabase.auth.signOut();
   redirect("/");

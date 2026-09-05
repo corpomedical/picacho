@@ -299,6 +299,10 @@ export default async function HistoryDetailPage({
               parentRow.result_url as string | null,
               parentRow.content_type as string | null,
             ),
+            // Without this every video node took the <img> branch and
+            // rendered blank — the 2026-09-04 QuietVideo branch in
+            // LineageChain was dead code because no caller ever set it.
+            isVideo: (parentRow.content_type as string | null) === "video",
             label: h.lineageSource,
             detail:
               (parentRow.prompt_input as string | null)?.slice(0, 28) ?? null,
@@ -312,6 +316,7 @@ export default async function HistoryDetailPage({
         generation.result_url as string | null,
         generation.content_type as string | null,
       ),
+      isVideo: (generation.content_type as string | null) === "video",
       label: h.lineageThisTake,
       detail:
         typeof generation.match_score === "number"
@@ -331,6 +336,7 @@ export default async function HistoryDetailPage({
         c.result_url as string | null,
         c.content_type as string | null,
       ),
+      isVideo: (c.content_type as string | null) === "video",
       label: derivativeLabel(c.model_id as string | null),
       detail:
         typeof c.credits_used === "number" && c.credits_used > 0

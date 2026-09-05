@@ -98,7 +98,16 @@ type JobRow = {
   status_url: string | null;
   response_url: string | null;
   cancel_url: string | null;
-  payload: { videoUrl?: string; audioUrl?: string; label?: string; tier?: string };
+  payload: {
+    videoUrl?: string;
+    audioUrl?: string;
+    // The cue-padded voice mp3's RELATIVE media URL, when the timing cue
+    // uploaded one to generated-videos — recorded so the terminal collect
+    // can delete it (audioUrl is fal's own TTS URL, not ours to clean).
+    cueAudioUrl?: string;
+    label?: string;
+    tier?: string;
+  };
   resume: ResumeState;
   started_at: string;
   // Rewritten on every stage transition, so it marks when the CURRENT provider
@@ -187,6 +196,25 @@ class CriticalWriteError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "CriticalWriteError";
+  }
+}
+
+// The storage path behind one of OUR /api/media/generated-videos capability
+// URLs; null for anything else (a provider CDN url, a foreign bucket).
+// Upload names are sanitized so the encoded path IS the key once the ?v=
+// signature is cut, but decode defensively anyway.
+function generatedVideosPath(url: string | null | undefined): string | null {
+  const prefix = "/api/media/generated-videos/";
+  if (!url || !url.startsWith(prefix)) return null;
+  try {
+    return url
+      .slice(prefix.length)
+      .split("?")[0]
+      .split("/")
+      .map(decodeURIComponent)
+      .join("/");
+  } catch {
+    return null;
   }
 }
 
@@ -1574,6 +1602,7 @@ export async function advanceGeneration(
       let syncMode: "silence" | "cut_off" = "silence";
       let audioSeconds: number | null = null;
       let lipsyncAudioUrl = audioUrl;
+      let cueAudioMediaUrl: string | null = null;
       const cue = parseDialogueCue(row.resume.dialogueText ?? "");
       try {
         const res = await fetch(audioUrl);
@@ -1598,7 +1627,8 @@ export async function advanceGeneration(
                   .upload(path, padded, { contentType: "audio/mpeg" });
                 if (!upErr) {
                   buf = padded;
-                  lipsyncAudioUrl = providerDownloadUrl(mediaUrl("generated-videos", path));
+                  cueAudioMediaUrl = mediaUrl("generated-videos", path);
+                  lipsyncAudioUrl = providerDownloadUrl(cueAudioMediaUrl);
                   row.resume.attempts = appendStep(
                     row.resume.attempts ?? [],
                     `The line is placed at ${cue.startSeconds}s, as cued.`,
@@ -1672,7 +1702,7 @@ export async function advanceGeneration(
           status_url: lipsync.statusUrl,
           response_url: lipsync.responseUrl,
           cancel_url: lipsync.cancelUrl,
-          payload: { ...row.payload, audioUrl, label: "Sync Lipsync", provider: "fal" },
+          payload: { ...row.payload, audioUrl, ...(cueAudioMediaUrl ? { cueAudioUrl: cueAudioMediaUrl } : {}), label: "Sync Lipsync", provider: "fal" },
           resume: { ...row.resume, attempts: attemptsWithSpeech } satisfies ResumeState,
           updated_at: new Date().toISOString(),
           // Release the claim for the final stage's own advance.
@@ -1716,6 +1746,28 @@ export async function advanceGeneration(
         "lipsync",
       ),
     });
+    // The run's intermediates are unreferenced from this moment: the silent
+    // pre-lipsync video (payload.videoUrl, persisted before TTS) and the
+    // cue-padded voice mp3 (payload.cueAudioUrl, when the timing cue
+    // uploaded one) lived only in the job row finish() just deleted. Left alone, every
+    // dialogue render parked them in generated-videos forever — invisible to
+    // deleteGeneration (which reads only result_url) and reachable only by
+    // the full account sweep. Best-effort, and deliberately AFTER the
+    // terminal write: a failed cleanup costs pennies, but deleting before a
+    // finish that then failed would destroy the salvage branches' copy.
+    // (The salvage exits themselves deliver the silent video AS the result,
+    // so nothing is removed there.)
+    const intermediatePaths = [row.payload.videoUrl, row.payload.cueAudioUrl]
+      .map(generatedVideosPath)
+      .filter((p): p is string => Boolean(p));
+    if (intermediatePaths.length) {
+      const { error: cleanupError } = await admin.storage
+        .from("generated-videos")
+        .remove(intermediatePaths);
+      if (cleanupError) {
+        console.warn(`dialogue intermediate cleanup failed for ${generationId}:`, cleanupError.message);
+      }
+    }
     return { state: "succeeded", resultUrl: syncedUrl };
   } catch (err) {
     // Our own DB write failed mid-advance (stage transition, terminal
