@@ -59,6 +59,21 @@ describe("providerMediaOrigin", () => {
   });
 });
 
+describe("dialogue transitions hand the job to fal", () => {
+  // Source pin, same style as the wiring test above: the dialogue stages
+  // always run on fal, but the stage-transition payload writes spread
+  // ...row.payload — so a BytePlus-routed video that keeps provider
+  // "byteplus" through them sends every TTS/lip-sync poll to ModelArk with a
+  // fal request id, whose missing-means-gone rule fails the stage on the
+  // first poll and ships every spoken line silent. Both transitions must
+  // relabel provider alongside label.
+  it("both dialogue-stage payload writes set provider fal", () => {
+    const code = readFileSync(new URL("../job-runner.ts", import.meta.url), "utf8");
+    expect(code).toContain('label: "ElevenLabs TTS", provider: "fal"');
+    expect(code).toContain('label: "Sync Lipsync", provider: "fal"');
+  });
+});
+
 describe("providerDownloadUrl", () => {
   it("REGRESSION: what fal is handed is absolute", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://picacho.io");

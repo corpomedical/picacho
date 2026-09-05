@@ -1463,45 +1463,73 @@ export async function advanceGeneration(
       // re-observe the video "completed" and submit ANOTHER paid TTS job.
       // Throwing surfaces it as a CriticalWriteError, which the catch below
       // propagates for a retry instead of failing the billed render.
-      mustUpdate(
-        await admin
-          .from("generation_jobs")
-          .update({
-            stage: "dialogue_tts" satisfies JobStage,
-            provider_request_id: speech.requestId,
-            status_url: speech.statusUrl,
-            response_url: speech.responseUrl,
-            cancel_url: speech.cancelUrl,
-            // label follows the stage, not the row's history. Spreading
-            // ...row.payload alone kept the VIDEO model's name for the rest of
-            // the run, so jobHandle() reported an ElevenLabs/Sync Labs failure
-            // under "MiniMax" or "Gemini" — which is precisely why the silent-
-            // dialogue evidence read as a video-model fault for a whole day.
-            // (It also made the stage-based defaults at jobHandle unreachable:
-            // payload.label was always set.) videoUrl stays RELATIVE here.
-            payload: { ...row.payload, videoUrl, label: "ElevenLabs TTS" },
-            // The billed moment: fal has delivered the video and the run
-            // continues into dialogue. This exact wording is what
-            // refund-rules' VIDEO_RENDERED matches — a later failure in the
-            // dialogue stages must not force-refund a render fal was paid
-            // for. ("Generated via" never appears on the queued lane.)
-            resume: {
-              ...row.resume,
-              attempts: appendStep(
-                row.resume.attempts ?? [],
-                "Rendered the video — generating the dialogue next.",
-                "generate",
-              ),
-            },
-            updated_at: new Date().toISOString(),
-            // Release the claim: the next stage is a different provider job and
-            // its own advance must be able to claim it fresh.
-            advance_lock: null,
-            advance_locked_at: null,
-          })
-          .eq("generation_id", generationId),
-        `Couldn't record the dialogue TTS stage for generation ${generationId}`,
-      );
+      // Fenced on the stage and provider job this caller actually COLLECTED,
+      // not just the generation id. The 90s advance lease can genuinely
+      // expire inside this branch (persistGeneratedVideo buffers the whole
+      // file), and the expired-lease winner re-collects the same completed
+      // video and submits its own TTS job. Without the fence, the slower
+      // caller's late write overwrote the winner's transition — capable of
+      // regressing dialogue_lipsync back to dialogue_tts and orphaning the
+      // winner's PAID lip-sync job. With it, the late write matches zero
+      // rows and the loser stands down (and cancels its own duplicate).
+      let ttsWrite = admin
+        .from("generation_jobs")
+        .update({
+          stage: "dialogue_tts" satisfies JobStage,
+          provider_request_id: speech.requestId,
+          status_url: speech.statusUrl,
+          response_url: speech.responseUrl,
+          cancel_url: speech.cancelUrl,
+          // label AND provider follow the stage, not the row's history.
+          // Spreading ...row.payload alone kept the VIDEO model's name for
+          // the rest of the run, so jobHandle() reported an ElevenLabs/Sync
+          // Labs failure under "MiniMax" or "Gemini" — which is precisely why
+          // the silent-dialogue evidence read as a video-model fault for a
+          // whole day. provider has the same trap with worse teeth: a
+          // BytePlus-routed video that kept provider "byteplus" here sent
+          // every dialogue poll to ModelArk with a fal request id, whose
+          // missing-means-gone rule failed the stage on the FIRST poll and
+          // shipped every spoken line silent. The dialogue stages always run
+          // on fal, whoever rendered the video. videoUrl stays RELATIVE here.
+          payload: { ...row.payload, videoUrl, label: "ElevenLabs TTS", provider: "fal" },
+          // The billed moment: fal has delivered the video and the run
+          // continues into dialogue. This exact wording is what
+          // refund-rules' VIDEO_RENDERED matches — a later failure in the
+          // dialogue stages must not force-refund a render fal was paid
+          // for. ("Generated via" never appears on the queued lane.)
+          resume: {
+            ...row.resume,
+            attempts: appendStep(
+              row.resume.attempts ?? [],
+              "Rendered the video — generating the dialogue next.",
+              "generate",
+            ),
+          },
+          updated_at: new Date().toISOString(),
+          // Release the claim: the next stage is a different provider job and
+          // its own advance must be able to claim it fresh.
+          advance_lock: null,
+          advance_locked_at: null,
+        })
+        .eq("generation_id", generationId)
+        .eq("stage", "video" satisfies JobStage);
+      ttsWrite = row.provider_request_id
+        ? ttsWrite.eq("provider_request_id", row.provider_request_id)
+        : ttsWrite.is("provider_request_id", null);
+      const ttsResult = await ttsWrite.select("generation_id");
+      mustUpdate(ttsResult, `Couldn't record the dialogue TTS stage for generation ${generationId}`);
+      if (!ttsResult.data?.length) {
+        // A concurrent winner advanced this row while we were past the lease.
+        // The TTS job submitted above is our duplicate — cancel it
+        // (best-effort; ElevenLabs may already be done, at cents) and report
+        // pending so the winner's chain stays authoritative.
+        try {
+          await cancelVideoJob({ ...speech, provider: "fal" });
+        } catch {
+          // Best-effort only.
+        }
+        return { state: "pending", stage: "dialogue_tts", progress: STAGE_PROGRESS.dialogue_tts };
+      }
       // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
       await admin
         .from("generations")
@@ -1631,26 +1659,41 @@ export async function advanceGeneration(
         "speech",
       );
       // Same mustUpdate reasoning as the TTS transition above — the paid
-      // lip-sync job is already submitted.
-      mustUpdate(
-        await admin
-          .from("generation_jobs")
-          .update({
-            stage: "dialogue_lipsync" satisfies JobStage,
-            provider_request_id: lipsync.requestId,
-            status_url: lipsync.statusUrl,
-            response_url: lipsync.responseUrl,
-            cancel_url: lipsync.cancelUrl,
-            payload: { ...row.payload, audioUrl, label: "Sync Lipsync" },
-            resume: { ...row.resume, attempts: attemptsWithSpeech } satisfies ResumeState,
-            updated_at: new Date().toISOString(),
-            // Release the claim for the final stage's own advance.
-            advance_lock: null,
-            advance_locked_at: null,
-          })
-          .eq("generation_id", generationId),
-        `Couldn't record the lip-sync stage for generation ${generationId}`,
-      );
+      // lip-sync job is already submitted. Same fence too: an expired-lease
+      // winner may have re-collected this TTS stage and advanced the row, and
+      // the loser's late write must not drag it back. provider stays "fal"
+      // for the same reason as the TTS transition (a BytePlus render's row
+      // would otherwise poll ModelArk for a Sync Labs job).
+      let lipsyncWrite = admin
+        .from("generation_jobs")
+        .update({
+          stage: "dialogue_lipsync" satisfies JobStage,
+          provider_request_id: lipsync.requestId,
+          status_url: lipsync.statusUrl,
+          response_url: lipsync.responseUrl,
+          cancel_url: lipsync.cancelUrl,
+          payload: { ...row.payload, audioUrl, label: "Sync Lipsync", provider: "fal" },
+          resume: { ...row.resume, attempts: attemptsWithSpeech } satisfies ResumeState,
+          updated_at: new Date().toISOString(),
+          // Release the claim for the final stage's own advance.
+          advance_lock: null,
+          advance_locked_at: null,
+        })
+        .eq("generation_id", generationId)
+        .eq("stage", "dialogue_tts" satisfies JobStage);
+      lipsyncWrite = row.provider_request_id
+        ? lipsyncWrite.eq("provider_request_id", row.provider_request_id)
+        : lipsyncWrite.is("provider_request_id", null);
+      const lipsyncResult = await lipsyncWrite.select("generation_id");
+      mustUpdate(lipsyncResult, `Couldn't record the lip-sync stage for generation ${generationId}`);
+      if (!lipsyncResult.data?.length) {
+        try {
+          await cancelVideoJob({ ...lipsync, provider: "fal" });
+        } catch {
+          // Best-effort only.
+        }
+        return { state: "pending", stage: "dialogue_lipsync", progress: STAGE_PROGRESS.dialogue_lipsync };
+      }
       // Fire-and-forget on purpose — progress_stage is cosmetic UI copy.
       await admin
         .from("generations")

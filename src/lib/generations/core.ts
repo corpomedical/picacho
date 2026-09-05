@@ -425,7 +425,13 @@ export async function persistGeneratedVideo(
   providerUrl: string,
 ): Promise<string | null> {
   try {
-    const res = await fetch(providerUrl);
+    // Bounded: this runs while the caller holds the 90s advance claim, and a
+    // download that outlives the lease invites a second caller to re-collect
+    // the same stage and double-submit the paid dialogue jobs. A file too big
+    // or a CDN too slow for 45s falls back to the provider URL — the designed,
+    // honest fallback. (The upload below has no abort hook in storage-js; the
+    // Vercel-to-Supabase leg is the fast one.)
+    const res = await fetch(providerUrl, { signal: AbortSignal.timeout(45_000) });
     if (!res.ok) {
       console.warn(`persistGeneratedVideo: provider returned ${res.status}; keeping their URL.`);
       return null;
