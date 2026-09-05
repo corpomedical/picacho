@@ -146,6 +146,7 @@ export async function sendTestEmail(formData: FormData) {
     to: profile!.email,
     subject: `[Test] ${rendered.subject}`,
     html: rendered.html,
+    unsubscribeUrl: await unsubscribeUrl(userId),
   });
   if (error) fail(`Couldn't send the test email: ${error.slice(0, 200)}`);
 
@@ -282,7 +283,7 @@ export async function sendEmailBlast(formData: FormData) {
   // marketing mail (so clicking it from a service notice remains
   // meaningful), and a bulk send with no visible opt-out reads as
   // deceptive regardless of its legal category.
-  const messages: { to: string; subject: string; html: string }[] = [];
+  const messages: { to: string; subject: string; html: string; unsubscribeUrl?: string }[] = [];
   for (const recipient of recipients) {
     if (!recipient.email) continue; // NOT NULL in schema, but never send to ""
     const rendered = renderTemplate(
@@ -291,7 +292,14 @@ export async function sendEmailBlast(formData: FormData) {
       varsFor(recipient),
       await unsubscribeUrl(recipient.id),
     );
-    messages.push({ to: recipient.email, subject: rendered.subject, html: rendered.html });
+    messages.push({
+      to: recipient.email,
+      subject: rendered.subject,
+      html: rendered.html,
+      // One-click headers per recipient — a Gmail/Yahoo bulk-sender
+      // requirement, and the scanner-safe unsubscribe path.
+      unsubscribeUrl: await unsubscribeUrl(recipient.id),
+    });
   }
 
   const result = await sendBatch(messages);

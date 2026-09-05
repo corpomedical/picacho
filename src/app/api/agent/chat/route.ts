@@ -99,9 +99,26 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("plan, plan_status, current_period_start")
+    .select("plan, plan_status, current_period_start, status")
     .eq("id", user.id)
-    .single<{ plan: PlanId | null; plan_status: string | null; current_period_start: string | null }>();
+    .single<{
+      plan: PlanId | null;
+      plan_status: string | null;
+      current_period_start: string | null;
+      status: string | null;
+    }>();
+
+  // Suspension was enforced only by the middleware's pathname gate
+  // (startsWith("/app")) — this route spends Anthropic tokens on every turn
+  // and a suspended account kept its full chat budget indefinitely
+  // (round-one audit's own critic caught it). Same check, same message as
+  // checkGenerationAllowance.
+  if (profile?.status === "suspended") {
+    return NextResponse.json(
+      { error: "Your account is suspended. Contact support if you think this is a mistake." },
+      { status: 403 },
+    );
+  }
 
   const plan: PlanId = profile?.plan ?? "none";
   // Same rule as checkGenerationAllowance: a plan's allowance only exists

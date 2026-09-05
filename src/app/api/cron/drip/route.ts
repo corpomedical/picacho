@@ -99,7 +99,7 @@ export async function GET(request: Request) {
       unsubscribe,
     );
 
-    const { error: sendError } = await sendEmail({ to: c.email, subject, html });
+    const { error: sendError } = await sendEmail({ to: c.email, subject, html, unsubscribeUrl: unsubscribe });
     if (sendError) {
       // Release the claim so tomorrow retries this person.
       await admin.from("drip_sends").delete().match({ user_id: c.user_id, template: c.template });

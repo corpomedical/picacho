@@ -52,7 +52,24 @@ export type EmailMessage = {
   subject: string;
   html: string;
   text?: string;
+  // When set, the send carries RFC 8058 one-click headers pointing here.
+  // Gmail and Yahoo now REQUIRE List-Unsubscribe on bulk mail, and the
+  // POST-based one-click flow is also what keeps mail-scanner GETs from
+  // opting users out (the unsubscribe route's GET is a confirmation page;
+  // only the POST flips the flag — 2026-09-05 audit).
+  unsubscribeUrl?: string;
 };
+
+// The one-click headers for a message that carries an unsubscribe link.
+// List-Unsubscribe-Post makes providers send a bare POST to the same URL,
+// which api/email/unsubscribe's POST handler accepts.
+function unsubscribeHeaders(url: string | undefined): Record<string, string> | undefined {
+  if (!url) return undefined;
+  return {
+    "List-Unsubscribe": `<${url}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+}
 
 /**
  * Sends a single email. Never throws: failures are logged and returned as
@@ -78,6 +95,7 @@ export async function sendEmail(message: EmailMessage): Promise<{ error: string 
           subject: message.subject,
           html: message.html,
           ...(message.text ? { text: message.text } : {}),
+          ...(message.unsubscribeUrl ? { headers: unsubscribeHeaders(message.unsubscribeUrl) } : {}),
         }),
       },
       SEND_TIMEOUT_MS,
@@ -113,7 +131,7 @@ export type BatchResult = {
  * report honestly what went out.
  */
 export async function sendBatch(
-  messages: { to: string; subject: string; html: string }[],
+  messages: { to: string; subject: string; html: string; unsubscribeUrl?: string }[],
 ): Promise<BatchResult> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
@@ -146,6 +164,7 @@ export async function sendBatch(
               to: [m.to],
               subject: m.subject,
               html: m.html,
+              ...(m.unsubscribeUrl ? { headers: unsubscribeHeaders(m.unsubscribeUrl) } : {}),
             })),
           ),
         },
