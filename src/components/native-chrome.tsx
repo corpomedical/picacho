@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
+import { popBackCloser } from "@/lib/native/back-stack";
 
 // Applies the native-app class, keeps the Android system bars in the app's
 // own colors, and gives the hardware back button sane in-app behavior.
@@ -149,6 +150,10 @@ export function NativeChrome() {
     const app = capPlugin("App");
     let backHandle: { remove?: () => void } | undefined;
     const maybePromise = app?.addListener?.("backButton", (state: { canGoBack?: boolean }) => {
+      // An open overlay (lightbox, community viewer, search dialog) consumes
+      // the press — back used to navigate away UNDERNEATH it, the opposite
+      // of what every Android app does. See lib/native/back-stack.ts.
+      if (popBackCloser()) return;
       const path = window.location.pathname;
       if (path === "/app" || path === "/login") {
         void app?.minimizeApp?.();

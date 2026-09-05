@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type SVGProps } from "react";
 import { useRouter } from "next/navigation";
 import { searchAll, type SearchResults } from "@/lib/search/actions";
+import { useBackCloser } from "@/lib/native/back-stack";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 
@@ -53,6 +54,8 @@ export function SearchDialog({ open, onClose }: { open: boolean; onClose: () => 
   // only the one that still matches at resolution time may write results.
   const searchSeqRef = useRef(0);
   const router = useRouter();
+  // Android hardware back closes the dialog instead of navigating under it.
+  useBackCloser(open, onClose);
 
   useEffect(() => {
     if (!open) return;

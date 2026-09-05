@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useBackCloser } from "@/lib/native/back-stack";
 import { MediaActionBar } from "@/components/media-action-bar";
 
 // A result image that expands to a fullscreen viewer on tap — the thing
@@ -35,6 +36,8 @@ export function ZoomableImage({
   redirectAfterDelete?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Android hardware back closes the zoom instead of navigating under it.
+  useBackCloser(open, () => setOpen(false));
 
   useEffect(() => {
     if (!open) return;

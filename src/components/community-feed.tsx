@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useBackCloser } from "@/lib/native/back-stack";
 import { useLocale } from "@/lib/i18n/provider";
 import {
   recordCommunityView,
@@ -203,6 +204,9 @@ export function CommunityFeed({
   }, [feedMuted]);
 
   const feedOpen = feedIndex !== null;
+  // Android hardware back closes the full-screen viewer instead of leaving
+  // the community page underneath it.
+  useBackCloser(feedOpen, () => setFeedIndex(null));
 
   // Deep link: open once, on mount, if the post is in the loaded set.
   useEffect(() => {

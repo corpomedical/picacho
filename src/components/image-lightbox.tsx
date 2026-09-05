@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useBackCloser } from "@/lib/native/back-stack";
 import { useLocale } from "@/lib/i18n/provider";
 import { DownloadButton } from "@/components/download-button";
 
@@ -35,6 +36,9 @@ export function ImageLightbox({
   const c = t.character;
   const panelRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  // Mounted means open — the Android hardware back closes the lightbox
+  // instead of navigating underneath it.
+  useBackCloser(true, onClose);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
