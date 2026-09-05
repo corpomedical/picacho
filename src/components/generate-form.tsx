@@ -45,6 +45,7 @@ import {
   storyboardFrameExtraCredits,
   continuationExtraCredits,
   getDialogueCreditWeight,
+  FREE_TIER_GENERATION_CREDITS,
 } from "@/lib/generations/providers/video-models";
 import {
   reserveChatAttachmentPath,
@@ -2532,8 +2533,8 @@ function GenerateFormInner({
   // total by a charge the server does not make.
   const perRenderForFanout =
     sendRenderCount > 1 ? Math.max(0, selectedCreditCost - continuationExtra) : selectedCreditCost;
-  const sendCreditCost = fanoutCreditCost(perRenderForFanout, sendRenderCount);
-  const cannotAfford = sendCreditCost > creditsAvailable;
+  // sendCreditCost and cannotAfford now live just below the dialogue state
+  // they read — see the dialogue-surcharge note there.
   const [panelUploadBusy, setPanelUploadBusy] = useState(false);
   const panelUploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -2562,6 +2563,29 @@ function GenerateFormInner({
   // options above); only shown once the selected character has a voice
   // assigned in Character settings.
   const [dialogueText, setDialogueText] = useState("");
+  // Dialogue is charged server-side whenever a line is present (actions.ts:
+  // wantsDialogue adds getDialogueCreditWeight on top of the duration
+  // weight), and it rides only the single-send path — fan-outs carry no
+  // dialogue and storyboards reject the combination outright. The quote used
+  // to leave the surcharge out, so the labeled TOTAL and the shortfall
+  // banner both understated every dialogue send; the real price arrived as
+  // the server's rejection, which is the worst moment to learn it.
+  const dialogueSurcharge =
+    contentType === "video" &&
+    sendRenderCount === 1 &&
+    !storyboardActive &&
+    dialogueText.trim().length > 0
+      ? getDialogueCreditWeight(videoDurationSeconds)
+      : 0;
+  const sendCreditCost = fanoutCreditCost(perRenderForFanout, sendRenderCount) + dialogueSurcharge;
+  const cannotAfford = sendCreditCost > creditsAvailable;
+  // "Uses today's free generation" is a promise about THIS send: the server
+  // spends the daily slot only on a send within the trial's own pinned cost
+  // (core.ts), and anything above that ceiling draws on purchased credits.
+  // Gated on the pill, the promise used to sit beside the red shortfall
+  // banner — free and can't-afford at once — or, for a topped-up account,
+  // promised free while purchased credits were silently debited.
+  const sendRidesFreeSlot = dailyFreeAvailable && sendCreditCost <= FREE_TIER_GENERATION_CREDITS;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -7848,11 +7872,11 @@ function GenerateFormInner({
                   generation" is a promise about a render, and a question
                   spends no generation. */}
               {!willAsk &&
-                (dailyFreeAvailable ||
+                (sendRidesFreeSlot ||
                 (!hasGeneratedBefore && contentType === "image")) &&
                 !submitting && (
                   <div className="space-y-1 px-4 pb-2.5">
-                    {dailyFreeAvailable && (
+                    {sendRidesFreeSlot && (
                       <p className="flex items-center justify-end gap-1.5 text-[11px] text-atelier-muted">
                         <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-atelier-accent" />
                         {g.dailyFreeNotice} ·{" "}
