@@ -21,6 +21,13 @@ const LOOKS_LIKE_JSON_BLOB = /[{[]\s*"/;
 // to swap in a localized generic line instead. Reported 2026-08-19: a
 // failed render's history page showed the owner a full fal.ai 422 JSON
 // dump, provider names, docs URLs and all.
+// The one action-level error pollGeneration returns (actions.ts). Exported
+// so both poll loops can recognize it as TRANSIENT: a cookie-refresh race
+// after long backgrounding in the WebView made getUser() blip while the paid
+// render kept going at fal — and the bubble went red over a render that
+// later succeeded into History. "We couldn't check" is not "the job failed".
+export const SESSION_EXPIRED_MESSAGE = "Your session expired — please log in again.";
+
 export function isRawProviderError(message: string): boolean {
   return RAW_PROVIDER_ERROR_PREFIX.test(message) || LOOKS_LIKE_JSON_BLOB.test(message);
 }

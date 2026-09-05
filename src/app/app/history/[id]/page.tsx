@@ -34,6 +34,7 @@ import {
 import { angleSortIndex } from "@/lib/generations/angles";
 import { AngleResultViewer } from "@/components/angle-result-viewer";
 import { StillRendering } from "@/components/still-rendering";
+import { HistoryLiveRefresh } from "@/components/history-live-refresh";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { DownloadButton } from "@/components/download-button";
 import { ZoomableImage } from "@/components/zoomable-image";
@@ -448,8 +449,14 @@ export default async function HistoryDetailPage({
               </>
             ) : generation.status === "generating" ? (
               // Same rule as the multi-angle viewer: a render still in flight
-              // is not a failed one, and must not be described as one.
-              <StillRendering startedAt={generation.created_at as string} />
+              // is not a failed one, and must not be described as one. The
+              // invisible poller makes this card's own promise ("will appear
+              // here when it's ready") true without a manual reload — and
+              // means the person watching is driving advanceGeneration.
+              <>
+                <HistoryLiveRefresh generationIds={[generation.id as string]} />
+                <StillRendering startedAt={generation.created_at as string} />
+              </>
             ) : (
               <p className="mt-2 text-sm text-atelier-muted">{h.noResult}</p>
             )}

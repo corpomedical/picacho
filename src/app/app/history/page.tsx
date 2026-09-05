@@ -12,6 +12,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { ContinueChatButton } from "@/components/continue-chat-button";
 import { LocalDate } from "@/components/local-date";
+import { HistoryLiveRefresh } from "@/components/history-live-refresh";
 
 // History as a CONTACT SHEET — direction A from the design canvas, operator
 // pick 2026-09-04 ("Go With A").
@@ -242,6 +243,16 @@ export default async function HistoryPage({
 
   return (
     <div>
+      {/* The waiting room refreshes itself: one invisible poller per row
+          still rendering (capped — a pathological backlog must not open
+          dozens of loops), and the finished result replaces the pulsing
+          chip without a manual reload. */}
+      <HistoryLiveRefresh
+        generationIds={(generations ?? [])
+          .filter((g) => g.status === "generating")
+          .slice(0, 6)
+          .map((g) => g.id as string)}
+      />
       {/* Masthead in the Ledger's voice — eyebrow, serif title, and the
           month's credits as a figure on the same line rather than a p-8 sheet
           of its own. The admin redesign's commit promised "one design system

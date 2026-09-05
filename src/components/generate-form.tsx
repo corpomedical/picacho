@@ -39,6 +39,7 @@ import {
   isRawProviderError,
   classifyFailureDetails,
   isBudgetExhaustedDetail,
+  SESSION_EXPIRED_MESSAGE,
 } from "@/lib/generations/user-facing-error";
 import { createPortal } from "react-dom";
 import {
@@ -335,7 +336,20 @@ async function awaitQueuedGeneration(
       continue;
     }
 
-    if (poll.error !== null) return { state: "failed", error: poll.error };
+    if (poll.error !== null) {
+      // Same rule the shared poll-client carries (see its comment): the auth
+      // check's transient blip must never end the wait as a failure while
+      // the paid render keeps going at fal. Retried under the same budget
+      // as thrown transport errors; every other action error is a verdict.
+      if (poll.error === SESSION_EXPIRED_MESSAGE) {
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= 60) {
+          return { state: "failed", error: lostTrackMessage };
+        }
+        continue;
+      }
+      return { state: "failed", error: poll.error };
+    }
 
     switch (poll.state) {
       case "pending":
@@ -1526,6 +1540,16 @@ type ChatItem = ({ kind: "single" } & ChatTurn) | MultiAngleChatItem | AskChatIt
 // the same shape a freshly-generated turn already gets in `items` — past
 // attachments aren't tracked anywhere to reload, so those are always empty;
 // everything else lines up 1:1.
+// Whether two thread items are the SAME conversation entry — used by the
+// resume path to graduate a settled job into the thread exactly once. A
+// multi-angle group's members all resolve to the same group thread, so
+// without this each resumed angle appended its own copy of the whole group.
+function sameThreadItem(a: ChatItem, b: ChatItem): boolean {
+  if (a.kind === "multi" && b.kind === "multi") return a.groupId === b.groupId;
+  if (a.kind === "single" && b.kind === "single") return a.id === b.id;
+  return false;
+}
+
 function historyItemToChatItem(item: ChatHistoryItem): ChatItem {
   if (item.kind === "multi") {
     return { ...item, attachments: [] };
@@ -2027,6 +2051,18 @@ function GenerateFormInner({
 
   const [items, setItems] = useState<ChatItem[]>([]);
 
+  // Renders re-attached to on mount — the lock-phone-mid-render, reopen-the-
+  // app case the wrapper exists for. Each gets a VISIBLE turn (prompt
+  // bubble, live progress, its own Stop) instead of the old "deliberately
+  // quiet" resume, which showed a blank hero composer over a render the
+  // person was still waiting on: no bubble, no Stop, and the finished
+  // result landed nowhere on this page (2026-09-05 audit). A settled job
+  // graduates into a real thread turn via getGenerationThread — the same
+  // loader the ?resume= path uses.
+  const [resumedJobs, setResumedJobs] = useState<
+    { id: string; prompt: string; progress: string | null; stopping: boolean }[]
+  >([]);
+
   // The assistant (2026-08-31). ONE switch, not a mode.
   //
   // The first version of this shipped a Render | Ask segmented control and
@@ -2240,7 +2276,11 @@ function GenerateFormInner({
   // actually gets sent (hasAnyMessages), or the person explicitly picks
   // Create image/video from the + menu (creationModeActive).
   const hasAnyMessages =
-    items.length > 0 || livePrompt !== null || liveMultiAngle !== null || liveAsk !== null;
+    items.length > 0 ||
+    resumedJobs.length > 0 ||
+    livePrompt !== null ||
+    liveMultiAngle !== null ||
+    liveAsk !== null;
   const isHero = heroMode && !creationModeActive && !hasAnyMessages;
 
   // Kling advanced video options — storyboard (start/end frame) and
@@ -3663,9 +3703,14 @@ function GenerateFormInner({
   // flight and start polling it again. Also covers the ordinary cases — a
   // reload mid-render, or coming back to a tab that was closed.
   //
-  // Deliberately quiet. It refreshes the route when something lands so the
-  // result appears in the workspace and History, rather than trying to
-  // reconstruct a live bubble for a request this page never made.
+  // VISIBLY, since 2026-09-05. The old version was "deliberately quiet" —
+  // it polled with the progress thrown away and only router.refresh()ed at
+  // the end, which predates the mobile shell: lock the phone mid-render,
+  // reopen the app, and the screen was a blank hero composer with no bubble,
+  // no Stop and no evidence of the render the person was waiting on — and
+  // the finished result landed nowhere on this page. Each in-flight job now
+  // gets a resumed turn (see resumedJobs), and a settled one graduates into
+  // the real thread through the same loader the ?resume= path uses.
   useEffect(() => {
     let cancelled = false;
 
@@ -3676,27 +3721,60 @@ function GenerateFormInner({
       } catch {
         // Never block the composer over this — it's recovery, not the
         // main path.
-        return false;
+        return;
       }
       if (cancelled || inFlight.length === 0) return;
 
-      setLiveProgress(
-        inFlight.length === 1 ? g.resumingRender : formatMsg(g.finishingRenders, { n: inFlight.length }),
+      setResumedJobs(
+        inFlight.map((gen) => ({
+          id: gen.id,
+          prompt: gen.prompt,
+          progress: null,
+          stopping: false,
+        })),
       );
 
       await Promise.all(
-        inFlight.map((gen) =>
-          awaitQueuedGeneration(
+        inFlight.map(async (gen) => {
+          const outcome = await awaitQueuedGeneration(
             gen.id,
-            () => {},
+            (progress) => {
+              if (cancelled) return;
+              setResumedJobs((prev) =>
+                prev.map((j) => (j.id === gen.id ? { ...j, progress } : j)),
+              );
+            },
             () => cancelled,
             g.lostTrackOfRender,
-          ),
-        ),
+          );
+          if (cancelled) return;
+
+          if (outcome.state === "cancelled") {
+            // The person pressed this card's Stop — the same discard the
+            // composer's own stop path runs, so the card just goes away.
+            void discardStoppedGeneration(gen.id);
+          } else if (outcome.state !== "abandoned") {
+            // Graduate into a real thread turn, exactly once: a multi-angle
+            // group's members all resolve to the same group thread, so
+            // dedupe by thread identity, not by job id.
+            try {
+              const thread = await getGenerationThread(gen.id);
+              if (!cancelled && thread) {
+                const item = historyItemToChatItem(thread);
+                setItems((prev) =>
+                  prev.some((p) => sameThreadItem(p, item)) ? prev : [...prev, item],
+                );
+                setTranscriptOpen(true);
+              }
+            } catch {
+              // History still has it — the refresh below repaints stats.
+            }
+          }
+          if (!cancelled) setResumedJobs((prev) => prev.filter((j) => j.id !== gen.id));
+        }),
       );
 
       if (cancelled) return;
-      setLiveProgress(null);
       router.refresh();
     })();
 
@@ -3882,6 +3960,20 @@ function GenerateFormInner({
   // next attempt (or the generate step of the current one, if it hasn't
   // started yet) from ever beginning, which is where almost all the time
   // and cost of a multi-attempt run actually goes.
+  // Stop for a RESUMED render — per job, since several can be re-attached at
+  // once, and none of them own activeGenerationRef (that belongs to a send
+  // this mount made). The server-side cancel propagates back through the
+  // job's own poll loop as a "cancelled" outcome, which removes the card.
+  async function stopResumedJob(id: string) {
+    setResumedJobs((prev) => prev.map((j) => (j.id === id ? { ...j, stopping: true } : j)));
+    try {
+      await requestGenerationCancel(id);
+    } catch {
+      // The poll keeps watching either way; let the button be pressed again.
+      setResumedJobs((prev) => prev.map((j) => (j.id === id ? { ...j, stopping: false } : j)));
+    }
+  }
+
   async function handleStop() {
     const active = activeGenerationRef.current;
     if (!active || stopping) return;
@@ -5993,6 +6085,30 @@ function GenerateFormInner({
               </div>
             )}
 
+            {/* Renders re-attached to on mount — the reopened-app case. Same
+                bubble anatomy as the live turn below, with a per-job Stop. */}
+            {resumedJobs.map((job) => (
+              <div key={job.id} className="space-y-3">
+                <UserBubble prompt={job.prompt} />
+                <div className="flex justify-start">
+                  <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
+                    <div className="flex items-center gap-3 text-sm text-atelier-muted">
+                      <LoaderIcon className="h-4 w-4" />
+                      <span>{job.progress ?? g.resumingRender}</span>
+                      <button
+                        type="button"
+                        onClick={() => stopResumedJob(job.id)}
+                        disabled={job.stopping}
+                        className="rounded-control border border-atelier-rule px-2.5 py-1 text-xs text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50"
+                      >
+                        {job.stopping ? g.stopping : g.stop}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+
             {livePrompt !== null && (
               <div className="space-y-3">
                 <UserBubble prompt={livePrompt} attachments={liveAttachments} />
@@ -6036,9 +6152,11 @@ function GenerateFormInner({
                               <Badge tone={liveIsLive ? "success" : "neutral"}>
                                 {liveIsLive ? g.live : g.simulated}
                               </Badge>
-                              <p className="font-numeral text-xs tabular-nums text-atelier-accent">
-                                {formatMsg(g.passedOnAttempt, { n: liveResult.attempts })}
-                              </p>
+                              {liveResult.attempts > 1 && (
+                                <p className="font-numeral text-xs tabular-nums text-atelier-accent">
+                                  {formatMsg(g.passedOnAttempt, { n: liveResult.attempts })}
+                                </p>
+                              )}
                             </div>
                             {/* Same submitted-type fix as ResultMedia above —
                                 promotability belongs to what the request

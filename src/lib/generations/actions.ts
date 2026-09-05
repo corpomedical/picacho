@@ -18,6 +18,7 @@ import {
   layerStoragePath,
 } from "@/lib/generations/layers";
 import { probeImage } from "@/lib/media/image-probe";
+import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
 import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { baselineIdentityReferences, resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
@@ -2197,7 +2198,9 @@ export async function pollGeneration(generationId: string): Promise<
 > {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
-  if (!userData.user) return { error: "Your session expired — please log in again." };
+  // The shared constant, not a literal — the poll loops match on it to treat
+  // this one error as TRANSIENT (see SESSION_EXPIRED_MESSAGE's comment).
+  if (!userData.user) return { error: SESSION_EXPIRED_MESSAGE };
 
   // Deliberately NO revalidatePath here.
   //
