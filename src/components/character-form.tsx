@@ -404,9 +404,21 @@ export function CharacterForm({
     }
 
     setSubmitting(true);
+    const supabase = createClient();
+    // Hoisted out of the try so BOTH failure paths below can clean up: the
+    // photos go to storage before the server ever validates the save, so a
+    // rejected save (or an upload that dies midway) used to orphan the whole
+    // batch forever — and the retry re-uploaded the same files under fresh
+    // UUIDs. The 2026-08-31 inspection counted 43 objects of this class.
+    const uploadedPaths: string[] = [];
+    const uploadedOutfitPaths: string[] = [];
+    const cleanupUploads = () => {
+      const batch = [...uploadedPaths, ...uploadedOutfitPaths];
+      if (batch.length) {
+        void supabase.storage.from("character-references").remove(batch);
+      }
+    };
     try {
-      const supabase = createClient();
-      const uploadedPaths: string[] = [];
 
       // Same sanitize as every other upload lane (attachments, upscale,
       // layers): Supabase rejects keys outside its ASCII-safe set, so a
@@ -428,7 +440,6 @@ export function CharacterForm({
       // Outfit photos share the bucket; the "outfit-" name prefix is purely
       // for humans reading the storage browser — the row's outfit_image_urls
       // column is what actually separates them from identity references.
-      const uploadedOutfitPaths: string[] = [];
       for (const { file } of newOutfitFiles) {
         const path = `${userId}/outfit-${crypto.randomUUID()}-${safeName(file.name)}`;
         const { error: uploadError } = await supabase.storage
@@ -472,6 +483,7 @@ export function CharacterForm({
       const result = await saveCharacterProfile(formData);
 
       if (result.error) {
+        cleanupUploads();
         setError(result.error);
         setSubmitting(false);
         return;
@@ -487,6 +499,7 @@ export function CharacterForm({
       window.location.assign(initial?.id ? "/app/character" : "/app/generate");
     } catch (err) {
       console.error("Failed to save character:", err);
+      cleanupUploads();
       // The direct-to-storage photo upload above can hit the same raw
       // network TypeError as the reference-image generator on a weak
       // connection — same fix here: recognize it and show the plain

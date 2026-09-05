@@ -241,6 +241,13 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       .eq("id", id)
       .eq("user_id", data.user.id)
       .maybeSingle();
+    if (!freshRow) {
+      // The characters rail exposes quick-delete on every page (and a second
+      // device can delete too). A 0-row update below reports no error, so
+      // this save used to claim success while every edit vanished and the
+      // just-uploaded photos were orphaned with nothing referencing them.
+      return { error: "This character was deleted while you were editing — nothing was saved." };
+    }
     const oldRefs = (freshRow?.reference_image_urls as string[] | null) ?? [];
     const oldOutfits = (freshRow?.outfit_image_urls as string[] | null) ?? [];
     const refBase = (hasBaselines ? referenceBaseline : null) ?? oldRefs;
@@ -256,15 +263,21 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
     row.reference_image_urls = [...referenceImagePaths, ...appendedRefs];
     row.outfit_image_urls = [...outfitImagePaths, ...appendedOutfits];
 
-    const { error } = await supabase
+    const { data: updatedRows, error } = await supabase
       .from("character_profiles")
       .update(row)
       .eq("id", id)
-      .eq("user_id", data.user.id);
+      .eq("user_id", data.user.id)
+      .select("id");
 
     if (error) {
       console.error("saveCharacterProfile update failed:", error.message);
       return { error: "Couldn't save this character — try again." };
+    }
+    // Deleted in the window between the fresh read above and this write —
+    // same honest answer as the read-time check.
+    if (!updatedRows?.length) {
+      return { error: "This character was deleted while you were editing — nothing was saved." };
     }
 
     // The submitted lists replace the stored ones, so any photo the user
