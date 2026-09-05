@@ -18,7 +18,29 @@ const CONTENT_TYPES: Record<string, string> = {
   gif: "image/gif",
   mp4: "video/mp4",
   webm: "video/webm",
+  // The chat-attachments bucket accepts image/*, video/*, pdf, txt and doc
+  // (user-actions.sql), and the composer's file input advertises exactly
+  // those — but everything below used to fall out of this map and ship as
+  // application/octet-stream under nosniff. SVG was the sharpest case:
+  // browsers never sniff SVG, so every SVG attachment rendered as a broken
+  // image. (SVG also gets a script-neutralizing CSP below — an inline
+  // user-supplied SVG on our origin is an XSS vector when opened directly.)
+  svg: "image/svg+xml",
+  avif: "image/avif",
+  heic: "image/heic",
+  mov: "video/quicktime",
+  pdf: "application/pdf",
+  txt: "text/plain; charset=utf-8",
+  mp3: "audio/mpeg",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 };
+
+// A user-uploaded SVG served inline from our origin executes its scripts on
+// direct navigation (never inside <img>, which is why serving it at all is
+// fine). This CSP neutralizes that without breaking rendering — the same
+// defense the big user-content hosts use.
+const SVG_CSP = "default-src 'none'; style-src 'unsafe-inline'";
 
 // Formats worth resizing. GIF is excluded on purpose — it may be animated,
 // and a resize would flatten it to a single frame.
@@ -98,7 +120,11 @@ export async function GET(
         // 50MP ceiling (was 24MP, which modern providers exceed — those
         // renders failed resize, fell back to multi-MB originals, and the
         // biggest broke entirely on the platform's response limit).
-        const resized = await sharp(input, { limitInputPixels: 50_000_000 })
+        // animated: WebP can carry animation (the reason GIF is excluded
+        // from RESIZABLE entirely) — without the flag sharp reads only the
+        // first frame, so the same file animated at full size and froze at
+        // ?w=320. The flag is a no-op for still images.
+        const resized = await sharp(input, { limitInputPixels: 50_000_000, animated: ext === "webp" })
           .rotate() // honour EXIF orientation, which resizing would otherwise drop
           .resize({ width, withoutEnlargement: true })
           .webp({ quality: 78 })
@@ -129,13 +155,14 @@ export async function GET(
     // passthrough branch needs this; thumbnails are images.
     const range = request.headers.get("range");
     const contentType = CONTENT_TYPES[ext] ?? "application/octet-stream";
-    const baseHeaders = {
+    const baseHeaders: Record<string, string> = {
       "content-type": contentType,
       // Same edge-cache note as the thumbnail branch above.
       "cache-control": "public, max-age=31536000, s-maxage=31536000, immutable",
       "X-Content-Type-Options": "nosniff",
       "accept-ranges": "bytes",
     };
+    if (ext === "svg") baseHeaders["content-security-policy"] = SVG_CSP;
 
     if (range) {
       const m = range.match(/^bytes=(\d*)-(\d*)$/);
