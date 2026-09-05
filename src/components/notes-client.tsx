@@ -43,6 +43,11 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
   const [body, setBody] = useState(initialNotes[0]?.body ?? "");
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The save the timer would fire, kept reachable so flushPendingSave can run
+  // it NOW instead of merely cancelling it — cancelling alone silently threw
+  // away everything typed since the last fired save whenever the user
+  // switched notes or navigated within the 700ms debounce window.
+  const pendingSave = useRef<(() => void) | null>(null);
 
   const selected = notes.find((n) => n.id === selectedId) ?? null;
 
@@ -58,7 +63,8 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
     if (!selectedId) return;
     setStatus("saving");
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
+    const fire = async () => {
+      pendingSave.current = null;
       const formData = new FormData();
       formData.set("id", selectedId);
       formData.set("title", nextTitle);
@@ -78,11 +84,18 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
           )
           .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()),
       );
-    }, SAVE_DELAY_MS);
+    };
+    pendingSave.current = () => void fire();
+    saveTimer.current = setTimeout(fire, SAVE_DELAY_MS);
   }
 
+  // FLUSHES, not just cancels: the pending timer holds every change since the
+  // last completed save, so cancelling without firing loses real typed text.
+  // The save runs fire-and-forget — the note being left keeps its own id in
+  // the closure, so it lands on the right row even after selection changes.
   function flushPendingSave() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (pendingSave.current) pendingSave.current();
   }
 
   useEffect(() => () => flushPendingSave(), []);
