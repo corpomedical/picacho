@@ -111,7 +111,7 @@ export default async function GalleryPage() {
   // page's inert first-frame tiles.
   return (
     <div className="min-h-screen bg-[#17150f]">
-      <MarketingHeader />
+      <MarketingHeader dark />
 
       <section className="mx-auto max-w-6xl px-6 pb-4 pt-20 sm:px-8">
         <p className="text-[10.5px] font-semibold uppercase tracking-[0.16em] text-ochre">
@@ -142,7 +142,7 @@ export default async function GalleryPage() {
         )}
       </section>
 
-      <MarketingFooter />
+      <MarketingFooter dark />
     </div>
   );
 }
