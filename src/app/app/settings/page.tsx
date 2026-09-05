@@ -182,7 +182,7 @@ export default async function SettingsPage({
     supabase
       .from("profiles")
       .select(
-        "username, company, gender, plan, plan_status, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access",
+        "username, company, gender, plan, plan_status, plan_source, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access",
       )
       .eq("id", data.user.id)
       .single(),
@@ -234,7 +234,14 @@ export default async function SettingsPage({
   // plan changes should go through the Customer Portal, which handles
   // proration correctly. No subscription yet (or fully canceled) means the
   // next click starts a brand-new Checkout session instead.
-  const hasLiveSubscription = profile?.plan_status === "active" || profile?.plan_status === "past_due";
+  // Stripe-owned plans only (round-two audit): a Play-billed subscriber has
+  // no Stripe customer, so the portal button dead-ended in "No billing
+  // account yet — start with a plan below" — telling a PAYING customer they
+  // have no billing. Play subscribers manage billing in the Play Store; the
+  // NativeStore branch and checkout-core's guard already say so.
+  const hasLiveSubscription =
+    (profile?.plan_status === "active" || profile?.plan_status === "past_due") &&
+    profile?.plan_source !== "play";
 
   const NAV: { id: TabId; label: string; icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element }[] = [
     { id: "account", label: s.account, icon: AccountIcon },

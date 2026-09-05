@@ -43,7 +43,19 @@ export async function GET(request: Request) {
       // distinction the email paths get for free by being separate forms.
       const user = exchanged?.user;
       const createdAt = user?.created_at ? Date.parse(user.created_at) : NaN;
-      const brandNew = Number.isFinite(createdAt) && Date.now() - createdAt < 60_000;
+      // 15s, not the old 60s, and never on a recovery flow (round-two
+      // audit): the heuristic cannot distinguish "created by THIS exchange"
+      // from "a second exchange for a very fresh account" — at 60 seconds a
+      // signup whose redirect was interrupted, retried after the operator
+      // flipped signups off mid-wave, hard-deleted a legitimately created
+      // account (with its terms record and referral). 15s keeps the
+      // kill-switch teeth for the exchange that really just minted the user
+      // while shrinking the misfire window fourfold; password-recovery
+      // exchanges land on this same route with next=/reset-password and
+      // never create accounts, so they are exempt outright.
+      const isRecoveryFlow = next.startsWith("/reset-password");
+      const brandNew =
+        Number.isFinite(createdAt) && Date.now() - createdAt < 15_000 && !isRecoveryFlow;
       if (brandNew && user) {
         const { data: flag } = await supabase
           .from("feature_flags")

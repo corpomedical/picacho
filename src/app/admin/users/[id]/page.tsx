@@ -314,6 +314,10 @@ export default async function AdminUserDetailPage({
             </p>
             <form action={setBonusCredits} className="mt-2 flex gap-2">
               <input type="hidden" name="user_id" value={user.id} />
+              {/* The value this page RENDERED — the action refuses to write
+                  over a different one, so a referral credit landing while
+                  the tab sat open can't be silently erased. */}
+              <input type="hidden" name="expected_bonus_credits" value={bonusCredits} />
               <input
                 type="number"
                 name="bonus_credits"

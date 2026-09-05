@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/admin/require-admin";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { renderTemplate, type TemplateVars } from "@/lib/email/render";
 import { sendEmail, sendBatch, unsubscribeUrl } from "@/lib/email/send";
+import { rateLimited } from "@/lib/rate-limit";
 
 // Announcement email management. Design rule: NOTHING in the product sends
 // marketing email on its own — the only two paths that ever hand mail to
@@ -325,6 +326,37 @@ export async function sendEmailBlast(formData: FormData) {
     });
   }
 
+  // In-flight lock (round-two audit): nothing server-side stopped a second
+  // tab (or the natural retry after a mid-send death) from re-sending
+  // thousands of already-accepted emails — the only guard was one tab's
+  // disabled button. One blast per admin per 15 minutes; after a mid-send
+  // death the block is exactly right, because the audit row below now
+  // exists to show what already went out.
+  if (await rateLimited(userId, "email-blast", 15 * 60, 1)) {
+    fail("A blast from this account is already in flight (or just ran) — check Recent sends before retrying. Nothing was sent.");
+  }
+
+  // Audit row BEFORE the send (round-two audit): a blast that died mid-loop
+  // used to leave no row at all, so 3,000 delivered emails looked like a
+  // send that never happened — and invited the double-sending retry. The
+  // row goes in as in-flight and is finalized after; if even this insert
+  // fails, the blast is refused, because mail with no audit trail is worse
+  // than no mail.
+  const { data: auditRow, error: auditStartError } = await admin
+    .from("email_sends")
+    .insert({
+      template_key: key,
+      subject: template!.subject,
+      audience: `${serviceNotice ? `${audience} (service notice)` : audience} — in flight`,
+      recipient_count: messages.length,
+      sent_by: userId,
+    })
+    .select("id")
+    .single();
+  if (auditStartError || !auditRow) {
+    fail(`Couldn't record the blast before sending — nothing was sent. ${(auditStartError?.message ?? "").slice(0, 120)}`);
+  }
+
   const result = await sendBatch(messages);
 
   if (result.sent === 0) {
@@ -333,23 +365,18 @@ export async function sendEmailBlast(formData: FormData) {
     fail("The blast could not be sent — nothing went out. Check RESEND_API_KEY and the server log.");
   }
 
-  // Audit row AFTER the send, recording what Resend actually accepted.
-  // Best-effort: the mail is already out, so a failed audit write is a loud
-  // log line, not a reason to tell the admin the blast failed. The
-  // service-notice flag is recorded as a suffix in the free-text audience
-  // column — "which sends ignored the opt-out list?" must stay answerable
-  // from the log alone, with no schema change.
-  const { error: auditError } = await admin.from("email_sends").insert({
-    template_key: key,
-    subject: template!.subject,
-    audience: serviceNotice ? `${audience} (service notice)` : audience,
-    recipient_count: result.sent,
-    sent_by: userId,
-  });
+  // Finalize the in-flight audit row with what Resend actually accepted.
+  // Best-effort: the mail is already out, so a failed update is a loud log
+  // line — the in-flight row itself remains as the record either way.
+  const { error: auditError } = await admin
+    .from("email_sends")
+    .update({
+      audience: serviceNotice ? `${audience} (service notice)` : audience,
+      recipient_count: result.sent,
+    })
+    .eq("id", auditRow!.id);
   if (auditError) {
-    // serviceNotice included: when the audit row fails, this log line is the
-    // only remaining record that the opt-out list was bypassed.
-    console.error("sendEmailBlast: audit insert failed", { key, audience, serviceNotice, auditError });
+    console.error("sendEmailBlast: audit finalize failed", { key, audience, serviceNotice, auditError });
   }
 
   revalidatePath("/admin/emails");

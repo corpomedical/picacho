@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { planForPlayProduct, packForPlayProduct, normalizePlayProductId } from "@/lib/play/products";
+import { notifyAdmins } from "@/lib/push/web-push";
 
 // RevenueCat webhook — Google Play Billing's server-side truth, the Play
 // counterpart of /api/webhooks/stripe. RevenueCat receives Play's real-time
@@ -20,7 +21,10 @@ import { planForPlayProduct, packForPlayProduct, normalizePlayProductId } from "
 //    vice versa — each system resets only what it owns.
 
 type RevenueCatEvent = {
+  id?: string;
   type?: string;
+  transferred_from?: string[];
+  transferred_to?: string[];
   app_user_id?: string;
   original_app_user_id?: string;
   product_id?: string;
@@ -101,6 +105,57 @@ export async function POST(request: Request) {
           console.error("RevenueCat webhook: unknown product", productRaw);
           break;
         }
+
+        // ORDERING GUARD (round-two audit): RC redelivers any non-2xx for
+        // days and promises no ordering. An activation whose own period has
+        // already ENDED is a stale redelivery — applying it resurrected a
+        // dead plan forever, because its EXPIRATION was already acked and
+        // nothing later ever addresses a dead subscription again.
+        if (
+          typeof event.expiration_at_ms === "number" &&
+          event.expiration_at_ms > 0 &&
+          event.expiration_at_ms <= Date.now()
+        ) {
+          console.log("RevenueCat webhook: stale activation skipped (period already over)", userId, event.type);
+          break;
+        }
+
+        // CROSS-STORE GUARD — the header's invariant ("a Play event never
+        // touches a Stripe-owned plan"), now actually enforced on the one
+        // path that lacked it. Every reset path was guarded; the activation
+        // was not, so a Play purchase stomped a LIVE Stripe-billed profile
+        // while stripe_subscription_id kept billing invisibly, and the
+        // later Play EXPIRATION then reset the still-paying Stripe
+        // subscriber to the free tier. A double subscription cannot be
+        // fixed by a retry loop — ack it, but loudly: the alert is the
+        // admin's cue to refund one side.
+        const { data: current, error: readError } = await supabase
+          .from("profiles")
+          .select("plan_source, plan_status, stripe_subscription_id")
+          .eq("id", userId)
+          .maybeSingle();
+        if (readError) {
+          console.error("RevenueCat webhook: profile read failed", readError.message);
+          return NextResponse.json({ received: false }, { status: 500 });
+        }
+        if (
+          current?.plan_source === "stripe" &&
+          (current.plan_status === "active" || current.plan_status === "past_due") &&
+          current.stripe_subscription_id
+        ) {
+          console.error(
+            "RevenueCat webhook: Play activation for a LIVE Stripe-billed profile — NOT applied; user is double-subscribed",
+            userId,
+            productRaw,
+          );
+          await notifyAdmins({
+            title: "Double subscription (Stripe + Play)",
+            body: `User ${userId} bought ${productRaw} on Play while Stripe still bills them — refund one side.`,
+            path: "#money",
+          });
+          break;
+        }
+
         const { error } = await supabase
           .from("profiles")
           .update({
@@ -158,23 +213,54 @@ export async function POST(request: Request) {
       // Entitlement actually ended. Reset ONLY a Play-owned plan, and only
       // the plan fields — Stripe columns are not this webhook's to touch.
       case "EXPIRATION": {
-        const { error } = await supabase
-          .from("profiles")
-          .update({
-            plan: "none",
-            plan_status: "canceled",
-            plan_source: null,
-            play_product_id: null,
-            plan_interval: null,
-            plan_currency: null,
-            current_period_start: null,
-            current_period_end: null,
-          })
-          .eq("id", userId)
-          .eq("plan_source", "play");
-        if (error) {
-          console.error("RevenueCat webhook: expiration reset failed", error.message);
-          return NextResponse.json({ received: false }, { status: 500 });
+        // ORDERING GUARD (round-two audit): a redelivered EXPIRATION from a
+        // PREVIOUS subscription must not wipe a just-purchased one. If the
+        // event's own expiration predates the stored period end, the stored
+        // subscription is the newer truth — skip.
+        if (typeof event.expiration_at_ms === "number" && event.expiration_at_ms > 0) {
+          const { data: cur, error: curError } = await supabase
+            .from("profiles")
+            .select("plan_source, current_period_end")
+            .eq("id", userId)
+            .maybeSingle();
+          if (curError) {
+            console.error("RevenueCat webhook: expiration pre-read failed", curError.message);
+            return NextResponse.json({ received: false }, { status: 500 });
+          }
+          if (
+            cur?.plan_source === "play" &&
+            cur.current_period_end &&
+            new Date(cur.current_period_end).getTime() > event.expiration_at_ms
+          ) {
+            console.log("RevenueCat webhook: stale EXPIRATION skipped (newer subscription present)", userId);
+            break;
+          }
+        }
+        const ok = await resetPlayPlan(supabase, userId);
+        if (!ok) return NextResponse.json({ received: false }, { status: 500 });
+        break;
+      }
+
+      // RC's transfer-on-conflict moved a store receipt's entitlement to a
+      // different app user id. No later event EVER addresses the origin id
+      // again, so ignoring this left the origin profile paid forever while
+      // the same Google subscription entitled someone else (round-two
+      // audit). Reset every Play-owned origin; the target gets no product
+      // payload here, so it is alerted for manual reconcile rather than
+      // guessed at.
+      case "TRANSFER": {
+        for (const originId of (event.transferred_from ?? []).filter(isUuid)) {
+          const ok = await resetPlayPlan(supabase, originId);
+          if (!ok) return NextResponse.json({ received: false }, { status: 500 });
+        }
+        const targets = (event.transferred_to ?? []).filter(isUuid);
+        if (targets.length) {
+          console.error("RevenueCat webhook: TRANSFER target needs manual reconcile", targets.join(","));
+          await notifyAdmins({
+            title: "Play entitlement transferred",
+            body: `Entitlement moved to ${targets.join(", ")} — origin reset; check the target's plan.`,
+            path: "#money",
+          });
         }
         break;
       }
@@ -225,14 +311,21 @@ async function grantPack(
   credits: number,
   event: RevenueCatEvent,
 ): Promise<boolean> {
-  if (!event.transaction_id) {
-    console.error("RevenueCat webhook: pack purchase without transaction_id");
-    return true; // nothing to key idempotency on; acking beats a retry loop
+  // transaction_id first, RC's own event id as the fallback — both are
+  // stable across redeliveries, so idempotency holds either way. Acking a
+  // keyless pack (the old behavior) kept the customer's money with no
+  // grant, no credit_purchases row for the REFUND handler to find, and no
+  // trace beyond a log line; with no durable key at all, a 500 makes RC
+  // redeliver loudly (bounded by its retry schedule) instead.
+  const idempotencyKey = event.transaction_id ?? event.id;
+  if (!idempotencyKey) {
+    console.error("RevenueCat webhook: pack purchase without transaction_id or event id — refusing to ack");
+    return false;
   }
   const amountCents = Math.round((event.price_in_purchased_currency ?? 0) * 100);
   const { data: granted, error } = await supabase.rpc("record_credit_purchase", {
     p_user_id: userId,
-    p_session_id: `play:${event.transaction_id}`,
+    p_session_id: `play:${idempotencyKey}`,
     p_amount_cents: amountCents,
     p_currency: event.currency?.toLowerCase() ?? "usd",
     p_credits: credits,
@@ -242,7 +335,34 @@ async function grantPack(
     return false;
   }
   if (granted !== true) {
-    console.log("RevenueCat webhook: duplicate pack grant ignored", event.transaction_id);
+    console.log("RevenueCat webhook: duplicate pack grant ignored", idempotencyKey);
+  }
+  return true;
+}
+// The guarded Play reset EXPIRATION and TRANSFER share — resets ONLY a
+// Play-owned plan, never Stripe columns. Returns false when the caller
+// should 500 for a redelivery.
+async function resetPlayPlan(
+  supabase: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<boolean> {
+  const { error } = await supabase
+    .from("profiles")
+    .update({
+      plan: "none",
+      plan_status: "canceled",
+      plan_source: null,
+      play_product_id: null,
+      plan_interval: null,
+      plan_currency: null,
+      current_period_start: null,
+      current_period_end: null,
+    })
+    .eq("id", userId)
+    .eq("plan_source", "play");
+  if (error) {
+    console.error("RevenueCat webhook: play plan reset failed", error.message);
+    return false;
   }
   return true;
 }

@@ -39,9 +39,16 @@ export async function previewVoice(
   // This is the gate that keeps a free signup from scripting paid TTS calls.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role")
+    .select("plan, role, status")
     .eq("id", userData.user.id)
     .single();
+  // The one paid lane the suspension matrix missed (round-two audit): this
+  // action is reachable via /admin/voices, outside the middleware's /app
+  // gate, so a suspended paid account could keep scripting paid TTS calls.
+  // Same check, same message as every other money lane.
+  if (profile?.status === "suspended") {
+    return { error: "Your account is suspended. Contact support if you think this is a mistake." };
+  }
   if ((profile?.plan ?? "none") === "none" && profile?.role !== "admin") {
     return { error: "Voice previews are part of a paid plan — upgrade to use them." };
   }

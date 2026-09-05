@@ -584,14 +584,43 @@ export async function setBonusCredits(formData: FormData) {
   if (!Number.isFinite(bonusCredits) || bonusCredits < 0) {
     redirect(`${redirectTo}?error=${encodeURIComponent("Bonus credits must be 0 or more.")}`);
   }
+  // Upper bound (round-two audit): the old floor-only validation let a
+  // fat-fingered paste write any value up to integer overflow onto a money
+  // counter. Nobody has ever been granted more than double digits.
+  if (bonusCredits > 10_000) {
+    redirect(`${redirectTo}?error=${encodeURIComponent("That's more than 10,000 bonus credits — if you really mean it, do it in two steps.")}`);
+  }
 
-  const { error } = await admin
-    .from("profiles")
-    .update({ bonus_credits: bonusCredits })
-    .eq("id", userId);
+  // Compare-and-set against the value the page rendered: bonus_credits has
+  // a SECOND writer (the referral trigger increments it in the database),
+  // and the absolute write here silently erased any increment that landed
+  // between page render and save (round-two audit). A mismatch now asks the
+  // admin to look again instead of destroying a user's earned credit.
+  const expectedRaw = formData.get("expected_bonus_credits") as string | null;
+  const expected = expectedRaw === null ? null : Number.parseInt(expectedRaw, 10);
+  let write = admin.from("profiles").update({ bonus_credits: bonusCredits }).eq("id", userId);
+  if (expected !== null && Number.isFinite(expected)) {
+    write = write.eq("bonus_credits", expected);
+  }
+  const { data: updated, error } = await write.select("id");
   if (error) {
     redirect(`${redirectTo}?error=${encodeURIComponent(error.message)}`);
   }
+  if (!updated?.length) {
+    redirect(
+      `${redirectTo}?error=${encodeURIComponent(
+        "Their bonus credits changed while this page was open (a referral may have landed) — the value was NOT saved. Check the new number and try again.",
+      )}`,
+    );
+  }
+  // The only audit trail this grant has — make it greppable.
+  const { data: adminUser } = await supabase.auth.getUser();
+  console.log("admin: bonus credits set", {
+    userId,
+    to: bonusCredits,
+    from: expected,
+    by: adminUser?.user?.id ?? "unknown",
+  });
 
   revalidatePath(`/admin/users/${userId}`);
 }
