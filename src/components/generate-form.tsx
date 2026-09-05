@@ -2357,7 +2357,7 @@ function GenerateFormInner({
       return;
     }
     if (!continueModelAppliedRef.current) {
-      setVideoModelId("seedance-2");
+      selectVideoModel("seedance-2");
     } else {
       setContinueFromId(null);
     }
@@ -3106,6 +3106,16 @@ function GenerateFormInner({
     setStoryboardEndPath(null);
     setMultiRefPaths([]);
     setPanelUploads([]);
+  }
+
+  // Every model switch funnels through here. The advanced storyboard/
+  // multiref staging is Kling 1.6-only (server gate: "Multi-image reference
+  // and storyboard need Kling 1.6"), but nothing used to clear it on a model
+  // change — the staged frames rode silently in the payload, the receipt
+  // claimed they were native, and the server rejected the send.
+  function selectVideoModel(id: string) {
+    if (id !== "kling" && videoAdvancedMode !== "none") clearAdvancedVideo();
+    setVideoModelId(id);
   }
 
   function openAdvancedVideo(mode: "storyboard" | "multiref") {
@@ -4112,7 +4122,7 @@ function GenerateFormInner({
       case "switch-photoreal-model": {
         // send-plan only attaches this action when it resolved a target.
         const target = issue.params?.target;
-        if (target) setVideoModelId(target);
+        if (target) selectVideoModel(target);
         return false;
       }
       case "clear-continuation":
@@ -4777,7 +4787,7 @@ function GenerateFormInner({
   // before the deferred submit fires.
   function retryOnPhotorealModel(turnPrompt: string, targetModelId: string) {
     if (submitting) return;
-    setVideoModelId(targetModelId);
+    selectVideoModel(targetModelId);
     setPrompt(turnPrompt);
     // Same unfold-before-submit as generateAnyway above — the folded form
     // doesn't exist to receive requestSubmit.
@@ -5418,7 +5428,7 @@ function GenerateFormInner({
                   role="option"
                   aria-selected={m.id === videoModelId}
                   onClick={() => {
-                    setVideoModelId(m.id);
+                    selectVideoModel(m.id);
                     setVideoModelMenuOpen(false);
                   }}
                   className={cn(

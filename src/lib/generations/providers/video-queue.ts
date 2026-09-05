@@ -86,17 +86,24 @@ export async function submitVideoJob(
 
   const model = getVideoModel(modelId);
   const label = model.name;
-  // The reference list is assembled the same way fal's branch assembles it —
-  // identity anchor first, then outfit, then the attached prop — because the
-  // citation prose below numbers them in that order. byteplus.ts states the
-  // cap is the caller's job; the catalogue budgets Seedance at 4.
-  const references = [
-    ...(options.characterAnchorImageUrl ? [options.characterAnchorImageUrl] : []),
-    ...(options.referenceImageUrls ?? []),
-  ].slice(0, 4);
-  const outfit = options.outfitImageUrl;
-  const prop = options.propImageUrl;
-  const images = [...references, ...(outfit ? [outfit] : []), ...(prop ? [prop] : [])].slice(0, 4);
+  // The reference list mirrors fal's Seedance branch EXACTLY (fal.ts): the
+  // anchor and referenceImageUrls are either/or — the anchor IS refs[0],
+  // separately signed, so prepending it double-sent that photo and pushed
+  // the last real reference out of the 4-slot budget. And outfit/prop ride
+  // only when they FIT the budget: the old trailing slice could drop the
+  // outfit image while its citation line still said "@Image5 shows only an
+  // outfit" — pointing the model at a photo of someone's face, or nothing.
+  // byteplus.ts states the cap is the caller's job; Seedance budgets 4.
+  const references = (
+    options.referenceImageUrls?.length
+      ? options.referenceImageUrls
+      : options.characterAnchorImageUrl
+        ? [options.characterAnchorImageUrl]
+        : []
+  ).slice(0, 4);
+  const outfit = references.length < 4 ? options.outfitImageUrl : undefined;
+  const prop = references.length + (outfit ? 1 : 0) < 4 ? options.propImageUrl : undefined;
+  const images = [...references, ...(outfit ? [outfit] : []), ...(prop ? [prop] : [])];
 
   // Same citation lines fal's Seedance branch writes, and the same "@ImageN"
   // spelling — confirmed on 2026-09-04 against ByteDance's own request sample

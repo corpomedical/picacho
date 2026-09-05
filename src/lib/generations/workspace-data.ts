@@ -182,6 +182,10 @@ export async function getGenerateWorkspaceData(
   const multiAngleAvailable =
     (profile?.plan ?? "none") !== "none" ||
     (profile?.bonus_credits ?? 0) > 0 ||
+    // Purchased credits count — the server gate deliberately accepts them
+    // (anyone can buy a pack), and hiding the button from a topped-up free
+    // account walled off a feature they had already paid to be able to use.
+    (profile?.purchased_credits ?? 0) > 0 ||
     profile?.role === "admin";
 
   // Same "approaching your limit" nudge Claude/ChatGPT show near the

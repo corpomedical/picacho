@@ -266,14 +266,28 @@ describe("kling-o3 reference aspect bounds (422-after-reserve incident)", () => 
 });
 
 describe("multi-person routing", () => {
-  it("companions on a multi-person model ride as cast", () => {
-    const plan = resolveSendPlan({ ...base, modelId: "kling-o3-pro", companionsCount: 2 });
+  it("companions on the multi-person model ride as cast", () => {
+    // kling (1.6) is the ONE model the server accepts several distinct
+    // characters on — the previous version of this test pinned kling-o3-pro
+    // as native, encoding exactly the false claim the matrix carried: fal.ts
+    // folds every O3 Pro photo into one element as angles of the same person.
+    const plan = resolveSendPlan({ ...base, modelId: "kling", companionsCount: 2 });
     expect(entry(plan, "cast")!.consumption).toBe("native");
   });
 
   it("companions on a single-person model block", () => {
     const plan = resolveSendPlan({ ...base, modelId: "kling-2.5", companionsCount: 1 });
     expect(issue(plan, "MODEL_CANNOT_MULTI_PERSON")?.severity).toBe("block");
+  });
+
+  it("companions block on every model the server rejects them on", () => {
+    // Server truth (actions.ts): "Using multiple characters together needs
+    // Kling 1.6". The receipt must never say "cast: native" on a send the
+    // server refuses — that was the 2026-09-05 audit finding.
+    for (const modelId of ["kling-o3-pro", "seedance", "seedance-2"]) {
+      const plan = resolveSendPlan({ ...base, modelId, companionsCount: 1 });
+      expect(issue(plan, "MODEL_CANNOT_MULTI_PERSON")?.severity).toBe("block");
+    }
   });
 });
 

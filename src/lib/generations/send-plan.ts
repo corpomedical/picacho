@@ -126,7 +126,13 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     continuation: false,
     startEndFrames: false,
     storyboard: true,
-    multiPerson: true,
+    // false, corrected 2026-09-05: the server hard-rejects multi-character
+    // video on everything but Kling 1.6 (actions.ts "Using multiple
+    // characters together needs Kling 1.6"), and fal.ts folds every O3 Pro
+    // photo into ONE element as extra angles of the same person. Claiming
+    // it here suppressed the MODEL_CANNOT_MULTI_PERSON block, so the
+    // receipt said "cast: native" on a send the server refused.
+    multiPerson: false,
     aspectControl: "param",
     refAspectBounds: { min: 0.4, max: 2.5 },
     photorealPolicy: "accepts",
@@ -166,7 +172,10 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     continuation: true,
     startEndFrames: false,
     storyboard: false,
-    multiPerson: true,
+    // false, corrected 2026-09-05 — same server gate as kling-o3-pro above,
+    // and the Seedance citation line reads "The person in this video is
+    // @Image1", singular by construction.
+    multiPerson: false,
     aspectControl: "param",
     photorealPolicy: "rejects",
     imageBudget: 4,
@@ -178,7 +187,8 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     continuation: true,
     startEndFrames: false,
     storyboard: false,
-    multiPerson: true,
+    // false — see the seedance entry above.
+    multiPerson: false,
     aspectControl: "param",
     photorealPolicy: "rejects",
     imageBudget: 4,
@@ -866,8 +876,14 @@ export function resolveSendPlan(input: ResolveInput): SendPlan {
 
   // Reference-aspect bounds (kling-o3 family): only checkable when the
   // candidate identity image carries dimensions (upload metadata, P1+).
-  if (caps?.refAspectBounds && firstImageAttachment?.width && firstImageAttachment?.height) {
-    const ratio = firstImageAttachment.width / firstImageAttachment.height;
+  // The candidate is whichever photo actually rides the face slot — the
+  // legacy/identity-role attachment OR a reference-role one promoted by the
+  // referenceAsIdentity ladder above. Checking only the former made this
+  // block unreachable from current clients (every attachment ships role
+  // "reference" since 2026-08-25), so the failure surfaced post-submit.
+  const aspectCandidate = firstImageAttachment ?? referenceAsIdentity;
+  if (caps?.refAspectBounds && aspectCandidate?.width && aspectCandidate?.height) {
+    const ratio = aspectCandidate.width / aspectCandidate.height;
     if (ratio < caps.refAspectBounds.min || ratio > caps.refAspectBounds.max) {
       issues.push({
         severity: "block",
