@@ -131,6 +131,9 @@ export async function GET(request: Request) {
       .eq("content_type", "video")
       .eq("status", "succeeded")
       .is("poster_url", null)
+      // Only rows whose file we actually hold — the two ancient mock://
+      // rows can never grow a poster and were being re-nominated every run.
+      .like("result_url", "/api/media/%")
       .order("created_at", { ascending: false })
       .limit(300);
     // Frame grabs run a few seconds each, so 300 can outlast the function's
