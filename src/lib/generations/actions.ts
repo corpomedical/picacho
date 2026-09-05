@@ -506,7 +506,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const attachmentStoragePaths = (attachmentRoles ?? [])
     .map((a) => a.url)
     .filter((u) => u.startsWith("/api/media/chat-attachments/"))
-    .map((u) => u.slice("/api/media/chat-attachments/".length));
+    // The url carries mediaUrl()'s "?v=<sig>" — storage keys don't. Leaving
+    // it on made deleteGeneration's cleanup a permanent no-op: remove()
+    // silently skips keys that don't exist, so no error ever surfaced.
+    // (Upload names are sanitized to [A-Za-z0-9._-], so the encoded path IS
+    // the storage key once the query string is gone.)
+    .map((u) => u.slice("/api/media/chat-attachments/".length).split("?")[0]);
 
   // Which of the character's OWN saved reference photos to anchor to —
   // from the picker in the composer, for characters with more than one
@@ -3460,6 +3465,12 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
   // guard, since the column is data a past request wrote.
   const attachmentPaths = rows
     .flatMap((r) => ((r as { attachments?: unknown }).attachments as string[] | null) ?? [])
+    // Rows written before 2026-09-05 stored the path with mediaUrl()'s
+    // "?v=<sig>" still attached (the write side sliced the url without
+    // cutting the query), which made this cleanup a silent no-op — remove()
+    // skips keys that don't exist without an error. Stripping here heals
+    // every existing row, not just new ones.
+    .map((p) => (typeof p === "string" ? p.split("?")[0] : p))
     .filter((p) => typeof p === "string" && p.startsWith(`${userData.user!.id}/`) && !p.includes(".."));
   if (attachmentPaths.length) {
     const { error: attachmentRemoveError } = await supabase.storage

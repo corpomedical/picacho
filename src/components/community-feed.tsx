@@ -180,6 +180,7 @@ export function CommunityFeed({
   const [reportReason, setReportReason] = useState<ReportReason>("inappropriate");
   const [reportDetails, setReportDetails] = useState("");
   const [reportSending, setReportSending] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
   const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
   const [sharedTick, setSharedTick] = useState<string | null>(null);
   // In state, not a ref: the displayed count adds 1 once this session has
@@ -319,12 +320,18 @@ export function CommunityFeed({
 
   async function submitReport(post: CommunityPostView) {
     setReportSending(true);
+    setReportError(null);
     const { error } = await reportCommunityPost(post.id, reportReason, reportDetails);
     setReportSending(false);
     if (!error) {
       setReportedIds((prev) => new Set(prev).add(post.id));
       setReportOpenId(null);
       setReportDetails("");
+    } else {
+      // The action returns real user-facing messages (the 10/min rate limit,
+      // an expired session, a post unshared meanwhile) — dropping them left
+      // the sheet sitting there as if the button did nothing.
+      setReportError(error);
     }
   }
 
@@ -563,7 +570,10 @@ export function CommunityFeed({
                     {!post.mine && (
                       <button
                         type="button"
-                        onClick={() => setReportOpenId(reportOpenId === post.id ? null : post.id)}
+                        onClick={() => {
+                          setReportError(null);
+                          setReportOpenId(reportOpenId === post.id ? null : post.id);
+                        }}
                         aria-label={g.reportProblem}
                         className={cn(
                           "flex h-11 w-11 items-center justify-center rounded-full bg-[#101116]/55 text-[#f2f0ec]/85 backdrop-blur-md",
@@ -653,6 +663,9 @@ export function CommunityFeed({
                       >
                         {reportSending ? g.reportSending : g.reportSubmit}
                       </button>
+                      {reportError && (
+                        <p className="mt-2 text-[11px] leading-snug text-red-600">{reportError}</p>
+                      )}
                     </div>
                   )}
                 </section>
