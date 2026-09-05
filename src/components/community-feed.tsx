@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useBackCloser } from "@/lib/native/back-stack";
 import { useModalFocus } from "@/lib/use-modal-focus";
+import { localizeServerText } from "@/lib/i18n/server-text";
 import { useLocale } from "@/lib/i18n/provider";
 import {
   recordCommunityView,
@@ -672,7 +673,7 @@ export function CommunityFeed({
                         {reportSending ? g.reportSending : g.reportSubmit}
                       </button>
                       {reportError && (
-                        <p className="mt-2 text-[11px] leading-snug text-red-600">{reportError}</p>
+                        <p className="mt-2 text-[11px] leading-snug text-red-600">{localizeServerText(reportError, t)}</p>
                       )}
                     </div>
                   )}

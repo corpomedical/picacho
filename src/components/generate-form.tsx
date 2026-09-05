@@ -100,6 +100,7 @@ import {
   type VideoResolution,
 } from "@/lib/generations/providers/video-resolution";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages";
 import { cn } from "@/lib/cn";
@@ -5791,7 +5792,7 @@ function GenerateFormInner({
           {stageInFlightPrompt !== null ? (
             <div className="flex flex-col items-center gap-3 px-6 text-center">
               <LoaderIcon className="h-5 w-5 text-[#a39a88]" />
-              <p className="text-sm text-[#cfc8ba]">{liveProgress ?? g.runningPipeline}</p>
+              <p className="text-sm text-[#cfc8ba]">{liveProgress ? localizeServerText(liveProgress, t) : g.runningPipeline}</p>
               <p className="max-w-md truncate text-[11px] text-[#a39a88]">{stageInFlightPrompt}</p>
             </div>
           ) : stageTakeUrl ? (
@@ -6168,7 +6169,7 @@ function GenerateFormInner({
                   <div className="group max-w-[90%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4.5 py-4 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
                     <div className="flex items-center gap-3 text-sm text-atelier-muted">
                       <LoaderIcon className="h-4 w-4" />
-                      <span>{job.progress ?? g.resumingRender}</span>
+                      <span>{job.progress ? localizeServerText(job.progress, t) : g.resumingRender}</span>
                       <button
                         type="button"
                         onClick={() => stopResumedJob(job.id)}
@@ -6397,7 +6398,7 @@ function GenerateFormInner({
             absolute "rise from behind" positioning is always anchored to
             the form's own top edge, regardless of whether UsageBanner is
             also rendered above it pushing the form down. */}
-        {error && <ComposerToast key={error} message={error} onDone={() => setError("")} />}
+        {error && <ComposerToast key={error} message={localizeServerText(error, t)} onDone={() => setError("")} />}
         {/* Decorative shadow layer, separate from the form itself: the
             Safari shadow-corner mask fix would also clip the "+" dropdown
             and the loadout sheets, which are children of this form and need

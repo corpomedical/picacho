@@ -1622,6 +1622,66 @@ const en = {
     doneTitle: "You're all set",
     doneBody: "That's the tour. Describe what you want below to make your first generation.",
   },
+  // Server-produced strings, localized at DISPLAY time (2026-09-05 audit:
+  // every server action error and stage label reached the localized app in
+  // English). The server keeps returning its English strings — they are the
+  // wire format and the pipeline evidence — and localizeServerText
+  // (lib/i18n/server-text.ts) maps the known ones here at the render sites.
+  // A truth-contract test pins every mapped string against the server
+  // source, so an edit to either side alone fails the suite.
+  serverText: {
+    stageVideo: "Rendering your video",
+    stageVoice: "Generating the voice",
+    stageLipsync: "Syncing the lips to the dialogue",
+    stageUpscale: "Upscaling the video",
+    stageLayers: "Splitting into layers",
+    sessionExpired: "Your session expired — please log in again.",
+    suspended: "Your account is suspended. Contact support if you think this is a mistake.",
+    suspendedShort: "This account is suspended.",
+    tooFast: "You're generating a bit fast — wait a few seconds and try again.",
+    planCreditsUsedUp: "You've used all the credits included in your plan this month.",
+    describeFirst: "Describe what you want first.",
+    nothingToGenerate: "That didn't include anything to generate — describe what you want to see, like \"a woman walking through a neon-lit street at night\".",
+    characterNotFound: "Couldn't find that character.",
+    needsVoiceForDialogue: "Pick a character with a voice assigned to add dialogue, or clear the dialogue field.",
+    characterNoVoice: "This character doesn't have a voice assigned yet — add one in Character settings, or clear the dialogue field.",
+    voiceNotFound: "This character's voice couldn't be found — try picking a different one.",
+    trialSilentClips: "Dialogue and longer videos are part of a paid plan — the free trial makes short, silent clips. Pick a plan to unlock them.",
+    advancedNeedsPlan: "Multi-image reference and storyboard are available on the Studio and Elite plans. Upgrade to use them, or turn these options off.",
+    advancedNeedsKling: "Multi-image reference and start & end frames need Kling 1.6 as the selected video model — switch models, or turn these options off.",
+    multiNeedsKling: "Using multiple characters together needs Kling 1.6 as the selected video model — switch models, or remove the extra characters.",
+    storyboardNeedsO3: "Storyboards run on Kling O3 Pro — switch the model, or clear the storyboard.",
+    storyboardNoDialogue: "Storyboards and spoken dialogue can't combine yet — remove one.",
+    storyboardVsFrames: "Storyboards and start/end frames can't combine — remove one.",
+    continueNeedsSeedance: "Continuing a clip works with the Seedance models — pick Seedance 2.0 (or 2.5 for illustrated characters), or clear the continuation.",
+    couldntStart: "Couldn't start this generation — try again.",
+    couldntStartMulti: "Couldn't start these generations — try again.",
+    fanoutInFlight: "Your last multi-shot render is still running — stop it or let it finish before starting another.",
+    alreadyStarted: "That request was already started — try again.",
+    freeUsedToday: "You've used today's free generation — it comes back tomorrow. Pick a plan or top up credits to keep going — your characters and history stay exactly as they are.",
+    insufficientDetail: "That would use {need} credits (some models cost more than 1 per video), but you only have {have} left. Top up or pick a plan to keep going.",
+    trialCeiling: "That would use {need} credits (some models cost more than 1 per video) — the free trial only covers generations of up to {cap} credit(s). Top up credits or pick a plan to use this one.",
+  },
+  apiKeys: {
+    title: "API keys",
+    docsLink: "Read the API docs",
+    blurb: "Generate images from your own software — same characters, same credits. Included with Elite.",
+    notEnabled: "API access is included with the Elite plan. Get in touch and we'll switch it on for this account.",
+    freshTitle: "Copy this key now — it won't be shown again.",
+    copy: "Copy",
+    copied: "Copied",
+    done: "Done",
+    hashNote: "We only store a hash of it, so we genuinely can't show it to you again — if it's lost, revoke it and make another.",
+    created: "created",
+    lastUsed: "last used",
+    neverUsed: "never used",
+    nameLabel: "Name a new key",
+    namePlaceholder: "Batch product shots",
+    createKey: "Create key",
+    creating: "Creating…",
+    revoke: "Revoke",
+    revoking: "Revoking…",
+  },
 };
 
 export default en;

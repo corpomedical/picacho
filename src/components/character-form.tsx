@@ -11,6 +11,7 @@ import {
   generateReferenceImage,
 } from "@/lib/characters/actions";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { VoicePreviewButton } from "@/components/voice-preview-button";
@@ -1167,7 +1168,7 @@ export function CharacterForm({
         </Fold>
       )}
 
-      {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+      {error && <p className="text-sm text-red-600 dark:text-red-400">{localizeServerText(error, t)}</p>}
 
       <div className="flex items-center justify-between">
         <Link href="/app/character" className="text-sm text-atelier-muted hover:text-atelier-ink">

@@ -5,6 +5,7 @@ import { VIDEO_MODELS } from "./providers/video-models";
 import { MEDIA_BUCKETS } from "../media/url";
 import { USER_STORAGE_BUCKETS } from "../profile/storage-buckets";
 import { CANONICAL_ORIGIN, KNOWN_APP_HOSTS, PURCHASE_ORIGIN } from "../domains";
+import { MAPPED_SERVER_STRINGS } from "../i18n/server-text";
 
 // THE DUPLICATED-TRUTH CONTRACTS (2026-09-05 audit).
 //
@@ -132,4 +133,22 @@ describe("the price quoted is computed from the same helpers as the price charge
     expect(server).toMatch(/wantsDialogue \? getDialogueCreditWeight/);
     expect(client).toMatch(/dialogueText\.trim\(\)\.length > 0\s*\? getDialogueCreditWeight/);
   });
+});
+describe("localized server strings still match what the server says", () => {
+  // localizeServerText maps EXACT English wire strings to catalog entries.
+  // If a server message is reworded without updating the map, the localized
+  // app silently falls back to English for that string — this pin makes the
+  // reword loud instead. Source literals wrapped across lines with '+' are
+  // reconstituted before matching.
+  const serverSource = ["./actions.ts", "./core.ts", "./job-runner.ts"]
+    .map((p) => src(p))
+    .join("\n")
+    .replace(/["'`]\s*\+\s*["'`]/g, "")
+    .replace(/\\"/g, '"');
+
+  for (const wire of MAPPED_SERVER_STRINGS) {
+    it(`server still says: "${wire.slice(0, 56)}…"`, () => {
+      expect(serverSource, `the server no longer produces this exact string — update lib/i18n/server-text.ts (and the four catalogs) in the same commit`).toContain(wire);
+    });
+  }
 });
