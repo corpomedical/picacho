@@ -67,6 +67,32 @@ function Drop({
   );
 }
 
+// Downscale big photos in the browser before upload. Vercel rejects request
+// bodies over ~4.5MB at the PLATFORM level — before our route ever runs — so
+// two individually-valid 3MB photos used to die with a misdiagnosed "check
+// your connection". Identity lives in the face, not the megapixels: a 1600px
+// JPEG is more than the scorer needs.
+async function shrinkForUpload(file: File): Promise<File> {
+  if (file.size <= 1_500_000) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 1600 / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    // Not readable as an image here — send it as-is and let the server say so.
+    return file;
+  }
+}
+
 export function IdentityCheckTool() {
   const [reference, setReference] = useState<File | null>(null);
   const [candidate, setCandidate] = useState<File | null>(null);
@@ -81,10 +107,22 @@ export function IdentityCheckTool() {
     setResult(null);
     try {
       const body = new FormData();
-      body.set("reference", reference);
-      body.set("candidate", candidate);
+      body.set("reference", await shrinkForUpload(reference));
+      body.set("candidate", await shrinkForUpload(candidate));
       const res = await fetch("/api/tools/identity-check", { method: "POST", body });
-      const json = await res.json();
+      // A platform-level 413 (or any proxy error) has no JSON body — parsing
+      // it used to throw into the catch and blame the user's connection.
+      if (res.status === 413) {
+        setError("Those photos are too large even after compression — try smaller files.");
+        return;
+      }
+      let json: { error?: string } & Result;
+      try {
+        json = await res.json();
+      } catch {
+        setError("Something went wrong — try again.");
+        return;
+      }
       if (!res.ok) setError(json.error ?? "Something went wrong.");
       else setResult(json as Result);
     } catch {

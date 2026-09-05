@@ -75,7 +75,11 @@ export async function POST(request: NextRequest) {
   ]);
   if (!referenceUrl || !candidateUrl) {
     return NextResponse.json(
-      { error: "Both files must be a JPEG, PNG or WebP under 4MB." },
+      // The honest combined cap is the platform's, not ours: Vercel rejects
+      // request bodies over ~4.5MB before this route runs, so "under 4MB
+      // each" was a promise the pair could not keep. The web tool downscales
+      // client-side; this copy is for direct API callers.
+      { error: "Both files must be a JPEG, PNG or WebP — under 4MB each and about 4MB combined." },
       { status: 400 },
     );
   }
