@@ -99,12 +99,20 @@ export async function POST(request: NextRequest) {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("profiles")
-    .select("plan, current_period_start")
+    .select("plan, plan_status, current_period_start")
     .eq("id", user.id)
-    .single<{ plan: PlanId | null; current_period_start: string | null }>();
+    .single<{ plan: PlanId | null; plan_status: string | null; current_period_start: string | null }>();
 
   const plan: PlanId = profile?.plan ?? "none";
-  const isFree = plan === "none";
+  // Same rule as checkGenerationAllowance: a plan's allowance only exists
+  // while Stripe says the subscription is in good standing (NULL passes —
+  // comped plans never had a plan_status). Chat spends Anthropic tokens on
+  // every turn, and a past_due subscriber used to keep the full paid budget
+  // and Smarter mode against a payment that never arrived; they now meter
+  // like a free account until the card clears.
+  const planAllowanceActive =
+    (profile?.plan_status ?? null) === null || profile?.plan_status === "active";
+  const isFree = plan === "none" || !planAllowanceActive;
 
   // Smarter is a paid capability: the free allowance is sized for about a
   // dozen Faster messages, and one Smarter turn could eat half of it.

@@ -144,11 +144,21 @@ export async function POST(req: Request) {
   if (!requestId) return new Response("Missing request_id", { status: 400 });
 
   const admin = createAdminClient();
-  const { data: job } = await admin
+  const { data: job, error: jobLookupError } = await admin
     .from("generation_jobs")
     .select("generation_id, user_id")
     .eq("provider_request_id", requestId)
     .maybeSingle<{ generation_id: string; user_id: string }>();
+
+  // Error checked BEFORE the null check: a transient DB failure used to look
+  // exactly like "already handled" and got a 200 — and fal stops retrying an
+  // acked delivery, defeating this route's whole purpose (collecting a
+  // finished render with no browser open). 500 lets fal retry, same as the
+  // advanceGeneration throw below.
+  if (jobLookupError) {
+    console.error("fal webhook: job lookup failed", jobLookupError.message);
+    return new Response("Retry", { status: 500 });
+  }
 
   // No job row means this was already finished — by a poll, by the reaper, or
   // by an earlier delivery of this same webhook. fal retries up to ten times

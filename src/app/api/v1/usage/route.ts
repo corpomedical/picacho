@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, bonus_credits, purchased_credits, current_period_start")
+    .select("plan, plan_status, bonus_credits, purchased_credits, current_period_start")
     .eq("id", caller.userId)
     .single();
 
@@ -36,7 +36,18 @@ export async function GET(request: Request) {
     caller.userId,
     profile?.current_period_start as string | null | undefined,
   );
-  const included = (PLAN_LIMITS[caller.plan] ?? 0) + ((profile?.bonus_credits ?? 0) as number);
+  // Same rule as enforcement (checkGenerationAllowance): the plan portion is
+  // zero while plan_status says the subscription lapsed (NULL passes —
+  // comped plans never had one). This endpoint exists so an integration can
+  // check its budget instead of discovering the ceiling as a wall of 402s —
+  // reporting a full allowance the spend path would refuse was exactly that.
+  const planStatus = ((profile as { plan_status?: string | null } | null)?.plan_status ?? null) as
+    | string
+    | null;
+  const planAllowanceActive = planStatus === null || planStatus === "active";
+  const included =
+    (planAllowanceActive ? (PLAN_LIMITS[caller.plan] ?? 0) : 0) +
+    ((profile?.bonus_credits ?? 0) as number);
 
   return NextResponse.json({
     plan: caller.plan,

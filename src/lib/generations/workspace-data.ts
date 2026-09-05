@@ -126,7 +126,7 @@ export async function getGenerateWorkspaceData(
           supabase
             .from("profiles")
             .select(
-              "plan, role, bonus_credits, purchased_credits, current_period_start, current_period_end, has_completed_onboarding, free_generation_last_at",
+              "plan, plan_status, role, bonus_credits, purchased_credits, current_period_start, current_period_end, has_completed_onboarding, free_generation_last_at",
             )
             .eq("id", userId)
             .single(),
@@ -192,8 +192,17 @@ export async function getGenerateWorkspaceData(
   // widen the limit here too, same as the actual enforcement check, so this
   // nudge doesn't fire early for someone who still has bonus credits left.
   const isAdminUser = profile?.role === "admin";
+  // Mirrors checkGenerationAllowance: the plan portion is zero while
+  // plan_status says the subscription lapsed (NULL passes — comped plans
+  // never had one), so the composer's banner and affordability math agree
+  // with what the spend path will actually allow.
+  const wsPlanStatus = ((profile as { plan_status?: string | null } | null)?.plan_status ?? null) as
+    | string
+    | null;
+  const planAllowanceActive = wsPlanStatus === null || wsPlanStatus === "active";
   const planLimit =
-    PLAN_LIMITS[(profile?.plan ?? "none") as PlanId] + (profile?.bonus_credits ?? 0);
+    (planAllowanceActive ? PLAN_LIMITS[(profile?.plan ?? "none") as PlanId] : 0) +
+    (profile?.bonus_credits ?? 0);
   // The remaining dependent read (needs current_period_start) rides with the
   // two flag lookups, one trip instead of two.
   const [usedThisMonth, voiceModeEnabled, chatAgentEnabled] = await Promise.all([
