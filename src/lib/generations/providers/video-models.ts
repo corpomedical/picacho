@@ -700,6 +700,19 @@ export function maxSingleRenderCostUsd(): number {
 export const KLING_STORYBOARD_PER_SECOND_USD = 0.098;
 
 /**
+ * A multi-shot storyboard's credit weight: total seconds at the model's real
+ * per-second rate, over the established $0.28/credit basis, rounded UP — the
+ * same formula behind every duration weight in the catalogue, just computed
+ * for an arbitrary total instead of a preset. One home (2026-09-05): the
+ * server charge and the composer quote both used to write this formula out
+ * inline, one as costPerSecondUsd/0.28 and one as a bare 0.5.
+ */
+export function storyboardCreditCost(modelId: string, totalSeconds: number): number {
+  const model = getVideoModel(modelId);
+  return Math.ceil((totalSeconds * (model.costPerSecondUsd ?? 0.14)) / COST_BASIS_USD_PER_CREDIT);
+}
+
+/**
  * Extra credits when a Kling render carries a start/end frame — the
  * difference between the storyboard endpoint's real per-second price and the
  * base weight already charged, rounded up on the same $0.28 basis as every

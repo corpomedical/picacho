@@ -91,22 +91,18 @@ import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import {
   getVideoModel,
   getDefaultDurationSeconds,
-  getDurationCreditWeight,
-  storyboardFrameExtraCredits,
-  continuationExtraCredits,
-  getDialogueCreditWeight,
   isValidDuration,
   requiresReferenceImage,
   VIDEO_MODELS,
   VIDEO_MODELS_BY_PRICE,
 } from "@/lib/generations/providers/video-models";
-import {
-  resolutionCreditWeight,
-  resolveVideoResolution,
-} from "@/lib/generations/providers/video-resolution";
+import { resolveVideoResolution } from "@/lib/generations/providers/video-resolution";
+// The one function that turns this request's validated facts into its price —
+// the composer quotes through the same one, so the display and the charge
+// cannot desync (see quote.ts for the incident history).
+import { quoteSend } from "@/lib/generations/quote";
 import { detectAspectRatioFromPrompt, type VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import {
-  fanoutCreditCost,
   normaliseScenePlan,
   shotPresetIds,
 } from "@/lib/generations/scene-plan";
@@ -868,28 +864,15 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       ? requestedDurationSeconds
       : getDefaultDurationSeconds(activeVideoModel);
 
-  // Pricier models — and longer durations within a model — cost more of the
-  // user's monthly plan allowance than the 5s baseline. Resolved once here
-  // so both the allowance check below and the row we save afterward agree
-  // on the same number.
-  //
-  // Dialogue adds a surcharge on top: it runs ElevenLabs speech plus a Sync
-  // Labs lipsync re-render, neither of which a silent video touches. See
-  // getDialogueCreditWeight for why that's scaled by duration rather than by
-  // the model's own weight.
-  let creditWeight =
-    contentType === "video"
-      ? getDurationCreditWeight(activeVideoModel, videoDurationSeconds) +
-        (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0)
-      : 1;
+  // The PRICE is no longer computed here piece by piece — quoteSend, called
+  // once below after every fact is validated and the circuit breaker has
+  // picked the final model, prices the whole send through the same function
+  // the composer quotes with.
 
-  // Storyboard pricing: total seconds at the model's real per-second rate,
-  // over the established $0.28/credit basis, rounded UP — the same formula
-  // behind every duration weight in the catalog, just computed for an
-  // arbitrary total instead of a preset. The duration enum check below is
-  // skipped: per-shot lengths were validated at parse (1-15s each, ≤30s
-  // total), and videoDurationSeconds becomes the TOTAL so the saved row and
-  // any dialogue math stay honest.
+  // Storyboard validation. The duration enum check below is skipped:
+  // per-shot lengths were validated at parse (1-15s each, ≤30s total), and
+  // videoDurationSeconds becomes the TOTAL so the saved row and any dialogue
+  // math stay honest.
   if (storyboardShots) {
     if (videoModelId !== "kling-o3-pro") {
       return { error: "Storyboards run on Kling O3 Pro — switch the model, or clear the storyboard." };
@@ -897,9 +880,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     if (wantsDialogue) {
       return { error: "Storyboards and spoken dialogue can't combine yet — remove one." };
     }
-    const totalSeconds = storyboardShots.reduce((n, s) => n + s.seconds, 0);
-    videoDurationSeconds = totalSeconds;
-    creditWeight = Math.ceil((totalSeconds * (activeVideoModel.costPerSecondUsd ?? 0.14)) / 0.28);
+    videoDurationSeconds = storyboardShots.reduce((n, s) => n + s.seconds, 0);
   }
 
   // Aspect ratio — resolution order (real incident, 2026-08-07: a user typed
@@ -975,70 +956,30 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
-  // Re-price for the model actually used. resolveModel above may have failed
-  // the user over to a DIFFERENT model when their pick was out of service, but
-  // the credit weight and duration were computed against the ORIGINAL pick —
-  // so without this, both the allowance check below and the credits_used saved
-  // on the row would charge the old model's price for a render on the new one.
-  // Substitution is cheapest-first, so this most often LOWERS the charge, but
-  // the row must record what was actually rendered either way. Only the
-  // resolved model's real durations are valid, so a duration the old model
-  // allowed but the new one doesn't falls back to the new model's default (and
-  // the placeholder row saves this same resolved duration below).
+  // Re-snap the duration for the model actually used. resolveModel above may
+  // have failed the user over to a DIFFERENT model when their pick was out
+  // of service — only the resolved model's real durations are valid, so a
+  // duration the old model allowed but the new one doesn't falls back to the
+  // new model's default (and the placeholder row saves this same resolved
+  // duration below). Pricing needs no re-run here: quoteSend below prices
+  // against the final videoModelId and this final duration.
   if (contentType === "video" && substitutedFrom && !storyboardShots) {
-    // (!storyboardShots: a storyboard's weight is computed above from total
-    // seconds, and a substitution away from O3 Pro already errored — this
-    // enum-based recompute would silently misprice it.)
+    // (!storyboardShots: videoDurationSeconds is a storyboard's shot TOTAL,
+    // not a catalog duration, and a substitution away from O3 Pro already
+    // errored — this enum-based snap would silently rewrite it.)
     const substitutedModel = getVideoModel(videoModelId);
     if (!isValidDuration(substitutedModel, videoDurationSeconds)) {
       videoDurationSeconds = getDefaultDurationSeconds(substitutedModel);
     }
-    creditWeight =
-      getDurationCreditWeight(substitutedModel, videoDurationSeconds) +
-      (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0);
   }
 
-  // Resolution, priced (2026-08-30). Resolved HERE, deliberately after the
-  // circuit breaker has had its say, against the model that will actually
-  // render — so a 4K request on Veo that gets failed over to Kling neither
-  // charges the 4K surcharge nor sends a parameter Kling has never heard of.
-  //
-  // resolutionCreditWeight returns the TOTAL weight for the duration at that
-  // resolution, or null when the resolution costs nothing extra (1080p on
-  // Veo) or is not offered at all — in which case the duration weight
-  // computed above stands untouched. The dialogue surcharge rides on top of
-  // whichever base applies, exactly as before.
+  // Resolution, resolved (2026-08-30) — deliberately after the circuit
+  // breaker has had its say, against the model that will actually render, so
+  // a 4K request on Veo that gets failed over to Kling neither charges the
+  // 4K surcharge (quoteSend prices this resolved value) nor sends a
+  // parameter Kling has never heard of.
   const videoResolution =
     contentType === "video" ? resolveVideoResolution(videoModelId, requestedResolution) : null;
-  if (videoResolution && !storyboardShots) {
-    const resolutionWeight = resolutionCreditWeight(
-      videoModelId,
-      videoResolution,
-      videoDurationSeconds,
-    );
-    if (resolutionWeight !== null) {
-      creditWeight =
-        resolutionWeight + (wantsDialogue ? getDialogueCreditWeight(videoDurationSeconds) : 0);
-    }
-  }
-
-  // Start/end frames ride the storyboard endpoint, which bills higher than
-  // the base Kling weight assumes — see storyboardFrameExtraCredits for the
-  // real prices. Charged AFTER substitution, on the exact conditions
-  // buildVideoRequest uses to pick that endpoint (final model is kling, no
-  // 2+ multi-reference riding, a frame actually present), so the charge and
-  // the endpoint can never disagree. Every render on this lane before today
-  // was billed $0.49 against a $0.28 charge — a loss on each one
-  // (2026-08-31 inspection).
-  if (
-    contentType === "video" &&
-    !storyboardShots &&
-    videoModelId === "kling" &&
-    referencePhotoPaths.length < 2 &&
-    (storyboardStartPath || storyboardEndPath)
-  ) {
-    creditWeight += storyboardFrameExtraCredits(videoModelId, videoDurationSeconds);
-  }
 
   // Clip continuation, validated and PRICED here — before the reservation.
   //
@@ -1058,6 +999,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   }
 
   let continuationSourceUrl: string | null = null;
+  let continuationSourceSeconds: number | null = null;
   const continueFromGenerationId = ((formData.get("continue_from_generation_id") as string) || "").trim();
   if (continueFromGenerationId && contentType === "video") {
     if (videoModelId !== "seedance" && videoModelId !== "seedance-2") {
@@ -1092,7 +1034,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           "That clip predates length tracking, so continuing from it can't be priced — pick a newer clip.",
       };
     }
-    creditWeight += continuationExtraCredits(videoModelId, videoDurationSeconds, sourceSeconds);
+    continuationSourceSeconds = sourceSeconds;
     continuationSourceUrl = absolutizeMediaUrl(priorUrl, await getOrigin());
   }
 
@@ -1113,6 +1055,24 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       error: `${getVideoModel(videoModelId).name} needs a reference photo — add one to this character, attach a photo to this message, or pick a different model.`,
     };
   }
+
+  // The price, in one call — every fact below is the validated,
+  // post-circuit-breaker value, and the composer quotes through this same
+  // function, so both the allowance check here and the credits_used saved on
+  // the row are the number the person was shown.
+  const sendQuote = quoteSend({
+    contentType,
+    videoModelId,
+    videoDurationSeconds,
+    videoResolution,
+    storyboardTotalSeconds: storyboardShots ? videoDurationSeconds : null,
+    referencePhotoCount: referencePhotoPaths.length,
+    framePicked: Boolean(storyboardStartPath || storyboardEndPath),
+    continuationSourceSeconds,
+    dialoguePresent: wantsDialogue,
+    renderCount: 1,
+  });
+  const creditWeight = sendQuote.totalCredits;
 
   let allowance = await checkGenerationAllowance(supabase, userData.user.id, creditWeight);
   if (allowance.error) return { error: allowance.error };
@@ -2569,7 +2529,8 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   let videoDurationSeconds = isValidDuration(activeVideoModel, requestedDurationSeconds)
     ? requestedDurationSeconds
     : getDefaultDurationSeconds(activeVideoModel);
-  let creditWeight = getDurationCreditWeight(activeVideoModel, videoDurationSeconds);
+  // Priced below in one quoteSend call, once the circuit breaker has picked
+  // the final model and the resolution is resolved against it.
 
   // Same resolution order as runGeneration (see the comment there): prompt
   // text beats the icon pick, which beats the 16:9 default.
@@ -2589,32 +2550,23 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   if (!angleResolved.ok) return { error: angleResolved.message };
   videoModelId = angleResolved.modelId;
 
-  // Re-price for the substituted model, exactly as runGeneration does — the
-  // weight above was the original model's, and every angle is charged and
-  // saved at creditWeight, so a substitution would otherwise misprice the
-  // whole multi-angle request by a factor of the angle count.
+  // Re-snap the duration for the substituted model, exactly as runGeneration
+  // does — only the resolved model's real durations are valid. The reprice
+  // itself happens in the quoteSend call below, against this final model.
   if (angleResolved.substitutedFrom) {
     const substitutedModel = getVideoModel(videoModelId);
     if (!isValidDuration(substitutedModel, videoDurationSeconds)) {
       videoDurationSeconds = getDefaultDurationSeconds(substitutedModel);
     }
-    creditWeight = getDurationCreditWeight(substitutedModel, videoDurationSeconds);
   }
 
-  // Resolution, priced — same contract as runGeneration, and it matters MORE
-  // here: every angle is charged and saved at creditWeight, so a resolution
-  // surcharge that went unpriced would be undercharged once per angle, and
-  // one resolved against the pre-substitution model would send a parameter
-  // the new endpoint has never heard of, N times over.
+  // Resolution, resolved against the FINAL model — same contract as
+  // runGeneration, and it matters MORE here: every angle is charged and
+  // saved at the per-render weight, so a resolution surcharge that went
+  // unpriced would be undercharged once per angle, and one resolved against
+  // the pre-substitution model would send a parameter the new endpoint has
+  // never heard of, N times over.
   const videoResolution = resolveVideoResolution(videoModelId, requestedResolution);
-  if (videoResolution) {
-    const resolutionWeight = resolutionCreditWeight(
-      videoModelId,
-      videoResolution,
-      videoDurationSeconds,
-    );
-    if (resolutionWeight !== null) creditWeight = resolutionWeight;
-  }
 
   // Any frame-starting model (image/reference-to-video), checked on the
   // RESOLVED model so a substitution into one is caught — multi-angle has no
@@ -2699,8 +2651,24 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     );
   }
 
-  // Through the same function the composer quotes with — see fanoutCreditCost.
-  const totalRequestedCredits = fanoutCreditCost(creditWeight, angleIds.length);
+  // Through the same function the composer quotes with. A fan-out carries no
+  // storyboard, frames, continuation, or dialogue — every angle is a plain
+  // render — so the quote's per-render price is what each row is charged and
+  // saved at, and its total is what the whole batch reserves.
+  const angleQuote = quoteSend({
+    contentType: "video",
+    videoModelId,
+    videoDurationSeconds,
+    videoResolution,
+    storyboardTotalSeconds: null,
+    referencePhotoCount: 0,
+    framePicked: false,
+    continuationSourceSeconds: null,
+    dialoguePresent: false,
+    renderCount: angleIds.length,
+  });
+  const creditWeight = angleQuote.perRenderCredits;
+  const totalRequestedCredits = angleQuote.totalCredits;
   let multiAllowance = await checkGenerationAllowance(
     supabase,
     userData.user.id,

@@ -105,33 +105,45 @@ describe("MODEL_CAPABILITIES vs the fal adapter", () => {
   });
 });
 
-describe("the price quoted is computed from the same helpers as the price charged", () => {
-  // The client composer quotes; the server action charges. The AMOUNTS come
-  // from shared helpers in video-models.ts — this pins that BOTH sides keep
-  // calling every shared helper, so a surcharge added or removed on one
-  // side alone fails here instead of shipping as a misquote (the class
-  // behind the 9-quoted-45-charged multi-angle incident and the dialogue
-  // surcharge the TOTAL omitted until 2026-09-05).
+describe("the price quoted and the price charged come from the same function", () => {
+  // The client composer quotes; the server action charges. Both now go
+  // through quoteSend (lib/generations/quote.ts) — the extraction that
+  // closed the misquote class behind the 9-quoted-45-charged multi-angle
+  // incident and the dialogue surcharge the TOTAL omitted until 2026-09-05.
+  // These pins fail the commit that quietly reintroduces a side computing
+  // its own price; quote.test.ts pins the amounts themselves against the
+  // incident matrix.
   const client = src("../../components/generate-form.tsx");
   const server = src("./actions.ts");
-  const sharedHelpers = [
-    "fanoutCreditCost(",
-    "getDialogueCreditWeight(",
-    "storyboardFrameExtraCredits(",
-    "continuationExtraCredits(",
-    "resolutionCreditWeight(",
-  ];
+  const quote = src("./quote.ts");
 
-  for (const helper of sharedHelpers) {
-    it(`${helper.slice(0, -1)} is consulted by both the quote and the charge`, () => {
-      expect(client, `composer quote no longer calls ${helper}`).toContain(helper);
-      expect(server, `server charge no longer calls ${helper}`).toContain(helper);
-    });
-  }
+  it("the composer quotes through quoteSend", () => {
+    expect(client).toContain("quoteSend(");
+  });
 
-  it("both sides gate the dialogue surcharge on a dialogue being present", () => {
-    expect(server).toMatch(/wantsDialogue \? getDialogueCreditWeight/);
-    expect(client).toMatch(/dialogueText\.trim\(\)\.length > 0\s*\? getDialogueCreditWeight/);
+  it("the server prices both charge paths (single send AND fan-out) through quoteSend", () => {
+    expect(server.match(/quoteSend\(\{/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it("every shared pricing helper is consulted by the one quote", () => {
+    for (const helper of [
+      "fanoutCreditCost(",
+      "getDialogueCreditWeight(",
+      "storyboardFrameExtraCredits(",
+      "continuationExtraCredits(",
+      "resolutionCreditWeight(",
+      "storyboardCreditCost(",
+    ]) {
+      expect(quote, `quoteSend no longer calls ${helper}`).toContain(helper);
+    }
+  });
+
+  it("the storyboard weight formula has one home", () => {
+    // It used to be written out twice — costPerSecondUsd/0.28 in actions.ts,
+    // a bare *0.5 in the composer. Both now call storyboardCreditCost.
+    expect(client).toContain("storyboardCreditCost(");
+    expect(server).not.toMatch(/costPerSecondUsd \?\? 0\.14/);
+    expect(client).not.toMatch(/storyboardTotalSeconds \* 0\.5/);
   });
 });
 describe("localized server strings still match what the server says", () => {

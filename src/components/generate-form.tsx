@@ -43,11 +43,12 @@ import {
 } from "@/lib/generations/user-facing-error";
 import { createPortal } from "react-dom";
 import {
-  storyboardFrameExtraCredits,
-  continuationExtraCredits,
+  storyboardCreditCost,
   getDialogueCreditWeight,
-  FREE_TIER_GENERATION_CREDITS,
 } from "@/lib/generations/providers/video-models";
+// The send's price comes from the same function the server charges with —
+// see quote.ts for the misquote incidents that made this one function.
+import { quoteSend } from "@/lib/generations/quote";
 import {
   reserveChatAttachmentPath,
   finalizeChatAttachment,
@@ -90,7 +91,7 @@ import {
   type ContentType,
 } from "@/lib/generations/pipeline";
 import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "@/lib/generations/angles";
-import { fanoutCreditCost, type ScenePlan } from "@/lib/generations/scene-plan";
+import { type ScenePlan } from "@/lib/generations/scene-plan";
 import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
 import { FEATURED_VIDEO_MODEL_IDS, VIDEO_MODELS, getVideoModel } from "@/lib/generations/providers/video-models";
@@ -2355,7 +2356,7 @@ function GenerateFormInner({
   ]);
   const storyboardActive = storyboardMode && contentType === "video" && videoModelId === "kling-o3-pro";
   const storyboardTotalSeconds = storyboardShots.reduce((n, s) => n + s.seconds, 0);
-  const storyboardCredits = Math.ceil(storyboardTotalSeconds * 0.5); // $0.14/s ÷ $0.28 — server recomputes authoritatively
+  const storyboardCredits = storyboardCreditCost(videoModelId, storyboardTotalSeconds); // same helper the server charges with
   const storyboardReady =
     storyboardShots.length >= 2 && storyboardShots.every((s) => s.prompt.trim().length > 0);
   useEffect(() => {
@@ -2543,67 +2544,13 @@ function GenerateFormInner({
   // character's own saved photo with no extra form field needed.
   const [panelUploads, setPanelUploads] = useState<{ path: string; url: string }[]>([]);
 
-  // A start/end frame moves the render to a pricier endpoint, so the price
-  // shown must move with it BEFORE the send — same rule as 4K. Mirrors the
-  // server's own conditions (kling, no 2+ multi-reference, a frame picked).
-  // Continuation re-prices the render over BOTH clips' durations — shown
-  // here for the same reason as 4K and the start/end frame: a price that
-  // only appears after the money moved is a claim, not a price.
-  const continuationExtra =
-    contentType === "video" && continueFromId
-      ? continuationExtraCredits(videoModelId, videoDurationSeconds, continueSourceSeconds)
-      : 0;
-  // NO multiRefPaths clause here, deliberately (2026-08-31 inspection). In
-  // storyboard mode the submit sends only the frames — multi-reference picks
-  // never ride — but the picks LINGER in state when someone switches tabs
-  // without clearing, and a preview that consulted them quoted 1 credit for
-  // a send the server then charged the frame surcharge on. The server's own
-  // condition counts what was SENT (reference_photo_paths, empty on this
-  // path), so the quote must count the same thing.
-  const storyboardFrameExtra =
-    contentType === "video" &&
-    videoAdvancedMode === "storyboard" &&
-    (storyboardStartPath || storyboardEndPath)
-      ? storyboardFrameExtraCredits(videoModelId, videoDurationSeconds)
-      : 0;
-  const selectedCreditCost =
-    contentType === "video" && storyboardActive
-      ? storyboardCredits
-      : contentType === "video"
-        ? (resolutionCreditWeight(videoModelId, videoResolution, videoDurationSeconds) ??
-            baseDurationCredits) + storyboardFrameExtra + continuationExtra
-        : 1;
   const creditsAvailable = Math.max(0, creditsLimit - creditsUsed) + purchasedCredits;
-  // What THIS SEND actually costs, which for a fan-out is not one render.
-  //
-  // Multi-angle charges angleIds.length * creditWeight on the server
-  // (runMultiAngleGeneration) while this file quoted selectedCreditCost — the
-  // price of a single render — so a five-angle Seedance batch displayed 9
-  // credits and took 45, and cannotAfford compared the wrong number, meaning
-  // the shortfall banner stayed silent for someone who could not afford the
-  // batch. They found out after pressing send, which the action's own comment
-  // calls the worst moment to learn it. Both sides now go through
-  // fanoutCreditCost.
-  const sendRenderCount =
-    contentType !== "video"
-      ? 1
-      : // A staged scene is a fan-out too, and it is the LARGER one — up to
-        // six renders. Counting only multi-angle here priced a whole scene as
-        // a single render, so the affordability check and the shortfall
-        // banner both looked at one shot's price while the server charged for
-        // all of them.
-        scenePlan
-        ? scenePlan.shots.length
-        : multiAngleMode
-          ? selectedAngles.length
-          : 1;
-  // A fan-out never carries the continuation surcharge: neither the scene nor
-  // the multi-angle path sends continueFromId, so quoting it inflated the
-  // total by a charge the server does not make.
-  const perRenderForFanout =
-    sendRenderCount > 1 ? Math.max(0, selectedCreditCost - continuationExtra) : selectedCreditCost;
-  // sendCreditCost and cannotAfford now live just below the dialogue state
-  // they read — see the dialogue-surcharge note there.
+  // What THIS SEND actually costs now comes from quoteSend, just below the
+  // dialogue state it reads — one pure function shared with the server's
+  // charge paths, so the surcharge conditions the misquote incidents each
+  // desynced (the 9-quoted-45-charged multi-angle batch, the frame surcharge
+  // quoted off lingering multiref picks, the scene priced as one render, the
+  // dialogue surcharge the TOTAL omitted) exist exactly once.
   const [panelUploadBusy, setPanelUploadBusy] = useState(false);
   const panelUploadInputRef = useRef<HTMLInputElement>(null);
 
@@ -2632,21 +2579,33 @@ function GenerateFormInner({
   // options above); only shown once the selected character has a voice
   // assigned in Character settings.
   const [dialogueText, setDialogueText] = useState("");
-  // Dialogue is charged server-side whenever a line is present (actions.ts:
-  // wantsDialogue adds getDialogueCreditWeight on top of the duration
-  // weight), and it rides only the single-send path — fan-outs carry no
-  // dialogue and storyboards reject the combination outright. The quote used
-  // to leave the surcharge out, so the labeled TOTAL and the shortfall
-  // banner both understated every dialogue send; the real price arrived as
-  // the server's rejection, which is the worst moment to learn it.
-  const dialogueSurcharge =
-    contentType === "video" &&
-    sendRenderCount === 1 &&
-    !storyboardActive &&
-    dialogueText.trim().length > 0
-      ? getDialogueCreditWeight(videoDurationSeconds)
-      : 0;
-  const sendCreditCost = fanoutCreditCost(perRenderForFanout, sendRenderCount) + dialogueSurcharge;
+  // The quote (see the note above creditsAvailable). Inputs are what will
+  // actually be SENT, never lingering picker state: multiref picks ride only
+  // in multiref mode, frames only in storyboard mode (the 2026-08-31
+  // misquote), and a staged scene is the larger fan-out — up to six renders
+  // — with multi-angle the smaller.
+  const sendQuote = quoteSend({
+    contentType,
+    videoModelId,
+    videoDurationSeconds,
+    videoResolution,
+    storyboardTotalSeconds: storyboardActive ? storyboardTotalSeconds : null,
+    referencePhotoCount: videoAdvancedMode === "multiref" ? multiRefPaths.length : 0,
+    framePicked:
+      videoAdvancedMode === "storyboard" && Boolean(storyboardStartPath || storyboardEndPath),
+    continuationSourceSeconds: continueFromId ? continueSourceSeconds : null,
+    dialoguePresent: dialogueText.trim().length > 0,
+    renderCount:
+      contentType !== "video"
+        ? 1
+        : scenePlan
+          ? scenePlan.shots.length
+          : multiAngleMode
+            ? selectedAngles.length
+            : 1,
+  });
+  const sendRenderCount = sendQuote.renderCount;
+  const sendCreditCost = sendQuote.totalCredits;
   const cannotAfford = sendCreditCost > creditsAvailable;
   // "Uses today's free generation" is a promise about THIS send: the server
   // spends the daily slot only on a send within the trial's own pinned cost
@@ -2654,7 +2613,7 @@ function GenerateFormInner({
   // Gated on the pill, the promise used to sit beside the red shortfall
   // banner — free and can't-afford at once — or, for a topped-up account,
   // promised free while purchased credits were silently debited.
-  const sendRidesFreeSlot = dailyFreeAvailable && sendCreditCost <= FREE_TIER_GENERATION_CREDITS;
+  const sendRidesFreeSlot = dailyFreeAvailable && sendQuote.freeSlotEligible;
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -6965,7 +6924,7 @@ function GenerateFormInner({
                     {formatMsg(g.sceneCost, {
                       shots: scenePlan.shots.length,
                       seconds: scenePlan.shots.reduce((t, sh) => t + sh.seconds, 0),
-                      credits: fanoutCreditCost(selectedCreditCost, scenePlan.shots.length),
+                      credits: sendQuote.totalCredits,
                     })}
                   </p>
                   <div className="flex items-center justify-end gap-2 pt-1">
