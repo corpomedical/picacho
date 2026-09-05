@@ -152,7 +152,7 @@ describe("localized server strings still match what the server says", () => {
   // app silently falls back to English for that string — this pin makes the
   // reword loud instead. Source literals wrapped across lines with '+' are
   // reconstituted before matching.
-  const serverSource = ["./actions.ts", "./core.ts", "./job-runner.ts"]
+  const serverSource = ["./actions.ts", "./core.ts", "./job-runner.ts", "./angle-stage.ts"]
     .map((p) => src(p))
     .join("\n")
     .replace(/["'`]\s*\+\s*["'`]/g, "")

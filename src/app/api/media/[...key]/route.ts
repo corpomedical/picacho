@@ -18,6 +18,9 @@ const CONTENT_TYPES: Record<string, string> = {
   gif: "image/gif",
   mp4: "video/mp4",
   webm: "video/webm",
+  // Angle Stage proxies (2026-09-05): the GLTFLoader fetch works under
+  // octet-stream too, but the real type keeps nosniff honest.
+  glb: "model/gltf-binary",
   // The chat-attachments bucket accepts image/*, video/*, pdf, txt and doc
   // (user-actions.sql), and the composer's file input advertises exactly
   // those — but everything below used to fall out of this map and ship as

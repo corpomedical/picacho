@@ -59,6 +59,24 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That request was already started — try again.": "alreadyStarted",
   "You've used today's free generation — it comes back tomorrow. Pick a plan or top up credits to keep going — your characters and history stay exactly as they are.":
     "freeUsedToday",
+  // Angle Stage (lib/generations/angle-stage.ts).
+  "That take can't be staged — it must be one of your own finished takes.": "stageNotYours",
+  "This video doesn't have its still frame saved yet — it arrives within a day of rendering.":
+    "stageNoPoster",
+  "The Angle Stage is part of the Studio and Elite plans — upgrade to stage your takes.":
+    "stageNeedsPlan",
+  "This take already has its stage — reload the page.": "stageAlreadyBuilt",
+  "You're staging quickly — give it a minute and try again.": "stageTooFast",
+  "The studio couldn't start that — try again in a moment.": "stageCouldntStart",
+  "The 3D proxy couldn't be built from this take — try a different one.": "stageProxyFailed",
+  "That proxy came out too large to store — try a simpler take.": "stageProxyTooLarge",
+  "The 3D proxy couldn't be fetched — try again.": "stageProxyFetchFailed",
+  "Couldn't save the proxy — try again.": "stageProxySaveFailed",
+  "That angle couldn't be read — try saving it again.": "stageSnapshotUnreadable",
+  "That snapshot is too large — try again.": "stageSnapshotTooLarge",
+  "That angle couldn't be re-rendered — try a slightly different one.": "stageFrameFailed",
+  "That angle couldn't be fetched — try again.": "stageFrameFetchFailed",
+  "You're rendering angles quickly — give it a moment.": "stageFramesTooFast",
 };
 
 // Parameterized server strings — the numbers ride into the localized copy.
@@ -76,6 +94,16 @@ const PATTERNS: {
     re: /^That would use (\d+) credits \(some models cost more than 1 per video\) — the free trial only covers generations of up to (\d+) credits?\./,
     key: "trialCeiling",
     params: (m) => ({ need: m[1], cap: m[2] }),
+  },
+  {
+    re: /^You've staged (\d+) takes this billing month — the limit on your plan\./,
+    key: "stageMonthlyCap",
+    params: (m) => ({ used: m[1] }),
+  },
+  {
+    re: /^This take already has its (\d+) full-quality angles — pick your start and end from those\./,
+    key: "stageFramesCap",
+    params: (m) => ({ limit: m[1] }),
   },
 ];
 

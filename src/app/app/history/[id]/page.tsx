@@ -645,6 +645,21 @@ export default async function HistoryDetailPage({
                       </Button>
                     </Link>
                   )}
+                {/* The Angle Stage: any finished take with a usable still —
+                an image's result, or a video's saved poster frame. The page
+                itself gates plans and explains; hiding it here would bury a
+                Studio feature behind knowledge of a URL. */}
+                {isOwner &&
+                  generation.status === "succeeded" &&
+                  (generation.content_type === "image"
+                    ? isRenderableUrl(generation.result_url)
+                    : Boolean(generation.poster_url)) && (
+                    <Link href={`/app/stage/${generation.id}`}>
+                      <Button variant="secondary" size="sm">
+                        {t.stage.openFromTake}
+                      </Button>
+                    </Link>
+                  )}
                 {/* Split into layers, on the image itself. The tool page shows a
                 recent handful; this is what makes EVERY finished image a
                 source (operator, 2026-09-04: "It only gives me 8 images to

@@ -1661,6 +1661,42 @@ const en = {
   // (lib/i18n/server-text.ts) maps the known ones here at the render sites.
   // A truth-contract test pins every mapped string against the server
   // source, so an edit to either side alone fails the suite.
+  // The Angle Stage (2026-09-05): a take's 3D stage — orbit, pick angles,
+  // render the move through the normal frames lane.
+  stage: {
+    eyebrow: "Angle Stage",
+    title: "Stage this take",
+    subtitle:
+      "Orbit a 3D stage built from your take, save the angles you like as full-quality frames, and render the camera move between them — scored like every take.",
+    notEligible: "The Angle Stage is part of the Studio and Elite plans.",
+    upgradeCta: "See plans",
+    proxyHint:
+      "One build per take — the stage is a rough 3D sketch that only decides the camera. Every frame you keep is re-rendered from the take itself.",
+    buildProxy: "Build the 3D stage",
+    buildingProxy: "Building the stage — about three minutes…",
+    monthlyUsage: "{used} of {limit} takes staged this billing month",
+    dragHint: "drag to orbit · scroll to dolly",
+    resetCamera: "Reset camera",
+    saveAngle: "Render this angle",
+    renderingAngle: "Rendering the angle…",
+    framesTitle: "Your angles",
+    framesHint:
+      "The take itself is always available as a frame. Pick any two as the start and end of the move.",
+    originalLabel: "The take",
+    startTag: "Start",
+    endTag: "End",
+    setStart: "Set start",
+    setEnd: "Set end",
+    movePromptLabel: "Describe the move",
+    movePromptDefault:
+      "The camera moves smoothly from the first framing to the second while the scene holds still. Cinematic, no cuts.",
+    durationLabel: "Length",
+    renderMove: "Render the move · {n} credits",
+    renderingMove: "Rendering…",
+    needBothFrames: "Pick a start and an end frame first.",
+    proxyLoadFailed: "The stage couldn't load — reload the page.",
+    openFromTake: "Open in Angle Stage",
+  },
   // Push notifications — resolved PER DEVICE from push_tokens.locale by
   // lib/push/send.ts, because a push arrives while no screen is open to
   // translate it (the last English-only voice after the 2026-09-05
@@ -1706,6 +1742,25 @@ const en = {
     freeUsedToday: "You've used today's free generation — it comes back tomorrow. Pick a plan or top up credits to keep going — your characters and history stay exactly as they are.",
     insufficientDetail: "That would use {need} credits (some models cost more than 1 per video), but you only have {have} left. Top up or pick a plan to keep going.",
     trialCeiling: "That would use {need} credits (some models cost more than 1 per video) — the free trial only covers generations of up to {cap} credit(s). Top up credits or pick a plan to use this one.",
+    // Angle Stage server strings (lib/generations/angle-stage.ts) — pinned
+    // against that source by truth-contracts, same as every entry above.
+    stageNotYours: "That take can't be staged — it must be one of your own finished takes.",
+    stageNoPoster: "This video doesn't have its still frame saved yet — it arrives within a day of rendering.",
+    stageNeedsPlan: "The Angle Stage is part of the Studio and Elite plans — upgrade to stage your takes.",
+    stageAlreadyBuilt: "This take already has its stage — reload the page.",
+    stageTooFast: "You're staging quickly — give it a minute and try again.",
+    stageCouldntStart: "The studio couldn't start that — try again in a moment.",
+    stageProxyFailed: "The 3D proxy couldn't be built from this take — try a different one.",
+    stageProxyTooLarge: "That proxy came out too large to store — try a simpler take.",
+    stageProxyFetchFailed: "The 3D proxy couldn't be fetched — try again.",
+    stageProxySaveFailed: "Couldn't save the proxy — try again.",
+    stageSnapshotUnreadable: "That angle couldn't be read — try saving it again.",
+    stageSnapshotTooLarge: "That snapshot is too large — try again.",
+    stageFrameFailed: "That angle couldn't be re-rendered — try a slightly different one.",
+    stageFrameFetchFailed: "That angle couldn't be fetched — try again.",
+    stageFramesTooFast: "You're rendering angles quickly — give it a moment.",
+    stageMonthlyCap: "You've staged {used} takes this billing month — the limit on your plan. It resets with your billing period.",
+    stageFramesCap: "This take already has its {limit} full-quality angles — pick your start and end from those.",
   },
   apiKeys: {
     title: "API keys",
