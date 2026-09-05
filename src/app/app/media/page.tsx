@@ -50,7 +50,7 @@ export default async function MediaPage({
   let query = supabase
     .from("generations")
     .select(
-      "id, prompt_input, status, result_url, content_type, created_at, character_profile_id, angle_group_id, angle",
+      "id, prompt_input, status, result_url, poster_url, content_type, created_at, character_profile_id, angle_group_id, angle",
     )
     .eq("user_id", userData.user.id)
     .is("deleted_at", null)
@@ -103,6 +103,10 @@ export default async function MediaPage({
         // the real file (the <video> paints its own first frame).
         result_url: representative.content_type === "image" ? thumbUrl(full, 640) : full,
         full_url: full,
+        poster_url:
+          representative.content_type === "video" && representative.poster_url
+            ? thumbUrl(toMediaUrl(representative.poster_url), 640)
+            : null,
         content_type: representative.content_type,
         created_at: representative.created_at,
         characterName: representative.character_profile_id

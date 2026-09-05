@@ -132,7 +132,7 @@ export default async function HistoryPage({
   let query = supabase
     .from("generations")
     .select(
-      "id, prompt_input, status, attempts, character_profile_id, content_type, created_at, angle_group_id, angle, result_url, match_score, video_model_id, video_duration_seconds",
+      "id, prompt_input, status, attempts, character_profile_id, content_type, created_at, angle_group_id, angle, result_url, poster_url, match_score, video_model_id, video_duration_seconds",
     )
     .eq("user_id", userData.user.id)
     .is("deleted_at", null);
@@ -213,6 +213,15 @@ export default async function HistoryPage({
         // the old 64px row used: a contact-sheet tile is ~340px wide at lg,
         // so 320 would arrive visibly soft on any 2x screen.
         thumb: representative.content_type === "image" ? thumbUrl(media, 640) : media,
+        // The saved still frame (2026-09-05): a real thumbnail for video
+        // tiles, so the grid paints an image instead of mounting a video.
+        // Through the same resizing route as image thumbs. Null for videos
+        // from before the poster pipeline — the tile falls back to the
+        // metadata-slice video, exactly as before.
+        poster:
+          representative.content_type === "video" && representative.poster_url
+            ? thumbUrl(toMediaUrl(representative.poster_url), 640)
+            : null,
         matchScore:
           typeof representative.match_score === "number" ? representative.match_score : null,
         modelName,
@@ -350,6 +359,17 @@ export default async function HistoryPage({
                     g.content_type === "image" ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={g.thumb} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    ) : g.poster ? (
+                      <>
+                        {/* The saved still frame — a plain image, no video
+                            element mounted, no bytes of movie fetched just
+                            to stand in a grid. */}
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={g.poster} alt="" className="h-full w-full object-cover" loading="lazy" />
+                        <span className="absolute inset-0 m-auto flex h-9 w-9 items-center justify-center rounded-full bg-black/60 text-onmedia backdrop-blur-[2px]">
+                          <PlayIcon className="h-3.5 w-3.5" />
+                        </span>
+                      </>
                     ) : (
                       <>
                         <QuietVideo

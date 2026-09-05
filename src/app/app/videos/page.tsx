@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { Pager } from "@/components/pager";
 import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
-import { toMediaUrl, isRenderableUrl } from "@/lib/media/url";
+import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { MediaGallery, type GalleryItem } from "@/components/media-gallery";
 import { getServerMessages } from "@/lib/i18n/server";
 
@@ -23,7 +23,7 @@ export default async function VideosPage({
   const { data: generations, error } = await supabase
     .from("generations")
     .select(
-      "id, prompt_input, status, result_url, content_type, created_at, character_profile_id, angle_group_id, angle",
+      "id, prompt_input, status, result_url, poster_url, content_type, created_at, character_profile_id, angle_group_id, angle",
     )
     .eq("user_id", userData.user.id)
     .eq("content_type", "video")
@@ -81,6 +81,9 @@ export default async function VideosPage({
         status: representative.status,
         result_url: toMediaUrl(representative.result_url),
         full_url: toMediaUrl(representative.result_url),
+        poster_url: representative.poster_url
+          ? thumbUrl(toMediaUrl(representative.poster_url), 640)
+          : null,
         content_type: representative.content_type,
         created_at: representative.created_at,
         characterName: representative.character_profile_id

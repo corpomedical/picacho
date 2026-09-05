@@ -21,6 +21,11 @@ export type GalleryItem = {
   // be a resized thumb (images pages pass thumbUrl for grid weight). Falls
   // back to result_url when absent.
   full_url?: string | null;
+  // A video's saved still frame (2026-09-05) — when present the tile paints
+  // this image instead of mounting a <video>, so a 90-tile grid costs 90
+  // small images, not 90 media-route streams. Null for pre-poster videos;
+  // the tile falls back to the metadata-slice video.
+  poster_url?: string | null;
   content_type: string | null;
   created_at: string;
   characterName: string;
@@ -124,6 +129,14 @@ export function MediaGallery({
             <img
               src={item.result_url!}
               alt={item.prompt_input}
+              className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+            />
+          ) : item.poster_url ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={item.poster_url}
+              alt={item.prompt_input}
+              loading="lazy"
               className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
             />
           ) : (
