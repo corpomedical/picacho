@@ -58,11 +58,20 @@ async function resolveProfile(
   customerId: string | null,
 ): Promise<{ id: string; stripeSubscriptionId: string | null } | null> {
   const query = supabase.from("profiles").select("id, stripe_subscription_id");
-  const { data } = metadata?.supabase_user_id
-    ? await query.eq("id", metadata.supabase_user_id).single()
+  // maybeSingle, error checked BEFORE the null check — the same trap
+  // clawbackCreditPurchase documents below: with .single() a transient DB
+  // failure and "no matching row" both surface as data null, the subscription
+  // handlers answer a null profile with `break`, and the route acks 200.
+  // Stripe never redelivers an acked event, and subscription.deleted is the
+  // TERMINAL event for its subscription — swallow it once and the canceled
+  // subscriber keeps a paid plan forever. Throwing 500s the webhook so
+  // Stripe retries; a genuine no-row (unknown customer) still returns null.
+  const { data, error } = metadata?.supabase_user_id
+    ? await query.eq("id", metadata.supabase_user_id).maybeSingle()
     : customerId
-      ? await query.eq("stripe_customer_id", customerId).single()
-      : { data: null };
+      ? await query.eq("stripe_customer_id", customerId).maybeSingle()
+      : { data: null, error: null };
+  if (error) throw new Error(`couldn't resolve profile for webhook event: ${error.message}`);
   if (!data) return null;
   return { id: data.id, stripeSubscriptionId: data.stripe_subscription_id ?? null };
 }
