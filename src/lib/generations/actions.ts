@@ -2789,6 +2789,27 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     }
   }
 
+  // The guard above cannot catch the expensive accident: a double-click (or a
+  // second click while the panel was still on screen) reaches here with a
+  // FRESH group id each time, so each pass would reserve and charge the full
+  // fan-out again. The spend, not the id, is what must not happen twice —
+  // refuse to open a fan-out while another one this user started moments ago
+  // is still in flight. "generating" is the only non-terminal status, so a
+  // stopped, failed or finished batch never blocks a legitimate resubmit, and
+  // the short window means even a wedged row (reaper territory) cannot lock
+  // the account out of rendering.
+  const { data: inflightGroup } = await supabase
+    .from("generations")
+    .select("id")
+    .eq("user_id", userData.user.id)
+    .not("angle_group_id", "is", null)
+    .eq("status", "generating")
+    .gte("created_at", new Date(Date.now() - 2 * 60 * 1000).toISOString())
+    .limit(1);
+  if (inflightGroup?.length) {
+    return { error: "Your last multi-shot render is still running — stop it or let it finish before starting another." };
+  }
+
   // Atomic group reservation — the whole angle group's MONTHLY portion is
   // checked and all N rows inserted under one advisory lock (reserve_generations,
   // same lock key as the single-generation path so the two serialize together).

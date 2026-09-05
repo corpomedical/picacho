@@ -3051,6 +3051,7 @@ function GenerateFormInner({
   // duplicating it: the queue-and-poll machinery, the stop handling and the
   // failure recovery are identical, and the only difference is the payload.
   async function confirmScene() {
+    if (submitting) return;
     if (!pendingScene || !scenePlan) return;
     if (!characterId) {
       // Guarded here rather than only inside confirmMultiAngle, whose own
@@ -3249,6 +3250,11 @@ function GenerateFormInner({
     plan: ScenePlan;
     pending: { prompt: string; attachments: ChatAttachment[] };
   }): Promise<boolean> {
+    // A second click while a batch is in flight would mint a fresh group id,
+    // which is precisely the thing the server's replayed-group guard keys on
+    // — so it would queue and charge a whole second fan-out. The scene panel
+    // used to sit on screen with a live Render button for the entire render.
+    if (submitting) return false;
     const source = scene ? scene.pending : pendingMultiAngle;
     if (!source || !characterId) return false;
     // A scene's rows are keyed "shot-1".."shot-6"; an angle batch's by angle
@@ -6607,7 +6613,11 @@ function GenerateFormInner({
             isHero && "bg-atelier-ink/[0.045] focus-within:bg-atelier-ink/[0.07]",
           )}
         >
-          {pendingScene ? (
+          {/* Hidden while the render is in flight: the staged plan is kept
+              (a stop or a rejected send brings the panel back for retry),
+              but its Render button must not share the screen with a running
+              render it could double-charge. */}
+          {pendingScene && !submitting ? (
             <div className="space-y-3 p-4">
               <div>
                 <p className="text-xs font-medium uppercase tracking-widest text-atelier-muted">
@@ -6711,7 +6721,7 @@ function GenerateFormInner({
                     <button
                       type="button"
                       onClick={confirmScene}
-                      disabled={cannotAfford}
+                      disabled={cannotAfford || submitting}
                       className="rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
                     >
                       {formatMsg(g.sceneRender, { n: scenePlan.shots.length })}
@@ -6766,7 +6776,7 @@ function GenerateFormInner({
                 <button
                   type="button"
                   onClick={() => confirmMultiAngle()}
-                  disabled={selectedAngles.length === 0}
+                  disabled={selectedAngles.length === 0 || submitting}
                   className="rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
                   {selectedAngles.length === 1 ? g.generateAngleOne : formatMsg(g.generateAngleOther, { n: selectedAngles.length })}
