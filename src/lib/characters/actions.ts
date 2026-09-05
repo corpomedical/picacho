@@ -84,6 +84,18 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   const referenceImagePaths = rawReferencePaths.filter((p) => p.startsWith(`${uid}/`));
   // Outfit photos (2026-08-24): clothing shots, kept apart from the identity
   // references above — same bucket, same own-folder ownership rule.
+  // What the submitting form believed the row held when it loaded (the form
+  // also folds in auto-persists it witnessed). Photos on the row but NOT in
+  // this baseline were appended from outside the form — another tab's
+  // promote-to-reference, an auto-persisted AI reference — and a Save must
+  // neither drop them from the row nor delete their files: the old wholesale
+  // replace-then-diff permanently destroyed a promoted photo on the next
+  // Save from any tab opened before the promotion. A form from before this
+  // shipped sends no baseline; the fallback below keeps the old semantics.
+  const referenceBaseline = parseStringArray(formData.get("reference_baseline_paths"));
+  const outfitBaseline = parseStringArray(formData.get("outfit_baseline_paths"));
+  const hasBaselines = formData.get("reference_baseline_paths") !== null;
+
   const rawOutfitPaths = parseStringArray(formData.get("outfit_image_paths"));
   if (rawOutfitPaths === null) {
     return { error: "Couldn't read the outfit photo list — refresh and try again." };
@@ -219,6 +231,31 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
   };
 
   if (id) {
+    // Fresh read at the last moment: the vision calls above can hold this
+    // action open for tens of seconds, and photos auto-persist onto the row
+    // from outside the form in exactly that window. Merging against a fresh
+    // read shrinks the lost-append window from half a minute to milliseconds.
+    const { data: freshRow } = await supabase
+      .from("character_profiles")
+      .select("reference_image_urls, outfit_image_urls")
+      .eq("id", id)
+      .eq("user_id", data.user.id)
+      .maybeSingle();
+    const oldRefs = (freshRow?.reference_image_urls as string[] | null) ?? [];
+    const oldOutfits = (freshRow?.outfit_image_urls as string[] | null) ?? [];
+    const refBase = (hasBaselines ? referenceBaseline : null) ?? oldRefs;
+    const outfitBase = (hasBaselines ? outfitBaseline : null) ?? oldOutfits;
+    // On the row but unknown to this form: appended elsewhere — keep, after
+    // the form's own list so the primary photo stays the one the form chose.
+    const appendedRefs = oldRefs.filter(
+      (p) => !refBase.includes(p) && !referenceImagePaths.includes(p),
+    );
+    const appendedOutfits = oldOutfits.filter(
+      (p) => !outfitBase.includes(p) && !outfitImagePaths.includes(p),
+    );
+    row.reference_image_urls = [...referenceImagePaths, ...appendedRefs];
+    row.outfit_image_urls = [...outfitImagePaths, ...appendedOutfits];
+
     const { error } = await supabase
       .from("character_profiles")
       .update(row)
@@ -230,16 +267,15 @@ export async function saveCharacterProfile(formData: FormData): Promise<SaveResu
       return { error: "Couldn't save this character — try again." };
     }
 
-    // The submitted lists wholesale replace the stored ones, so any photo
-    // dropped from the gallery was left behind in storage forever — 43
-    // stranded objects had accumulated by the time the 2026-08-31 inspection
-    // counted them. Diff after a confirmed save and remove what fell off.
-    // Best-effort: a failed remove costs pennies of storage, not the save.
-    const keep = new Set([...referenceImagePaths, ...outfitImagePaths]);
-    const dropped = [
-      ...((existingRow?.reference_image_urls as string[] | null) ?? []),
-      ...((existingRow?.outfit_image_urls as string[] | null) ?? []),
-    ].filter((p) => p && !keep.has(p));
+    // The submitted lists replace the stored ones, so any photo the user
+    // deliberately dropped from the gallery was left behind in storage
+    // forever — 43 stranded objects had accumulated by the 2026-08-31
+    // inspection. Diff after a confirmed save and remove what fell off.
+    // Everything appended-elsewhere is in `keep` by construction, so only
+    // deliberate removals (in the form's baseline, not resubmitted) can land
+    // here. Best-effort: a failed remove costs pennies, not the save.
+    const keep = new Set([...row.reference_image_urls, ...row.outfit_image_urls]);
+    const dropped = [...oldRefs, ...oldOutfits].filter((p) => p && !keep.has(p));
     if (dropped.length) {
       const { error: removeError } = await supabase.storage
         .from("character-references")

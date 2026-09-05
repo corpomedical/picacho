@@ -408,8 +408,16 @@ export function CharacterForm({
       const supabase = createClient();
       const uploadedPaths: string[] = [];
 
+      // Same sanitize as every other upload lane (attachments, upscale,
+      // layers): Supabase rejects keys outside its ASCII-safe set, so a
+      // phone photo named "foto año.jpg" blocked the whole save with a raw
+      // "Invalid key" — and a "#" or "?" in the name truncated the key that
+      // was actually uploaded while the row stored the full path, a photo
+      // that "saved" and then 404'd on every render.
+      const safeName = (n: string) => n.replace(/[^a-zA-Z0-9._-]/g, "_");
+
       for (const { file } of newFiles) {
-        const path = `${userId}/${crypto.randomUUID()}-${file.name}`;
+        const path = `${userId}/${crypto.randomUUID()}-${safeName(file.name)}`;
         const { error: uploadError } = await supabase.storage
           .from("character-references")
           .upload(path, file);
@@ -422,7 +430,7 @@ export function CharacterForm({
       // column is what actually separates them from identity references.
       const uploadedOutfitPaths: string[] = [];
       for (const { file } of newOutfitFiles) {
-        const path = `${userId}/outfit-${crypto.randomUUID()}-${file.name}`;
+        const path = `${userId}/outfit-${crypto.randomUUID()}-${safeName(file.name)}`;
         const { error: uploadError } = await supabase.storage
           .from("character-references")
           .upload(path, file);
@@ -448,6 +456,17 @@ export function CharacterForm({
       formData.set(
         "outfit_image_paths",
         JSON.stringify([...keptOutfit.map((i) => i.path), ...uploadedOutfitPaths]),
+      );
+      // What this form KNEW the row held (persistedPaths also witnesses
+      // in-session auto-persists). The server keeps — and never deletes —
+      // any photo on the row beyond this baseline: it was appended from
+      // outside this form (another tab's promote-to-reference, an
+      // auto-persisted AI shot), and a Save from a form that never saw it
+      // used to destroy it permanently.
+      formData.set("reference_baseline_paths", JSON.stringify(persistedPaths));
+      formData.set(
+        "outfit_baseline_paths",
+        JSON.stringify(existingOutfitImages.map((i) => i.path)),
       );
 
       const result = await saveCharacterProfile(formData);
