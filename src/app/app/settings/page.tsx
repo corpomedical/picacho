@@ -145,6 +145,14 @@ export default async function SettingsPage({
     // account still exists (and still bills) after a failed deletion.
     "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.":
       s.errorDeletionAborted,
+    // The Play-billing guards (checkout-core.ts / profile deleteAccount).
+    // Their entire purpose is the instruction in the text — collapsing them
+    // to "Something went wrong" told a Play subscriber nothing about WHERE
+    // their subscription actually lives.
+    "Your subscription is billed through Google Play — manage or change it in the Play Store on your phone.":
+      s.errorPlayBilledCheckout,
+    "Your subscription is billed through Google Play, and we can't cancel it from here. Cancel it in the Play Store first (Play Store → Payments & subscriptions), then delete your account.":
+      s.errorPlayBilledDeletion,
   };
   const errorMessage = error ? (KNOWN_ERRORS[error] ?? s.errorGeneric) : null;
   const brandRules = await getBrandRules();

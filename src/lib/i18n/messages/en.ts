@@ -1418,6 +1418,10 @@ const en = {
     errorAlreadySubscribed: "You already have a subscription — use Manage billing to change plans.",
     errorDeletionAborted:
       "We couldn't cancel your subscription just now, so your account was NOT deleted — try again in a minute, or contact support and we'll sort it out.",
+    errorPlayBilledCheckout:
+      "Your subscription is billed through Google Play — manage or change it in the Play Store on your phone.",
+    errorPlayBilledDeletion:
+      "Your subscription is billed through Google Play, and we can't cancel it from here. Cancel it in the Play Store first (Play Store → Payments & subscriptions), then delete your account.",
   },
   // Every tier's first line speaks in CREDITS with a concrete anchor
   // (2026-08-19) — the old "N generations / month" framing was false the

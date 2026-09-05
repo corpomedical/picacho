@@ -1342,6 +1342,10 @@ const it = {
     errorAlreadySubscribed: "Hai già un abbonamento — usa Gestisci fatturazione per cambiare piano.",
     errorDeletionAborted:
       "Non siamo riusciti ad annullare il tuo abbonamento in questo momento, quindi il tuo account NON è stato eliminato — riprova tra un minuto o contatta l'assistenza e lo sistemeremo.",
+    errorPlayBilledCheckout:
+      "Il tuo abbonamento è fatturato tramite Google Play — gestiscilo o cambialo nel Play Store del tuo telefono.",
+    errorPlayBilledDeletion:
+      "Il tuo abbonamento è fatturato tramite Google Play e non possiamo annullarlo da qui. Annullalo prima nel Play Store (Play Store → Pagamenti e abbonamenti), poi elimina il tuo account.",
   },
   pricingTiers: {
     basic: {

@@ -1342,6 +1342,10 @@ const es = {
     errorAlreadySubscribed: "Ya tienes una suscripción — usa Gestionar facturación para cambiar de plan.",
     errorDeletionAborted:
       "No pudimos cancelar tu suscripción en este momento, así que tu cuenta NO se eliminó — inténtalo de nuevo en un minuto o contacta con soporte y lo resolveremos.",
+    errorPlayBilledCheckout:
+      "Tu suscripción se factura a través de Google Play — gestiónala o cámbiala en la Play Store de tu teléfono.",
+    errorPlayBilledDeletion:
+      "Tu suscripción se factura a través de Google Play y no podemos cancelarla desde aquí. Cancélala primero en la Play Store (Play Store → Pagos y suscripciones) y luego elimina tu cuenta.",
   },
   pricingTiers: {
     basic: {

@@ -1342,6 +1342,10 @@ const pt = {
     errorAlreadySubscribed: "Você já tem uma assinatura — use Gerenciar cobrança para trocar de plano.",
     errorDeletionAborted:
       "Não conseguimos cancelar sua assinatura agora, então sua conta NÃO foi excluída — tente novamente em um minuto ou fale com o suporte que resolveremos.",
+    errorPlayBilledCheckout:
+      "Sua assinatura é cobrada pelo Google Play — gerencie ou altere na Play Store do seu telefone.",
+    errorPlayBilledDeletion:
+      "Sua assinatura é cobrada pelo Google Play e não podemos cancelá-la daqui. Cancele primeiro na Play Store (Play Store → Pagamentos e assinaturas) e depois exclua sua conta.",
   },
   pricingTiers: {
     basic: {
