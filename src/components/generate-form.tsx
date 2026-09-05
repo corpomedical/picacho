@@ -2062,6 +2062,24 @@ function GenerateFormInner({
   const [resumedJobs, setResumedJobs] = useState<
     { id: string; prompt: string; progress: string | null; stopping: boolean }[]
   >([]);
+  // The foreground send's generation id ONCE THE JOB IS QUEUED at the
+  // provider — null before that and after it settles. This is what makes
+  // "Render in background" safe to offer: pre-queue there is no server-side
+  // job for the background watcher to poll, so the affordance only exists
+  // in the window where detaching is real.
+  const [liveQueuedId, setLiveQueuedId] = useState<string | null>(null);
+  // Generations sent to the background mid-flight. The running submitPrompt
+  // loop checks this and stands down (its poll returns "abandoned", its
+  // foreground path writes nothing more); the resumed-turn watcher owns the
+  // job from then on.
+  const detachedIdsRef = useRef<Set<string>>(new Set());
+  const unmountedRef = useRef(false);
+  useEffect(
+    () => () => {
+      unmountedRef.current = true;
+    },
+    [],
+  );
 
   // The assistant (2026-08-31). ONE switch, not a mode.
   //
@@ -2656,6 +2674,10 @@ function GenerateFormInner({
     (a) => a.status === "ready" && a.type.startsWith("image/") && Boolean(a.url),
   );
   const locked = submitting || pendingMultiAngle !== null;
+  // Whether the foreground send can be sent to the background right now:
+  // queued at the provider, not already stopping, and no background render
+  // running (one background + one foreground = the two-concurrent cap).
+  const canDetach = submitting && !stopping && liveQueuedId !== null && resumedJobs.length === 0;
 
   const currentCharacter = characters.find((c) => c.id === characterId);
   const referencePhotos = currentCharacter?.referencePhotos ?? [];
@@ -3712,8 +3734,6 @@ function GenerateFormInner({
   // gets a resumed turn (see resumedJobs), and a settled one graduates into
   // the real thread through the same loader the ?resume= path uses.
   useEffect(() => {
-    let cancelled = false;
-
     (async () => {
       let inFlight: Awaited<ReturnType<typeof listInFlightGenerations>> = [];
       try {
@@ -3723,68 +3743,62 @@ function GenerateFormInner({
         // main path.
         return;
       }
-      if (cancelled || inFlight.length === 0) return;
+      if (unmountedRef.current || inFlight.length === 0) return;
 
-      setResumedJobs(
-        inFlight.map((gen) => ({
-          id: gen.id,
-          prompt: gen.prompt,
-          progress: null,
-          stopping: false,
-        })),
-      );
+      await Promise.all(inFlight.map((gen) => watchResumedJob(gen)));
 
-      await Promise.all(
-        inFlight.map(async (gen) => {
-          const outcome = await awaitQueuedGeneration(
-            gen.id,
-            (progress) => {
-              if (cancelled) return;
-              setResumedJobs((prev) =>
-                prev.map((j) => (j.id === gen.id ? { ...j, progress } : j)),
-              );
-            },
-            () => cancelled,
-            g.lostTrackOfRender,
-          );
-          if (cancelled) return;
-
-          if (outcome.state === "cancelled") {
-            // The person pressed this card's Stop — the same discard the
-            // composer's own stop path runs, so the card just goes away.
-            void discardStoppedGeneration(gen.id);
-          } else if (outcome.state !== "abandoned") {
-            // Graduate into a real thread turn, exactly once: a multi-angle
-            // group's members all resolve to the same group thread, so
-            // dedupe by thread identity, not by job id.
-            try {
-              const thread = await getGenerationThread(gen.id);
-              if (!cancelled && thread) {
-                const item = historyItemToChatItem(thread);
-                setItems((prev) =>
-                  prev.some((p) => sameThreadItem(p, item)) ? prev : [...prev, item],
-                );
-                setTranscriptOpen(true);
-              }
-            } catch {
-              // History still has it — the refresh below repaints stats.
-            }
-          }
-          if (!cancelled) setResumedJobs((prev) => prev.filter((j) => j.id !== gen.id));
-        }),
-      );
-
-      if (cancelled) return;
+      if (unmountedRef.current) return;
       router.refresh();
     })();
-
-    return () => {
-      cancelled = true;
-    };
     // Once per mount. Re-running on every render would start duplicate
     // pollers for the same jobs.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Watches ONE background render as a visible resumed turn — used both by
+  // the mount-time re-attach above and by "Render in background" (a
+  // detached foreground send). Adds the card, polls, and on settle
+  // graduates the job into the real thread exactly once (a multi-angle
+  // group's members all resolve to the same group thread, so dedupe is by
+  // thread identity, not job id).
+  async function watchResumedJob(gen: { id: string; prompt: string }): Promise<void> {
+    setResumedJobs((prev) =>
+      prev.some((j) => j.id === gen.id)
+        ? prev
+        : [...prev, { id: gen.id, prompt: gen.prompt, progress: null, stopping: false }],
+    );
+
+    const outcome = await awaitQueuedGeneration(
+      gen.id,
+      (progress) => {
+        if (unmountedRef.current) return;
+        setResumedJobs((prev) => prev.map((j) => (j.id === gen.id ? { ...j, progress } : j)));
+      },
+      () => unmountedRef.current,
+      g.lostTrackOfRender,
+    );
+    if (unmountedRef.current) return;
+
+    if (outcome.state === "cancelled") {
+      // The person pressed this card's Stop — the same discard the
+      // composer's own stop path runs, so the card just goes away.
+      void discardStoppedGeneration(gen.id);
+    } else if (outcome.state !== "abandoned") {
+      try {
+        const thread = await getGenerationThread(gen.id);
+        if (!unmountedRef.current && thread) {
+          const item = historyItemToChatItem(thread);
+          setItems((prev) =>
+            prev.some((p) => sameThreadItem(p, item)) ? prev : [...prev, item],
+          );
+          setTranscriptOpen(true);
+        }
+      } catch {
+        // History still has it — the caller's refresh repaints stats.
+      }
+    }
+    if (!unmountedRef.current) setResumedJobs((prev) => prev.filter((j) => j.id !== gen.id));
+  }
 
   // Watches for ?tour=1 arriving, rather than only reading it once at mount.
   //
@@ -3960,6 +3974,36 @@ function GenerateFormInner({
   // next attempt (or the generate step of the current one, if it hasn't
   // started yet) from ever beginning, which is where almost all the time
   // and cost of a multi-attempt run actually goes.
+  // "Render in background" (operator, 2026-09-05: two concurrent renders is
+  // enough). Frees the composer for a second send once the current one is
+  // QUEUED — liveQueuedId exists only in that window, because pre-queue
+  // there is no server-side job for the background watcher to poll. The
+  // running submitPrompt loop is told to stand down via detachedIdsRef (its
+  // poll returns "abandoned" and its foreground path writes nothing more),
+  // and the render continues as a resumed turn with its own Stop, exactly
+  // like a reopened-app render. The affordance hides while a background
+  // render exists, which is the whole concurrency cap. Fan-outs (scenes,
+  // multi-angle) stay exclusive — they are already parallelism.
+  function detachLiveRender() {
+    if (!liveQueuedId || !submitting || resumedJobs.length > 0) return;
+    const id = liveQueuedId;
+    const backgroundPrompt = livePrompt ?? "";
+    detachedIdsRef.current.add(id);
+    activeGenerationRef.current = null;
+    setLiveQueuedId(null);
+    setLivePrompt(null);
+    setLiveAttachments([]);
+    setLiveTimeline([]);
+    setLiveResult(null);
+    setRevealedCount(0);
+    setLiveProgress(null);
+    setSubmitting(false);
+    setStopping(false);
+    void watchResumedJob({ id, prompt: backgroundPrompt }).then(() => {
+      if (!unmountedRef.current) router.refresh();
+    });
+  }
+
   // Stop for a RESUMED render — per job, since several can be re-attached at
   // once, and none of them own activeGenerationRef (that belongs to a send
   // this mount made). The server-side cancel propagates back through the
@@ -4500,12 +4544,22 @@ function GenerateFormInner({
 
     if (result.pending) {
       setLiveProgress(result.progress ?? null);
+      // Queued at the provider — from here on the send can be sent to the
+      // background (see detachLiveRender).
+      setLiveQueuedId(result.id);
       const outcome = await awaitQueuedGeneration(
         result.id,
-        setLiveProgress,
-        () => userStoppedRef.current,
+        (progress) => {
+          if (!detachedIdsRef.current.has(result.id)) setLiveProgress(progress);
+        },
+        () => userStoppedRef.current || detachedIdsRef.current.has(result.id),
         g.lostTrackOfRender,
       );
+      setLiveQueuedId(null);
+      // Sent to the background mid-flight: the resumed-turn watcher owns it
+      // now — this foreground path must write nothing more (detachLiveRender
+      // already cleared every live state and freed the composer).
+      if (detachedIdsRef.current.has(result.id)) return;
       setLiveProgress(null);
 
       if (outcome.state === "succeeded") {
@@ -6524,8 +6578,15 @@ function GenerateFormInner({
                 {hasAnyMessages && (
                   <button
                     type="button"
-                    onClick={() => resetChat()}
-                    disabled={locked}
+                    onClick={() => {
+                      // Instead of being dead for the whole render, New chat
+                      // now sends a queued render to the background and
+                      // starts fresh — the render keeps its own visible
+                      // turn and Stop (see detachLiveRender).
+                      if (canDetach) detachLiveRender();
+                      resetChat();
+                    }}
+                    disabled={locked && !canDetach}
                     className="ml-auto flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink disabled:opacity-50"
                   >
                     {g.newChat}
@@ -7942,16 +8003,31 @@ function GenerateFormInner({
                       <StopIcon className="h-3.5 w-3.5" />
                     </button>
                   ) : submitting ? (
-                    <button
-                      type="button"
-                      onClick={handleStop}
-                      disabled={stopping}
-                      title={stopping ? g.stopping : g.stop}
-                      aria-label={stopping ? g.stopping : g.stop}
-                      className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-60"
-                    >
-                      <StopIcon className="h-3.5 w-3.5" />
-                    </button>
+                    <>
+                      {/* Two concurrent renders (operator, 2026-09-05): once
+                          the send is queued, it can keep rendering in the
+                          background — visible turn, own Stop — and the
+                          composer frees for the next one. */}
+                      {canDetach && (
+                        <button
+                          type="button"
+                          onClick={detachLiveRender}
+                          className="flex-shrink-0 rounded-full border border-atelier-rule px-3 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink"
+                        >
+                          {g.renderInBackground}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleStop}
+                        disabled={stopping}
+                        title={stopping ? g.stopping : g.stop}
+                        aria-label={stopping ? g.stopping : g.stop}
+                        className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-colors hover:bg-atelier-ink/90 disabled:opacity-60"
+                      >
+                        <StopIcon className="h-3.5 w-3.5" />
+                      </button>
+                    </>
                   ) : (
                     <button
                       type="submit"

@@ -652,6 +652,7 @@ const pt = {
     voiceConfirmPlain: "Então: um {type} de “{prompt}”.",
     send: "Enviar",
     stop: "Parar geração",
+    renderInBackground: "Renderizar em segundo plano",
     stopping: "Parando…",
     stoppedByUser: "Parado.",
     creditsEach: "{n} créditos cada um",

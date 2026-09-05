@@ -705,6 +705,7 @@ const en = {
     voiceConfirmPlain: "So: a {type} of “{prompt}”.",
     send: "Send",
     stop: "Stop generating",
+    renderInBackground: "Render in background",
     stopping: "Stopping…",
     stoppedByUser: "Stopped.",
     creditsEach: "{n} credits each",

@@ -652,6 +652,7 @@ const es = {
     voiceConfirmPlain: "Entonces: un {type} de “{prompt}”.",
     send: "Enviar",
     stop: "Detener generación",
+    renderInBackground: "Renderizar en segundo plano",
     stopping: "Deteniendo…",
     stoppedByUser: "Detenido.",
     creditsEach: "{n} créditos cada uno",

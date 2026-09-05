@@ -652,6 +652,7 @@ const it = {
     voiceConfirmPlain: "Quindi: un {type} di “{prompt}”.",
     send: "Invia",
     stop: "Interrompi generazione",
+    renderInBackground: "Continua in background",
     stopping: "Interruzione…",
     stoppedByUser: "Interrotto.",
     creditsEach: "{n} crediti ciascuno",
