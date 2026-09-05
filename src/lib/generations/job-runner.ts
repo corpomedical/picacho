@@ -1136,6 +1136,35 @@ export async function advanceGeneration(
         return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
       }
       await cancelVideoJob(jobHandle(row));
+      // A stop during a dialogue stage arrives AFTER the video itself was
+      // rendered, billed and persisted (payload.videoUrl) — only the voice
+      // work is still cancellable, and the line just above cancelled it.
+      // Every other dialogue-stage exit (provider failure, crash salvage,
+      // reaper timeout) ships the silent video and refunds the surcharge; a
+      // stop must not deliver LESS than a failure does. This branch used to
+      // discard the video outright: full price charged, finished file in the
+      // bucket, nothing delivered, refund routed through the switched-off
+      // automatic_refunds flag.
+      if (
+        (row.stage === "dialogue_tts" || row.stage === "dialogue_lipsync") &&
+        row.payload.videoUrl
+      ) {
+        const didSalvage = await finish(generationId, userId, {
+          status: "succeeded",
+          resultUrl: row.payload.videoUrl,
+          attempts: appendStep(
+            row.resume.attempts ?? [],
+            "Stopped during the dialogue — showing the video without it.",
+            "speech",
+          ),
+        });
+        try {
+          if (didSalvage) await refundDialogueSurcharge(generationId);
+        } catch (refundErr) {
+          console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
+        }
+        return { state: "succeeded", resultUrl: row.payload.videoUrl };
+      }
       const didCancelTransition = await finish(generationId, userId, {
         status: "failed",
         attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
@@ -1391,12 +1420,31 @@ export async function advanceGeneration(
       collectedVideoUrl = videoUrl;
       const wantsDialogue = Boolean(row.resume.dialogueText?.trim() && row.resume.dialogueVoiceId);
 
-      if (!wantsDialogue) {
-        await finish(generationId, userId, {
+      // Stop pressed while the video job was finishing: the render is done
+      // and billed, so it is delivered — but the dialogue stages have not
+      // started, and starting them would spend NEW provider money on a run
+      // the person already abandoned (this exact fall-through used to submit
+      // a fresh paid TTS job after Stop). Deliver silent, surcharge back.
+      const stoppedBeforeDialogue = wantsDialogue && Boolean(gen?.cancel_requested);
+      if (!wantsDialogue || stoppedBeforeDialogue) {
+        const didTransition = await finish(generationId, userId, {
           status: "succeeded",
           resultUrl: videoUrl,
-          attempts: row.resume.attempts ?? [],
+          attempts: stoppedBeforeDialogue
+            ? appendStep(
+                row.resume.attempts ?? [],
+                "Stopped before the dialogue — showing the video without it.",
+                "speech",
+              )
+            : (row.resume.attempts ?? []),
         });
+        if (stoppedBeforeDialogue) {
+          try {
+            if (didTransition) await refundDialogueSurcharge(generationId);
+          } catch (refundErr) {
+            console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
+          }
+        }
         return { state: "succeeded", resultUrl: videoUrl };
       }
 
@@ -1464,6 +1512,27 @@ export async function advanceGeneration(
     }
 
     if (row.stage === "dialogue_tts") {
+      // Same stop rule as the video transition above: the voice finished
+      // before the stop landed, but the PAID lip-sync submit has not
+      // happened yet — a stopped run must not buy it. Silent video plus
+      // the surcharge back, like every other dialogue exit.
+      if (gen?.cancel_requested && row.payload.videoUrl) {
+        const didTransition = await finish(generationId, userId, {
+          status: "succeeded",
+          resultUrl: row.payload.videoUrl,
+          attempts: appendStep(
+            row.resume.attempts ?? [],
+            "Stopped before the lip-sync — showing the video without dialogue.",
+            "speech",
+          ),
+        });
+        try {
+          if (didTransition) await refundDialogueSurcharge(generationId);
+        } catch (refundErr) {
+          console.error(`dialogue surcharge refund failed for ${generationId}:`, refundErr);
+        }
+        return { state: "succeeded", resultUrl: row.payload.videoUrl };
+      }
       const audioUrl = await fetchQueuedAudioUrl(jobHandle(row));
       phase = "submit";
 
