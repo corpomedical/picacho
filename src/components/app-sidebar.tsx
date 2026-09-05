@@ -508,8 +508,15 @@ export function AppSidebar({
   // the server-rendered and first client-rendered output always match —
   // avoids a hydration mismatch, at the cost of a brief flash if collapsed.
   useEffect(() => {
-    const saved = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
-    if (saved === "1") setCollapsed(true);
+    // try/catch, not optional: with "Block all cookies" set, touching
+    // localStorage at all throws, and an unguarded mount effect here takes
+    // the whole app shell down with it.
+    try {
+      const saved = window.localStorage.getItem(COLLAPSED_STORAGE_KEY);
+      if (saved === "1") setCollapsed(true);
+    } catch {
+      // No stored preference — start expanded.
+    }
   }, []);
 
   // Cmd/Ctrl+K opens search from anywhere in the app, same as Claude.
@@ -527,7 +534,11 @@ export function AppSidebar({
   function toggleCollapsed() {
     setCollapsed((prev) => {
       const next = !prev;
-      window.localStorage.setItem(COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      try {
+        window.localStorage.setItem(COLLAPSED_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // Storage blocked — the toggle still works for this visit.
+      }
       return next;
     });
   }

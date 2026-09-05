@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useLocale } from "@/lib/i18n/provider";
-import { COOKIE_CONSENT_KEY, getCookieConsent } from "@/lib/cookie-consent";
+import { getCookieConsent, setCookieConsent } from "@/lib/cookie-consent";
 
 // Shown once, to first-time visitors, until they make an explicit choice.
 // Analytics (the page-view tracker) stays off by default and only starts
@@ -17,7 +17,7 @@ export function CookieConsentBanner() {
   }, []);
 
   function choose(value: "accepted" | "declined") {
-    window.localStorage.setItem(COOKIE_CONSENT_KEY, value);
+    setCookieConsent(value);
     setVisible(false);
   }
 
