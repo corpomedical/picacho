@@ -13,7 +13,10 @@ export function PicachoMark({ size = "md" }: { size?: "sm" | "md" }) {
     <img
       src="/logo-dark.png"
       alt="Made with Picacho"
-      className={`pointer-events-none absolute bottom-2 right-2 select-none opacity-80 drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] ${
+      // Gemini-style ghost (operator, 2026-09-06: "like a white shade, same
+      // as Gemini") — matches the 55% white burn now inside the public
+      // files themselves, so the overlay and the pixels agree.
+      className={`pointer-events-none absolute bottom-2 right-2 select-none opacity-55 drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)] ${
         size === "sm" ? "w-14" : "w-20 sm:w-24"
       }`}
     />

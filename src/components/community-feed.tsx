@@ -511,6 +511,10 @@ export function CommunityFeed({
                           if (v.paused) void v.play().catch(() => {});
                           else v.pause();
                         }}
+                        // Public surface: no right-click save (2026-09-06,
+                        // same rule as the gallery viewer).
+                        controlsList="nodownload"
+                        onContextMenu={(e) => e.preventDefault()}
                         className="relative max-h-full max-w-full"
                       />
                       <PicachoMark />

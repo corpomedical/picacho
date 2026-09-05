@@ -156,6 +156,14 @@ export function GalleryShowcase({ items }: { items: ShowcaseItem[] }) {
                     controls
                     autoPlay
                     playsInline
+                    // No download affordances on the public surface
+                    // (operator, 2026-09-06): strips the browser player's
+                    // download button and the right-click save menu. A
+                    // determined scraper can still capture a stream — which
+                    // is exactly why the files themselves now carry the
+                    // burned-in mark.
+                    controlsList="nodownload"
+                    onContextMenu={(e) => e.preventDefault()}
                     className="max-h-[78vh] w-full bg-neutral-950 object-contain"
                   />
                   {/* Above the video, below nothing — the player's own
