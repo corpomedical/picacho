@@ -20,6 +20,22 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.20.0",
+    build: 33,
+    date: "2026-09-05",
+    title: "The ledger closes, and the studio gains a stage",
+    items: [
+      "Every remaining row of the audit ledger is closed. The fourteen findings deferred for later and the nine only partly fixed were finished in one sweep: the login and signup pages stopped displaying whatever a crafted link put in their address and speak only their own translated wording; throwaway email addresses are turned away at signup; and admin accounts gained two-step verification — enroll once under Admin → Security, and the console demands the code on every new sign-in from then on.",
+      "New: the Angle Stage. Open any finished take and build a rough 3D stage from it, orbit the camera to the framing you want, and keep the angles you like as full-quality frames — the stage only decides the camera; every kept frame is re-rendered from the take itself, so the face, wardrobe and light are the take's own. Pick a start and an end, describe the move, and it renders on the same lane, at the same visible price, scored like every take. Proven with real money before it shipped: the test's camera arc held the face the whole way around. Studio and Elite, fifteen and forty staged takes a month.",
+      "The site got measurably faster at showing your work, and the cause was found by measuring, not guessing. The page every render lands on was quietly serving the raw stored file as its main image — megabytes where the grids ship kilobytes — and now displays a screen-sized copy while downloads keep the untouched original. And every video everywhere gained a saved still frame, so a grid of video tiles paints instantly instead of asking each video to wake up first; the whole backlog was filled the same evening.",
+      "The last voices that only spoke English learned their languages: push notifications now arrive in the language each device actually uses, and the voice assistant translates error messages before reading them aloud instead of switching to English mid-sentence.",
+      "The thing you make now has one name on the last screen that disagreed: the dashboard's \"Recent creations\" became \"Recent takes\", in all four languages — render, generation, clip and creation no longer compete for the same object.",
+      "Sharing any page of the site now produces that page's own preview card — pricing, guides, comparisons, tools — where every one of them used to hand out the homepage's. The free identity-check tool, finished for weeks but linked from nowhere, joined the footer; the getting-started course stops telling signed-in people to sign up; and the in-app tutorial's illustrations were redrawn to show the design the app actually wears.",
+      "Generated character photos on the new-character page can no longer be lost by leaving: they keep themselves in a draft and come back when you return, so a free account's two lifetime photos can't be burned on a page that was never saved.",
+      "Housekeeping with consequences: the database's paper trail was reorganized so what was applied and what is pending each have one home with a written rule, the credit labels say their direction (used this month vs. left), and the free plan's out-of-credits wall now leads with the one thing it never said — your free generation comes back tomorrow.",
+    ],
+  },
+  {
     version: "1.19.0",
     build: 32,
     date: "2026-09-05",
