@@ -20,7 +20,7 @@ import {
 import {
   cancelVideoJob,
   checkVideoJob,
-  fetchVideoUrl,
+  fetchVideoResult,
   providerFromPayload,
   type QueuedVideoJob,
 } from "@/lib/generations/providers/video-queue";
@@ -622,6 +622,37 @@ async function refundDialogueSurcharge(generationId: string): Promise<void> {
     // Atomic add — a read-then-write would race a concurrent spend.
     await admin.rpc("add_purchased_credits", { p_user_id: row.user_id, p_amount: purchasedRefund });
   }
+}
+
+/**
+ * Record which lane a finished video actually came down, and what ModelArk
+ * says it cost, onto the attempt log that is about to be persisted.
+ *
+ * Only the BytePlus lane is stamped. fal rows are left byte-identical to what
+ * they have always been — partly because fal's collect returns no per-request
+ * cost to record, and partly because writing "provider: fal" onto every row
+ * in the table would be a schema change dressed as a log line, for a fact
+ * that is already the absence of the other one.
+ *
+ * The stamp lands on the LAST attempt, which is the one that actually
+ * rendered: earlier entries in the array are failed or retried attempts, and
+ * charging them with this render's token count would double-count the lane's
+ * cost the moment anything retried.
+ */
+function withProviderCost(
+  attempts: AttemptLog[] | undefined,
+  provider: QueuedVideoJob["provider"],
+  completionTokens: number | null,
+): AttemptLog[] {
+  const list = attempts ?? [];
+  if (provider !== "byteplus" || list.length === 0) return list;
+  const stamped = list.slice();
+  stamped[stamped.length - 1] = {
+    ...stamped[stamped.length - 1],
+    provider: "byteplus",
+    ...(typeof completionTokens === "number" ? { providerTokens: completionTokens } : {}),
+  };
+  return stamped;
 }
 
 function jobHandle(row: JobRow): QueuedVideoJob {
@@ -1470,7 +1501,16 @@ export async function advanceGeneration(
     }
 
     if (row.stage === "video") {
-      const providerVideoUrl = await fetchVideoUrl(jobHandle(row));
+      const handle = jobHandle(row);
+      const { url: providerVideoUrl, completionTokens } = await fetchVideoResult(handle);
+      // Stamp the lane onto the attempt log BEFORE any of the finish paths
+      // below read it (there are three from here — silent delivery, stopped
+      // before dialogue, and the dialogue stages that carry resume forward
+      // into a fresh job row). Mutating resume rather than threading a new
+      // array through all of them is deliberate: resume IS the value every
+      // one of those paths persists, so one write covers them all and a
+      // future stage cannot forget to pass it along.
+      row.resume.attempts = withProviderCost(row.resume.attempts, handle.provider, completionTokens);
       // Ours from here, or theirs if the copy fails — see
       // persistGeneratedVideo. A render that plays from the provider beats a
       // success with a dead link, and the lifecycle header means their copy

@@ -9,6 +9,9 @@ import {
   COST_BASIS_USD_PER_CREDIT,
 } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
+import { isByteplusCapable, videoProviderFor } from "@/lib/generations/providers/video-provider";
+import { ARK_USD_PER_MILLION_TOKENS } from "@/lib/generations/providers/byteplus";
+import type { AttemptLog } from "@/lib/generations/pipeline";
 import { getFalBalance, reconcileFalLedger } from "@/lib/generations/providers/fal-ledger";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +32,7 @@ export default async function AdminProvidersPage({
   // trusting that the layout gate can never be sidestepped. requireAdmin()
   // can't live inside getAllModelHealth — the generation pipeline's circuit
   // breaker calls it with no admin (or any) session in scope.
-  await requireAdmin();
+  const { admin } = await requireAdmin();
   const supabase = await createClient();
 
   const [{ data: flag }, { data: modelSetting }, { data: imageModelSetting }] = await Promise.all([
@@ -67,7 +70,81 @@ export default async function AdminProvidersPage({
     { name: "fal.ai (video + image)", present: Boolean(process.env.FAL_KEY) },
     { name: "OpenAI (voice command — Whisper + TTS)", present: Boolean(process.env.OPENAI_API_KEY) },
     { name: "fal.ai (character dialogue — ElevenLabs + Sync Labs)", present: Boolean(process.env.FAL_KEY) },
+    { name: "BytePlus ModelArk (Seedance direct)", present: Boolean(process.env.BYTEPLUS_ARK_API_KEY) },
   ];
+
+  // --- Seedance render lane -------------------------------------------------
+  //
+  // Added 2026-09-06, and the reason is the whole point of it: the operator
+  // set BYTEPLUS_SEEDANCE_LANE in Vercel, redeployed, and then said "I don't
+  // see it" — twice — because there was nowhere in the product where the
+  // answer existed. A routing switch with no readout is a switch you have to
+  // take on faith, and this one moves paying customers' renders to a provider
+  // that had never carried one.
+  //
+  // So this resolves the routing by CALLING videoProviderFor — the same pure
+  // function submitVideoJob calls — rather than re-reading the environment and
+  // re-implementing the rule. If the two ever disagreed, the panel would be
+  // the thing that was wrong, which is the wrong way round.
+  const laneFlag = process.env.BYTEPLUS_SEEDANCE_LANE;
+  const laneSwitches = [
+    {
+      name: "BYTEPLUS_ARK_API_KEY",
+      note: "Authenticates. Without it the client throws before any request.",
+      state: process.env.BYTEPLUS_ARK_API_KEY ? "detected" : "missing",
+      ok: Boolean(process.env.BYTEPLUS_ARK_API_KEY),
+    },
+    {
+      name: "BYTEPLUS_SEEDANCE_LANE",
+      note: 'Routes. Must be exactly "on" — anything else, including "On", reads as off.',
+      // Never the value itself: "set, but not on" is the whole diagnostic, and
+      // printing environment contents into a page is how a secret escapes from
+      // a panel that only meant to be helpful.
+      state: laneFlag === undefined ? "not set" : laneFlag === "on" ? 'on' : 'set, but not "on"',
+      ok: laneFlag === "on",
+    },
+  ];
+  const seedanceRouting = VIDEO_MODELS.filter((m) => isByteplusCapable(m.id)).map((m) => ({
+    id: m.id,
+    name: m.name,
+    provider: videoProviderFor(m.id),
+    falCostPerSecondUsd: m.costPerSecondUsd,
+  }));
+  const laneLive = seedanceRouting.some((r) => r.provider === "byteplus");
+
+  // What the lane has actually billed, from ModelArk's own usage figures
+  // (job-runner stamps them onto the attempt log at collect time). Before this
+  // existed the number was fetched and dropped, so the lane could be proven to
+  // WORK without anyone learning what it CHARGED. Service client: these rows
+  // belong to their owners, and this is an admin-only accounting view.
+  const { data: recentVideos } = await admin
+    .from("generations")
+    .select("id, created_at, model_id, video_duration_seconds, pipeline_log")
+    .eq("content_type", "video")
+    .eq("status", "succeeded")
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  const laneRenders = (recentVideos ?? []).flatMap((row) => {
+    const attempts = Array.isArray(row.pipeline_log) ? (row.pipeline_log as AttemptLog[]) : [];
+    const billed = attempts.find((a) => a?.provider === "byteplus");
+    if (!billed) return [];
+    const rate = ARK_USD_PER_MILLION_TOKENS[row.model_id as keyof typeof ARK_USD_PER_MILLION_TOKENS];
+    const tokens = typeof billed.providerTokens === "number" ? billed.providerTokens : null;
+    const usd = tokens !== null && rate ? (tokens / 1_000_000) * rate : null;
+    const seconds = row.video_duration_seconds ?? null;
+    return [
+      {
+        id: row.id as string,
+        createdAt: row.created_at as string,
+        modelId: row.model_id as string,
+        seconds,
+        tokens,
+        usd,
+        usdPerSecond: usd !== null && seconds ? usd / seconds : null,
+      },
+    ];
+  });
 
   return (
     <div>
@@ -123,10 +200,115 @@ export default async function AdminProvidersPage({
         </div>
       </Card>
 
+      {/* Seedance render lane — see the block that computes it above for why
+          this panel exists at all. */}
+      <Card className="mt-6">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+          <div className="min-w-0 sm:flex-1">
+            <h2 className="text-sm font-semibold text-neutral-900">Seedance render lane</h2>
+            <p className="mt-1 text-xs text-neutral-500">
+              Where a Seedance render goes right now, answered by the same function the pipeline
+              calls — not by what the environment is supposed to say. Every other model stays on
+              fal regardless.
+            </p>
+          </div>
+          <Badge
+            tone={laneLive ? "success" : "neutral"}
+            className="w-fit shrink-0 whitespace-nowrap"
+          >
+            {laneLive ? "BytePlus ModelArk" : "fal.ai"}
+          </Badge>
+        </div>
+
+        {/* Stacked on a narrow admin viewport, side-by-side from sm up: the
+            names are long unbreakable tokens, so sharing a row with a chip at
+            phone width turns them into a two-character column. */}
+        <div className="mt-4 space-y-2.5 border-t border-neutral-100 pt-4">
+          {laneSwitches.map((s) => (
+            <div
+              key={s.name}
+              className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+            >
+              <div className="min-w-0 sm:flex-1">
+                {/* break-all, not truncate: these names have no spaces to
+                    wrap at, so on a narrow admin viewport the string used to
+                    run straight under the badge instead of stopping. */}
+                <p className="break-all font-mono text-xs text-neutral-700">{s.name}</p>
+                <p className="mt-0.5 text-xs text-neutral-400">{s.note}</p>
+              </div>
+              <Badge
+                tone={s.ok ? "success" : "danger"}
+                className="w-fit shrink-0 whitespace-nowrap"
+              >
+                {s.state}
+              </Badge>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">
+          {seedanceRouting.map((r) => (
+            <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+              <span className="text-neutral-600">{r.name}</span>
+              <span
+                className={cn(
+                  "text-xs font-medium",
+                  r.provider === "byteplus" ? "text-emerald-700" : "text-neutral-500",
+                )}
+              >
+                {r.provider === "byteplus" ? "→ BytePlus ModelArk" : "→ fal.ai"}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {/* What it has actually cost. Empty until a render takes the lane —
+            and saying so plainly is the honest state, not a gap to fill with
+            the list-price estimate. */}
+        <div className="mt-4 border-t border-neutral-100 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-400">
+            Billed on this lane
+          </p>
+          {laneRenders.length === 0 ? (
+            <p className="mt-2 text-sm text-neutral-500">
+              No render has taken this lane yet — nothing has been billed to ModelArk from
+              production. The saving this lane exists for is still a list-price comparison:{" "}
+              <span className="font-medium text-neutral-700">$0.1528/sec</span> was measured once,
+              on a 4s <em>text</em>-to-video, while BytePlus support quoted{" "}
+              <span className="font-medium text-neutral-700">$0.303/sec</span> for the enhanced
+              line — parity with fal. The product sends reference-to-video, whose token cost has
+              never been measured on either line. One supervised render fills this panel in.
+            </p>
+          ) : (
+            <>
+              <div className="mt-2 space-y-1.5">
+                {laneRenders.slice(0, 10).map((r) => (
+                  <p key={r.id} className="text-sm text-neutral-700">
+                    {new Date(r.createdAt).toLocaleString()} · {r.modelId}
+                    {r.seconds ? ` · ${r.seconds}s` : ""} ·{" "}
+                    {r.tokens !== null ? `${r.tokens.toLocaleString()} tokens` : "tokens not reported"}
+                    {r.usd !== null ? ` · $${r.usd.toFixed(4)}` : ""}
+                    {r.usdPerSecond !== null ? ` · $${r.usdPerSecond.toFixed(4)}/sec` : ""}
+                  </p>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-neutral-400">
+                Dollars are ModelArk&apos;s reported completion tokens at their published per-million
+                list price, not an invoice — which billing line this account sits on is still
+                unresolved. Compare against fal&apos;s{" "}
+                {seedanceRouting.map((r) => `$${r.falCostPerSecondUsd.toFixed(4)}/sec on ${r.name}`).join(", ")}.
+              </p>
+            </>
+          )}
+        </div>
+      </Card>
+
       <Card className="mt-6">
         <h2 className="text-sm font-semibold text-neutral-900">Video model</h2>
         <p className="mt-1 text-xs text-neutral-500">
-          All models run through the same fal.ai key — switching is instant, no new keys needed.
+          Every model here runs through the same fal.ai key — switching is instant, no new keys
+          needed. The one exception is Seedance, which routes to BytePlus ModelArk when the lane
+          above is on.
         </p>
 
         <div className="mt-4 flex flex-wrap gap-2 border-b border-neutral-100">

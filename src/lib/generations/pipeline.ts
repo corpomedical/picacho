@@ -78,6 +78,18 @@ export type AttemptLog = {
   passed: boolean;
   issues: string[];
   compiledPrompt: string;
+  // Provenance for the BytePlus Seedance lane (2026-09-06). Deliberately NOT
+  // steps: steps are the user-facing story of their render, and which vendor
+  // resold the GPU is our business, not theirs. These ride alongside instead,
+  // so they persist in pipeline_log where the admin lane readout can count
+  // them, and render nowhere.
+  //
+  // Written only when a render actually took the ModelArk lane, so their
+  // absence means "fal", exactly as it does in the job payload.
+  /** Which provider held this render. Absent on every fal row, past or future. */
+  provider?: "byteplus";
+  /** ModelArk's own usage.completion_tokens — this lane's only real invoice. */
+  providerTokens?: number;
 };
 
 export type PipelineResult = {

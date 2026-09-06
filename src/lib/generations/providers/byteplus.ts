@@ -78,6 +78,24 @@ export const ARK_MODELS = {
   "seedance-2": "dreamina-seedance-2-0-260128",
 } as const;
 
+/**
+ * ModelArk's list price per MILLION tokens, read from their pricing page on
+ * 2026-09-03 (the same read that produced the 2.00x comparison in the header).
+ *
+ * These turn a task's reported usage.completion_tokens into dollars, which is
+ * the only way this lane's cost is ever checkable rather than asserted. Two
+ * standing caveats travel with them, and both are recorded in the header:
+ * which billing LINE this account actually sits on is unresolved (support
+ * quoted $0.303/sec for the "enhanced" line, roughly fal parity), and the one
+ * real measurement we hold is text-to-video, not the reference-to-video shape
+ * the product sends. So a number derived from these is what the list price
+ * implies, not an invoice.
+ */
+export const ARK_USD_PER_MILLION_TOKENS: Record<keyof typeof ARK_MODELS, number> = {
+  seedance: 10.7,
+  "seedance-2": 7.0,
+};
+
 /** Same family, far cheaper, unevaluated. Not reachable from the catalogue. */
 export const ARK_MODELS_UNEVALUATED = {
   "seedance-2-fast": "dreamina-seedance-2-0-fast-260128",

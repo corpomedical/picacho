@@ -204,10 +204,23 @@ export async function checkVideoJob(job: QueuedVideoJob): Promise<QueuedJobState
   );
 }
 
-export async function fetchVideoUrl(job: QueuedVideoJob): Promise<string> {
-  if (job.provider === "fal") return fetchFalVideoUrl(job);
-  const { url } = await fetchArkVideo(job.requestId);
-  return url;
+/**
+ * The finished file, plus what the provider says it cost.
+ *
+ * `completionTokens` is ModelArk's own usage figure and is the ONLY quantity
+ * that turns a BytePlus render into a number — ByteDance bills per million
+ * tokens, so without it the lane's whole reason for existing ("half of fal")
+ * stays a list-price assertion instead of something checkable. It used to be
+ * fetched and dropped on the floor here (fetchArkVideo has always returned
+ * it), which meant a supervised canary could prove the lane WORKS and still
+ * not tell anyone what it CHARGED. fal has no equivalent per-request figure
+ * on this endpoint, so it reads null there.
+ */
+export async function fetchVideoResult(
+  job: QueuedVideoJob,
+): Promise<{ url: string; completionTokens: number | null }> {
+  if (job.provider === "fal") return { url: await fetchFalVideoUrl(job), completionTokens: null };
+  return fetchArkVideo(job.requestId);
 }
 
 export async function cancelVideoJob(job: QueuedVideoJob): Promise<void> {
