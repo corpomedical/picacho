@@ -75,71 +75,38 @@ export function NativeChrome() {
     document.documentElement.classList.add("native-app");
 
     // --- Status bar ---
-    const statusBar = capPlugin("StatusBar");
+    //
+    // SystemBars, not @capacitor/status-bar (2026-09-06). Play's release-13
+    // dashboard flagged "Your app uses deprecated APIs or parameters for
+    // edge-to-edge", naming android.view.Window.get/setStatusBarColor reached
+    // through com.capacitorjs.plugins.statusbar.StatusBar. None of those calls
+    // were ours and none could be removed from JS: StatusBar.java's
+    // constructor calls getStatusBarColorDeprecated() unconditionally, so the
+    // bytecode Play scans was present whether or not anything reached it. The
+    // only way out was to stop shipping the plugin.
+    //
+    // Capacitor 8 core registers its own SystemBars plugin (Bridge.java:658),
+    // so this needs no dependency at all. Its setStyle is implemented with
+    // WindowInsetsControllerCompat.setAppearanceLightStatusBars — the
+    // edge-to-edge-correct API, which is what the old plugin used for style
+    // too, so the behaviour here is unchanged.
+    //
+    // setBackgroundColor is gone with it, and loses nothing: it was already a
+    // NO-OP on Android 15+ (the old plugin refused it by design once targetSdk
+    // passed 34, because Android 15 deprecated Window.setStatusBarColor
+    // outright). The strip behind the status bar is painted by CSS and always
+    // was on modern devices — html.native-app carries background-color
+    // var(--frost-top) in globals.css while body holds the safe-area padding,
+    // so the app's own surface shows through a transparent system bar. That is
+    // the mechanism the operator's 2026-08-21 "unify the color" fix rides on,
+    // and it is untouched here.
+    const systemBars = capPlugin("SystemBars");
     const paintBars = () => {
       const dark = document.documentElement.classList.contains("dark");
-      // Style.Light = light BACKGROUND (dark icons), Style.Dark the reverse.
-      // This one still works everywhere: the plugin implements it with
-      // WindowInsetsControllerCompat.setAppearanceLightStatusBars, which
-      // edge-to-edge did not deprecate.
-      void statusBar?.setStyle?.({ style: dark ? "DARK" : "LIGHT" });
-      // setBackgroundColor is a NO-OP on Android 15+ and kept only for 14 and
-      // below. Not an oversight — the plugin refuses it by design: with
-      // targetSdk 36 its own shouldSetStatusBarColor() returns false on any
-      // API above 34 (StatusBar.java), because Android 15 enforced
-      // edge-to-edge and deprecated Window.setStatusBarColor outright.
-      //
-      // The strip behind the status bar is painted by CSS instead, and always
-      // was on modern devices: html.native-app carries background-color
-      // var(--frost-top) (globals.css) while body holds the safe-area
-      // padding, so the app's own surface shows through a transparent system
-      // bar. That is the edge-to-edge-correct mechanism and it is what the
-      // operator's 2026-08-21 "unify the color" fix is actually riding on.
-      //
-      // Play's release dashboard flags "deprecated APIs for edge-to-edge" on
-      // this build. None of it is ours.
-      //
-      // RE-AUDITED 2026-09-04, against the shipped versionCode 12 APK rather
-      // than from memory, because the list that stood here was wrong: it named
-      // five surviving callers, three of which are not in the binary at all
-      // (androidx.activity.EdgeToEdgeApi23/26/29 never appear in mapping.txt,
-      // and there is not one com.google.android.material class left), and the
-      // next paragraph then said two of them had been removed — the block
-      // contradicted itself.
-      //
-      // Dexdumped, the release DEX holds exactly FOUR references to the four
-      // bar-colour APIs, in TWO library classes, and none in ai.picacho.app:
-      //
-      //   com.capacitorjs.plugins.statusbar.StatusBar
-      //     .getStatusBarColorDeprecated  -> Window.getStatusBarColor
-      //     .setStatusBarColorDeprecated  -> Window.setStatusBarColor
-      //   androidx.core.splashscreen.SplashScreen$Impl31
-      //     .applyAppSystemUiTheme        -> Window.setStatusBarColor
-      //                                   -> Window.setNavigationBarColor
-      //
-      // Three things follow, and they are why this is recorded rather than
-      // fixed:
-      //
-      // 1. PLAY'S OWN SUGGESTED FIX WOULD MAKE IT WORSE. Its other
-      //    recommendation says to call enableEdgeToEdge(). Read in
-      //    activity-1.11.0's sources, EdgeToEdgeApi23/26/29 assign
-      //    window.statusBarColor and window.navigationBarColor, and the
-      //    highest implementation is Api30 — there is no API-35 subclass that
-      //    skips the assignment. Calling it would add SIX new deprecated call
-      //    sites to a binary that currently has none of its own.
-      // 2. THERE IS NOTHING TO UPGRADE TO. @capacitor/status-bar's latest is
-      //    8.0.3, which is what is installed; androidx.core:core-splashscreen's
-      //    latest is 1.2.0, which is what variables.gradle pins.
-      // 3. DELETING THE CALL BELOW WOULD CHANGE NOTHING. StatusBar.java's
-      //    constructor calls getStatusBarColorDeprecated() unconditionally, so
-      //    the bytecode Play scans is present whether or not any JS reaches it.
-      //
-      // The app is already inset-correct on Android 15 without any of it:
-      // Capacitor 8 core registers a built-in SystemBars plugin (Bridge.java)
-      // that installs a window-insets listener and hands real insets to the
-      // WebView, which is what the env(safe-area-inset-*) padding in
-      // globals.css consumes. It is a recommendation with no deadline.
-      void statusBar?.setBackgroundColor?.({ color: dark ? "#1a1c24" : "#eef1f8" });
+      // LIGHT = dark icons on a light background; DARK is the reverse. Same
+      // vocabulary the old plugin used, so the light/dark mapping is a
+      // straight carry-over.
+      void systemBars?.setStyle?.({ style: dark ? "DARK" : "LIGHT" });
     };
     paintBars();
     // The theme toggle flips a class on <html>; watch it so the bar follows.

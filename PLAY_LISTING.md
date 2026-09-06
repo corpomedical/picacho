@@ -30,7 +30,7 @@ Picacho — AI Character Video
 The same face, in every single frame — every render scored to prove it.
 ```
 
-### Full description — 2372/4000
+### Full description — 2477/4000
 
 <!-- count:en.full -->
 ```text
@@ -44,7 +44,7 @@ THE PROOF
 Most tools hope the face carries over. Picacho checks. A vision model compares every result against your character's identity photo and prints the match score under the image — so you see the number before your audience does.
 
 THE PIPELINE
-Every generation runs the full pipeline: one AI model drafts your prompt, a second reviews it against your character's rulebook, then the result is generated and validated before it reaches you. Failed attempts retry automatically — and when we block a request, or a provider refuses it before rendering, it never uses your credits.
+Every generation runs the full pipeline: your character's saved traits and brand rules are engineered into the prompt automatically, then checked — and repaired — before a single credit is spent, and the result is validated before it reaches you. Failed attempts retry automatically — and when we block a request, or a provider refuses it before rendering, it never uses your credits.
 
 BRAND RULES
 Give your character a rulebook — what it must always, or must never, appear with — and every prompt is drafted and reviewed against it before anything is generated. Your mascot stays on-brand everywhere it shows up.
@@ -82,7 +82,7 @@ Picacho: personaje IA en vídeo
 La misma cara en cada fotograma — cada resultado puntuado para demostrarlo.
 ```
 
-### Full description — 2612/4000
+### Full description — 2721/4000
 
 <!-- count:es.full -->
 ```text
@@ -96,7 +96,7 @@ LA PRUEBA
 La mayoría de herramientas esperan que la cara se mantenga. Picacho lo comprueba: un modelo de visión compara cada resultado con la foto de identidad de tu personaje e imprime la puntuación de coincidencia bajo la imagen — para que tú veas el número antes que tu audiencia.
 
 EL PIPELINE
-Cada generación recorre el pipeline completo: un modelo de IA redacta tu prompt, un segundo lo revisa contra el reglamento de tu personaje, y el resultado se genera y se valida antes de llegar a ti. Los intentos fallidos se reintentan automáticamente — y las generaciones fallidas nunca consumen tus créditos.
+Cada generación recorre el pipeline completo: los rasgos guardados de tu personaje y sus reglas de marca se integran automáticamente en el prompt, que se comprueba —y se corrige— antes de gastar un solo crédito, y el resultado se valida antes de llegar a ti. Los intentos fallidos se reintentan automáticamente — y si bloqueamos una solicitud, o un proveedor la rechaza antes de renderizar, nunca consume tus créditos.
 
 REGLAS DE MARCA
 Dale a tu personaje un reglamento — con qué debe, o no debe, aparecer — y cada prompt se redacta y se revisa contra él antes de generar nada. Tu mascota se mantiene fiel a la marca allí donde aparezca.
@@ -134,7 +134,7 @@ Picacho: video personaggi IA
 La stessa faccia in ogni fotogramma — e un punteggio che lo dimostra.
 ```
 
-### Full description — 2723/4000
+### Full description — 2826/4000
 
 <!-- count:it.full -->
 ```text
@@ -148,7 +148,7 @@ LA PROVA
 La maggior parte degli strumenti spera che il volto si mantenga. Picacho verifica: un modello di visione confronta ogni risultato con la foto identità del personaggio e stampa il punteggio di somiglianza sotto l'immagine — così vedi il numero prima del tuo pubblico.
 
 LA PIPELINE
-Ogni generazione percorre la pipeline completa: un modello IA scrive la bozza del prompt, un secondo la rivede confrontandola con il regolamento del personaggio, poi il risultato viene generato e validato prima di arrivare a te. I tentativi falliti vengono ripetuti automaticamente — e le generazioni fallite non consumano mai i tuoi crediti.
+Ogni generazione percorre la pipeline completa: i tratti salvati del tuo personaggio e le sue regole di marca vengono integrati automaticamente nel prompt, che viene controllato — e corretto — prima di spendere un solo credito, e il risultato viene validato prima di arrivare a te. I tentativi falliti vengono ripetuti automaticamente — e se blocchiamo una richiesta, o un provider la rifiuta prima del rendering, non consuma mai i tuoi crediti.
 
 REGOLE DI BRAND
 Dai al tuo personaggio un regolamento — con cosa deve, o non deve, apparire — e ogni prompt viene scritto e revisionato rispetto a esso prima di generare qualsiasi cosa. La tua mascotte resta fedele al brand ovunque compaia.
@@ -186,7 +186,7 @@ Picacho: vídeo personagem IA
 O mesmo rosto em cada quadro — cada resultado pontuado para provar.
 ```
 
-### Full description — 2554/4000
+### Full description — 2669/4000
 
 <!-- count:pt.full -->
 ```text
@@ -200,7 +200,7 @@ A PROVA
 A maioria das ferramentas torce para o rosto se manter. O Picacho confere: um modelo de visão compara cada resultado com a foto de identidade do personagem e imprime a pontuação de correspondência sob a imagem — para você ver o número antes do seu público.
 
 O PIPELINE
-Cada geração percorre o pipeline completo: um modelo de IA redige seu prompt, um segundo o revisa contra o regulamento do seu personagem, e o resultado é gerado e validado antes de chegar até você. Tentativas com falha são refeitas automaticamente — e gerações com falha nunca consomem seus créditos.
+Cada geração percorre o pipeline completo: os traços salvos do seu personagem e suas regras de marca são integrados automaticamente ao prompt, que é verificado — e corrigido — antes de gastar um único crédito, e o resultado é validado antes de chegar até você. Tentativas com falha são refeitas automaticamente — e se bloquearmos um pedido, ou um provedor o recusar antes de renderizar, nunca consome seus créditos.
 
 REGRAS DE MARCA
 Dê ao seu personagem um regulamento — com o que ele deve, ou nunca deve, aparecer — e cada prompt é redigido e revisado contra ele antes de qualquer geração. Seu mascote continua fiel à marca onde quer que apareça.
@@ -237,10 +237,10 @@ own translation, so the es/it/pt listings map to the same keys in their own file
 | Two AI models: one drafts, a second reviews against the character's rulebook | `marketing.home.diffModelsTitle/diffModelsDetail` |
 | Full pipeline: draft → review → generate → validate | `marketing.pricing.subtitle`, `marketing.home.step1–step4` |
 | Failed attempts retry automatically | `marketing.home.stat2Caption`, `step4Detail` |
-| Failed generations never use your credits | `pricingTiers.*.features`, `marketing.pricing.faq[1]`, `marketing.compare.picFailures` |
+| A blocked or refused request never uses your credits | `pricingTiers.{basic,starter,growth}.features` (studio/elite carry no such bullet), `marketing.pricing.faq[1]`, `marketing.compare.picFailures`. NOT "failed generations never use your credits" — that broader claim was retracted sitewide on 2026-08-30 because a render that fails AFTER it starts is charged, and refunded only on review. es/it/pt carried the retracted wording in the listing until 2026-09-06. |
 | Brand rules: every prompt drafted and reviewed against the rulebook before generation | `marketing.home.diffRulesTitle/diffRulesDetail`, `generate.promptLevelNote` — prompt-level checks (nothing generated, nothing charged when a rule blocks; deliberately NOT an output gate, per the 2026-08-20 economics decision). Requires the `brand_rules_enforcement` flag ON (Admin → Feature flags) — flip it before submitting for review, or rules aren't applied at all (`brandRules.pausedNotice`) |
 | Dialogue: type the line, pick a voice, lips synced | `character.dialogueVoiceSubtitle`, `generate.dialogueCreditNote` |
-| Multi-angle: same scene, several camera angles at once | `onboarding.multiAngleBody`, `marketing.home.diffFormatsDetail` — paid-plan feature per `generate.multiAngleLocked`; the listing describes it without claiming it's free. (Heads-up: `tutorial.s5p3` says "Studio plan" while `generate.multiAngleLocked` says "any paid plan" — reconcile before review.) |
+| Multi-angle: same scene, several camera angles at once | `onboarding.multiAngleBody`, `marketing.home.diffFormatsDetail` — paid-plan feature per `generate.multiAngleLocked`; the listing describes it without claiming it's free. (The old s5p3/multiAngleLocked mismatch is resolved — `tutorial.s5p3` now says "any paid plan" too.) |
 | A free generation every day, fastest model, no credit card, resets daily, doesn't stack | `marketing.home.heroFreeTrialNote`, `marketing.pricing.faq[2]` |
 | Paid plans from $9/month (Basic, 12 credits) | `marketing.compare.picEntry`, `pricingTiers.basic.features` (EU visitors billed the same numbers in euros, per `picEntry`) |
 | Standard video/image = 1 credit; premium costs more; exact cost shown before you confirm | `marketing.pricing.subtitle`, `marketing.pricing.faq[0]`, `marketing.compare.picCost` |
