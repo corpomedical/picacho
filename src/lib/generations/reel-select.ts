@@ -95,7 +95,11 @@ function shortLabel(prompt: string | null): string | null {
   if (clean.length <= 42) return clean;
   const cut = clean.slice(0, 42);
   const lastSpace = cut.lastIndexOf(" ");
-  return `${(lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+  const kept = (lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim();
+  // Drop trailing sentence punctuation before the ellipsis: a prompt that
+  // happens to end a sentence inside the first 42 characters otherwise reads
+  // "A 15-second cinematic drama trailer.…", which looks like a bug.
+  return `${kept.replace(/[.,;:!?—–-]+$/, "")}…`;
 }
 
 function isUsableVideo(row: ReelRow): boolean {

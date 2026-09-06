@@ -168,6 +168,16 @@ describe("what the band calls each cut", () => {
     expect(label).not.toMatch(/\s…$/);
   });
 
+  it("does not strand punctuation in front of the ellipsis", () => {
+    // Real prompts open with a full sentence ("A 15-second cinematic drama
+    // trailer. Eva walks..."), and the trim can land right after the stop.
+    const label =
+      selectReel([row({ prompt_input: "A 15-second cinematic drama trailer. Eva walks in" })])
+        ?.clips[0].label ?? "";
+    expect(label.endsWith("…")).toBe(true);
+    expect(label).not.toMatch(/[.,;:!?-]…$/);
+  });
+
   it("gives up rather than showing a stub", () => {
     expect(selectReel([row({ prompt_input: null })])?.clips[0].label).toBeNull();
     expect(selectReel([row({ prompt_input: "  " })])?.clips[0].label).toBeNull();

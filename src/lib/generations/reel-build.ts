@@ -116,19 +116,37 @@ export async function buildUserReel(
 
   const { data: existing } = await admin
     .from("user_reels")
-    .select("storage_path, poster_path")
+    // select("*") rather than a column list: naming a column that has not been
+    // migrated yet fails the whole read in PostgREST, which on 2026-09-07 took
+    // the reel off every dashboard at once. Same reasoning as /app/page.tsx.
+    .select("*")
     .eq("user_id", userId)
     .maybeSingle();
 
-  // The key is a hash of exactly the inputs that decide the bytes, so an equal
-  // key means an identical reel already exists. Re-encoding it would burn CPU
-  // to produce the same file at the same immutable URL.
+  // "Unchanged" has to mean the whole ROW is what the band needs, not just that
+  // the video bytes would be identical.
   //
-  // The poster has to be present too. Comparing only the video key left a reel
-  // whose poster failed stuck without one FOREVER — every later run said
-  // "unchanged" and never retried, so the band would open on black for that
-  // user permanently. A missing poster earns one more attempt.
-  if (existing?.storage_path === storagePath && existing.poster_path) {
+  // The key is a hash of exactly the inputs that decide the bytes, so an equal
+  // key does mean an identical file — re-encoding it would burn CPU to produce
+  // the same thing at the same immutable URL. But the row carries more than the
+  // file, and twice now a field arrived after the reels did:
+  //
+  //   - the poster, which can fail on its own. Comparing only the video key
+  //     left a reel whose poster failed stuck without one forever, opening on
+  //     black for that user permanently.
+  //   - clips, added 2026-09-07 for the segmented bar, the slug and the meter.
+  //     Every existing reel had an empty array and no run would ever refill it,
+  //     so the design would simply never have appeared for anyone who already
+  //     had a reel.
+  //
+  // So completeness is judged on what the band reads, and anything missing
+  // earns another build. `clips` is only required when the column is actually
+  // present — otherwise a deploy that runs ahead of its migration would rebuild
+  // every reel every hour instead of quietly doing nothing.
+  const clipsColumnExists = Boolean(existing) && "clips" in (existing as object);
+  const clipsPopulated =
+    !clipsColumnExists || (Array.isArray(existing?.clips) && existing.clips.length > 0);
+  if (existing?.storage_path === storagePath && existing.poster_path && clipsPopulated) {
     return { status: "unchanged", storagePath };
   }
 
