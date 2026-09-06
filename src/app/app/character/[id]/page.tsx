@@ -67,7 +67,7 @@ export default async function EditCharacterPage({
   const [{ data: recentRows }, { data: statRows }] = await Promise.all([
     supabase
     .from("generations")
-    .select("id, result_url, match_score, content_type")
+    .select("id, result_url, poster_url, match_score, content_type")
     .eq("user_id", userData.user.id)
     .eq("character_profile_id", id)
     .eq("status", "succeeded")
@@ -102,6 +102,12 @@ export default async function EditCharacterPage({
         // can play — the broken lineage tile, 2026-09-03. Videos keep the
         // real file and are rendered by QuietVideo.
         url: isRenderableUrl(url) ? (isVideo ? url : (thumbUrl(url, 640) ?? url)) : "",
+        // The saved scoring frame (2026-09-06). Without it a video tile sat
+        // dark behind QuietVideo's placeholder disc until the whole moov
+        // atom had come down — which is what the poster backfill earlier
+        // today existed to prevent, on a grid that was never asked for one.
+        // Re-signed through toMediaUrl like every other stored media URL.
+        poster: isVideo ? (toMediaUrl(r.poster_url as string | null) ?? null) : null,
         score: (r.match_score ?? null) as number | null,
         isVideo,
       };

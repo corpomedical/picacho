@@ -124,7 +124,16 @@ export function CharacterForm({
   // "In action" (2026-08-27 redesign, case 4): this character's recent
   // succeeded image renders, queried by the edit page. Empty array = show
   // the first-shot nudge; undefined/new-character = no strip at all.
-  recentRenders?: { id: string; url: string; score: number | null; isVideo?: boolean }[];
+  recentRenders?: {
+    id: string;
+    url: string;
+    score: number | null;
+    isVideo?: boolean;
+    /** Saved scoring frame for a video tile, so it shows the render rather
+        than a dark placeholder while the file streams. Null when the
+        backfill has not reached that row. */
+    poster?: string | null;
+  }[];
   /** The three figures on the masthead — see the project page for why the
       counts are read separately from the grid they sit above. */
   stats?: { renders: number; meanIdentity: number | null; lastWorkedAt: string | null };
@@ -608,7 +617,16 @@ export function CharacterForm({
            prompt is the whole top of the page — and the figures, which have
            nothing to count yet, simply do not render. */}
         <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4 border-b border-atelier-rule pb-5">
-          <div className="min-w-0 flex-1">
+          {/* basis-full below sm (2026-09-06): the row is flex-wrap, but a
+              flex-1 child with min-w-0 can shrink to nothing, so it never
+              forced a wrap — the three figures beside it are flex-shrink-0
+              and simply took the width, crushing the name field until only
+              its first letter survived the truncate. Caught shooting Play
+              screenshots at 360dp, which is most budget Androids: "Eva"
+              rendered as "E". Giving the name the whole first line on phone
+              widths lets the figures wrap underneath, where they have room,
+              and leaves the sm+ layout exactly as it was. */}
+          <div className="min-w-0 flex-1 basis-full sm:basis-auto">
             <h1 className="sr-only">{initial?.id ? name || c.eyebrowOne : c.newTitle}</h1>
             <p className={EYEBROW} aria-hidden>
               {initial?.id ? c.eyebrowOne : c.newTitle}
@@ -748,6 +766,7 @@ export function CharacterForm({
                     <QuietVideo
                       pending="disc"
                       src={`${r.url}#t=0.1`}
+                      poster={r.poster ?? undefined}
                       muted
                       playsInline
                       preload="metadata"

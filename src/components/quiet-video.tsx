@@ -22,15 +22,22 @@ export function QuietVideo({
   pending = "disc",
   ref,
   onLoadedData,
+  poster,
   ...props
 }: React.VideoHTMLAttributes<HTMLVideoElement> & {
   pending?: "disc" | "spinner";
   ref?: React.Ref<HTMLVideoElement>;
 }) {
   const [ready, setReady] = useState(false);
+  // A poster IS the quiet state, and a better one — it is the render itself
+  // rather than a stand-in for it. So when one is given, skip both halves of
+  // the placeholder: no disc, and no opacity-0 (2026-09-06 — that fade was
+  // hiding the poster along with the empty video, which is why tiles with a
+  // saved frame still came up dark).
+  const shown = ready || Boolean(poster);
   return (
     <>
-      {!ready && (
+      {!shown && (
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
           {pending === "disc" ? (
             <span className="flex h-9 w-9 items-center justify-center rounded-full bg-onmedia/10">
@@ -48,13 +55,14 @@ export function QuietVideo({
         // used to mount full mp4s — with the media route now honoring Range,
         // metadata preload means a tile costs the moov atom, not the movie.
         preload="metadata"
+        poster={poster}
         {...props}
         ref={ref}
         onLoadedData={(e) => {
           setReady(true);
           onLoadedData?.(e);
         }}
-        className={cn(className, "transition-opacity duration-300", ready ? "opacity-100" : "opacity-0")}
+        className={cn(className, "transition-opacity duration-300", shown ? "opacity-100" : "opacity-0")}
       />
     </>
   );
