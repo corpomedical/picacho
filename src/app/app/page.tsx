@@ -63,9 +63,16 @@ export default async function AppHome() {
       // resolves, the gather does not re-throw, and the band simply does not
       // render. The SQL still goes first by house rule — this is the seatbelt,
       // not the plan.
+      // select("*") rather than a column list, deliberately. Naming a column
+      // that does not exist yet fails the WHOLE select in PostgREST, so a
+      // migration applied after its code shipped does not degrade one feature
+      // — it blanks the reel for everyone and silently swaps in the example
+      // band. That happened on 2026-09-07 with `clips`. The row is nine small
+      // columns on a primary-key lookup, so there is nothing to save by
+      // listing them, and every reader below already guards its own field.
       supabase
         .from("user_reels")
-        .select("storage_path, poster_path, character_profile_id, takes, mean_identity, clips")
+        .select("*")
         .eq("user_id", data.user?.id ?? "")
         .maybeSingle(),
     ]);
