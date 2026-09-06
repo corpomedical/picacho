@@ -3,7 +3,12 @@ import { probeImage } from "@/lib/media/image-probe";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { persistGeneratedVideo, persistImageBytes } from "@/lib/generations/core";
 import { LAYERS_TIERS, layerStoragePath, type LayersTier } from "@/lib/generations/layers";
-import { forceRefundEligible, isProviderRejection } from "@/lib/generations/refund-rules";
+import {
+  forceRefundEligible,
+  isProviderRejection,
+  REFUNDS,
+  type FailureFault,
+} from "@/lib/generations/refund-rules";
 import { createAdminClient } from "@/lib/supabase/server";
 import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import {
@@ -333,27 +338,12 @@ async function claimAdvance(
 // unearned allowance. A refund is only fair where the fault is ours or the
 // provider's.
 //
-//   provider_failed  fal errored or lost the job. Failed work generally isn't
-//                    billed, so refunding costs nothing and is plainly right.
-//   our_error        a bug on our side. We caused it, we absorb it.
-//   user_cancelled   they pressed Stop. We cancel at fal immediately, so
-//                    little or nothing is billed, and refunding keeps Stop
-//                    honest rather than a penalty.
-//   abandoned        nobody came back for it. The render ran and was billed.
-//                    Since the webhook landed this is rare and genuinely means
-//                    the person walked away, so the credit stands.
-//
-// Set deliberately, per Wigly, 2026-08-10. Worth revisiting if support
-// requests pile up — an unrefunded abandoned render tends to cost more in
-// goodwill than the credit is worth.
-export type FailureFault = "provider_failed" | "our_error" | "user_cancelled" | "abandoned";
-
-const REFUNDS: Record<FailureFault, boolean> = {
-  provider_failed: true,
-  our_error: true,
-  user_cancelled: true,
-  abandoned: false,
-};
+// The table itself now lives in refund-rules.ts, which imports nothing and is
+// therefore the only place a money decision in this file can be unit-tested.
+// Its header carries the per-fault reasoning and the 2026-09-06 change that
+// stopped Stop refunding. Re-exported here for existing importers.
+export type { FailureFault };
+export { REFUNDS };
 
 // Gives back everything a failed generation consumed, across all three
 // credit sources. The monthly allowance refunds itself the moment
@@ -394,7 +384,11 @@ export async function refundGenerationCosts(
 ): Promise<boolean> {
   const admin = createAdminClient();
 
-  // Master switch (Admin > Feature flags > automatic_refunds), currently OFF.
+  // Master switch (Admin > Feature flags > automatic_refunds). It has been ON
+  // in production since at least 2026-09-06 — this comment said "currently
+  // OFF" for weeks after that stopped being true, which is exactly the kind
+  // of stale note that gets a refund policy reasoned about backwards. Read
+  // the flag, not this line.
   //
   // The 2026-08-17 audit found the refund policy unsafe as designed: nothing
   // bounded what a refunded failure cost us, and several paths handed credits

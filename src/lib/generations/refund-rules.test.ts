@@ -4,6 +4,8 @@ import {
   acknowledgedPolicyWarning,
   isProviderRejection,
   forceRefundEligible,
+  refundsOnFault,
+  REFUNDS,
 } from "./refund-rules";
 
 // Incident replay — the 2026-08-29 report. Each case is a real pipeline log
@@ -159,5 +161,45 @@ describe("forceRefundEligible", () => {
   it("never forces a run with no rejection at all", () => {
     expect(forceRefundEligible(run("fal.ai (Veo) error (500): internal"))).toBe(false);
     expect(forceRefundEligible([])).toBe(false);
+  });
+});
+
+// The fault table decides where a customer's money goes, and until it moved
+// into this module it lived in job-runner.ts, which vitest cannot load — so
+// it was the one refund decision with nothing pinning it. These are the four
+// answers, stated as answers rather than as a shape, so a future edit that
+// flips one has to flip a test that says out loud what it means.
+describe("REFUNDS by fault", () => {
+  // Operator, 2026-09-06: "A user pushes Stop generation, No refund is
+  // applied. A stopped generation is not a failed one. It's a decision made
+  // by the user." The previous answer was true, and its stated reasoning —
+  // "we cancel at fal immediately, so little or nothing is billed" — was
+  // false on the BytePlus lane, where a running task cannot be cancelled at
+  // all and the render is billed in full.
+  it("does not refund a generation the user stopped", () => {
+    expect(refundsOnFault("user_cancelled")).toBe(false);
+    expect(REFUNDS.user_cancelled).toBe(false);
+  });
+
+  it("still refunds the two faults that are not the customer's doing", () => {
+    expect(refundsOnFault("provider_failed")).toBe(true);
+    expect(refundsOnFault("our_error")).toBe(true);
+  });
+
+  // Unchanged since 2026-08-10: the render ran and was billed, and nobody
+  // came back for it.
+  it("does not refund an abandoned render", () => {
+    expect(refundsOnFault("abandoned")).toBe(false);
+  });
+
+  // A new fault class must be a deliberate money decision, not something that
+  // inherits an answer by being added to a union.
+  it("covers exactly the four known faults", () => {
+    expect(Object.keys(REFUNDS).sort()).toEqual([
+      "abandoned",
+      "our_error",
+      "provider_failed",
+      "user_cancelled",
+    ]);
   });
 });

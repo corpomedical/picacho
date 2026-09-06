@@ -111,3 +111,49 @@ export function forceRefundEligible(attempts: RefundAttempt[]): boolean {
   }
   return true;
 }
+
+// --- Which failure classes give the credit back ----------------------------
+//
+// Moved here from job-runner.ts on 2026-09-06 for the reason this whole
+// module exists: job-runner pulls in Supabase and the entire provider chain,
+// so vitest cannot load it, and this table decides where a customer's money
+// goes. It was the one refund decision in the codebase with no test on it.
+//
+//   provider_failed  the provider errored or lost the job. Failed work
+//                    generally isn't billed, so refunding costs nothing and
+//                    is plainly right.
+//   our_error        a bug on our side. We caused it, we absorb it.
+//   user_cancelled   they pressed Stop.
+//   abandoned        nobody came back for it. The render ran and was billed.
+//
+// STOP NO LONGER REFUNDS (operator, 2026-09-06): "A user pushes Stop
+// generation, No refund is applied. A stopped generation is not a failed one.
+// It's a decision made by the user."
+//
+// The old entry read true, on the reasoning that we cancel at fal
+// immediately so little or nothing is billed. Two things undid it. The
+// reasoning was fal-shaped: BytePlus confirmed on 2026-09-04 that a RUNNING
+// ModelArk task cannot be deleted at all, so on that lane Stop ends the wait
+// and not the charge — we were paying for the render and handing the credit
+// back as well. And it mis-stated what a stop is: every other entry here
+// describes something going wrong, while this one describes someone changing
+// their mind, which is not the same event and should not be priced like one.
+//
+// This does NOT contradict anything published. The Terms (i18n/legal/terms.ts)
+// and the pricing FAQ promise exactly two things are free — a request blocked
+// by the customer's own brand rules, and a request a provider refuses before
+// rendering begins — plus a support review "where the fault was ours". A stop
+// is neither, and no Stop control in the product has ever promised otherwise.
+export type FailureFault = "provider_failed" | "our_error" | "user_cancelled" | "abandoned";
+
+export const REFUNDS: Record<FailureFault, boolean> = {
+  provider_failed: true,
+  our_error: true,
+  user_cancelled: false,
+  abandoned: false,
+};
+
+/** Whether this failure class returns the credit. The single authority. */
+export function refundsOnFault(fault: FailureFault): boolean {
+  return REFUNDS[fault];
+}

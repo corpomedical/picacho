@@ -2282,23 +2282,34 @@ export async function requestGenerationCancel(generationId: string): Promise<{ e
 // This marks such a row failed and clears its result so it can't show up as
 // a usable generation afterwards.
 //
-// Credits ARE refunded here (changed 2026-08-12). This used to deliberately
-// keep the charge on the grounds that the provider call was genuinely
-// billed — but the async cancel path (REFUNDS.user_cancelled in
-// job-runner.ts) already refunds the identical situation, and the published
-// Terms/FAQ now promise that only delivered, validated results consume the
-// allowance. Charging one cancel path and refunding the other was the worse
-// inconsistency; the provider cost of a rare cancel is the price of keeping
-// the promise simple.
+// Credits are NOT refunded here (operator, 2026-09-06: "A user pushes Stop
+// generation, No refund is applied. A stopped generation is not a failed one.
+// It's a decision made by the user."). This mirrors REFUNDS.user_cancelled in
+// refund-rules.ts, and the two paths must keep agreeing — charging one cancel
+// route and refunding the other was the inconsistency the 2026-08-12 change
+// set out to fix, and it stays fixed by moving both to the same answer.
+//
+// The 2026-08-12 note this replaces also justified itself with a promise the
+// published copy does not actually make: the Terms (i18n/legal/terms.ts) and
+// the pricing FAQ say a brand-rules block and a pre-render provider refusal
+// never consume the allowance, plus a support review "where the fault was
+// ours" — not that only delivered results are charged. A stop is the
+// customer's own decision and falls outside all three.
+//
+// Deliberately unchanged: this path fires when the person stopped a render
+// the provider had ALREADY been paid for, which is the case the new rule is
+// squarely about.
 export async function discardStoppedGeneration(generationId: string): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
-  // .select("id") so we know the update actually matched a row THIS user
-  // owns — the refund below runs with the admin client, so gating it on
-  // "no error" alone would let any signed-in user zero out someone else's
-  // credits_used by guessing generation ids.
+  // The user_id filter is what keeps this safe now that no refund follows:
+  // the update runs with the admin client, so without it any signed-in user
+  // could fail someone else's live render by guessing generation ids. It used
+  // to be paired with .select("id") to gate the refund on the row actually
+  // having matched; the refund is gone (2026-09-06 policy change above) and
+  // the guard it needed went with it, but the filter itself stays load-bearing.
   //
   // The three filters after ownership are what make this a discard rather
   // than an undo button. Until 2026-08-17 there were none, and because a
@@ -2314,17 +2325,19 @@ export async function discardStoppedGeneration(generationId: string): Promise<{ 
   //   started within the hour — a stop is a live gesture, not a claim made
   //                             days later about a row nobody is watching
   const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-  const { data: updated, error } = await createAdminClient()
+  const { error } = await createAdminClient()
     .from("generations")
     .update({ status: "failed", result_url: null })
     .eq("id", generationId)
     .eq("user_id", userData.user.id)
     .eq("status", "generating")
     .eq("cancel_requested", true)
-    .gte("created_at", oneHourAgo)
-    .select("id");
+    .gte("created_at", oneHourAgo);
 
-  if (!error && updated?.length) await refundGenerationCosts(generationId);
+  // No refund — see the policy note above the function. The row is still
+  // marked failed and its result cleared, so a render the person stopped can
+  // never resurface in their history as a usable generation; only the credit
+  // stays spent.
 
   if (error) {
     console.error("discardStoppedGeneration failed:", error.message);
