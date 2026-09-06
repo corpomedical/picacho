@@ -84,6 +84,22 @@ export const SEGMENT_LEAD_IN = 1;
 const ASSUMED_DURATION = 5;
 
 /**
+ * How many SCORED cuts a reel needs before it is worth showing at all.
+ *
+ * Operator, 2026-09-07, on seeing the first four real reels: drop the thin
+ * ones. A single-cut "reel" has no assembly to show — the segmented bar does
+ * not even render — and an unscored one has nothing behind the identity meter
+ * or the score chips, so the band makes a claim it cannot back. Below this bar
+ * the dashboard shows the example edit instead, which is honest about being
+ * ours rather than a thin thing pretending to be theirs.
+ *
+ * The cost of the bar is real and worth stating: a user with genuine video
+ * takes that predate scoring gets no reel of their own. That is the trade the
+ * bar buys — nothing is shown until there is something to show.
+ */
+export const MIN_SCORED_CUTS = 2;
+
+/**
  * The prompt, trimmed to something that fits one line over the video.
  * Cuts on a word boundary rather than mid-word, and gives up (returns null)
  * rather than showing a stub, because an empty slug is better than a truncated
@@ -231,7 +247,11 @@ export function selectReel(rows: ReelRow[], maxClips: number = MAX_REEL_CLIPS): 
       ...segmentWindow(row.video_duration_seconds),
     }));
 
-  if (clips.length === 0) return null;
+  // The quality bar. Counted on the CUTS that would actually appear, not on
+  // the character's whole history: a character with fifty scored takes still
+  // fails if the three that made this reel are unscored.
+  const scoredCuts = clips.filter((c) => typeof c.matchScore === "number").length;
+  if (scoredCuts < MIN_SCORED_CUTS) return null;
 
   return {
     characterProfileId,

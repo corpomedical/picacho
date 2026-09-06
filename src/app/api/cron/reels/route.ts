@@ -28,6 +28,18 @@ const SCAN_ROWS = 1000;
 /** Users built in one run, whichever comes first with the deadline. */
 const MAX_USERS_PER_RUN = 60;
 
+/**
+ * How often an existing reel is re-examined even when nothing new was rendered.
+ *
+ * Without this the sweep only ever visits users whose newest take is newer than
+ * their reel — so a reel that quietly stopped qualifying (the quality bar
+ * moved, its character was deleted, its takes were removed) would never be
+ * looked at again and would sit on the dashboard forever. A daily re-check
+ * costs two light reads per user and is what makes the bar retroactive rather
+ * than a rule for new reels only.
+ */
+const RECHECK_AFTER_MS = 24 * 60 * 60 * 1000;
+
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
   const auth = request.headers.get("authorization");
@@ -70,20 +82,35 @@ export async function GET(request: Request) {
   // this the sweep would re-derive a hash for every user every hour to learn
   // nothing; with it, a quiet account costs one row read here and no work at
   // all in the builder.
-  const { data: reels } = await admin
+  // select("*") and the error captured, both deliberately. A column list that
+  // names an unmigrated column fails the whole read (that took the reel off
+  // every dashboard on 2026-09-07), and destructuring only `data` made a
+  // failed read indistinguishable from "nobody has a reel" — which would
+  // re-encode all sixty users, hourly, and charge us for it in CPU while
+  // reporting success.
+  const { data: reels, error: reelsError } = await admin
     .from("user_reels")
-    .select("user_id, built_at")
+    .select("*")
     .in("user_id", candidates);
+
+  if (reelsError) {
+    console.error("Reel cron: could not read existing reels; standing down rather than rebuilding everyone.", reelsError.message);
+    return NextResponse.json({ error: "reels-read-failed" }, { status: 500 });
+  }
 
   const builtAt = new Map<string, string>();
   for (const row of reels ?? []) {
     builtAt.set(row.user_id as string, (row.built_at as string) ?? "");
   }
 
+  const recheckBefore = new Date(Date.now() - RECHECK_AFTER_MS).toISOString();
   const due = candidates.filter((userId) => {
     const reel = builtAt.get(userId);
     if (!reel) return true;
-    return (newestByUser.get(userId) ?? "") > reel;
+    // Something new to say...
+    if ((newestByUser.get(userId) ?? "") > reel) return true;
+    // ...or old enough that whether it still qualifies is worth re-asking.
+    return reel < recheckBefore;
   });
 
   // 220s against the 300s ceiling, the same headroom reconcile leaves. Whoever
@@ -92,6 +119,7 @@ export async function GET(request: Request) {
   const deadline = Date.now() + 220_000;
   let built = 0;
   let unchanged = 0;
+  let retired = 0;
   let skipped = 0;
   const reasons: Record<string, number> = {};
 
@@ -101,6 +129,7 @@ export async function GET(request: Request) {
       const result = await buildUserReel(admin, userId);
       if (result.status === "built") built += 1;
       else if (result.status === "unchanged") unchanged += 1;
+      else if (result.status === "retired") retired += 1;
       else {
         skipped += 1;
         // Bucketed rather than logged per user: "no-eligible-takes" 40 times
@@ -119,12 +148,13 @@ export async function GET(request: Request) {
     }
   }
 
-  console.log("Reel cron done.", { candidates: candidates.length, due: due.length, built, unchanged, skipped, reasons });
+  console.log("Reel cron done.", { candidates: candidates.length, due: due.length, built, unchanged, retired, skipped, reasons });
   return NextResponse.json({
     candidates: candidates.length,
     due: due.length,
     built,
     unchanged,
+    retired,
     skipped,
     reasons,
   });

@@ -62,6 +62,7 @@ export type ReelBuildResult =
       durationSeconds: number;
     }
   | { status: "unchanged"; storagePath: string }
+  | { status: "retired"; reason: string }
   | { status: "skipped"; reason: string };
 
 // The service-role client, taken from its own factory rather than restated —
@@ -110,7 +111,28 @@ export async function buildUserReel(
   if (error) return { status: "skipped", reason: `read-failed: ${error.message}` };
 
   const selection = selectReel((rows ?? []) as ReelRow[]);
-  if (!selection) return { status: "skipped", reason: "no-eligible-takes" };
+
+  // Someone who no longer qualifies must LOSE their reel, not keep the last
+  // one forever. The quality bar otherwise only governs new builds, so a reel
+  // that stopped being good enough — the bar was raised, its character was
+  // deleted, its takes were removed — would sit on the dashboard indefinitely
+  // with nothing rebuilding or removing it.
+  if (!selection) {
+    const { data: stale } = await admin
+      .from("user_reels")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (stale?.storage_path) {
+      await admin.from("user_reels").delete().eq("user_id", userId);
+      await admin.storage
+        .from("generated-videos")
+        .remove([stale.storage_path, reelPosterKeyFor(stale.storage_path)])
+        .catch(() => {});
+      return { status: "retired", reason: "no-longer-qualifies" };
+    }
+    return { status: "skipped", reason: "no-eligible-takes" };
+  }
 
   const storagePath = reelStorageKey(userId, selection.clips);
 
