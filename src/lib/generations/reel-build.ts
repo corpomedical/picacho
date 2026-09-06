@@ -95,7 +95,7 @@ export async function buildUserReel(
     // the select string, and it can only do that when the string is literal.
     // Built from pieces, every column comes back typed as an error placeholder.
     .select(
-      "id, result_url, poster_url, content_type, status, character_profile_id, match_score, created_at, video_duration_seconds, video_aspect_ratio, angle_group_id, angle",
+      "id, result_url, poster_url, content_type, status, character_profile_id, match_score, created_at, video_duration_seconds, video_aspect_ratio, prompt_input, angle_group_id, angle",
     )
     .eq("user_id", userId)
     .eq("status", "succeeded")
@@ -234,6 +234,15 @@ export async function buildUserReel(
         byte_size: reel.byteLength,
         takes: selection.takes,
         mean_identity: selection.meanIdentity,
+        // Per-cut detail for the band: the segmented bar, the identity meter
+        // and the slug that names each cut all read from here rather than
+        // joining back to generations on every dashboard load.
+        clips: usedClips.map((c) => ({
+          id: c.generationId,
+          score: c.matchScore,
+          seconds: c.durationSeconds,
+          label: c.label,
+        })),
         built_at: new Date().toISOString(),
       },
       { onConflict: "user_id" },

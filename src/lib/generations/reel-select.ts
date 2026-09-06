@@ -26,6 +26,7 @@ export type ReelRow = {
   created_at: string | null;
   video_duration_seconds: number | null;
   video_aspect_ratio: string | null;
+  prompt_input: string | null;
   angle_group_id: string | null;
   angle: string | null;
 };
@@ -36,6 +37,12 @@ export type ReelClip = {
   resultUrl: string;
   posterUrl: string | null;
   matchScore: number | null;
+  /**
+   * What the band calls this cut while it plays. The user's own line, not a
+   * generated description — a reel that names its cuts in the words the person
+   * typed reads like their edit rather than our summary of it.
+   */
+  label: string | null;
   /** Seconds into the source where this segment starts. */
   startSeconds: number;
   /** How long this segment runs. */
@@ -75,6 +82,21 @@ export const SEGMENT_LEAD_IN = 1;
 
 /** Assumed length when video_duration_seconds is null (older rows). */
 const ASSUMED_DURATION = 5;
+
+/**
+ * The prompt, trimmed to something that fits one line over the video.
+ * Cuts on a word boundary rather than mid-word, and gives up (returns null)
+ * rather than showing a stub, because an empty slug is better than a truncated
+ * one that reads like a bug.
+ */
+function shortLabel(prompt: string | null): string | null {
+  const clean = (prompt ?? "").replace(/\s+/g, " ").trim();
+  if (clean.length < 3) return null;
+  if (clean.length <= 42) return clean;
+  const cut = clean.slice(0, 42);
+  const lastSpace = cut.lastIndexOf(" ");
+  return `${(lastSpace > 20 ? cut.slice(0, lastSpace) : cut).trim()}…`;
+}
 
 function isUsableVideo(row: ReelRow): boolean {
   return (
@@ -201,6 +223,7 @@ export function selectReel(rows: ReelRow[], maxClips: number = MAX_REEL_CLIPS): 
       resultUrl: row.result_url as string,
       posterUrl: row.poster_url,
       matchScore: row.match_score,
+      label: shortLabel(row.prompt_input),
       ...segmentWindow(row.video_duration_seconds),
     }));
 

@@ -65,7 +65,7 @@ export default async function AppHome() {
       // not the plan.
       supabase
         .from("user_reels")
-        .select("storage_path, poster_path, character_profile_id, takes, mean_identity")
+        .select("storage_path, poster_path, character_profile_id, takes, mean_identity, clips")
         .eq("user_id", data.user?.id ?? "")
         .maybeSingle(),
     ]);
@@ -85,7 +85,22 @@ export default async function AppHome() {
 
   if (!hasCharacter) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center text-center">
+      <div className="mx-auto max-w-3xl space-y-8">
+        {/* A brand-new account has nothing of its own to play, and an empty
+            page is a poor first impression of a product whose whole claim is
+            what it makes. Real Picacho footage, labelled as ours: the eyebrow
+            reads "Made with Picacho" and never "Your reel". */}
+        <ReelBand
+          videoUrl="/reel-default.mp4"
+          posterUrl="/reel-default.jpg"
+          eyebrow={d.reelExampleTitle}
+          headline={d.reelExampleHeadline}
+          subtitle={d.reelExampleBody}
+          href="/app/character/new"
+          ctaLabel={d.setupCharacterCta}
+          replayLabel={d.reelReplay}
+        />
+        <div className="flex flex-col items-center justify-center text-center">
         {profile?.has_completed_onboarding !== true && <FirstRunTour />}
         <h1 className="font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
           {formatMsg(d.greeting, { name })}
@@ -102,6 +117,7 @@ export default async function AppHome() {
         >
           {d.courseHeroLink}
         </Link>
+        </div>
       </div>
     );
   }
@@ -121,6 +137,20 @@ export default async function AppHome() {
   const reelPosterUrl = reel?.poster_path
     ? thumbUrl(mediaUrl("generated-videos", reel.poster_path as string), 640)
     : null;
+  const reelCuts = Array.isArray(reel?.clips)
+    ? (reel.clips as { score: number | null; label: string | null; seconds: number }[])
+    : [];
+  // The rail: the whole cast, the reel's own character ringed. Built from the
+  // picker list already loaded above, so it costs no extra query.
+  const reelCast = (characters ?? []).slice(0, 6).map((c) => ({
+    id: c.id as string,
+    name: (c.name as string) ?? "",
+    avatarUrl: thumbUrl(
+      mediaUrl("character-references", ((c.reference_image_urls as string[] | null) ?? [])[0] ?? ""),
+      320,
+    ),
+  }));
+  const reelCharacterName = (reelCharacter?.name as string | undefined) ?? null;
 
   const recentTiles = (recent ?? [])
     // Small tiles — the full image is one tap away on the history page.
@@ -151,19 +181,50 @@ export default async function AppHome() {
         </Link>
       </div>
 
-      {reelVideoUrl && (
+      {reelVideoUrl ? (
         <ReelBand
           videoUrl={reelVideoUrl}
           posterUrl={reelPosterUrl}
-          characterName={(reelCharacter?.name as string | undefined) ?? null}
-          takes={(reel?.takes as number | null) ?? null}
+          eyebrow={d.reelTitle}
+          headline={reelCharacterName ?? d.reelExampleHeadline}
+          subtitle={
+            reel?.takes
+              ? reel.mean_identity
+                ? `${reel.takes} takes · ${reel.mean_identity} mean identity`
+                : `${reel.takes} takes`
+              : null
+          }
+          cuts={reelCuts}
           meanIdentity={(reel?.mean_identity as number | null) ?? null}
+          cast={reelCast}
+          selectedCharacterId={(reel?.character_profile_id as string | null) ?? null}
           href={
             reel?.character_profile_id
               ? `/app/generate?character=${reel.character_profile_id}`
               : "/app/generate"
           }
-          labels={{ title: d.reelTitle, replay: d.reelReplay }}
+          ctaLabel={
+            reelCharacterName
+              ? formatMsg(d.reelCta, { name: reelCharacterName })
+              : d.reelExampleCta
+          }
+          replayLabel={d.reelReplay}
+        />
+      ) : (
+        // No reel yet — a character with no video takes, or takes the cron has
+        // not reached. Rather than a hole where the band goes, show real
+        // Picacho footage, labelled as ours rather than theirs: the eyebrow
+        // says "Made with Picacho", never "Your reel".
+        <ReelBand
+          videoUrl="/reel-default.mp4"
+          posterUrl="/reel-default.jpg"
+          eyebrow={d.reelExampleTitle}
+          headline={d.reelExampleHeadline}
+          subtitle={d.reelExampleBody}
+          href="/app/generate?type=video"
+          ctaLabel={d.reelExampleCta}
+          replayLabel={d.reelReplay}
+          cast={reelCast}
         />
       )}
 

@@ -28,6 +28,7 @@ function row(over: Partial<ReelRow> = {}): ReelRow {
     created_at: `2026-09-0${(seq % 9) + 1}T00:00:00Z`,
     video_duration_seconds: 10,
     video_aspect_ratio: "16:9",
+    prompt_input: "Eva on a snowy ridge, looking up",
     angle_group_id: null,
     angle: null,
     ...over,
@@ -141,6 +142,35 @@ describe("choosing the clips", () => {
     const forward = selectReel(rows)?.clips.map((c) => c.generationId);
     const backward = selectReel([...rows].reverse())?.clips.map((c) => c.generationId);
     expect(forward).toEqual(backward);
+  });
+});
+
+// The band names each cut in the person's own words while it plays, so the
+// label has to survive a long prompt without reading like a bug.
+describe("what the band calls each cut", () => {
+  it("uses the prompt as typed when it already fits", () => {
+    const picked = selectReel([row({ prompt_input: "Eva on a snowy ridge" })]);
+    expect(picked?.clips[0].label).toBe("Eva on a snowy ridge");
+  });
+
+  it("collapses whitespace so a pasted prompt does not break the line", () => {
+    const picked = selectReel([row({ prompt_input: "  Eva\n\n  on   a ridge  " })]);
+    expect(picked?.clips[0].label).toBe("Eva on a ridge");
+  });
+
+  it("trims a long prompt on a word boundary, never mid-word", () => {
+    const long = "Eva standing on a snowy ridge at golden hour looking upward";
+    const label = selectReel([row({ prompt_input: long })])?.clips[0].label ?? "";
+    expect(label.length).toBeLessThanOrEqual(43);
+    expect(label.endsWith("…")).toBe(true);
+    // The visible part must be whole words from the original.
+    expect(long.startsWith(label.slice(0, -1))).toBe(true);
+    expect(label).not.toMatch(/\s…$/);
+  });
+
+  it("gives up rather than showing a stub", () => {
+    expect(selectReel([row({ prompt_input: null })])?.clips[0].label).toBeNull();
+    expect(selectReel([row({ prompt_input: "  " })])?.clips[0].label).toBeNull();
   });
 });
 
