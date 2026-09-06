@@ -415,10 +415,31 @@ async function buildVideoRequest(
       references.length > 0 && references.length + (outfit ? 1 : 0) < 4
         ? (options.propImageUrl ?? null)
         : null;
+    // Which Seedance lane this send belongs on (2026-09-06, operator: "Add
+    // the text to video capability in seedance"). Same in-place swap
+    // wan-turbo and gemini-omni already do, in the opposite direction: the
+    // catalogue names the text-to-video endpoint so requiresReferenceImage()
+    // reads false and the two server gates stop refusing a characterless
+    // send, and this line swaps UP to reference-to-video the moment there is
+    // something to reference.
+    //
+    // The continuation counts as a reference even though it is a video, not a
+    // photo: video_urls is a reference-to-video field, and the text-to-video
+    // endpoint takes a prompt and nothing else — so a "continue this clip"
+    // send with no identity photo still has to go down the reference lane or
+    // it would silently drop the clip it was asked to continue.
+    //
+    // outfit and prop need no test of their own: both are already gated on
+    // references.length > 0 above, so they cannot exist without one.
+    const referenceLane = references.length > 0 || Boolean(continuation);
     endpoint =
       modelId === "seedance"
-        ? "bytedance/seedance-2.5/reference-to-video"
-        : "bytedance/seedance-2.0/reference-to-video";
+        ? referenceLane
+          ? "bytedance/seedance-2.5/reference-to-video"
+          : "bytedance/seedance-2.5/text-to-video"
+        : referenceLane
+          ? "bytedance/seedance-2.0/reference-to-video"
+          : "bytedance/seedance-2.0/text-to-video";
     // Citations have to appear in the PROMPT for the model to bind to them —
     // passing image_urls/video_urls alone does nothing. Continuation cites
     // the prior clip as @Video1 alongside the identity's @Image1; the outfit

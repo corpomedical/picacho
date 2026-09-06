@@ -430,10 +430,12 @@ are a different argument and a different priority.
 
 ### Still unanswered
 
-- The five API-reference questions (model id form on create, request-side
-  service_tier, the error object, whether deleting an in-flight task stops
-  billing, the create shape with a verified asset) — sent as a separate
-  Technical Support ticket, no reply yet.
+- ~~The five API-reference questions~~ **ANSWERED 2026-09-04** — all five, in
+  the section headed "THE FIVE API QUESTIONS, ANSWERED 2026-09-04" earlier in
+  this file. This bullet stood for two days after its own answers landed
+  (struck 2026-09-06); a "still unanswered" list that is wrong is worse than
+  no list, because it sends someone to ask a question that already has a
+  written reply.
 - **Who completes the per-person check.** Their KYC (risk assessment, letter
   of commitment, phone) reads as ACCOUNT-level enterprise verification. The
   real-human asset library normally also requires a per-person portrait-rights

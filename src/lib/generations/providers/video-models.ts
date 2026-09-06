@@ -160,7 +160,20 @@ export const VIDEO_MODELS = [
     // fal's pricing page 2026-08-21).
     costPerSecondUsd: 0.3024,
     name: "Seedance 2.0",
-    falEndpoint: "bytedance/seedance-2.0/reference-to-video",
+    // The TEXT-to-video lane is the catalogue endpoint, exactly as it is for
+    // wan-turbo and gemini-omni: requiresReferenceImage() reads this string,
+    // and false is the right answer because Seedance runs perfectly well with
+    // no photo at all. fal.ts swaps up to
+    // bytedance/seedance-2.0/reference-to-video the moment there is an
+    // identity reference or a clip to continue from.
+    //
+    // The swap cannot change what a render costs, which is what makes it safe
+    // to make silently: fal's text-to-video lane read $0.3034/s at 720p with
+    // audio on 2026-09-06 against the $0.3024/s recorded below for the
+    // reference lane on 2026-08-21 — 0.33% apart, provider drift on one
+    // number rather than a difference between two lanes. Every credit weight
+    // here stays correct on either.
+    falEndpoint: "bytedance/seedance-2.0/text-to-video",
     recommended: false,
     // The PHOTOREAL Seedance. ByteDance's 2.5 endpoints reject reference
     // images that look like real people ("content_policy_violation /
@@ -257,7 +270,11 @@ export const VIDEO_MODELS = [
     // fal.ai's real per-second price, for pricingAudit() below.
     costPerSecondUsd: 0.4730,
     name: "Seedance 2.5",
-    falEndpoint: "bytedance/seedance-2.5/reference-to-video",
+    // Text-to-video is the catalogue endpoint here for the same reason as 2.0
+    // above — see that comment. fal's 2.5 text-to-video read $0.4730/s at 720p
+    // on 2026-09-06, which is EXACTLY the reference lane's recorded rate, so
+    // the swap is free on this row to the cent.
+    falEndpoint: "bytedance/seedance-2.5/text-to-video",
     recommended: false,
     // The one model here whose reference images are IDENTITY references
     // rather than the opening frame. fal's schema: "Reference images to guide

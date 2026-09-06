@@ -103,12 +103,21 @@ export const ARK_MODELS_UNEVALUATED = {
 } as const;
 
 // The tier a task ran under, as reported by the list endpoint's
-// filter.service_tier. "flex" is ByteDance's offline inference mode, and it
-// is worth pricing: this product is already fire-and-poll with a push at the
-// end, so it has no interactive latency to protect and could take the
-// cheaper tier wholesale — a lever a competitor selling real-time generation
-// cannot pull. Read-only for now; see the note in submitArkVideoJob for why
-// nothing sets it yet.
+// filter.service_tier. "flex" is ByteDance's offline inference mode.
+//
+// THIS IS NOT A LEVER ON THIS LANE, and the paragraph that used to stand here
+// said the opposite (2026-09-06 — it survived the 2026-09-04 Model list read
+// that disproved it, and a stale note about money is how the wrong decision
+// gets made twice). Two independent confirmations: the Model list page lists
+// "flex: Not supported" for every Dreamina model, and BytePlus Technical
+// Support wrote on 2026-09-04 that "the seedance2.x series models are only
+// related to video resolution and whether there is an input video, and have
+// nothing to do with priority". So there is no cheaper tier to take
+// wholesale, however async this product happens to be.
+//
+// Kept as a type because the field is real on the list endpoint. Nothing
+// reads it yet — and if a future reader wants to know which billing line a
+// task actually ran on, this is the field to start capturing.
 export type ArkServiceTier = "default" | "flex";
 
 // Verified enum from the task list reference. Cancelled rows are queryable
