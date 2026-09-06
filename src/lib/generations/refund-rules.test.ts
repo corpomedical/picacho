@@ -231,15 +231,30 @@ describe("the stop refund gate", () => {
     expect(refunds(false, true)).toBe(true);
   });
 
-  // The default that keeps an unreadable status from inventing a refund: a
-  // provider that does not say is treated as started, because the opposite
-  // gives credits back for renders we were billed for.
-  it("charges when the provider did not say", () => {
-    const started = (state: { state: string; started?: boolean }) =>
-      !(state.state === "pending" && state.started === false);
-    expect(started({ state: "pending" })).toBe(true);
-    expect(started({ state: "pending", started: true })).toBe(true);
-    expect(started({ state: "pending", started: false })).toBe(false);
-    expect(started({ state: "completed" })).toBe(true);
+  // The default when the provider does not answer (operator, 2026-09-06:
+  // "Yes flip it"). Charging requires POSITIVE evidence that the provider
+  // charged us; silence is not that evidence, so silence refunds. Mirrors
+  // cancelVideoJob's own condition.
+  const providerBilledUs = (state: { state: string; started?: boolean }) =>
+    state.state === "completed" || (state.state === "pending" && state.started === true);
+
+  it("charges only on positive evidence the provider did", () => {
+    expect(providerBilledUs({ state: "pending", started: true })).toBe(true);
+    expect(providerBilledUs({ state: "completed" })).toBe(true);
+  });
+
+  it("refunds when the provider said the job had not started", () => {
+    expect(providerBilledUs({ state: "pending", started: false })).toBe(false);
+  });
+
+  it("refunds when the provider did not say — silence is not evidence of a charge", () => {
+    // Two ways to get here: a status read that threw (network, 429, 401), and
+    // a pending state carrying no `started` at all.
+    expect(providerBilledUs({ state: "pending" })).toBe(false);
+  });
+
+  it("refunds a reported failure — failed work bills zero", () => {
+    // 235 lifetime fal requests, 31 non-2xx, not one billable unit.
+    expect(providerBilledUs({ state: "failed" })).toBe(false);
   });
 });

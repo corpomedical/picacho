@@ -235,9 +235,17 @@ export async function fetchVideoResult(
  * Stop a queued render, and report whether we got there before the meter
  * started.
  *
- * Returns TRUE only when the provider itself said the job had not begun
- * processing — the one state both vendors have put in writing as free (see
- * QueuedJobState). The caller refunds on that and only that.
+ * Returns FALSE only when the provider positively said a runner had begun, or
+ * that the render had already finished. Everything else — still queued, or an
+ * answer we could not get — returns true and refunds.
+ *
+ * That default is the operator's call (2026-09-06, "Yes flip it"), and it
+ * follows from their rule rather than softening it: the rule is that the
+ * customer is charged when the PROVIDER charged us, so an unanswered status
+ * read is not a reason to charge, it is an absence of the only evidence that
+ * would justify charging. The cost of being wrong lands on us, one credit at a
+ * time, in the rare case where a status read fails at the exact moment someone
+ * presses Stop on a render that had already started.
  *
  * The status is READ FIRST, deliberately, because neither cancel call answers
  * the billing question on its own:
@@ -252,18 +260,23 @@ export async function fetchVideoResult(
  *    "may still complete". A 202 therefore means "we passed it on", not
  *    "nothing was billed".
  *
- * Best-effort: a status read that throws leaves this false, which charges the
- * customer. That is the safe direction — the alternative refunds renders we
- * paid for on no evidence — and the cancel is still attempted either way.
+ * The cancel is attempted either way — a status we could not read changes who
+ * absorbs the credit, never whether we try to stop the work.
  */
 export async function cancelVideoJob(job: QueuedVideoJob): Promise<boolean> {
-  let stoppedBeforeStart = false;
+  // Charge only on positive evidence that the provider did: a runner had the
+  // job, or it had already finished. A reported FAILURE is not evidence —
+  // failed work bills zero (fal's ledger, 235 lifetime requests, not one
+  // billable unit on a non-2xx), and the fault-keyed refund covers it anyway.
+  let providerBilledUs = false;
   try {
     const state = await checkVideoJob(job);
-    stoppedBeforeStart = state.state === "pending" && state.started === false;
+    providerBilledUs =
+      state.state === "completed" || (state.state === "pending" && state.started === true);
   } catch {
-    // Unreadable status: cancel anyway, refund nothing.
+    // Unreadable status: no evidence of a charge, so no charge.
   }
+  const stoppedBeforeStart = !providerBilledUs;
 
   if (job.provider === "fal") {
     await cancelFalJob(job);
