@@ -1435,6 +1435,8 @@ const es = {
     yourCharacters: "Tus personajes",
     newCharacter: "Nuevo personaje",
     recentCreations: "Tomas recientes",
+    reelTitle: "Tu reel",
+    reelReplay: "Repetir",
     seeAll: "Ver todo",
     quickImage: "Crear una imagen",
     quickVideo: "Crear un vídeo",

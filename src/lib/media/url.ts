@@ -101,6 +101,40 @@ export function toMediaUrl(stored: string | null | undefined): string | null {
   return mediaUrl(bucket, decodeURIComponent(rawPath));
 }
 
+/**
+ * The inverse of mediaUrl: pull bucket + storage path back out of a stored
+ * value, so server-side code can read the OBJECT instead of fetching its own
+ * HTTP route.
+ *
+ * Added 2026-09-07 for the highlight reel, whose cron downloads three takes
+ * from storage with the service role. Going through /api/media would mean the
+ * app calling itself over the network — a second lambda, a signature round
+ * trip, and a hard dependency on knowing its own origin from inside a cron.
+ *
+ * Shares MEDIA_ROUTE_RE and SIGNED_URL_RE with toMediaUrl deliberately: a
+ * second copy of those patterns is exactly the drift the truth-contract tests
+ * exist to catch. Returns null for anything not ours (an external provider
+ * URL, a null column), which every caller must treat as "skip this row".
+ */
+export function mediaStoragePath(
+  stored: string | null | undefined,
+): { bucket: string; path: string } | null {
+  if (!stored) return null;
+  const asMedia = stored.match(MEDIA_ROUTE_RE);
+  if (asMedia) {
+    const [, bucket, rawPath] = asMedia;
+    if (!isMediaBucket(bucket)) return null;
+    return { bucket, path: rawPath.split("/").map(decodeURIComponent).join("/") };
+  }
+  const signed = stored.match(SIGNED_URL_RE);
+  if (signed) {
+    const [, bucket, rawPath] = signed;
+    if (!isMediaBucket(bucket)) return null;
+    return { bucket, path: decodeURIComponent(rawPath) };
+  }
+  return null;
+}
+
 /** A media URL is relative; AI providers and server-side fetches need it absolute. */
 export function absolutizeMediaUrl(url: string, origin: string): string {
   return url.startsWith("/api/media/") ? `${origin}${url}` : url;

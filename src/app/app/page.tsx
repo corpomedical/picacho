@@ -8,6 +8,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import { mediaUrl, toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { InviteCard } from "@/components/invite-card";
+import { ReelBand } from "@/components/reel-band";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const maxDuration = 300;
@@ -52,6 +53,21 @@ export default async function AppHome() {
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
         .limit(6),
+      // The highlight reel, built out of band by /api/cron/reels. Rides this
+      // existing wave rather than adding a serial hop: it is one indexed
+      // primary-key read, and the page must not get slower to gain a banner.
+      // maybeSingle because most accounts legitimately have no reel yet.
+      //
+      // Safe to deploy BEFORE user-reels.sql is run: supabase-js reports a
+      // missing table as { data: null, error } rather than throwing, so this
+      // resolves, the gather does not re-throw, and the band simply does not
+      // render. The SQL still goes first by house rule — this is the seatbelt,
+      // not the plan.
+      supabase
+        .from("user_reels")
+        .select("storage_path, poster_path, character_profile_id, takes, mean_identity")
+        .eq("user_id", data.user?.id ?? "")
+        .maybeSingle(),
     ]);
   } catch (err) {
     console.error(
@@ -60,7 +76,8 @@ export default async function AppHome() {
     );
     throw err;
   }
-  const [{ data: profile }, workspace, { data: characters }, { data: recent }] = dashboardReads;
+  const [{ data: profile }, workspace, { data: characters }, { data: recent }, reelRead] =
+    dashboardReads;
 
   const name = profile?.username ?? (data.user?.email ?? "").split("@")[0];
   const plan = (profile?.plan ?? "none") as PlanId;
@@ -88,6 +105,22 @@ export default async function AppHome() {
       </div>
     );
   }
+
+  // The highlight reel, if the cron has built one. Everything here is a
+  // lookup against data already in hand — no extra query to name the
+  // character, because the picker list above is already loaded.
+  const reel = reelRead?.data ?? null;
+  const reelCharacter = reel?.character_profile_id
+    ? (characters ?? []).find((c) => c.id === reel.character_profile_id)
+    : null;
+  const reelVideoUrl = reel?.storage_path
+    ? mediaUrl("generated-videos", reel.storage_path as string)
+    : null;
+  // 640 wide is the poster's own encoded width, so asking for it costs one
+  // resize once and then serves from the edge like everything else.
+  const reelPosterUrl = reel?.poster_path
+    ? thumbUrl(mediaUrl("generated-videos", reel.poster_path as string), 640)
+    : null;
 
   const recentTiles = (recent ?? [])
     // Small tiles — the full image is one tap away on the history page.
@@ -117,6 +150,22 @@ export default async function AppHome() {
           <button className="inline-flex items-center justify-center gap-2 rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90">{d.continueCreating}</button>
         </Link>
       </div>
+
+      {reelVideoUrl && (
+        <ReelBand
+          videoUrl={reelVideoUrl}
+          posterUrl={reelPosterUrl}
+          characterName={(reelCharacter?.name as string | undefined) ?? null}
+          takes={(reel?.takes as number | null) ?? null}
+          meanIdentity={(reel?.mean_identity as number | null) ?? null}
+          href={
+            reel?.character_profile_id
+              ? `/app/generate?character=${reel.character_profile_id}`
+              : "/app/generate"
+          }
+          labels={{ title: d.reelTitle, replay: d.reelReplay }}
+        />
+      )}
 
       {/* Quick actions. */}
       <div className="grid grid-cols-3 gap-3">

@@ -28,6 +28,20 @@ const nextConfig: NextConfig = {
     },
   },
 
+  // The highlight-reel cron shells out to ffmpeg (2026-09-07). ffmpeg-static
+  // ships a ~44MB NATIVE BINARY, not JavaScript, so Next's dependency tracing
+  // does not see it: the module that requires it only ever exports a path
+  // string. Without this the route deploys, imports cleanly, and then fails at
+  // runtime with ENOENT on a file that exists perfectly well in local
+  // node_modules — the classic version of this bug.
+  //
+  // Scoped to the one route that needs it. Tracing is per-route, so listing it
+  // here keeps the ~44MB inside the reels function and leaves every other
+  // lambda its normal size.
+  outputFileTracingIncludes: {
+    "/api/cron/reels": ["./node_modules/ffmpeg-static/ffmpeg"],
+  },
+
   // Canonical host: www.picacho.ai permanently redirects to picacho.ai.
   // Both hosts were serving the full site (both appear in production error
   // stack traces), which splits SEO authority between two URLs for every

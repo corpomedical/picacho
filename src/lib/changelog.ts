@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.22.0",
+    build: 35,
+    date: "2026-09-07",
+    title: "The app opens on your own best work",
+    items: [
+      "Your home screen now opens on a short film of your own best takes. Picacho picks the character you have worked with most, takes the three highest-scoring videos you have made of them, cuts three seconds out of each, and joins them into one clip that plays when the app opens. Nobody assembles it and nothing is charged for it — it is rebuilt quietly in the background whenever your best three change.",
+      "It was built to cost you almost nothing to watch. The whole reel is around 320 KB — less than a seventh of what a single one of your raw takes would cost to stream, and about a twentieth of playing all three — because it is re-encoded once at a size made for a phone rather than streamed at the size it was rendered. It is then stored at an address that never changes, so your phone downloads it exactly once and every later visit plays it from your own device.",
+      "On a metered connection, or if your phone is set to reduce motion, the reel does not download at all: you get its opening frame as a still, about 25 KB, and nothing else. It also plays once and stops rather than looping forever, with a Replay button if you want it again — the file is already on your phone by then, so looping would cost battery rather than data, and that seemed like yours to spend rather than ours.",
+      "Vertical takes are kept vertical. Aspect ratio is something you choose per render, so the reel letterboxes anything that is not widescreen instead of stretching it to fit — a portrait take of a character now sits in the frame at its own shape rather than being squashed sideways.",
+    ],
+  },
+  {
     version: "1.21.0",
     build: 34,
     date: "2026-09-06",

@@ -1435,6 +1435,8 @@ const pt = {
     yourCharacters: "Seus personagens",
     newCharacter: "Novo personagem",
     recentCreations: "Takes recentes",
+    reelTitle: "O teu reel",
+    reelReplay: "Repetir",
     seeAll: "Ver tudo",
     quickImage: "Criar uma imagem",
     quickVideo: "Criar um vídeo",

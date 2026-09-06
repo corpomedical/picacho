@@ -1521,6 +1521,8 @@ const en = {
     yourCharacters: "Your characters",
     newCharacter: "New character",
     recentCreations: "Recent takes",
+    reelTitle: "Your reel",
+    reelReplay: "Replay",
     seeAll: "See all",
     quickImage: "Create an image",
     quickVideo: "Create a video",
