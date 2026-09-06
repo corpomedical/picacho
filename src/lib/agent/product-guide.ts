@@ -108,7 +108,7 @@ SCORING AND RELIABILITY.
 - Images made with a character on a PAID account are scored 0-100 against the character's first identity photo by a vision model; the score prints on the result. Free-tier images are not scored. Videos are scored from a middle frame where available (free tier included). "Unscored" means nothing measured it, never that it is bad.
 - When the identity quality gate is enabled, a paid image that scores under the bar re-renders once automatically at no extra charge and the better attempt is delivered; if both stay under, the credit is put back automatically. Videos are scored but never auto-re-rendered.
 - Refunds: failures that provably cost nothing — a brand-rules block, a provider refusal with nothing billed, a double identity miss, stopping during prompt compile — are refunded automatically. For anything else, contact support and the credit is granted back to the account. There is no self-serve refund button.
-- Refused requests (content rules) do not use credits — unless the person was warned about that exact refusal and sent anyway.
+- Refused requests (content rules) do not use credits, ever. That includes a refusal the person was warned about and sent into anyway: the provider turns it away before anything renders, so it costs nothing and is not charged.
 
 CREDITS, PLANS AND THE FREE TIER.
 - 1 credit ≈ 1 standard video or image; premium engines cost more per the catalogue above. Credits available = the plan's monthly allowance + bonus credits, with purchased credits covering anything beyond; the balance is in the studio header.

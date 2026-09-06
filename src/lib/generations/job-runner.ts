@@ -902,11 +902,11 @@ async function finish(
     // fails, the user is deducted tokens" — for rejection-class failures,
     // no longer.)
     refunded = await refundGenerationCosts(generationId, {
-      // Same narrow exception as the inline path: a refusal the person was
-      // warned about and sent anyway keeps its credit. The push notification
-      // below reads `refunded`, so it will correctly stop promising the
-      // credits came back.
-      // The single authority — see refund-rules.ts.
+      // The single authority — see refund-rules.ts. There is no longer any
+      // warned-and-sent-anyway exception here: that was dropped 2026-09-06
+      // because a refusal costs nothing whoever sent it. The push
+      // notification below reads `refunded`, so its wording follows whatever
+      // this actually did rather than what anyone expected it to do.
       force: forceRefundEligible(outcome.attempts),
     });
   }

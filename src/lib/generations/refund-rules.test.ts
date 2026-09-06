@@ -84,12 +84,17 @@ describe("acknowledgedPolicyWarning", () => {
     expect(isProviderRejection([ack])).toBe(false);
   });
 
-  it("the combination the refund sites actually evaluate", () => {
-    // force = isProviderRejection && !acknowledged
-    const forced = (a: Parameters<typeof isProviderRejection>[0]) =>
-      isProviderRejection(a) && !acknowledgedPolicyWarning(a);
-    expect(forced([refusal])).toBe(true); // unwarned refusal -> refund
-    expect(forced([ack, refusal])).toBe(false); // warned, sent anyway -> charged
+  // The marker stopped deciding money on 2026-09-06 (operator: "Drop the
+  // august rule, the newer one wins"). It is kept because "we warned this
+  // person and they sent anyway" is worth having in the log for support — so
+  // what is pinned now is that reading it changes NOTHING about the refund.
+  it("no longer affects the refund either way", () => {
+    expect(forceRefundEligible([refusal])).toBe(true);
+    expect(forceRefundEligible([ack, refusal])).toBe(true);
+  });
+
+  it("is still recorded, so support can see the person was warned", () => {
+    expect(acknowledgedPolicyWarning([ack, refusal])).toBe(true);
   });
 });
 
@@ -133,13 +138,17 @@ describe("forceRefundEligible", () => {
     ).toBe(true);
   });
 
-  it("suppresses force only for the refusal the person was warned about", () => {
-    expect(forceRefundEligible(run("[acknowledged-policy-warning]", LIKENESS_422))).toBe(false);
+  // REVERSED 2026-09-06 (operator: "Drop the august rule, the newer one
+  // wins"). This case used to return false — the person was warned about the
+  // Seedance 2.5 likeness refusal, sent anyway, and kept the charge. It now
+  // refunds like any other refusal, because the provider turns these away at
+  // submit and bills nothing, and the rule that survived is "charge the
+  // customer exactly when the provider charged us".
+  it("forces the very refusal the person was warned about and sent anyway", () => {
+    expect(forceRefundEligible(run("[acknowledged-policy-warning]", LIKENESS_422))).toBe(true);
   });
 
-  it("still forces an UNRELATED 4xx even after an acknowledged warning", () => {
-    // Accepting the likeness warning is not consent to be charged for an
-    // aspect-ratio rejection nobody predicted.
+  it("forces an unrelated 4xx after a warning, as it always did", () => {
     expect(
       forceRefundEligible(
         run(
@@ -150,12 +159,30 @@ describe("forceRefundEligible", () => {
     ).toBe(true);
   });
 
-  it("still forces when substitution moved the run off the warned model", () => {
-    // The breaker can substitute Seedance 2.5 away; a 4xx from the
-    // substitute names a different model and was never predicted.
+  // The canary that ended the old rule: a warned send that BytePlus refused.
+  // The suppression was keyed to fal's "Seedance 2.5 … likeness" wording and
+  // never matched ModelArk's, so the charge had already become a coin flip on
+  // which provider answered. Now both refund, deliberately.
+  it("forces a ModelArk likeness refusal, warned or not", () => {
+    const ARK_400 =
+      'BytePlus ModelArk (Seedance 2.0) error (400): {"error":{"code":"InputImageSensitiveContentDetected.PrivacyInformation","message":"the input image may contain real person"}}';
+    expect(forceRefundEligible(run(ARK_400))).toBe(true);
+    expect(forceRefundEligible(run("[acknowledged-policy-warning]", ARK_400))).toBe(true);
+  });
+
+  // Unchanged and load-bearing: a run that actually rendered something never
+  // force-refunds, warning or no warning. That guard is now the only thing
+  // standing between this function and refunding billed work.
+  it("does not force a warned run that nonetheless rendered a video", () => {
     expect(
-      forceRefundEligible(run("[acknowledged-policy-warning]", "fal.ai (Kling) error (422): rejected")),
-    ).toBe(true);
+      forceRefundEligible(
+        run(
+          "[acknowledged-policy-warning]",
+          "Rendered the video — generating the dialogue next.",
+          "fal.ai (ElevenLabs) error (422): text too long",
+        ),
+      ),
+    ).toBe(false);
   });
 
   it("never forces a run with no rejection at all", () => {

@@ -37,37 +37,39 @@ export function isProviderRejection(attempts: RefundAttempt[]): boolean {
   return all.some((d) => REJECTION_4XX.test(d));
 }
 
-// Acknowledged policy warnings (2026-08-30).
+// Acknowledged policy warnings — now an AUDIT RECORD ONLY (2026-09-06).
 //
-// Picacho predicts the Seedance 2.5 likeness refusal BEFORE anything is spent
-// — see SEEDANCE25_PHOTOREAL in send-plan.ts — and offers the one-tap switch
-// to a model that accepts photoreal people. When someone reads that and
-// chooses to send anyway, the refusal stops being something that happened TO
-// them and becomes something they opted into, so it no longer force-refunds
-// past the automatic_refunds switch.
+// Picacho predicts a likeness refusal BEFORE anything is spent (see
+// SEEDANCE25_PHOTOREAL in send-plan.ts) and offers the one-tap switch to a
+// model that accepts photoreal people. From 2026-08-30 until today, sending
+// anyway after reading that meant keeping the charge: the refusal had stopped
+// being something that happened TO the person and become something they opted
+// into.
 //
-// This is a deliberately narrow exception to the "a provider refusal costs
-// nothing, so charging for it is indefensible" rule above. It applies ONLY
-// when three things are true at once: the warning was shown, the person acted
-// on it by sending anyway, and the send is the exact one they were warned
-// about. The marker is written by actions.ts at submit time and is bound to
-// that single generation.
+// The operator retired that (2026-09-06, "Drop the august rule, the newer one
+// wins") because it lost an argument with a rule made the same week: charge
+// the customer exactly when the PROVIDER charged us. A refusal is a 400 at
+// submit on both lanes — no task is queued and nothing is billed — so the
+// August rule charged for something that cost nothing, which is the practice
+// the surrounding rule exists to forbid. Choosing to send is not the same as
+// consuming anything.
 //
-// Kept as a pipeline-log marker rather than a column on purpose: the whole
-// refund decision already reads the attempt log, the log is what the person
-// can see under their own render, and a schema change for one boolean would
-// have to be deployed before the code that writes it.
+// What retired it in practice was the canary on 2026-09-06: a warned send to
+// BytePlus came back InputImageSensitiveContentDetected, and the suppression
+// silently did not apply, because it was keyed to fal's Seedance 2.5 wording
+// and ModelArk phrases its refusals differently. The charge had already become
+// a coin flip on which provider answered.
+//
+// The marker is still written and still read here, because "we warned this
+// person and they sent anyway" is a true and useful thing to have in the log
+// when support reads a render back. It simply no longer decides money — and
+// nothing else in the codebase consults it, so if that changes, this comment
+// is the place that has to change with it.
 export const ACKNOWLEDGED_WARNING_MARKER = "[acknowledged-policy-warning]";
 
 export function acknowledgedPolicyWarning(attempts: RefundAttempt[]): boolean {
   return details(attempts).some((d) => d.includes(ACKNOWLEDGED_WARNING_MARKER));
 }
-
-// The refusal the warning actually predicted: Seedance 2.5's likeness /
-// content-policy rejection, on Seedance 2.5. Both halves matter — after a
-// circuit-breaker substitution the error names a different model, and an
-// unrelated 400 on the same model is not what anyone was warned about.
-const PREDICTED_LIKENESS = /Seedance 2\.5[\s\S]*?(likeness|content_policy)/i;
 
 // Logged by job-runner at the moment a queued video stage completes and the
 // run continues into dialogue — the one point where money is provably spent
@@ -79,37 +81,25 @@ const VIDEO_RENDERED = /^Rendered the video\b/;
  * automatic_refunds switch (2026-08-31, replacing the two hand-assembled
  * copies in actions.ts and job-runner.ts, which had drifted).
  *
- * Force applies when a provider rejected the request (4xx) AND nothing in
- * the run was provably billed AND the rejection is not the one the person
- * was explicitly warned about and sent into anyway.
+ * Force applies when a provider rejected the request (4xx) AND nothing in the
+ * run was provably billed. There is no third condition any more: the
+ * acknowledged-warning exception was dropped on 2026-09-06 (see the marker
+ * above), so a refusal now refunds whoever sent it and whatever they were
+ * told first — because it cost nothing either way.
  *
- * Two 2026-08-31 inspection findings shaped it:
- *
- * - "Generated via" is only ever logged on the INLINE path, and every video
- *   has gone through the queue since 2026-08-25 — so the billed-render guard
- *   had been dead on the entire video lane (0 of 31 succeeded videos carry
- *   the marker; verified against production). The queued path's own billed
- *   moment is the video stage completing under a dialogue run, which
- *   job-runner now logs as "Rendered the video…", matched here.
- *
- * - The acknowledged-warning marker used to suppress force for EVERY 4xx in
- *   the run. Someone who accepted the likeness warning and then hit an
- *   unrelated aspect-ratio 422 was charged for a failure nobody warned them
- *   about. Suppression now applies only when every rejection in the run is
- *   the predicted Seedance 2.5 likeness refusal itself.
+ * The 2026-08-31 inspection finding that still shapes it: "Generated via" is
+ * only ever logged on the INLINE path, and every video has gone through the
+ * queue since 2026-08-25 — so the billed-render guard had been dead on the
+ * entire video lane (0 of 31 succeeded videos carry the marker; verified
+ * against production). The queued path's own billed moment is the video stage
+ * completing under a dialogue run, which job-runner logs as "Rendered the
+ * video…", matched here. That guard is what keeps this honest: a run that
+ * actually rendered something never force-refunds, warning or no warning.
  */
 export function forceRefundEligible(attempts: RefundAttempt[]): boolean {
   const all = details(attempts);
   if (all.some((d) => COMPLETED_RENDER.test(d) || VIDEO_RENDERED.test(d))) return false;
-  const rejections = all.filter((d) => REJECTION_4XX.test(d));
-  if (rejections.length === 0) return false;
-  if (
-    acknowledgedPolicyWarning(attempts) &&
-    rejections.every((d) => PREDICTED_LIKENESS.test(d))
-  ) {
-    return false;
-  }
-  return true;
+  return all.some((d) => REJECTION_4XX.test(d));
 }
 
 // --- Which failure classes give the credit back ----------------------------

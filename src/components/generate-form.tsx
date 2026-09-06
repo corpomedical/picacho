@@ -4433,9 +4433,11 @@ function GenerateFormInner({
       formData.set("video_duration_seconds", String(videoDurationSeconds));
       if (videoAspectRatio) formData.set("video_aspect_ratio", videoAspectRatio);
       if (videoResolution) formData.set("video_resolution", videoResolution);
-      // Sent with the provider-policy warning showing: record the choice so a
-      // refusal keeps its credit instead of force-refunding (see
-      // acknowledgedPolicyWarning in refund-rules.ts).
+      // Sent with the provider-policy warning showing: recorded so support can
+      // see the person was warned. It no longer affects the refund — that
+      // exception was dropped 2026-09-06, since a refusal is turned away at
+      // submit and bills nothing (see acknowledgedPolicyWarning in
+      // refund-rules.ts, now an audit record only).
       //
       // Resolved HERE from the same pure resolver the strip renders from,
       // rather than read from a value declared further down the component —
