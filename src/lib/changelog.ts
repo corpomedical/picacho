@@ -20,6 +20,20 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.21.0",
+    build: 34,
+    date: "2026-09-06",
+    title: "What a stopped render costs, answered by the meter",
+    items: [
+      "Stopping a render now costs you a credit only if an engine had already started on it. Catch it while it is still queued and nothing is charged, because nothing was made — and both of our providers say in writing that queue time is free, so this is their rule as much as ours. Pressing Stop on a render already underway does use its credit: that work is running and billed on our side whether or not anyone waits for it. Two exceptions stay generous by design — an upscale or a layer split is priced on what it delivers, so stopping one is always free.",
+      "A refused request never uses your credits. Not sometimes: never. There used to be an exception — if we warned you a provider would refuse a particular send and you sent it anyway, the credit was kept — and it is gone. A refusal is turned away before anything renders, so it costs nothing to make and there is nothing to charge for. Four screens said otherwise, in four languages: the pricing questions, the plan feature lists, the comparison table and the warning above the send button itself, which promised the take would \"fail and still use credits\". All corrected.",
+      "Seedance can now run directly at ByteDance's own service instead of through the middleman, and which one it uses is finally something you can see and change. Admin → AI providers shows where a Seedance render actually goes, resolved by the same code the pipeline runs rather than by what the settings are supposed to say, along with both switches it depends on and what the lane has been billed. Choosing between the two is now two buttons that take effect on the next render, where it used to be an environment variable and a deploy.",
+      "Two things looked broken on a phone and were. A character named Eva showed as \"E\" on narrower Android screens — the name field was being crushed by the figures beside it, and now takes its own line so it can never be squeezed out. And the split-into-layers page opened far wider than the screen: its layout could not shrink below the size of the picture inside it, so the page ran off the edge with nothing to scroll. Both were found by photographing the real app rather than by any test.",
+      "Video tiles on a character's page show the render instead of a dark placeholder. Every video already had a saved still frame — that arrived yesterday — but this grid was never told to use it, so it sat waiting for each file to load before showing anything at all.",
+      "One confession, since the store is a promise too: the Play listing described a two-model drafting step that was removed from the product a week earlier, and in Spanish, Italian and Portuguese it claimed failed generations never use your credits — a claim withdrawn everywhere else on the site on 30 August because a render that fails after it starts is charged, and refunded on review. English was fixed the next day and the other three were missed. They now say what the English says.",
+    ],
+  },
+  {
     version: "1.20.0",
     build: 33,
     date: "2026-09-05",
