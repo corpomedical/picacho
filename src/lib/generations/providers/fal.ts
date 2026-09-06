@@ -960,7 +960,25 @@ export type QueuedJob = {
 };
 
 export type QueuedJobState =
-  | { state: "pending" }
+  // `started` splits the two halves of "pending" that matter for MONEY, and
+  // for nothing else — every existing consumer switches on `state` alone and
+  // is unaffected by its presence.
+  //
+  // Both vendors bill from the moment a runner picks the job up. BytePlus says
+  // so about cancels explicitly ("deleting tasks in the queue will not incur
+  // any charges", support, 2026-09-04); fal says the two halves separately —
+  // "Time spent waiting in the queue before a runner starts processing your
+  // request is also free. Only the actual inference work counts toward your
+  // bill", plus a queued cancel meaning the request "is removed immediately
+  // and is never processed". Neither documents what a cancel costs AFTER that
+  // moment, and fal classifies one as client_cancelled/499, outside its own
+  // 500+ never-charged guarantee. So `started: false` is the only state either
+  // vendor supports treating as free — see refund-rules.ts for how far that
+  // rests on a quote and how far on an inference.
+  //
+  // Undefined means the provider did not say — treated as started, because
+  // guessing the other way refunds renders we were billed for.
+  | { state: "pending"; started?: boolean }
   | { state: "completed" }
   | { state: "failed"; error: string };
 
@@ -1142,7 +1160,8 @@ export async function checkQueuedJob(job: QueuedJob): Promise<QueuedJobState> {
   const data = (await res.json()) as QueueStatusResponse;
   if (data.status === "COMPLETED") return { state: "completed" };
   if (data.error) return { state: "failed", error: `fal.ai (${job.label}): ${data.error}` };
-  return { state: "pending" };
+  // IN_QUEUE means no runner has touched it, which fal prices at nothing.
+  return { state: "pending", started: data.status !== "IN_QUEUE" };
 }
 
 async function fetchQueuedResult(job: QueuedJob): Promise<unknown> {

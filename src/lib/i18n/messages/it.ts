@@ -283,7 +283,7 @@ const it = {
       faq: [
         {
           q: "Cosa conta come una generazione?",
-          a: "Un'immagine o un clip video finito che supera la validazione e arriva a te. Dietro le quinte possiamo redigere, validare e riprovare più volte: è incluso. Fermare tu stesso una generazione è l'unica eccezione: una volta inviata al motore, il lavoro è già pagato da parte nostra, quindi consuma il suo credito. I clip più lunghi e i modelli video premium possono consumare più di un credito; il costo esatto è sempre mostrato prima della conferma.",
+          a: "Un'immagine o un clip video finito che supera la validazione e arriva a te. Dietro le quinte possiamo redigere, validare e riprovare più volte: è incluso. Fermare tu stesso una generazione è l'unica eccezione, e solo quando un motore ha già iniziato a lavorarci: se la fermi mentre è ancora in coda non viene addebitato nulla, perché nulla è stato generato. I clip più lunghi e i modelli video premium possono consumare più di un credito; il costo esatto è sempre mostrato prima della conferma.",
         },
         {
           q: "Le generazioni fallite consumano la mia quota?",

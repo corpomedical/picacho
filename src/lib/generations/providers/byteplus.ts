@@ -260,9 +260,13 @@ async function listTaskPage(batch: string[]): Promise<Map<string, QueuedJobState
 
 function taskState(task: ArkTask): QueuedJobState {
   switch (task.status) {
+    // Split for billing only (see QueuedJobState): support put "deleting
+    // tasks in the queue will not incur any charges" in writing on
+    // 2026-09-04, and said a running task cannot be deleted at all.
     case "queued":
+      return { state: "pending", started: false };
     case "running":
-      return { state: "pending" };
+      return { state: "pending", started: true };
     case "succeeded":
       return task.content?.video_url
         ? { state: "completed" }

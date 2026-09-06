@@ -1221,7 +1221,10 @@ export async function advanceGeneration(
       if (!(await claimAdvance(admin, generationId, row.provider_request_id))) {
         return { state: "pending", stage: row.stage, progress: STAGE_PROGRESS[row.stage] };
       }
-      await cancelVideoJob(jobHandle(row));
+      // True only when the provider confirmed no runner had picked the job up
+      // — the one state fal and BytePlus both price at nothing. See
+      // cancelVideoJob for why neither cancel response can answer this.
+      const stoppedBeforeStart = await cancelVideoJob(jobHandle(row));
       // A stop during a dialogue stage arrives AFTER the video itself was
       // rendered, billed and persisted (payload.videoUrl) — only the voice
       // work is still cancellable, and the line just above cancelled it.
@@ -1256,11 +1259,20 @@ export async function advanceGeneration(
         attempts: appendStep(row.resume.attempts ?? [], "Stopped.", "generate"),
         fault: "user_cancelled",
       });
-      // A stopped upscale delivered nothing (the completion check just above
-      // is what routes an already-finished one to delivery instead), and
-      // fal bills upscales on delivered output only — so the credit goes
-      // back, force past the flag, exactly once.
-      if (REFUND_ON_FAILURE[row.stage] && didCancelTransition) {
+      // Charge the customer exactly when the provider charged us (operator,
+      // 2026-09-06: "If the stop does not charge me anything from the provider
+      // then I should not charge the user"). Two ways that is true:
+      //
+      //   stoppedBeforeStart  no runner had started, and both vendors price
+      //                       queue time at zero — so the render was free.
+      //   REFUND_ON_FAILURE   upscale and layers are billed per DELIVERED
+      //                       output, so a stop costs nothing whenever it
+      //                       lands (the completion check above is what routes
+      //                       an already-finished one to delivery instead).
+      //
+      // Forced past the automatic_refunds switch in both cases, because both
+      // are the provably-zero-cost class that flag's force exists for.
+      if ((stoppedBeforeStart || REFUND_ON_FAILURE[row.stage]) && didCancelTransition) {
         try {
           await refundGenerationCosts(generationId, { force: true });
         } catch (refundErr) {

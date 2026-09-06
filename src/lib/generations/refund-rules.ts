@@ -159,8 +159,55 @@ export function forceRefundEligible(attempts: RefundAttempt[]): boolean {
 //    there genuinely costs us nothing. If that exception is ever removed, the
 //    guide has to change in the same commit.
 //
-// So this table governs the lanes billed on submission. The lanes billed on
-// delivery keep their refund, and say so publicly.
+// REFINED SAME DAY by the operator, and this is the rule that actually
+// governs: "If the stop does not charge me anything from the provider then I
+// should not charge the user. You should check at one point of the stop
+// request does the provider start charging us to apply the same rule for the
+// user." So the question is not "was it stopped" but "had the meter started".
+//
+// It has a documented answer, and the two vendors agree on it: billing begins
+// when a RUNNER PICKS THE JOB UP, not when the request is accepted.
+//
+//   BytePlus support, in writing 2026-09-04: "Deleting tasks in the queue will
+//   not incur any charges." A running task cannot be deleted at all. This half
+//   is an EXPLICIT vendor statement about a cancel.
+//
+//   fal is an INFERENCE, and the distinction is worth keeping honest: fal
+//   never says what a cancelled request costs — the word does not appear
+//   beside billing anywhere in its pricing page or FAQ. What it does say, on
+//   the "What You Are Not Charged For" section, is "Time spent waiting in the
+//   queue before a runner starts processing your request is also free" and
+//   "Only the actual inference work counts toward your bill"; and on the queue
+//   page, that a cancel while IN_QUEUE means "The request is removed
+//   immediately and is never processed". Never processed means no inference,
+//   and only inference bills. Sound, but chained from three sentences rather
+//   than read off one.
+//
+//   The same pages corroborate the other side hard: "Without cancellation
+//   handling, a cancelled request continues consuming GPU time until it
+//   finishes naturally." So a stop after the runner starts is billed.
+//
+//   The inference errs toward the CUSTOMER — if fal does bill a cancelled
+//   queued request, we refund anyway and absorb it, never the reverse. And it
+//   is monitored rather than merely assumed: fal files a cancel as
+//   client_cancelled / 499, which reconcileFalLedger already counts as a
+//   failure, so any billable unit on one surfaces in Admin > AI providers
+//   under "failures we were BILLED for". If that box ever turns red with a
+//   499 in it, this inference is wrong and this gate must close.
+//
+// Neither vendor documents what a cancel costs after that moment, and fal
+// files one as client_cancelled / 499 — below the 500+ threshold of its own
+// never-charged guarantee. Measured against fal's ledger 2026-09-06: the only
+// two renders anyone has ever stopped on this product both billed 5 units at
+// HTTP 200, i.e. they were already running. So "after the runner starts" is
+// charged, and the evidence says that is what a stop has meant so far.
+//
+// This table is therefore the ANSWER FOR THE STARTED CASE only. The cancel
+// path (job-runner) reads the provider's own status first and force-refunds
+// when it says no runner had begun — see cancelVideoJob for why neither
+// provider's cancel RESPONSE can stand in for that read. The lanes billed on
+// delivery (upscale, layers) refund whenever they are stopped, and say so
+// publicly.
 export type FailureFault = "provider_failed" | "our_error" | "user_cancelled" | "abandoned";
 
 export const REFUNDS: Record<FailureFault, boolean> = {

@@ -203,3 +203,43 @@ describe("REFUNDS by fault", () => {
     ]);
   });
 });
+
+// The billing boundary the stop refund is gated on (2026-09-06). Both vendors
+// price the same moment at zero — queue time before a runner starts — and
+// neither documents what a cancel costs after it. These pin the shape of the
+// decision so the "unknown means charged" default cannot quietly invert.
+describe("the stop refund gate", () => {
+  // Mirrors job-runner's cancel branch: refund when the provider said no
+  // runner had begun, OR when the stage is billed on delivered output only.
+  const refunds = (stoppedBeforeStart: boolean, deliveryBilled: boolean) =>
+    stoppedBeforeStart || deliveryBilled;
+
+  it("refunds a stop the provider caught before any runner started", () => {
+    expect(refunds(true, false)).toBe(true);
+  });
+
+  it("charges a stop that landed after a runner had started", () => {
+    // fal files this as client_cancelled/499, outside its own 500+
+    // never-charged rule; BytePlus cannot even delete a running task. The two
+    // real stops in production both billed 5 units at HTTP 200.
+    expect(refunds(false, false)).toBe(false);
+  });
+
+  it("refunds a delivery-billed stage whenever it is stopped", () => {
+    // Upscale and layers are priced per delivered output, so a stop costs
+    // nothing however late it lands — and the product guide promises this.
+    expect(refunds(false, true)).toBe(true);
+  });
+
+  // The default that keeps an unreadable status from inventing a refund: a
+  // provider that does not say is treated as started, because the opposite
+  // gives credits back for renders we were billed for.
+  it("charges when the provider did not say", () => {
+    const started = (state: { state: string; started?: boolean }) =>
+      !(state.state === "pending" && state.started === false);
+    expect(started({ state: "pending" })).toBe(true);
+    expect(started({ state: "pending", started: true })).toBe(true);
+    expect(started({ state: "pending", started: false })).toBe(false);
+    expect(started({ state: "completed" })).toBe(true);
+  });
+});

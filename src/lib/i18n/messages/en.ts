@@ -315,7 +315,7 @@ const en = {
       faq: [
         {
           q: "What counts as a generation?",
-          a: "One finished image or video clip that passes validation and reaches you. Behind the scenes we may draft, validate, and retry several times — that's included. Stopping a render yourself is the one exception: once it has gone to the engine, the work is already paid for on our side, so it uses its credit. Longer clips and premium video models can use more than one generation credit; the exact cost is always shown before you confirm.",
+          a: "One finished image or video clip that passes validation and reaches you. Behind the scenes we may draft, validate, and retry several times — that's included. Stopping a render yourself is the one exception, and only once an engine has actually started on it — catch it while it is still queued and nothing is charged, because nothing was rendered. Longer clips and premium video models can use more than one generation credit; the exact cost is always shown before you confirm.",
         },
         {
           q: "Do failed generations use up my allowance?",

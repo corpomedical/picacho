@@ -231,15 +231,47 @@ export async function fetchVideoResult(
   return fetchArkVideo(job.requestId);
 }
 
-export async function cancelVideoJob(job: QueuedVideoJob): Promise<void> {
-  if (job.provider === "fal") return cancelFalJob(job);
-  // ANSWERED 2026-09-04. A queued task really is cancelled and not billed; a
-  // RUNNING one cannot be deleted at all, and a finished one only loses its
-  // record. So this call stops the work only if we got there before it
-  // started. deleteArkTask returns false rather than throwing in that case,
-  // because a documented refusal is not a provider fault — the caller's own
-  // row still finishes as cancelled, which is the honest outcome: the customer
-  // has stopped waiting, and if it was already running they were always going
-  // to be billed for it.
+/**
+ * Stop a queued render, and report whether we got there before the meter
+ * started.
+ *
+ * Returns TRUE only when the provider itself said the job had not begun
+ * processing — the one state both vendors have put in writing as free (see
+ * QueuedJobState). The caller refunds on that and only that.
+ *
+ * The status is READ FIRST, deliberately, because neither cancel call answers
+ * the billing question on its own:
+ *
+ *  - deleteArkTask returns true for ANY 2xx, and ModelArk deletes a succeeded
+ *    task just as happily as a queued one — it only drops the record, the work
+ *    having been done and billed. Refunding on that boolean would refund
+ *    finished renders. Its false is no better: it covers a running task
+ *    (billed) and an already-cancelled one (never billed) alike.
+ *  - fal's cancel answers 202 CANCELLATION_REQUESTED whether the request was
+ *    IN_QUEUE or already mid-flight, and its own docs say a mid-flight one
+ *    "may still complete". A 202 therefore means "we passed it on", not
+ *    "nothing was billed".
+ *
+ * Best-effort: a status read that throws leaves this false, which charges the
+ * customer. That is the safe direction — the alternative refunds renders we
+ * paid for on no evidence — and the cancel is still attempted either way.
+ */
+export async function cancelVideoJob(job: QueuedVideoJob): Promise<boolean> {
+  let stoppedBeforeStart = false;
+  try {
+    const state = await checkVideoJob(job);
+    stoppedBeforeStart = state.state === "pending" && state.started === false;
+  } catch {
+    // Unreadable status: cancel anyway, refund nothing.
+  }
+
+  if (job.provider === "fal") {
+    await cancelFalJob(job);
+    return stoppedBeforeStart;
+  }
+  // A RUNNING ModelArk task cannot be deleted at all (support, 2026-09-04), so
+  // this stops the work only if we got there first — but the delete's own
+  // answer is not the signal; the status read above is.
   await deleteArkTask(job.requestId);
+  return stoppedBeforeStart;
 }
