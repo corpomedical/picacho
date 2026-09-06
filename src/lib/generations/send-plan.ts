@@ -39,6 +39,11 @@ export type VideoModelId =
   | "minimax-h3"
   | "seedance"
   | "seedance-2"
+  // Dormant (2026-09-06) — hidden from the composer and refused server-side
+  // unless the experimental_models flag is on, but present here because the
+  // truth contract requires every catalogue row to declare its capabilities.
+  | "seedance-2-fast"
+  | "seedance-2-mini"
   | "veo"
   | "wan-turbo";
 export type ImageModelId = "gpt-image" | "flux";
@@ -188,6 +193,45 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     startEndFrames: false,
     storyboard: false,
     // false — see the seedance entry above.
+    multiPerson: false,
+    aspectControl: "param",
+    photorealPolicy: "rejects",
+    imageBudget: 4,
+  },
+  // The two dormant rows (2026-09-06). Both are hidden from the composer and
+  // refused server-side unless the experimental_models flag is on, but the
+  // truth contract requires a capabilities row for every catalogue model —
+  // and rightly so: the day someone flips that flag, these are what the send
+  // receipt and the agent will describe.
+  //
+  // Conservative on purpose where a claim is untested. Both are the same
+  // Seedance family and take the same identity citations, so identity and the
+  // image budget carry over. Continuation and the outfit photo are marked
+  // FALSE not because the models refuse them but because nobody has sent one:
+  // a receipt promising a feature nobody has watched work is the kind of
+  // claim this file exists to prevent. Turn them on with a render, not a
+  // guess.
+  "seedance-2-fast": {
+    kind: "video",
+    identity: { max: 4, mechanism: "citation", required: true },
+    outfitImage: false,
+    continuation: false,
+    startEndFrames: false,
+    storyboard: false,
+    multiPerson: false,
+    aspectControl: "param",
+    // Inherited from 2.0, whose fence this shares — ByteDance's real-person
+    // rule is applied at the family level, not per variant.
+    photorealPolicy: "rejects",
+    imageBudget: 4,
+  },
+  "seedance-2-mini": {
+    kind: "video",
+    identity: { max: 4, mechanism: "citation", required: true },
+    outfitImage: false,
+    continuation: false,
+    startEndFrames: false,
+    storyboard: false,
     multiPerson: false,
     aspectControl: "param",
     photorealPolicy: "rejects",

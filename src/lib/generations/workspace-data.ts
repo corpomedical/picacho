@@ -7,6 +7,7 @@ import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
   VIDEO_MODELS_BY_PRICE,
   getDefaultDurationSeconds,
+  isDormantVideoModel,
   type VideoDurationOption,
 } from "@/lib/generations/providers/video-models";
 import type { createClient } from "@/lib/supabase/server";
@@ -159,8 +160,29 @@ export async function getGenerateWorkspaceData(
   }));
 
   const defaultVideoModelId = videoModelSetting?.value ?? "kling";
+  // Dormant models stay out of the composer until the experimental_models
+  // flag is on (2026-09-06). Read here rather than passed down because this
+  // is the one place the picker's list is built — and it is only half the
+  // gate: actions.ts refuses a dormant id on the server regardless of what
+  // any client sends, because hiding an option is not a check.
+  //
+  // Read failure means OFF: an unreadable flag must never be the thing that
+  // reveals an unproven model.
+  let experimentalModels = false;
+  try {
+    const { data: expFlag } = await supabase
+      .from("feature_flags")
+      .select("enabled")
+      .eq("key", "experimental_models")
+      .maybeSingle<{ enabled: boolean | null }>();
+    experimentalModels = expFlag?.enabled === true;
+  } catch {
+    experimentalModels = false;
+  }
   // Cheapest first — see VIDEO_MODELS_BY_PRICE.
-  const videoModels: VideoModelOption[] = VIDEO_MODELS_BY_PRICE.map((m) => ({
+  const videoModels: VideoModelOption[] = VIDEO_MODELS_BY_PRICE.filter(
+    (m) => experimentalModels || !isDormantVideoModel(m.id),
+  ).map((m) => ({
     id: m.id,
     name: m.name,
     description: m.description,

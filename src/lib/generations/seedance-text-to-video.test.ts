@@ -4,6 +4,8 @@ import {
   getVideoModel,
   pricingAudit,
   requiresReferenceImage,
+  isDormantVideoModel,
+  isByteplusOnlyModel,
 } from "./providers/video-models";
 
 // Seedance without a character (2026-09-06, operator: "Add the text to video
@@ -75,6 +77,66 @@ describe("the lane swap does not move the money", () => {
 
   it("leaves the pricing audit no new complaint about Seedance", () => {
     const flagged = pricingAudit().filter((r) => r.modelId === "seedance" || r.modelId === "seedance-2");
+    expect(flagged).toEqual([]);
+  });
+});
+
+// The dormant pair (2026-09-06, operator: "Wire them dormant with a switch I
+// can flip to activate. (For testing purposes)"). Nobody has judged their
+// output, so the catalogue carries them and two gates keep them out of reach:
+// the composer's list in workspace-data.ts and the server refusal in
+// actions.ts, both requiring the experimental_models flag.
+describe("the dormant Seedance variants", () => {
+  it("are in the catalogue but marked dormant", () => {
+    expect(isDormantVideoModel("seedance-2-fast")).toBe(true);
+    expect(isDormantVideoModel("seedance-2-mini")).toBe(true);
+    expect(getVideoModel("seedance-2-fast").name).toBe("Seedance 2.0 Fast");
+    expect(getVideoModel("seedance-2-mini").name).toBe("Seedance 2.0 Mini");
+  });
+
+  it("never marks a live model dormant", () => {
+    for (const id of ["seedance", "seedance-2", "kling", "veo", "wan-turbo", "gemini-omni"]) {
+      expect(isDormantVideoModel(id)).toBe(false);
+    }
+  });
+
+  // Mini has no fal endpoint of any kind, so on the fal lane its request would
+  // be built against a path that does not exist and fail AFTER the charge.
+  it("marks only mini as BytePlus-only", () => {
+    expect(isByteplusOnlyModel("seedance-2-mini")).toBe(true);
+    expect(isByteplusOnlyModel("seedance-2-fast")).toBe(false);
+    expect(isByteplusOnlyModel("seedance-2")).toBe(false);
+  });
+
+  // fal's own billing record: $0.0112 per 1000 tokens, tokens =
+  // (h * w * duration * 24) / 1024. At 720p that is 21,600 tokens/sec.
+  // The same page also shows $0.014 — the STANDARD tier's rate, copy-pasted —
+  // and pricing from it would overcharge by 25%. This pins the right one.
+  it("prices fast from fal's fast-tier token rate, not the standard tier's", () => {
+    const tokensPerSecond720p = (1280 * 720 * 24) / 1024;
+    expect(tokensPerSecond720p).toBe(21600);
+    const fastPerSecond = (tokensPerSecond720p / 1000) * 0.0112;
+    expect(getVideoModel("seedance-2-fast").costPerSecondUsd).toBeCloseTo(fastPerSecond, 5);
+    // The wrong rate, named so a future edit cannot drift onto it unnoticed.
+    const standardPerSecond = (tokensPerSecond720p / 1000) * 0.014;
+    expect(getVideoModel("seedance-2-fast").costPerSecondUsd).not.toBeCloseTo(standardPerSecond, 4);
+  });
+
+  it("keeps both dormant rows above cost at their recorded rates", () => {
+    for (const id of ["seedance-2-fast", "seedance-2-mini"]) {
+      const model = getVideoModel(id);
+      for (const d of model.durations) {
+        expect(d.creditWeight * COST_BASIS_USD_PER_CREDIT).toBeGreaterThan(
+          model.costPerSecondUsd * d.seconds,
+        );
+      }
+    }
+  });
+
+  it("leaves the pricing audit no complaint about either", () => {
+    const flagged = pricingAudit().filter(
+      (r) => r.modelId === "seedance-2-fast" || r.modelId === "seedance-2-mini",
+    );
     expect(flagged).toEqual([]);
   });
 });

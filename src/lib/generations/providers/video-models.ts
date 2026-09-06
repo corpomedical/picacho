@@ -516,7 +516,110 @@ export const VIDEO_MODELS = [
       { seconds: 10, creditWeight: 4 },
     ] satisfies VideoDurationOption[],
   },
+  // --- Dormant, 2026-09-06 (operator: "Wire them dormant with a switch I can
+  // flip to activate. (For testing purposes)") ------------------------------
+  //
+  // Both are hidden from the composer and refused by the server unless the
+  // experimental_models feature flag is on — see DORMANT_VIDEO_MODEL_IDS. They
+  // are in the catalogue rather than in a scratch file so their prices, credit
+  // weights and pricingAudit coverage are real and reviewed, instead of being
+  // invented on the day someone switches them on.
+  //
+  // NOBODY HAS SEEN THEIR OUTPUT. That is the whole reason for the flag: the
+  // ~$0.09/s and ~$0.03/s figures that made these interesting were read off a
+  // vendor page, and a cheap model whose renders are unusable is not cheap.
+  {
+    id: "seedance-2-fast",
+    // fal's own billing record for this endpoint, read 2026-09-06:
+    // {"endpoint":"bytedance/seedance-2.0/fast/text-to-video",
+    //  "billing_unit":"1000 tokens","price":0.0112}. Tokens are
+    // (height * width * duration * 24) / 1024, so 720p is
+    // 1280*720*24/1024 = 21,600 tokens/sec and 21.6 * $0.0112 = $0.24192/sec,
+    // which reproduces the page's own "$0.2419/second" exactly.
+    //
+    // THE TRAP ON THAT PAGE, recorded so nobody re-reads it wrong: the same
+    // page also carries a summary table reading "$0.014 / 1,000 tokens". That
+    // is the STANDARD tier's rate copy-pasted onto the fast page — 21.6 *
+    // $0.014 = $0.3024, which is the standard lane's per-second figure, not
+    // this one. Pricing from it would overcharge every render by 25%.
+    costPerSecondUsd: 0.24192,
+    name: "Seedance 2.0 Fast",
+    // Text-to-video is the catalogue endpoint for the same reason as the two
+    // Seedance rows above; fal publishes a matching
+    // bytedance/seedance-2.0/fast/image-to-video, so this lane is not
+    // text-only — fal.ts's Seedance branch handles the swap.
+    falEndpoint: "bytedance/seedance-2.0/fast/text-to-video",
+    recommended: false,
+    description:
+      "Cheaper, faster Seedance — about a quarter less per second than 2.0. Unproven: nobody has judged its output yet.",
+    // cost / $0.28, rounded up: $1.2096/5s -> 5, $2.4192/10s -> 9,
+    // $3.6288/15s -> 13. fal accepts 4-15s on this endpoint.
+    durations: [
+      { seconds: 5, creditWeight: 5, default: true },
+      { seconds: 10, creditWeight: 9 },
+      { seconds: 15, creditWeight: 13 },
+    ] satisfies VideoDurationOption[],
+  },
+  {
+    id: "seedance-2-mini",
+    // MODELARK ONLY — fal publishes no mini endpoint of any kind (searched
+    // 2026-09-06), so this row cannot run on the fal lane at all and the
+    // server refuses it there. That is why it stays dormant even if the flag
+    // is on and the lane is fal.
+    //
+    // No fal price exists to record, so this is derived from BytePlus's own
+    // list price and their own worked example, both read 2026-09-06:
+    // mini is $3.50/M tokens (480p/720p, no video input), and their price
+    // example for the standard 2.0 model puts a 5s 720p clip at $0.76 against
+    // its $7.00/M — i.e. ~108,571 tokens for 5s at 720p. The same clip on
+    // mini is therefore 108,571 * $3.50/M = $0.38, or $0.076/sec.
+    //
+    // That last step is ARITHMETIC OF MINE, not a figure BytePlus prints: it
+    // assumes the token count for a given resolution and duration is the same
+    // across the family. Re-derive it from a real render's reported
+    // completion_tokens before this is ever shown to a paying customer.
+    costPerSecondUsd: 0.076,
+    name: "Seedance 2.0 Mini",
+    // Recorded so requiresReferenceImage() answers false and the shape
+    // matches its siblings. It is NOT a live fal endpoint — see above.
+    falEndpoint: "bytedance/seedance-2.0/mini/text-to-video",
+    recommended: false,
+    description:
+      "The cheapest Seedance. BytePlus lane only, and unproven: nobody has judged its output yet.",
+    // cost / $0.28, rounded up: $0.38/5s -> 2, $0.76/10s -> 3, $1.14/15s -> 5.
+    durations: [
+      { seconds: 5, creditWeight: 2, default: true },
+      { seconds: 10, creditWeight: 3 },
+      { seconds: 15, creditWeight: 5 },
+    ] satisfies VideoDurationOption[],
+  },
 ] as const;
+
+/**
+ * Models that exist in the catalogue but are not offered to anyone yet.
+ *
+ * Kept as its own list rather than a field on the rows for the same reason
+ * FEATURED_VIDEO_MODEL_IDS is: the catalogue is a `const` tuple, and a field
+ * present on two entries out of eleven turns every read of it into a
+ * narrowing exercise.
+ *
+ * Two gates read this — the composer's list in workspace-data.ts, and the
+ * server refusal in actions.ts — and both also require the experimental_models
+ * feature flag. Hiding a model from the picker is not a security boundary; the
+ * server check is.
+ */
+export const DORMANT_VIDEO_MODEL_IDS = ["seedance-2-fast", "seedance-2-mini"] as const;
+
+export function isDormantVideoModel(id: string): boolean {
+  return (DORMANT_VIDEO_MODEL_IDS as readonly string[]).includes(id);
+}
+
+/** Dormant models with no fal endpoint — refused unless BytePlus is serving. */
+export const BYTEPLUS_ONLY_MODEL_IDS = ["seedance-2-mini"] as const;
+
+export function isByteplusOnlyModel(id: string): boolean {
+  return (BYTEPLUS_ONLY_MODEL_IDS as readonly string[]).includes(id);
+}
 
 export type VideoModelId = (typeof VIDEO_MODELS)[number]["id"];
 export type VideoModel = (typeof VIDEO_MODELS)[number];

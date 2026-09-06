@@ -91,11 +91,15 @@ import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import {
   getVideoModel,
   getDefaultDurationSeconds,
+  isByteplusOnlyModel,
+  isDormantVideoModel,
   isValidDuration,
   requiresReferenceImage,
   VIDEO_MODELS,
   VIDEO_MODELS_BY_PRICE,
 } from "@/lib/generations/providers/video-models";
+import { videoProviderFor } from "@/lib/generations/providers/video-provider";
+import { seedanceLaneChoice } from "@/lib/generations/providers/lane-setting";
 import { resolveVideoResolution } from "@/lib/generations/providers/video-resolution";
 // The one function that turns this request's validated facts into its price —
 // the composer quotes through the same one, so the display and the charge
@@ -1036,6 +1040,30 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
     continuationSourceSeconds = sourceSeconds;
     continuationSourceUrl = absolutizeMediaUrl(priorUrl, await getOrigin());
+  }
+
+  // Dormant models (2026-09-06). The composer never lists these unless the
+  // experimental_models flag is on, but a model id arrives in form data and
+  // form data is not a promise — so the refusal lives here, before any credit
+  // is reserved, and it re-reads the flag rather than trusting that the list
+  // the client rendered was the list we sent it.
+  if (contentType === "video" && isDormantVideoModel(videoModelId)) {
+    const { data: expFlag } = await supabase
+      .from("feature_flags")
+      .select("enabled")
+      .eq("key", "experimental_models")
+      .maybeSingle<{ enabled: boolean | null }>();
+    if (expFlag?.enabled !== true) {
+      return { error: `${getVideoModel(videoModelId).name} isn't available yet — pick another model.` };
+    }
+    // Mini has no fal endpoint at all, so on the fal lane the request would be
+    // built against a path that does not exist and fail AFTER the charge.
+    // Refuse it here instead, and say which switch is in the way.
+    if (isByteplusOnlyModel(videoModelId) && videoProviderFor(videoModelId, await seedanceLaneChoice()) !== "byteplus") {
+      return {
+        error: `${getVideoModel(videoModelId).name} only runs on the BytePlus lane — switch it in Admin > AI providers, or pick another model.`,
+      };
+    }
   }
 
   // A model whose fal endpoint starts from a frame (image/reference-to-video)
