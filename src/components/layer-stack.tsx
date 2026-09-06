@@ -57,8 +57,19 @@ export function LayerStack({ layers, tierLabel, generationId }: {
   const base = ordered[0];
   const aspect = base?.width && base?.height ? `${base.width} / ${base.height}` : "1 / 1";
 
+  // minmax(0,1fr) on the ONE-column layout too (2026-09-06, operator: "the
+  // Split into layers page opens a wide page on the phone app and browser").
+  // A grid item defaults to min-width:auto, so a track sized `auto` cannot
+  // shrink below its content's min-content width — and the composite below is
+  // an aspect-ratio box holding a 1K PNG, whose min-content width is the
+  // image. On a 411px phone the two cards computed to 997px each and were
+  // clipped by an ancestor rather than scrolled, so the page looked "wide"
+  // with no scrollbar to explain it. The lg track already carried minmax(0,…)
+  // for exactly this reason; the narrow case — every phone, and any browser
+  // under 1024px — had nothing. Measured on the device after the fix: cards
+  // 997px → 379px, composite 971px → 354px.
   return (
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-5 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
       {/* Composite */}
       <Card pad="sm">
         <div className="flex items-baseline justify-between px-1">
