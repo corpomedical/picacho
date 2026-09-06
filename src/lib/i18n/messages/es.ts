@@ -284,7 +284,7 @@ const es = {
       faq: [
         {
           q: "¿Qué cuenta como una generación?",
-          a: "Una imagen o un clip de vídeo terminado que supera la validación y llega a ti. Entre bastidores podemos redactar, validar y reintentar varias veces: eso está incluido. Los clips más largos y los modelos de vídeo premium pueden consumir más de un crédito; el coste exacto se muestra siempre antes de confirmar.",
+          a: "Una imagen o un clip de vídeo terminado que supera la validación y llega a ti. Entre bastidores podemos redactar, validar y reintentar varias veces: eso está incluido. Detener tú mismo una generación es la única excepción: una vez enviada al motor, el trabajo ya está pagado por nuestra parte, así que consume su crédito. Los clips más largos y los modelos de vídeo premium pueden consumir más de un crédito; el coste exacto se muestra siempre antes de confirmar.",
         },
         {
           q: "¿Las generaciones fallidas consumen mi cuota?",

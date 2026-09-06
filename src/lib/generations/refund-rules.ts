@@ -139,11 +139,28 @@ export function forceRefundEligible(attempts: RefundAttempt[]): boolean {
 // describes something going wrong, while this one describes someone changing
 // their mind, which is not the same event and should not be priced like one.
 //
-// This does NOT contradict anything published. The Terms (i18n/legal/terms.ts)
-// and the pricing FAQ promise exactly two things are free — a request blocked
-// by the customer's own brand rules, and a request a provider refuses before
-// rendering begins — plus a support review "where the fault was ours". A stop
-// is neither, and no Stop control in the product has ever promised otherwise.
+// What the published copy actually says, checked rather than assumed — and
+// the first pass at this comment got it wrong by reading only the exception
+// lists. Three surfaces matter:
+//
+//  - The Terms (i18n/legal/terms.ts) and pricing FAQ #2 list exactly two free
+//    classes — a brand-rules block and a pre-render provider refusal — plus a
+//    support review "where the fault was ours". A stop is none of the three,
+//    so both are consistent with this table as written.
+//  - Pricing FAQ #1 DEFINES a generation as one that "reaches you", which a
+//    stopped render never does. That definition was silently contradicted by
+//    this change and has been amended in all four locales to name the
+//    exception. It is the definition, not an exception list, which is why
+//    reading only the latter missed it.
+//  - The assistant's product guide and the shipped changelog BOTH promise the
+//    credit comes back when an UPSCALE is stopped. That promise is still
+//    kept: job-runner's REFUND_ON_FAILURE force-refunds stopped upscale and
+//    layers jobs, because fal bills those on delivered output only, so a stop
+//    there genuinely costs us nothing. If that exception is ever removed, the
+//    guide has to change in the same commit.
+//
+// So this table governs the lanes billed on submission. The lanes billed on
+// delivery keep their refund, and say so publicly.
 export type FailureFault = "provider_failed" | "our_error" | "user_cancelled" | "abandoned";
 
 export const REFUNDS: Record<FailureFault, boolean> = {

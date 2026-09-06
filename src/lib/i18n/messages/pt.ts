@@ -284,7 +284,7 @@ const pt = {
       faq: [
         {
           q: "O que conta como uma geração?",
-          a: "Uma imagem ou um clipe de vídeo finalizado que passa na validação e chega até você. Nos bastidores podemos rascunhar, validar e tentar novamente várias vezes — isso está incluído. Clipes mais longos e modelos de vídeo premium podem consumir mais de um crédito; o custo exato é sempre mostrado antes de confirmar.",
+          a: "Uma imagem ou um clipe de vídeo finalizado que passa na validação e chega até você. Nos bastidores podemos rascunhar, validar e tentar novamente várias vezes — isso está incluído. Parar você mesmo uma geração é a única exceção: depois de enviada ao motor, o trabalho já está pago do nosso lado, então consome o seu crédito. Clipes mais longos e modelos de vídeo premium podem consumir mais de um crédito; o custo exato é sempre mostrado antes de confirmar.",
         },
         {
           q: "Gerações com falha consomem minha cota?",

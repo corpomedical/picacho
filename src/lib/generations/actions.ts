@@ -2289,12 +2289,14 @@ export async function requestGenerationCancel(generationId: string): Promise<{ e
 // route and refunding the other was the inconsistency the 2026-08-12 change
 // set out to fix, and it stays fixed by moving both to the same answer.
 //
-// The 2026-08-12 note this replaces also justified itself with a promise the
-// published copy does not actually make: the Terms (i18n/legal/terms.ts) and
-// the pricing FAQ say a brand-rules block and a pre-render provider refusal
-// never consume the allowance, plus a support review "where the fault was
-// ours" — not that only delivered results are charged. A stop is the
-// customer's own decision and falls outside all three.
+// The 2026-08-12 note this replaces justified itself with the Terms and the
+// pricing FAQ, whose exception lists cover a brand-rules block, a pre-render
+// provider refusal and a support review "where the fault was ours" — a stop
+// is none of them. What that reading missed, and what a sweep caught after
+// the fact, is that FAQ #1 DEFINES a generation as one that "reaches you";
+// that definition is amended in all four locales alongside this change. See
+// refund-rules.ts for the full copy audit, including the upscale lane, which
+// still refunds a stop and still publicly says so.
 //
 // Deliberately unchanged: this path fires when the person stopped a render
 // the provider had ALREADY been paid for, which is the case the new rule is
