@@ -28,16 +28,24 @@ const nextConfig: NextConfig = {
     },
   },
 
-  // The highlight-reel cron shells out to ffmpeg (2026-09-07). ffmpeg-static
-  // ships a ~44MB NATIVE BINARY, not JavaScript, so Next's dependency tracing
-  // does not see it: the module that requires it only ever exports a path
-  // string. Without this the route deploys, imports cleanly, and then fails at
-  // runtime with ENOENT on a file that exists perfectly well in local
-  // node_modules — the classic version of this bug.
+  // The highlight-reel cron shells out to ffmpeg (2026-09-07), and that needs
+  // BOTH of the following. They fix different halves of the same problem and
+  // either one alone still fails at runtime.
   //
-  // Scoped to the one route that needs it. Tracing is per-route, so listing it
-  // here keeps the ~44MB inside the reels function and leaves every other
-  // lambda its normal size.
+  // ffmpeg-static ships a ~44MB NATIVE BINARY, not JavaScript. Next's
+  // dependency tracing cannot see it, because the module that requires it only
+  // ever exports a path string — so without the include the file is simply
+  // absent from the deployed function. Scoped to the one route that needs it,
+  // since tracing is per-route and every other lambda should stay small.
+  //
+  // And ffmpeg-static locates its binary with __dirname, which the bundler
+  // rewrites to a placeholder when the module is bundled. Caught locally
+  // 2026-09-07 by running the real builder against production data: the path
+  // came back as `/ROOT/node_modules/ffmpeg-static/ffmpeg` and the spawn
+  // failed ENOENT — with the binary sitting correctly in node_modules the
+  // whole time. Marking the package external keeps it out of the bundle so
+  // __dirname stays a real directory.
+  serverExternalPackages: ["ffmpeg-static"],
   outputFileTracingIncludes: {
     "/api/cron/reels": ["./node_modules/ffmpeg-static/ffmpeg"],
   },

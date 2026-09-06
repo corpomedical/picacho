@@ -116,14 +116,19 @@ export async function buildUserReel(
 
   const { data: existing } = await admin
     .from("user_reels")
-    .select("storage_path")
+    .select("storage_path, poster_path")
     .eq("user_id", userId)
     .maybeSingle();
 
   // The key is a hash of exactly the inputs that decide the bytes, so an equal
   // key means an identical reel already exists. Re-encoding it would burn CPU
   // to produce the same file at the same immutable URL.
-  if (existing?.storage_path === storagePath) {
+  //
+  // The poster has to be present too. Comparing only the video key left a reel
+  // whose poster failed stuck without one FOREVER — every later run said
+  // "unchanged" and never retried, so the band would open on black for that
+  // user permanently. A missing poster earns one more attempt.
+  if (existing?.storage_path === storagePath && existing.poster_path) {
     return { status: "unchanged", storagePath };
   }
 
@@ -197,8 +202,19 @@ export async function buildUserReel(
       const { error: posterError } = await admin.storage
         .from("generated-videos")
         .upload(posterKey, posterBytes, { contentType: "image/jpeg", upsert: true });
-      if (!posterError) posterPath = posterKey;
-    } catch {
+      if (posterError) {
+        console.warn("Reel poster upload failed.", { userId, message: posterError.message });
+      } else {
+        posterPath = posterKey;
+      }
+    } catch (err) {
+      // Best-effort, but never silent: without a poster the band opens on black
+      // and a save-data viewer has nothing to fall back to, so this is worth
+      // seeing in the log rather than inferring from a null column.
+      console.warn("Reel poster encode failed.", {
+        userId,
+        message: err instanceof Error ? err.message.slice(0, 300) : "unknown",
+      });
       posterPath = null;
     }
 
