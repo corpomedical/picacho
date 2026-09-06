@@ -14,6 +14,7 @@ import {
   MAX_IDENTITY_THRESHOLD,
   MIN_IDENTITY_THRESHOLD,
 } from "@/lib/generations/identity-gate";
+import { SEEDANCE_LANE_KEY } from "@/lib/generations/providers/lane-setting";
 
 // Called imperatively (not from a <form>) by AdminCommandBar, which polls
 // this on an interval to keep the nav's red-dot badges live without the
@@ -334,6 +335,38 @@ export async function setVideoModel(formData: FormData) {
   }
 
   revalidatePath("/admin/providers");
+}
+
+// Which provider runs Seedance (2026-09-06). Upsert rather than update: this
+// key has no migration behind it, so the first click has to create the row —
+// and through the SERVICE client, because app_settings carries an admin UPDATE
+// policy but no INSERT policy at all, so a user-scoped insert would be refused
+// by RLS on that very first click and on no click after it.
+//
+// requireAdmin has already established the caller is an admin; the service
+// client is the write mechanism, not the authorisation.
+export async function setSeedanceProvider(formData: FormData) {
+  const { admin } = await requireAdmin();
+  const raw = formData.get("provider");
+  // Never trust the form for a value that decides where money is spent.
+  const provider = raw === "byteplus" ? "byteplus" : "fal";
+
+  const { error } = await admin.from("app_settings").upsert(
+    {
+      key: SEEDANCE_LANE_KEY,
+      value: provider,
+      description: "Which provider runs Seedance renders. Needs BYTEPLUS_SEEDANCE_LANE=on to reach BytePlus.",
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "key" },
+  );
+
+  if (error) {
+    redirect(`/admin/providers?error=${encodeURIComponent(error.message)}`);
+  }
+
+  revalidatePath("/admin/providers");
+  revalidatePath("/admin/system");
 }
 
 export async function setImageModel(formData: FormData) {

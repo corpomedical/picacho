@@ -49,10 +49,12 @@ export {
 } from "./video-provider";
 import {
   arkCallbackUrl,
+  isByteplusCapable,
   videoProviderFor,
   type ByteplusModelId,
   type VideoProvider,
 } from "./video-provider";
+import { seedanceLaneChoice } from "./lane-setting";
 
 // Compile-time coupling in the direction that matters: if ARK_MODELS loses a
 // row or renames one, this assignment stops type-checking, so the hand-written
@@ -79,7 +81,13 @@ export async function submitVideoJob(
   modelId: string,
   options: VideoGenerationOptions = {},
 ): Promise<QueuedVideoJob> {
-  const provider = videoProviderFor(modelId);
+  // The operator's picker is read HERE, in the one function that decides the
+  // provider, rather than threaded in from the callers — this file's header
+  // says why: there are two paid submit sites, and a fork placed in either
+  // one silently leaves the other on the old lane. Only asked for models the
+  // choice could possibly apply to, so nothing else pays for the read.
+  const chosen = isByteplusCapable(modelId) ? await seedanceLaneChoice() : null;
+  const provider = videoProviderFor(modelId, chosen);
   if (provider === "fal") {
     return { ...(await submitFalVideoJob(prompt, modelId, options)), provider };
   }

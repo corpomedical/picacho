@@ -1,6 +1,13 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/admin/require-admin";
-import { toggleFeatureFlag, setVideoModel, setImageModel, restoreModel, suspendModel } from "@/lib/admin/actions";
+import {
+  toggleFeatureFlag,
+  setVideoModel,
+  setImageModel,
+  setSeedanceProvider,
+  restoreModel,
+  suspendModel,
+} from "@/lib/admin/actions";
 import { getAllModelHealth } from "@/lib/generations/model-health";
 import {
   VIDEO_MODELS,
@@ -10,6 +17,7 @@ import {
 } from "@/lib/generations/providers/video-models";
 import { IMAGE_MODELS } from "@/lib/generations/providers/image-models";
 import { isByteplusCapable, videoProviderFor } from "@/lib/generations/providers/video-provider";
+import { seedanceLaneChoice } from "@/lib/generations/providers/lane-setting";
 import { ARK_USD_PER_MILLION_TOKENS } from "@/lib/generations/providers/byteplus";
 import type { AttemptLog } from "@/lib/generations/pipeline";
 import { getFalBalance, reconcileFalLedger } from "@/lib/generations/providers/fal-ledger";
@@ -104,12 +112,22 @@ export default async function AdminProvidersPage({
       ok: laneFlag === "on",
     },
   ];
+  // The operator's own pick, and then the SAME resolution the pipeline runs
+  // with it — so this page can never claim a lane the submit path would not
+  // actually take.
+  const laneChoice = await seedanceLaneChoice();
   const seedanceRouting = VIDEO_MODELS.filter((m) => isByteplusCapable(m.id)).map((m) => ({
     id: m.id,
     name: m.name,
-    provider: videoProviderFor(m.id),
+    provider: videoProviderFor(m.id, laneChoice),
     falCostPerSecondUsd: m.costPerSecondUsd,
   }));
+  // What the picker can actually offer. BytePlus is only selectable once the
+  // environment has enabled it, because the setting is a brake and not an
+  // accelerator (see lane-setting.ts) — offering a button that silently does
+  // nothing is how a panel stops being believed.
+  const byteplusSelectable =
+    process.env.BYTEPLUS_SEEDANCE_LANE === "on" && Boolean(process.env.BYTEPLUS_ARK_API_KEY);
   const laneLive = seedanceRouting.some((r) => r.provider === "byteplus");
 
   // What the lane has actually billed, from ModelArk's own usage figures
@@ -244,6 +262,40 @@ export default async function AdminProvidersPage({
               </Badge>
             </div>
           ))}
+        </div>
+
+        {/* The picker. Two buttons rather than a toggle because the labels
+            have to name the actual companies — "on/off" is what left the
+            operator unable to tell which one was serving their renders. */}
+        <div className="mt-4 border-t border-neutral-100 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.1em] text-neutral-400">
+            Run Seedance on
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(["fal", "byteplus"] as const).map((option) => {
+              const active = seedanceRouting.every((r) => r.provider === option);
+              const disabled = option === "byteplus" && !byteplusSelectable;
+              return (
+                <form key={option} action={setSeedanceProvider}>
+                  <input type="hidden" name="provider" value={option} />
+                  <Button
+                    type="submit"
+                    size="sm"
+                    variant={active ? "primary" : "secondary"}
+                    disabled={disabled}
+                  >
+                    {option === "fal" ? "fal.ai" : "BytePlus ModelArk"}
+                    {active ? " · running" : ""}
+                  </Button>
+                </form>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-neutral-400">
+            {byteplusSelectable
+              ? "Takes effect on the next render — no deploy. Switching back to fal is the rollback."
+              : "BytePlus needs both environment switches above before it can be picked here."}
+          </p>
         </div>
 
         <div className="mt-4 space-y-2 border-t border-neutral-100 pt-4">

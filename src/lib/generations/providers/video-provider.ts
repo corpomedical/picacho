@@ -35,10 +35,20 @@ export function isByteplusCapable(modelId: string): modelId is ByteplusModelId {
  * the key landed in Vercel. Flip the flag once the lane has been watched
  * working; remove it to go back to fal without deploying code.
  */
-export function videoProviderFor(modelId: string): VideoProvider {
+export function videoProviderFor(modelId: string, chosen?: VideoProvider | null): VideoProvider {
   if (!isByteplusCapable(modelId)) return "fal";
   if (process.env.BYTEPLUS_SEEDANCE_LANE !== "on") return "fal";
   if (!process.env.BYTEPLUS_ARK_API_KEY) return "fal";
+  // The operator's own choice, from Admin > AI providers (2026-09-06). It can
+  // only ever send a render BACK to fal — the two env switches above still
+  // have to be satisfied first, so a setting row can never reach a provider
+  // the environment has not enabled. That asymmetry is the point: the picker
+  // is a brake anyone can reach in one click, not a second accelerator.
+  //
+  // Undefined means "nobody asked", which keeps the environment's answer —
+  // so every caller that has not been taught to read the setting behaves
+  // exactly as it did before this parameter existed.
+  if (chosen === "fal") return "fal";
   return "byteplus";
 }
 

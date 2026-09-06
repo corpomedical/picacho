@@ -1,12 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { videoProviderFor } from "@/lib/generations/providers/video-provider";
+import { seedanceLaneChoice } from "@/lib/generations/providers/lane-setting";
 import { cn } from "@/lib/cn";
 
 export default async function AdminSystemPage() {
-  // "seedance-2" is the 2.0 id; both Seedance ids share one lane flag, so
-  // either answers the question this card asks.
-  const seedanceLane = videoProviderFor("seedance-2");
+  // "seedance-2" is the 2.0 id; both Seedance ids share one lane flag and one
+  // picker, so either answers the question this card asks. Resolved through
+  // the same function the submit path uses, with the operator's own choice.
+  const seedanceLane = videoProviderFor("seedance-2", await seedanceLaneChoice());
   const supabase = await createClient();
   const { data: generations } = await supabase
     .from("generations")

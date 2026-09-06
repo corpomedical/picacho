@@ -81,6 +81,46 @@ describe("videoProviderFor", () => {
       });
     }
   });
+
+  // The operator's picker (Admin > AI providers). It is a BRAKE, never an
+  // accelerator: it can send a render back to fal without a deploy, and it
+  // can never reach BytePlus on its own. Both directions are pinned because
+  // getting this backwards would let a database row move customer renders
+  // onto a provider the environment never enabled.
+  describe("the operator's lane choice", () => {
+    it("sends Seedance back to fal even with both switches set", () => {
+      withEnv({ [KEY]: "ark-test", [FLAG]: "on" }, () => {
+        expect(videoProviderFor("seedance", "fal")).toBe("fal");
+        expect(videoProviderFor("seedance-2", "fal")).toBe("fal");
+      });
+    });
+
+    it("cannot reach BytePlus while the environment says no", () => {
+      withEnv({ [KEY]: "ark-test", [FLAG]: undefined }, () => {
+        expect(videoProviderFor("seedance", "byteplus")).toBe("fal");
+      });
+      withEnv({ [KEY]: undefined, [FLAG]: "on" }, () => {
+        expect(videoProviderFor("seedance", "byteplus")).toBe("fal");
+      });
+    });
+
+    it("leaves the environment's answer alone when nobody has picked", () => {
+      withEnv({ [KEY]: "ark-test", [FLAG]: "on" }, () => {
+        // null is "no row in app_settings"; undefined is "this caller does not
+        // read the setting at all". Neither may change the old behaviour.
+        expect(videoProviderFor("seedance", null)).toBe("byteplus");
+        expect(videoProviderFor("seedance", undefined)).toBe("byteplus");
+        expect(videoProviderFor("seedance")).toBe("byteplus");
+      });
+    });
+
+    it("does not let a choice drag a fal-only model onto the lane", () => {
+      withEnv({ [KEY]: "ark-test", [FLAG]: "on" }, () => {
+        expect(videoProviderFor("kling", "byteplus")).toBe("fal");
+        expect(videoProviderFor("veo", "byteplus")).toBe("fal");
+      });
+    });
+  });
 });
 
 describe("isByteplusCapable", () => {
