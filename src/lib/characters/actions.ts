@@ -349,7 +349,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role, free_reference_generations_used, current_period_start")
+    .select("plan, role, plan_status, free_reference_generations_used, current_period_start")
     .eq("id", data.user.id)
     .single();
 
@@ -363,11 +363,30 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   // atomic reservation further down — this early read is only a courtesy
   // fast-path so an obviously capped account gets its answer before the
   // flag/model lookups run.
-  const isFreeTier = plan === "none" && !isAdmin;
+  // plan_status, not just plan. A subscription that has gone past_due or
+  // inactive keeps its `plan` value — the Stripe webhook writes the status and
+  // leaves the tier alone — so reading `plan` by itself hands a lapsed Studio
+  // account its full 200 AI character photos against a payment that never
+  // arrived. Each one is a real, billed provider call.
+  //
+  // Same predicate core.ts:260 uses for generation credits, so the two meters
+  // agree: a lapsed account is metered as free tier until the card clears,
+  // rather than being locked out.
+  const planStatus = (profile?.plan_status ?? null) as string | null;
+  const planAllowanceActive = planStatus === null || planStatus === "active";
+  const isFreeTier = (plan === "none" || !planAllowanceActive) && !isAdmin;
   const freeUsed = profile?.free_reference_generations_used ?? 0;
-  const freeCapError =
-    `You've used your ${FREE_REFERENCE_GENERATIONS_LIMIT} free AI-generated character photos. ` +
-    "Subscribe to a plan to keep generating, or upload your own photo instead — that's always free.";
+  // A lapsed subscriber is metered as free tier, but must not be TOLD to
+  // "subscribe to a plan" — they have one. Same reasoning as core.ts:288,
+  // where a paused plan gets its own sentence instead of "you've used all 0
+  // credits included in your Growth plan".
+  const lapsed = !planAllowanceActive && plan !== "none";
+  const freeCapError = lapsed
+    ? planStatus === "past_due"
+      ? `Your last payment for the ${PLAN_LABELS[plan]} plan failed, so its AI character photos are paused — update your payment method in Settings to restore them. Uploading your own photo still works and is always free.`
+      : `Your ${PLAN_LABELS[plan]} plan isn't active anymore, so its AI character photos are paused. Uploading your own photo still works and is always free.`
+    : `You've used your ${FREE_REFERENCE_GENERATIONS_LIMIT} free AI-generated character photos. ` +
+      "Subscribe to a plan to keep generating, or upload your own photo instead — that's always free.";
   if (isFreeTier && freeUsed >= FREE_REFERENCE_GENERATIONS_LIMIT) {
     return { error: freeCapError };
   }

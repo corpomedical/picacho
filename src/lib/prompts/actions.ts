@@ -64,7 +64,7 @@ async function assistAllowance(
 ): Promise<AssistAllowance> {
   const { data: profile } = await supabase
     .from("profiles")
-    .select("plan, role, status, current_period_start")
+    .select("plan, role, status, plan_status, current_period_start")
     .eq("id", userId)
     .single();
 
@@ -79,7 +79,15 @@ async function assistAllowance(
   // "none" row in PLAN_PROMPT_ASSIST_LIMITS is 0 — so routing granted
   // accounts through the plan path meant zero assists and the nonsense
   // "used all 0 … the No active plan plan" message (2026-08-20).
-  const isFreeTier = plan === "none";
+  //
+  // plan_status matters here too, and it bites hardest on Elite: its assist
+  // limit is POSITIVE_INFINITY, so a lapsed Elite account kept an uncapped
+  // Claude proxy on a payment that never arrived. Metered as free tier until
+  // the card clears — the same rule core.ts:260 applies to credits and the
+  // chat route applies to assists.
+  const planStatus = (profile?.plan_status ?? null) as string | null;
+  const planAllowanceActive = planStatus === null || planStatus === "active";
+  const isFreeTier = plan === "none" || !planAllowanceActive;
 
   // Free tier: counted for the lifetime of the account, since a trial has no
   // billing anchor to reset against.
