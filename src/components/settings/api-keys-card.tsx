@@ -30,7 +30,6 @@ export type ApiKeyRow = {
 };
 
 export function ApiKeysCard({ keys, enabled }: { keys: ApiKeyRow[]; enabled: boolean }) {
-  // The last fully hardcoded-English card in the localized app (audit).
   const { t } = useLocale();
   const k = t.apiKeys;
   const [freshKey, setFreshKey] = useState<string | null>(null);
