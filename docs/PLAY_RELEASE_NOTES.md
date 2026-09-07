@@ -10,6 +10,98 @@ worse than a short translation.
 
 ---
 
+## versionCode 14 · versionName 1.14.0
+
+**Context the notes do not say out loud.** Google refuses OAuth inside an
+embedded WebView, so the consent screen always had to leave the app. What was
+missing was the way back: the redirect landed in Chrome, the session was
+created in Chrome's cookie jar, and the app stayed signed out (verified on the
+Play internal build, 2026-08-20). The buttons were hidden here from that day.
+
+The return path is a custom-scheme intent filter, `ai.picacho.app://auth-callback`,
+NOT an https App Link. An App Link needs the Play App Signing SHA-256, verifies
+asynchronously, and on Android 12+ fails by opening silently in Chrome — which
+is the same bug, with the one-time code already spent. PKCE makes scheme
+interception useless: the code is worthless without the verifier, which is a
+host-only cookie inside our own WebView.
+
+Two things this build depends on, both read out of the Capacitor sources:
+
+- `*.supabase.co` came OFF `server.allowNavigation`. `signInWithOAuth` returns
+  Supabase's own `/authorize` URL, not the provider's, so while that host was
+  allow-listed the WebView navigated for real — and `onPageStarted` calls
+  `Bridge.reset()`, which calls `removeAllListeners()` on every plugin. The
+  listener waiting for the way back was destroyed on the way out.
+- Cold start uses the retained `appUrlOpen` event, never `App.getLaunchUrl()`.
+  `Bridge.intentUri` is set once and never cleared, so getLaunchUrl would replay
+  a spent code on every page forever — a successful sign-in would loop between
+  /app and /login.
+
+The gate asks "can this build return?", not "is this the app?": a
+`PicachoAuth/1` user-agent token that only a rebuild can produce. Every
+installed versionCode 13 keeps the buttons hidden the moment the website
+deploys, which it already has. **iOS is deliberately excluded** — it has no
+equivalent filter yet and keeps the bare marker.
+
+Housekeeping in the same build: `@capacitor/status-bar` was named in
+`includePlugins` but is not installed (the bar is painted through SystemBars),
+so `capacitor.plugins.json` has SEVEN entries and build.gradle's "all 8" was
+stale. Corrected, or the R8 verification below reports a false alarm.
+
+**Before uploading:** `ai.picacho.app://auth-callback` must be in Supabase →
+Authentication → URL Configuration → Redirect URLs, or the redirect never comes
+back. Operator confirmed added 2026-09-07.
+
+### en-US
+
+```
+Sign in with Google, inside the app.
+
+Tapping Continue with Google now opens your browser and brings you straight back, signed in. It used to leave you signed in everywhere except the app, so the buttons were hidden here — this release is what makes them work.
+
+Also: the sign-in screen is finally in your language, notes tell you when a change didn't save instead of losing it quietly, and a take you delete no longer keeps playing in your reel.
+```
+
+(446 characters, limit 500)
+
+### es-419
+
+```
+Inicia sesión con Google, dentro de la app.
+
+Al tocar Continuar con Google ahora se abre tu navegador y vuelves directo, con la sesión iniciada. Antes quedabas conectado en todas partes menos en la app, por eso los botones estaban ocultos aquí.
+
+Además: la pantalla de inicio de sesión ya está en tu idioma, las notas avisan si un cambio no se guardó en vez de perderlo en silencio, y una toma que elimines deja de aparecer en tu reel.
+```
+
+(435 characters, limit 500)
+
+### pt-BR
+
+```
+Entre com o Google, dentro do app.
+
+Tocar em Continuar com o Google agora abre seu navegador e traz você de volta já conectado. Antes você ficava conectado em todo lugar menos no app, por isso os botões ficavam ocultos aqui.
+
+Também: a tela de login enfim está no seu idioma, as notas avisam quando uma alteração não foi salva em vez de perdê-la em silêncio, e um take que você excluir não continua no seu reel.
+```
+
+(411 characters, limit 500)
+
+### it-IT
+
+```
+Accedi con Google, dentro l'app.
+
+Toccando Continua con Google ora si apre il browser e torni subito indietro, già connesso. Prima restavi connesso ovunque tranne che nell'app, per questo i pulsanti erano nascosti qui.
+
+Inoltre: la schermata di accesso è finalmente nella tua lingua, le note ti dicono quando una modifica non è stata salvata invece di perderla in silenzio, e una ripresa che elimini non resta nel tuo reel.
+```
+
+(423 characters, limit 500)
+
+---
+
 ## versionCode 13 · versionName 1.13.0
 
 **Context the notes do not say out loud.** Play's release-12 dashboard listed
