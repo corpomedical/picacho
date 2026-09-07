@@ -5903,6 +5903,14 @@ function GenerateFormInner({
               <DownloadButton
                 url={stageTakeUrl}
                 contentType={stageTakeIsVideo ? "video" : "image"}
+                // A multi-angle take is several rows; the id here is the
+                // representative the Stage is actually showing, which is the
+                // one the person is choosing to keep.
+                generationId={
+                  stageTake?.kind === "single"
+                    ? stageTake.id
+                    : (stageTake?.angles.find((a) => a.succeeded && a.resultUrl)?.id ?? undefined)
+                }
                 variant="ghost"
               />
               {stageTakeIsVideo && (

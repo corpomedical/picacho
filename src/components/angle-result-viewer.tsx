@@ -111,7 +111,7 @@ export function AngleResultViewer({ rows }: { rows: AngleRow[] }) {
                   aria-label={getAnglePreset(active.angle ?? "")?.label ?? h.angleFallback}
                   className="aspect-video w-full rounded-[6px] bg-neutral-950"
                 />
-                <DownloadButton url={active.result_url} contentType="video" />
+                <DownloadButton url={active.result_url} contentType="video" generationId={active.id} />
               </div>
             ) : (
               <>

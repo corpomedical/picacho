@@ -407,6 +407,7 @@ export default async function HistoryDetailPage({
                       <DownloadButton
                         url={generation.result_url}
                         contentType="image"
+                        generationId={generation.id}
                       />
                     </div>
                   ) : (
@@ -421,6 +422,7 @@ export default async function HistoryDetailPage({
                       <DownloadButton
                         url={generation.result_url}
                         contentType="video"
+                        generationId={generation.id}
                       />
                     </div>
                   )

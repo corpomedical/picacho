@@ -3434,6 +3434,43 @@ function extractStoragePath(url: string | null, bucket: string): string | null {
 // user currently is. Multi-angle requests share an angle_group_id and are
 // always shown together as one card in History, so deleting one deletes the
 // whole group rather than leaving orphaned siblings behind.
+/**
+ * Records that the person saved a render to their own device.
+ *
+ * The strongest keep signal the product collects — plainer than a share and
+ * far plainer than a look — and until now it was the one that went unrecorded,
+ * because downloading happens entirely in the browser.
+ *
+ * Ownership is re-checked here rather than trusted. The client sends a
+ * generation id, and a client can send any id: without this a curious caller
+ * could stamp signals onto other people's renders and quietly poison the only
+ * dataset here that cannot be bought.
+ *
+ * Returns nothing and reports nothing. A download that succeeded must never
+ * appear to fail because our research write did.
+ */
+export async function recordDownload(generationId: string): Promise<void> {
+  try {
+    if (!generationId) return;
+    const supabase = await createClient();
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return;
+    // .eq("user_id") is the check, not decoration: RLS on generations allows
+    // an admin to read every row, so ownership has to be asserted explicitly
+    // here exactly as it is in the dashboard's own queries.
+    const { data: owned } = await supabase
+      .from("generations")
+      .select("id")
+      .eq("id", generationId)
+      .eq("user_id", userData.user.id)
+      .maybeSingle();
+    if (!owned) return;
+    await recordSignal(generationId, userData.user.id, "downloaded");
+  } catch {
+    // Research data only. Never surfaces, never retries.
+  }
+}
+
 export async function deleteGeneration(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();

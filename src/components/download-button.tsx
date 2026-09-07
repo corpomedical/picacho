@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
+import { recordDownload } from "@/lib/generations/actions";
 
 // Shared by the live Generate composer and the History detail page — both
 // show a generated image/video and both need the same "download it" button
@@ -112,10 +113,18 @@ export async function downloadResultNative(url: string, filename: string): Promi
 export function DownloadButton({
   url,
   contentType,
+  generationId,
   variant = "overlay",
 }: {
   url: string;
   contentType: "image" | "video";
+  /**
+   * Which render this is, when the caller knows. Optional on purpose: some
+   * surfaces (the lightbox, a community post) show a file without an owned
+   * generation behind it, and a download there records nothing rather than
+   * guessing an id.
+   */
+  generationId?: string;
   /** "overlay" = the self-positioning charcoal circle on result frames;
       "ghost" = the Stage's 30px square ghost (parent positions it). */
   variant?: "overlay" | "ghost";
@@ -139,6 +148,12 @@ export function DownloadButton({
       } else {
         await downloadResult(url, filename);
       }
+      // Saving a file to your own device is the plainest "I wanted this" the
+      // product ever sees, and it was the one signal going unrecorded because
+      // downloading happens entirely in the browser. Fire-and-forget after the
+      // download itself succeeded: a research write must never make a
+      // completed download look like a failure, or make the button wait.
+      if (generationId) void recordDownload(generationId).catch(() => {});
     } finally {
       setBusy(false);
     }
