@@ -216,7 +216,7 @@ export default async function AppHome() {
     .slice(0, 6);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8 pb-24">
+    <div className="mx-auto max-w-3xl space-y-8">
       {/* Cinema first, working surface under it — direction F. The band is not
           a card on a dashboard; it is the top of the page, and the sheet below
           rides up over its bottom edge. */}
@@ -411,17 +411,24 @@ export default async function AppHome() {
 
       <InstallAppHint />
 
-      {/* The prompt bar, as the mockup has it: fixed at the foot of the
-          screen, not a button inside the band. Offset past the desktop
-          sidebar; the page carries pb-24 so nothing hides beneath it. */}
-      <div className="fixed inset-x-0 bottom-4 z-20 px-4 md:pl-72">
+      {/* The prompt bar, as the mockup has it: at the foot of the screen, not
+          a button inside the band.
+          STICKY, not fixed. Fixed broke the sidebar's settings button: the
+          sidebar is `md:static md:z-auto`, so it forms no stacking context,
+          and a fixed z-20 bar painted straight over it — while `inset-x-0`
+          spread an invisible full-width container across the bottom of the
+          viewport, including the sidebar's own footer where that button
+          lives. No pl- offset could have fixed it either, since the rail is
+          w-64 expanded and w-14 collapsed. Sticky keeps the bar inside the
+          content column, where it belongs and where it covers nothing. */}
+      <div className="sticky bottom-4 z-20">
         <Link
           href={
             reel?.character_profile_id
               ? `/app/generate?character=${reel.character_profile_id}`
               : "/app/generate"
           }
-          className="mx-auto flex max-w-3xl items-center gap-2.5 rounded-full border border-atelier-rule bg-atelier-surface/90 py-2 pl-3 pr-2 shadow-[0_3px_8px_rgba(33,29,22,.10),0_18px_34px_-20px_rgba(33,29,22,.40)] backdrop-blur-xl"
+          className="flex items-center gap-2.5 rounded-full border border-atelier-rule bg-atelier-surface/90 py-2 pl-3 pr-2 shadow-[0_3px_8px_rgba(33,29,22,.10),0_18px_34px_-20px_rgba(33,29,22,.40)] backdrop-blur-xl"
         >
           {reelCast[0]?.avatarUrl && (
             /* eslint-disable-next-line @next/next/no-img-element */
