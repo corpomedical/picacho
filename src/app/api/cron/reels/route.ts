@@ -73,6 +73,19 @@ export async function GET(request: Request) {
     if (!userId) continue;
     if (!newestByUser.has(userId)) newestByUser.set(userId, (row.created_at as string) ?? "");
   }
+  // Anyone who already HAS a reel is a candidate too, even with no live takes
+  // left (2026-09-07 housekeeping).
+  //
+  // Building the list from finished takes alone meant a user who deleted the
+  // last of theirs dropped out of the sweep entirely — so buildUserReel never
+  // ran for them, and its retire branch was unreachable in exactly the case it
+  // exists for. Their reel played deleted renders indefinitely.
+  const withReels = await admin.from("user_reels").select("user_id");
+  for (const row of withReels.data ?? []) {
+    const id = row.user_id as string | null;
+    if (id && !newestByUser.has(id)) newestByUser.set(id, "");
+  }
+
   const candidates = [...newestByUser.keys()];
   if (candidates.length === 0) {
     return NextResponse.json({ candidates: 0, built: 0, unchanged: 0, skipped: 0 });
@@ -107,6 +120,9 @@ export async function GET(request: Request) {
   const due = candidates.filter((userId) => {
     const reel = builtAt.get(userId);
     if (!reel) return true;
+    // A reel with no live take behind it at all: the retire case, and the one
+    // the old candidate list could never see.
+    if (!newestByUser.get(userId)) return true;
     // Something new to say...
     if ((newestByUser.get(userId) ?? "") > reel) return true;
     // ...or old enough that whether it still qualifies is worth re-asking.

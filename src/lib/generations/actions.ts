@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { recordSignal } from "@/lib/generations/record-signal";
+import { reelPosterKeyFor } from "@/lib/media/reel-encode";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
 import {
   LAYERS_MAX_BYTES,
@@ -3548,6 +3549,46 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
   // not happen, and awaited-but-fail-soft so it can never break the delete.
   for (const r of rows) {
     await recordSignal(r.id as string, userData.user.id, "deleted");
+  }
+
+  // Retire a highlight reel that was cut from anything just deleted.
+  //
+  // The reel is a DERIVED copy: a stitched MP4 in the same bucket, holding
+  // three seconds of each source render. Deleting the sources hard-deletes
+  // their files and leaves that copy playing on the dashboard — still billed,
+  // still fetchable through a capability URL that never expires, still showing
+  // the person exactly what they asked to be rid of.
+  //
+  // The cron's retire branch cannot reach this case: it builds its candidate
+  // list from LIVE takes, so a user who deletes the last of theirs drops out
+  // of the sweep entirely and is never revisited. So the deletion itself has
+  // to do it, at the moment the person asks.
+  //
+  // Fail-soft and last: a reel is decoration, and nothing here may turn a
+  // successful delete into an error the user sees.
+  try {
+    const deletedIds = rows.map((r) => r.id as string);
+    const admin = createAdminClient();
+    const { data: touched } = await admin
+      .from("user_reels")
+      // select("*") on purpose: naming columns makes PostgREST fail the WHOLE
+      // query if one is missing, which is how a mid-deploy schema gap blanked
+      // every reel once already.
+      .select("*")
+      .eq("user_id", userData.user.id)
+      .overlaps("clip_generation_ids", deletedIds);
+    for (const reel of touched ?? []) {
+      const path = reel.storage_path as string | null;
+      await admin.from("user_reels").delete().eq("user_id", userData.user.id);
+      if (path) {
+        await admin.storage
+          .from("generated-videos")
+          .remove([path, reelPosterKeyFor(path)])
+          .catch(() => {});
+      }
+    }
+  } catch (err) {
+    console.warn("Couldn't retire a reel containing a deleted render.", err);
   }
 
   // Un-share what is being deleted. The soft delete means the ON DELETE
