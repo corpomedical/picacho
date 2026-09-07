@@ -3,6 +3,7 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { persistGeneratedVideo } from "@/lib/generations/core";
+import { recordSignal } from "@/lib/generations/record-signal";
 
 // Community feed actions — thin wrappers over the SQL in
 // supabase/applied/2026-08-21/community.sql. Sharing and reporting go
@@ -62,6 +63,11 @@ export async function shareToCommunity(
     // The definer raises human-readable messages; surface them.
     return { error: error.message.replace(/^.*Exception: /, ""), postId: null };
   }
+  // Publishing a render under your own name is the strongest keep signal the
+  // product collects — stronger than a download, because it is public. After
+  // the RPC succeeded, and fail-soft, so research data can never break a share.
+  await recordSignal(generationId, userData.user.id, "shared");
+
   return { error: null, postId: (data as string | null) ?? null };
 }
 

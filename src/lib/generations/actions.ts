@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
+import { recordSignal } from "@/lib/generations/record-signal";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
 import {
   LAYERS_MAX_BYTES,
@@ -3487,6 +3488,13 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
     return { error: "Couldn't delete this — try again." };
   }
 
+  // The only unambiguous negative this product collects. Recorded after the
+  // delete has actually succeeded, so a signal never claims something that did
+  // not happen, and awaited-but-fail-soft so it can never break the delete.
+  for (const r of rows) {
+    await recordSignal(r.id as string, userData.user.id, "deleted");
+  }
+
   // Un-share what is being deleted. The soft delete means the ON DELETE
   // CASCADE on community_posts never fires, so a shared render stayed on the
   // public feed forever — pointing at a storage object the next lines
@@ -3875,6 +3883,13 @@ async function startUpscaleCore(params: {
     return { error: "You've used all the credits included in your plan this month." };
   }
   const generationId = reservedId as string;
+
+  // Building on an earlier render is that render being useful — the clearest
+  // "worth continuing from" the product sees, and it costs a credit to say, so
+  // it is not idle clicking. Fail-soft; research data never blocks a send.
+  if (params.sourceGenerationId) {
+    await recordSignal(params.sourceGenerationId, params.userId, "continued");
+  }
 
   // Guarded purchased-credit spend, same abort contract as the render path:
   // nothing paid has run yet, so losing the race releases the placeholder.
