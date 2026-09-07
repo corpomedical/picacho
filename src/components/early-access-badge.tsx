@@ -35,7 +35,10 @@ export function EarlyAccessBadge({ className, dark }: { className?: string; dark
         "select-none text-[10px] font-medium uppercase leading-none tracking-wide",
         // The dark front page pins literals so the site theme can't touch
         // them; everywhere else the badge keeps its theme-adaptive greys.
-        dark ? "text-[#f7f6f4]/40" : "text-neutral-400 dark:text-neutral-500",
+        // The light value was neutral-400 — 2.48:1, the worst-measuring text
+        // in the shared chrome. The dark: half was already here and already
+        // fine; only light was failing.
+        dark ? "text-[#f7f6f4]/40" : "text-neutral-600 dark:text-neutral-500",
         className,
       )}
     >

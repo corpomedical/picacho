@@ -96,7 +96,11 @@ export async function MarketingFooter({ dark = false }: { dark?: boolean } = {})
               className={
                 dark
                   ? "flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-[#f7f6f4]/35 sm:justify-end"
-                  : "flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-neutral-400 sm:justify-end"
+                  : // neutral-400 measured 2.48:1 on this ground — these are
+                    // LINKS at 12px, so AA's 4.5 applies and it was nowhere
+                    // near. neutral-500 only reaches ~4.2 on paper; 600 is the
+                    // first step that actually clears it.
+                    "flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs text-neutral-600 sm:justify-end"
               }
             >
               <Link href="/guides" className={subLink}>
