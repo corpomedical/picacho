@@ -173,6 +173,40 @@ function normalise(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
+/**
+ * Strips leading punctuation and markdown before the opener tests.
+ *
+ * "**Assistant, make a continuation prompt of this: ..." was sent to the
+ * renderer on 2026-09-06 and cost a credit, because every opener test looks at
+ * the first WORD and the first characters were asterisks. Bold markers, quotes,
+ * bullets and stray colons are decoration around the message, never part of it.
+ */
+function stripLeadingMarks(text: string): string {
+  return text.replace(/^[^\p{L}\p{N}]+/u, "");
+}
+
+/**
+ * Asking the product to WRITE a prompt is never a description of a shot.
+ *
+ * "make a continuation prompt" carries no question mark and opens with an
+ * imperative, so every list above reads it as a render instruction — and it
+ * rendered, twice, ninety seconds apart (operator, 2026-09-06). A person
+ * describing a scene says what is IN it; only someone talking to the assistant
+ * asks it for a prompt.
+ */
+const META_PROMPT_REQUEST =
+  /\b(?:make|write|create|generate|give|suggest|draft|improve|rewrite)\b[^.!?]{0,60}\bprompts?\b/u;
+
+/**
+ * The assistant addressed by name, at the start.
+ *
+ * Deliberately NOT matched anywhere in the message, unlike "picacho" above:
+ * "picacho" is a product name nobody puts in a shot description, but
+ * "assistant" is an ordinary noun — a shop assistant, a lab assistant — and
+ * matching it mid-sentence would refuse legitimate renders.
+ */
+const ASSISTANT_ADDRESS = /^(?:hey |hi |ok |okay |@)?assistant\b/u;
+
 function startsWithWord(haystack: string, word: string): boolean {
   return haystack === word || haystack.startsWith(word + " ");
 }
@@ -194,7 +228,7 @@ export function classifyMessage(text: string): IntentReading {
   // Peel leading filler before testing openers, repeatedly — "ok so why did
   // that fail" carries two. Bounded to three passes so no list of fillers can
   // turn this into a loop.
-  let probe = lower;
+  let probe = stripLeadingMarks(lower);
   for (let pass = 0; pass < 3; pass++) {
     const stripped = LEADING_FILLER.find((f) => startsWithWord(probe, f));
     if (!stripped) break;
@@ -204,6 +238,8 @@ export function classifyMessage(text: string): IntentReading {
     if (!rest) break;
     probe = rest;
   }
+  // Decoration around the message, not part of it — see stripLeadingMarks.
+  probe = stripLeadingMarks(probe);
 
   const asks =
     raw.includes("?") ||
@@ -212,7 +248,9 @@ export function classifyMessage(text: string): IntentReading {
     SMALL_TALK.includes(lower.replace(/[.!]+$/, "")) ||
     QUESTION_OPENERS.some((w) => startsWithWord(probe, w)) ||
     QUESTION_PHRASE_OPENERS.some((w) => startsWithWord(probe, w)) ||
-    ADDRESSED_PHRASES.some((p) => lower.includes(p));
+    ADDRESSED_PHRASES.some((p) => lower.includes(p)) ||
+    ASSISTANT_ADDRESS.test(probe) ||
+    META_PROMPT_REQUEST.test(probe);
 
   if (!asks) return { intent: "render", renderablePrompt: null };
 

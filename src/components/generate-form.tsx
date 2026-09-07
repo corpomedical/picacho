@@ -2108,6 +2108,13 @@ function GenerateFormInner({
   // has to switch it on twice. resetChat deliberately does NOT reset it: a
   // new thread is not a reason to change a preference.
   const [assistantOn, setAssistantOn] = useState(false);
+  // Holds a send that looked like a message to the assistant while the person
+  // decides what they meant. Null = nothing pending. See plainRenderIntended.
+  const [modeQuery, setModeQuery] = useState<string | null>(null);
+  // "Render it anyway", bound to the EXACT text it was granted for. A bare
+  // boolean would arm whatever send happened to come next — the latent bug
+  // skipRulesForPromptRef was rewritten to close.
+  const renderAnywayRef = useRef<string | null>(null);
   const [agentEffort, setAgentEffort] = useState<AgentMode>("faster");
   // Increments on every deliberate pick of Smarter; keys the particle burst
   // so it replays each time rather than only on the first.
@@ -2138,6 +2145,24 @@ function GenerateFormInner({
   // A function rather than a derived const because it reads `prompt`, which
   // is declared further down: hoisting keeps this readable without a
   // temporal-dead-zone trap.
+  // Is this text plainly a render instruction, judged even when the assistant
+  // is switched off? The composer modes that OWN the box (storyboard, angles,
+  // Cinema Studio) are excluded for the same reason sendIntent excludes them:
+  // `prompt` is stale text kept alive underneath, and classifying it would
+  // block an explicit, correct send.
+  // A pending question describes ONE piece of text; the moment that text
+  // changes it is answering about something that no longer exists.
+  useEffect(() => {
+    setModeQuery((q) => (q !== null && q !== prompt ? null : q));
+  }, [prompt]);
+
+  function plainRenderIntended(): boolean {
+    if (storyboardActive || multiAngleMode || sceneMode || pendingScene !== null) return true;
+    if (!prompt.trim()) return true;
+    if (renderAnywayRef.current === prompt) return true;
+    return classifyMessage(prompt).intent === "render";
+  }
+
   function sendIntent(): "render" | "ask" {
     // chatAgentEnabled FIRST, and it is the reason this is the only place
     // allowed to answer this question. Review found handleSubmit asking
@@ -5086,6 +5111,25 @@ function GenerateFormInner({
     // chat turn.
     if (sendIntent() === "ask") {
       await askAgent(prompt, classifyMessage(prompt).renderablePrompt);
+      return;
+    }
+
+    // The assistant is OFF, but this reads like a message TO it (operator,
+    // 2026-09-06: two sends 90 seconds apart — "make a continuation prompt"
+    // and "**Assistant, make a continuation prompt of this: …" — both queued,
+    // both stopped, 8 credits gone on a mode error).
+    //
+    // "Off means off" governs ROUTING, and still does: nothing is silently
+    // diverted to a chat turn. It cannot also govern SPENDING, because the
+    // cost of guessing wrong is asymmetric — a refused send costs one tap to
+    // correct, a wrong render costs money and cannot be taken back. So this
+    // stops and asks rather than rendering or rerouting, and the person
+    // decides.
+    //
+    // Only reachable with the assistant off; with it on the branch above has
+    // already taken the message.
+    if (!plainRenderIntended()) {
+      setModeQuery(prompt);
       return;
     }
 
@@ -8104,6 +8148,44 @@ function GenerateFormInner({
                     </button>
                   </div>
                 )}
+              {/* The send was stopped because the text reads as a message to
+                  the assistant (2026-09-06: 8 credits on a mode error). The
+                  quiet line above is the same judgement offered earlier and
+                  passively; this is the last moment before money moves, so it
+                  asks outright and does not decide. */}
+              {modeQuery !== null && (
+                <div className="mx-4 mb-2.5 rounded-card border border-atelier-rule bg-atelier-surface p-3">
+                  <p className="text-[12px] leading-snug text-atelier-ink">
+                    {g.modeQueryTitle}
+                  </p>
+                  <div className="mt-2.5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setModeQuery(null);
+                        if (!assistantOn) toggleAssistant();
+                      }}
+                      className="rounded-control bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90"
+                    >
+                      {g.modeQueryAsk}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        // Consumed by plainRenderIntended on the next submit:
+                        // the person has answered for THIS text, so the guard
+                        // stands aside exactly once.
+                        renderAnywayRef.current = prompt;
+                        setModeQuery(null);
+                      }}
+                      className="rounded-control border border-atelier-rule px-3 py-1.5 text-xs font-medium text-atelier-ink transition-opacity duration-150 hover:opacity-80"
+                    >
+                      {g.modeQueryRender}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Guardrail footer (2026-08-21 incident): what a send spends,
                   and the two first-session nudges. Renders nothing for
                   established paid accounts. */}

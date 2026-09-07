@@ -274,3 +274,53 @@ describe("addressing the app by name", () => {
     expect(r.renderablePrompt).toBeTruthy();
   });
 });
+
+// Two sends to the renderer that were meant for the assistant (operator,
+// 2026-09-06, 90 seconds apart): "make a continuation prompt" and
+// "**Assistant, make a continuation prompt of this: …". Both classified as
+// render, both queued, both stopped, both charged. 8 credits for a mode error.
+//
+// Same shape as the "Hey picacho" incident this module already records: a
+// message talking TO the product, read as a description of a shot.
+describe("messages meant for the assistant, not the renderer", () => {
+  it("reads the assistant addressed by name as a question", () => {
+    for (const text of [
+      "Assistant, what happened?",
+      "hey assistant",
+      "@assistant can you look at this",
+      // The exact send. The leading asterisks defeated every opener test,
+      // because they all look at the first WORD.
+      "**Assistant, make a continuation prompt of this: A trailer-style sequence",
+    ]) {
+      expect(classifyMessage(text).intent, text).toBe("ask");
+    }
+  });
+
+  it("reads a request for a PROMPT as a question, not a shot", () => {
+    // Nobody describing a scene asks for a prompt; they say what is in it.
+    for (const text of [
+      "make a continuation prompt",
+      "write me a prompt for a snowy scene",
+      "improve this prompt please",
+      "suggest a prompt",
+    ]) {
+      expect(classifyMessage(text).intent, text).toBe("ask");
+    }
+  });
+
+  // The false positives that would cost more than the bug. "assistant" is an
+  // ordinary noun, unlike "picacho", so it is only matched as a leading
+  // address — never mid-sentence.
+  it("still renders a scene that merely contains the word", () => {
+    for (const text of [
+      "a shop assistant behind the counter, warm light",
+      "a lab assistant holding a beaker",
+      "Eva reading a teleprompter in a studio",
+      "make a coffee cup on the table",
+      "make her smile",
+      "A red-haired woman with freckles stands in a grand candlelit ballroom",
+    ]) {
+      expect(classifyMessage(text).intent, text).toBe("render");
+    }
+  });
+});
