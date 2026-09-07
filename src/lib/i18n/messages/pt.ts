@@ -444,6 +444,13 @@ const pt = {
     },
   },
   auth: {
+    // Shared by the login AND signup pages, so it does not live under
+    // auth.login. The provider names are proper nouns and stay as they are.
+    oauth: {
+      continueWith: "Continuar com {provider}",
+      redirecting: "Redirecionando…",
+      startFailed: "Não foi possível iniciar o acesso.",
+    },
     login: {
       title: "Entrar",
       subtitle: "Bem-vindo de volta ao Picacho.",

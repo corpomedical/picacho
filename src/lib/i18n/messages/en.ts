@@ -493,6 +493,13 @@ const en = {
     },
   },
   auth: {
+    // Shared by the login AND signup pages, so it does not live under
+    // auth.login. The provider names are proper nouns and stay as they are.
+    oauth: {
+      continueWith: "Continue with {provider}",
+      redirecting: "Redirecting…",
+      startFailed: "Couldn't start sign-in.",
+    },
     login: {
       title: "Log in",
       subtitle: "Welcome back to Picacho.",

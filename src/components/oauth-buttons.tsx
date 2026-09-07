@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, type SVGProps } from "react";
+import { useLocale } from "@/lib/i18n/provider";
+import { formatMsg } from "@/lib/i18n/format";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/cn";
 import { clientOrigin } from "@/lib/client-origin";
@@ -63,21 +65,25 @@ function FacebookIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-const PROVIDERS: { id: Provider; label: string; icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element }[] = [
-  { id: "google", label: "Continue with Google", icon: GoogleIcon },
+// `name` is the provider's own proper noun and is NOT translated — only the
+// sentence around it is (auth.oauth.continueWith).
+const PROVIDERS: { id: Provider; name: string; icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element }[] = [
+  { id: "google", name: "Google", icon: GoogleIcon },
   // Apple is left out until there's a paid Apple Developer account to set up
   // "Sign in with Apple" credentials — add it back in here once that's done:
-  // { id: "apple", label: "Continue with Apple", icon: AppleIcon },
+  // { id: "apple", name: "Apple", icon: AppleIcon },
   // Microsoft is left out until its Azure AD app registration is sorted out
   // (personal Microsoft accounts need a real Azure tenant, which hit signup
   // friction on 2026-08-07) — add it back in here once that's resolved:
-  // { id: "azure", label: "Continue with Microsoft", icon: MicrosoftIcon },
-  { id: "facebook", label: "Continue with Facebook", icon: FacebookIcon },
+  // { id: "azure", name: "Microsoft", icon: MicrosoftIcon },
+  { id: "facebook", name: "Facebook", icon: FacebookIcon },
 ];
 
 // `nativeReturn` is set only by a shell binary that carries the auth-callback
 // intent filter — see NATIVE_AUTH_UA_MARKER. The web path is untouched.
 export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean } = {}) {
+  const { t } = useLocale();
+  const o = t.auth.oauth;
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
   const [error, setError] = useState("");
 
@@ -119,7 +125,7 @@ export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean 
       // back. The sign-in would then complete and simply never return.
       if (data?.url) window.location.assign(data.url);
       else {
-        setError("Couldn't start sign-in.");
+        setError(o.startFailed);
         setLoadingProvider(null);
       }
     }
@@ -140,7 +146,9 @@ export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean 
           )}
         >
           <p.icon className="h-[18px] w-[18px] flex-shrink-0" />
-          {loadingProvider === p.id ? "Redirecting…" : p.label}
+          {loadingProvider === p.id
+            ? o.redirecting
+            : formatMsg(o.continueWith, { provider: p.name })}
         </button>
       ))}
       {error && <p className="text-sm text-red-600">{error}</p>}
