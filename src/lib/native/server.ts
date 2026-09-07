@@ -48,9 +48,12 @@ export async function nativeSupportsAuthReturn(): Promise<boolean> {
   // anyone who had already updated. Email and password are untouched, which
   // is what every account used before yesterday.
   //
-  // TO RE-ENABLE once the redirect is fixed: delete these two lines. The
-  // check below is correct and stays as it is.
-  if (process.env.NATIVE_OAUTH_ENABLED !== "1") return false;
+  // The version gate below now does the excluding: versionCode 14 claims
+  // PicachoAuth/1 and the marker is /2, so the broken build can never be
+  // offered these buttons again. This stays as an instant lever if 15 also
+  // misbehaves — set NATIVE_OAUTH_DISABLED=1 in Vercel and it is off for
+  // every build on the next request, no deploy and no store round trip.
+  if (process.env.NATIVE_OAUTH_DISABLED === "1") return false;
 
   const headerStore = await headers();
   return userAgentSupportsAuthReturn(headerStore.get("user-agent"));

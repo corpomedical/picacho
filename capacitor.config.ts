@@ -82,7 +82,10 @@ const config = {
     // without that filter cannot catch the redirect coming back — which is the
     // 2026-08-20 bug. Only iOS is left without the token on purpose: it has no
     // equivalent filter yet, so its OAuth buttons stay hidden.
-    appendUserAgent: "PicachoApp PicachoAuth/1",
+    // /2 for versionCode 15. /1 was versionCode 14, whose sign-in could not
+    // complete; the site recognises only /2, so that binary is retired from
+    // these buttons for good rather than waiting on a store rollback.
+    appendUserAgent: "PicachoApp PicachoAuth/2",
     backgroundColor: "#ffffff",
     // Play requires HTTPS for anything handling credentials.
     allowMixedContent: false,

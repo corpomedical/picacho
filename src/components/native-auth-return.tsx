@@ -50,11 +50,21 @@ export function NativeAuthReturn() {
       } catch {
         return;
       }
-      if (parsed.protocol !== "ai.picacho.app:") return;
+      // Two shapes reach here. The verified App Link
+      // (https://picacho.ai/auth/callback) is what versionCode 15 asks the
+      // provider for. The custom scheme is versionCode 14's, still accepted
+      // because a redirect issued before this deploy — or an install whose
+      // App Link verification has not landed yet — can still arrive that way.
+      const isAppLink =
+        parsed.protocol === "https:" &&
+        parsed.host === "picacho.ai" &&
+        parsed.pathname.startsWith("/auth/callback");
       // Custom-scheme URLs put the "host" in different places across parsers;
       // accept either shape rather than depending on one.
-      const target = parsed.host || parsed.pathname.replace(/^\/+/, "");
-      if (target !== "auth-callback") return;
+      const isScheme =
+        parsed.protocol === "ai.picacho.app:" &&
+        (parsed.host || parsed.pathname.replace(/^\/+/, "")) === "auth-callback";
+      if (!isAppLink && !isScheme) return;
 
       const code = parsed.searchParams.get("code");
       if (code && /^[A-Za-z0-9._~-]+$/.test(code)) {

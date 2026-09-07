@@ -18,7 +18,15 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 14
+        versionCode 15
+        // 15 = the OAuth return becomes a VERIFIED App Link (2026-09-08).
+        // 14 shipped it on a custom scheme and sign-in never came back: the
+        // hop out was a bare ACTION_VIEW into the default browser, where an
+        // intermediate provider URL could be claimed by another app, and the
+        // authorization died before Supabase issued a code. assetlinks.json
+        // now carries the classical AND post-quantum Play signing keys, the
+        // filter is scoped to /auth/callback so the app claims nothing else,
+        // and the user-agent token moves to PicachoAuth/2 so 14 is retired.
         // 14 = Google sign-in works in the app (2026-09-07). Adds the
         // auth-callback intent filter, drops *.supabase.co from
         // allowNavigation so the OAuth hop actually leaves the WebView, and
@@ -133,7 +141,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.14.0"
+        versionName "1.15.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

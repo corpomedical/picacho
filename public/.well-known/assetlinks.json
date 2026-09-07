@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "ai.picacho.app",
+      "sha256_cert_fingerprints": [
+        "D5:88:B2:E2:80:DF:67:6E:13:18:6E:DE:B2:96:64:3F:13:8F:CA:31:B2:27:1D:59:1E:DF:11:03:5E:9E:99:23",
+        "43:09:AB:B5:39:81:51:65:D5:BB:93:F9:7A:B9:2D:2B:48:D5:EE:89:36:4C:55:6A:AB:A4:5E:BD:39:A1:CA:96",
+        "23:5D:EC:40:6B:56:A9:F8:C6:5C:2D:9F:87:90:48:9D:0C:8A:96:67:3E:67:E4:44:B3:FD:B1:B3:0F:F0:FB:AB"
+      ]
+    }
+  }
+]

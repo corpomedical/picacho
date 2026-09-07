@@ -56,6 +56,33 @@
                 <data android:scheme="ai.picacho.app" android:host="auth-callback" />
             </intent-filter>
 
+            <!-- App Link for the OAuth return (versionCode 15).
+
+                 android:autoVerify makes Android fetch
+                 https://picacho.ai/.well-known/assetlinks.json at install and
+                 check this app's signing certificate against it. Once it
+                 verifies, the redirect opens the APP with no chooser and no
+                 chance for another app to claim the hop — which is what the
+                 custom scheme above could not guarantee.
+
+                 pathPrefix is NOT optional. Without it this filter would claim
+                 EVERY https://picacho.ai URL, so the marketing site, the
+                 guides and every shared link would open in the app instead of
+                 a browser. It is scoped to the one callback path.
+
+                 www is deliberately absent: next.config.ts 308s it to the
+                 apex, and Digital Asset Links verification fails on a
+                 redirect. Only the apex is declared, and only the apex serves
+                 assetlinks.json. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="picacho.ai" />
+                <data android:pathPrefix="/auth/callback" />
+            </intent-filter>
+
         </activity>
 
         <provider
