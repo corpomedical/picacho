@@ -7,7 +7,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { Label, Input } from "@/components/ui/field";
 import { OAuthButtons } from "@/components/oauth-buttons";
 import { getServerMessages } from "@/lib/i18n/server";
-import { isNativeApp } from "@/lib/native/server";
+import { isNativeApp, nativeSupportsAuthReturn } from "@/lib/native/server";
 import { Logo } from "@/components/logo";
 
 export default async function LoginPage({
@@ -38,12 +38,18 @@ export default async function LoginPage({
       : errors.failed
     : null;
 
-  // OAuth is web-only for now: inside the Capacitor shell the provider
-  // redirect isn't allowNavigation-listed, so it bounces to the system
-  // browser and any session it creates lands in Chrome's cookies, not the
-  // app's — the app stays signed out (verified on the Play internal build,
-  // 2026-08-20). Server-side gate so the buttons never render-then-vanish.
+  // OAuth in the app works only on a shell that can catch the redirect coming
+  // back (custom-scheme intent filter + NativeAuthReturn). Before that existed,
+  // the provider redirect bounced to the system browser and the session landed
+  // in Chrome's cookies, not the app's — the app stayed signed out (verified on
+  // the Play internal build, 2026-08-20).
+  //
+  // So the question asked here is "can this build return?", NOT "is this the
+  // app?". The website reaches every installed binary the moment Vercel
+  // deploys; older ones have no way back and must keep the buttons hidden.
+  // Server-side so they never render-then-vanish.
   const native = await isNativeApp();
+  const showOAuth = !native || (await nativeSupportsAuthReturn());
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-neutral-50 p-8">
@@ -55,10 +61,10 @@ export default async function LoginPage({
           <h1 className="font-display text-xl font-bold tracking-[-0.02em] text-neutral-900">{a.title}</h1>
           <p className="mt-1 text-sm text-neutral-500">{a.subtitle}</p>
 
-          {!native && (
+          {showOAuth && (
             <>
               <div className="mt-6">
-                <OAuthButtons />
+                <OAuthButtons nativeReturn={native} />
               </div>
 
               <div className="my-6 flex items-center gap-3">
@@ -69,7 +75,7 @@ export default async function LoginPage({
             </>
           )}
 
-          <form action={login} className={native ? "mt-6 space-y-4" : "space-y-4"}>
+          <form action={login} className={showOAuth ? "space-y-4" : "mt-6 space-y-4"}>
             <div>
               <Label htmlFor="email">{a.emailLabel}</Label>
               <Input id="email" name="email" type="email" required />

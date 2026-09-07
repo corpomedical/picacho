@@ -23,9 +23,39 @@
 export const NATIVE_UA_MARKER = "PicachoApp";
 export const NATIVE_COOKIE = "picacho_native";
 
+// A CAPABILITY token, not a version. Only a shell binary that carries the
+// auth-callback intent filter appends it (capacitor.config.ts, android only).
+//
+// It exists because the website reaches every installed app the moment Vercel
+// deploys, while a new APK reaches people over days. Gating OAuth on "is this
+// the app?" would switch the buttons on for binaries that have no way to catch
+// the redirect coming back — which is precisely the 2026-08-20 bug this whole
+// change is fixing. Gating on "can this app catch the return?" cannot.
+//
+// Named for what it does rather than the versionCode, so it needs no
+// coordination with release numbering and cannot drift from build.gradle.
+export const NATIVE_AUTH_UA_MARKER = "PicachoAuth/1";
+
 export function userAgentIsNativeApp(userAgent: string | null | undefined): boolean {
   return Boolean(userAgent && userAgent.includes(NATIVE_UA_MARKER));
 }
+
+// Deliberately a SEPARATE substring test rather than an extension of the one
+// above: appending a second space-separated token cannot change what the
+// existing includes("PicachoApp") matches, so reader-mode gating — the
+// App Review-critical part — is untouched in both directions.
+export function userAgentSupportsAuthReturn(userAgent: string | null | undefined): boolean {
+  return Boolean(userAgent && userAgent.includes(NATIVE_AUTH_UA_MARKER));
+}
+
+// Where the provider sends the browser back to. A custom scheme, NOT an
+// https App Link: an App Link needs the Play signing fingerprint (which is not
+// in this repo), its verification is asynchronous and cacheable, and when it
+// fails on Android 12+ the link opens silently in Chrome — the exact failure
+// being fixed, with the one-time code already spent. PKCE makes scheme
+// interception useless: the code is worthless without the verifier, and the
+// verifier is a host-only cookie inside our own WebView.
+export const NATIVE_AUTH_REDIRECT = "ai.picacho.app://auth-callback";
 
 // Client-side check. Capacitor injects a global on native platforms; the user
 // agent is the fallback for the brief window before that global exists, and

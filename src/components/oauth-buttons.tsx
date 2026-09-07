@@ -4,6 +4,7 @@ import { useState, type SVGProps } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/cn";
 import { clientOrigin } from "@/lib/client-origin";
+import { NATIVE_AUTH_REDIRECT } from "@/lib/native/platform";
 
 // Supabase's provider ids — "azure" is what Supabase calls Microsoft/Entra ID
 // (covers Outlook, Hotmail, and work/school Microsoft accounts).
@@ -74,7 +75,9 @@ const PROVIDERS: { id: Provider; label: string; icon: (props: SVGProps<SVGSVGEle
   { id: "facebook", label: "Continue with Facebook", icon: FacebookIcon },
 ];
 
-export function OAuthButtons() {
+// `nativeReturn` is set only by a shell binary that carries the auth-callback
+// intent filter — see NATIVE_AUTH_UA_MARKER. The web path is untouched.
+export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean } = {}) {
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
   const [error, setError] = useState("");
 
@@ -83,17 +86,45 @@ export function OAuthButtons() {
     setLoadingProvider(provider);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithOAuth({
+    const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: `${clientOrigin()}/auth/callback` },
+      options: {
+        // In the app the provider must send the browser back to our custom
+        // scheme, which the shell catches and walks into the WebView. On the
+        // web it comes straight back to the callback route.
+        redirectTo: nativeReturn ? NATIVE_AUTH_REDIRECT : `${clientOrigin()}/auth/callback`,
+        // Take the redirect by hand on native. supabase-js would call
+        // window.location.assign itself, which works — but doing it here keeps
+        // the handoff explicit and makes swapping in a Custom Tab a one-line
+        // change later. The PKCE verifier is written either way: auth-js
+        // builds the URL (and stores the verifier) BEFORE it looks at this
+        // flag.
+        skipBrowserRedirect: nativeReturn,
+      },
     });
 
     if (error) {
       setError(error.message);
       setLoadingProvider(null);
+      return;
     }
-    // On success the browser navigates away to the provider's sign-in page,
-    // so there's nothing else to do here.
+
+    if (nativeReturn) {
+      // The URL here is Supabase's /authorize endpoint, NOT the provider's —
+      // and that distinction is load-bearing. Its host must be absent from
+      // capacitor.config.ts allowNavigation, so Capacitor cancels the load and
+      // hands it to the system browser. If it were allowed, the WebView would
+      // navigate for real, and onPageStarted → Bridge.reset() clears every
+      // plugin listener — including the appUrlOpen one that catches the way
+      // back. The sign-in would then complete and simply never return.
+      if (data?.url) window.location.assign(data.url);
+      else {
+        setError("Couldn't start sign-in.");
+        setLoadingProvider(null);
+      }
+    }
+    // On the web the browser has already navigated away to the provider, so
+    // there is nothing else to do here.
   }
 
   return (

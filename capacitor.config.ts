@@ -46,7 +46,22 @@ const config = {
     // shell. This is a review requirement as much as a UX one — a webview
     // that can wander onto arbitrary pages is how a "reader" app
     // accidentally becomes one that links to a purchase page.
-    allowNavigation: ["picacho.ai", "*.picacho.ai", "*.supabase.co"],
+    //
+    // *.supabase.co WAS listed here and had to come off for OAuth to work at
+    // all (2026-09-07). signInWithOAuth hands back Supabase's own /authorize
+    // URL, not the provider's — so while that host was allow-listed, the
+    // WebView navigated to it for real instead of handing off. That matters
+    // because BridgeWebViewClient.onPageStarted calls Bridge.reset(), which
+    // calls removeAllListeners() on every plugin: the appUrlOpen listener that
+    // catches the redirect coming back would be destroyed on the way OUT, and
+    // sign-in would complete in the browser and never return. The hardware
+    // back button's listener dies the same way.
+    //
+    // Nothing needs it: stored media is served same-origin through
+    // /api/media/[...key] (see lib/media/url.ts mediaUrl), and Supabase's own
+    // auth/storage traffic is fetch/XHR, which allowNavigation does not
+    // govern — that is CSP connect-src.
+    allowNavigation: ["picacho.ai", "*.picacho.ai"],
   },
 
   ios: {
@@ -60,7 +75,14 @@ const config = {
   },
 
   android: {
-    appendUserAgent: "PicachoApp",
+    // Two tokens. "PicachoApp" is the reader-mode marker and must stay exactly
+    // as it is. "PicachoAuth/1" is a CAPABILITY claim: this binary carries the
+    // auth-callback intent filter, so the website may show the OAuth buttons.
+    // The site reaches installed apps the instant Vercel deploys, and a build
+    // without that filter cannot catch the redirect coming back — which is the
+    // 2026-08-20 bug. Only iOS is left without the token on purpose: it has no
+    // equivalent filter yet, so its OAuth buttons stay hidden.
+    appendUserAgent: "PicachoApp PicachoAuth/1",
     backgroundColor: "#ffffff",
     // Play requires HTTPS for anything handling credentials.
     allowMixedContent: false,
@@ -121,7 +143,13 @@ const config = {
       "@capacitor/push-notifications",
       "@capacitor/share",
       "@capacitor/splash-screen",
-      "@capacitor/status-bar",
+      // @capacitor/status-bar was listed here but is NOT installed — not in
+      // package.json, not in node_modules. The status bar is painted through
+      // capPlugin("SystemBars") (native-chrome.tsx), which Capacitor 8
+      // provides itself. Sync has been silently dropping the name, so the
+      // generated capacitor.plugins.json holds SEVEN entries, not the eight
+      // build.gradle claims — removed so the next sync cannot trip over a
+      // name with nothing behind it.
     ],
   },
 

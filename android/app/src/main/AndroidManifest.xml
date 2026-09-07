@@ -27,6 +27,35 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- The way back in from an OAuth sign-in.
+
+                 Google refuses OAuth inside an embedded WebView, so the
+                 consent screen has to open in the system browser; this filter
+                 is how the redirect gets back to us. A SEPARATE filter, never
+                 merged into the LAUNCHER one above — an activity may carry
+                 many, and folding VIEW into MAIN/LAUNCHER breaks the launcher
+                 entry.
+
+                 A custom scheme rather than an https App Link with
+                 android:autoVerify, deliberately: an App Link needs the Play
+                 App Signing SHA-256 (not in this repo), its verification is
+                 asynchronous and cacheable, and when it fails on Android 12+
+                 the link opens silently in Chrome — which is exactly the bug
+                 this is fixing, with the one-time code already spent.
+                 Interception is not a risk here: PKCE means the code is
+                 useless without the verifier, which is a host-only cookie
+                 inside our own WebView.
+
+                 MainActivity is already singleTask and exported, so a resume
+                 arrives via onNewIntent and Capacitor turns it into the
+                 appUrlOpen event that NativeAuthReturn listens for. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="ai.picacho.app" android:host="auth-callback" />
+            </intent-filter>
+
         </activity>
 
         <provider

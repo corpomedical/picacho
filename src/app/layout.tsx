@@ -7,6 +7,7 @@ import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme/theme-provider";
 import { PageViewTracker } from "@/components/page-view-tracker";
 import { CookieConsentBanner } from "@/components/cookie-consent-banner";
 import { NativeChrome, SPLASH_HIDE_SCRIPT } from "@/components/native-chrome";
+import { NativeAuthReturn } from "@/components/native-auth-return";
 import { NativeIntro } from "@/components/native-intro";
 import { LocaleProvider } from "@/lib/i18n/provider";
 import { getLocale } from "@/lib/i18n/server";
@@ -169,6 +170,10 @@ export default async function RootLayout({
               pull all four catalogs into the client bundle (114KB gz). */}
           <LocaleProvider initialLocale={locale} messages={getMessages(locale)}>
             <NativeChrome />
+            {/* Catches the OAuth deep link on the way back in. Mounted beside
+                NativeChrome because it needs the same always-on lifetime and is
+                inert off-native. */}
+            <NativeAuthReturn />
             {native && <NativeIntro />}
             <PageViewTracker />
             {/* In the app shell, the route's server work must not hold up

@@ -9,7 +9,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { Label, Input } from "@/components/ui/field";
 import { OAuthButtons } from "@/components/oauth-buttons";
 import { getServerMessages } from "@/lib/i18n/server";
-import { isNativeApp } from "@/lib/native/server";
+import { isNativeApp, nativeSupportsAuthReturn } from "@/lib/native/server";
 import { Logo } from "@/components/logo";
 
 export default async function SignupPage({
@@ -53,10 +53,10 @@ export default async function SignupPage({
       : errors.signupFailed
     : null;
 
-  // OAuth is web-only for now — same gate as the login page: inside the
-  // Capacitor shell the provider redirect bounces to the system browser and
-  // the session strands in Chrome, never reaching the app.
+  // Same gate as the login page: shown on the web, and in the app only on a
+  // build that can catch the redirect coming back. See login/page.tsx.
   const native = await isNativeApp();
+  const showOAuth = !native || (await nativeSupportsAuthReturn());
 
   // Post-signup confirmation screen. Reached by the signup action's redirect
   // to /signup?sent=1 — a clear "we emailed you, go click the link" state
@@ -137,10 +137,10 @@ export default async function SignupPage({
           <h1 className="font-display text-xl font-bold tracking-[-0.02em] text-neutral-900">{a.title}</h1>
           <p className="mt-1 text-sm text-neutral-500">{a.subtitle}</p>
 
-          {!native && (
+          {showOAuth && (
             <>
               <div className="mt-6">
-                <OAuthButtons />
+                <OAuthButtons nativeReturn={native} />
               </div>
 
               <div className="my-6 flex items-center gap-3">
@@ -151,7 +151,7 @@ export default async function SignupPage({
             </>
           )}
 
-          <form action={signup} className={native ? "mt-6 space-y-4" : "space-y-4"}>
+          <form action={signup} className={showOAuth ? "space-y-4" : "mt-6 space-y-4"}>
             <div>
               <Label htmlFor="full_name">{a.nameLabel}</Label>
               <Input id="full_name" name="full_name" required maxLength={80} autoComplete="name" />

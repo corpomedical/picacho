@@ -18,7 +18,13 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 13
+        versionCode 14
+        // 14 = Google sign-in works in the app (2026-09-07). Adds the
+        // auth-callback intent filter, drops *.supabase.co from
+        // allowNavigation so the OAuth hop actually leaves the WebView, and
+        // claims "PicachoAuth/1" in the user agent so the website knows this
+        // binary can catch the redirect coming back. The website half is
+        // already live and shows the buttons to NOTHING until this ships.
         // 13 = the build itself, on Play's release-12 dashboard (2026-09-04,
         // operator: "I need all 3 issues resolved in any way possible"). R8
         // optimization on (the -optimize default file), resource shrinking on
@@ -27,7 +33,7 @@ android {
         // bullets Play lists under "Improve your app's memory and performance
         // with R8 optimization", and the APK went 2,278,080 -> 1,884,759
         // bytes, -17.3%. No plugin removed, no device dropped: minSdk stays 24
-        // and all 8 plugin classpaths plus 62 @PluginMethod names survive R8
+        // and all 7 plugin classpaths plus 62 @PluginMethod names survive R8
         // identity-mapped, verified on the Pixel_7 against a signed build.
         //
         // The two edge-to-edge recommendations are NOT addressed and cannot
@@ -127,7 +133,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.13.0"
+        versionName "1.14.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

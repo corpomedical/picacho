@@ -1,5 +1,9 @@
 import { cookies, headers } from "next/headers";
-import { NATIVE_COOKIE, userAgentIsNativeApp } from "@/lib/native/platform";
+import {
+  NATIVE_COOKIE,
+  userAgentIsNativeApp,
+  userAgentSupportsAuthReturn,
+} from "@/lib/native/platform";
 
 // Server-side "is this the mobile app?" check, for Server Components that
 // need to omit purchase UI entirely rather than hide it after render.
@@ -20,4 +24,16 @@ export async function isNativeApp(): Promise<boolean> {
 
   const headerStore = await headers();
   return userAgentIsNativeApp(headerStore.get("user-agent"));
+}
+
+// Can THIS shell catch an OAuth redirect coming back from the system browser?
+//
+// User agent only, with no cookie fallback, and that is the point: the cookie
+// exists because the UA is missing on some cached responses, but here a
+// missed detection means the OAuth buttons stay hidden — today's behaviour,
+// and the safe direction. A cookie fallback could only make it answer "yes"
+// on a request where we are less sure, which is the one answer that hurts.
+export async function nativeSupportsAuthReturn(): Promise<boolean> {
+  const headerStore = await headers();
+  return userAgentSupportsAuthReturn(headerStore.get("user-agent"));
 }
