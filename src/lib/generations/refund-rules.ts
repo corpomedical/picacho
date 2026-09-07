@@ -211,3 +211,55 @@ export const REFUNDS: Record<FailureFault, boolean> = {
 export function refundsOnFault(fault: FailureFault): boolean {
   return REFUNDS[fault];
 }
+
+// ---------------------------------------------------------------------
+// Is this refund over the daily ceiling?
+// ---------------------------------------------------------------------
+//
+// Extracted 2026-09-08 for the reason at the top of this file: job-runner.ts
+// pulls in Supabase and the whole provider chain, so nothing in it can be
+// unit-tested. This is the money rule that bounds refunds, and it went in
+// yesterday with no test behind it at all.
+//
+// Three cases, and the middle one is the one that was missing:
+//
+//   normal   — bounded, counted on refunded_at (the marker the refund writes)
+//   forced   — NOT bounded, because force is reserved for classes that
+//              provably cost nothing: a brand rule blocking a prompt before
+//              any provider call, a pre-render 4xx refusal
+//   settled  — forced past the automatic_refunds switch, but bounded anyway.
+//              An identity settle DELIVERED the render and spent two vision
+//              calls establishing it should not have, so it is the opposite
+//              of free. Unbounded it was the one refund class in the product
+//              with no ceiling: fail the identity bar deliberately, twice,
+//              and the render is free, repeatable at the 3-second cooldown.
+//              Counted on identity_gated_at rather than refunded_at so it
+//              neither eats the failure budget nor hides behind it.
+//
+// Admins are exempt everywhere, same as every other consumer-facing limit.
+import { refundedFailureDailyCap, type PlanId } from "../plans";
+
+export type RefundBoundInput = {
+  role?: string | null;
+  plan: PlanId;
+  /** Bypasses the automatic_refunds master switch. */
+  force?: boolean;
+  /** A forced refund that is NOT zero-cost — an identity-gate settle. */
+  settlement?: boolean;
+  /** Refunds this account had stamped in the last 24h (refunded_at). */
+  forgivenToday: number;
+  /** Settlements this account had in the last 24h (identity_gated_at). */
+  settledToday: number;
+};
+
+/** True when the refund must be WITHHELD because the account is at its cap. */
+export function refundWithheld(input: RefundBoundInput): boolean {
+  if (input.role === "admin") return false;
+
+  const bounded = !input.force || input.settlement === true;
+  if (!bounded) return false;
+
+  const cap = refundedFailureDailyCap(input.plan);
+  const used = input.settlement ? input.settledToday : input.forgivenToday;
+  return used >= cap;
+}

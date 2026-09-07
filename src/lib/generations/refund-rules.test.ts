@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { refundedFailureDailyCap } from "../plans";
 import {
+  refundWithheld,
   ACKNOWLEDGED_WARNING_MARKER,
   acknowledgedPolicyWarning,
   isProviderRejection,
@@ -283,5 +285,61 @@ describe("the stop refund gate", () => {
   it("refunds a reported failure — failed work bills zero", () => {
     // 235 lifetime fal requests, 31 non-2xx, not one billable unit.
     expect(providerBilledUs({ state: "failed" })).toBe(false);
+  });
+});
+
+// The daily ceiling (2026-09-08).
+//
+// This bounds every refund in the product, and until the settlement case was
+// added it was the one piece of money logic with no test — the same class of
+// gap that let an unbounded settle ship. What these catch: making `force`
+// exempt the settlement again (unlimited free renders), counting a settlement
+// against the wrong budget, or letting the cap apply to an admin.
+describe("the daily refund ceiling", () => {
+  const base = { plan: "starter" as const, forgivenToday: 0, settledToday: 0 };
+  // Derived, not hardcoded: the ceiling is per-plan and deliberately tunable
+  // in one place, so a test that pinned a number would fail the next time the
+  // policy moved and teach nothing about the rule being tested.
+  const cap = refundedFailureDailyCap(base.plan);
+
+  it("allows a normal refund under the cap and withholds it at the cap", () => {
+    expect(refundWithheld({ ...base, forgivenToday: cap - 1 })).toBe(false);
+    expect(refundWithheld({ ...base, forgivenToday: cap })).toBe(true);
+  });
+
+  // force is reserved for classes that provably cost nothing — a rule block,
+  // a pre-render 4xx. Those must never be withheld, whatever the count.
+  it("never withholds a forced refund, because those cost nothing", () => {
+    expect(refundWithheld({ ...base, force: true, forgivenToday: 9999 })).toBe(false);
+  });
+
+  // The one that matters. A settle is forced past the automatic_refunds
+  // switch but DELIVERED a render, so it stays bounded. If this ever returns
+  // false at the cap again, deliberately failing the identity bar twice is
+  // free renders forever at the 3-second cooldown.
+  it("DOES withhold a settlement at the cap, even though it is forced", () => {
+    expect(refundWithheld({ ...base, force: true, settlement: true, settledToday: cap })).toBe(true);
+    expect(
+      refundWithheld({ ...base, force: true, settlement: true, settledToday: cap - 1 }),
+    ).toBe(false);
+  });
+
+  // Settlements count on identity_gated_at, failures on refunded_at. Crossing
+  // the two would let a busy day of ordinary failures silently block a
+  // legitimate settlement, or the reverse.
+  it("counts a settlement against settlements, not against failures", () => {
+    // Plenty of ordinary refunds today must not block a settlement.
+    expect(
+      refundWithheld({ ...base, force: true, settlement: true, forgivenToday: 9999, settledToday: 0 }),
+    ).toBe(false);
+    // And plenty of settlements must not block an ordinary refund.
+    expect(refundWithheld({ ...base, forgivenToday: 0, settledToday: 9999 })).toBe(false);
+  });
+
+  it("exempts admins, same as every other consumer-facing limit", () => {
+    expect(refundWithheld({ ...base, role: "admin", forgivenToday: 9999 })).toBe(false);
+    expect(
+      refundWithheld({ ...base, role: "admin", force: true, settlement: true, settledToday: 9999 }),
+    ).toBe(false);
   });
 });

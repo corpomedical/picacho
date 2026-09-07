@@ -11,6 +11,7 @@ import {
 } from "@/lib/generations/refund-rules";
 import { createAdminClient } from "@/lib/supabase/server";
 import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
+import { refundWithheld } from "@/lib/generations/refund-rules";
 import {
   cancelQueuedJob,
   checkQueuedJob,
@@ -479,20 +480,28 @@ export async function refundGenerationCosts(
   // the "unlimited refund is an unlimited budget" case plans.ts warns about.
   // It is counted on identity_gated_at rather than refunded_at so it neither
   // eats the failure budget nor hides behind it.
-  const bounded = !opts?.force || opts?.settlement === true;
-  if (profile?.role !== "admin" && bounded) {
-    const cap = refundedFailureDailyCap((profile?.plan ?? "none") as PlanId);
-    const usedToday = opts?.settlement ? (settledToday ?? 0) : (forgivenToday ?? 0);
-    if (usedToday >= cap) {
-      console.warn("Refund withheld: daily refunded-failure cap reached", {
-        userId: row.user_id,
-        cap,
-        usedToday,
-        kind: opts?.settlement ? "settlement" : "failure",
-        generationId,
-      });
-      return false;
-    }
+  // The decision itself lives in refund-rules.ts, which is alias-free and so
+  // can be unit-tested — this file cannot be, and this is the rule that
+  // decides whether money goes back.
+  const plan = (profile?.plan ?? "none") as PlanId;
+  if (
+    refundWithheld({
+      role: profile?.role,
+      plan,
+      force: opts?.force,
+      settlement: opts?.settlement,
+      forgivenToday: forgivenToday ?? 0,
+      settledToday: settledToday ?? 0,
+    })
+  ) {
+    console.warn("Refund withheld: daily refunded-failure cap reached", {
+      userId: row.user_id,
+      cap: refundedFailureDailyCap(plan),
+      usedToday: opts?.settlement ? (settledToday ?? 0) : (forgivenToday ?? 0),
+      kind: opts?.settlement ? "settlement" : "failure",
+      generationId,
+    });
+    return false;
   }
 
   // Always release the monthly allowance, even when there's nothing else to
