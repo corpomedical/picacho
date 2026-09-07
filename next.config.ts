@@ -110,8 +110,20 @@ const nextConfig: NextConfig = {
           // Only sends the origin (not the full URL, which can contain
           // sensitive paths) as a referrer when navigating to another site.
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          // Disables a handful of browser features this app never uses.
-          { key: "Permissions-Policy", value: "camera=(), geolocation=(), payment=()" },
+          // Disables browser features this app does not use. camera and
+          // geolocation are genuinely unused — photo pickers are a plain
+          // <input type="file">, which needs no camera grant.
+          //
+          // payment is (self), NOT (). This header applies to /:path*, which
+          // includes /app/checkout, and that page mounts Stripe's
+          // EmbeddedCheckout in-document (checkout-embed.tsx) rather than
+          // redirecting away — so the app's only payment form lives inside a
+          // page this header governs. An empty allowlist denies the Payment
+          // Request API to the document AND to every nested context, and an
+          // iframe's own allow="payment" cannot re-grant what the top
+          // document denied, so Google Pay and Apple Pay could not initialise
+          // inside the embed. (self) keeps it same-origin rather than open.
+          { key: "Permissions-Policy", value: "camera=(), geolocation=(), payment=(self)" },
           // Forces HTTPS for two years, including subdomains, and opts into
           // browser preload lists.
           { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains; preload" },
