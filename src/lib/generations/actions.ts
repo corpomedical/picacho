@@ -3490,6 +3490,41 @@ export async function recordDownload(generationId: string): Promise<void> {
   }
 }
 
+/**
+ * "I looked at this one." The denominator for every other signal.
+ *
+ * Opening is NOT approval and signals.ts is emphatic about it — someone opens
+ * a render to find out WHETHER it worked, which happens just as often when it
+ * did not. What it buys is the distinction that makes a rejection mean
+ * anything: a render that was looked at and then left alone is evidence, while
+ * one nobody ever opened is silence.
+ *
+ * Called from the browser on mount, deliberately, and NOT from the page's
+ * server component: Next prefetches links, so recording it during render would
+ * stamp "opened" on renders the person never actually looked at — poisoning
+ * the one dataset here that cannot be bought.
+ */
+export async function recordOpened(generationId: string): Promise<void> {
+  try {
+    if (!generationId) return;
+    const supabase = await createClient();
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) return;
+    // Same explicit ownership assertion as recordDownload: admins can read
+    // every row under RLS, so it has to be checked here.
+    const { data: owned } = await supabase
+      .from("generations")
+      .select("id")
+      .eq("id", generationId)
+      .eq("user_id", userData.user.id)
+      .maybeSingle();
+    if (!owned) return;
+    await recordSignal(generationId, userData.user.id, "opened");
+  } catch {
+    // Research data only. Never surfaces, never retries.
+  }
+}
+
 export async function deleteGeneration(formData: FormData): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();

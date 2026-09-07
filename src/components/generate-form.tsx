@@ -533,10 +533,16 @@ function ResultMedia({
   resultUrl,
   contentType,
   prompt,
+  generationId,
 }: {
   succeeded: boolean;
   resultUrl: string | null;
   contentType: ContentType;
+  // Which render this is. Threaded purely so a download here records a
+  // "downloaded" signal — this is the render someone JUST made, the most
+  // telling download on the site, and it was the one surface recording
+  // nothing. Every caller already had the id for ResultActions beside it.
+  generationId?: string;
   // The prompt that produced this result — used as the image's alt text so
   // it actually describes what's in the picture (each generation is unique
   // to its prompt) instead of the same generic "Generated result" string on
@@ -555,7 +561,7 @@ function ResultMedia({
           aria-label={prompt}
           className="aspect-video w-full rounded-media bg-neutral-950"
         />
-        <DownloadButton url={resultUrl} contentType={contentType} />
+        <DownloadButton url={resultUrl} contentType={contentType} generationId={generationId} />
       </div>
     ) : (
       <div className="relative mt-4">
@@ -565,7 +571,7 @@ function ResultMedia({
           className="w-full rounded-media bg-atelier-ink/5 object-cover"
           downloadUrl={resultUrl}
         />
-        <DownloadButton url={resultUrl} contentType={contentType} />
+        <DownloadButton url={resultUrl} contentType={contentType} generationId={generationId} />
       </div>
     );
   }
@@ -1614,7 +1620,7 @@ function SingleTurnBubble({
           <PipelineTrace timeline={timeline} revealedCount={timeline.length} isAnimating={false} isLive={live} />
           {turn.succeeded ? (
             <>
-              <ResultMedia succeeded={turn.succeeded} resultUrl={turn.resultUrl} contentType={turn.contentType} prompt={turn.prompt} />
+              <ResultMedia succeeded={turn.succeeded} resultUrl={turn.resultUrl} contentType={turn.contentType} prompt={turn.prompt} generationId={turn.id} />
               <div className="mt-3 flex items-center gap-2">
                 <Badge tone={live ? "success" : "neutral"}>{live ? g.live : g.simulated}</Badge>
                 {/* Only when the gate actually retried — "passed on attempt 1
@@ -1703,7 +1709,7 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
 
       {active && (
         <>
-          <ResultMedia succeeded={active.succeeded} resultUrl={active.resultUrl} contentType="video" prompt={prompt} />
+          <ResultMedia succeeded={active.succeeded} resultUrl={active.resultUrl} contentType="video" prompt={prompt} generationId={active.id} />
           {active.succeeded ? (
             <>
               <div className="mt-3 flex items-center gap-2">
@@ -6246,6 +6252,7 @@ function GenerateFormInner({
                               resultUrl={liveResult.resultUrl}
                               contentType={liveContentType}
                               prompt={livePrompt ?? undefined}
+                              generationId={liveResult.id}
                             />
                             <div className="mt-3 flex items-center gap-2">
                               <Badge tone={liveIsLive ? "success" : "neutral"}>

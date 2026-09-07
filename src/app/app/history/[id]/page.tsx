@@ -13,6 +13,7 @@ import {
   LAYERIZE_LABEL,
 } from "@/lib/generations/layers";
 import { QuietVideo } from "@/components/quiet-video";
+import { RecordOpenSignal } from "@/components/record-open-signal";
 import {
   toMediaUrl,
   isRenderableUrl,
@@ -348,6 +349,10 @@ export default async function HistoryDetailPage({
 
   return (
     <div className="mx-auto max-w-2xl">
+      {/* Records that this render was actually looked at — from the browser,
+          because this server component also runs on Next's link prefetches.
+          Renders nothing. */}
+      <RecordOpenSignal generationId={generation.id as string} />
       {/* This page had NO h1 and nothing larger than text-sm on it — the page
           for a render someone spent credits to make had no title at all
           (found in the 2026-09-04 design review). The eyebrow + serif title
