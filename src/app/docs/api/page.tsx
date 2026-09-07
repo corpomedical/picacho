@@ -32,7 +32,7 @@ export const metadata: Metadata = {
 
 function Code({ children }: { children: string }) {
   return (
-    <pre className="mt-3 overflow-x-auto rounded-[12px] border border-slate-200 bg-slate-900 p-4 text-[12.5px] leading-relaxed text-slate-100">
+    <pre className="mt-3 overflow-x-auto rounded-[12px] border border-neutral-200 bg-slate-900 p-4 text-[12.5px] leading-relaxed text-slate-100">
       <code>{children}</code>
     </pre>
   );
@@ -48,14 +48,14 @@ function Endpoint({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-t border-slate-200 py-8">
+    <section className="border-t border-neutral-200 py-8">
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="rounded-[6px] bg-ochre px-2 py-1 font-mono text-[11px] font-bold text-onmedia">
           {method}
         </span>
-        <span className="font-mono text-sm font-semibold text-slate-900">{path}</span>
+        <span className="font-mono text-sm font-semibold text-neutral-900">{path}</span>
       </div>
-      <div className="mt-3 text-sm leading-relaxed text-slate-600">{children}</div>
+      <div className="mt-3 text-sm leading-relaxed text-neutral-600">{children}</div>
     </section>
   );
 }
@@ -66,36 +66,36 @@ export default function ApiDocsPage() {
       <MarketingHeader />
 
       <main className="mx-auto max-w-3xl px-8 py-16">
-        <h1 className="font-display text-4xl font-bold tracking-[-0.035em] text-slate-900">
+        <h1 className="font-display text-4xl font-bold tracking-[-0.035em] text-neutral-900">
           The Picacho API
         </h1>
-        <p className="mt-4 text-base leading-relaxed text-slate-600">
+        <p className="mt-4 text-base leading-relaxed text-neutral-600">
           Generate images of your own characters from your own software — the same pipeline the app
           uses, with the same identity locking and the same match scoring. Four endpoints, one key,
           and it draws on the credits already included in your plan.
         </p>
-        <p className="mt-4 rounded-[12px] border border-ochre/25 bg-ochre-soft/40 p-4 text-sm leading-relaxed text-slate-700">
+        <p className="mt-4 rounded-[12px] border border-ochre/25 bg-ochre-soft/40 dark:border-[#e0a468]/25 dark:bg-[#e0a468]/[0.08] p-4 text-sm leading-relaxed text-neutral-700">
           Included with <strong>Elite</strong>. Create a key in{" "}
-          <Link href="/app/settings" className="font-medium text-ochre underline underline-offset-2">
+          <Link href="/app/settings" className="font-medium text-ochre dark:text-[#e0a468] underline underline-offset-2">
             Settings → API keys
           </Link>
           . If you&apos;re on another plan and need it, get in touch — we enable it per account.
         </p>
 
-        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-slate-900">
+        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-neutral-900">
           Authentication
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        <p className="mt-3 text-sm leading-relaxed text-neutral-600">
           Send your key as a bearer token on every request. Keys are shown once, when you create
           them — we store only a hash, so a lost key can&apos;t be recovered, only replaced.
         </p>
         <Code>{`curl https://picacho.ai/api/v1/usage \\
   -H "Authorization: Bearer pic_live_your_key_here"`}</Code>
 
-        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-slate-900">
+        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-neutral-900">
           A first request, end to end
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        <p className="mt-3 text-sm leading-relaxed text-neutral-600">
           List your characters to get an id, then generate against it. That&apos;s the whole
           integration.
         </p>
@@ -140,7 +140,7 @@ curl -X POST https://picacho.ai/api/v1/generations \\
               get in touch and we&apos;ll credit it back.
             </p>
             <p className="mt-3">
-              <strong className="font-semibold text-slate-900">Body:</strong>{" "}
+              <strong className="font-semibold text-neutral-900">Body:</strong>{" "}
               <code className="text-[12.5px]">prompt</code> (required, up to 2000 characters) and{" "}
               <code className="text-[12.5px]">character_id</code> (optional — omit it and you get a
               generic image with no identity locking).
@@ -201,10 +201,10 @@ curl -X POST https://picacho.ai/api/v1/generations \\
           </Endpoint>
         </div>
 
-        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-slate-900">
+        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-neutral-900">
           Errors and limits
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        <p className="mt-3 text-sm leading-relaxed text-neutral-600">
           Errors come back as{" "}
           <code className="text-[12.5px]">{`{ "error": { "code", "message" } }`}</code> with a
           matching HTTP status: <strong>401</strong> for a missing, invalid or revoked key,{" "}
@@ -216,15 +216,15 @@ curl -X POST https://picacho.ai/api/v1/generations \\
           batch that runs out of credits mid-loop can hit 429s too. Back off for the number of
           seconds in the <code className="text-[12.5px]">retry-after</code> header.
         </p>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        <p className="mt-3 text-sm leading-relaxed text-neutral-600">
           Video isn&apos;t in this version. A render takes six to ten minutes and needs a queue
           rather than a request — if you need it, tell us and it moves up the list.
         </p>
 
-        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-slate-900">
+        <h2 className="mt-12 font-display text-2xl font-bold tracking-[-0.03em] text-neutral-900">
           Use it from Claude, Cursor or any MCP client
         </h2>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        <p className="mt-3 text-sm leading-relaxed text-neutral-600">
           The same four endpoints are also an{" "}
           <a
             href="https://modelcontextprotocol.io"
@@ -245,7 +245,7 @@ curl -X POST https://picacho.ai/api/v1/generations \\
     }
   }
 }`}</Code>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        <p className="mt-3 text-sm leading-relaxed text-neutral-600">
           Four tools: <code className="text-[12.5px]">list_characters</code>,{" "}
           <code className="text-[12.5px]">generate_image</code>,{" "}
           <code className="text-[12.5px]">get_generation</code> and{" "}
@@ -253,7 +253,7 @@ curl -X POST https://picacho.ai/api/v1/generations \\
           <code className="text-[12.5px]">generate_image</code> spends credits, and it&apos;s marked
           that way so a client asks you first.
         </p>
-        <p className="mt-3 text-sm leading-relaxed text-slate-600">
+        <p className="mt-3 text-sm leading-relaxed text-neutral-600">
           The reason it&apos;s worth connecting rather than calling a generic image API:{" "}
           <code className="text-[12.5px]">generate_image</code> comes back with{" "}
           <code className="text-[12.5px]">match_score</code> — how closely the rendered face matches

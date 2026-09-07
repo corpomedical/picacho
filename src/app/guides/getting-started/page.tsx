@@ -688,18 +688,18 @@ export default async function GettingStartedCourse() {
 
       <section className="isolate relative overflow-hidden bg-paper">
         <div className="mx-auto max-w-3xl px-8 pb-14 pt-20 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
             The Picacho Course
           </p>
-          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-slate-900 sm:text-5xl">
+          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-neutral-900 sm:text-5xl">
             From first login to your first video
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-neutral-600 sm:text-base">
             Nine short chapters, every step photographed on the live product. By the end you&apos;ll
             have a character whose face survives every scene, images and videos that look like them,
             and the instincts to fix the few things that go wrong.
           </p>
-          <p className="mt-4 text-xs text-slate-400">
+          <p className="mt-4 text-xs text-neutral-500">
             Every screenshot: the real app, a real new account, real generations.
           </p>
         </div>
@@ -715,9 +715,9 @@ export default async function GettingStartedCourse() {
               <li key={c.id}>
                 <a
                   href={`#${c.id}`}
-                  className="flex items-center gap-2.5 rounded-lg py-1 text-[15px] text-neutral-700 transition-colors hover:text-ochre"
+                  className="flex items-center gap-2.5 rounded-lg py-1 text-[15px] text-neutral-700 transition-colors hover:text-ochre dark:hover:text-[#e0a468]"
                 >
-                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-ochre/10 text-xs font-bold text-ochre">
+                  <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-ochre/10 text-xs font-bold text-ochre dark:text-[#e0a468]">
                     {i + 1}
                   </span>
                   {c.title}
@@ -735,7 +735,7 @@ export default async function GettingStartedCourse() {
             id={chapter.id}
             className="mx-auto max-w-2xl scroll-mt-24 px-8 pt-16"
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ochre">
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ochre dark:text-[#e0a468]">
               Chapter {ci + 1}
             </p>
             <h2 className={`mt-2 ${H2}`}>{chapter.title}</h2>

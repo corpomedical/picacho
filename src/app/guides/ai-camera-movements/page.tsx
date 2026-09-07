@@ -119,13 +119,13 @@ export default async function CameraMovementsGuide() {
 
       <section className="isolate relative overflow-hidden bg-paper">
         <div className="mx-auto max-w-3xl px-8 pb-14 pt-20 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
             Guide · updated August 2026
           </p>
-          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-slate-900 sm:text-5xl">
+          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-neutral-900 sm:text-5xl">
             AI camera movements: the director&apos;s cheat sheet
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-neutral-600 sm:text-base">
             Nine movements that actually work in current AI video models — each one shown as a real
             generated clip, not a stock illustration, with the exact wording that produces it and
             the shots it&apos;s built for.
@@ -252,7 +252,7 @@ export default async function CameraMovementsGuide() {
             <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-paper">
               Or make every move a one-tap preset
             </h2>
-            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-400">
+            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-neutral-400">
               Every movement on this page ships in Picacho as a validated preset — hover to preview
               the real clip, tap to arm it, stack it with a lighting look. A free generation every
               day, no credit card.

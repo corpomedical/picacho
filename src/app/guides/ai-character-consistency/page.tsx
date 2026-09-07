@@ -43,13 +43,13 @@ export default async function CharacterConsistencyGuide() {
 
       <section className="isolate relative overflow-hidden bg-paper">
         <div className="mx-auto max-w-3xl px-8 pb-14 pt-20 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
             Guide · updated August 2026
           </p>
-          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-slate-900 sm:text-5xl">
+          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-neutral-900 sm:text-5xl">
             AI character consistency: the practical guide
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-neutral-600 sm:text-base">
             Why AI characters drift between generations, and the five techniques that actually
             hold a face — from reference-set composition to measuring the lock instead of hoping.
             Everything here was verified against live models, not recycled from other blogs.
@@ -173,7 +173,7 @@ export default async function CharacterConsistencyGuide() {
             <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-paper">
               Or let the pipeline do steps 1–5 for you
             </h2>
-            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-400">
+            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-neutral-400">
               Picacho saves the character once — references, traits, rules — engineers them into
               every prompt, and scores every output against the identity photo. A free generation
               every day, no credit card.

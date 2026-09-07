@@ -39,13 +39,13 @@ export default async function SeedanceGuide() {
 
       <section className="isolate relative overflow-hidden bg-paper">
         <div className="mx-auto max-w-3xl px-8 pb-14 pt-20 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
             Guide · updated August 2026
           </p>
-          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-slate-900 sm:text-5xl">
+          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-neutral-900 sm:text-5xl">
             Seedance 2.0: the practical guide
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-neutral-600 sm:text-base">
             ByteDance&apos;s Seedance family is the current workhorse for character video — and the
             most misunderstood, because its two tiers behave differently in exactly the places that
             matter. Everything below was verified end-to-end in production, with dates.
@@ -208,7 +208,7 @@ export default async function SeedanceGuide() {
             <h2 className="font-display text-2xl font-bold tracking-[-0.02em] text-paper">
               Seedance 2.0, with the sharp edges fenced
             </h2>
-            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-400">
+            <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-neutral-400">
               Picacho routes photoreal characters away from the 2.5 rejection, rides outfit photos
               on the models that take them, and scores every render against the identity photo. A
               free generation every day, no credit card.

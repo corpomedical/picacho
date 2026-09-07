@@ -120,25 +120,25 @@ export async function ComparePage({ competitor }: { competitor: CompetitorId }) 
           homepage hero (the site's dark-mode remap must not touch it). */}
       <section className="isolate relative overflow-hidden bg-paper">
         <div className="mx-auto max-w-3xl px-8 pb-16 pt-20 text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">
             {c.eyebrow}
           </p>
-          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.05] tracking-[-0.035em] text-slate-900 sm:text-5xl">
-            Picacho <span className="font-normal text-slate-400">vs</span> {comp.name}
-            <em className="mt-3 block text-2xl not-italic text-ochre sm:text-3xl">
+          <h1 className="mt-4 font-display text-4xl font-bold leading-[1.05] tracking-[-0.035em] text-neutral-900 sm:text-5xl">
+            Picacho <span className="font-normal text-neutral-500">vs</span> {comp.name}
+            <em className="mt-3 block text-2xl not-italic text-ochre dark:text-[#e0a468] sm:text-3xl">
               {c.heroQuestion}
             </em>
           </h1>
-          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-slate-600 sm:text-base">
+          <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-neutral-600 sm:text-base">
             {page.heroSubtitle}
           </p>
-          <p className="mx-auto mt-5 max-w-xl text-xs leading-relaxed text-slate-500">
+          <p className="mx-auto mt-5 max-w-xl text-xs leading-relaxed text-neutral-500">
             {formatMsg(c.factCheck, { name: comp.name })}{" "}
             <a
               href={comp.pricingUrl}
               target="_blank"
               rel="noopener noreferrer nofollow"
-              className="underline decoration-slate-300 underline-offset-2 hover:decoration-slate-500"
+              className="underline decoration-neutral-300 underline-offset-2 hover:decoration-neutral-500"
             >
               {comp.pricingLabel}
             </a>
@@ -167,7 +167,7 @@ export async function ComparePage({ competitor }: { competitor: CompetitorId }) 
                 <th scope="col" className="w-[39%] px-5 py-4 align-bottom text-base font-semibold text-neutral-900">
                   {comp.name}
                 </th>
-                <th scope="col" className="w-[39%] px-5 py-4 align-bottom text-base font-semibold text-ochre">
+                <th scope="col" className="w-[39%] px-5 py-4 align-bottom text-base font-semibold text-ochre dark:text-[#e0a468]">
                   Picacho
                 </th>
               </tr>
@@ -243,17 +243,17 @@ export async function ComparePage({ competitor }: { competitor: CompetitorId }) 
             <h2 className="font-display text-2xl font-bold tracking-[-0.03em] text-paper sm:text-3xl">
               {c.proofTitle}
             </h2>
-            <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-400">{c.proofBody}</p>
+            <p className="mt-4 max-w-md text-sm leading-relaxed text-neutral-400">{c.proofBody}</p>
           </div>
           <div className="rounded-[14px] bg-white/[0.06] p-5">
-            <div className="flex items-center justify-between text-xs text-slate-400">
+            <div className="flex items-center justify-between text-xs text-neutral-400">
               <span>{home.scoreBandMatch}</span>
               <span className="font-semibold text-paper">92%</span>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/10">
               <div className="h-full w-[92%] rounded-full bg-ochre" />
             </div>
-            <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-4 flex items-center justify-between text-xs text-neutral-400">
               <span>{home.scoreBandPassed}</span>
               <span className="font-semibold text-paper">1 / 3</span>
             </div>
