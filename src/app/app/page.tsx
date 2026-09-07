@@ -406,9 +406,7 @@ export default async function AppHome() {
           surface in the product — a referral card only in Settings referred
           nobody. Same component the settings sheet uses. */}
       {profile?.username && (
-        <div className="rounded-control bg-atelier-surface p-5 shadow-[0_0_0_1px_var(--frost-ring),0_16px_40px_-24px_rgba(33,29,22,0.12)]">
-          <InviteCard username={profile.username} />
-        </div>
+        <InviteCard username={profile.username} />
       )}
 
       <InstallAppHint />

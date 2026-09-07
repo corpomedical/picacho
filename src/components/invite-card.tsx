@@ -50,32 +50,54 @@ export function InviteCard({ username }: { username: string }) {
   }, []);
 
   return (
-    <div>
-      <p className="text-sm font-medium text-atelier-ink">{s.inviteTitle}</p>
-      <p className="mt-1 text-xs leading-relaxed text-atelier-muted">{s.inviteBody}</p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <input
-          readOnly
-          value={link}
-          onFocus={(e) => e.currentTarget.select()}
-          className="min-w-0 flex-1 rounded-control border border-atelier-rule bg-transparent px-2.5 py-1.5 font-numeral text-xs text-atelier-ink outline-none"
-        />
-        <button
-          type="button"
-          onClick={copy}
-          className="flex-shrink-0 rounded-control bg-atelier-ink px-3 py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90"
-        >
-          {copied ? s.inviteCopied : s.inviteCopy}
-        </button>
-        {canShare && (
+    // A dark invitation rather than a paragraph with an input under it. The
+    // ground is atelier-stage, the one token defined to stay charcoal in both
+    // themes, so this card bookends the cinema at the top of the dashboard
+    // instead of dissolving into the frost around it. Everything on it takes
+    // `onmedia`, per the note on that token: --color-white is redeclared to a
+    // near-black in dark mode and would erase this text.
+    <div className="relative overflow-hidden rounded-card bg-atelier-stage p-5 ring-1 ring-onmedia/10 shadow-[0_18px_44px_-28px_rgba(20,18,16,0.55)] sm:p-6">
+      {/* One ochre bloom, the accent this system reserves for proof. Behind
+          the content, never over it. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-16 -top-20 h-52 w-52 rounded-full bg-atelier-accent/20 blur-3xl"
+      />
+
+      <div className="relative">
+        <p className="font-numeral text-lg font-semibold leading-snug tracking-tight text-onmedia sm:text-xl">
+          {s.inviteTitle}
+        </p>
+        <p className="mt-1.5 max-w-md text-xs leading-relaxed text-onmedia/60">{s.inviteBody}</p>
+
+        {/* The link on an engraved plate — the same pill the prompt bar uses,
+            inverted for the dark ground, with the actions inside the field
+            rather than trailing after it. */}
+        <div className="mt-4 flex items-center gap-2 rounded-full bg-black/30 py-1.5 pl-4 pr-1.5 ring-1 ring-onmedia/10">
+          <input
+            readOnly
+            value={link}
+            onFocus={(e) => e.currentTarget.select()}
+            aria-label={s.inviteTitle}
+            className="min-w-0 flex-1 truncate bg-transparent font-numeral text-xs tracking-wide text-onmedia/85 outline-none"
+          />
+          {canShare && (
+            <button
+              type="button"
+              onClick={share}
+              className="flex-none rounded-full px-3 py-1.5 text-xs font-medium text-onmedia/75 transition-opacity duration-150 hover:opacity-80"
+            >
+              {s.inviteShare}
+            </button>
+          )}
           <button
             type="button"
-            onClick={share}
-            className="flex-shrink-0 rounded-control border border-atelier-rule px-3 py-1.5 text-xs font-medium text-atelier-ink transition-colors hover:bg-atelier-ink/5"
+            onClick={copy}
+            className="flex-none rounded-full bg-onmedia px-3.5 py-1.5 text-xs font-medium text-atelier-stage transition-opacity duration-150 hover:opacity-90"
           >
-            {s.inviteShare}
+            {copied ? s.inviteCopied : s.inviteCopy}
           </button>
-        )}
+        </div>
       </div>
     </div>
   );
