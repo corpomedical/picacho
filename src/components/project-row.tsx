@@ -184,6 +184,10 @@ export function ProjectRow({
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(project.name);
   const [pending, setPending] = useState(false);
+  // Star, pin, archive, rename and delete all used to discard their result.
+  // A failed delete left the project sitting there and a failed rename snapped
+  // the name back, both with no explanation — the row just twitched.
+  const [error, setError] = useState<string | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -215,8 +219,10 @@ export function ProjectRow({
     const fd = new FormData();
     fd.set("id", project.id);
     Object.entries(extra).forEach(([k, v]) => fd.set(k, v));
-    await action(fd);
+    setError(null);
+    const result = await action(fd);
     setPending(false);
+    if (result?.error) setError(result.error);
   }
 
   async function submitRename() {
@@ -233,7 +239,13 @@ export function ProjectRow({
     const result = await renameProject(fd);
     setPending(false);
     setRenaming(false);
-    if (result.error) setName(project.name);
+    if (result.error) {
+      // The revert alone read as the app silently refusing the new name.
+      setName(project.name);
+      setError(result.error);
+      return;
+    }
+    setError(null);
   }
 
   function handleRemove() {
@@ -247,6 +259,18 @@ export function ProjectRow({
 
   const compact = variant === "sidebar";
   const isActive = pathname === `/app/projects/${project.id}`;
+
+  // One error surface for every action in this row. Absolutely positioned
+  // against the row's own wrapper, because this component renders in three
+  // different layouts and none of them has room to reflow.
+  const errorNote = error ? (
+    <p
+      role="alert"
+      className="absolute left-0 top-full z-40 mt-1 max-w-[16rem] rounded-control bg-atelier-surface/95 px-2 py-1 text-[11px] leading-snug text-red-600 shadow-[0_0_0_1px_var(--frost-ring)] backdrop-blur-xl dark:text-red-400"
+    >
+      {error}
+    </p>
+  ) : null;
 
   const menu = !renaming && (
     <div ref={menuRef} className="relative flex-shrink-0">
@@ -342,6 +366,7 @@ export function ProjectRow({
         ) : (
           menu
         )}
+        {errorNote}
       </div>
     );
   }
@@ -396,6 +421,7 @@ export function ProjectRow({
           </Link>
         )}
         {menu}
+        {errorNote}
       </div>
     );
   }
@@ -455,6 +481,7 @@ export function ProjectRow({
         )}
         {menu}
       </div>
+      {errorNote}
     </div>
   );
 }

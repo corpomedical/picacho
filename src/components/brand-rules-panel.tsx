@@ -44,19 +44,32 @@ export function BrandRulesPanel({
     router.refresh();
   }
 
+  // Both of these discarded their result and refreshed anyway, so a failed
+  // toggle or delete rendered as the rule simply snapping back — the panel
+  // already has an error line, it just was not being fed.
   async function handleToggle(rule: BrandRule) {
+    setError(null);
     const fd = new FormData();
     fd.set("id", rule.id);
     fd.set("active", String(!rule.active));
-    await toggleBrandRule(fd);
+    const result = await toggleBrandRule(fd);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
     router.refresh();
   }
 
   async function handleDelete(rule: BrandRule) {
     if (!window.confirm(b.deleteConfirm)) return;
+    setError(null);
     const fd = new FormData();
     fd.set("id", rule.id);
-    await deleteBrandRule(fd);
+    const result = await deleteBrandRule(fd);
+    if (result.error) {
+      setError(result.error);
+      return;
+    }
     router.refresh();
   }
 

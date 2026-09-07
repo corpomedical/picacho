@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
-import { shareToCommunity, unshareFromCommunity } from "@/lib/community/actions";
+import {
+  shareToCommunity,
+  unshareFromCommunity,
+} from "@/lib/community/actions";
 import { cn } from "@/lib/cn";
 
 // "Share to community" on a finished render — opt-in per render, with an
@@ -12,7 +15,15 @@ import { cn } from "@/lib/cn";
 
 function GlobeIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      {...props}
+    >
       <circle cx="12" cy="12" r="9" />
       <path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18" />
     </svg>
@@ -40,7 +51,8 @@ export function CommunityShareButton({
   useEffect(() => {
     if (!open) return;
     function onClick(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+      if (boxRef.current && !boxRef.current.contains(e.target as Node))
+        setOpen(false);
     }
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
@@ -62,26 +74,47 @@ export function CommunityShareButton({
 
   async function handleUnshare() {
     setBusy(true);
+    setError("");
     const { error: unshareError } = await unshareFromCommunity(generationId);
     setBusy(false);
-    if (!unshareError) setShared(false);
+    if (unshareError) {
+      // Was a bare no-op: the post stayed public and the button just went
+      // un-busy, which reads as "removed" to the person who clicked it.
+      setError(unshareError);
+      return;
+    }
+    setShared(false);
   }
 
   if (shared) {
+    // Wrapped so an unshare failure has somewhere to appear: the error line
+    // further down belongs to the share popover, which this branch never
+    // renders. className stays on the BUTTON — the action row's wrapping
+    // depends on it (see the note below).
     return (
-      <button
-        type="button"
-        onClick={handleUnshare}
-        disabled={busy}
-        className={cn(
-          "inline-flex items-center gap-1.5 rounded-full border border-atelier-rule bg-atelier-surface px-3.5 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50",
-          className,
+      <span className="inline-flex flex-col items-start gap-1">
+        <button
+          type="button"
+          onClick={handleUnshare}
+          disabled={busy}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-full border border-atelier-rule bg-atelier-surface px-3.5 py-1.5 text-xs font-medium text-atelier-muted transition-colors hover:border-atelier-muted hover:text-atelier-ink disabled:opacity-50",
+            className,
+          )}
+          title={c.unshare}
+        >
+          <GlobeIcon className="h-3.5 w-3.5 text-atelier-accent" />
+          {c.shared}
+        </button>
+        {error && (
+          <p
+            role="alert"
+            className="text-[11px] text-red-600 dark:text-red-400"
+          >
+            {error}
+          </p>
         )}
-        title={c.unshare}
-      >
-        <GlobeIcon className="h-3.5 w-3.5 text-atelier-accent" />
-        {c.shared}
-      </button>
+      </span>
     );
   }
 
@@ -109,8 +142,12 @@ export function CommunityShareButton({
       </button>
       {open && (
         <div className="absolute left-0 top-full z-30 mt-2 w-72 rounded-control bg-atelier-surface/95 backdrop-blur-xl p-3 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.3)]">
-          <p className="text-xs font-semibold text-atelier-ink">{c.confirmTitle}</p>
-          <p className="mt-1 text-[11px] leading-relaxed text-atelier-muted">{c.confirmBody}</p>
+          <p className="text-xs font-semibold text-atelier-ink">
+            {c.confirmTitle}
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-atelier-muted">
+            {c.confirmBody}
+          </p>
           <input
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -118,7 +155,11 @@ export function CommunityShareButton({
             maxLength={200}
             className="mt-2 w-full rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/80 focus:border-atelier-accent focus:outline-none"
           />
-          {error && <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">{error}</p>}
+          {error && (
+            <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">
+              {error}
+            </p>
+          )}
           <button
             type="button"
             onClick={handleShare}
