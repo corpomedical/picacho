@@ -172,7 +172,7 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
   },
   seedance: {
     kind: "video",
-    identity: { max: 4, mechanism: "citation", required: true },
+    identity: { max: 4, mechanism: "citation", required: false },
     outfitImage: true,
     continuation: true,
     startEndFrames: false,
@@ -187,7 +187,13 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
   },
   "seedance-2": {
     kind: "video",
-    identity: { max: 4, mechanism: "citation", required: true },
+    // required:false since 2026-09-07. The catalogue endpoint moved to
+    // text-to-video on 2026-09-06 and this row was missed, so the composer
+    // went on raising a BLOCKING "needs a reference photo" for a model that no
+    // longer needs one — the feature shipped and was unusable. Two sources of
+    // truth for the same fact; requiresReferenceImage() reads the endpoint,
+    // this reads a hand-kept boolean, and only the endpoint got updated.
+    identity: { max: 4, mechanism: "citation", required: false },
     outfitImage: true,
     continuation: true,
     startEndFrames: false,
@@ -213,7 +219,7 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
   // guess.
   "seedance-2-fast": {
     kind: "video",
-    identity: { max: 4, mechanism: "citation", required: true },
+    identity: { max: 4, mechanism: "citation", required: false },
     outfitImage: false,
     continuation: false,
     startEndFrames: false,
@@ -227,7 +233,7 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
   },
   "seedance-2-mini": {
     kind: "video",
-    identity: { max: 4, mechanism: "citation", required: true },
+    identity: { max: 4, mechanism: "citation", required: false },
     outfitImage: false,
     continuation: false,
     startEndFrames: false,

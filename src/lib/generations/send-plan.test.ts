@@ -5,12 +5,14 @@
 // in a later phase, the test changes IN THE SAME COMMIT, never silently.
 
 import { describe, expect, it } from "vitest";
+import { VIDEO_MODELS, requiresReferenceImage } from "./providers/video-models";
 import {
   CHARACTERLESS_MODEL_IDS,
   MODEL_CAPABILITIES,
   estimateSpeechSeconds,
   resolveSendPlan,
   type ResolveInput,
+  type ModelCapabilities,
   photorealFallback,
 } from "./send-plan";
 
@@ -462,7 +464,15 @@ describe("identity.required — what the character chip warns about", () => {
   it("requires a character on every lane that starts from a reference frame", () => {
     // These endpoints are image-to-video or reference-to-video: without a
     // photo there is nothing to start from, and send-plan blocks the send.
-    for (const id of ["kling-2.5", "kling-o3", "kling-o3-pro", "seedance", "seedance-2"] as const) {
+    //
+    // seedance and seedance-2 were in this list until 2026-09-07 and are
+    // deliberately no longer: their catalogue endpoints moved to
+    // text-to-video on 2026-09-06, so a characterless send is now legal and
+    // blocking it made the shipped feature unusable. The hardcoded list is
+    // exactly how that drifted unnoticed for a day, so the pairing is now
+    // ALSO asserted derivationally against requiresReferenceImage() below —
+    // this list is the readable case, that one is the one that cannot rot.
+    for (const id of ["kling-2.5", "kling-o3", "kling-o3-pro"] as const) {
       expect(MODEL_CAPABILITIES[id].identity.required).toBe(true);
       const plan = resolveSendPlan({ ...base, modelId: id, character: null });
       expect(issue(plan, "NEEDS_REFERENCE_PHOTO")?.severity).toBe("block");
@@ -803,5 +813,43 @@ describe("a timing cue on the dialogue line", () => {
       durationSeconds: 5,
     });
     expect(issue(plan, "DIALOGUE_CUE_PAST_CLIP")).toBeUndefined();
+  });
+});
+
+// The two sources of truth for "does this model need a reference photo"
+// (2026-09-07 regression).
+//
+// requiresReferenceImage() reads the catalogue's falEndpoint; MODEL_CAPABILITIES
+// carries a hand-kept `identity.required` boolean. On 2026-09-06 the Seedance
+// endpoints moved to text-to-video and only the first was updated — so the
+// composer kept raising a BLOCKING "needs a reference photo" for four models
+// that no longer needed one, and the shipped feature was unusable. Nothing
+// failed; the two facts simply disagreed in silence.
+describe("identity.required agrees with the endpoint it describes", () => {
+  it("never demands a reference for a text-to-video endpoint", () => {
+    for (const model of VIDEO_MODELS) {
+      const caps = (MODEL_CAPABILITIES as Record<string, ModelCapabilities | undefined>)[model.id];
+      if (!caps) continue;
+      if (!requiresReferenceImage(model)) {
+        expect(
+          caps.identity.required,
+          `${model.id} sends to ${model.falEndpoint}, which needs no reference, but ` +
+            `MODEL_CAPABILITIES still marks identity.required — the composer will block it.`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("does demand one where the endpoint genuinely starts from a frame", () => {
+    // The other direction: a model that CANNOT run without an image must say
+    // so, or the composer lets a send through that the provider will refuse.
+    for (const model of VIDEO_MODELS) {
+      const caps = (MODEL_CAPABILITIES as Record<string, ModelCapabilities | undefined>)[model.id];
+      if (!caps || !requiresReferenceImage(model)) continue;
+      expect(
+        caps.identity.required,
+        `${model.id} sends to ${model.falEndpoint}, which cannot start without an image.`,
+      ).toBe(true);
+    }
   });
 });
