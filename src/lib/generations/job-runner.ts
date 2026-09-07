@@ -633,6 +633,20 @@ async function refundDialogueSurcharge(generationId: string): Promise<void> {
  * charging them with this render's token count would double-count the lane's
  * cost the moment anything retried.
  */
+/**
+ * Stamps how long the render took onto the last attempt log.
+ *
+ * Same placement and reasoning as withProviderCost below: analysis data lives
+ * in pipeline_log beside the render it describes, never in a column that a
+ * late migration could turn into a failed terminal write.
+ */
+function withQueueSeconds(attempts: AttemptLog[], seconds: number | null): AttemptLog[] {
+  if (seconds === null || attempts.length === 0) return attempts;
+  const stamped = attempts.slice();
+  stamped[stamped.length - 1] = { ...stamped[stamped.length - 1], queueSeconds: seconds };
+  return stamped;
+}
+
 function withProviderCost(
   attempts: AttemptLog[] | undefined,
   provider: QueuedVideoJob["provider"],
@@ -830,13 +844,36 @@ async function finish(
 ): Promise<boolean> {
   const admin = createAdminClient();
 
+  // How long this render actually took, read BEFORE the job row is deleted a
+  // few lines below — after that the only record of when it started is gone.
+  // Wall clock per stage per model is the reliability data the circuit breaker
+  // and the cost model both guess at today, and it is free to keep.
+  //
+  // A small extra read rather than a second UPDATE: the terminal write below
+  // is deliberately the only one, so the score and the row it describes can
+  // never disagree. Best-effort — a failure here must never block a finish.
+  let queueSeconds: number | null = null;
+  try {
+    const { data: jobRow } = await admin
+      .from("generation_jobs")
+      .select("started_at")
+      .eq("generation_id", generationId)
+      .maybeSingle();
+    const startedAt = jobRow?.started_at ? Date.parse(jobRow.started_at as string) : NaN;
+    if (Number.isFinite(startedAt)) {
+      queueSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
+    }
+  } catch {
+    queueSeconds = null;
+  }
+
   const { data: transitioned, error: transitionError } = await admin
     .from("generations")
     .update({
       status: outcome.status,
       attempts: outcome.attempts.length,
       result_url: outcome.status === "succeeded" ? outcome.resultUrl : null,
-      pipeline_log: outcome.attempts,
+      pipeline_log: withQueueSeconds(outcome.attempts, queueSeconds),
       progress_stage: null,
       // NOTE: credits are NOT zeroed here. Releasing the monthly allowance is a
       // refund, and every refund must pass through the single, flag-gated
@@ -1107,6 +1144,35 @@ async function finish(
 
           const verdict = await scoreIdentityMatch(frameUrl, signedIdentity.signedUrl, traitSummary);
           if (verdict) {
+            // Provenance goes where the image lane's goes — pipeline_log — so
+            // there is ONE place to look for "which scorer produced this",
+            // rather than a column for video and a log entry for stills.
+            //
+            // Read-modify-write is safe here specifically: the row went
+            // terminal a few lines above and nothing else writes pipeline_log
+            // after that. It rides in the same UPDATE as the score, so it
+            // costs one read and no extra write.
+            let stampedLog: AttemptLog[] | null = null;
+            try {
+              const { data: logRow } = await admin
+                .from("generations")
+                .select("pipeline_log")
+                .eq("id", generationId)
+                .maybeSingle();
+              const log = (logRow?.pipeline_log ?? []) as AttemptLog[];
+              if (Array.isArray(log) && log.length > 0) {
+                stampedLog = log.slice();
+                stampedLog[stampedLog.length - 1] = {
+                  ...stampedLog[stampedLog.length - 1],
+                  scorerVersion: verdict.scorerVersion,
+                  identityAttempts: [
+                    { score: verdict.score, notes: verdict.notes || null, delivered: true },
+                  ],
+                };
+              }
+            } catch {
+              stampedLog = null;
+            }
             // `unusable` is deliberately NOT acted on here, unlike the image
             // lane which auto-fails and refunds a blank frame. On video it
             // would be reading one still and condemning a whole clip on it —
@@ -1119,6 +1185,7 @@ async function finish(
                 match_notes: verdict.unusable
                   ? `${verdict.notes || "Scored from the middle frame."} (Frame read as blank or unusable.)`.slice(0, 500)
                   : verdict.notes || null,
+                ...(stampedLog ? { pipeline_log: stampedLog } : {}),
               })
               .eq("id", generationId);
             if (scoreError) {

@@ -39,6 +39,30 @@ export type GateOutcome = {
   logLines: string[];
   /** The storage URL of the losing attempt, if a retry happened. */
   discardedUrl: string | null;
+  /**
+   * EVERY attempt the gate scored, in the order it made them — not just the
+   * one delivered.
+   *
+   * Added 2026-09-07. A gate run that retried produced two renders of the same
+   * prompt for the same character and scored both, and the loser's score was
+   * thrown away the moment the winner was chosen. That pair — same intent, two
+   * outcomes, both measured — is the only labelled data this product generates
+   * for free, and it was being discarded on the way to the database.
+   *
+   * The losing IMAGE is still swept (see the caller): an unclaimed render sits
+   * in the bucket billed and fetchable through a capability URL that never
+   * expires. The number costs nothing to keep and is the part worth keeping.
+   */
+  attempts: GateAttempt[];
+  /** Which scorer produced these numbers. Null when scoring did not run. */
+  scorerVersion: string | null;
+};
+
+export type GateAttempt = {
+  score: number | null;
+  notes: string | null;
+  /** True for the attempt actually delivered to the user. */
+  delivered: boolean;
 };
 
 export type GateDeps = {
@@ -77,20 +101,26 @@ async function score(
   imageUrl: string,
   identityPhotoUrl: string,
   traitSummary: string,
-): Promise<{ score: number | null; notes: string | null; unusable: boolean }> {
+): Promise<{
+  score: number | null;
+  notes: string | null;
+  unusable: boolean;
+  scorerVersion: string | null;
+}> {
   try {
     const verdict = await scoreIdentityMatch(imageUrl, identityPhotoUrl, traitSummary);
-    if (!verdict) return { score: null, notes: null, unusable: false };
+    if (!verdict) return { score: null, notes: null, unusable: false, scorerVersion: null };
     return {
       score: typeof verdict.score === "number" ? verdict.score : null,
       notes: verdict.notes || null,
       unusable: Boolean(verdict.unusable),
+      scorerVersion: verdict.scorerVersion,
     };
   } catch {
     // Best-effort, exactly as before the gate existed: a scoring hiccup must
     // never affect the generation. identityGateDecision reads null as "not
     // measured" and passes rather than spending money on a re-render.
-    return { score: null, notes: null, unusable: false };
+    return { score: null, notes: null, unusable: false, scorerVersion: null };
   }
 }
 
@@ -113,6 +143,8 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     return {
       resultUrl: deps.resultUrl,
       matchScore: first.score,
+      attempts: [{ score: first.score, notes: first.notes, delivered: true }],
+      scorerVersion: first.scorerVersion,
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
@@ -133,6 +165,8 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     return {
       resultUrl: deps.resultUrl,
       matchScore: first.score,
+      attempts: [{ score: first.score, notes: first.notes, delivered: true }],
+      scorerVersion: first.scorerVersion,
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
@@ -159,6 +193,8 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     return {
       resultUrl: deps.resultUrl,
       matchScore: first.score,
+      attempts: [{ score: first.score, notes: first.notes, delivered: true }],
+      scorerVersion: first.scorerVersion,
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
@@ -192,6 +228,8 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     return {
       resultUrl: deps.resultUrl,
       matchScore: first.score,
+      attempts: [{ score: first.score, notes: first.notes, delivered: true }],
+      scorerVersion: first.scorerVersion,
       matchNotes: first.notes,
       retries: 0,
       settledAt: null,
@@ -230,6 +268,11 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     return {
       resultUrl: winnerUrl,
       matchScore: winnerScore,
+      attempts: [
+        { score: first.score, notes: first.notes, delivered: keepFirst },
+        { score: second.score, notes: second.notes, delivered: !keepFirst },
+      ],
+      scorerVersion: second.scorerVersion ?? first.scorerVersion,
       matchNotes: winnerNotes,
       retries: 1,
       settledAt: new Date().toISOString(),
@@ -251,6 +294,11 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     resultUrl: winnerUrl,
     matchScore: winnerScore,
     matchNotes: winnerNotes,
+    attempts: [
+      { score: first.score, notes: first.notes, delivered: keepFirst },
+      { score: second.score, notes: second.notes, delivered: !keepFirst },
+    ],
+    scorerVersion: second.scorerVersion ?? first.scorerVersion,
     retries: 1,
     settledAt: null,
     keptPrevious: keepFirst,

@@ -4,6 +4,7 @@
 // than asking the same model to check its own work.
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { identityScorerVersion } from "@/lib/generations/scorer-version";
 
 // Characters v2: image-level identity verification. Compares a finished
 // generation against the character's identity photo (gallery photo #1) and
@@ -16,7 +17,7 @@ export async function scoreIdentityMatch(
   resultImageUrl: string,
   identityImageUrl: string,
   traitSummary: string,
-): Promise<{ score: number; notes: string; unusable: boolean } | null> {
+): Promise<{ score: number; notes: string; unusable: boolean; scorerVersion: string } | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   try {
@@ -81,6 +82,9 @@ export async function scoreIdentityMatch(
       score,
       notes: typeof parsed.notes === "string" ? parsed.notes.slice(0, 300) : "",
       unusable: parsed.unusable === true,
+      // Stamped next to the value it qualifies, so a score is never a bare
+      // number whose origin has to be guessed from its timestamp.
+      scorerVersion: identityScorerVersion(process.env.OPENAI_MODEL),
     };
   } catch {
     return null;

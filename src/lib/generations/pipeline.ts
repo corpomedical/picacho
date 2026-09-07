@@ -86,6 +86,27 @@ export type AttemptLog = {
   //
   // Written only when a render actually took the ModelArk lane, so their
   // absence means "fal", exactly as it does in the job payload.
+  /**
+   * Every identity attempt the gate scored on this render, and which scorer
+   * scored them. Rides alongside for the same reason `provider` does: it is
+   * ours to analyse, not part of the user-facing story of their render, so it
+   * persists in pipeline_log and renders nowhere.
+   *
+   * Added 2026-09-07. A gate run that retried scored TWO renders of the same
+   * prompt for the same character, and only the winner's number survived —
+   * the pair was discarded on the way to the database. It is the one labelled
+   * dataset this product produces for free.
+   *
+   * In pipeline_log rather than its own column deliberately: this is written
+   * inside the UPDATE that makes a generation terminal, and naming a column
+   * that has not been migrated yet fails that whole statement. A missing
+   * column here would not lose data, it would stop renders from finishing.
+   */
+  identityAttempts?: { score: number | null; notes: string | null; delivered: boolean }[];
+  /** Which scorer produced those numbers, e.g. "gpt-5.4-mini/p1". */
+  scorerVersion?: string | null;
+  /** Wall-clock seconds from the job row being created to the terminal write. */
+  queueSeconds?: number;
   /** Which provider held this render. Absent on every fal row, past or future. */
   provider?: "byteplus";
   /** ModelArk's own usage.completion_tokens — this lane's only real invoice. */

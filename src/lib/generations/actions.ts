@@ -388,6 +388,27 @@ export async function promoteGenerationToReference(
   return { error: null };
 }
 
+/**
+ * Stamps the gate's full record onto the last attempt log.
+ *
+ * Mirrors withProviderCost in job-runner.ts: analysis data belongs in
+ * pipeline_log beside the render it describes, not in the user-facing steps
+ * and not in a column that a late migration could turn into a failed write.
+ */
+function withIdentityRecord(
+  attempts: AttemptLog[],
+  gate: GateOutcome | null,
+): AttemptLog[] {
+  if (!gate || attempts.length === 0) return attempts;
+  const stamped = attempts.slice();
+  stamped[stamped.length - 1] = {
+    ...stamped[stamped.length - 1],
+    identityAttempts: gate.attempts,
+    scorerVersion: gate.scorerVersion,
+  };
+  return stamped;
+}
+
 // Shared cost/abuse guardrail for both single and multi-angle generation.
 
 export async function runGeneration(formData: FormData): Promise<RunResult> {
@@ -1971,7 +1992,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           status: succeeded && !gateOutcome?.unusable ? "succeeded" : "failed",
           attempts: attempts.length,
           result_url: gateOutcome?.unusable ? null : resultUrl,
-          pipeline_log: attempts,
+          // Both gate attempts and the scorer that judged them ride out on the
+          // last log entry, the same way provider/providerTokens do. Without
+          // this the losing render's score — half of a free preference pair —
+          // is gone the moment the winner is chosen.
+          pipeline_log: withIdentityRecord(attempts, gateOutcome),
           // Folded into the terminal write rather than a second UPDATE. The
           // old scoring block ran AFTER this write and issued its own; one
           // write means the score and the row it describes can never
