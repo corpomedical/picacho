@@ -130,10 +130,7 @@ export default async function AppHome() {
           posterUrl="/reel-default.jpg"
           eyebrow={d.reelExampleTitle}
           headline={d.reelExampleHeadline}
-          subtitle={d.reelExampleBody}
-          href="/app/character/new"
-          ctaLabel={d.setupCharacterCta}
-          replayLabel={d.reelReplay}
+          line={d.reelExampleBody}
         />
         <div className="flex flex-col items-center justify-center text-center">
         {profile?.has_completed_onboarding !== true && <FirstRunTour />}
@@ -219,7 +216,7 @@ export default async function AppHome() {
     .slice(0, 6);
 
   return (
-    <div className="mx-auto max-w-3xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-8 pb-24">
       {/* Cinema first, working surface under it — direction F. The band is not
           a card on a dashboard; it is the top of the page, and the sheet below
           rides up over its bottom edge. */}
@@ -229,29 +226,21 @@ export default async function AppHome() {
           videoUrl={reelVideoUrl}
           posterUrl={reelPosterUrl}
           eyebrow={d.reelTitle}
+          builtAt={(reel?.built_at as string | null) ?? null}
+          locale={locale}
           headline={reelCharacterName ?? d.reelExampleHeadline}
-          subtitle={
+          line={
             reel?.takes
               ? reel.mean_identity
-                ? `${reel.takes} takes · ${reel.mean_identity} mean identity`
-                : `${reel.takes} takes`
+                ? formatMsg(d.reelLine, { takes: reel.takes, mean: reel.mean_identity })
+                : formatMsg(d.reelLinePlain, { takes: reel.takes })
               : null
           }
           cuts={reelCuts}
           meanIdentity={(reel?.mean_identity as number | null) ?? null}
           cast={reelCast}
           selectedCharacterId={(reel?.character_profile_id as string | null) ?? null}
-          href={
-            reel?.character_profile_id
-              ? `/app/generate?character=${reel.character_profile_id}`
-              : "/app/generate"
-          }
-          ctaLabel={
-            reelCharacterName
-              ? formatMsg(d.reelCta, { name: reelCharacterName })
-              : d.reelExampleCta
-          }
-          replayLabel={d.reelReplay}
+          addCharacterHref="/app/character/new"
         />
       ) : (
         // No reel yet — a character with no video takes, or takes the cron has
@@ -263,11 +252,9 @@ export default async function AppHome() {
           posterUrl="/reel-default.jpg"
           eyebrow={d.reelExampleTitle}
           headline={d.reelExampleHeadline}
-          subtitle={d.reelExampleBody}
-          href="/app/generate?type=video"
-          ctaLabel={d.reelExampleCta}
-          replayLabel={d.reelReplay}
+          line={d.reelExampleBody}
           cast={reelCast}
+          addCharacterHref="/app/character/new"
         />
       )}
 
@@ -425,6 +412,37 @@ export default async function AppHome() {
       )}
 
       <InstallAppHint />
+
+      {/* The prompt bar, as the mockup has it: fixed at the foot of the
+          screen, not a button inside the band. Offset past the desktop
+          sidebar; the page carries pb-24 so nothing hides beneath it. */}
+      <div className="fixed inset-x-0 bottom-4 z-20 px-4 md:pl-72">
+        <Link
+          href={
+            reel?.character_profile_id
+              ? `/app/generate?character=${reel.character_profile_id}`
+              : "/app/generate"
+          }
+          className="mx-auto flex max-w-3xl items-center gap-2.5 rounded-full border border-atelier-rule bg-atelier-surface/90 py-2 pl-3 pr-2 shadow-[0_3px_8px_rgba(33,29,22,.10),0_18px_34px_-20px_rgba(33,29,22,.40)] backdrop-blur-xl"
+        >
+          {reelCast[0]?.avatarUrl && (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={reelCast[0].avatarUrl}
+              alt=""
+              className="h-7 w-7 flex-none rounded-full object-cover"
+            />
+          )}
+          <span className="flex-1 truncate text-[13px] text-atelier-muted">
+            {reelCharacterName
+              ? formatMsg(d.reelPrompt, { name: reelCharacterName })
+              : d.composerPlaceholder}
+          </span>
+          <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-atelier-ink text-sm text-atelier-paper">
+            ↑
+          </span>
+        </Link>
+      </div>
     </div>
   );
 }
