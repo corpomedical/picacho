@@ -79,11 +79,23 @@ export async function POST(req: Request, ctx: { params: Promise<{ secret: string
   if (!isTerminalArkStatus(body.status)) return new Response("Noted", { status: 200 });
 
   const admin = createAdminClient();
-  const { data: job } = await admin
+  const { data: job, error: jobLookupError } = await admin
     .from("generation_jobs")
     .select("generation_id, user_id")
     .eq("provider_request_id", taskId)
     .maybeSingle<{ generation_id: string; user_id: string }>();
+
+  // The error is checked BEFORE the null check, and the order is the whole
+  // point — the fal route fixed exactly this and the reasoning transfers.
+  // A transient DB failure returns no row, which is indistinguishable from
+  // "already handled"; answering 200 to it makes the ack PERMANENT, because
+  // ModelArk only retries a non-2xx. The render then waits for a callback
+  // that will never come again and is written off 45 minutes later by the
+  // reaper. 500 lets it redeliver.
+  if (jobLookupError) {
+    console.error("byteplus webhook: job lookup failed", jobLookupError.message);
+    return new Response("lookup failed", { status: 500 });
+  }
 
   // No row means this was already finished — by a poll, by the reaper, or by
   // an earlier delivery of this same callback. 200 so ModelArk stops retrying

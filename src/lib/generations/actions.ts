@@ -3546,7 +3546,7 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
 
   const { data: row } = await supabase
     .from("generations")
-    .select("id, angle_group_id, content_type, result_url, attachments")
+    .select("id, angle_group_id, content_type, result_url, poster_url, attachments")
     .eq("id", id)
     .eq("user_id", userData.user.id)
     .single();
@@ -3556,7 +3556,7 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
   const { data: group } = row.angle_group_id
     ? await supabase
         .from("generations")
-        .select("id, content_type, result_url, attachments")
+        .select("id, content_type, result_url, poster_url, attachments")
         .eq("angle_group_id", row.angle_group_id)
         .eq("user_id", userData.user.id)
     : { data: null };
@@ -3701,8 +3701,20 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
     .map((r) => extractStoragePath(r.result_url as string | null, "generated-videos"))
     .filter((p): p is string => Boolean(p));
 
-  if (videoPaths.length > 0) {
-    await supabase.storage.from("generated-videos").remove(videoPaths);
+  // The POSTER goes with the video. Every video row carries a poster_url — a
+  // still of its first frame, written into the same bucket beside the mp4 —
+  // and this sweep never fetched the column, let alone removed the object. So
+  // deleting a video left its poster behind: a frame of the very footage the
+  // person asked to be rid of, still fetchable through a capability URL that
+  // does not expire, and still billed as storage. Same extractStoragePath
+  // treatment, so a row that predates our own hosting drops out harmlessly.
+  const posterPaths = rows
+    .map((r) => extractStoragePath(r.poster_url as string | null, "generated-videos"))
+    .filter((p): p is string => Boolean(p));
+
+  const videoObjects = [...new Set([...videoPaths, ...posterPaths])];
+  if (videoObjects.length > 0) {
+    await supabase.storage.from("generated-videos").remove(videoObjects);
   }
 
   // Layers (since 2026-09-03): a Layerize generation additionally owns
@@ -3768,6 +3780,17 @@ export type HistoryTurn = {
   matchScore?: number | null;
   /** chat-attachments storage paths this send carried (recorded 2026-08-31). */
   attachmentPaths?: string[];
+  /**
+   * The same attachments as SIGNED media URLs, in the same order.
+   *
+   * Signed here because it can ONLY be signed here: /api/media compares ?v=
+   * against mediaSig and answers 404 when it does not match, and mediaSig
+   * reads MEDIA_SIGNING_SECRET, which a client component does not have. The
+   * composer was rebuilding these as /api/media/chat-attachments/<path> with
+   * no signature at all, so every attachment chip on a reloaded thread
+   * pointed at a 404.
+   */
+  attachmentUrls?: string[];
 };
 
 export type HistoryAngleClip = {
@@ -3860,6 +3883,9 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
   }
 
   const attempts = (row.pipeline_log ?? []) as AttemptLog[];
+  const threadAttachments = ((row.attachments as string[] | null) ?? []).filter(
+    (p): p is string => typeof p === "string",
+  );
   return {
     kind: "single",
     id: row.id as string,
@@ -3873,9 +3899,8 @@ export async function getGenerationThread(generationId: string): Promise<ChatHis
     matchScore: (row.match_score ?? null) as number | null,
     // Reloaded threads used to come back with the attachment chips missing —
     // the paths were never stored anywhere to reload (2026-08-31).
-    attachmentPaths: ((row.attachments as string[] | null) ?? []).filter(
-      (p) => typeof p === "string",
-    ),
+    attachmentPaths: threadAttachments,
+    attachmentUrls: threadAttachments.map((p) => mediaUrl("chat-attachments", p)),
   };
 }
 

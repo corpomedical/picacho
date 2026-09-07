@@ -1576,12 +1576,16 @@ function historyItemToChatItem(item: ChatHistoryItem): ChatItem {
   // reconstructable: the stable media URL and a display name. Size is
   // unknowable and unused for display; the type is guessed from the
   // extension so video attachments still render as video.
-  const attachments: ChatAttachment[] = (item.attachmentPaths ?? []).map((path) => {
+  const attachments: ChatAttachment[] = (item.attachmentPaths ?? []).map((path, i) => {
     const name = path.split("/").pop() ?? path;
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
     return {
       path,
-      url: `/api/media/chat-attachments/${path}`,
+      // The SIGNED url from the server. Rebuilding the path here produced an
+      // unsigned /api/media URL, which that route answers with 404 — every
+      // attachment on a reloaded thread was a broken chip. The signature
+      // cannot be computed on the client: it needs MEDIA_SIGNING_SECRET.
+      url: item.attachmentUrls?.[i] ?? `/api/media/chat-attachments/${path}`,
       name,
       type: ["mp4", "webm", "mov"].includes(ext) ? `video/${ext}` : `image/${ext || "png"}`,
       size: 0,
