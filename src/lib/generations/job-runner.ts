@@ -380,6 +380,13 @@ export async function refundGenerationCosts(
     // when a rule blocks" promise, flag or no flag). Every other failure
     // class stays behind the switch.
     force?: boolean;
+    // Marks a forced refund that is NOT zero-cost: an identity-gate settle,
+    // which delivered a render and spent two vision calls on top. It keeps
+    // the switch bypass but stays under the daily ceiling, counted on its
+    // own marker (identity_gated_at) so it neither eats the failure budget
+    // nor hides behind it. Without this the settle path was the one refund
+    // class in the product with no bound at all.
+    settlement?: boolean;
   },
 ): Promise<boolean> {
   const admin = createAdminClient();
@@ -430,7 +437,7 @@ export async function refundGenerationCosts(
   // withholding legitimate refunds from people who'd merely hit a busy
   // moment. Only rows this function stamped in the last 24h count.
   const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const [{ data: profile }, { count: forgivenToday }] = await Promise.all([
+  const [{ data: profile }, { count: forgivenToday }, { count: settledToday }] = await Promise.all([
     admin.from("profiles").select("plan, role").eq("id", row.user_id).maybeSingle<{
       plan: PlanId;
       role: string | null;
@@ -440,6 +447,17 @@ export async function refundGenerationCosts(
       .select("id", { count: "exact", head: true })
       .eq("user_id", row.user_id)
       .gte("refunded_at", dayAgo),
+    // Settlements are counted on their own marker. identity_gated_at is
+    // stamped by the terminal write BEFORE this runs, so the row being
+    // settled right now is excluded or it would count itself.
+    opts?.settlement
+      ? admin
+          .from("generations")
+          .select("id", { count: "exact", head: true })
+          .eq("user_id", row.user_id)
+          .neq("id", generationId)
+          .gte("identity_gated_at", dayAgo)
+      : Promise.resolve({ count: 0 }),
   ]);
 
   // Admins are exempt, same as everywhere else — support and testing must
@@ -450,13 +468,27 @@ export async function refundGenerationCosts(
   // block, a pre-render 4xx refusal). Capping those meant the 11th likeness
   // refusal in a day kept a credit for a render ByteDance never performed —
   // while the pricing page promised otherwise, unconditionally.
-  if (profile?.role !== "admin" && !opts?.force) {
+  //
+  // A SETTLEMENT is the exception to that exemption, and the reason this
+  // option exists. An identity settle is forced past the automatic_refunds
+  // switch like the classes above, but it is emphatically NOT zero-cost: it
+  // delivered the render and burned two vision calls on top. Exempting it
+  // from the ceiling made it the one refund class with no bound at all —
+  // deliberately fail the identity bar twice and the render is free, at the
+  // 3-second cooldown, for as long as you care to repeat it. That is exactly
+  // the "unlimited refund is an unlimited budget" case plans.ts warns about.
+  // It is counted on identity_gated_at rather than refunded_at so it neither
+  // eats the failure budget nor hides behind it.
+  const bounded = !opts?.force || opts?.settlement === true;
+  if (profile?.role !== "admin" && bounded) {
     const cap = refundedFailureDailyCap((profile?.plan ?? "none") as PlanId);
-    if ((forgivenToday ?? 0) >= cap) {
+    const usedToday = opts?.settlement ? (settledToday ?? 0) : (forgivenToday ?? 0);
+    if (usedToday >= cap) {
       console.warn("Refund withheld: daily refunded-failure cap reached", {
         userId: row.user_id,
         cap,
-        forgivenToday,
+        usedToday,
+        kind: opts?.settlement ? "settlement" : "failure",
         generationId,
       });
       return false;

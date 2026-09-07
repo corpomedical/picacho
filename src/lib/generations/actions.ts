@@ -2148,12 +2148,23 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // published standard: the product says the identity is verified, and
       // this row is the product saying it could not verify it.
       //
-      // Forced refunds are exempt from the daily refunded-failure cap by
-      // design, and deliberately leave no refunded_at stamp — which is
-      // exactly why identity_gated_at exists and was written above. It is
-      // the only durable marker that this row was settled, and the guard
-      // that stops a second settlement refunding twice.
-      const refunded = await refundGenerationCosts(placeholder.id, { force: true });
+      // settlement:true, not force alone. Forced refunds skip the daily
+      // ceiling because they are reserved for classes that provably cost
+      // nothing — and a settle is not one: it DELIVERED this render and
+      // spent two vision calls proving it should not have. Unbounded, that
+      // made deliberately failing the identity bar twice a way to take every
+      // render for free at the 3-second cooldown.
+      //
+      // The comment that stood here claimed identity_gated_at was already
+      // "the guard that stops a second settlement refunding twice". It was
+      // written and never read anywhere in the repo, so no such guard
+      // existed. It does now: refundGenerationCosts counts settlements by
+      // that column against the same per-plan ceiling every other refund
+      // class answers to.
+      const refunded = await refundGenerationCosts(placeholder.id, {
+        force: true,
+        settlement: true,
+      });
       const line = gateLogLine(
         {
           action: "settle",
@@ -4724,7 +4735,12 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
         attempt = keepFirst ? first : second;
         if (settle.action === "settle") {
           try {
-            await refundGenerationCosts(editGenerationId, { force: true });
+            // Same bound as the main lane's settle — this one delivers a
+            // re-cut layer and is equally repeatable.
+            await refundGenerationCosts(editGenerationId, {
+              force: true,
+              settlement: true,
+            });
             refunded = true;
           } catch (refundErr) {
             console.error(`layer edit settle refund failed for ${editGenerationId}:`, refundErr);
