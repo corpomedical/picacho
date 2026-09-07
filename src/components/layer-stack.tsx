@@ -127,7 +127,13 @@ export function LayerStack({ layers, tierLabel, generationId }: {
                   type="button"
                   onClick={() => toggle(layer.id)}
                   aria-pressed={!isHidden}
-                  title={isHidden ? "Show" : "Hide"}
+                  // The button's only content is a check glyph that goes
+                  // transparent when hidden, so this text IS its name — and it
+                  // was the one English string left in a translated panel.
+                  // aria-label as well as title: title alone is an unreliable
+                  // accessible name and never reaches a touch device.
+                  aria-label={isHidden ? L.show : L.hide}
+                  title={isHidden ? L.show : L.hide}
                   className={
                     "flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-[6px] border text-[10px] transition-colors " +
                     (isHidden

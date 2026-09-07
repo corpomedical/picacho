@@ -901,6 +901,8 @@ const pt = {
     reportSending: "Enviando…",
   },
   layers: {
+    hide: "Ocultar",
+    show: "Mostrar",
     pageEyebrow: "Ferramentas",
     pageSub: "Divida qualquer imagem em camadas transparentes com nome e mude uma sem tocar nas outras.",
     pagePick: "Ou escolha uma imagem recente",

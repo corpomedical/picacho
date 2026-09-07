@@ -974,6 +974,8 @@ const en = {
     reportSending: "Sending…",
   },
   layers: {
+    hide: "Hide",
+    show: "Show",
     pageEyebrow: "Tools",
     pageSub: "Split any image into named, transparent layers — then change one without touching the rest.",
     pagePick: "Or pick a recent image",

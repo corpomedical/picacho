@@ -900,6 +900,8 @@ const it = {
     reportSending: "Invio…",
   },
   layers: {
+    hide: "Nascondi",
+    show: "Mostra",
     pageEyebrow: "Strumenti",
     pageSub: "Dividi qualsiasi immagine in livelli trasparenti con un nome e cambiane uno senza toccare il resto.",
     pagePick: "Oppure scegli un'immagine recente",

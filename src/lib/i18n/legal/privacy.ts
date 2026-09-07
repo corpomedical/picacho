@@ -4,12 +4,20 @@ import type { LegalDoc } from "./types";
 // A real, drafted policy reflecting what Picacho actually does today — not
 // boilerplate. It is still a draft: see the "not legal advice" note shown
 // alongside it on the page, and have an attorney review before launch.
-const UPDATED = "August 12, 2026";
+// The "last updated" date is prose, not a token — "August 12, 2026" sat unchanged
+// inside the Spanish, Italian and Portuguese documents, which is the one
+// English sentence left on an otherwise translated legal page.
+const UPDATED: Record<Locale, string> = {
+  en: "August 12, 2026",
+  es: "12 de agosto de 2026",
+  it: "12 agosto 2026",
+  pt: "12 de agosto de 2026",
+};
 
 const privacy: Record<Locale, LegalDoc> = {
   en: {
     title: "Privacy Policy",
-    updated: UPDATED,
+    updated: UPDATED.en,
     intro:
       "This Privacy Policy explains what information Picacho (\"we\", \"us\") collects when you use the Picacho website and app, how we use it, and the choices you have.",
     sections: [
@@ -96,7 +104,7 @@ const privacy: Record<Locale, LegalDoc> = {
   },
   es: {
     title: "Política de privacidad",
-    updated: UPDATED,
+    updated: UPDATED.es,
     intro:
       "Esta Política de privacidad explica qué información recopila Picacho (\"nosotros\") cuando usas el sitio web y la aplicación de Picacho, cómo la usamos y qué opciones tienes.",
     sections: [
@@ -185,7 +193,7 @@ const privacy: Record<Locale, LegalDoc> = {
   },
   pt: {
     title: "Política de Privacidade",
-    updated: UPDATED,
+    updated: UPDATED.pt,
     intro:
       "Esta Política de Privacidade explica quais informações o Picacho (\"nós\") coleta quando você usa o site e o aplicativo Picacho, como as usamos e quais escolhas você tem.",
     sections: [
@@ -274,7 +282,7 @@ const privacy: Record<Locale, LegalDoc> = {
   },
   it: {
     title: "Informativa sulla privacy",
-    updated: UPDATED,
+    updated: UPDATED.it,
     intro:
       "Questa Informativa sulla privacy spiega quali informazioni Picacho (\"noi\") raccoglie quando utilizzi il sito e l'app Picacho, come le utilizziamo e quali scelte hai a disposizione.",
     sections: [

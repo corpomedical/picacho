@@ -1,12 +1,20 @@
 import type { Locale } from "@/lib/i18n/locales";
 import type { LegalDoc } from "./types";
 
-const UPDATED = "August 12, 2026";
+// The "last updated" date is prose, not a token — "August 12, 2026" sat unchanged
+// inside the Spanish, Italian and Portuguese documents, which is the one
+// English sentence left on an otherwise translated legal page.
+const UPDATED: Record<Locale, string> = {
+  en: "August 12, 2026",
+  es: "12 de agosto de 2026",
+  it: "12 agosto 2026",
+  pt: "12 de agosto de 2026",
+};
 
 const terms: Record<Locale, LegalDoc> = {
   en: {
     title: "Terms of Service",
-    updated: UPDATED,
+    updated: UPDATED.en,
     intro:
       "These Terms govern your use of Picacho. By creating an account or using the service, you agree to them.",
     sections: [
@@ -74,7 +82,7 @@ const terms: Record<Locale, LegalDoc> = {
   },
   es: {
     title: "Términos de servicio",
-    updated: UPDATED,
+    updated: UPDATED.es,
     intro:
       "Estos Términos rigen tu uso de Picacho. Al crear una cuenta o usar el servicio, los aceptas.",
     sections: [
@@ -144,7 +152,7 @@ const terms: Record<Locale, LegalDoc> = {
   },
   pt: {
     title: "Termos de Serviço",
-    updated: UPDATED,
+    updated: UPDATED.pt,
     intro: "Estes Termos regem o uso do Picacho. Ao criar uma conta ou usar o serviço, você concorda com eles.",
     sections: [
       {
@@ -213,7 +221,7 @@ const terms: Record<Locale, LegalDoc> = {
   },
   it: {
     title: "Termini di servizio",
-    updated: UPDATED,
+    updated: UPDATED.it,
     intro:
       "Questi Termini regolano il tuo utilizzo di Picacho. Creando un account o utilizzando il servizio, li accetti.",
     sections: [

@@ -5,12 +5,20 @@ import type { LegalDoc } from "./types";
 // addition to the Terms of Service. The two rules below (real-people
 // likeness, and anything involving minors) are enforced strictly and
 // without exception — see the "emphasis" flags used on the page.
-const UPDATED = "August 5, 2026";
+// The "last updated" date is prose, not a token — "August 5, 2026" sat unchanged
+// inside the Spanish, Italian and Portuguese documents, which is the one
+// English sentence left on an otherwise translated legal page.
+const UPDATED: Record<Locale, string> = {
+  en: "August 5, 2026",
+  es: "5 de agosto de 2026",
+  it: "5 agosto 2026",
+  pt: "5 de agosto de 2026",
+};
 
 const contentPolicy: Record<Locale, LegalDoc> = {
   en: {
     title: "Content Policy",
-    updated: UPDATED,
+    updated: UPDATED.en,
     intro:
       "This Content Policy sets the rules for everything you create, upload, or request through Picacho. It applies in addition to our Terms of Service, and every account is expected to follow it without exception.",
     sections: [
@@ -61,7 +69,7 @@ const contentPolicy: Record<Locale, LegalDoc> = {
   },
   es: {
     title: "Política de contenido",
-    updated: UPDATED,
+    updated: UPDATED.es,
     intro:
       "Esta Política de contenido establece las reglas para todo lo que crees, subas o solicites a través de Picacho. Se aplica además de nuestros Términos de servicio, y se espera que todas las cuentas la cumplan sin excepción.",
     sections: [
@@ -112,7 +120,7 @@ const contentPolicy: Record<Locale, LegalDoc> = {
   },
   pt: {
     title: "Política de Conteúdo",
-    updated: UPDATED,
+    updated: UPDATED.pt,
     intro:
       "Esta Política de Conteúdo define as regras para tudo que você cria, envia ou solicita através do Picacho. Ela se aplica em conjunto com nossos Termos de Serviço, e espera-se que todas as contas a sigam sem exceção.",
     sections: [
@@ -163,7 +171,7 @@ const contentPolicy: Record<Locale, LegalDoc> = {
   },
   it: {
     title: "Politica sui contenuti",
-    updated: UPDATED,
+    updated: UPDATED.it,
     intro:
       "Questa Politica sui contenuti stabilisce le regole per tutto ciò che crei, carichi o richiedi tramite Picacho. Si applica in aggiunta ai nostri Termini di servizio, e ogni account è tenuto a rispettarla senza eccezioni.",
     sections: [

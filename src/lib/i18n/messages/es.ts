@@ -901,6 +901,8 @@ const es = {
     reportSending: "Enviando…",
   },
   layers: {
+    hide: "Ocultar",
+    show: "Mostrar",
     pageEyebrow: "Herramientas",
     pageSub: "Divide cualquier imagen en capas transparentes con nombre y cambia una sin tocar el resto.",
     pagePick: "O elige una imagen reciente",
