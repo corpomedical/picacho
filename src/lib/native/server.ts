@@ -34,6 +34,24 @@ export async function isNativeApp(): Promise<boolean> {
 // and the safe direction. A cookie fallback could only make it answer "yes"
 // on a request where we are less sure, which is the one answer that hurts.
 export async function nativeSupportsAuthReturn(): Promise<boolean> {
+  // KILL SWITCH, 2026-09-08. In-app Google sign-in is OFF.
+  //
+  // versionCode 14 shipped it to Play and it is broken on real devices: the
+  // consent screen opens in the browser correctly, but choosing an account
+  // ends up in Gmail composing a mail instead of returning to the app. The
+  // person is left with a button that cannot complete, and no way back.
+  //
+  // Turned off HERE, in the website, on purpose. The capability token was
+  // built so the site decides whether a binary may show these buttons, and
+  // that cuts both ways: this reaches every installed v14 the moment Vercel
+  // deploys, where a Play rollback would take hours and still not reach
+  // anyone who had already updated. Email and password are untouched, which
+  // is what every account used before yesterday.
+  //
+  // TO RE-ENABLE once the redirect is fixed: delete these two lines. The
+  // check below is correct and stays as it is.
+  if (process.env.NATIVE_OAUTH_ENABLED !== "1") return false;
+
   const headerStore = await headers();
   return userAgentSupportsAuthReturn(headerStore.get("user-agent"));
 }
