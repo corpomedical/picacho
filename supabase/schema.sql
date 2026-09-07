@@ -1,4 +1,4 @@
--- Picacho public schema snapshot — generated 2026-09-05
+-- Picacho public schema snapshot — generated 2026-09-07
 -- Read directly from the live database's catalogs (see supabase/README.md).
 -- Reference document: the applied/ SQL files remain the change history.
 
@@ -307,10 +307,23 @@ create table public.generation_reports (
   constraint "generation_reports_pkey" PRIMARY KEY (id),
   constraint "generation_reports_generation_id_fkey" FOREIGN KEY (generation_id) REFERENCES generations(id) ON DELETE CASCADE,
   constraint "generation_reports_user_id_fkey" FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE,
-  constraint "generation_reports_source_check" CHECK ((source = ANY (ARRAY['user'::text, 'auto'::text]))),
+  constraint "generation_reports_source_check" CHECK ((source = ANY (ARRAY['user'::text, 'auto'::text, 'community'::text]))),
   constraint "generation_reports_status_check" CHECK ((status = ANY (ARRAY['open'::text, 'resolved'::text])))
 );
 alter table public.generation_reports enable row level security;
+
+create table public.generation_signals (
+  "id" uuid default gen_random_uuid() not null,
+  "generation_id" uuid not null,
+  "user_id" uuid not null,
+  "kind" text not null,
+  "created_at" timestamp with time zone default now() not null,
+  constraint "generation_signals_pkey" PRIMARY KEY (id),
+  constraint "generation_signals_generation_id_fkey" FOREIGN KEY (generation_id) REFERENCES generations(id) ON DELETE CASCADE,
+  constraint "generation_signals_user_id_fkey" FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE,
+  constraint "generation_signals_kind_check" CHECK ((kind = ANY (ARRAY['downloaded'::text, 'continued'::text, 'shared'::text, 'opened'::text, 'deleted'::text])))
+);
+alter table public.generation_signals enable row level security;
 
 create table public.generations (
   "id" uuid default gen_random_uuid() not null,
@@ -459,7 +472,7 @@ create table public.profiles (
   constraint "profiles_referred_by_fkey" FOREIGN KEY (referred_by) REFERENCES profiles(id) ON DELETE SET NULL,
   constraint "profiles_bonus_credits_non_negative" CHECK ((bonus_credits >= 0)),
   constraint "profiles_free_reference_generations_used_non_negative" CHECK ((free_reference_generations_used >= 0)),
-  constraint "profiles_plan_check" CHECK ((plan = ANY (ARRAY['none'::text, 'starter'::text, 'growth'::text, 'studio'::text, 'elite'::text]))),
+  constraint "profiles_plan_check" CHECK ((plan = ANY (ARRAY['none'::text, 'basic'::text, 'starter'::text, 'growth'::text, 'studio'::text, 'elite'::text]))),
   constraint "profiles_plan_source_check" CHECK ((plan_source = ANY (ARRAY['stripe'::text, 'play'::text]))),
   constraint "profiles_role_check" CHECK ((role = ANY (ARRAY['user'::text, 'admin'::text]))),
   constraint "profiles_status_check" CHECK ((status = ANY (ARRAY['active'::text, 'suspended'::text]))),
@@ -577,6 +590,25 @@ create table public.saved_prompts (
   constraint "saved_prompts_source_input_check" CHECK ((char_length(source_input) <= 2000))
 );
 alter table public.saved_prompts enable row level security;
+
+create table public.user_reels (
+  "user_id" uuid not null,
+  "storage_path" text not null,
+  "poster_path" text,
+  "character_profile_id" uuid,
+  "clip_generation_ids" uuid[] default '{}'::uuid[] not null,
+  "duration_seconds" integer default 0 not null,
+  "byte_size" integer,
+  "takes" integer,
+  "mean_identity" smallint,
+  "built_at" timestamp with time zone default now() not null,
+  "clips" jsonb default '[]'::jsonb not null,
+  constraint "user_reels_pkey" PRIMARY KEY (user_id),
+  constraint "user_reels_character_profile_id_fkey" FOREIGN KEY (character_profile_id) REFERENCES character_profiles(id) ON DELETE SET NULL,
+  constraint "user_reels_user_id_fkey" FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE,
+  constraint "user_reels_duration_sane" CHECK (((duration_seconds >= 0) AND (duration_seconds <= 60)))
+);
+alter table public.user_reels enable row level security;
 
 create table public.voice_presets (
   "id" uuid default gen_random_uuid() not null,
