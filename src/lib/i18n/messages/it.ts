@@ -1175,6 +1175,7 @@ const it = {
     lightboxAlt: "Foto di riferimento (a grandezza intera)",
   },
   projects: {
+    projectGone: "Quel progetto non esiste più.",
     eyebrow: "Studio",
     eyebrowOne: "Progetto",
     theWork: "Il lavoro",

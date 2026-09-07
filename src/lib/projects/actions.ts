@@ -87,7 +87,12 @@ export async function assignCharacterToProject(formData: FormData) {
     .eq("user_id", data.user.id)
     .maybeSingle();
   if (!project) {
-    redirect(`/app/projects?error=${encodeURIComponent("Couldn't find that project.")}`);
+    // A CODE, not an English sentence. The other seven redirects in this file
+    // land on pages that render the raw text; this one lands on the projects
+    // list, which never read the param at all — so the message was dropped and
+    // the person was returned to the list with no explanation whatsoever. A
+    // code lets that page say it in the reader's own language.
+    redirect("/app/projects?error=not_found");
   }
 
   const { error } = await supabase

@@ -1176,6 +1176,7 @@ const pt = {
     lightboxAlt: "Foto de referência (tamanho completo)",
   },
   projects: {
+    projectGone: "Esse projeto não existe mais.",
     eyebrow: "Estúdio",
     eyebrowOne: "Projeto",
     theWork: "O trabalho",

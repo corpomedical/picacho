@@ -43,12 +43,17 @@ import { formatMsg } from "@/lib/i18n/format";
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ view?: string; page?: string }>;
+  searchParams: Promise<{ view?: string; page?: string; error?: string }>;
 }) {
   const { t } = await getServerMessages();
   const p = t.projects;
   const raw = await searchParams;
   const showArchived = raw.view === "archived";
+  // assignCharacterToProject redirects here with ?error=not_found when the
+  // project is gone. This page never read the param, so that message was
+  // dropped and the person landed back on the list with nothing said. Mapped
+  // from a code so it can be said in their own language.
+  const notice = raw.error === "not_found" ? p.projectGone : null;
   const page = parsePage(raw.page);
   const size = PAGE_SIZES.projects;
   const { from, to } = pageRange(page, size);
@@ -194,6 +199,14 @@ export default async function ProjectsPage({
       </div>
 
       <div className="mt-5 h-px bg-atelier-rule" />
+
+      {notice ? (
+        <Card className="mt-5 text-center">
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+            {notice}
+          </p>
+        </Card>
+      ) : null}
 
       {error ? (
         <Card className="mt-5 text-center">
