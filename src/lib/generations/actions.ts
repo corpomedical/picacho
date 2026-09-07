@@ -1871,7 +1871,25 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         contentType === "image" &&
         characterId &&
         resultUrl &&
-        !isFreeTierAccount &&
+        // !consumeFree, not !isFreeTierAccount (2026-09-07 housekeeping).
+        //
+        // These two look interchangeable and are not. isFreeTierAccount
+        // requires purchased_credits === 0; onDailyFreeTier — which decides
+        // who actually SPENDS the daily free slot — checks only plan and bonus
+        // credits. So an account on plan "none" that has bought a credit pack
+        // still spends the free slot, and was still gated.
+        //
+        // That combination is a loop, armed the moment identity_gate_threshold
+        // rises above 0: free-slot render, gate misses twice, the settlement
+        // force-refunds, refund_daily_free_generation sets
+        // free_generation_last_at = NULL, the free slot is handed back, repeat
+        // at the 3-second cooldown. Each cycle burns two paid renders and two
+        // vision calls and costs the user nothing.
+        //
+        // consumeFree is the funding decision itself — the same value written
+        // to free_generation_used on the row — so gating on it cannot drift
+        // from what the render was actually paid with.
+        !consumeFree &&
         isRenderableUrl(resultUrl)
       ) {
         const identityPath = character?.reference_image_urls?.[0];

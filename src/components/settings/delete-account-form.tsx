@@ -29,6 +29,10 @@ export function DeleteAccountForm({ username }: { username: string }) {
         </label>
         <input
           id="confirm_delete"
+          // name= was missing, so the typed confirmation was never submitted
+          // and the entire gate was `disabled` on the button below — a state
+          // no server has ever seen. deleteAccount now re-checks this value.
+          name="confirm_delete"
           className={FIELD}
           value={confirmText}
           onChange={(e) => setConfirmText(e.target.value)}

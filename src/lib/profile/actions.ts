@@ -379,10 +379,38 @@ export async function updatePasswordFromRecovery(formData: FormData): Promise<Ac
 // table's user_id foreign key cascades from (character_profiles, projects,
 // generations, notes) or sets to null for (page_views, to keep anonymized
 // traffic history intact).
-export async function deleteAccount() {
+export async function deleteAccount(formData: FormData) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   if (!data.user) redirect("/login");
+
+  // The typed confirmation, re-checked SERVER-SIDE (2026-09-07 housekeeping).
+  //
+  // Until now this function took no arguments and the comment above said the
+  // gate lived in DeleteAccountForm — but that gate was `disabled` on a button
+  // plus an input with no name attribute, so the value never left the browser.
+  // One POST with a session cookie cancelled Stripe, deleted the auth user,
+  // cascaded every row and purged six storage buckets. The same file already
+  // demands the current password for the strictly less destructive email and
+  // password changes.
+  //
+  // The expected string is derived exactly as the settings page derives what
+  // it ASKS for (profile.username, falling back to the email local part), so
+  // the two can never disagree about what the person was told to type.
+  const { data: confirmProfile } = await supabase
+    .from("profiles")
+    .select("username")
+    .eq("id", data.user.id)
+    .maybeSingle();
+  const expected = (
+    (confirmProfile?.username as string | null) ?? (data.user.email ?? "").split("@")[0]
+  )
+    .trim()
+    .toLowerCase();
+  const typed = ((formData.get("confirm_delete") as string) ?? "").trim().toLowerCase();
+  if (!expected || typed !== expected) {
+    redirect("/app/settings?error=delete_confirm");
+  }
 
   const userId = data.user.id;
   const admin = createAdminClient();

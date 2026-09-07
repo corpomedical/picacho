@@ -1356,6 +1356,7 @@ const es = {
       "Esto elimina permanentemente tu cuenta — personajes, proyectos, tomas y notas incluidos. No hay forma de deshacerlo.",
     typeToConfirm: "Escribe {username} para confirmar",
     deleteMyAccount: "Eliminar mi cuenta",
+    errorDeleteConfirm: "Eso no coincide con tu nombre de usuario, así que no se eliminó nada.",
     editUsername: "Editar nombre de usuario",
     help: "Ayuda",
     showSidebar: "Mostrar barra lateral",

@@ -1356,6 +1356,7 @@ const pt = {
       "Isso exclui permanentemente sua conta — personagens, projetos, takes e notas incluídos. Não há como desfazer.",
     typeToConfirm: "Digite {username} para confirmar",
     deleteMyAccount: "Excluir minha conta",
+    errorDeleteConfirm: "Isso não corresponde ao teu nome de utilizador, por isso nada foi eliminado.",
     editUsername: "Editar nome de usuário",
     help: "Ajuda",
     showSidebar: "Mostrar barra lateral",

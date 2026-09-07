@@ -122,6 +122,9 @@ export default async function SettingsPage({
   // unrecognized — including the free-text database messages profile actions
   // still pass — collapses to one generic localized line.
   const KNOWN_ERRORS: Record<string, string> = {
+    // Server-side refusal from deleteAccount when the typed confirmation
+    // does not match. A code, not a sentence, so it cannot be phished.
+    delete_confirm: s.errorDeleteConfirm,
     "That plan isn't available.": s.errorPlanUnavailable,
     "This plan isn't set up for checkout yet.": s.errorPlanNotConfigured,
     "Couldn't start checkout — try again.": s.errorCheckoutFailed,

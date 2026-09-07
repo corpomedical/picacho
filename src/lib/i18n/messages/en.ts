@@ -1433,6 +1433,7 @@ const en = {
       "This permanently deletes your account — characters, projects, takes, and notes included. There's no undo.",
     typeToConfirm: "Type {username} to confirm",
     deleteMyAccount: "Delete my account",
+    errorDeleteConfirm: "That did not match your username, so nothing was deleted.",
     editUsername: "Edit username",
     help: "Help",
     showSidebar: "Show sidebar",

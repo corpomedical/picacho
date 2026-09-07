@@ -1355,6 +1355,7 @@ const it = {
       "Questo elimina permanentemente il tuo account — personaggi, progetti, riprese e note incluse. Non è possibile annullare.",
     typeToConfirm: "Digita {username} per confermare",
     deleteMyAccount: "Elimina il mio account",
+    errorDeleteConfirm: "Non corrisponde al tuo nome utente, quindi non è stato eliminato nulla.",
     editUsername: "Modifica nome utente",
     help: "Aiuto",
     showSidebar: "Mostra barra laterale",
