@@ -1350,6 +1350,7 @@ const en = {
     inviteCopy: "Copy link",
     inviteCopied: "Copied",
     inviteShare: "Share",
+    inviteEach: "each",
     eyebrow: "Account",
     title: "Settings",
     subtitle: "Everything about your account, in one place.",

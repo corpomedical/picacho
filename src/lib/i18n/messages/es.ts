@@ -1273,6 +1273,7 @@ const es = {
     inviteCopy: "Copiar enlace",
     inviteCopied: "Copiado",
     inviteShare: "Compartir",
+    inviteEach: "cada uno",
     eyebrow: "Cuenta",
     title: "Ajustes",
     subtitle: "Todo sobre tu cuenta, en un solo lugar.",

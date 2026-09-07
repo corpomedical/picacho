@@ -1272,6 +1272,7 @@ const it = {
     inviteCopy: "Copia link",
     inviteCopied: "Copiato",
     inviteShare: "Condividi",
+    inviteEach: "a testa",
     eyebrow: "Account",
     title: "Impostazioni",
     subtitle: "Tutto sul tuo account, in un unico posto.",
