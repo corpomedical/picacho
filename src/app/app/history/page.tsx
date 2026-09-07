@@ -14,6 +14,8 @@ import { DeleteGenerationButton } from "@/components/delete-generation-button";
 import { ContinueChatButton } from "@/components/continue-chat-button";
 import { LocalDate } from "@/components/local-date";
 import { HistoryLiveRefresh } from "@/components/history-live-refresh";
+import { Pager } from "@/components/pager";
+import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from "@/lib/pagination";
 
 // History as a CONTACT SHEET — direction A from the design canvas, operator
 // pick 2026-09-04 ("Go With A").
@@ -87,7 +89,7 @@ function FilterPill({ href, active, children }: { href: string; active: boolean;
 export default async function HistoryPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; outcome?: string }>;
+  searchParams: Promise<{ type?: string; outcome?: string; page?: string }>;
 }) {
   const { t } = await getServerMessages();
   const h = t.history;
@@ -111,6 +113,9 @@ export default async function HistoryPage({
   const type = raw.type === "video" || raw.type === "image" ? raw.type : undefined;
   const outcome = raw.outcome === "passed" || raw.outcome === "failed" ? raw.outcome : undefined;
   const filtered = Boolean(type || outcome);
+  const page = parsePage(raw.page);
+  const size = PAGE_SIZES.history;
+  const { from, to } = pageRange(page, size);
 
   const filterHref = (next: { type?: "video" | "image"; outcome?: "passed" | "failed" }) => {
     const params = new URLSearchParams();
@@ -140,15 +145,25 @@ export default async function HistoryPage({
   if (outcome) query = query.eq("status", outcome === "passed" ? "succeeded" : "failed");
 
   const [{ data: generations, error }, { data: profile }, usedThisMonth] = await Promise.all([
-    query.order("created_at", { ascending: false }).limit(50),
+    // .range, not .limit(50). History is the ONLY surface that shows failed
+    // renders — media, images and videos all filter status "failed" out — so
+    // capping it at 50 with no way forward meant the 51st render onward was
+    // unreachable in the product, and this page's own header still called
+    // itself "the COMPLETE record". PAGE_SIZES.history has been sitting in
+    // lib/pagination.ts unused since paging shipped to four other surfaces.
+    query.order("created_at", { ascending: false }).range(from, to),
     supabase.from("profiles").select("plan, bonus_credits").eq("id", userData.user.id).single(),
     getMonthlyUsage(userData.user.id),
   ]);
 
   if (error) console.error("Failed to load generations:", error);
 
+  // The probe row is dropped BEFORE anything else reads the list, so the
+  // grouping, the character lookup and the cards all see exactly this page.
+  const { rows: pageRows, hasNext } = takePage(generations ?? [], size);
+
   const characterIds = Array.from(
-    new Set((generations ?? []).map((g) => g.character_profile_id).filter(Boolean)),
+    new Set(pageRows.map((g) => g.character_profile_id).filter(Boolean)),
   );
   const { data: characters } = characterIds.length
     ? await supabase.from("character_profiles").select("id, name").in("id", characterIds)
@@ -167,7 +182,7 @@ export default async function HistoryPage({
   // near-duplicate rows.
   type GenerationRow = NonNullable<typeof generations>[number];
   const groups = new Map<string, GenerationRow[]>();
-  for (const g of generations ?? []) {
+  for (const g of pageRows) {
     const key = g.angle_group_id ?? g.id;
     const arr = groups.get(key) ?? [];
     arr.push(g);
@@ -258,7 +273,7 @@ export default async function HistoryPage({
           dozens of loops), and the finished result replaces the pulsing
           chip without a manual reload. */}
       <HistoryLiveRefresh
-        generationIds={(generations ?? [])
+        generationIds={pageRows
           .filter((g) => g.status === "generating")
           .slice(0, 6)
           .map((g) => g.id as string)}
@@ -478,6 +493,21 @@ export default async function HistoryPage({
           ))
         )}
       </div>
+
+      {/* Counted in CARDS, not rows. A multi-angle request is several rows
+          sharing one angle_group_id and collapses into a single card, so the
+          honest number for "showing x-y" is what is on screen. pageHref keeps
+          the type/outcome chips in the URL — a next page that silently
+          dropped the active filter would be worse than no paging. */}
+      {cards.length > 0 && (
+        <Pager
+          prevHref={page > 1 ? pageHref("/app/history", raw, page - 1) : null}
+          nextHref={hasNext ? pageHref("/app/history", raw, page + 1) : null}
+          label={formatMsg(t.history.pageRange, pageBounds(page, size, cards.length))}
+          prevLabel={t.common.prev}
+          nextLabel={t.common.next}
+        />
+      )}
     </div>
   );
 }
