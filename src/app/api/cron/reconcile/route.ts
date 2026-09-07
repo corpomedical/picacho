@@ -53,7 +53,42 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "query failed" }, { status: 500 });
   }
 
-  const userIds = [...new Set((rows ?? []).map((r) => r.user_id as string))];
+  // Second source, and without it the sweep this cron carries could never
+  // run for the population it was written for.
+  //
+  // reapStaleJobs also writes off ORPHANS: rows sitting at "generating" with
+  // NO generation_jobs row, left when the function died between
+  // reserve_generation and saveVideoJob. Nominating only from
+  // generation_jobs means those users are never selected — an orphan has no
+  // job row by definition — so the orphan branch was unreachable from here.
+  //
+  // The only other caller is reapAbandonedGenerations, which runs on the
+  // workspace page load for the CURRENT user. So an orphan was cleared only
+  // if its owner came back. Someone whose first render died this way, and who
+  // did not return, kept a charged row at "generating" indefinitely — exactly
+  // the person least likely to come back and fix it themselves.
+  //
+  // Same cutoff as above deliberately: this only NOMINATES, and reapStaleJobs
+  // re-checks every row against ORPHANED_GENERATION_TIMEOUT_MS (one hour)
+  // before touching it, so nominating early costs a no-op, not a wrong write.
+  const { data: orphanRows, error: orphanError } = await admin
+    .from("generations")
+    .select("user_id")
+    .eq("status", "generating")
+    .lt("created_at", cutoff)
+    .limit(200);
+  if (orphanError) {
+    // Not fatal: the job-based sweep above is the common case and has already
+    // been read. Losing this half for one run costs a day, not a render.
+    console.error("reconcile: orphan-user query failed", orphanError.message);
+  }
+
+  const userIds = [
+    ...new Set([
+      ...(rows ?? []).map((r) => r.user_id as string),
+      ...(orphanRows ?? []).map((r) => r.user_id as string),
+    ]),
+  ];
   let reaped = 0;
   let failures = 0;
   for (const userId of userIds) {
