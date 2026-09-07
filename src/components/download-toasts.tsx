@@ -50,7 +50,11 @@ export function DownloadToasts() {
     };
   }, []);
 
-  if (toasts.length === 0) return null;
+  // No early return. The wrapper below is the aria-live region, and returning
+  // null when the list is empty meant it was created in the same commit that
+  // filled it on every single download — the mount-and-fill pattern that
+  // announces nothing, which settings-status.tsx states as policy. The map
+  // renders nothing when empty, so keeping it costs an empty div.
 
   return (
     <div

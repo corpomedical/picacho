@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 } from "@/lib/generations/layers";
 import { SerifNumerals } from "@/components/marketing/serif-numerals";
 import { useLocale } from "@/lib/i18n/provider";
+import { useModalFocus } from "@/lib/use-modal-focus";
 import { formatMsg } from "@/lib/i18n/format";
 
 // "Bring any image" (shape B, 2026-09-03), the Upscale upload lane's shape
@@ -47,6 +48,25 @@ export function LayersUpload() {
   const [phase, setPhase] = useState<"idle" | "uploading">("idle");
   const [pending, startTransition] = useTransition();
   const busy = pending || phase === "uploading";
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  // The dialog contract this overlay looked like it had and did not: it could
+  // be dismissed ONLY by clicking the backdrop. No Escape, no close control,
+  // no focus move — so a keyboard user who opened it had no way out, and a
+  // screen reader was never told a dialog had opened. useModalFocus is the
+  // shared hook four other dialogs already use, and its own header documents
+  // this exact class of bug.
+  useModalFocus(open, dialogRef);
+  useEffect(() => {
+    if (!open) return;
+    function onKeyDown(e: KeyboardEvent) {
+      // Not while a purchase is in flight — the same guard the backdrop uses,
+      // so Escape cannot walk away from a request that is already spending.
+      if (e.key === "Escape" && !busy) setOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, busy]);
 
   const problemLabel = (code: ReturnType<typeof uploadLayersIneligibility>): string | null => {
     if (code === "not-image") return L.errNotImage;
@@ -152,9 +172,16 @@ export function LayersUpload() {
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !busy && setOpen(false)}>
-          <div className="w-full max-w-md rounded-control border border-atelier-rule bg-atelier-paper p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="layers-upload-title"
+            className="w-full max-w-md rounded-control border border-atelier-rule bg-atelier-paper p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
             <p className="text-[11px] font-semibold uppercase tracking-widest text-atelier-muted">{L.receipt}</p>
-            <h2 className="mt-1.5 text-lg font-semibold text-atelier-ink">{L.uploadTitle}</h2>
+            <h2 id="layers-upload-title" className="mt-1.5 text-lg font-semibold text-atelier-ink">{L.uploadTitle}</h2>
             <p className="mt-1 text-sm text-atelier-muted">{L.uploadSub}</p>
 
             <button

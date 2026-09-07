@@ -4,6 +4,7 @@ import { useState } from "react";
 import { updateEmail } from "@/lib/profile/actions";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { SettingsStatus } from "@/components/settings/settings-status";
 
 // Atelier form idiom (settings-popover, extended): caps label over an
 // ink-hairline input at the control radius; accent only marks focus.
@@ -75,12 +76,13 @@ export function EmailForm({ initialEmail }: { initialEmail: string }) {
             />
           </div>
         )}
-        {error && <p className="mt-1.5 text-xs text-red-600 dark:text-red-400">{error}</p>}
-        {status === "saved" && (
-          <p className="mt-1.5 text-xs text-atelier-muted">
-            {t.settings.emailChangeNote}
-          </p>
-        )}
+        {/* Same reasoning as password-form: this is a password-gated
+            credential change, and its result was rendered but never spoken. */}
+        <SettingsStatus
+          className="mt-1.5"
+          state={error ? "error" : status === "saved" ? "saved" : "idle"}
+          message={error ?? (status === "saved" ? t.settings.emailChangeNote : null)}
+        />
       </div>
       <Button
         type="submit"

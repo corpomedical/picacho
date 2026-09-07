@@ -4,6 +4,7 @@ import { useState } from "react";
 import { updatePassword } from "@/lib/profile/actions";
 import { Button } from "@/components/ui/button";
 import { useLocale } from "@/lib/i18n/provider";
+import { SettingsStatus } from "@/components/settings/settings-status";
 
 // Atelier form idiom (settings-popover, extended): caps label over an
 // ink-hairline input at the control radius; accent only marks focus.
@@ -90,8 +91,16 @@ export function PasswordForm() {
           minLength={8}
         />
       </div>
-      {error && <p className="text-xs text-red-600 dark:text-red-400">{error}</p>}
-      {status === "saved" && <p className="text-xs text-emerald-600 dark:text-emerald-400">{t.settings.passwordUpdated}</p>}
+      {/* SettingsStatus, not two conditional <p>s. Both messages used to be
+          created in the same commit that filled them, and a live region that
+          is mounted only once it has content announces nothing in several
+          screen readers — so a failed password change left the button un-busy,
+          focus where it was, and nothing spoken. The component keeps a
+          mounted sr-only region for exactly this; its header says so. */}
+      <SettingsStatus
+        state={error ? "error" : status === "saved" ? "saved" : "idle"}
+        message={error ?? (status === "saved" ? t.settings.passwordUpdated : null)}
+      />
       <Button
         type="submit"
         variant="secondary"
