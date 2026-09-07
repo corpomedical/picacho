@@ -68,6 +68,17 @@ const COLUMNS = {
   app_settings: ["key", "value"],
   feature_flags: ["key", "enabled"],
   voice_presets: ["label"],
+  // The dashboard reel and the revealed-preference signals (2026-09-07). These
+  // had ZERO coverage here, and user_reels is the exact table that already
+  // caused this class of outage: `clips` was selected by name before its
+  // migration ran, PostgREST failed the WHOLE query, and every user's reel
+  // silently fell back to the example band. clips is listed FIRST for that
+  // reason — it is the column a half-applied migration leaves behind.
+  user_reels: [
+    "user_id", "storage_path", "poster_path", "clips", "clip_generation_ids",
+    "character_profile_id", "duration_seconds", "byte_size", "built_at",
+  ],
+  generation_signals: ["generation_id", "user_id", "kind", "created_at"],
 };
 
 // RPCs the app calls (schema.sql + pending files).
