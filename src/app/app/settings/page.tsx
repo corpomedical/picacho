@@ -6,7 +6,7 @@ import { getMonthlyUsage } from "@/lib/generations/actions";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
-import { Card } from "@/components/ui/card";
+import { SettingsSection } from "@/components/settings/settings-section";
 import { BrandRulesPanel } from "@/components/brand-rules-panel";
 import { BuyCreditsPanel } from "@/components/buy-credits-panel";
 import { NativeStore } from "@/components/native-store";
@@ -32,9 +32,6 @@ import { formatMsg } from "@/lib/i18n/format";
 import { isEUVisitor } from "@/lib/geo";
 import { cn } from "@/lib/cn";
 
-// Section titles inside a sheet are set as small caps labels, the
-// settings-popover idiom extended.
-const SHEET_TITLE = "text-[11px] font-medium uppercase tracking-widest text-atelier-muted";
 
 // The upsell ladder for the "next tier" card below — each plan nudges toward
 // the one after it. Basic slots in as the first paid step (2026-08-19): a
@@ -292,92 +289,83 @@ export default async function SettingsPage({
         <div className="min-w-0 flex-1">
           {activeTab === "account" && (
             <div className="space-y-4">
-              <Card>
-                <h2 className={SHEET_TITLE}>{s.account}</h2>
-                <div className="mt-4 space-y-5">
+              <SettingsSection title={s.account} description={s.accountDesc}>
+                <div className="space-y-5">
                   <UsernameForm initialUsername={username} />
                   <EmailForm initialEmail={data.user.email ?? ""} />
                   <div className="border-t border-atelier-rule/60 pt-5">
                     <ProfileForm initialCompany={profile?.company ?? ""} initialGender={profile?.gender ?? ""} />
                   </div>
-                  <div className="border-t border-atelier-rule/60 pt-5">
-                    <InviteCard username={username} />
-                  </div>
                 </div>
-              </Card>
+              </SettingsSection>
 
-              <Card>
-                <h2 className={SHEET_TITLE}>{s.aiGeneration}</h2>
-                <div className="mt-4">
-                  <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
-                </div>
-              </Card>
+              <InviteCard username={username} />
 
-              <Card>
-                <h2 className={SHEET_TITLE}>{s.emailPreferences}</h2>
-                <div className="mt-4">
-                  {/* enabled = NOT opted out; a missing profile row degrades
-                      to the column's default (false → emails on), matching
-                      what the blast query would actually do. */}
-                  <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
-                </div>
-              </Card>
+              <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
+                <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
+              </SettingsSection>
+
+              <SettingsSection title={s.emailPreferences} description={s.emailPreferencesDesc}>
+                {/* enabled = NOT opted out; a missing profile row degrades to
+                    the column's default (false → emails on), matching what the
+                    blast query would actually do. */}
+                <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
+              </SettingsSection>
 
               {/* Only shown where it's actually usable — an API-keys card on a
                   Starter account is an advert dressed as a setting. */}
               {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
 
-              <Card>
-                <form action={logout}>
-                  <button
-                    type="submit"
-                    className="text-sm font-medium text-atelier-muted underline underline-offset-2 hover:text-atelier-ink"
-                  >
-                    {s.logOut}
-                  </button>
-                </form>
-              </Card>
+              {/* Not a card: a 32px sheet around one underlined link was the
+                  clearest case of the density the survey flagged. */}
+              <form action={logout} className="px-1">
+                <button
+                  type="submit"
+                  className="text-sm font-medium text-atelier-muted underline underline-offset-2 transition-colors hover:text-atelier-ink"
+                >
+                  {s.logOut}
+                </button>
+              </form>
 
-              <Card>
-                <h2 className="text-[11px] font-medium uppercase tracking-widest text-red-600 dark:text-red-400">{s.dangerZone}</h2>
-                <div className="mt-3">
-                  <DeleteAccountForm username={username} />
-                </div>
-              </Card>
+              {/* tone="danger" rather than a hardcoded red-600/red-400 pair:
+                  that was the only raw Tailwind colour on the page, and it had
+                  to name its own dark variant because it sat outside the token
+                  system. atelier-accent already has both. */}
+              <SettingsSection
+                tone="danger"
+                title={s.dangerZone}
+                description={s.dangerDesc}
+              >
+                <DeleteAccountForm username={username} />
+              </SettingsSection>
             </div>
           )}
 
           {activeTab === "appearance" && (
-            <Card>
-              <h2 className={SHEET_TITLE}>{s.appearance}</h2>
-              <p className="mt-1 text-xs text-atelier-muted">{s.appearanceSubtitle}</p>
-              <div className="mt-4">
+            <SettingsSection title={s.appearance} description={s.appearanceDesc}>
+              <div>
                 <ThemePicker />
+                <p className="mt-2 text-xs text-atelier-muted">{s.appearanceSubtitle}</p>
               </div>
-              <div className="mt-5 flex items-center justify-between border-t border-atelier-rule/60 pt-4">
+              <div className="flex items-center justify-between border-t border-atelier-rule/60 pt-5">
                 <div>
                   <p className="text-sm font-medium text-atelier-ink">{s.language}</p>
                   <p className="mt-0.5 text-xs text-atelier-muted">{s.languageSubtitle}</p>
                 </div>
                 <LanguageSwitcher />
               </div>
-            </Card>
+            </SettingsSection>
           )}
 
           {activeTab === "security" && (
-            <Card>
-              <h2 className={SHEET_TITLE}>{s.security}</h2>
-              <p className="mt-1 text-xs text-atelier-muted">{s.securitySubtitle}</p>
-              <div className="mt-4">
-                <PasswordForm />
-              </div>
-            </Card>
+            <SettingsSection title={s.security} description={s.securitySubtitle}>
+              <PasswordForm />
+            </SettingsSection>
           )}
 
           {activeTab === "usage" && (
-            <Card>
-              <h2 className={SHEET_TITLE}>{s.usageAndPlan}</h2>
-              <div className="mt-3 flex items-center justify-between">
+            <SettingsSection title={s.usageAndPlan} description={s.usageDesc}>
+              <div className="flex items-center justify-between">
                 <p className="text-sm text-atelier-muted">
                   {plan === "none" ? s.noActivePlan : formatMsg(s.planSuffix, { plan: PLAN_LABELS[plan] })}
                 </p>
@@ -474,7 +462,7 @@ export default async function SettingsPage({
                   </div>
                 )
               )}
-            </Card>
+            </SettingsSection>
           )}
 
           {/* Buying credits is a purchase, so it can't exist in the app at
@@ -495,8 +483,7 @@ export default async function SettingsPage({
           {activeTab === "brand" && <BrandRulesPanel rules={brandRules} enforcementPaused={brandRulesPaused} />}
 
           {activeTab === "support" && (
-            <Card>
-              <h2 className={SHEET_TITLE}>{s.support}</h2>
+            <SettingsSection title={s.support} description={s.supportDesc}>
               {/* Feedback is a form, not a mailto — it lands in the
                   /admin/feedback queue instead of an inbox, and doesn't
                   depend on the person having a mail client set up. Help
@@ -513,7 +500,7 @@ export default async function SettingsPage({
                   {s.getHelp}
                 </a>
               </div>
-            </Card>
+            </SettingsSection>
           )}
         </div>
       </div>
