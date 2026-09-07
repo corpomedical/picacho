@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SettingsStatus } from "@/components/settings/settings-status";
 import { setMarketingEmails } from "@/lib/profile/actions";
 import { useLocale } from "@/lib/i18n/provider";
 import { Switch } from "@/components/ui/switch";
@@ -18,19 +19,29 @@ export function MarketingEmailsToggle({ initialEnabled }: { initialEnabled: bool
   const s = t.settings;
   const [enabled, setEnabled] = useState(initialEnabled);
   const [pending, setPending] = useState(false);
+  // Both toggles used to roll back in silence: the switch slid back and that
+  // was the entire message. SettingsStatus was built for this in the same
+  // housekeeping pass and had not been adopted by anything yet.
+  const [status, setStatus] = useState<{ state: "idle" | "saved" | "error"; message?: string | null }>({
+    state: "idle",
+  });
 
   async function toggle() {
     const next = !enabled;
     setEnabled(next);
     setPending(true);
+    setStatus({ state: "idle" });
     const formData = new FormData();
     formData.set("enabled", next ? "on" : "off");
     const result = await setMarketingEmails(formData);
     setPending(false);
     if (result.error) {
-      // Roll back — the flip didn't actually save.
+      // Roll back AND say so — the flip didn't actually save.
       setEnabled(!next);
+      setStatus({ state: "error", message: result.error });
+      return;
     }
+    setStatus({ state: "saved", message: t.common.saved });
   }
 
   return (
@@ -38,6 +49,7 @@ export function MarketingEmailsToggle({ initialEnabled }: { initialEnabled: bool
       <div className="min-w-0">
         <p className="text-sm font-medium text-atelier-ink">{s.marketingEmailsLabel}</p>
         <p className="mt-0.5 text-xs text-atelier-muted">{s.marketingEmailsHelp}</p>
+        <SettingsStatus state={status.state} message={status.message} className="mt-1" />
       </div>
       <Switch
         checked={enabled}
