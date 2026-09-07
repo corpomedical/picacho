@@ -68,12 +68,8 @@ export function userAgentSupportsAuthReturn(userAgent: string | null | undefined
 // has not landed, the link opens in the browser instead of the app — and the
 // browser has no PKCE verifier, so the exchange is refused and the person
 // lands on /login?error=oauth rather than holding a half-made session.
-export const NATIVE_AUTH_REDIRECT = `${CANONICAL_ORIGIN}/auth/callback`;
+export const NATIVE_AUTH_REDIRECT = `${CANONICAL_ORIGIN}/auth/app-callback`;
 
-// The custom scheme versionCode 14 used. Kept only so the handler still
-// recognises it: an install that has not re-verified, or a redirect issued
-// before this deploy, can still arrive this way.
-export const NATIVE_AUTH_SCHEME_REDIRECT = "ai.picacho.app://auth-callback";
 
 // Client-side check. Capacitor injects a global on native platforms; the user
 // agent is the fallback for the brief window before that global exists, and

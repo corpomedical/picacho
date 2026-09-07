@@ -50,15 +50,16 @@ export function NativeAuthReturn() {
       } catch {
         return;
       }
-      // Two shapes reach here. The verified App Link
-      // (https://picacho.ai/auth/callback) is what versionCode 15 asks the
-      // provider for. The custom scheme is versionCode 14's, still accepted
-      // because a redirect issued before this deploy — or an install whose
-      // App Link verification has not landed yet — can still arrive that way.
+      // Two shapes reach here. The verified App Link is
+      // https://picacho.ai/auth/app-callback — the app's OWN path, not the
+      // shared /auth/callback, which browser sign-in and every password-reset
+      // email also use and which this app must never capture. The custom
+      // scheme is versionCode 14's; nothing asks for it any more, but a
+      // redirect already in flight when this deploys can still arrive on it.
       const isAppLink =
         parsed.protocol === "https:" &&
         parsed.host === "picacho.ai" &&
-        parsed.pathname.startsWith("/auth/callback");
+        parsed.pathname.startsWith("/auth/app-callback");
       // Custom-scheme URLs put the "host" in different places across parsers;
       // accept either shape rather than depending on one.
       const isScheme =
@@ -90,7 +91,18 @@ export function NativeAuthReturn() {
         // stored. A soft client-side navigation does neither, and would fail
         // silently — sign-in would appear to work and leave you logged out.
         // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-        window.location.assign(`/auth/callback?code=${encodeURIComponent(code)}`);
+        // Handed to the SHARED callback, which is where the exchange logic
+        // lives. Safe from inside the app: this is a same-origin navigation
+        // in our own WebView, so the verifier written when sign-in started is
+        // right here. `next` is forwarded when the provider passed one, and
+        // validated the same way the route validates it — a relative path
+        // only, so a crafted launch cannot turn this into an open redirect.
+        const rawNext = parsed.searchParams.get("next");
+        const next =
+          rawNext && /^\/[a-zA-Z0-9/_\-?=&.%]*$/.test(rawNext) && !rawNext.startsWith("//")
+            ? `&next=${encodeURIComponent(rawNext)}`
+            : "";
+        window.location.assign(`/auth/callback?code=${encodeURIComponent(code)}${next}`);
         return;
       }
       // The provider can also come back with a refusal ("cancelled", denied

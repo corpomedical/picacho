@@ -65,10 +65,17 @@
                  chance for another app to claim the hop — which is what the
                  custom scheme above could not guarantee.
 
-                 pathPrefix is NOT optional. Without it this filter would claim
-                 EVERY https://picacho.ai URL, so the marketing site, the
-                 guides and every shared link would open in the app instead of
-                 a browser. It is scoped to the one callback path.
+                 pathPrefix is NOT optional, and it points at /auth/app-
+                 callback rather than /auth/callback for a specific reason:
+                 /auth/callback is SHARED. Browser Google sign-in returns
+                 there, and so does every password-reset email
+                 (forgot-password-form.tsx sends ?next=/reset-password).
+                 Claiming it would pull those into the app, where the PKCE
+                 verifier does not exist — a reset link tapped in Gmail would
+                 open the app, fail, and spend its one-time code. The app asks
+                 the provider for its own path, and this filter claims only
+                 that. Without any prefix it would claim every picacho.ai URL
+                 and the marketing site would open in the app as well.
 
                  www is deliberately absent: next.config.ts 308s it to the
                  apex, and Digital Asset Links verification fails on a
@@ -80,7 +87,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
                 <data android:host="picacho.ai" />
-                <data android:pathPrefix="/auth/callback" />
+                <data android:pathPrefix="/auth/app-callback" />
             </intent-filter>
 
         </activity>
