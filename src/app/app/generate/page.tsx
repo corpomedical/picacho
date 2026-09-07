@@ -143,6 +143,38 @@ export default async function GeneratePage() {
     ? await getReliabilityStats(userData.user.id)
     : { firstTryRate: null, avgAttempts: null, total: 0 };
 
+  // Hoisted OUT of the JSX below, where both of these used to be awaited
+  // inline. An await inside streamed JSX that throws kills the Suspense
+  // boundary mid-stream, and the client files a minified React #419 naming
+  // nothing — five of those have been reported since 2026-08-23, all with the
+  // same digest, and none of them could say what failed. The gather above
+  // already learned this lesson; these two were the remaining black box.
+  //
+  // Reaching them at all is new-account-shaped: everything above returns
+  // early until the person has a character, so the first render of this full
+  // tree is the one right after their first character is created — which is
+  // exactly when both of 2026-09-07's signups reported it. The upgrade CTA
+  // additionally short-circuits on `advancedPlanActive`, so a paid account
+  // never evaluates isNativeApp() here and a plan-none account always does.
+  let nativeApp = false;
+  let allowExternalPurchase = false;
+  try {
+    [nativeApp, allowExternalPurchase] = await Promise.all([
+      isNativeApp(),
+      allowExternalPurchaseLink(),
+    ]);
+  } catch (err) {
+    // Named, then swallowed rather than rethrown: neither value is worth
+    // failing a paint over. nativeApp=false is the safe default for review
+    // gating only in the sense that it SHOWS the CTA — but a person who
+    // cannot see the composer at all is the worse outcome, and the log makes
+    // the cause visible instead of a digest.
+    console.error(
+      `[first-paint] /app/generate chrome flags failed for user ${userData.user?.id ?? "anonymous"}:`,
+      err,
+    );
+  }
+
   return (
     // max-w-5xl matches both the app layout's container and the width the
     // composer settles at after docking from /app. It used to be max-w-2xl,
@@ -155,7 +187,7 @@ export default async function GeneratePage() {
           This CTA was added with the repricing work, after the original
           native-gating pass, and shipped ungated — caught live on the Play
           internal build, 2026-08-20. */}
-      {!advancedPlanActive && !(await isNativeApp()) && (
+      {!advancedPlanActive && !nativeApp && (
         <div className="mb-3 flex justify-end">
           <Link href="/app/settings?tab=usage">
             <Button size="sm">{t.settings.upgrade}</Button>
@@ -239,7 +271,7 @@ export default async function GeneratePage() {
         creditsLimit={creditsLimit}
         purchasedCredits={purchasedCredits}
         currentPeriodEnd={currentPeriodEnd}
-        allowExternalPurchase={await allowExternalPurchaseLink()}
+        allowExternalPurchase={allowExternalPurchase}
         dailyFreeAvailable={dailyFreeAvailable}
         hasGeneratedBefore={stats.total > 0}
       />
