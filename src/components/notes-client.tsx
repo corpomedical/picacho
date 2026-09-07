@@ -42,7 +42,13 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
   const [selectedId, setSelectedId] = useState<string | null>(initialNotes[0]?.id ?? null);
   const [title, setTitle] = useState(initialNotes[0]?.title ?? "");
   const [body, setBody] = useState(initialNotes[0]?.body ?? "");
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
+  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  // Create/delete failures belong beside the LIST, not the editor's status
+  // line — the editor may be showing a different note than the one that failed.
+  const [notice, setNotice] = useState<string | null>(null);
+  // The exact save that failed, kept so Retry re-sends THAT text rather than
+  // whatever happens to be in the box by the time the person clicks.
+  const retrySave = useRef<(() => void) | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The save the timer would fire, kept reachable so flushPendingSave can run
   // it NOW instead of merely cancelling it — cancelling alone silently threw
@@ -72,9 +78,14 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
       formData.set("body", nextBody);
       const result = await saveNote(formData);
       if (result.error !== null) {
-        setStatus("idle");
+        // Was "idle", which renders as an EMPTY status line — identical to
+        // having nothing to save. Typed text stayed only in React state and
+        // went with the tab. Say it plainly and offer the retry.
+        retrySave.current = () => void fire();
+        setStatus("error");
         return;
       }
+      retrySave.current = null;
       setStatus("saved");
       setNotes((prev) =>
         prev
@@ -102,8 +113,12 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
   useEffect(() => () => flushPendingSave(), []);
 
   async function handleNewNote() {
+    setNotice(null);
     const result = await createNote();
-    if (result.error !== null || !result.id) return;
+    if (result.error !== null || !result.id) {
+      setNotice(nt.createFailed);
+      return;
+    }
     const fresh: Note = { id: result.id, title: nt.untitledNote, body: "", updated_at: new Date().toISOString() };
     setNotes((prev) => [fresh, ...prev]);
     selectNote(fresh);
@@ -114,7 +129,11 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
     const formData = new FormData();
     formData.set("id", note.id);
     const result = await deleteNote(formData);
-    if (result.error !== null) return;
+    if (result.error !== null) {
+      setNotice(nt.deleteFailed);
+      return;
+    }
+    setNotice(null);
 
     const remaining = notes.filter((note2) => note2.id !== note.id);
     setNotes(remaining);
@@ -137,6 +156,12 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
           <PlusIcon className="h-3.5 w-3.5" />
           {nt.newNote}
         </button>
+
+        {notice && (
+          <p role="status" className="mt-2 px-1 text-xs text-red-600 dark:text-red-400">
+            {notice}
+          </p>
+        )}
 
         {notes.length === 0 ? (
           <p className="mt-4 px-1 text-xs text-atelier-muted">{nt.noNotesYet}</p>
@@ -180,9 +205,25 @@ export function NotesClient({ initialNotes }: { initialNotes: Note[] }) {
                 className="w-full border-none bg-transparent text-lg font-semibold text-atelier-ink outline-none placeholder:text-atelier-muted/50"
               />
               <div className="flex flex-shrink-0 items-center gap-3">
-                <span className="whitespace-nowrap text-xs text-atelier-muted">
-                  {status === "saving" ? nt.saving : status === "saved" ? nt.saved : ""}
-                </span>
+                {status === "error" ? (
+                  <span className="flex items-center gap-2 whitespace-nowrap text-xs text-red-600 dark:text-red-400">
+                    {nt.saveFailed}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStatus("saving");
+                        retrySave.current?.();
+                      }}
+                      className="underline underline-offset-2 hover:no-underline"
+                    >
+                      {nt.retrySave}
+                    </button>
+                  </span>
+                ) : (
+                  <span className="whitespace-nowrap text-xs text-atelier-muted">
+                    {status === "saving" ? nt.saving : status === "saved" ? nt.saved : ""}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => handleDelete(selected)}
