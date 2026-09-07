@@ -6,9 +6,9 @@ import { getGenerateWorkspaceData } from "@/lib/generations/workspace-data";
 import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { mediaUrl, toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
-import { PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { InviteCard } from "@/components/invite-card";
 import { ReelBand } from "@/components/reel-band";
+import { MomentumSurface } from "@/components/momentum-surface";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const maxDuration = 300;
@@ -21,7 +21,7 @@ export const maxDuration = 300;
 // matters double now that Picacho installs to the home screen and this is
 // the screen the app icon opens.
 export default async function AppHome() {
-  const { t } = await getServerMessages();
+  const { t, locale } = await getServerMessages();
   const d = t.dashboard;
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
@@ -44,15 +44,37 @@ export default async function AppHome() {
         .eq("user_id", data.user?.id ?? "")
         .order("created_at", { ascending: false })
         .limit(12),
+      // Videos included now, not images only: the working surface leads on the
+      // last thing you made whatever it was, and the grid marks video takes.
       supabase
         .from("generations")
-        .select("id, result_url, content_type, prompt_input")
+        .select(
+          "id, result_url, poster_url, content_type, prompt_input, created_at, video_duration_seconds, match_score",
+        )
         .eq("user_id", data.user?.id ?? "")
         .eq("status", "succeeded")
-        .eq("content_type", "image")
         .is("deleted_at", null)
         .order("created_at", { ascending: false })
-        .limit(6),
+        .limit(12),
+      // Two account figures for the stat tiles. Both are cheap: a head-only
+      // count, and a bounded fold of the kind character/[id] already does —
+      // there is no avg() to call, so the mean is computed here over the most
+      // recent scored takes rather than all time.
+      supabase
+        .from("generations")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", data.user?.id ?? "")
+        .eq("status", "succeeded")
+        .is("deleted_at", null),
+      supabase
+        .from("generations")
+        .select("match_score")
+        .eq("user_id", data.user?.id ?? "")
+        .eq("status", "succeeded")
+        .is("deleted_at", null)
+        .not("match_score", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(500),
       // The highlight reel, built out of band by /api/cron/reels. Rides this
       // existing wave rather than adding a serial hop: it is one indexed
       // primary-key read, and the page must not get slower to gain a banner.
@@ -83,11 +105,17 @@ export default async function AppHome() {
     );
     throw err;
   }
-  const [{ data: profile }, workspace, { data: characters }, { data: recent }, reelRead] =
-    dashboardReads;
+  const [
+    { data: profile },
+    workspace,
+    { data: characters },
+    { data: recent },
+    takesRead,
+    { data: scoredRows },
+    reelRead,
+  ] = dashboardReads;
 
   const name = profile?.username ?? (data.user?.email ?? "").split("@")[0];
-  const plan = (profile?.plan ?? "none") as PlanId;
   const { hasCharacter, creditsUsed, creditsLimit, purchasedCredits } = workspace;
 
   if (!hasCharacter) {
@@ -159,35 +187,43 @@ export default async function AppHome() {
   }));
   const reelCharacterName = (reelCharacter?.name as string | undefined) ?? null;
 
+  // The working surface's three figures and its "pick up" card.
+  const takesCount = (takesRead as { count: number | null }).count ?? 0;
+  const scores = (scoredRows ?? [])
+    .map((r) => r.match_score as number | null)
+    .filter((n): n is number => typeof n === "number");
+  const accountMean = scores.length
+    ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length)
+    : null;
+  const lastTake = (recent ?? [])[0] ?? null;
+  const lastTakeIsVideo = lastTake?.content_type === "video";
+  const lastTakeThumb = lastTake
+    ? thumbUrl(
+        toMediaUrl((lastTakeIsVideo ? lastTake.poster_url : lastTake.result_url) as string | null),
+        320,
+      )
+    : null;
+
   const recentTiles = (recent ?? [])
-    // Small tiles — the full image is one tap away on the history page.
-    .map((g) => ({ ...g, displayUrl: thumbUrl(toMediaUrl(g.result_url), 320) }))
-    .filter((g) => isRenderableUrl(g.displayUrl));
+    // Small tiles — the full render is one tap away on the history page. A
+    // video shows its poster frame rather than nothing, and says so.
+    .map((g) => ({
+      ...g,
+      isVideo: g.content_type === "video",
+      displayUrl: thumbUrl(
+        toMediaUrl((g.content_type === "video" ? g.poster_url : g.result_url) as string | null),
+        320,
+      ),
+    }))
+    .filter((g) => isRenderableUrl(g.displayUrl))
+    .slice(0, 6);
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
-      {/* Greeting + credits, one glance. */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-numeral text-3xl font-semibold tracking-tight text-atelier-ink">
-            {formatMsg(d.greeting, { name })}
-          </h1>
-          <p className="mt-1 text-xs text-atelier-muted">
-            <span className="mr-1.5 rounded-full border border-atelier-rule px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-widest text-atelier-muted">
-              {PLAN_LABELS[plan]}
-            </span>
-            {d.creditsTitle}: <span className="font-numeral text-[13px] font-medium tabular-nums text-atelier-accent">{creditsUsed}</span>
-            {creditsLimit > 0 && <span className="font-numeral text-[13px] tabular-nums"> / {creditsLimit}</span>}
-            {purchasedCredits > 0 && (
-              <span className="ml-1.5 font-numeral tabular-nums">{formatMsg(d.creditsPurchased, { n: purchasedCredits })}</span>
-            )}
-          </p>
-        </div>
-        <Link href="/app/generate">
-          <button className="inline-flex items-center justify-center gap-2 rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity duration-150 hover:opacity-90">{d.continueCreating}</button>
-        </Link>
-      </div>
-
+      {/* Cinema first, working surface under it — direction F. The band is not
+          a card on a dashboard; it is the top of the page, and the sheet below
+          rides up over its bottom edge. */}
+      <div>
       {reelVideoUrl ? (
         <ReelBand
           videoUrl={reelVideoUrl}
@@ -234,6 +270,37 @@ export default async function AppHome() {
           cast={reelCast}
         />
       )}
+
+      <MomentumSurface
+        locale={locale}
+        take={
+          lastTake
+            ? {
+                href: `/app/history/${lastTake.id}`,
+                title: (lastTake.prompt_input as string | null) ?? null,
+                thumbUrl: lastTakeThumb,
+                isVideo: lastTakeIsVideo,
+                createdAt: (lastTake.created_at as string | null) ?? null,
+                seconds: (lastTake.video_duration_seconds as number | null) ?? null,
+                score: (lastTake.match_score as number | null) ?? null,
+              }
+            : null
+        }
+        creditsLeft={creditsLimit > 0 ? Math.max(0, creditsLimit - creditsUsed) : purchasedCredits}
+        meanIdentity={accountMean}
+        takes={takesCount}
+        labels={{
+          pickUp: d.pickUp,
+          continue: d.continueCreating,
+          newScene: d.newScene,
+          empty: d.emptyRecent,
+          untitled: d.recentCreations,
+          credits: d.creditsTitle,
+          meanIdentity: d.meanIdentity,
+          takes: d.takesLabel,
+        }}
+      />
+      </div>
 
       {/* Quick actions. */}
       <div className="grid grid-cols-3 gap-3">

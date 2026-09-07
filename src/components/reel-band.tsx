@@ -248,9 +248,11 @@ export function ReelBand({
       </div>
 
       {/* The cast rail, on the reel's own dark ground: who the reel is about,
-          and one tap to anyone else. The ring answers "why them?". */}
+          and one tap to anyone else. The ring answers "why them?".
+          pb-9 rather than pb-4 because the working surface rides up over this
+          edge by 24px, and a smaller pad let it clip the avatars. */}
       {cast.length > 0 && (
-        <div className="flex items-center gap-2.5 px-4 pb-4 sm:px-5">
+        <div className="flex items-center gap-2.5 px-4 pb-9 sm:px-5">
           {cast.map((member) => {
             const selected = member.id === selectedCharacterId;
             return (
