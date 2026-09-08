@@ -578,6 +578,36 @@ export const VIDEO_MODELS = [
     // assumes the token count for a given resolution and duration is the same
     // across the family. Re-derive it from a real render's reported
     // completion_tokens before this is ever shown to a paying customer.
+    //
+    // 2026-09-08, attempted. The re-derivation CANNOT be done yet, and the
+    // blocker is worth naming precisely so nobody repeats the search:
+    //
+    //   completion_tokens only ever comes from the ModelArk lane —
+    //   video-queue.ts returns completionTokens: null for fal, because fal
+    //   does not report usage. job-runner does persist it as providerTokens
+    //   when it exists. But ZERO of the 102 video renders in production carry
+    //   one: every render this product has ever made went through fal. So
+    //   there is no token measurement to check the assumption against, for
+    //   mini or for any sibling.
+    //
+    //   The prerequisite is therefore one Seedance render on the ModelArk
+    //   lane, not the experimental_models flag. After that, providerTokens
+    //   lands in pipeline_log and this becomes checkable.
+    //
+    // What WAS re-verified today, against BytePlus's published rates:
+    //   mini $3.50/M tokens text-to-video, standard 2.0 $7.00/M — unchanged.
+    //   $0.76 (their 5s 720p example on the $7.00/M model) / $7.00 per M
+    //     = 108,571 tokens.
+    //   108,571 * $3.50/M = $0.38 for the same clip on mini.
+    //   $0.38 / 5s = $0.076/sec, which is the number below.
+    // The arithmetic holds; only the shared-token-count assumption is still
+    // unproven. A secondary source rounds the same $0.38 to "$0.073/sec",
+    // which is simply their slip: 0.38 / 5 is 0.076.
+    //
+    // One thing the same read CONFIRMED rather than left open: mini is
+    // $2.10/M with video input against $3.50/M without, and 2.10 / 3.50 =
+    // 0.6 — exactly WITH_VIDEO_INPUT_MULTIPLIER, which was derived from fal's
+    // wording for a different model. Two independent sources, same figure.
     costPerSecondUsd: 0.076,
     name: "Seedance 2.0 Mini",
     // Recorded so requiresReferenceImage() answers false and the shape
