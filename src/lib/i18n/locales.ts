@@ -24,7 +24,3 @@ export const LOCALE_COOKIE = "picacho_locale";
 export function isLocale(value: string | undefined | null): value is Locale {
   return LOCALES.some((l) => l.code === value);
 }
-
-export function localeLabel(locale: Locale): string {
-  return LOCALES.find((l) => l.code === locale)?.label ?? locale;
-}

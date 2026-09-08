@@ -11,7 +11,6 @@ import { refundGenerationCosts } from "@/lib/generations/job-runner";
 import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { absolutizeMediaUrl, isRenderableUrl, toMediaUrl } from "@/lib/media/url";
-import { getOrigin } from "@/lib/origin";
 import type { BrandRule } from "@/lib/brand-rules/types";
 
 // The API's image generation path.
@@ -364,8 +363,4 @@ export async function runApiImageGeneration(params: {
       status: 500,
     };
   }
-}
-
-export async function apiOrigin(): Promise<string> {
-  return getOrigin();
 }

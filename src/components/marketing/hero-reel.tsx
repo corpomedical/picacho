@@ -2,55 +2,26 @@
 
 import { useEffect, useRef, useState } from "react";
 
-// Full-width homepage reel: plays each clip to the end, then the next,
-// looping the whole set forever — added 2026-08-19 when the band grew from
-// one clip to two. A single <video loop> can't sequence files, so this
-// swaps src on `ended`. The swap is a hard cut on purpose: both clips are
-// real renders of the same character, and a cut reads like an edit, not a
-// glitch (a crossfade would need two stacked videos and double the memory
-// for marginal polish — revisit only if a flash ever shows up in testing).
+// The homepage reel, sequencing several real renders into one loop.
+//
+// A single <video loop> can't sequence files, so this swaps src on `ended`.
+// The swap is a hard cut on purpose: the clips are real renders of the same
+// character, and a cut reads like an edit, not a glitch (a crossfade would
+// need two stacked videos and double the memory for marginal polish —
+// revisit only if a flash ever shows up in testing).
 //
 // muted + playsInline are required for mobile autoplay policies, and the
 // `muted` prop must ALSO be set imperatively on ref — React has a long-
 // standing quirk where the attribute alone doesn't always survive
 // hydration, and an unmuted video silently refuses to autoplay.
-export function HeroReel({ sources, badge }: { sources: string[]; badge: string }) {
-  const [index, setIndex] = useState(0);
-  const ref = useRef<HTMLVideoElement | null>(null);
-
-  return (
-    <section className="relative bg-slate-900">
-      <video
-        ref={(el) => {
-          ref.current = el;
-          if (el) el.muted = true;
-        }}
-        key={sources[index]}
-        src={sources[index]}
-        autoPlay
-        muted
-        playsInline
-        preload="metadata"
-        aria-hidden
-        className="block max-h-[70vh] w-full object-cover"
-        style={{ aspectRatio: "16 / 9" }}
-        onEnded={() => setIndex((i) => (i + 1) % sources.length)}
-        // Single-clip degenerate case: behave exactly like the old band.
-        loop={sources.length === 1}
-      />
-      {/* onmedia, not text-white — this rides ON the video, and text-white
-          repaints near-black in dark mode (the cast-wall lesson, 1fb95ba).
-          Same chip recipe as ShowcaseVideoPlayer's caption. */}
-      <span className="absolute bottom-4 left-4 rounded-full bg-black/55 px-3 py-1 text-xs font-medium text-onmedia backdrop-blur-sm sm:bottom-6 sm:left-6">
-        {badge}
-      </span>
-    </section>
-  );
-}
+//
+// This file used to export a second component, HeroReel, the band-style
+// version from 2026-08-19 that the backdrop below replaced on 2026-09-02.
+// Nothing had imported it since; removed 2026-09-08.
 
 // The dark front page's hero backdrop (2026-09-02): the same reel, but
 // filling the hero section behind the headline instead of being its own
-// band — absolute, cover-fit, muted, sequencing on ended exactly as above.
+// band — absolute, cover-fit, muted, sequencing on ended as described above.
 // The poster paints the first frame's territory while metadata loads so
 // the hero never opens on a black hole.
 // `captions`/`pillLabel`: the board's bottom-right composition — a per-clip
