@@ -27,24 +27,36 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- The way back in from an OAuth sign-in.
+            <!-- The way back in from an OAuth sign-in. THE one the app asks
+                 for, as of versionCode 16.
 
                  Google refuses OAuth inside an embedded WebView, so the
-                 consent screen has to open in the system browser; this filter
-                 is how the redirect gets back to us. A SEPARATE filter, never
+                 consent screen has to open in a real browser; this filter is
+                 how the redirect gets back to us. A SEPARATE filter, never
                  merged into the LAUNCHER one above — an activity may carry
                  many, and folding VIEW into MAIN/LAUNCHER breaks the launcher
                  entry.
 
-                 A custom scheme rather than an https App Link with
-                 android:autoVerify, deliberately: an App Link needs the Play
-                 App Signing SHA-256 (not in this repo), its verification is
-                 asynchronous and cacheable, and when it fails on Android 12+
-                 the link opens silently in Chrome — which is exactly the bug
-                 this is fixing, with the one-time code already spent.
-                 Interception is not a risk here: PKCE means the code is
-                 useless without the verifier, which is a host-only cookie
-                 inside our own WebView.
+                 A private-use scheme, not the https App Link below, and the
+                 reason is empirical. 15 asked for the App Link; Google's own
+                 Digital Asset Links verifier reads our assetlinks.json and
+                 parses all three certificates, but the RETURN still depends on
+                 Android having run and cached a successful check ON THAT
+                 DEVICE — invisible and unforceable from here — and on a real
+                 phone it had not. The redirect simply carried on in the
+                 browser. A scheme needs no verification at all.
+
+                 What makes the scheme reliable this time is WHERE the consent
+                 screen runs: a Chrome Custom Tab launched into this app's own
+                 task (oauth-buttons.tsx), not a handoff to the browser app.
+                 MainActivity is singleTask, so routing this intent to it
+                 brings the task forward and clears the tab off the top on the
+                 way — no explicit close, and no chance of the flow continuing
+                 somewhere we cannot see.
+
+                 Interception is not a risk: PKCE means the code is useless
+                 without the verifier, which is a host-only cookie inside our
+                 own WebView.
 
                  MainActivity is already singleTask and exported, so a resume
                  arrives via onNewIntent and Capacitor turns it into the
@@ -56,7 +68,12 @@
                 <data android:scheme="ai.picacho.app" android:host="auth-callback" />
             </intent-filter>
 
-            <!-- App Link for the OAuth return (versionCode 15).
+            <!-- App Link for the OAuth return. versionCode 15 asked for this
+                 URL; 16 does not, and this filter is kept rather than
+                 requested — it costs nothing, it still works on a device where
+                 verification did land, and a redirect already in flight when
+                 16 ships can still arrive on it. Do not make anything depend
+                 on it again without a way to observe verification per device.
 
                  android:autoVerify makes Android fetch
                  https://picacho.ai/.well-known/assetlinks.json at install and

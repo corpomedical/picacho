@@ -15,13 +15,14 @@ import { capPlugin } from "@/lib/native/bridge";
 //   1. oauth-buttons asks Supabase for the provider URL with
 //      redirectTo = ai.picacho.app://auth-callback, which writes the PKCE
 //      verifier as a host-only cookie in THIS WebView's jar.
-//   2. The WebView tries to navigate there; the host is not in
-//      allowNavigation, so Capacitor cancels the load and hands it to the
-//      system browser — a user agent Google actually permits.
+//   2. oauth-buttons opens that URL in a Chrome Custom Tab — a real browser,
+//      which is the only user agent Google permits for OAuth, but one launched
+//      into THIS app's task rather than handed away to the browser app.
 //   3. Provider → Supabase → 302 to ai.picacho.app://auth-callback?code=…
 //   4. The intent filter routes that to MainActivity (singleTask → onNewIntent)
 //      and Capacitor fires `appUrlOpen`.
-//   5. We navigate the WebView to /auth/callback?code=… — same origin, so the
+//   5. We close the tab and navigate the WebView to /auth/callback?code=… —
+//      same origin, so the
 //      verifier cookie rides along and the EXISTING server route does the
 //      exchange, unchanged. That route is not a thin redirect: it enforces the
 //      signups_enabled kill switch, stamps terms_accepted_at and resolves the
@@ -67,6 +68,23 @@ export function NativeAuthReturn() {
         (parsed.host || parsed.pathname.replace(/^\/+/, "")) === "auth-callback";
       if (!isAppLink && !isScheme) return;
 
+      // NOT Browser.close(), deliberately — read BrowserPlugin.java before
+      // adding it back. The tab is already gone by the time we get here:
+      // MainActivity is singleTask, so routing the scheme to it brings the
+      // task forward and clears everything stacked above, which is the Custom
+      // Tab and the translucent BrowserControllerActivity that launched it.
+      // That teardown IS the mechanism RFC 8252 relies on; nothing here has to
+      // ask for it.
+      //
+      // Calling close() anyway is not a harmless belt-and-braces. It starts
+      // BrowserControllerActivity again, and if the previous instance is
+      // finishing but not yet destroyed — a race, since clear-top destroys can
+      // land after onNewIntent — Android skips the finishing record and
+      // CREATES A FRESH ONE. Its onCreate fires the still-set controller
+      // listener, whose closure calls activity.open(url) with the SAME
+      // authorize URL. The tidy-up would reopen the sign-in it was meant to
+      // dismiss.
+
       const code = parsed.searchParams.get("code");
       if (code && /^[A-Za-z0-9._~-]+$/.test(code)) {
         // Belt and braces against the loop described above ever coming back by
@@ -84,13 +102,6 @@ export function NativeAuthReturn() {
           // Storage disabled: fall through. The retained-event contract above
           // already delivers once; this guard is the backup, not the mechanism.
         }
-        // A REAL document navigation, not router.push, and the lint rule below
-        // is wrong for this one case. /auth/callback is a Route Handler, not a
-        // page: the browser has to make an actual HTTP request so the PKCE
-        // verifier cookie is sent and the Set-Cookie carrying the session is
-        // stored. A soft client-side navigation does neither, and would fail
-        // silently — sign-in would appear to work and leave you logged out.
-        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         // Handed to the SHARED callback, which is where the exchange logic
         // lives. Safe from inside the app: this is a same-origin navigation
         // in our own WebView, so the verifier written when sign-in started is
@@ -102,6 +113,18 @@ export function NativeAuthReturn() {
           rawNext && /^\/[a-zA-Z0-9/_\-?=&.%]*$/.test(rawNext) && !rawNext.startsWith("//")
             ? `&next=${encodeURIComponent(rawNext)}`
             : "";
+        // A REAL document navigation, not router.push, and the lint rule is
+        // wrong for this one case. /auth/callback is a Route Handler, not a
+        // page: the browser has to make an actual HTTP request so the PKCE
+        // verifier cookie is sent and the Set-Cookie carrying the session is
+        // stored. A soft client-side navigation does neither, and would fail
+        // silently — sign-in would appear to work and leave you logged out.
+        //
+        // The directive must sit on the line IMMEDIATELY above the call. It
+        // was three comment paragraphs higher until 2026-09-08, where it
+        // disabled nothing and eslint reported it twice: once for the unused
+        // directive and once for the violation it was meant to cover.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.assign(`/auth/callback?code=${encodeURIComponent(code)}${next}`);
         return;
       }

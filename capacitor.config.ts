@@ -82,10 +82,13 @@ const config = {
     // without that filter cannot catch the redirect coming back — which is the
     // 2026-08-20 bug. Only iOS is left without the token on purpose: it has no
     // equivalent filter yet, so its OAuth buttons stay hidden.
-    // /2 for versionCode 15. /1 was versionCode 14, whose sign-in could not
-    // complete; the site recognises only /2, so that binary is retired from
-    // these buttons for good rather than waiting on a store rollback.
-    appendUserAgent: "PicachoApp PicachoAuth/2",
+    // /3 for versionCode 16, which opens the provider in a Custom Tab. /2 was
+    // 15 (App Link return, never came back on a real phone) and /1 was 14
+    // (custom scheme from the system browser, jumped to Gmail). The site
+    // recognises only the current token, so each retired binary loses these
+    // buttons the moment a new one ships — no store rollback, and no way for a
+    // later deploy to hand the button back to a build that cannot finish.
+    appendUserAgent: "PicachoApp PicachoAuth/3",
     backgroundColor: "#ffffff",
     // Play requires HTTPS for anything handling credentials.
     allowMixedContent: false,
@@ -141,6 +144,20 @@ const config = {
     includePlugins: [
       "@capacitor-community/in-app-review",
       "@capacitor/app",
+      // Chrome Custom Tabs, added at versionCode 16 for the OAuth hop.
+      //
+      // 15 sent the provider to the system browser with a bare ACTION_VIEW and
+      // asked for an https App Link back. Google's own Digital Asset Links
+      // verifier reads our assetlinks.json correctly — all three certificates
+      // parse — but the RETURN still has to be verified per device, and on a
+      // real phone it was not: the redirect simply carried on in the browser.
+      //
+      // A Custom Tab does not need any of that. The tab belongs to this app's
+      // task, so when the redirect fires our private-use scheme the tab closes
+      // and control comes back here. That is why RFC 8252 recommends this
+      // shape for native OAuth rather than handing the flow to a browser and
+      // hoping it finds the way home.
+      "@capacitor/browser",
       "@capacitor/filesystem",
       "@capacitor/haptics",
       "@capacitor/push-notifications",

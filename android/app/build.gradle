@@ -18,15 +18,34 @@ android {
         applicationId "ai.picacho.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 15
+        versionCode 16
+        // 16 = the sign-in hop moves into a CHROME CUSTOM TAB (2026-09-08,
+        // operator, on 15: "When clicking the account, it does not take you
+        // back to the app, it continues on the browser"). 15's App Link was
+        // never the problem on our side — Google's Digital Asset Links
+        // verifier reads our assetlinks.json and parses all three
+        // certificates — but the return depends on ANDROID having run and
+        // cached a successful check on that device, which is neither visible
+        // nor forceable from here, and on the operator's phone it had not
+        // happened. @capacitor/browser opens the provider URL in a Custom Tab
+        // launched into this app's own task instead of handing it to the
+        // browser, so the redirect to ai.picacho.app://auth-callback needs no
+        // verification of any kind: MainActivity is singleTask, so the intent
+        // brings the task forward and clears the tab off the top. That is the
+        // shape RFC 8252 recommends for native OAuth. Browser.close() is
+        // deliberately NOT called — see native-auth-return.tsx. The App Link
+        // filter and assetlinks.json stay but nothing requests them, and the
+        // user-agent token moves to PicachoAuth/3 so 15 is retired.
         // 15 = the OAuth return becomes a VERIFIED App Link (2026-09-08).
         // 14 shipped it on a custom scheme and sign-in never came back: the
         // hop out was a bare ACTION_VIEW into the default browser, where an
         // intermediate provider URL could be claimed by another app, and the
         // authorization died before Supabase issued a code. assetlinks.json
         // now carries the classical AND post-quantum Play signing keys, the
-        // filter is scoped to /auth/callback so the app claims nothing else,
-        // and the user-agent token moves to PicachoAuth/2 so 14 is retired.
+        // filter is scoped to /auth/app-callback — its own path, so the
+        // shared /auth/callback that browser sign-in and every password-reset
+        // email use is never captured — and the user-agent token moves to
+        // PicachoAuth/2 so 14 is retired. It did not work: see 16.
         // 14 = Google sign-in works in the app (2026-09-07). Adds the
         // auth-callback intent filter, drops *.supabase.co from
         // allowNavigation so the OAuth hop actually leaves the WebView, and
@@ -141,7 +160,7 @@ android {
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
-        versionName "1.15.0"
+        versionName "1.16.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

@@ -20,8 +20,6 @@
 // has been rejected for less. Everything gated by isNativeApp() below is
 // there for that reason, not for layout.
 
-import { CANONICAL_ORIGIN } from "@/lib/domains";
-
 export const NATIVE_UA_MARKER = "PicachoApp";
 export const NATIVE_COOKIE = "picacho_native";
 
@@ -36,11 +34,17 @@ export const NATIVE_COOKIE = "picacho_native";
 //
 // Named for what it does rather than the versionCode, so it needs no
 // coordination with release numbering and cannot drift from build.gradle.
-// /2, not /1. versionCode 14 claimed /1 and could not finish a sign-in, so
-// the site must never offer those buttons again — bumping the token retires
-// that binary permanently, without a store rollback and without any way for a
-// later deploy to hand the button back to it.
-export const NATIVE_AUTH_UA_MARKER = "PicachoAuth/2";
+//
+// /3 as of versionCode 16. /1 was 14 (custom scheme handed to the system
+// browser: the redirect jumped to Gmail) and /2 was 15 (verified App Link:
+// the redirect stayed in the browser). Neither could finish a sign-in, so the
+// site must never offer those buttons again — bumping the token retires each
+// binary permanently, without a store rollback and without any way for a later
+// deploy to hand the button back to it. The cost is deliberate and worth
+// naming: between this deploy and the day someone installs 16, the app shows
+// no Google button at all. Email and password still work, which is better than
+// a button that strands you half signed in.
+export const NATIVE_AUTH_UA_MARKER = "PicachoAuth/3";
 
 export function userAgentIsNativeApp(userAgent: string | null | undefined): boolean {
   return Boolean(userAgent && userAgent.includes(NATIVE_UA_MARKER));
@@ -54,22 +58,35 @@ export function userAgentSupportsAuthReturn(userAgent: string | null | undefined
   return Boolean(userAgent && userAgent.includes(NATIVE_AUTH_UA_MARKER));
 }
 
-// Where the provider sends the browser back to: a VERIFIED App Link, on our
-// own origin, as of versionCode 15.
+// Where the provider sends the user back to: our own private-use scheme,
+// opened inside a Chrome Custom Tab, as of versionCode 16.
 //
-// versionCode 14 used a custom scheme because an App Link needs the Play app
-// signing fingerprint and that is not derivable from this repo. It is now in
-// public/.well-known/assetlinks.json — both the classical and the
-// post-quantum Play keys, since quantum-ready hybrid signing means newer
-// devices verify against a different one, plus the upload certificate so
-// internal-test builds verify too.
+// 15 asked for a verified App Link instead and it did not come back on a real
+// phone. The file is not the problem — Google's Digital Asset Links verifier
+// reads our assetlinks.json and all three certificates parse. The problem is
+// that App Link verification is a PER-DEVICE step: Android has to run it,
+// succeed, and cache it, and none of that is visible or forceable from here.
+// When it has not happened the redirect just carries on in the browser, which
+// is exactly what was reported.
 //
-// The https form also fails SAFELY where the scheme did not. If verification
-// has not landed, the link opens in the browser instead of the app — and the
-// browser has no PKCE verifier, so the exchange is refused and the person
-// lands on /login?error=oauth rather than holding a half-made session.
-export const NATIVE_AUTH_REDIRECT = `${CANONICAL_ORIGIN}/auth/app-callback`;
-
+// A private-use scheme needs no verification at all, and inside a Custom Tab
+// it is deterministic: the tab belongs to this app's task, so firing the
+// scheme closes it and returns here. RFC 8252 recommends this exact shape for
+// native OAuth. The token bump to PicachoAuth/3 retires 15 the same way 15
+// retired 14.
+//
+// Interception is not the risk it sounds like. PKCE means a stolen code is
+// useless without the verifier, and the verifier is a host-only cookie inside
+// this WebView's own jar.
+//
+// There is deliberately no constant for 15's App Link target
+// (https://picacho.ai/auth/app-callback). Its intent filter, its route and
+// public/.well-known/assetlinks.json all stay — they cost nothing, they still
+// work on a device where verification did land, and a redirect already in
+// flight when this deploys can still arrive there. But nothing REQUESTS that
+// URL any more, so an exported constant for it would be a name with no caller,
+// inviting someone to reintroduce the dependency that broke 15.
+export const NATIVE_AUTH_REDIRECT = "ai.picacho.app://auth-callback";
 
 // Client-side check. Capacitor injects a global on native platforms; the user
 // agent is the fallback for the brief window before that global exists, and

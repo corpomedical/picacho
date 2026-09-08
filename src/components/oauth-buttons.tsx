@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, type SVGProps } from "react";
+import { useEffect, useState, type SVGProps } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/cn";
 import { clientOrigin } from "@/lib/client-origin";
 import { NATIVE_AUTH_REDIRECT } from "@/lib/native/platform";
+import { capPlugin } from "@/lib/native/bridge";
 
 // Supabase's provider ids — "azure" is what Supabase calls Microsoft/Entra ID
 // (covers Outlook, Hotmail, and work/school Microsoft accounts).
@@ -87,6 +88,30 @@ export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean 
   const [loadingProvider, setLoadingProvider] = useState<Provider | null>(null);
   const [error, setError] = useState("");
 
+  // Give the buttons back when someone backs out of the Custom Tab.
+  //
+  // Dismissing the tab returns to this page with no navigation and no state
+  // change of its own, so without this the row stays disabled on
+  // "Redirecting…" and the only way to try again is to kill the app. The
+  // plugin fires browserFinished when its controller activity comes back to
+  // the front, which is exactly that case. It can also fire on a SUCCESSFUL
+  // return; harmless, because that path is a full document navigation to
+  // /auth/callback and this component is gone by then.
+  useEffect(() => {
+    if (!nativeReturn) return;
+    const browser = capPlugin("Browser");
+    if (!browser?.addListener) return;
+    let handle: { remove?: () => void } | undefined;
+    void Promise.resolve(
+      browser.addListener("browserFinished", () => setLoadingProvider(null)),
+    ).then((h) => {
+      handle = h as { remove?: () => void };
+    });
+    return () => {
+      handle?.remove?.();
+    };
+  }, [nativeReturn]);
+
   async function handleClick(provider: Provider) {
     setError("");
     setLoadingProvider(provider);
@@ -95,16 +120,15 @@ export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean 
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
-        // In the app the provider must send the browser back to our custom
-        // scheme, which the shell catches and walks into the WebView. On the
-        // web it comes straight back to the callback route.
+        // In the app the provider must send the browser back to our own
+        // private-use scheme, which the shell catches and walks into the
+        // WebView. On the web it comes straight back to the callback route.
         redirectTo: nativeReturn ? NATIVE_AUTH_REDIRECT : `${clientOrigin()}/auth/callback`,
-        // Take the redirect by hand on native. supabase-js would call
-        // window.location.assign itself, which works — but doing it here keeps
-        // the handoff explicit and makes swapping in a Custom Tab a one-line
-        // change later. The PKCE verifier is written either way: auth-js
-        // builds the URL (and stores the verifier) BEFORE it looks at this
-        // flag.
+        // Take the redirect by hand on native — that is what lets the line
+        // below open a Custom Tab instead of letting supabase-js call
+        // window.location.assign. The PKCE verifier is written either way:
+        // auth-js builds the URL (and stores the verifier) BEFORE it looks at
+        // this flag.
         skipBrowserRedirect: nativeReturn,
       },
     });
@@ -116,17 +140,50 @@ export function OAuthButtons({ nativeReturn = false }: { nativeReturn?: boolean 
     }
 
     if (nativeReturn) {
-      // The URL here is Supabase's /authorize endpoint, NOT the provider's —
-      // and that distinction is load-bearing. Its host must be absent from
-      // capacitor.config.ts allowNavigation, so Capacitor cancels the load and
-      // hands it to the system browser. If it were allowed, the WebView would
-      // navigate for real, and onPageStarted → Bridge.reset() clears every
-      // plugin listener — including the appUrlOpen one that catches the way
-      // back. The sign-in would then complete and simply never return.
-      if (data?.url) window.location.assign(data.url);
-      else {
+      if (!data?.url) {
         setError(o.startFailed);
         setLoadingProvider(null);
+        return;
+      }
+      // A CUSTOM TAB, not a handoff to the system browser.
+      //
+      // versionCode 15 assigned this URL to window.location. The host is
+      // absent from capacitor.config.ts allowNavigation, so Capacitor
+      // cancelled the load and fired an ACTION_VIEW — the flow ran in whatever
+      // browser the phone uses, and coming BACK then depended on Android
+      // having verified an App Link for picacho.ai. That verification is a
+      // per-device step, it had not happened on a real phone, and the reported
+      // symptom is exactly what that looks like: pick an account, and the
+      // browser just carries on.
+      //
+      // A Custom Tab removes the dependency. The tab is launched into this
+      // app's own task, so when the provider redirects to our private-use
+      // scheme the tab closes and control returns here — no verification, no
+      // asset links, nothing per-device. RFC 8252 recommends this exact shape
+      // for native OAuth.
+      //
+      // The WebView still must not navigate here itself. data.url is
+      // Supabase's own /authorize endpoint, and were that host allow-listed
+      // the WebView would load it for real: onPageStarted calls
+      // Bridge.reset(), which removes every plugin listener including the
+      // appUrlOpen one waiting for the way back.
+      const browser = capPlugin("Browser");
+      if (browser?.open) {
+        // The plugin rejects when no browser can be resolved at all
+        // (ActivityNotFoundException). Rare, but without this the row would sit
+        // on "Redirecting…" forever with nothing on screen to explain it, and
+        // the rejection would surface as an unhandled promise instead.
+        void Promise.resolve(browser.open({ url: data.url })).catch(() => {
+          setError(o.startFailed);
+          setLoadingProvider(null);
+        });
+      } else {
+        // A shell that claims PicachoAuth/3 always has the plugin, so this is
+        // only reachable if includePlugins and the UA token ever disagree.
+        // Fall back to the old handoff rather than leaving a dead button: the
+        // scheme still resolves to this app through the intent filter, so the
+        // return can work — it is just no longer guaranteed.
+        window.location.assign(data.url);
       }
     }
     // On the web the browser has already navigated away to the provider, so
