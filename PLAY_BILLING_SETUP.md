@@ -165,7 +165,7 @@ Redeploy after saving (any push does it).
 
 ## 5 · Database
 
-Run `supabase/pending-2026-08-21/play-billing.sql` in the Supabase SQL
+Run `supabase/applied/2026-08-21/play-billing.sql` in the Supabase SQL
 editor (adds `profiles.plan_source` + `profiles.play_product_id`, backfills
 current payers as `stripe`).
 

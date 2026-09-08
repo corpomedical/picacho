@@ -222,7 +222,7 @@ Operator: "Build." What shipped, and where:
 | Piece | Where |
 |---|---|
 | Contract: endpoint, tiers, prices, eligibility, storage paths | `src/lib/generations/layers.ts` (+ tests) |
-| Schema: `generation_layers`, `layer-sources` bucket, RLS | `supabase/pending-2026-09-03/layers.sql` — **run before deploy** |
+| Schema: `generation_layers`, `layer-sources` bucket, RLS | `supabase/applied/2026-09-03/layers.sql` — **run before deploy** |
 | fal: `submitLayerizeJob`, `fetchQueuedLayers` | `providers/fal.ts` |
 | Job lane: stage `"layers"`, `saveLayersJob`, finish handler, refund on fail/cancel | `job-runner.ts` |
 | Actions: `startTakeLayers`, `startUploadLayers`, `reserveLayersUploadPath` | `actions.ts` |
