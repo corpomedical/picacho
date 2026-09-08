@@ -16,7 +16,14 @@ const eslintConfig = [
     // otherwise sweeps up, drowning the real tree's signal in ~1,000
     // errors from generated code. Never lint them; each worktree lints
     // itself when worked in.
-    ignores: [".claude/"],
+    //
+    // android/ and ios/ are the native shells. The only JavaScript under them
+    // is Capacitor's generated native-bridge.js, copied into build
+    // intermediates on every Gradle run — and until 2026-09-08 ESLint was
+    // linting two copies of it, contributing 32 of the 115 warnings the
+    // "baseline" carried. Generated code from a dependency is not this
+    // repo's to lint.
+    ignores: [".claude/", "android/", "ios/"],
   },
   ...nextCoreWebVitals,
   ...nextTypescript,
