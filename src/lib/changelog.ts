@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.24.0",
+    build: 37,
+    date: "2026-09-09",
+    title: "A leak closed, and every lock in the database checked",
+    items: [
+      "A database function could be called with the public key any browser holds and answered with other people's email addresses, usernames and full names. It had been locked on August 21 — but the lock named the two roles it meant to block and not the group both belong to, so it blocked neither. Found by probing every sensitive function with the anonymous key; this was the only one open, and it was closed within the hour. There is no evidence anyone found it before we did, and no way to be certain, which is why it is written here rather than left unsaid.",
+      "Every other lock was checked the same afternoon, against the live database rather than the files that describe it: all 27 functions that move money or read personal data refuse the public key; the two tables users can write to allow only the columns they should — a person can change their own username, name and settings, never their role, plan or credits; every storage policy fences a person to their own folder; and the buckets are private. One more narrowing came out of it: the date you accepted the terms was a column you could edit, and no longer is.",
+      "What the checks found is now permanent. The database verifier probes each private function with the anonymous key on every run, a test refuses any new privileged function that is neither probed nor deliberately allow-listed, and the six storage policies and the column grant that existed only in the dashboard are written down in the migration trail, along with the rule a lock has to follow to work.",
+      "Housekeeping in production, read-only first: the last of the August probe scripts' residue — a fake model called \"zzz\" in the health table — is gone, and a three-week-old hand-made copy of six character sheets was dropped once every row was confirmed to still exist in the live table. Nothing else in the day's health pass needed touching: the scheduled jobs are running, no render is stuck, and every model's failure counter is at zero.",
+    ],
+  },
+  {
     version: "1.23.0",
     build: 36,
     date: "2026-09-08",

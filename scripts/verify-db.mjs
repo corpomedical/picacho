@@ -119,6 +119,7 @@ const RPCS = [
 const PRIVATE_RPCS = [
   "add_purchased_credits",
   "admin_user_auth_activity",
+  "api_rate_check",
   "auth_email_status",
   "blast_recipient_emails",
   "claim_job_advance",

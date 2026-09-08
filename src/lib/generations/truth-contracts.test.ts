@@ -119,6 +119,59 @@ describe("sitemap: every public page registers itself", () => {
   });
 });
 
+describe("database functions: every SECURITY DEFINER function is accounted for", () => {
+  // A SECURITY DEFINER function runs with its owner's rights, and PostgreSQL
+  // grants EXECUTE on every new function to PUBLIC. So each one is either
+  // probed by scripts/verify-db.mjs with the anon key (PRIVATE_RPCS — must
+  // answer 42501) or named here as callable by design, because its body
+  // checks auth.uid() / is_admin() or it is a trigger that PostgREST cannot
+  // call with arguments. On 2026-09-09 drip_candidates() was neither, had
+  // been revoked from anon and authenticated but never from PUBLIC, and
+  // answered the anonymous key with other people's email addresses. A
+  // function added tomorrow lands in this test before it lands in
+  // production's anon-reachable surface.
+  it("is either probed as private or allow-listed as callable", () => {
+    const schema = src("../../../supabase/schema.sql");
+    const verifyDb = src("../../../scripts/verify-db.mjs");
+    const privateList = new Set(
+      [...(verifyDb.match(/const PRIVATE_RPCS = \[([\s\S]*?)\];/)?.[1] ?? "").matchAll(/"(\w+)"/g)].map((m) => m[1]),
+    );
+    // Callable by a signed-in user or a visitor on purpose. Each checks its
+    // caller inside, or is a trigger function with no RPC surface.
+    const callableByDesign = new Set([
+      "admin_traffic_daily", // raises unless is_admin()
+      "is_admin", // the check itself; reads only the caller's own row
+      "record_community_hide", // trigger
+      "record_community_view", // auth.uid() scoped
+      "record_user_activity", // auth.uid() scoped
+      "report_community_post", // auth.uid() scoped
+      "share_to_community", // auth.uid() scoped
+      "username_available", // signup needs it before sign-in
+      "community_hearts_bump", // trigger
+      "handle_new_user", // trigger
+      "reward_referral_on_success", // trigger
+      "sync_profile_email", // trigger
+    ]);
+    const definers: string[] = [];
+    for (const chunk of schema.split(/(?=CREATE OR REPLACE FUNCTION public\.)/).slice(1)) {
+      const name = chunk.match(/^CREATE OR REPLACE FUNCTION public\.(\w+)\(/)?.[1];
+      const end = chunk.indexOf("$function$;");
+      const body = chunk.slice(0, end > 0 ? end : 4000);
+      if (name && body.includes("SECURITY DEFINER")) definers.push(name);
+    }
+    expect(definers.length).toBeGreaterThan(20);
+    const unaccounted = [...new Set(definers)].filter((f) => !privateList.has(f) && !callableByDesign.has(f));
+    expect(
+      unaccounted,
+      `SECURITY DEFINER functions neither probed by verify-db nor allow-listed: ${unaccounted.join(", ")}`,
+    ).toEqual([]);
+    // And the reverse: a probed name that no longer exists is a typo in the
+    // probe, which would report a false "ok".
+    const stale = [...privateList].filter((f) => !definers.includes(f));
+    expect(stale, `PRIVATE_RPCS names functions not in schema.sql: ${stale.join(", ")}`).toEqual([]);
+  });
+});
+
 describe("MODEL_CAPABILITIES vs the fal adapter", () => {
   const fal = src("./providers/fal.ts");
 
