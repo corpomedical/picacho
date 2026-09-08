@@ -10,6 +10,135 @@ worse than a short translation.
 
 ---
 
+## versionCode 16 · versionName 1.16.0
+
+**Context the notes do not say out loud.** This is the THIRD attempt at
+in-app Google sign-in, and the honest summary of the first two is that both
+sent people to a browser and neither could get them back.
+
+14 used a custom scheme from the system browser; on the operator's phone the
+tap surfaced as a jump into Gmail. 15 replaced the return with a verified App
+Link, and the operator reported: *"When clicking the account, it does not take
+you back to the app, it continues on the browser."* The file was never the
+problem — Google's Digital Asset Links verifier reads our `assetlinks.json`
+and parses all three certificates. The return depends on ANDROID having run
+and cached a successful check on that particular handset, which is neither
+visible nor forceable from here, and on a real phone it had not happened.
+
+16 stops depending on anything per-device. The provider URL opens in a Chrome
+Custom Tab launched into the app's own task, so the redirect can be a
+private-use scheme, which needs no verification of any kind. MainActivity is
+`singleTask`, so the intent brings the task forward and clears the tab off the
+top on the way. RFC 8252 recommends this exact shape for native OAuth.
+
+Proven on the Pixel_7 AVD without signing in to anything: with a tab open,
+`dumpsys` put Chrome's activities in the SAME task as MainActivity, and firing
+`ai.picacho.app://auth-callback?code=EMULATORTEST123` left the task holding
+MainActivity alone with the WebView at `/login?error=oauth` — a fake code
+correctly refused. The full recipe is in MOBILE_APP.md.
+
+The user-agent token moved to `PicachoAuth/3`, so 15 can never be offered
+these buttons again. Say the quiet part: between the deploy and the day
+someone installs 16, the app shows NO Google button. Email and password still
+work, which beats a button that strands you half signed in.
+`NATIVE_OAUTH_DISABLED=1` in Vercel remains the instant kill if 16 misbehaves.
+
+**Honesty note on the copy.** These notes say the button has failed twice.
+15's notes said "working this time" and it was not; claiming it a second time
+would spend credibility we would rather keep. The copy describes what changed
+mechanically — the sign-in screen opens inside the app — rather than promising
+an outcome.
+
+**Before uploading:** `ai.picacho.app://auth-callback` must be in Supabase →
+Authentication → URL Configuration → Redirect URLs (present since 14), and the
+generated `android/app/src/main/assets/capacitor.plugins.json` must list
+`@capacitor/browser` — that list is an allow-list and a missing plugin is
+dropped silently.
+
+### en-US
+
+```
+Sign in with Google, opened inside the app.
+
+Twice now that button has sent you out to your browser and left you there. It no longer hands the sign-in to the browser at all — the Google screen opens inside the app, so picking your account brings you straight back, already signed in. Backing out of it no longer leaves the buttons stuck, either.
+
+If you got stuck on an earlier version: nothing was charged, and no half-made account was left behind.
+```
+
+(449 characters, limit 500)
+
+### es-419
+
+```
+Inicia sesión con Google, dentro de la app.
+
+Dos veces ese botón te mandó al navegador y te dejó ahí. Ya no le entrega el inicio de sesión al navegador: la pantalla de Google se abre dentro de la app, así que al elegir tu cuenta vuelves de inmediato, con la sesión ya iniciada. Y si te sales, los botones ya no se quedan trabados.
+
+Si te quedaste bloqueado en una versión anterior: no se cobró nada ni quedó ninguna cuenta a medias.
+```
+
+(432 characters, limit 500)
+
+### pt-BR
+
+```
+Entre com o Google, dentro do app.
+
+Duas vezes esse botão mandou você para o navegador e deixou você lá. Ele não entrega mais o login ao navegador: a tela do Google abre dentro do app, então escolher sua conta traz você de volta na hora, já conectado. E se você sair, os botões não travam mais.
+
+Se você ficou preso em uma versão anterior: nada foi cobrado e nenhuma conta ficou pela metade.
+```
+
+(391 characters, limit 500)
+
+### it-IT
+
+```
+Accedi con Google, dentro l'app.
+
+Due volte quel pulsante ti ha mandato nel browser e ti ha lasciato lì. Ora non affida più l'accesso al browser: la schermata di Google si apre dentro l'app, quindi scegliere l'account ti riporta subito indietro, già connesso. E se esci, i pulsanti non restano più bloccati.
+
+Se sei rimasto bloccato in una versione precedente: non è stato addebitato nulla e nessun account è rimasto a metà.
+```
+
+(424 characters, limit 500)
+
+---
+
+### If the listing uses the EUROPEAN variants
+
+Still unresolved, and still worth one look in Play Console → Store presence →
+Main store listing: 11 and 12 used `es-ES`/`pt-PT`, 13 onward used
+`es-419`/`pt-BR`, and notes pasted under a tag the listing does not carry go
+nowhere. English is the default listing language, so a missing translation
+falls back to en-US rather than showing nothing.
+
+#### es-ES
+
+```
+Inicia sesión con Google, dentro de la app.
+
+Dos veces ese botón te ha mandado al navegador y te ha dejado allí. Ya no le entrega el inicio de sesión al navegador: la pantalla de Google se abre dentro de la app, así que al elegir tu cuenta vuelves de inmediato, con la sesión ya iniciada. Y si sales, los botones ya no se quedan bloqueados.
+
+Si te quedaste bloqueado en una versión anterior: no se cobró nada ni quedó ninguna cuenta a medias.
+```
+
+(442 characters, limit 500)
+
+#### pt-PT
+
+```
+Inicia sessão com o Google, dentro da app.
+
+Duas vezes esse botão mandou-te para o navegador e deixou-te lá. Já não entrega o início de sessão ao navegador: o ecrã da Google abre dentro da app, por isso escolher a tua conta traz-te logo de volta, com sessão já iniciada. E se saíres, os botões deixam de ficar bloqueados.
+
+Se ficaste bloqueado numa versão anterior: não foi cobrado nada nem ficou nenhuma conta a meio.
+```
+
+(418 characters, limit 500)
+
+---
+
 ## versionCode 15 · versionName 1.15.0
 
 **Context the notes do not say out loud.** 14 shipped in-app Google sign-in

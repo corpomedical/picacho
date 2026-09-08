@@ -155,8 +155,13 @@ android {
         // after a 4-5 star rating in the app's own feedback card).
         // 5 = unified /app/media library ships with it (web-side, but the
         // operator wanted a numbered build to test against), 2026-08-21.
-        // Tracks CURRENT_VERSION in src/lib/changelog.ts. Bump versionCode
-        // (never reuse a value) on every Play upload. 3 = launcher icon
+        // versionName tracks versionCode (1.<code>.0), NOT the website's
+        // CURRENT_VERSION in src/lib/changelog.ts — a comment here claimed it
+        // did until 2026-09-08, while the two sat five releases apart. The
+        // site ships several times a day and the app a few times a month;
+        // tying the store's version string to the site's would make every
+        // web deploy look like an app update. Bump versionCode (never reuse
+        // a value) on every Play upload. 3 = launcher icon
         // committed to the dark tile in BOTH system themes (operator's call,
         // 2026-08-21: the ink tile reads better and never shifts size with
         // the theme), matching 512 store icon regenerated.
