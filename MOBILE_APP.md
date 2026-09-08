@@ -240,6 +240,69 @@ RELEASE build — WebView debugging is off — so the recipe above needs a debug
 APK, which has no R8 at all. For an R8 change the mapping check is the
 evidence, and the emulator run is the corroboration.
 
+## Google sign-in in the app — the invariants
+
+Added at versionCode 15 (2026-09-08), after 14 shipped it broken. Six things
+hold this up, and none of them fails loudly. Sign-in simply stops coming back.
+
+1. **`public/.well-known/assetlinks.json` must stay live at the APEX**, HTTP
+   200, `application/json`, and behind NO redirect. Android fetches it to
+   verify the App Link; a 301 or an HTML error page fails verification
+   silently and the redirect falls back to a browser. `www` is deliberately
+   absent from the intent filter because `next.config.ts` 308s it to the apex,
+   and a redirect fails Digital Asset Links.
+
+   ```bash
+   curl -sI https://picacho.ai/.well-known/assetlinks.json | head -3
+   ```
+
+2. **Three fingerprints, not one.** Play issues quantum-ready hybrid signing
+   keys, so newer devices verify against the POST-QUANTUM certificate and
+   older ones against the classical. Listing only one fails on half the fleet
+   with no error anywhere. The upload certificate is there too so
+   internal-test builds verify. All three come from Play Console →
+   Protected with Play → Play Store protection → Manage Play app signing.
+
+3. **`https://picacho.ai/auth/app-callback` must be in Supabase → Auth → URL
+   Configuration → Redirect URLs.** Without it the provider never returns.
+
+4. **The App Link claims `/auth/app-callback`, never `/auth/callback`.** That
+   second path is SHARED — browser Google sign-in returns there, and so does
+   every password-reset email. Claiming it pulls those into the app, where the
+   PKCE verifier does not exist, so a reset link tapped in Gmail opens the app,
+   fails, and spends its one-time code. Keep the `pathPrefix` narrow.
+
+5. **`*.supabase.co` must NOT be in `allowNavigation`.** `signInWithOAuth`
+   returns Supabase's own `/authorize` URL, not the provider's. If that host is
+   allow-listed the WebView navigates for real instead of handing off — and
+   `onPageStarted` calls `Bridge.reset()`, which calls `removeAllListeners()`
+   on every plugin, destroying the `appUrlOpen` listener that catches the way
+   back. The hardware back button dies with it.
+
+6. **`npx cap sync android` from the repo ROOT before building.** The user-agent
+   token and `allowNavigation` live in the generated
+   `android/app/src/main/assets/capacitor.config.json`, which is gitignored and
+   build-time only. Running sync from `android/` silently keeps the old file.
+
+### Turning it off, and retiring a bad build
+
+The website decides whether a binary may show these buttons, which is why
+versionCode 14 could be switched off in minutes without a store rollback:
+
+- `NATIVE_OAUTH_DISABLED=1` in Vercel kills it for every build on the next
+  request — no deploy, no store round trip.
+- The user-agent token (`PicachoAuth/<n>`, `capacitor.config.ts`) is the
+  version gate. Bumping it in the shell AND in `NATIVE_AUTH_UA_MARKER` retires
+  every older binary permanently, because the site then recognises only the
+  new one. That is how 14 was excluded when 15 shipped.
+
+### What to test on a device
+
+`adb shell am start -a android.intent.action.VIEW -d "https://picacho.ai/auth/app-callback?code=test"`
+should open the APP, not a browser, and land on `/login?error=oauth` — a fake
+code is correctly refused. If it opens a browser instead, verification has not
+landed: check `adb shell pm get-app-links ai.picacho.app`.
+
 ## Known risks, honestly
 
 1. **Guideline 4.2 rejection.** The single most likely outcome if Step 3 is
