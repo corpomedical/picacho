@@ -43,79 +43,16 @@
 //
 // layer-sources reads as empty. Confirm that is true before concluding it,
 // rather than assuming the bucket is unused.
-import fs from "node:fs";
+import { isReferenced as isRef, listAll as listAllIn, loadEnv, makeClient, mb, referencedKeys } from "./lib/storage-references.mjs";
 
-const env = Object.fromEntries(
-  fs.readFileSync(new URL("../.env.local", import.meta.url), "utf8")
-    .split("\n")
-    .filter((l) => l.includes("=") && !l.startsWith("#"))
-    .map((l) => [l.slice(0, l.indexOf("=")).trim(), l.slice(l.indexOf("=") + 1).trim()]),
-);
-const BASE = env.NEXT_PUBLIC_SUPABASE_URL;
-const KEY = env.SUPABASE_SERVICE_ROLE_KEY;
-if (!BASE || !KEY) throw new Error("Supabase env missing from .env.local");
-const h = { apikey: KEY, authorization: `Bearer ${KEY}`, "content-type": "application/json" };
-
-const rest = async (q) => (await fetch(`${BASE}/rest/v1/${q}`, { headers: h })).json();
-
-/** Storage key out of any URL shape we have ever stored, or null. */
-function storageKey(value) {
-  if (typeof value !== "string") return null;
-  const m =
-    value.match(/\/api\/media\/[^/]+\/([^?]+)/) ||
-    value.match(/\/object\/(?:sign|public)\/[^/]+\/([^?]+)/);
-  if (m) return decodeURIComponent(m[1]);
-  // Bare keys are stored directly in some columns (attachments, layers) — and
-  // some of them KEEP their ?v= signature, so the query has to come off here
-  // too or nothing matches. That is correction four: chat-attachments first
-  // reported 59 of 59 objects unreferenced, which was this bug and not the
-  // data.
-  return value.startsWith("http") ? null : decodeURIComponent(value.split("?")[0]);
-}
-
-const referenced = new Set();
-const add = (v) => {
-  const k = storageKey(v);
-  if (k) referenced.add(k);
-};
-
-for (const g of await rest("generations?select=*&limit=2000")) {
-  add(g.result_url);
-  add(g.poster_url);
-  for (const a of g.attachments ?? []) add(a);
-}
-for (const r of await rest("user_reels?select=*")) {
-  add(r.storage_path);
-  add(r.poster_path);
-}
-for (const c of await rest("community_posts?select=*&limit=2000")) add(c.media_url);
-for (const l of await rest("generation_layers?select=*&limit=2000")) add(l.storage_path);
-
-async function listAll(bucket, prefix = "", depth = 0, out = []) {
-  if (depth > 3) return out;
-  const res = await fetch(`${BASE}/storage/v1/object/list/${bucket}`, {
-    method: "POST",
-    headers: h,
-    body: JSON.stringify({ prefix, limit: 1000, offset: 0, sortBy: { column: "name", order: "asc" } }),
-  });
-  const items = await res.json();
-  if (!Array.isArray(items)) return out;
-  for (const it of items) {
-    const path = prefix ? `${prefix}/${it.name}` : it.name;
-    // A null id is how the list API reports a folder.
-    if (it.id === null) await listAll(bucket, path, depth + 1, out);
-    else out.push({ path, size: it.metadata?.size ?? 0 });
-  }
-  return out;
-}
-
-const isReferenced = (path) => {
-  if (referenced.has(path)) return true;
-  const wm = path.match(/^(.+)\/wm\/(.+)$/);
-  return wm ? referenced.has(`${wm[1]}/${wm[2]}`) : false;
-};
-
-const mb = (n) => (n / 1048576).toFixed(1);
+// The reference set, the key matcher and the lister all live in
+// lib/storage-references.mjs as of 2026-09-09, shared with the purge script
+// so the two can never disagree about what "unreferenced" means. Every
+// correction described above is encoded THERE.
+const client = makeClient(loadEnv());
+const referenced = await referencedKeys(client.rest);
+const listAll = (bucket) => listAllIn(client, bucket);
+const isReferenced = (path) => isRef(referenced, path);
 console.log(`referenced keys: ${referenced.size}`);
 let orphanBytes = 0;
 let orphanCount = 0;
