@@ -9,11 +9,30 @@
 // The pieces added so far each cover one path: read-guard.ts names a failing
 // workspace read, and the generate page names its chrome flags. Both are
 // try/catch inside the render, and neither can see a throw from anywhere
-// else — which is where this one is, because the digest tells us so. Next
-// computes it as djb2(message + stack), and ours has been the SAME value
-// across a fortnight of deploys; a real Error's stack shifts every build, so
-// whatever throws has an empty stack. That is the shape of a plain object —
-// a Supabase/PostgREST error, say — not of read-guard's `new Error`.
+// else — which is where this one is, because the digest tells us so.
+//
+// What the digest is, read from next/dist/server/app-render/
+// create-error-handler.js on 2026-09-09 rather than remembered: for a thrown
+// STRING it is string-hash(the string); for anything else Next first turns
+// it into an Error — a real Error passes through, a plain object becomes
+// new Error(safeStringifyLite(object)) INSIDE Next's own code — and then
+// takes string-hash(message + stack). The package is `string-hash`, not the
+// djb2Hash in next/shared/lib/hash — they differ, and a 2026-09-08 brute
+// force that hashed every string literal in src/ used the wrong one. Redone
+// on 09-09 with both functions over 32,292 distinct literals from src/,
+// @supabase/*, Next's server bundles and React: no match under either.
+//
+// Why the digest has been the same value across a fortnight of deploys:
+// an Error thrown in OUR code carries frames from our compiled chunks,
+// whose names change every build. A stable digest means no user frames at
+// all — a thrown string (no stack), or a plain object whose wrapper Error
+// was created inside Next, so its frames are Next's own files, unchanged
+// while Next stayed at 16.3.0 (it did, the whole window). Every `throw` in
+// our server code rethrows an Error, .throwOnError() is unused, and
+// supabase-js returns errors rather than throwing them; so the value comes
+// from a library or a promise rejected with a non-Error reason. The log
+// line below prints `name` and `message` — for the wrapped case, message IS
+// the stringified object — which is the fact this whole file exists to get.
 //
 // onRequestError is the only hook that sees all of them: it fires for errors
 // during streaming, in Server Actions and in route handlers alike, and is
