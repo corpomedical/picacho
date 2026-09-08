@@ -7,11 +7,16 @@ import type { LegalDoc } from "./types";
 // The "last updated" date is prose, not a token — "August 12, 2026" sat unchanged
 // inside the Spanish, Italian and Portuguese documents, which is the one
 // English sentence left on an otherwise translated legal page.
+// Moves when the TEXT changes, not when the file does. September 1, 2026 is
+// the day the data-controller section (LSSI operator card, GDPR controller,
+// complaint route) was added — a material change that sat under "August 12"
+// for a week because nothing tied the date to the wording. The 2026-09-07
+// commit only localized this date; it changed no terms and did not move it.
 const UPDATED: Record<Locale, string> = {
-  en: "August 12, 2026",
-  es: "12 de agosto de 2026",
-  it: "12 agosto 2026",
-  pt: "12 de agosto de 2026",
+  en: "September 1, 2026",
+  es: "1 de septiembre de 2026",
+  it: "1 settembre 2026",
+  pt: "1 de setembro de 2026",
 };
 
 const privacy: Record<Locale, LegalDoc> = {

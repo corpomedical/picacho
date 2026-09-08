@@ -4,11 +4,17 @@ import type { LegalDoc } from "./types";
 // The "last updated" date is prose, not a token — "August 12, 2026" sat unchanged
 // inside the Spanish, Italian and Portuguese documents, which is the one
 // English sentence left on an otherwise translated legal page.
+// Moves when the TEXT changes, not when the file does. August 30, 2026 is the
+// day the allowance clause was rewritten — "failed generations never consume
+// your allowance" became the narrower "requests blocked by your own brand
+// rules, and requests a provider refuses before rendering begins" — which is
+// the kind of change a person re-reading the terms needs dated. It sat under
+// "August 12" for nine days. The 2026-09-07 commit only localized this date.
 const UPDATED: Record<Locale, string> = {
-  en: "August 12, 2026",
-  es: "12 de agosto de 2026",
-  it: "12 agosto 2026",
-  pt: "12 de agosto de 2026",
+  en: "August 30, 2026",
+  es: "30 de agosto de 2026",
+  it: "30 agosto 2026",
+  pt: "30 de agosto de 2026",
 };
 
 const terms: Record<Locale, LegalDoc> = {
