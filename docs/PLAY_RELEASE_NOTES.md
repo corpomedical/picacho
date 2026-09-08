@@ -93,6 +93,44 @@ Inoltre: la Cronologia non si ferma più alla 50esima ripresa, quindi le precede
 
 ---
 
+### If the listing uses the EUROPEAN variants
+
+The locale tags in this file are not consistent, and it is worth resolving
+before the next upload rather than guessing again. versionCode 11 and 12 used
+`es-ES` and `pt-PT`; 13 switched to `es-419` and `pt-BR` and 14 and 15 copied
+that forward. Nobody checked which set the Play listing is actually
+configured for, and a listing only accepts the languages it has — notes
+pasted under a tag the listing does not carry go nowhere.
+
+Check Play Console → Store presence → Main store listing, and use whichever
+pair it lists. Same copy, adjusted for register.
+
+#### es-ES
+
+```
+Inicia sesión con Google, ahora sí.
+
+La actualización anterior añadió el botón pero no la vuelta: abría tu navegador y te dejaba allí. Ahora vuelves a la app con la sesión iniciada. Si antes te quedaste bloqueado, no se cobró nada ni quedó ninguna cuenta a medias.
+
+Además: el Historial ya no se detiene en la toma 50, así que las anteriores y las fallidas vuelven a estar accesibles. Y las pantallas de mejora y capas se cierran con el teclado.
+```
+
+(445 characters, limit 500)
+
+#### pt-PT
+
+```
+Inicia sessão com o Google, agora a funcionar.
+
+A atualização anterior adicionou o botão, mas não o regresso: abria o teu navegador e ficava por ali. Agora voltas à app já com sessão iniciada. Se ficaste bloqueado antes, não foi cobrado nada nem ficou nenhuma conta a meio.
+
+Além disso: o Histórico já não para na 50.ª captação, por isso as anteriores e as falhadas voltam a estar acessíveis. E os ecrãs de melhoria e camadas fecham-se com o teclado.
+```
+
+(450 characters, limit 500)
+
+---
+
 ## versionCode 14 · versionName 1.14.0
 
 **Context the notes do not say out loud.** Google refuses OAuth inside an
