@@ -242,66 +242,133 @@ evidence, and the emulator run is the corroboration.
 
 ## Google sign-in in the app — the invariants
 
-Added at versionCode 15 (2026-09-08), after 14 shipped it broken. Six things
-hold this up, and none of them fails loudly. Sign-in simply stops coming back.
+Rewritten at versionCode 16 (2026-09-08). Read the history first, because two
+releases were spent learning what does NOT hold this up:
 
-1. **`public/.well-known/assetlinks.json` must stay live at the APEX**, HTTP
-   200, `application/json`, and behind NO redirect. Android fetches it to
-   verify the App Link; a 301 or an HTML error page fails verification
-   silently and the redirect falls back to a browser. `www` is deliberately
-   absent from the intent filter because `next.config.ts` 308s it to the apex,
-   and a redirect fails Digital Asset Links.
+- **14** sent the provider to the system browser with a bare `ACTION_VIEW` and
+  asked for a custom scheme back. `auth.flow_state` showed four attempts with
+  `auth_code_issued_at` null: the flow died before Supabase issued a code, and
+  on the operator's phone the tap surfaced as a jump into Gmail.
+- **15** replaced the return with a VERIFIED App Link on `/auth/app-callback`.
+  Google's Digital Asset Links verifier reads our `assetlinks.json` and parses
+  all three certificates — the file was never the problem. The return still
+  depends on ANDROID having run and cached a successful check *on that device*,
+  which is neither visible nor forceable from here, and on a real phone it had
+  not happened. Operator, on 15: *"When clicking the account, it does not take
+  you back to the app, it continues on the browser."*
+- **16** stops depending on anything per-device. The provider URL opens in a
+  CHROME CUSTOM TAB launched into this app's own task, and the return is a
+  private-use scheme, which needs no verification of any kind. This is the
+  shape RFC 8252 recommends for native OAuth.
 
-   ```bash
-   curl -sI https://picacho.ai/.well-known/assetlinks.json | head -3
-   ```
+Five things hold 16 up, and none of them fails loudly. Sign-in simply stops
+coming back.
 
-2. **Three fingerprints, not one.** Play issues quantum-ready hybrid signing
-   keys, so newer devices verify against the POST-QUANTUM certificate and
-   older ones against the classical. Listing only one fails on half the fleet
-   with no error anywhere. The upload certificate is there too so
-   internal-test builds verify. All three come from Play Console →
-   Protected with Play → Play Store protection → Manage Play app signing.
+1. **`@capacitor/browser` must be in `android.includePlugins`**
+   (`capacitor.config.ts`). That list is an allow-list: a plugin merely left
+   out is dropped SILENTLY, so the shell would still build, `capPlugin`
+   ("Browser") would return null, and `oauth-buttons.tsx` would fall back to
+   the versionCode 15 handoff — the exact failure this release replaced. After
+   any change to that list, check the generated
+   `android/app/src/main/assets/capacitor.plugins.json` really lists it.
 
-3. **`https://picacho.ai/auth/app-callback` must be in Supabase → Auth → URL
+2. **`ai.picacho.app://auth-callback` must be in Supabase → Auth → URL
    Configuration → Redirect URLs.** Without it the provider never returns.
+   Present since versionCode 14; `https://picacho.ai/auth/app-callback` is
+   still listed too and does no harm.
 
-4. **The App Link claims `/auth/app-callback`, never `/auth/callback`.** That
-   second path is SHARED — browser Google sign-in returns there, and so does
-   every password-reset email. Claiming it pulls those into the app, where the
-   PKCE verifier does not exist, so a reset link tapped in Gmail opens the app,
-   fails, and spends its one-time code. Keep the `pathPrefix` narrow.
+3. **`Browser.close()` must NOT be called on the way back.** The tab is already
+   gone: MainActivity is `singleTask`, so routing the scheme intent to it
+   brings the task forward and clears everything above — the Custom Tab and the
+   translucent `BrowserControllerActivity` that launched it. Calling `close()`
+   anyway starts that activity again, and if the old instance is finishing but
+   not yet destroyed Android skips the finishing record and creates a fresh
+   one, whose `onCreate` fires the still-set controller listener and REOPENS
+   the same authorize URL. The rationale is in `native-auth-return.tsx`; the
+   mechanism is in `BrowserPlugin.java`.
 
-5. **`*.supabase.co` must NOT be in `allowNavigation`.** `signInWithOAuth`
-   returns Supabase's own `/authorize` URL, not the provider's. If that host is
-   allow-listed the WebView navigates for real instead of handing off — and
-   `onPageStarted` calls `Bridge.reset()`, which calls `removeAllListeners()`
-   on every plugin, destroying the `appUrlOpen` listener that catches the way
-   back. The hardware back button dies with it.
+4. **`*.supabase.co` must NOT be in `allowNavigation`.** Less load-bearing than
+   it was at 15 — the URL now goes to the plugin rather than to
+   `window.location` — but still true: if the WebView ever navigates there for
+   real, `onPageStarted` calls `Bridge.reset()`, which calls
+   `removeAllListeners()` on every plugin and destroys both the `appUrlOpen`
+   listener that catches the way back and the hardware back button's.
 
-6. **`npx cap sync android` from the repo ROOT before building.** The user-agent
-   token and `allowNavigation` live in the generated
-   `android/app/src/main/assets/capacitor.config.json`, which is gitignored and
-   build-time only. Running sync from `android/` silently keeps the old file.
+5. **`npx cap sync android` from the repo ROOT before building.** The
+   user-agent token, `allowNavigation` and the plugin list all live in
+   generated files under `android/app/src/main/assets/`, which are gitignored
+   and build-time only. Running sync from `android/` silently keeps the old
+   ones.
+
+### The App Link is kept, not depended on
+
+`public/.well-known/assetlinks.json`, the `autoVerify` intent filter and the
+`/auth/app-callback` route all stay. They cost nothing, they still work on a
+device where verification did land, and a redirect already in flight when 16
+ships can still arrive there. Nothing REQUESTS that URL any more. If you ever
+reintroduce a dependency on it, first find a way to OBSERVE verification per
+device — `adb shell pm get-app-links ai.picacho.app` reported
+`picacho.ai: none` on the emulator throughout, and forcing re-verification did
+not change it.
+
+What the file still has to satisfy, should it ever matter again: apex only
+(`www` 308s to the apex and a redirect fails Digital Asset Links), HTTP 200 as
+`application/json` behind no redirect, and THREE fingerprints — Play's
+quantum-ready hybrid signing means newer devices verify against the
+post-quantum certificate, older ones against the classical, and the upload
+certificate covers internal-test builds. All three come from Play Console →
+Protected with Play → Play Store protection → Manage Play app signing.
+
+```bash
+curl -sI https://picacho.ai/.well-known/assetlinks.json | head -3
+```
 
 ### Turning it off, and retiring a bad build
 
-The website decides whether a binary may show these buttons, which is why
-versionCode 14 could be switched off in minutes without a store rollback:
+The website decides whether a binary may show these buttons, which is why both
+14 and 15 could be switched off in minutes without a store rollback:
 
 - `NATIVE_OAUTH_DISABLED=1` in Vercel kills it for every build on the next
   request — no deploy, no store round trip.
 - The user-agent token (`PicachoAuth/<n>`, `capacitor.config.ts`) is the
   version gate. Bumping it in the shell AND in `NATIVE_AUTH_UA_MARKER` retires
-  every older binary permanently, because the site then recognises only the
-  new one. That is how 14 was excluded when 15 shipped.
+  every older binary permanently, because the site then recognises only the new
+  one. That is how 14 was excluded at 15, and 15 at 16. The cost is worth
+  naming: between the deploy and the day someone installs the new build, the
+  app shows no Google button at all.
 
-### What to test on a device
+### What to test on a device, without signing in to anything
 
-`adb shell am start -a android.intent.action.VIEW -d "https://picacho.ai/auth/app-callback?code=test"`
-should open the APP, not a browser, and land on `/login?error=oauth` — a fake
-code is correctly refused. If it opens a browser instead, verification has not
-landed: check `adb shell pm get-app-links ai.picacho.app`.
+The whole round trip is observable without a Google account. Run these against
+a debug build (`assembleDebug`; CDP is off on release builds), with the app in
+the foreground:
+
+```bash
+adb forward tcp:9333 localabstract:webview_devtools_remote_$(adb shell pidof ai.picacho.app)
+```
+
+1. Open a tab from the page's own bridge — over CDP, evaluate
+   `Capacitor.Plugins.Browser.open({url:"https://picacho.ai/login"})`.
+2. `adb shell dumpsys activity activities | grep "\* Hist"`. Chrome's
+   activities must sit in the SAME task as `ai.picacho.app/.MainActivity`. If
+   Chrome has a task of its own, the tab was not launched into ours and the
+   return will not be reliable — that is versionCode 15's failure.
+3. Fire the redirect as the provider would:
+
+   ```bash
+   adb shell am start -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d "ai.picacho.app://auth-callback?code=EMULATORTEST123"
+   ```
+
+4. `dumpsys` again: the task must be back to MainActivity ALONE — no Custom
+   Tab, no controller activity, and nothing was closed by hand. The WebView
+   must have navigated to `/login?error=oauth`, which is a fake code correctly
+   refused. Both were verified on the Pixel_7 AVD on 2026-09-08.
+
+Emulator gotcha found the same day: the Pixel_7 image ships with
+`com.android.chrome` DISABLED, so there is no browser at all and no Custom
+Tabs service. `adb shell pm enable com.android.chrome` first, or the tab falls
+back to the no-browser path (which is handled — the buttons re-enable and show
+an error — but proves nothing about the return).
 
 ## Known risks, honestly
 
