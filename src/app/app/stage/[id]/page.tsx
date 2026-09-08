@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
+import { isNativeApp } from "@/lib/native/server";
 import { getAngleStage } from "@/lib/generations/angle-stage";
 import { AngleStageView } from "@/components/angle-stage-view";
 
@@ -23,6 +24,13 @@ export default async function AngleStagePage({ params }: { params: Promise<{ id:
 
   const { t } = await getServerMessages();
   const s = t.stage;
+  // Reader-mode gate, same as every other in-app plan pointer (see
+  // lib/native/platform.ts): the Android shell may say which plans include
+  // the stage, but must not offer a way to go and get one. Until 2026-09-08
+  // this page was the one surface that showed "See plans" to the shell —
+  // found by listing every upgrade CTA in the app and checking each for
+  // this guard; this was the only one without it.
+  const native = await isNativeApp();
   const stage = await getAngleStage(id);
 
   return (
@@ -40,12 +48,14 @@ export default async function AngleStagePage({ params }: { params: Promise<{ id:
       ) : !stage.eligible ? (
         <div className="space-y-3 rounded-media border border-atelier-rule bg-atelier-surface p-6">
           <p className="text-sm text-atelier-ink">{s.notEligible}</p>
-          <Link
-            href="/app/settings?tab=usage"
-            className="inline-block cursor-pointer text-sm font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
-          >
-            {s.upgradeCta}
-          </Link>
+          {!native && (
+            <Link
+              href="/app/settings?tab=usage"
+              className="inline-block cursor-pointer text-sm font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
+            >
+              {s.upgradeCta}
+            </Link>
+          )}
         </div>
       ) : (
         <AngleStageView
