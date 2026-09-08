@@ -8,6 +8,7 @@ import { startTakeUpscale } from "@/lib/generations/actions";
 import { UPSCALE_TIERS, upscaleCreditCost, type UpscaleTier } from "@/lib/generations/upscale";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
+import { useIsNativeApp } from "@/lib/native/use-native";
 
 // The History-detail "Upscale to 1080p" action (design board A, operator-
 // approved 2026-09-02): an ochre-armed chip that opens the upscale receipt —
@@ -25,6 +26,8 @@ export function UpscaleButton({ generationId, seconds, tiers, trigger = "chip" }
    *  stage colors are theme-invariant literals, like every stage control. */
   trigger?: "chip" | "stageGhost";
 }) {
+  // Reader-mode gate (lib/native/platform.ts): no purchase pointer in the shell.
+  const native = useIsNativeApp();
   const { t } = useLocale();
   const h = t.history;
   const router = useRouter();
@@ -146,11 +149,13 @@ export function UpscaleButton({ generationId, seconds, tiers, trigger = "chip" }
             {/* Where the money lives — packs need no plan (operator report,
                 2026-09-02: the walls that say "you need credits" never
                 pointed at the door). */}
-            <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
-              <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">
-                {h.upscaleTopUpLink}
-              </Link>
-            </p>
+            {!native && (
+              <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
+                <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">
+                  {h.upscaleTopUpLink}
+                </Link>
+              </p>
+            )}
           </div>
         </div>
       )}

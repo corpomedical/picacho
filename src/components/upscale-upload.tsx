@@ -18,6 +18,7 @@ import { SerifNumerals } from "@/components/marketing/serif-numerals";
 import { useLocale } from "@/lib/i18n/provider";
 import { useModalFocus } from "@/lib/use-modal-focus";
 import { formatMsg } from "@/lib/i18n/format";
+import { useIsNativeApp } from "@/lib/native/use-native";
 
 // "Upscale a video" on the History header (design board C, operator-approved
 // 2026-09-02): bring any clip, not just a Picacho render. The browser reads
@@ -49,6 +50,8 @@ export function UpscaleUpload({ variant = "button" }: {
    *  dashed drop area (board B) — same sheet behind both. */
   variant?: "button" | "well";
 } = {}) {
+  // Reader-mode gate (lib/native/platform.ts): no purchase pointer in the shell.
+  const native = useIsNativeApp();
   const { t } = useLocale();
   const h = t.history;
   const router = useRouter();
@@ -320,11 +323,13 @@ export function UpscaleUpload({ variant = "button" }: {
             {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
             <p className="mt-3 text-xs leading-relaxed text-atelier-muted">{h.upscaleContentNote}</p>
             <p className="mt-1 text-xs leading-relaxed text-atelier-muted">{h.upscaleFootnote}</p>
-            <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
-              <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">
-                {h.upscaleTopUpLink}
-              </Link>
-            </p>
+            {!native && (
+              <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
+                <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">
+                  {h.upscaleTopUpLink}
+                </Link>
+              </p>
+            )}
           </div>
         </div>
       )}

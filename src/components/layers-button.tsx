@@ -8,6 +8,7 @@ import { startTakeLayers } from "@/lib/generations/actions";
 import { LAYERS_TIERS, LAYERS_TIER_ORDER, layersCreditCost, type LayersTier } from "@/lib/generations/layers";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
+import { useIsNativeApp } from "@/lib/native/use-native";
 
 // "Split into layers" on a finished image (shape B, 2026-09-03): the same
 // receipt discipline as Upscale — source, resolution, the serif-ochre total
@@ -17,6 +18,8 @@ export function LayersButton({ generationId, trigger = "chip" }: {
   generationId: string;
   trigger?: "chip" | "stageGhost";
 }) {
+  // Reader-mode gate (lib/native/platform.ts): no purchase pointer in the shell.
+  const native = useIsNativeApp();
   const { t } = useLocale();
   const L = t.layers;
   const router = useRouter();
@@ -123,9 +126,11 @@ export function LayersButton({ generationId, trigger = "chip" }: {
             </Button>
             {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
             <p className="mt-3 text-xs leading-relaxed text-atelier-muted">{L.footnote}</p>
-            <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
-              <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">{L.topUpLink}</Link>
-            </p>
+            {!native && (
+              <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
+                <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">{L.topUpLink}</Link>
+              </p>
+            )}
           </div>
         </div>
       )}

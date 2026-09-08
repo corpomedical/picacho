@@ -106,6 +106,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages";
 import { cn } from "@/lib/cn";
 import { EXTERNAL_PURCHASE_URL } from "@/lib/domains";
+import { useIsNativeApp } from "@/lib/native/use-native";
 
 type VisibleItem =
   | { kind: "step"; attempt: number; step: PipelineStepLog }
@@ -1190,6 +1191,8 @@ function UsageBanner({
   currentPeriodEnd: string | null;
   g: Messages["generate"];
 }) {
+  // Reader-mode gate: the shell may see its usage, never a way to buy more.
+  const native = useIsNativeApp();
   const [dismissed, setDismissed] = useState(false);
 
   if (dismissed) return null;
@@ -1214,10 +1217,15 @@ function UsageBanner({
           browser's locale/timezone, which legitimately differs from the SSR
           output — let React patch the text instead of throwing #418. */}
       <p className="flex-1" suppressHydrationWarning>
-        {formatMsg(g.approachingLimitUsage, { used, limit })} · {resetLabel} ·{" "}
-        <Link href="/app/settings?tab=usage" className="font-medium text-atelier-accent underline underline-offset-2">
-          {g.getMoreUsage}
-        </Link>
+        {formatMsg(g.approachingLimitUsage, { used, limit })} · {resetLabel}
+        {!native && (
+          <>
+            {" "}·{" "}
+            <Link href="/app/settings?tab=usage" className="font-medium text-atelier-accent underline underline-offset-2">
+              {g.getMoreUsage}
+            </Link>
+          </>
+        )}
       </p>
       <button
         type="button"

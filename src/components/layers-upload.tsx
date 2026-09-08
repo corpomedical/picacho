@@ -17,6 +17,7 @@ import { SerifNumerals } from "@/components/marketing/serif-numerals";
 import { useLocale } from "@/lib/i18n/provider";
 import { useModalFocus } from "@/lib/use-modal-focus";
 import { formatMsg } from "@/lib/i18n/format";
+import { useIsNativeApp } from "@/lib/native/use-native";
 
 // "Bring any image" (shape B, 2026-09-03), the Upscale upload lane's shape
 // exactly: the browser reads the image for the PREVIEW (size → eligibility);
@@ -37,6 +38,8 @@ function StackGlyph(props: React.SVGProps<SVGSVGElement>) {
 type PickedFile = { file: File; width: number; height: number; problem: string | null };
 
 export function LayersUpload() {
+  // Reader-mode gate (lib/native/platform.ts): no purchase pointer in the shell.
+  const native = useIsNativeApp();
   const { t } = useLocale();
   const L = t.layers;
   const router = useRouter();
@@ -249,9 +252,11 @@ export function LayersUpload() {
             {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
             <p className="mt-3 text-xs leading-relaxed text-atelier-muted">{L.contentNote}</p>
             <p className="mt-1 text-xs leading-relaxed text-atelier-muted">{L.footnote}</p>
-            <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
-              <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">{L.topUpLink}</Link>
-            </p>
+            {!native && (
+              <p className="mt-1 text-xs leading-relaxed text-atelier-muted">
+                <Link href="/app/settings?tab=usage" className="underline hover:text-atelier-ink">{L.topUpLink}</Link>
+              </p>
+            )}
           </div>
         </div>
       )}
