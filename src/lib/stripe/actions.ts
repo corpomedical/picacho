@@ -6,8 +6,6 @@ import { stripe } from "@/lib/stripe/client";
 import { getOrigin } from "@/lib/origin";
 import {
   blockInNativeApp,
-  startPlanCheckout,
-  startCreditCheckout,
   reportCheckoutFailure,
 } from "@/lib/stripe/checkout-core";
 

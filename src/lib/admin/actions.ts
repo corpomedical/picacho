@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
 import { redirect } from "next/navigation";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
 import { PLAN_LIMITS } from "@/lib/plans";
 import { computeAdminBadgeCounts, type AdminBadgeCounts } from "@/lib/admin/badges";
@@ -39,7 +39,7 @@ export async function getAdminBadgeCounts(): Promise<AdminBadgeCounts> {
 // target is just hardcoded.
 
 export async function setUserStatus(formData: FormData) {
-  const { supabase, admin, userId: actingUserId } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const status = formData.get("status") as string;
   const rawRedirect = (formData.get("redirect_to") as string) || "/admin/users";
@@ -296,7 +296,7 @@ export async function updateAppSetting(formData: FormData) {
 }
 
 export async function setUserRole(formData: FormData) {
-  const { supabase, admin, userId: actingUserId } = await requireAdmin();
+  const { admin, userId: actingUserId } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const role = formData.get("role") as string;
   const redirectTo = `/admin/users/${userId}`;
@@ -550,7 +550,7 @@ export async function setGenerationFeatured(formData: FormData) {
 }
 
 export async function setUserPlan(formData: FormData) {
-  const { supabase, admin } = await requireAdmin();
+  const { admin } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const plan = formData.get("plan") as string;
   const redirectTo = `/admin/users/${userId}`;
@@ -665,7 +665,7 @@ export async function setBonusCredits(formData: FormData) {
 // than a plan bump so it can be given and taken back without touching what
 // they pay or what else they can do.
 export async function setApiAccess(formData: FormData) {
-  const { supabase, admin } = await requireAdmin();
+  const { admin } = await requireAdmin();
   const userId = formData.get("user_id") as string;
   const enabled = formData.get("api_access") === "true";
 

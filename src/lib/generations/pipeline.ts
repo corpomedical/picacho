@@ -11,7 +11,6 @@ import {
   generateVideo,
   generateSpeech,
   lipSyncVideo,
-  type QueuedJob,
 } from "@/lib/generations/providers/fal";
 // The provider-dispatching submit, not fal's. Both paid video submit sites
 // import it from here — this one and the multi-angle one in actions.ts — so

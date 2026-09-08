@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
 import { isNativeAppClient } from "@/lib/native/platform";
-import { capPlugin } from "@/lib/native/bridge";
 import { downloadResult, downloadResultNative } from "@/components/download-button";
 import { deleteGeneration } from "@/lib/generations/actions";
 import { reportGenerationProblem } from "@/lib/generations/reports";

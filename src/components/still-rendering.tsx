@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
-import { formatMsg } from "@/lib/i18n/format";
 
 // Shown in place of a result while a generation is genuinely still rendering.
 //

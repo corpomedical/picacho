@@ -60,7 +60,7 @@ import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { AgentMode } from "@/lib/agent/prices";
 import { parseSseFrames } from "@/lib/agent/sse";
 import { classifyMessage } from "@/lib/agent/intent";
-import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type AttachmentRole, type PlanIssue, photorealFallback } from "@/lib/generations/send-plan";
+import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type PlanIssue, photorealFallback } from "@/lib/generations/send-plan";
 import { CINEMA_PRESETS, isProvenPreset, type CinemaPresetCategory } from "@/lib/generations/cinema-presets";
 import { UpscaleButton } from "@/components/upscale-button";
 import {

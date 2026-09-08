@@ -14,7 +14,6 @@ import { refundedFailureDailyCap, type PlanId } from "@/lib/plans";
 import { refundWithheld } from "@/lib/generations/refund-rules";
 import {
   cancelQueuedJob,
-  checkQueuedJob,
   extractVideoFrame,
   fetchQueuedAudioUrl,
   fetchQueuedVideoUrl,

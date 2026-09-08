@@ -12,7 +12,6 @@ import {
   setCommunityPostHidden,
 } from "@/lib/community/actions";
 import { REPORT_REASONS, type ReportReason } from "@/lib/generations/report-constants";
-import { formatMsg } from "@/lib/i18n/format";
 import { cn } from "@/lib/cn";
 import { QuietVideo } from "@/components/quiet-video";
 import { PicachoMark } from "@/components/picacho-mark";
