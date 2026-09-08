@@ -1,0 +1,16 @@
+-- Two unique indexes on the same expression, profiles lower(username):
+--
+--   profiles_username_lower_key   — the documented one (applied/2026-08-19/
+--                                   auth-admin.sql, referenced again in
+--                                   applied/2026-08-31/signup-username-hardening.sql)
+--   profiles_username_unique_idx  — appears in no applied file; created by hand
+--                                   in the dashboard at some point and never
+--                                   written down.
+--
+-- They enforce the identical rule, so the second buys nothing and costs a
+-- btree maintenance on every profile write plus its disk. Found 2026-09-08 by
+-- a mechanical pass over schema.sql for indexes sharing a table and
+-- expression; this was the only pair.
+--
+-- The documented one stays. Idempotent, harmless on a double paste.
+DROP INDEX IF EXISTS public.profiles_username_unique_idx;
