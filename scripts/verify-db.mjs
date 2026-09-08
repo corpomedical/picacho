@@ -1,8 +1,10 @@
-// Does production actually have what supabase/pending-*/ says it should?
+// Does production actually have what supabase/applied/ and supabase/pending/
+// say it should?
 //
 // Schema truth lives in three places — the live DB (operator hand-pastes
-// SQL), the pending-*/ files, and the schema.sql snapshot — with nothing
-// mechanical forcing agreement (2026-09-05 audit). The class already caused
+// SQL), the SQL files under supabase/ (applied/<date>/ once run, pending/
+// until then — see supabase/README.md), and the schema.sql snapshot — with
+// nothing mechanical forcing agreement (2026-09-05 audit). The class already caused
 // a money bug: the plan check constraint lacked 'basic' while the site sold
 // Basic. This script is the mechanical check: a curated manifest of the
 // LOAD-BEARING objects each pending directory creates, probed read-only
@@ -79,6 +81,11 @@ const COLUMNS = {
     "character_profile_id", "duration_seconds", "byte_size", "built_at",
   ],
   generation_signals: ["generation_id", "user_id", "kind", "created_at"],
+  // The onboarding drip's claim table (2026-09-08): the cron inserts here
+  // FIRST so two runs cannot both mail one person, and drip_candidates
+  // excludes anyone with a row. A missing table fails the claim and skips
+  // everyone — silently, since a failed claim reads as "already claimed".
+  drip_sends: ["user_id", "template", "sent_at"],
 };
 
 // RPCs the app calls (schema.sql + pending files).
@@ -96,6 +103,7 @@ const RPCS = [
   "username_available",
   "auth_email_status",
   "blast_recipient_emails",
+  "drip_candidates",
 ];
 
 // Storage buckets both code rosters expect (see truth-contracts.test.ts).
