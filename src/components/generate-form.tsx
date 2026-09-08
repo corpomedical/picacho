@@ -3885,9 +3885,24 @@ function GenerateFormInner({
   ];
   // Filtered once per tour open — a step list that mutated mid-tour would
   // yank the current index out from under the person.
+  //
+  // THE FIRST-DAY CRASH (React #419, five reports 2026-08-23 → 09-07, root
+  // cause found 2026-09-09). This memo runs during render, and for exactly one
+  // visitor it runs on the SERVER with tourActive already true: startOnboarding
+  // is set for a person who has a character and has not completed onboarding
+  // — the first composer render after their first character, and never again
+  // once the tour is dismissed. There, `document` does not exist, the
+  // querySelector threw "document is not defined", the Suspense boundary
+  // died mid-stream, and the client filed a minified #419 naming nothing.
+  // Every report matched that moment to the second.
+  //
+  // The DOM check is skipped where there is no DOM. The tour renders nothing
+  // until it has mounted, so the server-side list never reaches markup; and
+  // on the client this memo first runs during hydration, when the server's
+  // HTML is already in the document, so the anchors are there to be found.
   const tourSteps = useMemo(
     () =>
-      tourActive
+      tourActive && typeof document !== "undefined"
         ? allTourSteps.filter(
             (s) =>
               s.targetId === null ||
