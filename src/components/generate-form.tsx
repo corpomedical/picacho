@@ -105,6 +105,7 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages";
 import { cn } from "@/lib/cn";
+import { EXTERNAL_PURCHASE_URL } from "@/lib/domains";
 
 type VisibleItem =
   | { kind: "step"; attempt: number; step: PipelineStepLog }
@@ -1129,7 +1130,7 @@ function InsufficientCreditsBanner({
         {native && !canPlayBilling && allowExternalPurchase && (
           <button
             type="button"
-            onClick={() => window.open("https://picacho.io/pricing", "_blank")}
+            onClick={() => window.open(EXTERNAL_PURCHASE_URL, "_blank")}
             className="cursor-pointer font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
           >
             {t.common.webPurchaseCta}

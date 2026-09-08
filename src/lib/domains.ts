@@ -34,3 +34,12 @@ export const KNOWN_APP_HOSTS = [
 // DELIBERATELY the sibling domain, kept outside the shell's allowNavigation
 // so the link opens the system browser (see lib/native/external-purchase.ts).
 export const PURCHASE_ORIGIN = "https://picacho.io";
+
+// The one place the handoff URL is spelled. It lives HERE, in a module with
+// no server imports, because both halves need it: the settings page (a
+// Server Component) and the composer's credit strip (a Client Component).
+// lib/native/external-purchase.ts re-exports it for the server side but
+// imports next/headers, so a client file cannot reach it there — which is
+// how generate-form.tsx came to carry its own hand-typed copy of this string
+// until 2026-09-08.
+export const EXTERNAL_PURCHASE_URL = `${PURCHASE_ORIGIN}/pricing`;

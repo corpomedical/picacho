@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { PURCHASE_ORIGIN } from "@/lib/domains";
+import { EXTERNAL_PURCHASE_URL } from "@/lib/domains";
 import { isNativeApp } from "@/lib/native/server";
 
 // May THIS request's native app show a link out to the website's purchase
@@ -38,5 +38,7 @@ export async function allowExternalPurchaseLink(): Promise<boolean> {
 // the same app but is NOT in the shell's allowNavigation list — so opening
 // it bounces out of the WebView into the system browser, which is exactly
 // the "external link" shape the injunction describes (and keeps the
-// purchase flow out of the app's own frame).
-export const EXTERNAL_PURCHASE_URL = `${PURCHASE_ORIGIN}/pricing`;
+// purchase flow out of the app's own frame). Defined in lib/domains.ts so a
+// Client Component can import it without dragging next/headers along;
+// re-exported here so the server callers keep their import.
+export { EXTERNAL_PURCHASE_URL };
