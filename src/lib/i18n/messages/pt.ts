@@ -555,6 +555,7 @@ const pt = {
     tryAgain: "Tentar novamente",
   },
   generate: {
+    photoOption: "Foto {n}",
     multiAngleLocked: "O multiângulo gera vários ângulos de câmera de uma vez — disponível em qualquer plano pago. Faça upgrade em Configurações → Uso e plano.",
     advancedVideoLocked: "Os quadros inicial e final e a referência com várias imagens fazem parte dos planos Studio e Elite. Faça upgrade em Configurações → Uso e plano.",
     advancedVideoNeedsKling: "Os quadros inicial e final e a referência com várias imagens só funcionam com o modelo de vídeo Kling — troque de modelo para usá-los.",

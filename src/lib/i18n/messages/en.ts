@@ -607,6 +607,7 @@ const en = {
     tryAgain: "Try again",
   },
   generate: {
+    photoOption: "Photo {n}",
     multiAngleLocked: "Multi-angle renders several camera angles at once — available on any paid plan. Upgrade in Settings → Usage & plan.",
     advancedVideoLocked: "Start & end frames and multi-image reference are part of the Studio and Elite plans. Upgrade in Settings → Usage & plan.",
     advancedVideoNeedsKling: "Start & end frames and multi-image reference only work with the Kling video model — switch model to use them.",

@@ -5795,6 +5795,9 @@ function GenerateFormInner({
       : undefined) ??
     stageTakes[0] ??
     null;
+  // Both shapes in the union carry it: ChatTurn through HistoryTurn, and
+  // MultiAngleChatItem directly.
+  const stageTakePrompt = stageTake?.prompt ?? "";
   const stageTakeUrl = stageTake
     ? stageTake.kind === "single"
       ? stageTake.succeeded
@@ -5814,7 +5817,21 @@ function GenerateFormInner({
   const stagePanel = isHero ? null : (
     <div className="mb-4">
       <div className="relative overflow-hidden rounded-[16px] bg-atelier-stage shadow-[0_1px_2px_rgba(33,29,22,0.06),0_24px_60px_-28px_rgba(33,29,22,0.28)]">
-        <div className="flex h-[300px] w-full items-center justify-center sm:h-[428px]">
+        {/* The stage is where a render is watched, and it said nothing. All
+            three states swap inside this one box — the in-flight line, the
+            arriving take, and the couldntValidate failure — and none of them
+            was announced, so a screen-reader user got silence from "sending"
+            through to "done". The transcript's own ResultMedia already names
+            its media (line ~570); the stage never did.
+
+            role="status" rather than alert: this is progress, not an
+            interruption, and the pipeline's steps are distinct stages rather
+            than a ticking percentage, so hearing them is useful. */}
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex h-[300px] w-full items-center justify-center sm:h-[428px]"
+        >
           {stageInFlightPrompt !== null ? (
             <div className="flex flex-col items-center gap-3 px-6 text-center">
               <LoaderIcon className="h-5 w-5 text-[#a39a88]" />
@@ -5832,6 +5849,7 @@ function GenerateFormInner({
                 controls
                 playsInline
                 preload="metadata"
+                aria-label={stageTakePrompt || g.resultAlt}
                 className="h-full max-h-full w-full object-contain"
               />
             ) : (
@@ -5839,7 +5857,11 @@ function GenerateFormInner({
               <img
                 key={stageTakeUrl}
                 src={stageTakeUrl}
-                alt=""
+                // The prompt, not "". Each take is unique to what was asked
+                // for, so the prompt describes it better than any fixed
+                // string — the same rule ResultMedia states for the
+                // transcript copy of this image.
+                alt={stageTakePrompt || g.resultAlt}
                 className="h-full max-h-full w-full object-contain"
               />
             )
@@ -6677,6 +6699,13 @@ function GenerateFormInner({
                           key={p.path}
                           type="button"
                           onClick={() => setAnchorPhotoPath(p.path)}
+                          // The button's only child is an <img>, so without
+                          // these it had no accessible name at all and its
+                          // selected state was a border colour — invisible to
+                          // a screen reader and to anyone who cannot separate
+                          // those two greys.
+                          aria-pressed={selected}
+                          aria-label={formatMsg(g.photoOption, { n: i + 1 })}
                           className={cn(
                             "relative h-12 w-12 flex-shrink-0 overflow-hidden rounded-media border-2",
                             selected ? "border-atelier-ink" : "border-transparent",
@@ -7332,11 +7361,13 @@ function GenerateFormInner({
                               <PlusIcon className="h-4 w-4" />
                             )}
                           </button>
-                          {advancedPhotoOptions.map((p) => (
+                          {advancedPhotoOptions.map((p, i) => (
                             <button
                               key={p.key}
                               type="button"
                               onClick={() => toggleStoryboardPhoto(p.value, "start")}
+                              aria-pressed={storyboardStartPath === p.value}
+                              aria-label={formatMsg(g.photoOption, { n: i + 1 })}
                               className={cn(
                                 "relative aspect-square overflow-hidden rounded-media border-2",
                                 storyboardStartPath === p.value ? "border-atelier-ink" : "border-transparent",
@@ -7367,11 +7398,13 @@ function GenerateFormInner({
                               <PlusIcon className="h-4 w-4" />
                             )}
                           </button>
-                          {advancedPhotoOptions.map((p) => (
+                          {advancedPhotoOptions.map((p, i) => (
                             <button
                               key={p.key}
                               type="button"
                               onClick={() => toggleStoryboardPhoto(p.value, "end")}
+                              aria-pressed={storyboardEndPath === p.value}
+                              aria-label={formatMsg(g.photoOption, { n: i + 1 })}
                               className={cn(
                                 "relative aspect-square overflow-hidden rounded-media border-2",
                                 storyboardEndPath === p.value ? "border-atelier-ink" : "border-transparent",
@@ -7404,13 +7437,15 @@ function GenerateFormInner({
                             <PlusIcon className="h-4 w-4" />
                           )}
                         </button>
-                        {advancedPhotoOptions.map((p) => {
+                        {advancedPhotoOptions.map((p, i) => {
                           const checked = multiRefPaths.includes(p.value);
                           return (
                             <button
                               key={p.key}
                               type="button"
                               onClick={() => toggleMultiRefPhoto(p.value)}
+                              aria-pressed={checked}
+                              aria-label={formatMsg(g.photoOption, { n: i + 1 })}
                               className={cn(
                                 "relative aspect-square overflow-hidden rounded-media border-2",
                                 checked ? "border-atelier-ink" : "border-transparent",
