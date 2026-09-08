@@ -660,7 +660,6 @@ CREATE INDEX profiles_referred_by_idx ON public.profiles USING btree (referred_b
 CREATE UNIQUE INDEX profiles_stripe_customer_id_idx ON public.profiles USING btree (stripe_customer_id) WHERE (stripe_customer_id IS NOT NULL);
 CREATE UNIQUE INDEX profiles_stripe_subscription_id_idx ON public.profiles USING btree (stripe_subscription_id) WHERE (stripe_subscription_id IS NOT NULL);
 CREATE UNIQUE INDEX profiles_username_lower_key ON public.profiles USING btree (lower(username));
-CREATE UNIQUE INDEX profiles_username_unique_idx ON public.profiles USING btree (lower(username));
 CREATE INDEX idx_projects_user_id ON public.projects USING btree (user_id);
 CREATE INDEX promo_redemptions_code_idx ON public.promo_redemptions USING btree (promo_code_id);
 CREATE INDEX prompt_assists_user_created_idx ON public.prompt_assists USING btree (user_id, created_at DESC);
