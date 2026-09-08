@@ -1,0 +1,14 @@
+-- A consent record the person could edit, made read-only to them.
+--
+-- terms_accepted_at is stamped by the server alone: the auth callback and
+-- the signup action both write it with the service role, and nothing in the
+-- app writes it through a user's own session. Yet the by-hand column grant
+-- recorded in applied/2026-09-09/profiles-column-grants.sql included it —
+-- so any signed-in user could PATCH their own row through PostgREST and set
+-- their acceptance stamp to null, or to any date they liked. The row policy
+-- permits it (it is their row); only the column grant stood in the way, and
+-- it did not.
+--
+-- The other seven columns in that grant are the person's own settings and
+-- prompts, written through their session by design, and stay. Idempotent.
+REVOKE UPDATE (terms_accepted_at) ON public.profiles FROM authenticated;
