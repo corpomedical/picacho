@@ -793,6 +793,22 @@ export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].so
 // needs a pricing decision rather than a comment. Re-measure after any
 // change to retry behavior; do not let this paragraph go stale again.
 //
+// RE-MEASURED 2026-09-08, and the retry figure has moved in our favour.
+// 1.132 attempts per generation was measured on 2026-08-30. Against
+// production today: 1.188 all-time, but 1.083 over the 24 generations since
+// that measurement and 1.091 since 2026-09-01. The all-time number is dragged
+// up by early August, when the pipeline was still being fixed; the current
+// rate is BETTER than the basis assumes.
+//
+//   assumed  (0.28 + 0.02) x 1.132 = $0.3396 per credit
+//   measured (0.28 + 0.02) x 1.083 = $0.3249 per credit, ~4.3% cheaper
+//
+// So every margin figure below is conservative rather than optimistic, which
+// is the safe direction to be wrong in. Left as 1.132 deliberately: 24
+// generations is too small a sample to reprice on, and a basis that tracks
+// every fortnight's noise is worse than one that lags slightly. Re-measure
+// when the sample is larger.
+//
 // IT WENT STALE THE NEXT DAY (noted 2026-09-08). Those percentages were
 // measured on 2026-08-30. Elite's allowance went 600 -> 750 credits at an
 // unchanged $499/$399 on 2026-08-31 — see the comment on PRICING_TIERS.elite
