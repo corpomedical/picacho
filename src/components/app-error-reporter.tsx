@@ -65,12 +65,39 @@ export function AppErrorReporter() {
       return typeof digest === "string" && digest ? `\ndigest: ${digest}` : "";
     }
 
+    // `||`, not `??`, and that one character is why five #419 reports arrived
+    // with no location at all. An Error whose `stack` is the EMPTY STRING is
+    // not null or undefined, so `??` handed the empty string straight through
+    // and the filename:line:col fallback never ran — then reportClientError's
+    // .trim() removed the leftover newline, leaving no trace that a stack had
+    // been attempted. Every one of those reports was exactly 211 characters:
+    // message, page, digest, and nothing else.
+    //
+    // An empty stack is not a curiosity here, it is the clue. Next derives the
+    // digest as a hash of message + stack, and ours has been the SAME value
+    // across a fortnight of deploys — which can only happen if the stack is
+    // empty, since a real one carries build-specific frames. So the throw is
+    // something that reaches the client without one, and the location is the
+    // only thing left that can identify it.
+    function whereFrom(err: unknown, fallback: string): string {
+      const stack = err instanceof Error ? err.stack : undefined;
+      const kind =
+        err instanceof Error
+          ? `${err.name}`
+          : err === null
+            ? "null"
+            : `${typeof err}${typeof err === "object" ? ` (${Object.prototype.toString.call(err)})` : ""}`;
+      return `thrown: ${kind}\n${stack || fallback}`;
+    }
+
     function onError(event: ErrorEvent) {
       const message = event.error instanceof Error ? event.error.message : event.message;
-      const stack = event.error instanceof Error ? event.error.stack : undefined;
       handle(
         message || "Unknown client error",
-        `page: ${window.location.pathname}${digestOf(event.error)}\n${stack ?? `${event.filename}:${event.lineno}:${event.colno}`}`,
+        `page: ${window.location.pathname}${digestOf(event.error)}\n${whereFrom(
+          event.error,
+          `${event.filename}:${event.lineno}:${event.colno}`,
+        )}`,
       );
     }
 
@@ -78,8 +105,11 @@ export function AppErrorReporter() {
       const reason = event.reason;
       const message =
         reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "Unhandled promise rejection";
-      const stack = reason instanceof Error ? reason.stack : undefined;
-      handle(message, `page: ${window.location.pathname}${digestOf(reason)}\n${stack ?? String(reason)}`);
+      // Same `??` -> `||` correction, and the same reason.
+      handle(
+        message,
+        `page: ${window.location.pathname}${digestOf(reason)}\n${whereFrom(reason, String(reason))}`,
+      );
     }
 
     window.addEventListener("error", onError);
