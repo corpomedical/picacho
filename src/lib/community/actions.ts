@@ -153,13 +153,23 @@ export async function setCommunityPostHidden(postId: string, hidden: boolean): P
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
-  const { error } = await supabase
+  // Moderation is admin-only, and the "Admins moderate posts" policy is what
+  // enforces it. But RLS enforces by FILTERING, not by failing: a non-admin
+  // caller — a stale admin session, a hand-made request — gets zero rows
+  // updated and no error, and this used to answer { error: null } to that.
+  // The feed would then flip the eye icon as if the post were hidden while
+  // everyone else still saw it. Reading the row back turns "affected nothing"
+  // into the failure it is.
+  const { data, error } = await supabase
     .from("community_posts")
     .update({ hidden_at: hidden ? new Date().toISOString() : null })
-    .eq("id", postId);
+    .eq("id", postId)
+    .select("id")
+    .maybeSingle();
   if (error) {
     console.error("setCommunityPostHidden failed:", error.message);
     return { error: "Couldn't update this post." };
   }
+  if (!data) return { error: "Couldn't update this post." };
   return { error: null };
 }
