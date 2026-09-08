@@ -1,9 +1,22 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Card } from "@/components/ui/card";
 import { ResetPasswordForm } from "@/components/reset-password-form";
 import { getServerMessages } from "@/lib/i18n/server";
 import { Logo } from "@/components/logo";
+
+// "Set a new password | Picacho" in the tab and in a search result, via the root layout's
+// title.template — in the reader's language, since the heading already is.
+// Until 2026-09-08 the four account pages set no title of their own, so all
+// of them wore the homepage's, and someone with three tabs open could not
+// tell the login from the signup from the reset. Not in the sitemap on
+// purpose (see truth-contracts.test.ts); a title is for the person, not the
+// crawler.
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerMessages();
+  return { title: t.auth.resetPassword.title, description: t.auth.resetPassword.subtitle };
+}
 
 export default async function ResetPasswordPage() {
   // Only reachable with a valid (recovery) session — someone landing here

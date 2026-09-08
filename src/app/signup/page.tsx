@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { SignupUsernameField } from "@/components/signup-username-field";
 import { redirect } from "next/navigation";
@@ -11,6 +12,18 @@ import { OAuthButtons } from "@/components/oauth-buttons";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp, nativeSupportsAuthReturn } from "@/lib/native/server";
 import { Logo } from "@/components/logo";
+
+// "Sign up | Picacho" in the tab and in a search result, via the root layout's
+// title.template — in the reader's language, since the heading already is.
+// Until 2026-09-08 the four account pages set no title of their own, so all
+// of them wore the homepage's, and someone with three tabs open could not
+// tell the login from the signup from the reset. Not in the sitemap on
+// purpose (see truth-contracts.test.ts); a title is for the person, not the
+// crawler.
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getServerMessages();
+  return { title: t.auth.signup.title, description: t.auth.signup.subtitle };
+}
 
 export default async function SignupPage({
   searchParams,
