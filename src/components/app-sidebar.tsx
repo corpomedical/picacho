@@ -1086,6 +1086,7 @@ export function AppSidebar({
                   </p>
                   <input
                     ref={usernameInputRef}
+                    aria-label={s.usernameLabel}
                     value={usernameDraft}
                     onChange={(e) => setUsernameDraft(e.target.value)}
                     onKeyDown={(e) => {

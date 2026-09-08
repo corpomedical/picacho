@@ -1121,8 +1121,9 @@ export function CharacterForm({
         </p>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className={LABEL}>{c.hair}</label>
+            <label htmlFor="character-hair" className={LABEL}>{c.hair}</label>
             <input
+              id="character-hair"
               value={hair}
               onChange={(e) => setHair(e.target.value)}
               className={`mt-1 w-full ${FIELD}`}
@@ -1130,8 +1131,9 @@ export function CharacterForm({
             />
           </div>
           <div>
-            <label className={LABEL}>{c.outfit}</label>
+            <label htmlFor="character-outfit" className={LABEL}>{c.outfit}</label>
             <input
+              id="character-outfit"
               value={outfit}
               onChange={(e) => setOutfit(e.target.value)}
               className={`mt-1 w-full ${FIELD}`}
@@ -1139,8 +1141,9 @@ export function CharacterForm({
             />
           </div>
           <div>
-            <label className={LABEL}>{c.personality}</label>
+            <label htmlFor="character-personality" className={LABEL}>{c.personality}</label>
             <input
+              id="character-personality"
               value={personality}
               onChange={(e) => setPersonality(e.target.value)}
               className={`mt-1 w-full ${FIELD}`}
@@ -1148,8 +1151,9 @@ export function CharacterForm({
             />
           </div>
           <div>
-            <label className={LABEL}>{c.distinguishingFeatures}</label>
+            <label htmlFor="character-distinguishing" className={LABEL}>{c.distinguishingFeatures}</label>
             <input
+              id="character-distinguishing"
               value={distinguishing}
               onChange={(e) => setDistinguishing(e.target.value)}
               className={`mt-1 w-full ${FIELD}`}
@@ -1162,6 +1166,7 @@ export function CharacterForm({
       <section className={SHEET}>
         <h2 className={SHEET_TITLE}>{c.motionStyle}</h2>
         <input
+          aria-label={c.motionStyle}
           value={motionStyle}
           onChange={(e) => setMotionStyle(e.target.value)}
           className={`mt-4 w-full ${FIELD}`}
@@ -1177,6 +1182,7 @@ export function CharacterForm({
         ) : (
           <div className="mt-4 flex items-center gap-2">
             <select
+              aria-label={c.dialogueVoice}
               value={voiceId}
               onChange={(e) => setVoiceId(e.target.value)}
               className={`w-full ${FIELD}`}
@@ -1213,6 +1219,7 @@ export function CharacterForm({
             </span>
           ))}
           <input
+            aria-label={c.voiceToneTags}
             value={tagInput}
             onChange={(e) => setTagInput(e.target.value)}
             onKeyDown={(e) => {

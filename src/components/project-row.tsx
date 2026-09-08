@@ -348,6 +348,7 @@ export function ProjectRow({
         {renaming ? (
           <input
             ref={inputRef}
+            aria-label={p.rename}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={submitRename}
@@ -382,6 +383,7 @@ export function ProjectRow({
         {renaming ? (
           <input
             ref={inputRef}
+            aria-label={p.rename}
             value={name}
             onChange={(e) => setName(e.target.value)}
             onBlur={submitRename}
@@ -436,6 +438,7 @@ export function ProjectRow({
       {renaming ? (
         <input
           ref={inputRef}
+          aria-label={p.rename}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={submitRename}

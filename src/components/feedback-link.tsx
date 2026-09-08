@@ -86,6 +86,7 @@ export function FeedbackLink({
             <>
               <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{title}</p>
               <textarea
+                aria-label={title}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder={placeholder}
