@@ -56,8 +56,17 @@ describe("domain truth has one home", () => {
 
   it("the picacho.app placeholder domain is gone", () => {
     // A THIRD domain the product never shipped on, which robots.txt and the
-    // sitemap fell back to.
-    for (const file of ["../../app/robots.ts", "../../app/sitemap.ts", "../origin.ts", "../client-origin.ts"]) {
+    // sitemap fell back to — and, until 2026-09-08, the support-address
+    // fallback in the app shell and the settings page. Both now read
+    // SUPPORT_EMAIL_FALLBACK from lib/domains.
+    for (const file of [
+      "../../app/robots.ts",
+      "../../app/sitemap.ts",
+      "../origin.ts",
+      "../client-origin.ts",
+      "../../app/app/layout.tsx",
+      "../../app/app/settings/page.tsx",
+    ]) {
       expect(src(file)).not.toContain("picacho.app");
     }
   });

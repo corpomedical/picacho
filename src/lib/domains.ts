@@ -43,3 +43,12 @@ export const PURCHASE_ORIGIN = "https://picacho.io";
 // how generate-form.tsx came to carry its own hand-typed copy of this string
 // until 2026-09-08.
 export const EXTERNAL_PURCHASE_URL = `${PURCHASE_ORIGIN}/pricing`;
+
+// What the app shows as the support address when the app_settings row is
+// missing. The LIVE value is the support_email setting (hello@picacho.ai as
+// of 2026-09-08, editable in Admin); this is only the floor under it. It was
+// support@picacho.app in two places until 2026-09-08 — a domain the product
+// never shipped on, the same placeholder the sitemap and robots once fell
+// back to and that truth-contracts.test.ts already forbids elsewhere. A
+// fallback nobody can receive is worse than none.
+export const SUPPORT_EMAIL_FALLBACK = "hello@picacho.ai";

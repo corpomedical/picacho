@@ -31,6 +31,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { formatMsg } from "@/lib/i18n/format";
 import { isEUVisitor } from "@/lib/geo";
 import { cn } from "@/lib/cn";
+import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
 
 
 // The upsell ladder for the "next tier" card below — each plan nudges toward
@@ -226,7 +227,7 @@ export default async function SettingsPage({
   // person would actually be charged at checkout, see stripe/actions.ts.
   const currencySymbol = (await isEUVisitor()) ? "€" : "$";
   const purchasedCredits = (profile?.purchased_credits ?? 0) as number;
-  const supportEmail = supportEmailSetting?.value ?? "support@picacho.app";
+  const supportEmail = supportEmailSetting?.value ?? SUPPORT_EMAIL_FALLBACK;
   // A "live" Stripe subscription (active or behind on payment) means all
   // plan changes should go through the Customer Portal, which handles
   // proration correctly. No subscription yet (or fully canceled) means the

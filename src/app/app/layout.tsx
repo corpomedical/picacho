@@ -13,6 +13,7 @@ import { createClient } from "@/lib/supabase/server";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AppErrorReporter } from "@/components/app-error-reporter";
 import { ActivityHeartbeat } from "@/components/activity-heartbeat";
+import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
 
 export default async function AppLayout({
   children,
@@ -102,7 +103,7 @@ export default async function AppLayout({
         recentJobs={recentJobs ?? []}
         characters={characters ?? []}
         projects={projects ?? []}
-        supportEmail={supportEmailSetting?.value ?? "support@picacho.app"}
+        supportEmail={supportEmailSetting?.value ?? SUPPORT_EMAIL_FALLBACK}
         skipAiRefinement={profile?.skip_ai_refinement === true}
         voiceModeEnabled={voiceModeEnabled}
       />
