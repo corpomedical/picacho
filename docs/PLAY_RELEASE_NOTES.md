@@ -10,6 +10,89 @@ worse than a short translation.
 
 ---
 
+## versionCode 15 · versionName 1.15.0
+
+**Context the notes do not say out loud.** 14 shipped in-app Google sign-in
+and it could not complete. The consent screen opened in the system browser as
+designed, but the return never arrived: `auth.flow_state` showed four attempts
+— three Google, one Facebook — all with `auth_code_issued_at` null, meaning
+the flow died before Supabase ever issued a code. The buttons were switched
+off from the WEBSITE within the hour, which is the whole point of the
+capability token: it reached every installed 14 the moment Vercel deployed,
+where a store rollback would have taken hours and missed anyone who had
+already updated.
+
+15 replaces the custom-scheme return with a VERIFIED App Link on
+`/auth/app-callback`. The invariants are documented in MOBILE_APP.md; the two
+worth repeating here are that `assetlinks.json` carries THREE fingerprints
+(Play's quantum-ready hybrid signing means newer devices verify against the
+post-quantum certificate, and listing one fails half the fleet), and that the
+filter claims `/auth/app-callback` and never the shared `/auth/callback`,
+which browser sign-in and every password-reset email also use.
+
+The user-agent token moved to `PicachoAuth/2`, so 14 can never be offered
+these buttons again by any future deploy. `NATIVE_OAUTH_DISABLED=1` in Vercel
+remains the instant kill if 15 misbehaves too.
+
+**Honesty note on the copy.** These notes say the previous update did not
+work. That is deliberate: 14 was live, the button was tappable, and anyone who
+tried it hit a dead end. Saying so costs less than pretending otherwise.
+
+**Before uploading:** `https://picacho.ai/auth/app-callback` must be in
+Supabase → Authentication → URL Configuration → Redirect URLs (added
+2026-09-07), and `/.well-known/assetlinks.json` must answer 200 as
+application/json with no redirect (verified 2026-09-08).
+
+### en-US
+
+```
+Sign in with Google, working this time.
+
+The last update added the button but not the way back — it opened your browser and left you there. Tapping it now returns you to the app, signed in. If you got stuck before, nothing was charged and no account was left half-made.
+
+Also: History no longer stops at your 50th take, so older ones and failed attempts are reachable again. And the upscale and layers screens can now be closed with the keyboard.
+```
+
+(446 characters, limit 500)
+
+### es-419
+
+```
+Iniciar sesión con Google, ahora sí.
+
+La actualización anterior agregó el botón pero no el regreso: abría tu navegador y te dejaba ahí. Ahora vuelves a la app con la sesión iniciada. Si te quedaste atascado antes, no se cobró nada ni quedó una cuenta a medias.
+
+Además: el Historial ya no se detiene en la toma 50, así que las anteriores y las fallidas vuelven a estar accesibles. Y las pantallas de mejora y capas se cierran con el teclado.
+```
+
+(441 characters, limit 500)
+
+### pt-BR
+
+```
+Entrar com o Google, agora funcionando.
+
+A atualização anterior adicionou o botão, mas não o caminho de volta: abria seu navegador e parava por ali. Agora você volta ao app já conectado. Se você travou antes, nada foi cobrado e nenhuma conta ficou pela metade.
+
+Também: o Histórico não para mais no seu take 50, então os antigos e os que falharam voltam a ser acessíveis. E as telas de upscale e camadas fecham pelo teclado.
+```
+
+(424 characters, limit 500)
+
+### it-IT
+
+```
+Accedi con Google, stavolta davvero.
+
+L'aggiornamento precedente aveva aggiunto il pulsante ma non il ritorno: apriva il browser e ti lasciava lì. Ora torni nell'app, già connesso. Se prima sei rimasto bloccato, non è stato addebitato nulla e nessun account è rimasto a metà.
+
+Inoltre: la Cronologia non si ferma più alla 50esima ripresa, quindi le precedenti e quelle fallite sono di nuovo raggiungibili. E le schermate di upscale e livelli si chiudono da tastiera.
+```
+
+(466 characters, limit 500)
+
+---
+
 ## versionCode 14 · versionName 1.14.0
 
 **Context the notes do not say out loud.** Google refuses OAuth inside an
