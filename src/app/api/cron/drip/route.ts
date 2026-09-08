@@ -86,24 +86,40 @@ export async function GET(request: Request) {
       continue;
     }
 
-    const unsubscribe = await unsubscribeUrl(c.user_id);
-    const { subject, html } = renderTemplate(
-      tpl.subject,
-      tpl.body,
-      {
-        username: c.username ?? "there",
-        email: c.email,
-        plan: "",
-        credits: "",
-      },
-      unsubscribe,
-    );
+    // Everything between the claim and the send runs under one rule: if it
+    // does not end in a delivered message, the claim comes back off. The
+    // sendEmail branch always did that; the steps before it — building the
+    // unsubscribe link, rendering the template — could still throw (a missing
+    // signing secret, a template helper failing on one person's data), and a
+    // throw here escaped the loop with THIS claim held and every candidate
+    // after it unmailed. A held claim is a person the drip never writes to
+    // again, silently: drip_candidates excludes them from every later run.
+    let delivered = false;
+    let failure: string | null = null;
+    try {
+      const unsubscribe = await unsubscribeUrl(c.user_id);
+      const { subject, html } = renderTemplate(
+        tpl.subject,
+        tpl.body,
+        {
+          username: c.username ?? "there",
+          email: c.email,
+          plan: "",
+          credits: "",
+        },
+        unsubscribe,
+      );
+      const { error: sendError } = await sendEmail({ to: c.email, subject, html, unsubscribeUrl: unsubscribe });
+      if (sendError) failure = sendError;
+      else delivered = true;
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
 
-    const { error: sendError } = await sendEmail({ to: c.email, subject, html, unsubscribeUrl: unsubscribe });
-    if (sendError) {
+    if (!delivered) {
       // Release the claim so tomorrow retries this person.
       await admin.from("drip_sends").delete().match({ user_id: c.user_id, template: c.template });
-      console.error("drip: send failed", c.template, sendError);
+      console.error("drip: send failed", c.template, failure);
       skipped++;
       continue;
     }
