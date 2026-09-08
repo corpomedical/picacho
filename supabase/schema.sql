@@ -1,4 +1,10 @@
--- Picacho public schema snapshot — generated 2026-09-07
+-- Picacho public schema snapshot — generated 2026-09-07, policies/indexes/grants
+-- for the two tables added that day filled in 2026-09-09. The 09-07 re-snapshot
+-- inserted only their table blocks; the policies ("reels read own", "signals
+-- read own") and indexes are copied verbatim from applied/2026-09-07/, and the
+-- grants are the platform defaults every other table here carries — evidenced,
+-- not read from pg_class: an anonymous key gets 200 [] from both tables rather
+-- than 42501, which is what a granted-but-policy-filtered read looks like.
 -- Read directly from the live database's catalogs (see supabase/README.md).
 -- Reference document: the applied/ SQL files remain the change history.
 
@@ -642,6 +648,7 @@ CREATE UNIQUE INDEX generation_layers_version_key ON public.generation_layers US
 CREATE INDEX generation_reports_generation_id_idx ON public.generation_reports USING btree (generation_id);
 CREATE INDEX generation_reports_status_idx ON public.generation_reports USING btree (status);
 CREATE INDEX generation_reports_user_id_idx ON public.generation_reports USING btree (user_id);
+CREATE UNIQUE INDEX generation_signals_unique ON public.generation_signals USING btree (generation_id, kind);
 CREATE INDEX generations_angle_group_id_idx ON public.generations USING btree (angle_group_id) WHERE (angle_group_id IS NOT NULL);
 CREATE UNIQUE INDEX generations_angle_group_unique ON public.generations USING btree (user_id, angle_group_id, angle) WHERE (angle_group_id IS NOT NULL);
 CREATE INDEX generations_featured ON public.generations USING btree (featured_at DESC) WHERE (featured_at IS NOT NULL);
@@ -667,6 +674,7 @@ CREATE INDEX push_tokens_user_idx ON public.push_tokens USING btree (user_id);
 CREATE INDEX idx_reference_image_generations_character_profile_id ON public.reference_image_generations USING btree (character_profile_id);
 CREATE INDEX reference_image_generations_user_created_idx ON public.reference_image_generations USING btree (user_id, created_at DESC);
 CREATE INDEX saved_prompts_user_created_idx ON public.saved_prompts USING btree (user_id, created_at DESC);
+CREATE INDEX user_reels_built_at_idx ON public.user_reels USING btree (built_at);
 
 CREATE OR REPLACE FUNCTION public.add_purchased_credits(p_user_id uuid, p_amount integer)
  RETURNS void
@@ -1933,6 +1941,8 @@ create policy "Insert own generation reports" on public.generation_reports for i
   with check ((( SELECT auth.uid() AS uid) = user_id));
 create policy "Read own generation reports or admin reads all" on public.generation_reports for select to public
   using (((( SELECT auth.uid() AS uid) = user_id) OR ( SELECT is_admin() AS is_admin)));
+create policy "signals read own" on public.generation_signals for select to authenticated
+  using ((user_id = auth.uid()));
 create policy "Delete own generations" on public.generations for delete to public
   using ((( SELECT auth.uid() AS uid) = user_id));
 create policy "Insert own generations" on public.generations for insert to public
@@ -2003,6 +2013,8 @@ create policy "Read own saved prompts" on public.saved_prompts for select to pub
 create policy "Update own saved prompts" on public.saved_prompts for update to public
   using ((( SELECT auth.uid() AS uid) = user_id))
   with check ((( SELECT auth.uid() AS uid) = user_id));
+create policy "reels read own" on public.user_reels for select to authenticated
+  using ((user_id = auth.uid()));
 create policy "Admins can delete voice presets" on public.voice_presets for delete to public
   using (( SELECT is_admin() AS is_admin));
 create policy "Admins can insert voice presets" on public.voice_presets for insert to public
@@ -2064,6 +2076,9 @@ grant delete, insert, references, select, trigger, truncate, update on public.ge
 grant delete, insert, references, select, trigger, truncate, update on public.generation_reports to anon;
 grant delete, insert, references, select, trigger, truncate, update on public.generation_reports to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on public.generation_reports to service_role;
+grant delete, insert, references, select, trigger, truncate, update on public.generation_signals to anon;
+grant delete, insert, references, select, trigger, truncate, update on public.generation_signals to authenticated;
+grant delete, insert, references, select, trigger, truncate, update on public.generation_signals to service_role;
 grant references, select, trigger, truncate on public.generations to anon;
 grant references, select, trigger, truncate on public.generations to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on public.generations to service_role;
@@ -2103,6 +2118,9 @@ grant delete, insert, references, select, trigger, truncate, update on public.re
 grant delete, insert, references, select, trigger, truncate, update on public.saved_prompts to anon;
 grant delete, insert, references, select, trigger, truncate, update on public.saved_prompts to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on public.saved_prompts to service_role;
+grant delete, insert, references, select, trigger, truncate, update on public.user_reels to anon;
+grant delete, insert, references, select, trigger, truncate, update on public.user_reels to authenticated;
+grant delete, insert, references, select, trigger, truncate, update on public.user_reels to service_role;
 grant delete, insert, references, select, trigger, truncate, update on public.voice_presets to anon;
 grant delete, insert, references, select, trigger, truncate, update on public.voice_presets to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on public.voice_presets to service_role;
