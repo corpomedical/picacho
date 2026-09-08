@@ -1,0 +1,14 @@
+-- A three-week-old copy of six people's character sheets, kept for nothing.
+--
+-- character_profiles_backup_20260814 was made by hand before a risky change
+-- on 2026-08-14 and never removed. Checked read-only on 2026-09-09: six rows,
+-- every one of them still present in character_profiles by id — nothing in
+-- the backup exists only there. No code, script or applied SQL references
+-- it. RLS is on with no policy, so nobody but the service role can read it,
+-- which makes it safe, not useful: it is personal data (reference photos,
+-- traits, voices) held past the moment it had a purpose, under a privacy
+-- policy that names us as controller.
+--
+-- Supabase Pro keeps seven days of automatic backups, which is the backup
+-- this table was standing in for. Idempotent.
+DROP TABLE IF EXISTS public.character_profiles_backup_20260814;
