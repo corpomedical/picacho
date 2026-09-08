@@ -106,6 +106,47 @@ const RPCS = [
   "drip_candidates",
 ];
 
+// Functions the ANON key must NOT be able to execute (2026-09-09). Every one
+// is SECURITY DEFINER and reads or moves money or personal data on behalf of
+// an arbitrary user id; the app reaches them through the service role only.
+// PostgreSQL grants EXECUTE to PUBLIC on creation and anon inherits from
+// PUBLIC, so a function is private only if a REVOKE named public — the day
+// this list was written, drip_candidates() had been "revoked" from anon and
+// authenticated but not public, and answered the anon key with other
+// people's email addresses. Probed by CALLING each with the anon key and
+// arguments that match nothing (random uuids): a private function answers
+// 42501 before running; a mis-granted one would run against no row.
+const PRIVATE_RPCS = [
+  "add_purchased_credits",
+  "admin_user_auth_activity",
+  "auth_email_status",
+  "blast_recipient_emails",
+  "claim_job_advance",
+  "clawback_credit_purchase",
+  "create_api_key_capped",
+  "decrement_purchased_credits",
+  "drip_candidates",
+  "increment_free_generations",
+  "insert_brand_rules_capped",
+  "insert_saved_prompt_capped",
+  "monthly_credits_used",
+  "record_agent_units",
+  "record_credit_purchase",
+  "record_model_failure",
+  "record_prompt_assist",
+  "refund_daily_free_generation",
+  "refund_free_reference_generation",
+  "reserve_generation",
+  "reserve_generations",
+  "reserve_reference_image_generation",
+  "spend_daily_free_generation",
+  "spend_free_generation",
+  "spend_free_reference_generation",
+  "spend_purchased_credits",
+];
+// And the one the signup form needs BEFORE anyone is signed in.
+const ANON_CALLABLE_RPCS = ["username_available"];
+
 // Storage buckets both code rosters expect (see truth-contracts.test.ts).
 const BUCKETS = [
   "character-references",
@@ -173,10 +214,59 @@ async function main() {
     else bad(`bucket ${b}`);
   }
 
+  // --- privileges: what the anon key can execute ---------------------------
+  const ANON = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const anonHeaders = { apikey: ANON, authorization: `Bearer ${ANON}`, "content-type": "application/json" };
+  const schemaSql = fs.readFileSync(new URL("../supabase/schema.sql", import.meta.url), "utf8");
+  const valueFor = (type) =>
+    /uuid\[\]/.test(type) ? [crypto.randomUUID()]
+    : /uuid/.test(type) ? crypto.randomUUID()
+    : /int|numeric/.test(type) ? 1
+    : /bool/.test(type) ? false
+    : /timestamp/.test(type) ? "2026-01-01T00:00:00Z"
+    : /jsonb/.test(type) ? {}
+    : /text\[\]/.test(type) ? ["probe"]
+    : "probe";
+  const argsFor = (fn) => {
+    const m = schemaSql.match(new RegExp(`CREATE OR REPLACE FUNCTION public\\.${fn}\\(([^)]*)\\)`));
+    if (!m) return null;
+    const out = {};
+    for (const part of m[1].split(",").map((x) => x.trim()).filter(Boolean)) {
+      const a = part.match(/^(\w+)\s+([^=]+?)(?:\s+DEFAULT.*)?$/);
+      if (a) out[a[1]] = valueFor(a[2]);
+    }
+    return out;
+  };
+  const anonCall = async (fn) => {
+    const res = await fetch(`${BASE}/rest/v1/rpc/${fn}`, {
+      method: "POST",
+      headers: anonHeaders,
+      body: JSON.stringify(argsFor(fn) ?? {}),
+    });
+    return { status: res.status, text: (await res.text()).replace(/\s+/g, " ") };
+  };
+
+  console.log("\nanon key may NOT execute:");
+  for (const fn of PRIVATE_RPCS) {
+    if (argsFor(fn) === null) { bad(`${fn} — no signature in schema.sql, cannot probe`); continue; }
+    const r = await anonCall(fn);
+    if (/42501/.test(r.text)) ok(fn);
+    // Status only, never the body: an exposed function's body IS the leak
+    // (drip_candidates answered with real email addresses), and a verifier's
+    // output ends up in terminals and logs.
+    else bad(`${fn} EXPOSED to the anon key — answered ${r.status} with ${r.text.length} bytes`);
+  }
+  console.log("\nanon key MUST be able to execute:");
+  for (const fn of ANON_CALLABLE_RPCS) {
+    const r = await anonCall(fn);
+    if (/42501/.test(r.text)) bad(`${fn} blocked for anon — signup's availability check would fail`);
+    else ok(fn);
+  }
+
   console.log(
     missing === 0
       ? "\nEverything the manifest names exists in production."
-      : `\n${missing} MISSING — find the pending file that creates it and run it.`,
+      : `\n${missing} PROBLEM(S) — a missing object needs its pending file run; an EXPOSED function needs its revoke.`,
   );
   process.exit(missing === 0 ? 0 : 1);
 }
