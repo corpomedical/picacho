@@ -116,21 +116,6 @@ create table public.character_profiles (
 );
 alter table public.character_profiles enable row level security;
 
-create table public.character_profiles_backup_20260814 (
-  "id" uuid,
-  "user_id" uuid,
-  "name" text,
-  "reference_image_urls" text[],
-  "traits" jsonb,
-  "motion_style" text,
-  "voice_tone_tags" text[],
-  "created_at" timestamp with time zone,
-  "updated_at" timestamp with time zone,
-  "project_id" uuid,
-  "voice_id" uuid
-);
-alter table public.character_profiles_backup_20260814 enable row level security;
-
 create table public.community_hearts (
   "post_id" uuid not null,
   "user_id" uuid not null,
@@ -2046,9 +2031,6 @@ grant delete, insert, references, select, trigger, truncate, update on public.br
 grant delete, insert, references, select, trigger, truncate, update on public.character_profiles to anon;
 grant delete, insert, references, select, trigger, truncate, update on public.character_profiles to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on public.character_profiles to service_role;
-grant delete, insert, references, select, trigger, truncate, update on public.character_profiles_backup_20260814 to anon;
-grant delete, insert, references, select, trigger, truncate, update on public.character_profiles_backup_20260814 to authenticated;
-grant delete, insert, references, select, trigger, truncate, update on public.character_profiles_backup_20260814 to service_role;
 grant delete, insert, references, select, trigger, truncate, update on public.community_hearts to authenticated;
 grant delete, insert, references, select, trigger, truncate, update on public.community_hearts to service_role;
 grant delete, insert, references, select, trigger, truncate, update on public.community_moderation to anon;
