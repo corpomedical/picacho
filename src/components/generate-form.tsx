@@ -3900,6 +3900,15 @@ function GenerateFormInner({
   // until it has mounted, so the server-side list never reaches markup; and
   // on the client this memo first runs during hydration, when the server's
   // HTML is already in the document, so the anchors are there to be found.
+  //
+  // VISIBLE, not merely present (2026-09-09, operator on the Android app:
+  // "wrong highlights that don't make sense"). The native shell hides the
+  // whole sidebar with CSS — html.native-app aside { display: none } — so its
+  // three anchored links stay in the DOM and passed the old existence test.
+  // A display:none element measures 0×0 at the top-left corner, and the tour
+  // dutifully spotlit a small square in that corner while the balloon talked
+  // about Characters, Templates and Community. getClientRects() is empty for
+  // anything not laid out, whatever hid it.
   const tourSteps = useMemo(
     () =>
       tourActive && typeof document !== "undefined"
@@ -3907,7 +3916,7 @@ function GenerateFormInner({
             (s) =>
               s.targetId === null ||
               s.revealedByTour ||
-              document.querySelector(`[data-tour-id="${s.targetId}"]`) !== null,
+              (document.querySelector(`[data-tour-id="${s.targetId}"]`)?.getClientRects().length ?? 0) > 0,
           )
         : allTourSteps,
     // eslint-disable-next-line react-hooks/exhaustive-deps
