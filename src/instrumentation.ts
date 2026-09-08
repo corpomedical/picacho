@@ -39,12 +39,61 @@
 // handed the same digest the client reports. Logging both together is what
 // finally joins one of these reports to its cause.
 //
-// Deliberately console only. Writing to the database from the global error
-// handler is the kind of clever that turns one failure into two — the write
-// can fail, and it can fail for the same reason the request did.
+// Console first, and then ONE durable line. The 09-08 version of this file
+// was console-only, on the argument that a database write from the global
+// error handler turns one failure into two. That argument lost to a fact
+// learned 09-09: all five #419 reports coincide with a person creating
+// their first character and being sent to /app/generate — one to eight
+// seconds apart, every time — and Vercel keeps runtime logs for a day. The
+// next occurrence will land on a day nobody is reading logs, and the console
+// line will be gone before anyone looks. So the same fields are also upserted
+// into app_settings (key `last_server_error`, and `last_server_error_419`
+// when the digest is the one being chased), where Admin → Settings already
+// lists every row. It is done with a bare fetch — no client, no import —
+// bounded to 1.5 s, inside its own try, after the console line has already
+// printed: it cannot throw into the handler, and if the database is the
+// thing that failed, the write fails quietly and the console line remains.
 import type { Instrumentation } from "next";
 
-export const onRequestError: Instrumentation.onRequestError = (error, request, context) => {
+// The digest every #419 report has carried since 2026-08-23. When the next
+// one arrives, its message goes to a key of its own so an unrelated error
+// landing afterwards cannot overwrite the one fact this file exists to keep.
+const CHASED_DIGEST = "3184253291";
+
+async function recordLastServerError(line: string, digest: string | undefined): Promise<void> {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!base || !key) return;
+  const rows = [
+    {
+      key: "last_server_error",
+      value: line,
+      description:
+        "Written by onRequestError (src/instrumentation.ts): the most recent server-side render or action error, with its digest. Read-only in spirit; editing it changes nothing.",
+    },
+  ];
+  if (digest === CHASED_DIGEST) {
+    rows.push({
+      key: "last_server_error_419",
+      value: line,
+      description:
+        "The most recent occurrence of the React #419 digest that first-day accounts hit on /app/generate right after creating a character. Its message names the cause the client reports cannot.",
+    });
+  }
+  await fetch(`${base}/rest/v1/app_settings?on_conflict=key`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      authorization: `Bearer ${key}`,
+      "content-type": "application/json",
+      prefer: "resolution=merge-duplicates,return=minimal",
+    },
+    body: JSON.stringify(rows),
+    signal: AbortSignal.timeout(1500),
+  });
+}
+
+export const onRequestError: Instrumentation.onRequestError = async (error, request, context) => {
   try {
     const err = error as { message?: unknown; name?: unknown; digest?: unknown; stack?: unknown };
     // Everything a report cannot say. digest is the join key: it is the exact
@@ -65,6 +114,18 @@ export const onRequestError: Instrumentation.onRequestError = (error, request, c
       // produce a build-stable digest — so its absence is itself the clue.
       stack: typeof err?.stack === "string" ? err.stack.split("\n").slice(0, 6).join("\n") : null,
     });
+    const digest = typeof err?.digest === "string" ? err.digest : undefined;
+    const name = typeof err?.name === "string" ? err.name : typeof error;
+    const message = typeof err?.message === "string" ? err.message : String(error);
+    const line =
+      `${new Date().toISOString()} | ${context.routePath} | ${context.routeType}/${context.renderSource ?? "-"}` +
+      ` | digest ${digest ?? "-"} | ${name}: ${message.slice(0, 500)}`;
+    try {
+      await recordLastServerError(line, digest);
+    } catch {
+      // The console line above already carries everything; a failed write
+      // must never become a second error on top of the first.
+    }
   } catch {
     // An error reporter that throws is worse than one that misses. Never let
     // this add a second failure to the one being reported.
