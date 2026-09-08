@@ -793,6 +793,29 @@ export const VIDEO_MODELS_BY_PRICE: readonly VideoModel[] = [...VIDEO_MODELS].so
 // needs a pricing decision rather than a comment. Re-measure after any
 // change to retry behavior; do not let this paragraph go stale again.
 //
+// IT WENT STALE THE NEXT DAY (noted 2026-09-08). Those percentages were
+// measured on 2026-08-30. Elite's allowance went 600 -> 750 credits at an
+// unchanged $499/$399 on 2026-08-31 — see the comment on PRICING_TIERS.elite
+// — so every Elite figure above is one day older than the plan it describes,
+// and the cost side grew 25% while the price did not.
+//
+// What that does to the annual number, in the same terms:
+//   all-in cost per credit = (0.28 provider + 0.02 drafting) x 1.132 attempts
+//                          = $0.3396
+//   600 credits -> $203.76/mo ; 750 credits -> $254.70/mo
+//   added cost at unchanged price = $50.94/mo
+//   Elite ANNUAL net of 21% VAT = 399 / 1.21 = $329.75/mo
+//   $50.94 / $329.75 = 15.4 points of net revenue
+// So ~1% becomes roughly MINUS 14% at full consumption. Elite MONTHLY absorbs
+// the same 15.4 points from a higher base and lands near zero rather than
+// under it.
+//
+// Two honest qualifiers. This is FULL consumption — the safe way to price an
+// allowance, but not what a typical account uses, so it is the floor rather
+// than the expectation. And nobody is exposed today: production has two paid
+// accounts, both Starter, and zero Elite of either interval. This is a
+// decision to make BEFORE Elite annual is sold, not a loss being taken.
+//
 // Confusing cost basis with margin led to a real mistake on 2026-08-11 —
 // Veo was declared "sold at a loss" and repriced on that basis. If you find
 // yourself comparing a credit weight against this number and calling the
