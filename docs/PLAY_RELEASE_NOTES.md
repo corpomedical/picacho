@@ -1,12 +1,32 @@
 # Play Console release notes
 
-One section per upload. Paste into **Release > Production > What's new in this
-release**, one language at a time. Play's limit is **500 characters per
-language** — the counts below are measured, not estimated.
+ONE BLOCK PER UPLOAD, ALL LANGUAGES, IN PLAY'S OWN `<locale>` TAG FORMAT.
 
-The app ships in four languages (`src/lib/i18n/locales.ts`), so all four
-listings get notes. A language left blank falls back to `en-US`, which is
-worse than a short translation.
+Play Console's **Release > Production > What's new in this release** accepts
+every language in a single paste when each one is wrapped in its listing tag:
+
+```
+<en-US>
+…notes…
+</en-US>
+<es-419>
+…notes…
+</es-419>
+```
+
+That is the ONLY shape these notes should ever be handed over in. Do not split
+them per language, do not add `=== en-US ===` markers, do not put character
+counts or commentary inside the fence — the fenced block is the exact bytes
+that go into the field, and anything else in it has to be deleted by hand.
+Both mistakes were made on 2026-09-08 and both were rejected. Counts and
+caveats belong in prose outside the block.
+
+Play's limit is **500 characters per language**, counted per section, not for
+the whole paste. The counts recorded after each block below are measured.
+
+The app ships in four languages (`src/lib/i18n/locales.ts`), so all four get
+notes. A language left blank falls back to `en-US`, which is worse than a
+short translation.
 
 ---
 
@@ -55,53 +75,41 @@ generated `android/app/src/main/assets/capacitor.plugins.json` must list
 `@capacitor/browser` — that list is an allow-list and a missing plugin is
 dropped silently.
 
-### en-US
+### The paste
 
 ```
+<en-US>
 Sign in with Google, opened inside the app.
 
 Twice now that button has sent you out to your browser and left you there. It no longer hands the sign-in to the browser at all — the Google screen opens inside the app, so picking your account brings you straight back, already signed in. Backing out of it no longer leaves the buttons stuck, either.
 
 If you got stuck on an earlier version: nothing was charged, and no half-made account was left behind.
-```
-
-(449 characters, limit 500)
-
-### es-419
-
-```
+</en-US>
+<es-419>
 Inicia sesión con Google, dentro de la app.
 
 Dos veces ese botón te mandó al navegador y te dejó ahí. Ya no le entrega el inicio de sesión al navegador: la pantalla de Google se abre dentro de la app, así que al elegir tu cuenta vuelves de inmediato, con la sesión ya iniciada. Y si te sales, los botones ya no se quedan trabados.
 
 Si te quedaste bloqueado en una versión anterior: no se cobró nada ni quedó ninguna cuenta a medias.
-```
-
-(432 characters, limit 500)
-
-### pt-BR
-
-```
+</es-419>
+<pt-BR>
 Entre com o Google, dentro do app.
 
 Duas vezes esse botão mandou você para o navegador e deixou você lá. Ele não entrega mais o login ao navegador: a tela do Google abre dentro do app, então escolher sua conta traz você de volta na hora, já conectado. E se você sair, os botões não travam mais.
 
 Se você ficou preso em uma versão anterior: nada foi cobrado e nenhuma conta ficou pela metade.
-```
-
-(391 characters, limit 500)
-
-### it-IT
-
-```
+</pt-BR>
+<it-IT>
 Accedi con Google, dentro l'app.
 
 Due volte quel pulsante ti ha mandato nel browser e ti ha lasciato lì. Ora non affida più l'accesso al browser: la schermata di Google si apre dentro l'app, quindi scegliere l'account ti riporta subito indietro, già connesso. E se esci, i pulsanti non restano più bloccati.
 
 Se sei rimasto bloccato in una versione precedente: non è stato addebitato nulla e nessun account è rimasto a metà.
+</it-IT>
 ```
 
-(424 characters, limit 500)
+Measured lengths, per section, all under Play's 500: en-US 449, es-419
+432, pt-BR 391, it-IT 424.
 
 ---
 
