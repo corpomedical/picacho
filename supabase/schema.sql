@@ -648,6 +648,8 @@ CREATE UNIQUE INDEX generation_layers_version_key ON public.generation_layers US
 CREATE INDEX generation_reports_generation_id_idx ON public.generation_reports USING btree (generation_id);
 CREATE INDEX generation_reports_status_idx ON public.generation_reports USING btree (status);
 CREATE INDEX generation_reports_user_id_idx ON public.generation_reports USING btree (user_id);
+CREATE INDEX generation_signals_generation_idx ON public.generation_signals USING btree (generation_id, kind);
+CREATE INDEX generation_signals_user_idx ON public.generation_signals USING btree (user_id, created_at desc);
 CREATE UNIQUE INDEX generation_signals_unique ON public.generation_signals USING btree (generation_id, kind);
 CREATE INDEX generations_angle_group_id_idx ON public.generations USING btree (angle_group_id) WHERE (angle_group_id IS NOT NULL);
 CREATE UNIQUE INDEX generations_angle_group_unique ON public.generations USING btree (user_id, angle_group_id, angle) WHERE (angle_group_id IS NOT NULL);
