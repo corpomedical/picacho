@@ -40,6 +40,12 @@ const PUBLIC_ROUTES = [
   // maintained by hand. If guides keep growing, generate this from the
   // guides directory instead.
   "/guides/getting-started",
+  // The public API reference — canonical, social-tagged, and absent from here
+  // for the same reason the course was: the list is hand-maintained. As of
+  // 2026-09-08 truth-contracts.test.ts diffs this list against the page
+  // directories, so the next public page that forgets to register fails a
+  // test instead of quietly not ranking.
+  "/docs/api",
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {

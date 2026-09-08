@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { MODEL_CAPABILITIES } from "./send-plan";
 import { VIDEO_MODELS } from "./providers/video-models";
 import { MEDIA_BUCKETS } from "../media/url";
@@ -69,6 +69,53 @@ describe("domain truth has one home", () => {
     ]) {
       expect(src(file)).not.toContain("picacho.app");
     }
+  });
+});
+
+describe("sitemap: every public page registers itself", () => {
+  // PUBLIC_ROUTES in app/sitemap.ts is maintained by hand, and twice a public
+  // page shipped without joining it — the course on 2026-08-25, the API
+  // reference on 2026-09-08 — which for a page that exists to rank is the
+  // whole point missed. This walks the app directory instead of trusting the
+  // list. Read as text rather than imported: sitemap.ts imports "@/lib/domains"
+  // (a contract asserted above) and vitest has no "@/" alias.
+  it("lists every page.tsx outside the app, admin, auth and account flows", () => {
+    const appDir = new URL("../../app/", import.meta.url);
+    const listed = new Set(
+      [...src("../../app/sitemap.ts").matchAll(/"(\/[^"]*|)"/g)].map((m) => m[1] || "/"),
+    );
+    // Not for indexing, on purpose: the account doors and the token-landing
+    // pages. Anything else public belongs in the sitemap.
+    const deliberatelyUnlisted = new Set([
+      "/login",
+      "/signup",
+      "/forgot-password",
+      "/reset-password",
+      "/admin-verify",
+    ]);
+    const pages: string[] = [];
+    const walk = (dir: URL, route: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (entry.isDirectory()) {
+          const seg = entry.name;
+          if (seg.startsWith("(")) walk(new URL(`${seg}/`, dir), route);
+          else walk(new URL(`${seg}/`, dir), `${route}/${seg}`);
+        } else if (entry.name === "page.tsx") {
+          pages.push(route || "/");
+        }
+      }
+    };
+    walk(appDir, "");
+    const missing = pages.filter(
+      (p) =>
+        !p.startsWith("/app") &&
+        !p.startsWith("/admin") &&
+        !p.startsWith("/auth") &&
+        !p.includes("[") &&
+        !deliberatelyUnlisted.has(p) &&
+        !listed.has(p),
+    );
+    expect(missing, `public pages missing from PUBLIC_ROUTES: ${missing.join(", ")}`).toEqual([]);
   });
 });
 
