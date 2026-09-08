@@ -26,7 +26,7 @@ export async function isNativeApp(): Promise<boolean> {
   return userAgentIsNativeApp(headerStore.get("user-agent"));
 }
 
-// Can THIS shell catch an OAuth redirect coming back from the system browser?
+// Can THIS shell catch an OAuth redirect coming back from the Custom Tab?
 //
 // User agent only, with no cookie fallback, and that is the point: the cookie
 // exists because the UA is missing on some cached responses, but here a
@@ -34,25 +34,21 @@ export async function isNativeApp(): Promise<boolean> {
 // and the safe direction. A cookie fallback could only make it answer "yes"
 // on a request where we are less sure, which is the one answer that hurts.
 export async function nativeSupportsAuthReturn(): Promise<boolean> {
-  // KILL SWITCH, 2026-09-08. In-app Google sign-in is OFF.
-  //
-  // versionCode 14 shipped it to Play and it is broken on real devices: the
-  // consent screen opens in the browser correctly, but choosing an account
-  // ends up in Gmail composing a mail instead of returning to the app. The
-  // person is left with a button that cannot complete, and no way back.
+  // KILL SWITCH. Set NATIVE_OAUTH_DISABLED=1 in Vercel and in-app Google
+  // sign-in is off for every build on the next request — no deploy, no store
+  // round trip. It was pulled within the hour on 2026-09-07, when versionCode
+  // 14 turned out to end in Gmail instead of back in the app.
   //
   // Turned off HERE, in the website, on purpose. The capability token was
   // built so the site decides whether a binary may show these buttons, and
-  // that cuts both ways: this reaches every installed v14 the moment Vercel
-  // deploys, where a Play rollback would take hours and still not reach
-  // anyone who had already updated. Email and password are untouched, which
-  // is what every account used before yesterday.
+  // that cuts both ways: it reaches every installed build the moment Vercel
+  // deploys, where a Play rollback takes hours and still misses anyone who
+  // already updated. Email and password are untouched either way.
   //
-  // The version gate below now does the excluding: versionCode 14 claims
-  // PicachoAuth/1 and the marker is /2, so the broken build can never be
-  // offered these buttons again. This stays as an instant lever if 15 also
-  // misbehaves — set NATIVE_OAUTH_DISABLED=1 in Vercel and it is off for
-  // every build on the next request, no deploy and no store round trip.
+  // Retiring a specific bad build is the token's job, not this switch's:
+  // 14 claimed PicachoAuth/1, 15 claimed /2, and the marker is now /3, so
+  // neither can be offered these buttons by any future deploy. This flag is
+  // for the day the CURRENT build misbehaves too.
   if (process.env.NATIVE_OAUTH_DISABLED === "1") return false;
 
   const headerStore = await headers();

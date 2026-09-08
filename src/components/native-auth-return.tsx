@@ -51,12 +51,14 @@ export function NativeAuthReturn() {
       } catch {
         return;
       }
-      // Two shapes reach here. The verified App Link is
-      // https://picacho.ai/auth/app-callback — the app's OWN path, not the
-      // shared /auth/callback, which browser sign-in and every password-reset
-      // email also use and which this app must never capture. The custom
-      // scheme is versionCode 14's; nothing asks for it any more, but a
-      // redirect already in flight when this deploys can still arrive on it.
+      // Two shapes reach here. The private-use scheme is THE path as of
+      // versionCode 16 — what oauth-buttons asks the provider for, fired from
+      // inside the Custom Tab. The App Link, https://picacho.ai/auth/app-
+      // callback, is versionCode 15's; nothing asks for it any more, but its
+      // intent filter stays and a redirect already in flight when 16 deploys
+      // can still arrive on it. It names the app's OWN path, not the shared
+      // /auth/callback that browser sign-in and every password-reset email
+      // use, which this app must never capture.
       const isAppLink =
         parsed.protocol === "https:" &&
         parsed.host === "picacho.ai" &&
