@@ -71,10 +71,19 @@ describe("the minors rule is a conjunction, structurally", () => {
     expect(decide(s({ minor_present: "HIGH", suggestive_framing: "NEGLIGIBLE" }))).toBeNull();
   });
 
-  it("refuses at LOW on the EXPLICIT axes — nudity, an act, or clothing removal", () => {
+  it("a CLEAR child refuses at LOW on the explicit axes — nudity, an act, or clothing removal", () => {
     expect(decide(s({ minor_present: "HIGH", sexual_nudity: "LOW" }))).toBe("minors");
     expect(decide(s({ minor_present: "HIGH", sexual_act: "LOW" }))).toBe("minors");
     expect(decide(s({ minor_present: "HIGH", clothing_removal: "LOW" }))).toBe("minors");
+  });
+
+  it("an AMBIGUOUS age needs MEDIUM on the explicit axes — two weak guesses do not compound", () => {
+    // The measured case: "size 18" misread as an age (minor_present MEDIUM)
+    // plus a swimsuit (sexual_nudity LOW). Under a single LOW threshold this
+    // produced the CSAM accusation on a body-positivity prompt.
+    expect(decide(s({ minor_present: "MEDIUM", sexual_nudity: "LOW" }))).toBeNull();
+    expect(decide(s({ minor_present: "MEDIUM", sexual_nudity: "MEDIUM" }))).toBe("minors");
+    expect(decide(s({ minor_present: "MEDIUM", clothing_removal: "MEDIUM" }))).toBe("minors");
   });
 
   it("needs MEDIUM on suggestive_framing, because LOW there is the classifier hedging", () => {
@@ -120,11 +129,23 @@ describe("prompt-side thresholds buy precision", () => {
 describe("an uploaded photograph raises the bar", () => {
   const strict = { hasRealPersonReference: true };
 
-  it("refuses clothing removal at LOW — this is the suspension", () => {
-    expect(decide(s({ clothing_removal: "LOW" }), strict)).toBe("real_person_sexualized");
-    // The same score with no photo attached is allowed: the direction of an
-    // edit only matters when there is something real to edit.
-    expect(decide(s({ clothing_removal: "LOW" }))).toBeNull();
+  it("refuses clothing removal at MEDIUM — undressing scores HIGH, a jacket swap scores LOW", () => {
+    // Measured bands: "nothing on", "see through top" and "put my coworker
+    // in a bikini" all HIGH on clothing_removal; "swap her jacket for the
+    // denim one" LOW. The line sits between them with a band to spare.
+    expect(decide(s({ clothing_removal: "MEDIUM" }), strict)).toBe("real_person_sexualized");
+    expect(decide(s({ clothing_removal: "HIGH" }), strict)).toBe("real_person_sexualized");
+    expect(decide(s({ clothing_removal: "LOW" }), strict)).toBeNull();
+    // Without a photo the same HIGH needs the general rule, which is HIGH.
+    expect(decide(s({ clothing_removal: "HIGH" }))).toBe("sexual");
+  });
+
+  it("lets a beach through in the strict lane — LOW framing is a hedge, not a finding", () => {
+    // "Soft in Mallorca… elegant white linen dress" — a real customer send
+    // with an attachment — scored framing LOW and was refused as
+    // sexualising a real person. That is the core path of the product.
+    expect(decide(s({ suggestive_framing: "LOW", sexual_nudity: "NEGLIGIBLE" }), strict)).toBeNull();
+    expect(decide(s({ sexual_nudity: "LOW" }), strict)).toBeNull();
   });
 
   it("drops nudity and framing to MEDIUM when a photo is attached", () => {

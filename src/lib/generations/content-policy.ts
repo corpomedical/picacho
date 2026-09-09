@@ -125,7 +125,12 @@ const SEXUAL_PRIOR: { re: RegExp; note: string }[] = [
   { re: /\bnaked\b(?![\s-]*(?:truth|eye|branches?|flame|bulb|ambition))/i, note: "naked (not the idiom)" },
   { re: /\btopless\b/i, note: "topless" },
   { re: /\bundress(?:ed|ing)?\b/i, note: "undress" },
-  { re: /\bsee[- ]?through\b|\bsheer\b/i, note: "see-through / sheer" },
+  // "sheer" is deliberately NOT here. It is ordinary fashion vocabulary —
+  // sheer tights, organza, chiffon, a tulle overlay — and on a 320-prompt
+  // blind corpus its only measured effect was tipping one borderline
+  // lingerie prompt from MEDIUM to HIGH while six ordinary ones passed
+  // regardless. The classifier reads "sheer" in context; the prior cannot.
+  { re: /\bsee[- ]?through\b/i, note: "see-through" },
   { re: /\bboudoir\b|\bspicy\b|\bseductive\b|\bsensual\b|\bprovocative\b/i, note: "suggestive register" },
   { re: /\bnsfw\b|\bporn(?:ographic)?\b/i, note: "explicit register" },
   { re: /\bgenitals?\b|\bnipples?\b/i, note: "anatomy as subject" },
@@ -225,9 +230,13 @@ function buildInstructions(prompt: string, ctx: PolicyContext): string {
     `clothing on a subject. Score the DIRECTION of the change, not the end state's vocabulary: ` +
     `"remove the fabric", "shorter", "more revealing", "less on" all score HIGH here even when ` +
     `no explicit word appears.\n\n` +
-    `minor_present — is a depicted person under 18, or of ambiguous/unstated age reading ` +
+    `minor_present — is a depicted person UNDER 18, or of ambiguous/unstated age reading ` +
     `young? THIS IS NOT A HARM JUDGEMENT. A child in an ordinary scene scores HIGH here and ` +
-    `that is correct and harmless; it refuses nothing by itself. Score it honestly.\n\n` +
+    `that is correct and harmless; it refuses nothing by itself. Score it honestly. Eighteen ` +
+    `and above is an adult: NEGLIGIBLE. A number after "size" (size 8, size 18, a size 14 ` +
+    `model) is a garment size, never an age. "Teen" as a word in a brand, a decade ("the ` +
+    `teens"), or a score is not a person. When the age is simply unstated and nothing reads ` +
+    `young, that is LOW, not MEDIUM.\n\n` +
     `CALIBRATION — these are the failures that matter most:\n` +
     `- "nude" as a colour (nude lipstick, a nude-coloured gown) is NEGLIGIBLE sexual_nudity.\n` +
     `- Idioms: "the naked truth", "the naked eye", "naked branches" are NEGLIGIBLE.\n` +
@@ -360,16 +369,39 @@ export function decide(scores: Scores, ctx: PolicyContext = {}): PolicyReason | 
   const explicitAxis = BAND_ORDER[
     Math.max(bandValue(nudity), bandValue(act), bandValue(removal))
   ];
-  const minorPresent = bandValue(scores.minor_present) >= bandValue("MEDIUM");
-  if (minorPresent && bandValue(explicitAxis) >= bandValue("LOW")) return "minors";
-  if (minorPresent && bandValue(framing) >= bandValue("MEDIUM")) return "minors";
+  // Two grades of "a minor is present", and they earn different thresholds.
+  // HIGH — a child is clearly in the scene — refuses at LOW on the explicit
+  // axes: a swimsuit reading beside a child is worth stopping on. MEDIUM —
+  // the age is ambiguous or merely unstated — needs MEDIUM on the explicit
+  // axes too. Measured 2026-09-09 on a blind corpus: "Maya, size 18, in a
+  // swimsuit on the diving board, body positive" drew minor_present MEDIUM
+  // (a dress size misread as an age) and sexual_nudity LOW (a swimsuit), and
+  // the old single threshold turned that into the CSAM accusation. Two weak
+  // guesses must not compound into the strongest refusal the policy has.
+  const minorClear = bandValue(scores.minor_present) >= bandValue("HIGH");
+  const minorMaybe = bandValue(scores.minor_present) >= bandValue("MEDIUM");
+  if (minorClear && bandValue(explicitAxis) >= bandValue("LOW")) return "minors";
+  if (minorMaybe && bandValue(explicitAxis) >= bandValue("MEDIUM")) return "minors";
+  if (minorMaybe && bandValue(framing) >= bandValue("MEDIUM")) return "minors";
 
   // A real person's photograph being undressed. This is the suspension, and
   // it refuses at LOW because there is no benign reading of it.
-  if (strict && bandValue(removal) >= bandValue("LOW")) return "real_person_sexualized";
-  if (strict && bandValue(nudity) >= bandValue("LOW")) return "real_person_sexualized";
-  // Framing refuses at LOW here too, and this is the nonconsensual-intimate
-  // rule rather than a nudity rule. The identical garment is allowed in a
+  //
+  // MEDIUM, not LOW, on all three — measured 2026-09-09 with the bands on
+  // seven strict-lane prompts. Every undressing instruction ("nothing on",
+  // "see through top", "put my coworker in a bikini") scored HIGH on
+  // clothing_removal, a full band of margin above this line. What LOW was
+  // catching instead: "Soft in Mallorca… elegant white linen dress" (a real
+  // customer's send, refused as sexualising a real person because
+  // "influencer aesthetic" hedged framing to LOW) and "swap her jacket for
+  // the denim one" (removal LOW — a clothing change, not an undressing).
+  // The coworker case is caught by removal, not by nudity or framing;
+  // those two at LOW were doing nothing the removal axis did not, and
+  // refusing every beach on the product's core path.
+  if (strict && bandValue(removal) >= bandValue("MEDIUM")) return "real_person_sexualized";
+  if (strict && bandValue(nudity) >= bandValue("MEDIUM")) return "real_person_sexualized";
+  // Framing at MEDIUM here is the nonconsensual-intimate rule rather than a
+  // nudity rule. The identical garment is allowed in a
   // dozen text-to-image cases; what changes is provenance. "Here is a photo of
   // my coworker — put her in a bikini" asks us to put a real, identifiable
   // third party into revealing clothing, and their consent is not something
@@ -381,7 +413,7 @@ export function decide(scores: Scores, ctx: PolicyContext = {}): PolicyReason | 
   // legitimate "put MY character in a swimsuit" edit. Capturing provenance at
   // upload (whose face is this, and did they attest to it) is what would let
   // this relax without loosening the rule that matters.
-  if (strict && bandValue(framing) >= bandValue("LOW")) return "real_person_sexualized";
+  if (strict && bandValue(framing) >= bandValue("MEDIUM")) return "real_person_sexualized";
 
   // Text-to-image, no photograph. A prompt-side score is a guess about
   // vocabulary, so the bar is HIGH — this is where precision is bought.
@@ -417,7 +449,8 @@ function messageFor(reason: PolicyReason): string {
 //
 // Imported inside the function so the pure halves of this file stay
 // unit-testable without dragging in the provider clients' "@/…" chain.
-async function score(prompt: string, ctx: PolicyContext): Promise<Scores | null> {
+/** Exported for the eval harness, which explains every refusal by its bands. */
+export async function score(prompt: string, ctx: PolicyContext): Promise<Scores | null> {
   const instructions = buildInstructions(prompt, ctx);
 
   try {
