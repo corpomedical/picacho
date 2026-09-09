@@ -1179,7 +1179,11 @@ export async function runRealPipeline(
       // text is the account's own saved trait or rule, and re-running the
       // draft would only re-append it. Looping here would also be the
       // filter-shopping shape this incident was about.
-      steps.push({ step: "validate", detail: "Blocked by the content policy before generating." });
+      // The detail is the sentence written for the person, not an internal
+      // note: the composer's summarizeFailure and History both read the
+      // attempt log, and this is how they all show one truth without a
+      // separate field being threaded through every caller.
+      steps.push({ step: "validate", detail: policyErr.userMessage });
       attempts.push({
         attempt: attemptNumber,
         steps,

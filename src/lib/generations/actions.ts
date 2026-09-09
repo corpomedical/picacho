@@ -2171,7 +2171,17 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       // forceRefundEligible is the single authority (refund-rules.ts) —
       // this and job-runner's finish() used to assemble the same rule by
       // hand and had drifted apart.
-      force: Boolean(rulesBlock?.length) || forceRefundEligible(attempts),
+      force:
+        Boolean(rulesBlock?.length) ||
+        // A platform content-policy block at the pipeline's last gate is the
+        // same zero-provider-cost class as a rules block — it fires BEFORE
+        // dispatch, so nothing was spent. It must not depend on the
+        // automatic_refunds switch: the refusal message tells the person
+        // "nothing was spent", and that has to be true whatever an admin
+        // flag says. Detected from the attempt log rather than a separate
+        // field so History, the API and the composer all see one truth.
+        attempts.some((a) => a.issues?.includes("content_policy")) ||
+        forceRefundEligible(attempts),
     });
     await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
   }

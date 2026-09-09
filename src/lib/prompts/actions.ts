@@ -290,6 +290,13 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
     // request genuinely couldn't be turned into a compliant prompt. Handing
     // that text over anyway would send the user off to spend a credit on a
     // prompt we already know the generator will block.
+    // The platform content policy gates the COMPILED prompt inside the
+    // pipeline too, and compileOnly passes through that gate. When it is
+    // what stopped the attempt, say so — the rules-conflict message below
+    // would send the person off to rephrase something no rephrasing allows.
+    if (result.contentPolicyBlock) {
+      return { error: result.contentPolicyBlock };
+    }
     const lastAttempt = result.attempts.at(-1);
     if (lastAttempt && !lastAttempt.passed) {
       return {

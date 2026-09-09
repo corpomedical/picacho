@@ -263,6 +263,20 @@ export async function runApiImageGeneration(params: {
       },
     );
 
+    // The compiled prompt is gated again inside the pipeline (traits and
+    // brand rules are folded in there, and none of that text passed the
+    // entry gate above). A block at that gate is the same answer as a block
+    // at entry, and gets the same shape: 422 and the reason, not a generic
+    // failed render the caller would retry.
+    if (result.contentPolicyBlock) {
+      await supabase
+        .from("generations")
+        .update({ status: "failed", attempts: result.attempts.length, pipeline_log: result.attempts })
+        .eq("id", generationId);
+      await refundGenerationCosts(generationId, { force: true });
+      return { error: result.contentPolicyBlock, status: 422 };
+    }
+
     const resultUrl = result.resultUrl;
     const succeeded = result.succeeded && isRenderableUrl(resultUrl);
 

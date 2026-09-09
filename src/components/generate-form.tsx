@@ -190,6 +190,18 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
   const blocked = rulesBlockOf(attempts);
   if (blocked) return blocked;
 
+  // The platform content policy blocking the COMPILED prompt at the
+  // pipeline's last gate. Its step detail is already the sentence written
+  // for the person (pipeline.ts), so it is shown verbatim. Checked here,
+  // ahead of the provider-error regex below, which keys on "error (4xx)"
+  // and would never see it — a refusal that fell through to the generic
+  // line would tell someone nothing about the one thing they can change.
+  const policyAttempt = attempts.find((a) => a.issues?.includes("content_policy"));
+  if (policyAttempt) {
+    const step = [...(policyAttempt.steps ?? [])].reverse().find((st) => st.step === "validate");
+    if (step?.detail) return step.detail;
+  }
+
   // Queued (async) renders log provider errors as a step detail with an
   // EMPTY issues array — the old issues-only checks below never saw them,
   // so the UI fell back to a generic line while the provider's own words
