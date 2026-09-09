@@ -14,6 +14,7 @@ import {
   stageFramesPrefix,
 } from "@/lib/generations/angle-stage-config";
 import type { PlanId } from "@/lib/plans";
+import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 
 // The Angle Stage's server half (2026-09-05). Two submit/poll pairs — the
 // 3D proxy and the guided angle re-render — both through fal's queue API,
@@ -293,6 +294,19 @@ export async function renderAngleFrame(
   }
 
   const scene = stage.promptInput.trim().slice(0, 400);
+
+  // A STORED PROMPT IS STILL A PROMPT REACHING A PROVIDER. This replays the
+  // prompt_input of an existing take, which means the corpus it draws from
+  // includes every row written BEFORE the content policy existed — the
+  // reviewer's own eight among them. Gating only new requests would leave
+  // the suspended session replayable through the angle stage.
+  try {
+    await assertPromptAllowed({ prompt: scene, hasRealPersonReference: true });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
+
   return submitToQueue(SEEDREAM_EDIT_ENDPOINT, {
     prompt:
       "Recreate the scene from image 2 at exactly the camera angle, subject pose and composition of image 1. " +

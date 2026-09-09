@@ -32,6 +32,7 @@ import type { VideoResolution } from "@/lib/generations/providers/video-resoluti
 import type { BrandRule } from "@/lib/brand-rules/types";
 import { classifyProhibitions } from "@/lib/brand-rules/classify";
 import { ACKNOWLEDGED_WARNING_MARKER } from "@/lib/generations/refund-rules";
+import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 
 export type ContentType = "video" | "image";
 
@@ -134,6 +135,12 @@ export type PipelineResult = {
   // done, it's in flight. See job-runner.ts, which owns it from here.
   /** Carries which provider took it — see video-queue.ts. */
   pendingVideoJob?: QueuedVideoJob;
+  // Set when the platform content policy refused the COMPILED prompt at the
+  // last gate before dispatch — see the block in the attempt loop. Distinct
+  // from rulesBlock, which is the account's own brand rules: this one is not
+  // the customer's rule to suspend, and carries a message written for them
+  // rather than a rule name.
+  contentPolicyBlock?: string;
 };
 
 // Polled between attempts (and once per attempt, right before the slow
@@ -482,7 +489,10 @@ export function missingRealProviderKeys(
 // deliberately NOT included here — production data shows OpenAI's
 // content-safety check can 400 transiently and succeed on the very next
 // retry, so blocking all 400s would throw that real recovery away.
-const NON_RETRYABLE_STATUS_CODES = new Set([401, 403, 404]);
+// 422 joined on 2026-09-09: it is fal's status for a refused prompt
+// (content_policy_violation), and its absence meant a refusal was retried
+// three times, paying for each attempt, before failing.
+const NON_RETRYABLE_STATUS_CODES = new Set([401, 403, 404, 422]);
 
 // Paid image calls allowed per generation, across all attempts.
 const MAX_PAID_IMAGE_CALLS = 4;
@@ -493,7 +503,25 @@ const MAX_PAID_IMAGE_CALLS = 4;
 // blacked-out image with HTTP 200 and bills for it). Deliberately distinct
 // from a bare 400, which really can be transient — see the comment on
 // NON_RETRYABLE_STATUS_CODES above.
-const SAFETY_REJECTION = /safety|nsfw|content policy|moderation|blocked by the provider/i;
+// A PROVIDER'S CONTENT REFUSAL IS TERMINAL. Getting this list wrong is how
+// the removed soften-and-retry ladder survived one level up.
+//
+// Until 2026-09-09 this was written in English prose — /safety|nsfw|content
+// policy|moderation|blocked by the provider/ — and matched NONE of the four
+// refusal strings fal and BytePlus actually emit. fal answers
+// `content_policy_violation`; ModelArk answers
+// `InputTextSensitiveContentDetected` and its two siblings. Neither contains
+// "content policy" with a space, so a content refusal fell through to the
+// retry machinery and was re-drafted under an instruction whose stated
+// purpose is that "plain description passes content filters far more
+// reliably". That is the ladder, reassembled, in the file the removal
+// never opened.
+//
+// The tokens below are provider-fault.ts's list, which got this right for the
+// circuit breaker on 2026-08-31 — the same question ("did the provider judge
+// this request, or is it down?") deserved the same answer in both places.
+const SAFETY_REJECTION =
+  /content[_ ]polic|sensitivecontentdetected|safety|nsfw|moderation|likeness|blocked by the provider|invalid prompt/i;
 
 function isNonRetryableProviderError(message: string): boolean {
   const match = message.match(/\((\d{3})\)/);
@@ -1114,6 +1142,59 @@ export async function runRealPipeline(
     if (options.cinemaPresetBlock && options.contentType === "video") {
       reviewedPrompt = `${reviewedPrompt}\n\n${options.cinemaPresetBlock}`;
       steps.push({ step: "generate", detail: "Cinema preset applied to the final prompt." });
+    }
+
+    // THE COMPILED PROMPT IS GATED AGAIN, HERE, IMMEDIATELY BEFORE DISPATCH.
+    //
+    // The entry gates (runGeneration, the API, Prompt Studio, multi-angle,
+    // character photos) judge the text a PERSON TYPED. This is not that
+    // string. Between there and here the pipeline has folded in the
+    // character's saved traits, the brand rulebook's required elements and a
+    // cinema preset — and review() at the validate step force-appends any
+    // trait the drafting model dropped, verbatim, precisely so it cannot be
+    // lost. None of that text passed an entry gate, because none of it came
+    // from this request.
+    //
+    // Found 2026-09-09 in the review of the first remediation: a character
+    // whose saved Outfit trait reads "nothing at all" renders through a
+    // perfectly benign, fully gated prompt, and the same hole defeats every
+    // entry at once. saveCharacterProfile and the brand-rule editor write
+    // free text with only a length check; a gate that never reads that text
+    // is not a gate on what we send.
+    //
+    // So: one more call, on the exact string the provider will receive. It
+    // costs a cheap classifier call per attempt against a generation that
+    // costs a credit, and it is the only check in the system that can say
+    // "nothing unvetted reached a model" and mean it.
+    try {
+      await assertPromptAllowed({
+        prompt: reviewedPrompt,
+        hasRealPersonReference: Boolean(
+          options.referenceImageUrl || options.referenceImageUrls?.length,
+        ),
+      });
+    } catch (policyErr) {
+      if (!(policyErr instanceof ContentPolicyRefusal)) throw policyErr;
+      // Terminal, not another attempt. A redraft cannot help: the offending
+      // text is the account's own saved trait or rule, and re-running the
+      // draft would only re-append it. Looping here would also be the
+      // filter-shopping shape this incident was about.
+      steps.push({ step: "validate", detail: "Blocked by the content policy before generating." });
+      attempts.push({
+        attempt: attemptNumber,
+        steps,
+        passed: false,
+        issues: ["content_policy"],
+        compiledPrompt: reviewedPrompt,
+      });
+      finalPrompt = reviewedPrompt;
+      return {
+        attempts,
+        finalPrompt,
+        succeeded: false,
+        resultUrl: null,
+        contentPolicyBlock: policyErr.userMessage,
+      };
     }
 
     // Draft/review are quick; generate (especially video) is the slow, costly

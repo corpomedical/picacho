@@ -576,6 +576,18 @@ export async function planScene(formData: FormData): Promise<PlanSceneResult> {
     return { error: `That's longer than ${MAX_INPUT_LENGTH} characters — trim it a little.` };
   }
 
+  // Same reasoning as compilePrompt above: the director expands a one-line
+  // idea into a full shot list, so ungated it is an ASSIST toward a violation
+  // — it takes a thin request and hands back the detailed, specific version a
+  // provider is likelier to act on. Refusing here also costs no assist
+  // allowance. See lib/generations/content-policy.ts.
+  try {
+    await assertPromptAllowed({ prompt: idea });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
+
   const [{ data: studioFlag }, { data: providersFlag }] = await Promise.all([
     supabase.from("feature_flags").select("enabled").eq("key", "prompt_studio").single(),
     supabase.from("feature_flags").select("enabled").eq("key", "real_ai_providers").single(),

@@ -330,8 +330,30 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   // description, which makes it the most direct route to the thing the
   // policy exists to stop; it also runs entirely outside runGeneration, so
   // the composer's gate never covered it. See content-policy.ts.
+  // Judged with the trait fields, which arrive in the SAME request and are
+  // spliced into the text sent to the provider further down. Gating `prompt`
+  // alone left trait_outfit="nothing at all" a clean route past the check —
+  // found in the 2026-09-09 review. Read here rather than reused from below
+  // so the gate cannot drift from what is actually sent.
+  const judged = [
+    prompt,
+    (formData.get("trait_hair") as string)?.trim(),
+    (formData.get("trait_outfit") as string)?.trim(),
+    (formData.get("trait_distinguishing_features") as string)?.trim(),
+  ]
+    .filter((t) => typeof t === "string" && t.length > 0)
+    .join("\n");
   try {
-    await assertPromptAllowed({ prompt });
+    // This path image-edits a stored photograph of a real person whenever the
+    // character already has reference photos, so it takes the strict lane.
+    await assertPromptAllowed({
+      prompt: judged,
+      // Read straight off the request, like the traits above: the parsed
+      // anchorPaths are built further down, and the gate must not depend on
+      // ordering it does not control.
+      hasRealPersonReference:
+        ((formData.get("anchor_paths") as string) ?? "").trim().length > 2,
+    });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;

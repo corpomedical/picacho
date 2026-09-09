@@ -91,7 +91,15 @@ export async function scoreIdentityMatch(
   }
 }
 
-export async function reviewWithOpenAI(instructions: string): Promise<string> {
+export async function reviewWithOpenAI(
+  instructions: string,
+  // Defaults preserve the original behaviour for every existing caller; the
+  // content policy passes its own, because a SAFETY verdict that changes
+  // between identical runs is not a verdict. Measured 2026-09-09: the same
+  // 75-case eval scored 0 and then 2 over-refusals on identical code, purely
+  // from sampling — deterministic scoring is what makes the number quotable.
+  opts: { temperature?: number; maxTokens?: number } = {},
+): Promise<string> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -117,7 +125,12 @@ export async function reviewWithOpenAI(instructions: string): Promise<string> {
         // models (gpt-5.4-mini and newer reject max_tokens outright with a
         // 400 "unsupported_parameter" error) — found via a real end-to-end
         // test run, 2026-08-07.
-        max_completion_tokens: 500,
+        // Raised from a flat 500 for callers that ask: gpt-5.4-mini spends
+        // tokens on internal reasoning before it writes, and a tight cap
+        // truncates the answer into an unparseable fragment — the same
+        // failure providers/anthropic.ts records and fixed at 3000.
+        max_completion_tokens: opts.maxTokens ?? 500,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
       }),
     },
     25_000,

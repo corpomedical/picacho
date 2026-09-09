@@ -414,7 +414,8 @@ async function score(prompt: string, ctx: PolicyContext): Promise<Scores | null>
 
   try {
     const { reviewWithOpenAI } = await import("@/lib/generations/providers/openai");
-    const s = parseScores(await reviewWithOpenAI(instructions));
+    // temperature 0: a safety verdict must not change between identical runs.
+    const s = parseScores(await reviewWithOpenAI(instructions, { temperature: 0, maxTokens: 2000 }));
     if (s) return s;
   } catch {
     // Fall through to the second classifier.

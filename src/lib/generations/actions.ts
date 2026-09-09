@@ -594,10 +594,43 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // is free, cannot be spoofed, and errs the right way: the strict branch
   // only refuses requests to SEXUALIZE the photo, which is the correct
   // answer for a drawing too.
+  // The storyboard's per-shot text, pulled out here purely to be judged. The
+  // real parse happens further down (it also validates seconds, ordering and
+  // the shot cap); this is deliberately a separate, forgiving read, because
+  // the gate must see the text even when the structure is malformed.
+  const storyboardJudgeText = (() => {
+    const raw = ((formData.get("storyboard_shots") as string) || "").trim();
+    if (!raw) return "";
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return "";
+      return parsed
+        .map((sh) => (sh && typeof sh === "object" ? String((sh as { prompt?: unknown }).prompt ?? "") : ""))
+        .filter(Boolean)
+        .join("\n");
+    } catch {
+      // Unparseable JSON is still text someone sent us. Judge it raw rather
+      // than letting a broken wrapper carry a prompt past the gate.
+      return raw.slice(0, 4000);
+    }
+  })();
+
   const editingAnUpload =
-    (attachmentRoles?.length ?? 0) > 0 || attachmentStoragePaths.length > 0;
+    (attachmentRoles?.length ?? 0) > 0 ||
+    attachmentStoragePaths.length > 0 ||
+    // A legacy native shell sends no attachment_roles, but its photo still
+    // becomes the identity anchor — so without this it took the lenient lane.
+    Boolean(legacyAttachmentUrl);
+  // EVERY TEXT CHANNEL, not just the prompt box. The 2026-09-09 review found
+  // the gate reading one field while the provider received a string built
+  // from several: dialogue is spoken aloud over a photoreal face, and the
+  // storyboard's per-shot text is its own free-text surface. Judged together
+  // so a benign prompt cannot carry a violating shot list past the gate.
+  const judged = [userInput, dialogueText, storyboardJudgeText]
+    .filter((t) => typeof t === "string" && t.trim().length > 0)
+    .join("\n\n");
   try {
-    await assertPromptAllowed({ prompt: userInput, hasRealPersonReference: editingAnUpload });
+    await assertPromptAllowed({ prompt: judged, hasRealPersonReference: editingAnUpload });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;
@@ -2623,10 +2656,33 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // Same platform content policy as runGeneration, at the same point and for
   // the same reason — this is a second entry that reaches a provider, and a
   // gate only one entry calls is not a gate. See content-policy.ts.
+  // Cinema Studio ships its shot list in a SECOND field, scene_plan, whose
+  // per-shot prompts are concatenated onto the compiled scene and sent to the
+  // video provider. The 2026-09-09 review reproduced the whole reviewer
+  // escalation through it while `prompt` stayed benign — six shots of 600
+  // characters that no gate had ever read. Judged with the prompt, as one
+  // string, so neither field can carry the other past the check.
+  const scenePlanJudgeText = (() => {
+    if (!sceneRaw) return "";
+    try {
+      const parsed: unknown = JSON.parse(sceneRaw);
+      const shots = (parsed as { shots?: unknown })?.shots;
+      if (!Array.isArray(shots)) return sceneRaw.slice(0, 4000);
+      return shots
+        .map((sh) => (sh && typeof sh === "object" ? String((sh as { prompt?: unknown }).prompt ?? "") : ""))
+        .filter(Boolean)
+        .join("\n");
+    } catch {
+      return sceneRaw.slice(0, 4000);
+    }
+  })();
   try {
     await assertPromptAllowed({
-      prompt: userInput,
-      hasRealPersonReference: Boolean(attachmentReferenceUrl),
+      prompt: [userInput, scenePlanJudgeText].filter(Boolean).join("\n\n"),
+      // Any image attachment, not only the "identity" role: the strict lane
+      // keyed on a role no client actually sends, so it could never fire.
+      hasRealPersonReference:
+        Boolean(attachmentReferenceUrl) || Boolean(neutralAttachmentUrl),
     });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
@@ -4649,6 +4705,20 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   if (ineligible === "base-layer") return { error: "The base layer can't be edited — it's what the others sit on." };
   if (ineligible === "too-large") return { error: "That layer is too big to edit." };
   if (ineligible) return { error: "This layer can't be edited." };
+
+  // The platform content policy, before reserve_generation so a refusal costs
+  // no credit. Layers had NO gate at all until the 2026-09-09 review: it is a
+  // subject-editing tool that takes free text and hands it to Flux with the
+  // character's identity photo alongside, which is the same shape as the edit
+  // that suspended the app. hasRealPersonReference is true unconditionally —
+  // a layer is always cut from an image of something, and the strict lane is
+  // the correct default when the subject came from a photograph.
+  try {
+    await assertPromptAllowed({ prompt, hasRealPersonReference: true });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
 
   // Versioning is what makes an edit non-destructive, and it lives in
   // columns a manual migration adds. Without them the insert below would
