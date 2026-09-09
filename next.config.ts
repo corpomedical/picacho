@@ -2,6 +2,11 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // The Android emulator reaches this machine's dev server as 10.0.2.2, and
+  // Next 16 answers 403 to /_next/* from any dev origin it was not told
+  // about — so the shell's WebView got its HTML and none of its scripts, and
+  // nothing hydrated (2026-09-09). Dev-only: production never reads this.
+  allowedDevOrigins: ["10.0.2.2"],
   // Pins Turbopack's project root to this folder explicitly. Without this,
   // Turbopack tries to infer the root by walking up looking for a lockfile
   // and found a stray package-lock.json in the home directory (outside this

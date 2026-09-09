@@ -8,6 +8,20 @@ import { createPortal } from "react-dom";
 // generate-form.tsx and app-sidebar.tsx) — the tour measures that element's
 // live position every frame, it never hardcodes coordinates. targetId null
 // means a centered, un-anchored stop (welcome/closing messages).
+// The element a stop points at: the first LAID-OUT match, not the first
+// match. Several ids exist twice on purpose — the sidebar's Characters link
+// and the tab bar's Characters tab share "tour-characters" — and on any one
+// device exactly one of them is visible. querySelector alone returned the
+// sidebar's copy on phones, which the native shell hides with CSS, and the
+// spotlight drew a 0×0 square in the corner (2026-09-09).
+export function findTourAnchor(targetId: string): Element | null {
+  if (typeof document === "undefined") return null;
+  for (const el of document.querySelectorAll(`[data-tour-id="${targetId}"]`)) {
+    if (el.getClientRects().length > 0) return el;
+  }
+  return null;
+}
+
 export type TourStep = {
   targetId: string | null;
   title: string;
@@ -195,7 +209,7 @@ export function OnboardingTour({
     placeDirtyRef.current = true;
 
     if (!step.targetId) return;
-    const el = document.querySelector(`[data-tour-id="${step.targetId}"]`);
+    const el = findTourAnchor(step.targetId);
     if (!el) return;
     const r = el.getBoundingClientRect();
     const fullyVisible = r.top >= 80 && r.bottom <= window.innerHeight - 80;
@@ -243,7 +257,7 @@ export function OnboardingTour({
       let goal: Rect | null = null;
       let measured = false;
       if (targetId) {
-        const el = document.querySelector(`[data-tour-id="${targetId}"]`);
+        const el = findTourAnchor(targetId);
         if (el) {
           const r = el.getBoundingClientRect();
           goal = { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 };

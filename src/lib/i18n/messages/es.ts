@@ -1581,7 +1581,7 @@ const es = {
     skip: "Omitir",
     finish: "Empezar",
     welcomeTitle: "Bienvenido a Picacho",
-    welcomeBody: "Un recorrido guiado por todo lo esencial — unos dos minutos, y puedes salir cuando quieras.",
+    welcomeBody: "Un vistazo rápido a las tres cosas que necesitas: cerca de un minuto, y puedes salir cuando quieras.",
     charactersTitle: "Personajes",
     charactersBody:
       "Todo empieza con un personaje — guarda su aspecto, personalidad y voz una vez aquí, y cada toma se mantiene consistente con él.",
@@ -1596,7 +1596,7 @@ const es = {
       "Aquí eliges qué personaje protagoniza tu toma. Brilla en tono cálido hasta que eliges a alguien — si envías sin personaje, obtienes un resultado genérico en lugar de tu personaje.",
     promptTitle: "Descríbelo con tus palabras",
     promptBody:
-      "No hace falta saber de prompts — escríbelo como se lo contarías a un amigo. Picacho redacta, revisa, genera y puntúa el resultado contra la foto de tu personaje.",
+      "No hace falta ingeniería de prompts: escríbelo como se lo contarías a un amigo. Picacho redacta y revisa el texto por ti.",
     templatesTitle: "Empieza desde una plantilla",
     templatesBody:
       "Escenas listas — retratos, fotos de producto, unboxings y más. Toca una y llega al compositor ya rellenada, lista para ajustar.",
@@ -1604,7 +1604,14 @@ const es = {
     communityBody:
       "Tomas reales compartidas por otros usuarios — corazones, vistas e ideas que vale la pena tomar prestadas. Comparte lo tuyo desde la página de Historial de cualquier toma.",
     doneTitle: "Todo listo",
-    doneBody: "Eso es todo. Describe lo que quieres abajo para hacer tu primera toma.",
+    doneBody: "Describe lo que quieres y envía: tu primera toma está a un mensaje. Cambia a Video cuando quieras; las herramientas de video se presentan solas cuando lo hagas.",
+    characterSelectNamedBody: "{name} está en la escena. Aquí cambias quién protagoniza una toma: tócalo para cambiar.",
+    sendTitle: "Enviar",
+    sendBody: "Un toque genera la toma y la puntúa contra las fotos de tu personaje, así sabes qué tan cerca quedó antes de usarla.",
+    menuTitle: "Todo lo demás está en el menú",
+    menuBody: "Plantillas, proyectos, prompts guardados y ajustes viven aquí.",
+    videoDoneTitle: "Eso es el lado del video",
+    videoDoneBody: "Esos dos controles son todo. El resto funciona exactamente igual que con las imágenes.",
   },
   stage: {
     eyebrow: "Angle Stage",

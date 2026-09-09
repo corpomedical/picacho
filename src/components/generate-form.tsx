@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
@@ -84,7 +84,8 @@ import { ZoomableImage } from "@/components/zoomable-image";
 import { NEW_CHAT_EVENT } from "@/components/native-quick-pill";
 import { FeedbackLink } from "@/components/feedback-link";
 import { ResultActions } from "@/components/result-actions";
-import { OnboardingTour, type TourStep } from "@/components/onboarding-tour";
+import { OnboardingTour, findTourAnchor, type TourStep } from "@/components/onboarding-tour";
+import { COOKIE_CONSENT_EVENT, getCookieConsent } from "@/lib/cookie-consent";
 import {
   type AttemptLog,
   type PipelineStepLog,
@@ -1957,7 +1958,15 @@ function GenerateFormInner({
   // the id isn't actually one of this account's characters.
   const [characterId, setCharacterId] = useState(() => {
     const fromUrl = searchParams.get("character");
-    return fromUrl && characters.some((c) => c.id === fromUrl) ? fromUrl : "";
+    if (fromUrl && characters.some((c) => c.id === fromUrl)) return fromUrl;
+    // No explicit pick: the most recently created character. That is what
+    // character-form.tsx has promised since the redirect after a save was
+    // written ("Generate defaults its character picker to the most recently
+    // created one") and what the composer never did — a person who had just
+    // made their first character landed here on "Select character ?" while
+    // the tour explained the picker (2026-09-09). `characters` arrives newest
+    // first from workspace-data.
+    return characters[0]?.id ?? "";
   });
   const [characterMenuOpen, setCharacterMenuOpen] = useState(false);
   const characterMenuRef = useRef<HTMLDivElement>(null);
@@ -3739,10 +3748,46 @@ function GenerateFormInner({
   // itself, and the effect that reveals each step's target, live further
   // down near the render (see the comment there) since they need
   // clearCreationMode/chooseCreationMode's setters, defined above.
+  // Not while the cookie banner is up. On a phone the banner, the tab bar and
+  // the first balloon all met at the bottom edge at once (2026-09-09). Every
+  // way of asking for the tour — the first-login prop, ?tour=1 at mount, and
+  // ?tour=1 arriving later from the sidebar's "Replay walkthrough" — goes
+  // through requestTour(): it starts at once when consent has been answered,
+  // and otherwise parks the request until the banner is, whichever button.
+  // Client only: the server has no localStorage and renders the tour as
+  // nothing until mounted anyway.
+  const consentAnswered = () => typeof window !== "undefined" && getCookieConsent() !== null;
   const [tourActive, setTourActive] = useState(
-    () => startOnboarding === true || searchParams.get("tour") === "1",
+    () => (startOnboarding === true || searchParams.get("tour") === "1") && consentAnswered(),
   );
   const [tourStepIndex, setTourStepIndex] = useState(0);
+  const tourPendingConsentRef = useRef(
+    (startOnboarding === true || searchParams.get("tour") === "1") && !consentAnswered(),
+  );
+  const requestTour = useCallback(() => {
+    setTourStepIndex(0);
+    if (consentAnswered()) setTourActive(true);
+    else tourPendingConsentRef.current = true;
+  }, []);
+  useEffect(() => {
+    const onConsent = () => {
+      if (!tourPendingConsentRef.current) return;
+      tourPendingConsentRef.current = false;
+      setTourActive(true);
+    };
+    window.addEventListener(COOKIE_CONSENT_EVENT, onConsent);
+    return () => window.removeEventListener(COOKIE_CONSENT_EVENT, onConsent);
+  }, []);
+
+  // The video tools get their own two-stop tour, shown the first time the
+  // composer is in Video mode with a character on hand — where the model
+  // picker and the multi-angle toggle actually exist — instead of the main
+  // tour flipping the composer into Video behind the person's back to point
+  // at them and leaving it there. Seen once per browser; ?tour=video replays.
+  const VIDEO_TOUR_KEY = "picacho.videoTour.v1";
+  const [videoTourActive, setVideoTourActive] = useState(false);
+  const [videoTourStep, setVideoTourStep] = useState(0);
+  const videoTourWantedRef = useRef(searchParams.get("tour") === "video");
 
   // Re-attach to any render that's still queued at the provider.
   //
@@ -3844,9 +3889,10 @@ function GenerateFormInner({
   // Resetting the step index matters too — without it, replaying after
   // finishing would reopen the tour on its last step.
   useEffect(() => {
-    if (searchParams.get("tour") !== "1") return;
-    setTourActive(true);
-    setTourStepIndex(0);
+    const tour = searchParams.get("tour");
+    if (tour !== "1" && tour !== "video") return;
+    if (tour === "1") requestTour();
+    else videoTourWantedRef.current = true;
     // Strip the param so a later refresh doesn't silently restart the tour —
     // on the SAME page this form is mounted on. This used to replace to a
     // hardcoded "/app", which (now that /app is a dashboard with no
@@ -3857,89 +3903,78 @@ function GenerateFormInner({
     rest.delete("tour");
     const qs = rest.toString();
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
-  }, [searchParams, router, pathname]);
+  }, [searchParams, router, pathname, requestTour]);
 
-  // The "AI providers" and "multi-angle/storyboard" stops point at composer
-  // elements that only exist once the composer is out of hero mode with
-  // video selected (see isHero above — the model picker and the advanced-
-  // options arrow are both gated behind creationModeActive). This nudges the
-  // composer into that state a render ahead of OnboardingTour trying to
-  // measure the target, the same way clicking "Create video" from the +
-  // menu would.
-  // The tour's stops, in first-session order. `revealedByTour` marks the two
-  // composer targets the tour itself flips into existence (video mode) — they
-  // are exempt from the present-in-DOM filter below, which otherwise drops
-  // stops whose anchor doesn't exist in this layout (the sidebar links on
-  // phones and in the native shell), so the tour never spotlights thin air.
+  // The tour's stops, in first-session order. Three things a person needs
+  // for a first take (who, what, send), then where the rest lives — pointing
+  // only at controls laid out on THIS device: the sidebar links on desktop,
+  // the tab bar and the menu button on phones, resolved by findTourAnchor.
+  // No stop flips the composer's mode any more; the video controls have
+  // their own tour below, shown where they exist.
   const ob = t.onboarding;
-  const allTourSteps: (TourStep & { revealedByTour?: boolean })[] = [
+  const characterSelectBody = currentCharacter
+    ? formatMsg(ob.characterSelectNamedBody, { name: currentCharacter.name })
+    : ob.characterSelectBody;
+  const allTourSteps: TourStep[] = [
     { targetId: null, title: ob.welcomeTitle, body: ob.welcomeBody },
-    { targetId: "tour-characters", title: ob.charactersTitle, body: ob.charactersBody },
-    { targetId: "tour-character-select", title: ob.characterSelectTitle, body: ob.characterSelectBody },
+    { targetId: "tour-character-select", title: ob.characterSelectTitle, body: characterSelectBody },
     { targetId: "tour-prompt", title: ob.promptTitle, body: ob.promptBody },
-    { targetId: "tour-video-model", title: ob.providersTitle, body: ob.providersBody, revealedByTour: true },
-    { targetId: "tour-advanced-toggle", title: ob.multiAngleTitle, body: ob.multiAngleBody, revealedByTour: true },
+    { targetId: "tour-send", title: ob.sendTitle, body: ob.sendBody },
+    { targetId: "tour-characters", title: ob.charactersTitle, body: ob.charactersBody },
     { targetId: "tour-templates", title: ob.templatesTitle, body: ob.templatesBody },
     { targetId: "tour-community", title: ob.communityTitle, body: ob.communityBody },
+    { targetId: "tour-menu", title: ob.menuTitle, body: ob.menuBody },
     { targetId: null, title: ob.doneTitle, body: ob.doneBody },
   ];
   // Filtered once per tour open — a step list that mutated mid-tour would
   // yank the current index out from under the person.
   //
   // THE FIRST-DAY CRASH (React #419, five reports 2026-08-23 → 09-07, root
-  // cause found 2026-09-09). This memo runs during render, and for exactly one
-  // visitor it runs on the SERVER with tourActive already true: startOnboarding
-  // is set for a person who has a character and has not completed onboarding
-  // — the first composer render after their first character, and never again
-  // once the tour is dismissed. There, `document` does not exist, the
-  // querySelector threw "document is not defined", the Suspense boundary
-  // died mid-stream, and the client filed a minified #419 naming nothing.
-  // Every report matched that moment to the second.
-  //
-  // The DOM check is skipped where there is no DOM. The tour renders nothing
-  // until it has mounted, so the server-side list never reaches markup; and
-  // on the client this memo first runs during hydration, when the server's
-  // HTML is already in the document, so the anchors are there to be found.
-  //
-  // VISIBLE, not merely present (2026-09-09, operator on the Android app:
-  // "wrong highlights that don't make sense"). The native shell hides the
-  // whole sidebar with CSS — html.native-app aside { display: none } — so its
-  // three anchored links stay in the DOM and passed the old existence test.
-  // A display:none element measures 0×0 at the top-left corner, and the tour
-  // dutifully spotlit a small square in that corner while the balloon talked
-  // about Characters, Templates and Community. getClientRects() is empty for
-  // anything not laid out, whatever hid it.
+  // cause found 2026-09-09): this memo runs during render, and for exactly one
+  // visitor it ran on the SERVER with tourActive already true — the first
+  // composer render after a first character — where `document` does not
+  // exist. findTourAnchor answers null without a document, so the server
+  // keeps the full list; the tour renders nothing until mounted, so that list
+  // never reaches markup, and the client filters at hydration against the
+  // server's HTML, which is already in the document.
   const tourSteps = useMemo(
     () =>
-      tourActive && typeof document !== "undefined"
-        ? allTourSteps.filter(
-            (s) =>
-              s.targetId === null ||
-              s.revealedByTour ||
-              (document.querySelector(`[data-tour-id="${s.targetId}"]`)?.getClientRects().length ?? 0) > 0,
-          )
+      tourActive
+        ? allTourSteps.filter((s) => s.targetId === null || findTourAnchor(s.targetId) !== null)
         : allTourSteps,
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tourActive],
   );
 
+  const videoTourSteps: TourStep[] = useMemo(
+    () => [
+      { targetId: "tour-video-model", title: ob.providersTitle, body: ob.providersBody },
+      { targetId: "tour-advanced-toggle", title: ob.multiAngleTitle, body: ob.multiAngleBody },
+      { targetId: null, title: ob.videoDoneTitle, body: ob.videoDoneBody },
+    ],
+    [ob],
+  );
+  // Start the video tour the first time its two targets are on screen: Video
+  // mode, a character on hand, the main tour not running, nothing in flight,
+  // not seen before (or ?tour=video). A short delay lets the mode switch
+  // finish laying out before the anchors are looked for.
   useEffect(() => {
-    // Never while a request is live: setContentType triggers the resetChat
-    // effect, which would wipe the in-flight thread mid-render — same hazard
-    // as the creation-mode chip's clear button, guarded the same way. With
-    // `submitting` in the deps, the nudge still lands once the render ends
-    // if the tour is somehow open through one.
-    if (!tourActive || submitting) return;
-    // Target-based, not index-based: the filtered step list shifts indexes
-    // per layout, so the old hardcoded `=== 2 || === 3` would reveal the
-    // composer on the wrong stop.
-    const target = tourSteps[tourStepIndex]?.targetId;
-    const needsVideoMode = target === "tour-video-model" || target === "tour-advanced-toggle";
-    if (needsVideoMode) {
-      setContentType("video");
-      setCreationModeActive(true);
+    if (contentType !== "video" || tourActive || videoTourActive || submitting || characters.length === 0) return;
+    let seen = false;
+    try {
+      seen = window.localStorage.getItem(VIDEO_TOUR_KEY) === "1";
+    } catch {
+      seen = true;
     }
-  }, [tourActive, tourStepIndex, submitting, tourSteps]);
+    if (seen && !videoTourWantedRef.current) return;
+    const timer = window.setTimeout(() => {
+      if (findTourAnchor("tour-video-model") && findTourAnchor("tour-advanced-toggle")) {
+        videoTourWantedRef.current = false;
+        setVideoTourActive(true);
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, [contentType, tourActive, videoTourActive, submitting, characters.length]);
 
   // Stick-to-bottom (operator, 2026-08-24: the pane jumped on Generate and
   // then fought the reader): the chat follows new content ONLY while the
@@ -5782,11 +5817,17 @@ function GenerateFormInner({
   function finishTour() {
     setTourActive(false);
     setTourStepIndex(0);
-    // Leave the composer the way it was before the tour nudged it into
-    // video-creation mode, so a first-time user lands back on the plain
-    // hero greeting rather than a half-filled-in composer they never chose.
-    clearCreationMode();
+    // Nothing to restore: the tour no longer changes the composer's mode.
     void setHasCompletedOnboarding();
+  }
+  function finishVideoTour() {
+    setVideoTourActive(false);
+    setVideoTourStep(0);
+    try {
+      window.localStorage.setItem(VIDEO_TOUR_KEY, "1");
+    } catch {
+      // Storage blocked: it will show again next time, which beats never.
+    }
   }
 
   // Rendered in BOTH layouts. The docked layout drops it into the message
@@ -6165,6 +6206,19 @@ function GenerateFormInner({
           onNext={() => setTourStepIndex((i) => i + 1)}
           onFinish={finishTour}
           onJump={setTourStepIndex}
+          next={ob.next}
+          skip={ob.skip}
+          finish={ob.finish}
+          stepsLabel={ob.stepsLabel}
+        />
+      )}
+      {videoTourActive && (
+        <OnboardingTour
+          steps={videoTourSteps}
+          stepIndex={videoTourStep}
+          onNext={() => setVideoTourStep((i) => i + 1)}
+          onFinish={finishVideoTour}
+          onJump={setVideoTourStep}
           next={ob.next}
           skip={ob.skip}
           finish={ob.finish}
@@ -8165,6 +8219,7 @@ function GenerateFormInner({
                   ) : (
                     <button
                       type="submit"
+                      data-tour-id="tour-send"
                       disabled={
                         willAsk
                           ? !prompt.trim()

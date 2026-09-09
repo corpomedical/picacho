@@ -1581,7 +1581,7 @@ const pt = {
     skip: "Pular",
     finish: "Começar",
     welcomeTitle: "Bem-vindo ao Picacho",
-    welcomeBody: "Um tour guiado por tudo o que você precisa — uns dois minutos, e você pode sair quando quiser.",
+    welcomeBody: "Uma olhada rápida nas três coisas de que você precisa: cerca de um minuto, e você pode sair quando quiser.",
     charactersTitle: "Personagens",
     charactersBody:
       "Tudo começa com um personagem — salve a aparência, personalidade e voz uma vez aqui, e cada take fica consistente com ele.",
@@ -1596,7 +1596,7 @@ const pt = {
       "Aqui você escolhe qual personagem estrela o take. Fica em tom quente até você escolher alguém — enviando sem personagem, o resultado é genérico em vez do seu personagem.",
     promptTitle: "Descreva com suas palavras",
     promptBody:
-      "Sem engenharia de prompt — escreva como contaria a um amigo. O Picacho redige, revisa, gera e pontua o resultado contra a foto do seu personagem.",
+      "Não precisa de engenharia de prompt: escreva como contaria a um amigo. O Picacho redige e revisa o texto por você.",
     templatesTitle: "Comece por um modelo",
     templatesBody:
       "Cenas prontas — retratos, fotos de produto, unboxings e mais. Toque em uma e ela chega ao compositor preenchida, pronta para ajustar.",
@@ -1604,7 +1604,14 @@ const pt = {
     communityBody:
       "Takes reais compartilhados por outros usuários — corações, visualizações e ideias que valem emprestar. Compartilhe os seus melhores pela página de Histórico de cada take.",
     doneTitle: "Tudo pronto",
-    doneBody: "Isso é o tour. Descreva o que você quer abaixo para fazer seu primeiro take.",
+    doneBody: "Descreva o que você quer e envie: seu primeiro take está a uma mensagem. Mude para Vídeo quando quiser; as ferramentas de vídeo se apresentam quando você fizer isso.",
+    characterSelectNamedBody: "{name} está na cena. Aqui você troca quem estrela um take: toque para mudar.",
+    sendTitle: "Enviar",
+    sendBody: "Um toque gera o take e dá uma nota comparando com as fotos do seu personagem, para você saber o quanto ficou parecido antes de usar.",
+    menuTitle: "Todo o resto está no menu",
+    menuBody: "Modelos, projetos, prompts salvos e configurações ficam aqui.",
+    videoDoneTitle: "Esse é o lado do vídeo",
+    videoDoneBody: "Esses dois controles são tudo. O resto funciona exatamente como nas imagens.",
   },
   stage: {
     eyebrow: "Angle Stage",

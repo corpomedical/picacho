@@ -1580,7 +1580,7 @@ const it = {
     skip: "Salta",
     finish: "Inizia",
     welcomeTitle: "Benvenuto su Picacho",
-    welcomeBody: "Un tour guidato di tutto l'essenziale — circa due minuti, e puoi uscire quando vuoi.",
+    welcomeBody: "Uno sguardo rapido alle tre cose che ti servono: circa un minuto, e puoi uscire quando vuoi.",
     charactersTitle: "Personaggi",
     charactersBody:
       "Tutto parte da un personaggio — salva qui aspetto, personalità e voce una volta sola, e ogni ripresa resterà coerente con esso.",
@@ -1595,7 +1595,7 @@ const it = {
       "Qui scegli quale personaggio è il protagonista della ripresa. Resta di un tono caldo finché non scegli qualcuno — inviando senza, ottieni un risultato generico invece del tuo personaggio.",
     promptTitle: "Descrivilo con parole tue",
     promptBody:
-      "Nessun prompt engineering — scrivilo come lo racconteresti a un amico. Picacho redige, rivede, genera e valuta il risultato rispetto alla foto del tuo personaggio.",
+      "Niente ingegneria dei prompt: scrivilo come lo racconteresti a un amico. Picacho redige e rivede il testo per te.",
     templatesTitle: "Parti da un modello",
     templatesBody:
       "Scene pronte — ritratti, foto prodotto, unboxing e altro. Toccane una e arriva nel compositore già precompilata, pronta da ritoccare.",
@@ -1603,7 +1603,14 @@ const it = {
     communityBody:
       "Riprese reali condivise dagli altri utenti — cuori, visualizzazioni e idee da cui prendere spunto. Condividi i tuoi migliori dalla pagina Cronologia di ogni ripresa.",
     doneTitle: "Tutto pronto",
-    doneBody: "Il tour finisce qui. Descrivi cosa vuoi qui sotto per fare la tua prima ripresa.",
+    doneBody: "Descrivi cosa vuoi e invia: la tua prima ripresa è a un messaggio di distanza. Passa a Video quando vuoi; gli strumenti video si presentano da soli quando lo fai.",
+    characterSelectNamedBody: "{name} è nella scena. Qui cambi chi è il protagonista di una ripresa: tocca per cambiare.",
+    sendTitle: "Invia",
+    sendBody: "Un tocco genera la ripresa e le assegna un punteggio rispetto alle foto del tuo personaggio, così sai quanto ci si avvicina prima di usarla.",
+    menuTitle: "Tutto il resto è nel menu",
+    menuBody: "Modelli, progetti, prompt salvati e impostazioni vivono qui.",
+    videoDoneTitle: "Questo è il lato video",
+    videoDoneBody: "Quei due controlli sono tutto. Il resto funziona esattamente come per le immagini.",
   },
   stage: {
     eyebrow: "Angle Stage",

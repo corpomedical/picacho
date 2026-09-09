@@ -1667,7 +1667,7 @@ const en = {
     skip: "Skip",
     finish: "Get started",
     welcomeTitle: "Welcome to Picacho",
-    welcomeBody: "A quick guided look at everything you need — about two minutes, and you can leave anytime.",
+    welcomeBody: "A quick look at the three things you need — about a minute, and you can leave any time.",
     charactersTitle: "Characters",
     charactersBody:
       "Everything starts with a character — save their look, personality, and voice once here, and every take stays consistent with it.",
@@ -1682,7 +1682,7 @@ const en = {
       "This chooses which character stars in your take. It glows warm until someone is picked — send without one and you get a generic take instead of your character.",
     promptTitle: "Describe it in plain words",
     promptBody:
-      "No prompt engineering needed — write it like you'd tell a friend. Picacho drafts, reviews, generates, then scores the result against your character's photo.",
+      "No prompt engineering needed — write it like you'd tell a friend. Picacho drafts and reviews the wording for you.",
     templatesTitle: "Start from a template",
     templatesBody:
       "Ready-made scenes — headshots, product shots, unboxings and more. Tap one and it lands in the composer prefilled, ready to tweak.",
@@ -1690,7 +1690,14 @@ const en = {
     communityBody:
       "Real takes shared by other users — hearts, views, and ideas worth borrowing. Share your own best work from any take's History page.",
     doneTitle: "You're all set",
-    doneBody: "That's the tour. Describe what you want below to make your first take.",
+    doneBody: "Describe what you want and send — your first take is one message away. Switch to Video whenever you like; the video tools introduce themselves when you do.",
+    characterSelectNamedBody: "{name} is in the scene. This is where you switch who stars in a take — tap it to change.",
+    sendTitle: "Send",
+    sendBody: "One tap generates the take and scores it against your character's photos, so you know how close it is before you use it.",
+    menuTitle: "Everything else is in the menu",
+    menuBody: "Templates, projects, saved prompts and settings live here.",
+    videoDoneTitle: "That's the video side",
+    videoDoneBody: "Those two controls are all there is to it. Everything else works exactly as it does for images.",
   },
   // Server-produced strings, localized at DISPLAY time (2026-09-05 audit:
   // every server action error and stage label reached the localized app in

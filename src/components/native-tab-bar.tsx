@@ -165,6 +165,16 @@ export function NativeTabBar() {
             href={tab.href}
             aria-current={routeActive ? "page" : undefined}
             onClick={() => setPendingHref(tab.href)}
+            // The "where things are" stops of the onboarding tour. The same
+            // ids as the sidebar's links: whichever of the two is laid out on
+            // this device is the one the tour points at (findTourAnchor).
+            data-tour-id={
+              tab.href === "/app/character"
+                ? "tour-characters"
+                : tab.href === "/app/community"
+                  ? "tour-community"
+                  : undefined
+            }
             className={cn(
               "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors",
               active

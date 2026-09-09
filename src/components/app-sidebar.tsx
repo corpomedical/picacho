@@ -594,6 +594,7 @@ export function AppSidebar({
           type="button"
           onClick={() => setMobileOpen(true)}
           aria-label={s.showSidebar}
+          data-tour-id="tour-menu"
           className="flex h-9 w-9 items-center justify-center rounded-control text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
         >
           <MenuIcon className="h-5 w-5" />

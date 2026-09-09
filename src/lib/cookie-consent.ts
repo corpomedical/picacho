@@ -24,9 +24,16 @@ export function getCookieConsent(): CookieConsent | null {
   }
 }
 
+// Fired on window when the banner is answered. The composer's onboarding tour
+// waits for it: on a phone the banner, the tab bar and a tour balloon all
+// competed for the same bottom edge at once (2026-09-09), and a first-time
+// person was asked to accept cookies in the middle of being shown around.
+export const COOKIE_CONSENT_EVENT = "picacho:cookie-consent";
+
 export function setCookieConsent(value: CookieConsent): void {
   try {
     window.localStorage.setItem(COOKIE_CONSENT_KEY, value);
+    window.dispatchEvent(new CustomEvent(COOKIE_CONSENT_EVENT, { detail: value }));
   } catch {
     // Storage unavailable — the banner still hides for this visit.
   }
