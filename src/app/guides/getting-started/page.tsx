@@ -6,30 +6,34 @@ import { MarketingFooter } from "@/components/marketing/footer";
 import { marketingSocial } from "@/lib/i18n/metadata";
 import { createClient } from "@/lib/supabase/server";
 
-// The Picacho course (2026-08-25, operator: "a course on how to use our
-// website with screenshots with mouse pointer and everything") — nine
-// chapters, every step photographed on the LIVE product with a drawn-in
-// cursor and highlight ring, captured on a fresh demo account (course-demo)
-// so it shows exactly what a new user sees. The Maya renders in chapters 2-3
-// are real generations, not mockups; the match score in chapter 6 is the
-// scorer's actual output (93%). Screenshots live in public/course/ and are
-// reproduced by the capture rig (see the session scratchpad's course/
-// configs) whenever the UI changes enough to matter.
+// The Picacho course — nine chapters, every step photographed on the live
+// product with a drawn cursor and an ochre highlight ring on the thing you
+// are told to click (the operator's original brief: "a course on how to use
+// our website with screenshots with mouse pointer and everything").
 //
-// Same conventions as every guide: English-only body (shell chrome stays
-// localized), one CTA band at the end, product claims verified live. The
-// course's three identity rules are the distilled lessons of real support
-// cases — same person in every reference, clothes in Outfit never in
-// References, traits must describe the photos.
+// REBUILT 2026-09-09, from scratch. The 2026-08-25 course was reshot on
+// 08-27 and then overtaken by 167 UI commits: the Stage x Control Room merge
+// replaced the chat composer with a stage + loadout row, the character form
+// moved Outfit and Fixed traits inside a closed "Look and voice" fold, the
+// dashboard became the reel, and the featured video lane went from three
+// models to four. A drift pass found 15 claims that were not merely stale
+// but WRONG — two of them ("render on Seedance for exact outfits", "the
+// dialogue line hides behind the advanced reveal") would send a reader to a
+// refusal. Nothing from the old text survives unchecked.
 //
-// Reshot 2026-08-27 after the composer/character redesign wave: cast wall,
-// character profile page (Perspective + In action), receipt strip under the
-// model row, featured-models menu with "More models", cinema Presets with
-// hover previews, Templates with sample pictures, Enhance/Describe chips.
-// Every replaced screenshot recaptured live on the same course-demo
-// account; the café render in ch3 is a fresh real generation from that
-// session (its free daily slot).
-const TITLE = "The Picacho Course: First Login to First Video";
+// Shot on a real free account walking the real first-run path, in order:
+// sign up, land on an empty dashboard, build one character (Maya) with a
+// generated identity photo, spend the day's one free generation on the cafe
+// render in chapter 3. That is deliberate — a beginner's course should show
+// a beginner's account, not a power user's crowded library, and every number
+// on screen (0 credits, 1 take, 100% first-try) is the account's own.
+//
+// Conventions, same as every guide: English-only body (shell chrome stays
+// localized), one CTA band at the end, product claims verified against
+// source at writing time — plan allowances from lib/plans.ts, the featured
+// video lane from FEATURED_VIDEO_MODEL_IDS, the photoreal fence from
+// MODEL_CAPABILITIES in lib/generations/send-plan.ts.
+const TITLE = "The Picacho Course: First Login to First Take";
 const DESCRIPTION =
   "Learn Picacho in nine short chapters, every step photographed on the live product: create a consistent AI character, generate images and videos that keep their face, and fix the few things that go wrong.";
 
@@ -52,7 +56,7 @@ type Step = {
   body: React.ReactNode;
   callout?: Callout;
 };
-type Chapter = { id: string; title: string; lede: string; steps: Step[] };
+type Chapter = { id: string; title: string; minutes: string; lede: string; steps: Step[] };
 
 const CALLOUT_LABEL: Record<Callout["kind"], string> = {
   tip: "Tip",
@@ -62,550 +66,494 @@ const CALLOUT_LABEL: Record<Callout["kind"], string> = {
 
 const CHAPTERS: Chapter[] = [
   {
-    id: "welcome",
-    title: "Welcome & sign-up",
-    lede: "Getting into Picacho takes a minute. Here's the door.",
+    id: "get-in",
+    title: "Get in and look around",
+    minutes: "5 min",
+    lede:
+      "Picacho keeps one person — your character — looking the same in every image and video you make. This chapter gets you an account and shows you the room you'll be working in.",
     steps: [
       {
-        shot: { src: "ch1-01-signup-cta" },
-        title: "Create your account",
+        shot: { src: "ch1-01-homepage" },
+        title: "Start on the homepage",
         body: (
           <>
-            On <b>picacho.ai</b>, click <b>Get started</b>. You can also continue with Google or
-            Facebook on the next screen — same account either way.
+            Go to picacho.ai and click <strong>Get started</strong>. There&apos;s also{" "}
+            <strong>Log in</strong> and <strong>Sign up</strong> in the top right — every one of
+            those buttons lands on the same form.
           </>
         ),
       },
       {
         shot: { src: "ch1-02-signup-form" },
-        title: "Email and password",
-        body: <>Enter your email and choose a password, then confirm the address from the email we send you.</>,
-      },
-      {
-        shot: { src: "ch1-03-welcome" },
-        title: "Your first look around",
+        title: "Fill in the form",
         body: (
           <>
-            On first login Picacho offers a one-minute tour — take it, it points at everything this
-            course covers.
+            Five fields: your name, your email, a username, a password, and your company if you
+            have one. The username is the name other people see, and it&apos;s what your invite
+            link is built from — the line underneath tells you whether the one you typed is free.
+            Then tick the box and click <strong>Create account</strong>.
           </>
         ),
         callout: {
           kind: "tip",
           text: (
             <>
-              The dashboard&apos;s advice is the whole product in one line:{" "}
-              <b>set up a character first — every generation is built around one.</b> That&apos;s
-              Chapter 2.
+              Prefer not to type any of that? <strong>Continue with Google</strong> or{" "}
+              <strong>Continue with Facebook</strong> at the top of the same card makes the account
+              for you. Those two are the only sign-in providers today.
             </>
           ),
         },
       },
+      {
+        shot: { src: "ch1-03-check-email" },
+        title: "Confirm your email",
+        body:
+          "We send you a link. Open it on the same device you signed up on — it signs you in and drops you straight into the app, so there's no need to come back to this tab.",
+        callout: {
+          kind: "tip",
+          text: "Nothing after a minute? Check your spam folder. If an account already exists on that address, the form tells you rather than sending anything.",
+        },
+      },
+      {
+        shot: { src: "ch1-04-first-screen" },
+        title: "Your first screen",
+        body: (
+          <>
+            You land on your dashboard. It&apos;s nearly empty on purpose: a reel playing at the
+            top, three cards — <strong>Create an image</strong>, <strong>Create a video</strong>,{" "}
+            <strong>How it works</strong> — and a box at the bottom to type in. The counters read
+            zero because you haven&apos;t made anything yet.
+          </>
+        ),
+        callout: {
+          kind: "tip",
+          text: "The reel at the top is ours, not yours. Once you have a few takes of your own, your best ones play there instead.",
+        },
+      },
+      {
+        title: "The tour that opens by itself",
+        body: (
+          <>
+            On your first visit a short walkthrough points at the things you&apos;ll need, one at a
+            time, with a counter so you know how far in you are. <strong>Skip</strong> closes it and
+            nothing is lost — you can replay it from the gear menu whenever you like.
+          </>
+        ),
+      },
+      {
+        shot: { src: "ch1-06-sidebar" },
+        title: "The sidebar is the whole app",
+        body: (
+          <>
+            <strong>Generate</strong> is where you make things. <strong>Characters</strong> holds
+            your cast, <strong>History</strong> everything you&apos;ve made,{" "}
+            <strong>Templates</strong> and <strong>Community</strong> are for ideas.{" "}
+            <strong>Media</strong> opens into Images and Videos, and <strong>Tools</strong> has
+            Upscale video, Layers and Notes. The gear at the very bottom opens settings, your plan,
+            and this course again.
+          </>
+        ),
+      },
     ],
   },
+
   {
     id: "character",
-    title: "Your first character",
-    lede: "A character is the person Picacho keeps consistent across every image and video you make. You'll create one — Maya — with an identity photo, an outfit, and traits that work with the photos instead of against them.",
+    title: "Make your character",
+    minutes: "10 min",
+    lede:
+      "A character is a name, a few photos and a few fixed details. Picacho locks that face into everything you make afterwards, so this is the one part worth doing slowly. We'll build one called Maya.",
     steps: [
       {
         shot: { src: "ch2-01-open-characters" },
         title: "Open Characters",
-        body: (
-          <>
-            In the sidebar, click <b>Characters</b>. This is where every character you create lives.
-          </>
-        ),
+        body: "Click Characters in the sidebar. This is your cast — a wall of everyone you've made. On day one it's empty.",
       },
       {
         shot: { src: "ch2-02-new-character" },
-        title: "Start a new character",
-        body: (
-          <>
-            Your characters live on a wall of portrait cards. Click <b>New character</b> in the
-            top-right corner — or the dashed <b>+ New character</b> card, same thing.
-          </>
-        ),
+        title: "Start a new one",
+        body: "Click New character at the top right, or the dashed tile on the wall. Both open the same form.",
       },
       {
         shot: { src: "ch2-03-name" },
-        title: "Name the person",
-        body: (
-          <>
-            Type the character&apos;s name — we&apos;re calling ours <b>Maya</b>.
-          </>
-        ),
+        title: "Name them",
+        body: "The big line at the top of the form is the name. That's the only thing you truly have to fill in — everything below it makes the face hold better.",
         callout: {
           kind: "tip",
-          text: (
-            <>
-              Name the <b>person</b>, not their clothes or brand. &ldquo;Maya&rdquo; works for every
-              scene she&apos;ll ever appear in; her outfit gets its own section below.
-            </>
-          ),
+          text: "Name the person, not their job or their clothes. “Maya” works in every scene she'll ever appear in; what she's wearing gets its own box further down.",
         },
       },
       {
         shot: { src: "ch2-04-generate-photo" },
-        title: "No photo? Generate one",
+        title: "Give them a face",
         body: (
           <>
-            If you don&apos;t have a photo, describe the person in the box and click{" "}
-            <b>Generate</b> — your first two AI photos are free. If you do have photos, use{" "}
-            <b>+ Add</b> instead: uploading is always free.
+            Under <strong>Reference images</strong> you can click <strong>+ Add</strong> to upload
+            photos from your device — up to five, and uploading is always free. No photos? Describe
+            the person in the box and click <strong>Generate</strong>. A free account gets two
+            AI-made character photos in total.
           </>
         ),
         callout: {
           kind: "rule",
-          text: (
-            <>
-              Every photo in References must show the <b>same person</b>. Different people in this
-              grid — or a product photo — and the AI blends them into someone new on every render.
-            </>
-          ),
+          text: "The same person in every photo. This grid is what your character's face is measured against — mix two people in, or drop in a product shot, and the AI blends them into someone new on every render.",
         },
       },
       {
-        shot: { src: "ch2-05-first-photo" },
+        shot: { src: "ch2-05-identity-photo" },
         title: "Your identity photo",
         body: (
           <>
-            The photo lands in References with the <b>IDENTITY PHOTO</b> badge — it anchors
-            Maya&apos;s face in every generation. The lock-strength meter shows how solid the anchor
-            is: add a three-quarter angle and a full-body shot of the <i>same</i> person to
-            strengthen it.
+            The photo lands with an <strong>IDENTITY PHOTO</strong> badge. That&apos;s the one every
+            take is scored against. The small bar meter beside the portrait is the face lock: one
+            photo lights one bar, and it gets stronger as you add more.
           </>
         ),
       },
       {
-        shot: { src: "ch2-06-outfit-slot" },
-        title: "The Outfit section",
+        shot: { src: "ch2-06-perspective" },
+        title: "Or let Perspective do it",
         body: (
           <>
-            What Maya <b>wears</b> lives here, apart from who she <b>is</b>. Click{" "}
-            <b>+ Add outfit photo</b> to upload clothing shots — product photos and flat-lays are
-            perfect, no face needed.
-          </>
-        ),
-        callout: {
-          kind: "tip",
-          text: (
-            <>
-              Use up to 2 photos of the <b>same outfit</b> (front and back, say) — not two different
-              outfits. Picacho studies the photos once and writes an exact garment description used
-              even by video models that can&apos;t read clothing photos directly.
-            </>
-          ),
-        },
-      },
-      {
-        shot: { src: "ch2-07-traits-match" },
-        title: "Traits that match the photos",
-        body: (
-          <>
-            Fixed traits ride into every prompt. Ours says <b>&ldquo;Short dark hair&rdquo;</b> —
-            because that&apos;s what the photo shows.
+            <strong>Perspective</strong> renders the same person front, three-quarter, profile and
+            full body in one tap — exactly the angles the meter is asking for. Each rendered photo
+            uses one AI-photo allowance.
           </>
         ),
         callout: {
           kind: "warn",
-          text: (
-            <>
-              Traits must <b>describe your photos</b>, never fight them. If the photos show hair
-              worn down and the trait says &ldquo;tied up&rdquo;, the AI is ordered to contradict
-              its own reference — and it resolves that by drawing a different-looking person.
-            </>
-          ),
+          text: "A free account has two AI photos in total, so Perspective can't fill all four slots. Upload the rest yourself — that costs nothing.",
         },
       },
       {
-        shot: { src: "ch2-08-save" },
-        title: "Save",
+        shot: { src: "ch2-07-outfit" },
+        title: "Clothes go in Outfit, not in the photos",
         body: (
           <>
-            Click <b>Save character</b>. Maya is now reusable in every image and video you make.
-          </>
-        ),
-      },
-      {
-        shot: { src: "ch2-09-ready-to-generate" },
-        title: "Ready to generate",
-        body: (
-          <>
-            You land in <b>Generate</b> with Maya selected. The prompt box is where the next chapter
-            begins — and note the small print under it: your first generation each day is free.
-          </>
-        ),
-      },
-      {
-        shot: { src: "ch2-10-character-page" },
-        title: "Your character's own page",
-        body: (
-          <>
-            Open Maya from the wall any time: her page shows the portrait, the lock-strength meter,
-            and her recent renders with their match scores under <b>In action</b> — the receipts of
-            the consistency promise. <b>Generate with Maya</b> jumps straight to a composer with her
-            selected.
-          </>
-        ),
-        callout: {
-          kind: "tip",
-          text: (
-            <>
-              The <b>Perspective</b> button is the fast way to a strong lock: one tap renders her
-              front, three-quarter, profile and full-body reference photos — the exact angles the
-              meter asks for — instead of prompting each one by hand. Each photo uses one of your
-              free AI-photo allowances.
-            </>
-          ),
-        },
-      },
-    ],
-  },
-  {
-    id: "first-image",
-    title: "Your first image",
-    lede: "Images are the fastest, cheapest way to meet your character. One prompt, about half a minute, and Maya looks back at you.",
-    steps: [
-      {
-        shot: { src: "ch3-01-pick-character" },
-        title: "Pick your character",
-        body: (
-          <>
-            Click the character selector at the top of the composer and choose <b>Maya</b>. Her
-            saved face photo now anchors everything this chat generates.
-          </>
-        ),
-        callout: {
-          kind: "tip",
-          text: (
-            <>
-              Skipping this gives you a <i>generic</i> render — a nice picture of a stranger. If
-              your result doesn&apos;t look like your character, the first thing to check is whether
-              one was selected at all.
-            </>
-          ),
-        },
-      },
-      {
-        shot: { src: "ch3-02-write-prompt" },
-        title: "Describe the scene, not the person",
-        body: (
-          <>
-            Type what&apos;s <b>happening</b>: &ldquo;Maya at a sunny cafe table with a cappuccino,
-            smiling at the camera, soft morning light.&rdquo; Her face comes from the photo; her
-            outfit and hair come from the character sheet.
+            <strong>Look and voice</strong> is folded shut under the photos — click it open. The
+            first thing inside is <strong>Outfit</strong>: up to two clothing photos, and flat-lays
+            or product shots are perfect because no face is needed.
           </>
         ),
         callout: {
           kind: "rule",
-          text: (
-            <>
-              <b>The photos own the person — the prompt owns the scene.</b> Spend your words on
-              place, action, light and mood, and identity stays locked. Short on words? The{" "}
-              <b>Enhance</b> chip next to send rewrites your prompt into a richer version you
-              approve before anything is spent.
-            </>
-          ),
+          text: "Faces in Reference images, clothes in Outfit. A jacket dropped into the references grid can quietly become part of the face.",
         },
       },
       {
-        shot: { src: "ch3-03-send" },
+        shot: { src: "ch2-08-traits" },
+        title: "Fixed traits",
+        body: (
+          <>
+            Hair, Outfit, Personality, Distinguishing features and Motion style are short phrases
+            that ride into every prompt you write, so you never have to retype them.
+          </>
+        ),
+        callout: {
+          kind: "warn",
+          text: "Traits have to describe the photos, never argue with them. If the photo shows short dark hair and the trait says “long blonde”, the model is being told to contradict its own reference — and it settles that by drawing someone else.",
+        },
+      },
+      {
+        shot: { src: "ch2-09-save" },
+        title: "Save",
+        body: "Click Save character. You land in the composer with your new character already picked, ready to render.",
+      },
+      {
+        shot: { src: "ch2-10-character-page" },
+        title: "Their own page",
+        body: (
+          <>
+            Click a character on the wall any time to open their page: how many takes they&apos;re
+            in, how well the face has held, when you last worked on them, and every take they
+            appear in under <strong>In action</strong>. <strong>Generate with Maya</strong> jumps
+            straight to a composer with her selected.
+          </>
+        ),
+      },
+    ],
+  },
+
+  {
+    id: "first-image",
+    title: "Your first image",
+    minutes: "3 min",
+    lede:
+      "The composer is one screen: a dark stage at the top where takes land, a strip of this session's takes under it, and a card at the bottom where you type. Start on Image — it's the fastest way to meet your character.",
+    steps: [
+      {
+        shot: { src: "ch3-01-composer" },
+        title: "The screen",
+        body: (
+          <>
+            The dark box is the <strong>stage</strong>, where your finished take appears.{" "}
+            <strong>Takes</strong> underneath collects everything from this session. The card at the
+            bottom is the composer — everything you choose before you send lives on that one row.
+          </>
+        ),
+      },
+      {
+        shot: { src: "ch3-02-character-chip" },
+        title: "Check who's in the scene",
+        body: (
+          <>
+            The first chip on the composer is your character, with their photo and their face-lock
+            meter. Beside it sit the engine, the clip length, and the frame shape.
+          </>
+        ),
+        callout: {
+          kind: "warn",
+          text: "Send with no character picked and you get a nice picture of a stranger. If a result doesn't look like your character, this is the first thing to check.",
+        },
+      },
+      {
+        shot: { src: "ch3-03-write-prompt" },
+        title: "Describe the scene, not the person",
+        body: (
+          <>
+            Write it the way you&apos;d tell a friend: <em>Maya at a sunny cafe table with a
+            cappuccino, smiling at the camera, soft morning light.</em> You don&apos;t need to
+            describe her face or her hair — that&apos;s what the character is for.
+          </>
+        ),
+        callout: {
+          kind: "rule",
+          text: "The character carries the person; your prompt carries the scene. Spend your words on place, action, light and mood. Repeating hair and clothes in the prompt fights the photos.",
+        },
+      },
+      {
+        shot: { src: "ch3-04-send" },
         title: "Send it",
-        body: <>Click the send button. Today&apos;s free generation covers this one.</>,
-      },
-      {
-        shot: { src: "ch3-04-cooking" },
-        title: "Watch Picacho work",
         body: (
           <>
-            The pipeline card narrates while it works, in three steps: <b>Draft</b> — AI rewrites
-            your prompt with the character&apos;s rulebook folded in; <b>Validate</b> — checks
-            nothing about your character was lost; <b>Generate</b> — the image model renders,
-            anchored to Maya&apos;s photo.
+            <strong>Enhance</strong> will rewrite your line into a fuller prompt and show it to you
+            before anything is spent — useful, optional. When you&apos;re ready, press{" "}
+            <strong>Render</strong>. The line underneath tells you exactly what it will cost: on a
+            new account, <em>Uses today&apos;s free generation</em>.
           </>
         ),
       },
       {
-        shot: { src: "ch3-05-result", h: 840 },
-        title: "The result",
-        body: (
-          <>
-            About half a minute later the image lands in the chat — same face as the reference
-            photo, new scene — and the finished card keeps the whole story: the exact drafted
-            prompt, the validation, and which model rendered it. It also appears in the Takes rail
-            on the right and in History.
-          </>
-        ),
+        shot: { src: "ch3-05-cooking" },
+        title: "Watch it work",
+        body: "The composer folds down to a bar and the stage narrates the pipeline: your prompt is rewritten with the character's details folded in, checked that nothing about them was lost, then rendered. You can leave the page — it carries on without you.",
       },
       {
-        shot: { src: "ch3-06-download", h: 720 },
-        title: "Save it",
+        shot: { src: "ch3-06-result", h: 840 },
+        title: "Your take",
         body: (
           <>
-            Hover the image and click the <b>download</b> button in its corner. On the phone app the
-            same button opens the share sheet — save to Photos, send to WhatsApp, anywhere.
+            About half a minute later the image lands on the stage — same face as the reference
+            photo, new scene. Hover it to download it, or open it full screen. It&apos;s also in{" "}
+            <strong>Takes</strong> below the stage and in <strong>History</strong> for good.
           </>
         ),
+        callout: {
+          kind: "tip",
+          text: "Once you're rendering on credits, takes carry an identity score — how close the face came to your character's photo. The one free render a day is deliberately left unscored, so it can never cost you the slot twice.",
+        },
       },
       {
         shot: { src: "ch3-07-templates" },
-        title: "Want a head start? Templates",
+        title: "Want a head start?",
         body: (
           <>
-            The <b>Templates</b> page in the sidebar is a gallery of ready-made scenes — LinkedIn
-            headshot, magazine cover, product shots, seasonal cards — each with a sample picture of
-            what it produces. Tap <b>Use template</b>, tweak the words in [brackets], and send. Your
-            character, their scene.
+            <strong>Templates</strong> in the sidebar are finished prompts with sample pictures —
+            headshots, magazine covers, product shots, seasonal cards. Pick one, swap in your
+            character, change the words that are meant to be changed, send.
           </>
         ),
       },
     ],
   },
+
   {
-    id: "videos",
-    title: "Making videos",
-    lede: "Videos work exactly like images — pick a character, describe the scene — with one new decision: which video model. It's a real decision, because they cost and behave differently.",
+    id: "video",
+    title: "Make a video",
+    minutes: "5 min",
+    lede:
+      "Same composer, same character, one different chip. Video costs more than an image and takes longer, so it's worth knowing which engine you're asking and what it's good at.",
     steps: [
       {
         shot: { src: "ch4-01-video-mode" },
-        title: "Switch to video",
+        title: "Switch to Video",
         body: (
           <>
-            From the dashboard choose <b>Create a video</b>, or switch inside the composer — the
-            model joins your character in the bar at the top, with the price per clip and the
-            duration choices riding alongside.
+            The <strong>+</strong> button beside the prompt opens a short menu:{" "}
+            <strong>Upload files</strong>, <strong>Saved prompts</strong>,{" "}
+            <strong>Create image</strong>, <strong>Create video</strong>. Pick{" "}
+            <strong>Create video</strong>. The composer keeps its shape — character, engine,
+            length, frame shape — and a small chip beside the button now reads <em>Video</em>.
           </>
         ),
       },
       {
-        shot: { src: "ch4-02-models" },
-        title: "Choose your model — the honest guide",
+        shot: { src: "ch4-02-engine" },
+        title: "Choose an engine",
         body: (
           <>
-            Click the model row: three featured picks come first, each with its one-line truth.{" "}
-            <b>Kling O3 Pro (reference)</b> — the strongest face lock, anchors to your
-            character&apos;s photo without copying its pose. <b>Seedance 2.0</b> — the best
-            all-rounder: it&apos;s the one whose renders can match a saved outfit <i>exactly</i>{" "}
-            (it accepts the outfit photo itself — see Chapter 2), it powers the camera Presets
-            below, and it goes up to 30 seconds. <b>Veo 3.1</b> — the premium pick, with audio, and
-            the one that needs no character at all. <b>More models</b> unfolds the rest: budget{" "}
-            <b>Kling 1.6</b>, <b>Kling 2.5 Turbo Pro</b>, <b>Kling O3</b> with native audio, and{" "}
-            <b>Seedance 2.5</b> — illustrated and mascot characters only.
-          </>
-        ),
-        callout: {
-          kind: "tip",
-          text: (
-            <>
-              If your character wears a specific real outfit, render on <b>Seedance 2.0</b>. On the
-              Kling family the outfit rides as a written description — colors and logos land, exact
-              stitching isn&apos;t guaranteed. The receipt line under the model row always tells you
-              which mode you&apos;re in.
-            </>
-          ),
-        },
-      },
-      {
-        shot: { src: "ch4-03-advanced" },
-        title: "Duration and shape",
-        body: (
-          <>
-            Pick the clip length right on the bar (each model shows its own options — Seedance goes
-            to 30s; on the phone the chips sit at the top of the model menu). For the aspect ratio, click the small <b>chevron</b> next to send: the advanced
-            row unfolds with the frame shapes — landscape for YouTube, portrait for Reels and TikTok
-            — and a line for spoken dialogue. Then describe the scene and send, exactly like an
-            image.
+            Four are featured: <strong>Seedance 2.0</strong>, <strong>Kling O3 Pro</strong>,{" "}
+            <strong>Gemini Omni Flash 1.1</strong> and <strong>Veo 3.1</strong>. Each shows its
+            price in credits before you commit. <strong>More models</strong> opens the rest.
           </>
         ),
         callout: {
           kind: "warn",
-          text: (
-            <>
-              Videos cost credits (the price chip on the model row is per clip). Your daily free
-              generation covers one render a day — and on the free tier it runs on the
-              pinned free model, whatever is selected; the note under the composer says so before you send. After that
-              you&apos;ll need a plan or a credit pack from Settings.
-            </>
-          ),
+          text: "Both Seedance lanes refuse photoreal reference photos. If your character is a real-looking person, Picacho will say so and offer you a one-tap switch to an engine that accepts them — take the switch rather than fighting it.",
         },
       },
       {
-        shot: { src: "ch4-04-presets" },
-        title: "Cinema presets",
+        shot: { src: "ch4-03-length-shape" },
+        title: "Length and shape",
         body: (
           <>
-            On Seedance, a <b>Presets</b> button appears above the prompt: nineteen proven camera
-            moves — crash zoom, dolly-in, orbit, crane reveal, bullet time and more. Point at any
-            chip and it plays the actual clip that move produced, so you choose with your eyes. Tap
-            to arm it, and the move rides along with whatever scene you describe.
+            The seconds chip sets clip length — Seedance 2.0 does 5, 10 or 15 seconds, and other
+            engines offer their own. The two icons beside it switch between landscape and portrait.
+          </>
+        ),
+      },
+      {
+        shot: { src: "ch4-04-camera-light" },
+        title: "Three more controls, for when one clip isn't enough",
+        body: (
+          <>
+            <strong>Storyboard</strong> plans the video as two to six shots, each with its own line
+            and its own length. <strong>Cinema Studio</strong> turns a single idea into that shot
+            list for you. <strong>Frames</strong> lets you pin the first frame — and optionally the
+            last — to a photo you already have.
           </>
         ),
         callout: {
           kind: "tip",
-          text: (
-            <>
-              Every preset thumbnail is a real render, not an illustration — what you see on the
-              chip is what the move does.
-            </>
-          ),
+          text: "Leave all three off for your first clip. One line, one shot, five seconds is the fastest way to learn what an engine does with your character.",
         },
+      },
+      {
+        shot: { src: "ch4-05-video-tour" },
+        title: "Video introduces itself",
+        body: (
+          <>
+            The first time you switch to video, a short tour walks the controls that are new here —
+            three stops, a counter, and <strong>Skip</strong> whenever you want. It only ever
+            appears once.
+          </>
+        ),
       },
     ],
   },
+
   {
     id: "attachments",
-    title: "Attaching photos — what it really does",
-    lede: "The + button lets you attach a photo to a message. What that photo will DO depends on the model — so Picacho tells you, in writing, before you send.",
+    title: "What you attach, and what it does",
+    minutes: "2 min",
+    lede:
+      "The same + menu has Upload files and Take photo. What Picacho does with an attachment depends on what it is and which engine is selected — and it tells you, in a line above the send button, before you spend anything.",
     steps: [
       {
-        shot: { src: "ch5-01-attach-receipt" },
-        title: "Read the receipt",
+        shot: { src: "ch5-01-receipt" },
+        title: "Read the receipt above the button",
         body: (
           <>
-            The small line under the model row is the <b>receipt</b> for your next send. Attach a
-            photo and it says exactly what will happen — here, on Kling O3 Pro:{" "}
-            <i>Face: saved photo · Attached image: described into your prompt</i>. Maya&apos;s face
-            stays anchored to her saved reference, and the attachment becomes scene direction. On
-            other models the same attachment can ride as the literal reference image — the receipt
-            always says which, before anything is spent. An orange <b>Describe image</b> chip can
-            turn the photo into written scene words for you.
+            The band is labelled <strong>Send receipt — quoted before the button</strong>, and it
+            is exactly that: <strong>Face: saved photo ✓</strong> if your character&apos;s photo is
+            riding along, whatever else you attached, and a <strong>Total</strong> in credits. If
+            something you expected is missing, it says so here — while it&apos;s still free to fix.
           </>
         ),
         callout: {
-          kind: "warn",
-          text: (
-            <>
-              One thing an attachment should never be: the character&apos;s <b>clothes</b>. Outfit
-              photos belong in the character&apos;s Outfit section (Chapter 2), where they can never
-              blur who the character is.
-            </>
-          ),
+          kind: "tip",
+          text: "An attached photo is not the same as your character. The character is the face Picacho locks; an attachment is a one-off reference for this take only.",
         },
       },
     ],
   },
+
   {
-    id: "results",
-    title: "Your results",
-    lede: "Everything you render is kept, scored, and one click away.",
+    id: "your-work",
+    title: "Everything you've made",
+    minutes: "2 min",
+    lede: "Nothing you make is only on the stage. Three places keep it.",
     steps: [
       {
         shot: { src: "ch6-01-history" },
         title: "History",
-        body: (
-          <>
-            The <b>History</b> page lists every generation with its status and — for images — a{" "}
-            <b>match score</b>: Picacho&apos;s own judgment of how well the result matches your
-            character&apos;s reference photos. Our café render scored 93%.
-          </>
-        ),
-        callout: {
-          kind: "tip",
-          text: (
-            <>
-              A low match score is a signal, not bad luck: check that a character was selected, that
-              the reference photos are all the same person, and that no clothing photo is sitting in
-              the face slot.
-            </>
-          ),
-        },
+        body: "Every take you've made, newest first, with its status and its identity score. Click one to open it.",
       },
       {
-        shot: { src: "ch6-02-detail", h: 984 },
-        title: "The detail page",
+        shot: { src: "ch6-02-detail" },
+        title: "The take itself",
         body: (
           <>
-            Click any render to see it full size with its full story — the exact prompt that was
-            drafted, every pipeline step, and the download button. Failed attempts show <i>why</i>{" "}
-            they failed, in plain language.
+            The render at full size, with a download button in its corner and{" "}
+            <strong>← History</strong> to get back. Scroll down for the rest: the prompt that made
+            it, the engine that rendered it, and the buttons to share it to the community or delete
+            it.
           </>
         ),
       },
     ],
   },
+
   {
     id: "community",
     title: "Community",
-    lede: "See what other people make with their characters — and share your own when you're proud of one.",
+    minutes: "2 min",
+    lede:
+      "A public feed of takes people chose to share. It's the fastest way to see what a prompt can actually do — and what a well-built character looks like.",
     steps: [
       {
         shot: { src: "ch7-01-community" },
         title: "The feed",
-        body: (
-          <>
-            The <b>Community</b> page opens as a grid of recent public renders. Tap any tile to view
-            it full-screen.
-          </>
-        ),
-      },
-      {
-        shot: { src: "ch7-02-viewer" },
-        title: "The viewer",
-        body: (
-          <>
-            Swipe or scroll to move between posts. The rail on the right: like, view count, share,
-            and report. Videos autoplay muted — tap the speaker to turn sound on, and it stays on
-            for every next video until you mute again. Tap the video itself to pause.
-          </>
-        ),
-        callout: {
-          kind: "tip",
-          text: (
-            <>
-              Your own renders are private by default. They only ever appear here when <b>you</b>{" "}
-              share them — from the share button on a result.
-            </>
-          ),
-        },
+        body: "Browse what other people made. Nothing of yours appears here unless you share it yourself.",
       },
     ],
   },
+
   {
     id: "credits",
-    title: "Credits, plans & inviting friends",
-    lede: "What things cost, where to see your balance, and the one link that earns you credits.",
+    title: "Credits, plans and inviting friends",
+    minutes: "3 min",
+    lede:
+      "A free account gets one generation a day and two AI character photos, ever. Everything past that runs on credits.",
     steps: [
       {
-        shot: { src: "ch8-01-settings", h: 984 },
-        title: "Settings",
+        shot: { src: "ch8-01-usage-plan" },
+        title: "Usage & plan",
         body: (
           <>
-            The <b>Settings</b> page (gear icon, bottom of the sidebar) shows your plan, credit
-            balance, and language. Images cost 1 credit, videos vary by model and length — the
-            composer always shows the price before you send. Every day, your first generation is
-            free.
+            The gear at the bottom of the sidebar opens Settings; <strong>Usage &amp; plan</strong>{" "}
+            is where your balance, your plan and your spending live. Credits are also shown in the
+            top right of the composer, so you always know before you send.
           </>
         ),
       },
       {
         shot: { src: "ch8-02-invite" },
-        title: "Invite friends — you both get credits",
+        title: "Invite friends",
         body: (
           <>
-            On the dashboard you&apos;ll find your personal invite link. When someone signs up with
-            it and makes their first render, <b>you both get a bonus credit</b>. Copy it, or share
-            straight from the card.
+            Share your link. When someone signs up with it and makes their first take, you both get
+            a bonus credit. The link is built from your username.
           </>
         ),
       },
     ],
   },
+
   {
     id: "troubleshooting",
-    title: "When it goes wrong",
-    lede: "Every failure here has a boring explanation and a fast fix. These are the ones that actually happen.",
+    title: "When something goes wrong",
+    minutes: "3 min",
+    lede: "Four things account for nearly every disappointing result. All four are quick to fix.",
     steps: [
       {
         title: "“It doesn't look like my character”",
         body: (
           <>
-            Three causes, in order of likelihood: <b>(1)</b> No character was selected for that
-            generation — check the chip above the prompt. <b>(2)</b> The reference photos
-            aren&apos;t all the same person — one stray photo of someone else (or a product shot)
-            poisons every render. <b>(3)</b> A trait contradicts the photos — hair &ldquo;tied
-            up&rdquo; over photos with hair down forces the AI to split the difference into a
-            stranger. Photos own the person; make the words agree with them.
+            Check a character was selected at all — that&apos;s the usual answer. If one was, the
+            face lock is probably thin: one photo is a start, but a three-quarter angle and a
+            full-body shot of the same person are what make it hold. Add them and render again.
           </>
         ),
       },
@@ -613,40 +561,40 @@ const CHAPTERS: Chapter[] = [
         title: "“The outfit came out wrong”",
         body: (
           <>
-            On the Kling family, outfit photos can&apos;t ride along — the models only accept
-            photos of people — so the outfit travels as a written description: close, not exact.
-            For pixel-exact clothing, render on <b>Seedance 2.0</b>, where the outfit photo itself
-            is attached as a reference. And keep clothing photos out of References — that&apos;s
-            what the Outfit section is for.
+            Put the clothes in <strong>Outfit</strong> rather than describing them in the prompt,
+            and make sure the <strong>Outfit</strong> trait agrees with the photo. Two photos of the
+            same outfit — front and back — beat one photo every time. Two <em>different</em>{" "}
+            outfits, on the other hand, give you an average of both.
           </>
         ),
       },
       {
-        shot: { src: "ch9-01-seedance-warn" },
         title: "The warnings are on your side",
         body: (
           <>
-            Picacho warns <i>before</i> credits move, not after. Pick Seedance 2.5 with a photoreal
-            character and you&apos;ll see this banner with a one-tap switch to the right model. And
-            the receipt line from Chapter 5 narrates every send — what anchors the face, what an
-            attachment will do — so nothing about a render is a surprise.
+            When Picacho puts a banner in front of you — a photoreal character on an engine that
+            refuses them, a missing voice on a line of dialogue — it&apos;s not being fussy. It has
+            seen the combination fail, and it usually offers the fix as a single tap. Take it.
           </>
         ),
-        callout: {
-          kind: "tip",
-          text: (
-            <>
-              When a generation is blocked by your own brand rules, or rejected outright by a
-              provider, your credits come back automatically — those failures are always free.
-            </>
-          ),
-        },
+      },
+      {
+        shot: { src: "ch9-01-out-of-credits", h: 560 },
+        title: "“It says I have no credits”",
+        body: (
+          <>
+            A free account gets one generation a day. When it&apos;s spent, the composer says so
+            plainly and tells you when it comes back — and it&apos;s explicit that your characters
+            and your history stay exactly as they are. Add credits, or come back tomorrow.
+          </>
+        ),
       },
       {
         title: "Still stuck?",
         body: (
           <>
-            Use <b>Give us your feedback</b> under the composer — a human reads it.
+            Settings has a <strong>Support</strong> tab, and there&apos;s a{" "}
+            <strong>Send feedback</strong> item in the gear menu. Both reach a person.
           </>
         ),
       },
@@ -674,10 +622,10 @@ function CalloutBox({ callout }: { callout: Callout }) {
 }
 
 export default async function GettingStartedCourse() {
-  // The dashboard's "3-minute course" card sends SIGNED-IN newcomers here,
-  // and the closing band used to tell them "Start free" → /signup — asking
-  // someone who just signed up to sign up. With a session, the band points
-  // back into the studio instead; signed-out readers keep the signup CTA.
+  // The dashboard's course card sends SIGNED-IN newcomers here, and the
+  // closing band used to tell them "Start free" → /signup — asking someone
+  // who just signed up to sign up. With a session, the band points back into
+  // the studio instead; signed-out readers keep the signup CTA.
   const supabase = await createClient();
   const { data } = await supabase.auth.getUser();
   const isLoggedIn = Boolean(data.user);
@@ -692,15 +640,15 @@ export default async function GettingStartedCourse() {
             The Picacho Course
           </p>
           <h1 className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-[-0.035em] text-neutral-900 sm:text-5xl">
-            From first login to your first video
+            From first login to your first take
           </h1>
           <p className="mx-auto mt-6 max-w-2xl text-sm leading-relaxed text-neutral-600 sm:text-base">
-            Nine short chapters, every step photographed on the live product. By the end you&apos;ll
-            have a character whose face survives every scene, images and videos that look like them,
-            and the instincts to fix the few things that go wrong.
+            Nine short chapters, every step photographed on the live product. By the end
+            you&apos;ll have a character whose face survives every scene, images and videos that
+            look like them, and the instincts to fix the few things that go wrong.
           </p>
           <p className="mt-4 text-xs text-neutral-500">
-            Every screenshot: the real app, a real new account, real generations.
+            Shot on a real free account, in order, on the live app. Nothing here is a mockup.
           </p>
         </div>
       </section>
@@ -720,7 +668,10 @@ export default async function GettingStartedCourse() {
                   <span className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-ochre/10 text-xs font-bold text-ochre dark:text-[#e0a468]">
                     {i + 1}
                   </span>
-                  {c.title}
+                  <span className="min-w-0 flex-1 truncate">{c.title}</span>
+                  <span className="flex-shrink-0 text-xs tabular-nums text-neutral-400">
+                    {c.minutes}
+                  </span>
                 </a>
               </li>
             ))}
@@ -735,9 +686,12 @@ export default async function GettingStartedCourse() {
             id={chapter.id}
             className="mx-auto max-w-2xl scroll-mt-24 px-8 pt-16"
           >
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ochre dark:text-[#e0a468]">
-              Chapter {ci + 1}
-            </p>
+            <div className="flex items-baseline gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-ochre dark:text-[#e0a468]">
+                Chapter {ci + 1}
+              </p>
+              <span className="text-xs text-neutral-400">{chapter.minutes}</span>
+            </div>
             <h2 className={`mt-2 ${H2}`}>{chapter.title}</h2>
             <p className={P}>{chapter.lede}</p>
 
@@ -759,11 +713,13 @@ export default async function GettingStartedCourse() {
                     alt={step.title}
                     width={1440}
                     height={step.shot.h ?? 900}
-                    // Without `sizes`, next/image assumes the image spans the
-                    // viewport and serves a ~1920px variant into a column that
-                    // is never wider than the article's 672px — several times
-                    // the bytes needed, 32 times over on this page.
+                    // The first shot on the page is the LCP element; the rest
+                    // stay lazy. Without `sizes`, next/image assumes the image
+                    // spans the viewport and serves a ~1920px variant into a
+                    // column that is never wider than the article's 672px —
+                    // several times the bytes needed, thirty times over.
                     sizes="(max-width: 768px) 100vw, 672px"
+                    priority={ci === 0 && si === 0}
                     className="mt-5 w-full rounded-2xl border border-neutral-200 shadow-[0_2px_12px_rgba(0,0,0,0.06)]"
                   />
                 )}
@@ -779,8 +735,8 @@ export default async function GettingStartedCourse() {
             Ready to meet your character?
           </h2>
           <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-slate-300">
-            A free generation every day, two free AI reference photos, no credit card. The whole
-            first chapter takes three minutes.
+            One free generation every day, two free AI reference photos, no credit card. The first
+            two chapters take about fifteen minutes.
           </p>
           <Link
             href={isLoggedIn ? "/app/generate" : "/signup"}

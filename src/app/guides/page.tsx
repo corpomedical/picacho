@@ -22,6 +22,13 @@ export const dynamic = "force-dynamic";
 
 const GUIDES = [
   {
+    href: "/guides/getting-started",
+    date: "September 2026",
+    title: "The Picacho course: first login to first take",
+    blurb:
+      "Nine short chapters, every step photographed on the live product — create a consistent character, generate images and videos that keep their face, and fix the few things that go wrong.",
+  },
+  {
     href: "/guides/ai-camera-movements",
     date: "August 2026",
     title: "AI camera movements: the director's cheat sheet",
@@ -34,13 +41,6 @@ const GUIDES = [
     title: "Seedance 2.0: the practical guide",
     blurb:
       "Identity references vs first frames, the photoreal rejection fence on both Seedance lanes, exact outfit matching from a clothing photo, and real per-second economics — all verified in production.",
-  },
-  {
-    href: "/guides/getting-started",
-    date: "August 2026",
-    title: "The Picacho course: first login to first video",
-    blurb:
-      "Nine short chapters, every step photographed on the live product — create a consistent character, generate images and videos that keep their face, and fix the few things that go wrong.",
   },
   {
     href: "/guides/ai-character-consistency",

@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.25.0",
+    build: 38,
+    date: "2026-09-09",
+    title: "The course, rephotographed — and a tour that points at the right things",
+    items: [
+      "The course at /guides/getting-started has been rebuilt from nothing. The old one was photographed on 25 August and reshot on the 27th, and 167 interface changes went past it after that — so a reader following it was being walked through an app that no longer existed. Going through it claim by claim against the current code turned up fifteen statements that were not merely dated but wrong, and two of those would have sent someone into a refusal: it told you to render on Seedance for exact clothing, which has rejected photoreal reference photos since 3 September, and it told you the dialogue setting hides behind an advanced reveal it no longer sits behind. Every chapter is rewritten, every screenshot retaken.",
+      "It is shot the way a beginner actually meets the product. One real free account, walked through in order on the live app: sign up, land on an empty dashboard, build one character with a generated identity photo, and spend that account's single free daily render on the café image in chapter three. Every number you can see in those screenshots — no active plan, zero credits, one take — is that account's own, and each step that asks you to click something has the thing to click ringed with a drawn cursor on it. Chapters carry a time estimate now, so you can tell at a glance what you are committing to.",
+      "One thing the rebuild found and the course now says plainly: your first render never carries an identity score. The scorer deliberately skips the free daily render, because a miss there refunds the render and hands the free slot back, which would let the same slot be spent over and over. Scores start once you are rendering on credits. The old course promised a number on every take, and a new reader would have gone looking for one that was never coming.",
+      "The tour that opens on your first visit was rebuilt around what a first take actually needs. It waits for your answer on cookies instead of talking over the banner, it points only at things that are genuinely on screen rather than spotlighting an empty corner, the newest character is already chosen when you arrive, and video gets its own short walkthrough at the moment you switch to video rather than being crammed into the first one.",
+    ],
+  },
+  {
     version: "1.24.0",
     build: 37,
     date: "2026-09-09",
