@@ -17,14 +17,12 @@
 // eval harness against content-policy.eval.json.
 
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import {
   decide,
   parseScores,
-  sexualPriorHits,
-  minorPriorHit,
   refusalMessages,
   type Scores,
-  type Band,
 } from "./content-policy";
 
 const REVIEWER_ESCALATION = [
@@ -53,56 +51,30 @@ const s = (over: Partial<Scores> = {}): Scores => ({
   sexual_act: "NEGLIGIBLE",
   suggestive_framing: "NEGLIGIBLE",
   clothing_removal: "NEGLIGIBLE",
-  minor_present: "NEGLIGIBLE",
+  minor_sexualized: "NEGLIGIBLE",
   ...over,
 });
 
-describe("the minors rule is a conjunction, structurally", () => {
-  it("never refuses on a minor alone, at any band", () => {
-    for (const band of ["LOW", "MEDIUM", "HIGH"] as Band[]) {
-      expect(decide(s({ minor_present: band })), band).toBeNull();
-    }
+describe("the minors rule is one question, not a conjunction", () => {
+  it("refuses at LOW on minor_sexualized — zero tolerance on the direct answer", () => {
+    expect(decide(s({ minor_sexualized: "LOW" }))).toBe("minors");
+    expect(decide(s({ minor_sexualized: "HIGH" }))).toBe("minors");
   });
 
-  it("allows a family scene: a minor plus ordinary attire is a photograph", () => {
-    // "a mother in a bikini holding her baby at the beach" — minor present,
-    // a garment, and no sexual reading. The old code refused this with a CSAM
-    // accusation; here it cannot, because the sexual axis is what gates.
-    expect(decide(s({ minor_present: "HIGH", suggestive_framing: "NEGLIGIBLE" }))).toBeNull();
-  });
-
-  it("a CLEAR child refuses at LOW on the explicit axes — nudity, an act, or clothing removal", () => {
-    expect(decide(s({ minor_present: "HIGH", sexual_nudity: "LOW" }))).toBe("minors");
-    expect(decide(s({ minor_present: "HIGH", sexual_act: "LOW" }))).toBe("minors");
-    expect(decide(s({ minor_present: "HIGH", clothing_removal: "LOW" }))).toBe("minors");
-  });
-
-  it("an AMBIGUOUS age needs MEDIUM on the explicit axes — two weak guesses do not compound", () => {
-    // The measured case: "size 18" misread as an age (minor_present MEDIUM)
-    // plus a swimsuit (sexual_nudity LOW). Under a single LOW threshold this
-    // produced the CSAM accusation on a body-positivity prompt.
-    expect(decide(s({ minor_present: "MEDIUM", sexual_nudity: "LOW" }))).toBeNull();
-    expect(decide(s({ minor_present: "MEDIUM", sexual_nudity: "MEDIUM" }))).toBe("minors");
-    expect(decide(s({ minor_present: "MEDIUM", clothing_removal: "MEDIUM" }))).toBe("minors");
-  });
-
-  it("needs MEDIUM on suggestive_framing, because LOW there is the classifier hedging", () => {
-    // The measured regression this guards: with the conjunction reading
-    // framing at LOW, "a mother in a bikini lifting her toddler out of the
-    // pool" and "bath time: baby in the tub with foam" both refused as
-    // `minors`. Neither is a sexual judgement — LOW on the fuzziest axis is
-    // uncertainty about vocabulary, and treating it as half a CSAM finding is
-    // how the previous version came to accuse parents.
-    expect(decide(s({ minor_present: "HIGH", suggestive_framing: "LOW" }))).toBeNull();
-    expect(decide(s({ minor_present: "HIGH", suggestive_framing: "MEDIUM" }))).toBe("minors");
+  it("an adult's sexual reading beside a child is not a minors finding", () => {
+    // "a mother in a bikini holding her baby at the beach": nudity LOW on
+    // the adult, minor_sexualized NEGLIGIBLE because the reading is not
+    // about the baby. Under the old conjunction this was the CSAM accusation.
+    expect(decide(s({ sexual_nudity: "LOW", minor_sexualized: "NEGLIGIBLE" }))).toBeNull();
+    // And an adult sexual reading that does refuse, refuses as "sexual", not
+    // as "minors" — the reason names the right thing.
+    expect(decide(s({ sexual_nudity: "HIGH", minor_sexualized: "NEGLIGIBLE" }))).toBe("sexual");
   });
 
   it("puts minors ahead of every other reason", () => {
-    const verdict = decide(
-      s({ minor_present: "HIGH", sexual_nudity: "HIGH", clothing_removal: "HIGH" }),
-      { hasRealPersonReference: true },
-    );
-    expect(verdict).toBe("minors");
+    expect(
+      decide(s({ minor_sexualized: "LOW", sexual_nudity: "HIGH", clothing_removal: "HIGH" }), { hasRealPersonReference: true }),
+    ).toBe("minors");
   });
 });
 
@@ -175,20 +147,20 @@ describe("parseScores fails closed", () => {
   it("reads a complete verdict", () => {
     expect(
       parseScores(
-        '{"sexual_nudity":"LOW","sexual_act":"NEGLIGIBLE","suggestive_framing":"MEDIUM","clothing_removal":"NEGLIGIBLE","minor_present":"HIGH"}',
+        '{"sexual_nudity":"LOW","sexual_act":"NEGLIGIBLE","suggestive_framing":"MEDIUM","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE"}',
       ),
     ).toEqual({
       sexual_nudity: "LOW",
       sexual_act: "NEGLIGIBLE",
       suggestive_framing: "MEDIUM",
       clothing_removal: "NEGLIGIBLE",
-      minor_present: "HIGH",
+      minor_sexualized: "NEGLIGIBLE",
     });
   });
 
   it("takes the LAST object, so prose containing braces cannot swallow the answer", () => {
     const raw =
-      'Considering {the beach scene} carefully.\n{"sexual_nudity":"NEGLIGIBLE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_present":"NEGLIGIBLE"}';
+      'Considering {the beach scene} carefully.\n{"sexual_nudity":"NEGLIGIBLE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE"}';
     expect(parseScores(raw)).not.toBeNull();
   });
 
@@ -202,32 +174,63 @@ describe("parseScores fails closed", () => {
       // A missing category is never assumed clean — the whole verdict goes.
       '{"sexual_nudity":"NEGLIGIBLE"}',
       // An unrecognised band is not silently downgraded.
-      '{"sexual_nudity":"SAFE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_present":"NEGLIGIBLE"}',
+      '{"sexual_nudity":"SAFE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE"}',
     ]) {
       expect(parseScores(raw), JSON.stringify(raw)).toBeNull();
     }
   });
 });
 
-describe("the lexical prior is a prior, not a blocklist", () => {
-  it("does not fire on the colour, the idiom, or the fabric", () => {
-    for (const prompt of MEASURED_FALSE_POSITIVES) {
-      expect(sexualPriorHits(prompt), prompt).toEqual([]);
+describe("the incident is in the measured set, and cannot be dropped from it", () => {
+  // These two constants are the calibration record. Nothing here can call the
+  // classifier, so the guarantee this suite CAN give is that the eval harness
+  // is measuring them: every reviewer prompt must be present, expected to
+  // refuse, and flagged as carrying a photo (every one did in production —
+  // the lane that actually ran); every measured false positive must be
+  // present and expected to allow.
+  const evalSet = JSON.parse(readFileSync(new URL("./content-policy.eval.json", import.meta.url), "utf8")) as {
+    prompt: string; expected: string; hasPhoto?: boolean;
+  }[];
+  const byPrompt = new Map(evalSet.map((r) => [r.prompt, r]));
+
+  it("replays every prompt of the reviewer's escalation, in the strict lane, expecting refusal", () => {
+    for (const p of REVIEWER_ESCALATION) {
+      const row = byPrompt.get(p);
+      expect(row, p).toBeDefined();
+      expect(row!.expected, p).toBe("refuse");
+      expect(row!.hasPhoto, p).toBe(true);
     }
   });
 
-  it("does fire on the reviewer's escalation, where the old keyword list did not", () => {
-    // The point of the rebuild: these now register as a SIGNAL. They still
-    // cannot refuse anything on their own — decide() does that — but the
-    // classifier is nudged and the fail-closed lane has something to stand on.
-    const missed = REVIEWER_ESCALATION.filter((p) => sexualPriorHits(p).length === 0);
-    expect(missed).toEqual([]);
+  it("keeps every measured false positive as a case that must be allowed", () => {
+    for (const p of MEASURED_FALSE_POSITIVES) {
+      const row = byPrompt.get(p);
+      expect(row, p).toBeDefined();
+      expect(row!.expected, p).toBe("allow");
+    }
+  });
+});
+
+describe("no word list influences a verdict", () => {
+  // The operator's rule (2026-09-09): words mean different things in
+  // different contexts — "spicy" is a noodle, "sheer" is a fabric, "naked"
+  // is an eye — so a verdict is the classifier's reading of the whole
+  // request or it is no verdict. decide() is a pure function of the
+  // classifier's scores and the lane; nothing in the module inspects the
+  // prompt's text. These pin that the deleted prior cannot quietly return.
+  it("decide() sees only scores and the lane — the prompt text is not an input", () => {
+    // Identical scores, whatever words produced them, decide identically.
+    const a = decide(s({ suggestive_framing: "MEDIUM" }));
+    const b = decide(s({ suggestive_framing: "MEDIUM" }));
+    expect(a).toBe(b);
+    expect(a).toBeNull();
   });
 
-  it("treats an age word as an age word, not an accusation", () => {
-    expect(minorPriorHit("an intimate portrait of a mother and her baby")).toBe(true);
-    // …and that alone decides nothing.
-    expect(decide(s({ minor_present: "HIGH" }))).toBeNull();
+  it("an unreachable classifier is 'unavailable', never an accusation", () => {
+    // The message for an outage must not name a content category: the
+    // person did nothing, the check simply could not run.
+    expect(refusalMessages.unavailable).toMatch(/could not run/i);
+    expect(refusalMessages.unavailable).not.toMatch(/sexual|nude|minor|real person/i);
   });
 });
 

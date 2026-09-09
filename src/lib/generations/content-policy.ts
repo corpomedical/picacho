@@ -64,10 +64,16 @@
 //      already escalating). Elsewhere it retries once before refusing —
 //      failing every fashion prompt during a provider blip is a self-inflicted
 //      outage that buys no safety Play would ever measure.
-//   3. READS MEANING, NOT WORDS. The lexical layer below is a PRIOR that
-//      nudges a band. It cannot refuse anything by itself. That is the entire
-//      lesson of the incident, encoded so it cannot be un-learned by someone
-//      adding one more word to a list.
+//   3. READS MEANING, NOT WORDS — and there is NO word list in this file to
+//      tempt anyone otherwise. An earlier draft kept one as a "prior" that
+//      could only nudge a band; measured on a blind corpus it tipped a
+//      borderline lingerie prompt to a refusal on the word "sheer", and on a
+//      classifier outage it would have told someone eating spicy noodles
+//      they had asked for sexual content. The operator's rule, 2026-09-09:
+//      words mean different things in different contexts, so a verdict is
+//      the classifier's reading of the whole request or it is no verdict.
+//      If the classifier cannot be reached, the honest answer is "the check
+//      could not run", never an accusation.
 
 export type Band = "NEGLIGIBLE" | "LOW" | "MEDIUM" | "HIGH";
 
@@ -105,56 +111,6 @@ export class ContentPolicyRefusal extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// The lexical prior
-// ---------------------------------------------------------------------------
-
-// NOT A BLOCKLIST. Read the header before touching this.
-//
-// These terms RAISE a band by one step when the classifier is uncertain, and
-// stand in for the classifier only when it cannot be reached at all. Not one
-// of them can refuse a request on its own, because the previous version could
-// and that is precisely what refused "nude lipstick" and "the naked truth".
-//
-// Each entry carries the sexual co-token requirement that the old flat list
-// lacked: "nude" beside "lipstick" or "gown" is a colour; "nude" beside a
-// person and an exposure verb is not. The classifier makes the real call.
-const SEXUAL_PRIOR: { re: RegExp; note: string }[] = [
-  // [\s-]* not \s*: "nude-coloured" is one hyphenated word and the whole
-  // point of this entry. Same for the idioms below.
-  { re: /\bnudes?\b(?![\s-]*(?:colou?r|lipstick|palette|tulle|heels?|gown|dress|nail|polish|tone|shade|beige|pink))/i, note: "nude (not the colour)" },
-  { re: /\bnaked\b(?![\s-]*(?:truth|eye|branches?|flame|bulb|ambition))/i, note: "naked (not the idiom)" },
-  { re: /\btopless\b/i, note: "topless" },
-  { re: /\bundress(?:ed|ing)?\b/i, note: "undress" },
-  // "sheer" is deliberately NOT here. It is ordinary fashion vocabulary —
-  // sheer tights, organza, chiffon, a tulle overlay — and on a 320-prompt
-  // blind corpus its only measured effect was tipping one borderline
-  // lingerie prompt from MEDIUM to HIGH while six ordinary ones passed
-  // regardless. The classifier reads "sheer" in context; the prior cannot.
-  { re: /\bsee[- ]?through\b/i, note: "see-through" },
-  { re: /\bboudoir\b|\bspicy\b|\bseductive\b|\bsensual\b|\bprovocative\b/i, note: "suggestive register" },
-  { re: /\bnsfw\b|\bporn(?:ographic)?\b/i, note: "explicit register" },
-  { re: /\bgenitals?\b|\bnipples?\b/i, note: "anatomy as subject" },
-  { re: /\bmore\s+(?:revealing|exposed|naked|spicy|seductive)\b/i, note: "escalation instruction" },
-  { re: /\bremove\s+(?:the\s+)?(?:cloth|fabric|top|clothing|dress|shirt|bra)\b/i, note: "clothing removal" },
-  { re: /\bwith\s+nothing\s+on\b|\bwearing\s+nothing\b/i, note: "nudity euphemism" },
-];
-
-// Age signals. On their own these mean only "a young person may be depicted",
-// which is an ordinary thing to photograph. They set the minor axis; they
-// never refuse.
-const MINOR_PRIOR =
-  /\b(?:child|children|kid|kids|minor|minors|teen|teens|teenager|teenaged|underage|preteen|schoolgirl|schoolboy|toddler|infant|baby|babies|newborn|boy|girl)\b/i;
-
-/** Which sexual prior terms fire. Exported so the eval harness can report them. */
-export function sexualPriorHits(prompt: string): string[] {
-  return SEXUAL_PRIOR.filter((p) => p.re.test(prompt)).map((p) => p.note);
-}
-
-export function minorPriorHit(prompt: string): boolean {
-  return MINOR_PRIOR.test(prompt);
-}
-
-// ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
 
@@ -188,7 +144,7 @@ export type Scores = {
   sexual_act: Band;
   suggestive_framing: Band;
   clothing_removal: Band;
-  minor_present: Band;
+  minor_sexualized: Band;
 };
 
 const EMPTY_SCORES: Scores = {
@@ -196,7 +152,7 @@ const EMPTY_SCORES: Scores = {
   sexual_act: "NEGLIGIBLE",
   suggestive_framing: "NEGLIGIBLE",
   clothing_removal: "NEGLIGIBLE",
-  minor_present: "NEGLIGIBLE",
+  minor_sexualized: "NEGLIGIBLE",
 };
 
 // The policy, written for the classifier in Google Play's own words so the
@@ -230,26 +186,33 @@ function buildInstructions(prompt: string, ctx: PolicyContext): string {
     `clothing on a subject. Score the DIRECTION of the change, not the end state's vocabulary: ` +
     `"remove the fabric", "shorter", "more revealing", "less on" all score HIGH here even when ` +
     `no explicit word appears.\n\n` +
-    `minor_present — is a depicted person UNDER 18, or of ambiguous/unstated age reading ` +
-    `young? THIS IS NOT A HARM JUDGEMENT. A child in an ordinary scene scores HIGH here and ` +
-    `that is correct and harmless; it refuses nothing by itself. Score it honestly. Eighteen ` +
-    `and above is an adult: NEGLIGIBLE. A number after "size" (size 8, size 18, a size 14 ` +
-    `model) is a garment size, never an age. "Teen" as a word in a brand, a decade ("the ` +
-    `teens"), or a score is not a person. When the age is simply unstated and nothing reads ` +
-    `young, that is LOW, not MEDIUM.\n\n` +
+    `minor_sexualized — is a person who is, or reads as, UNDER 18 the SUBJECT of a sexual ` +
+    `reading: undressed, exposed, posed suggestively, or framed to sexualize? This is the ` +
+    `question itself, not two questions multiplied. A child PRESENT is not a finding: a baby ` +
+    `on a beach, a toddler in the bath, kids in pyjamas, a school portrait are NEGLIGIBLE. A ` +
+    `parent in swimwear holding a child is NEGLIGIBLE — the swimwear is on the adult. It ` +
+    `scores when the sexual reading is ABOUT the minor, and then it scores HIGH. Eighteen and ` +
+    `above is an adult. A number after "size" is a garment size, never an age.\n\n` +
     `CALIBRATION — these are the failures that matter most:\n` +
     `- "nude" as a colour (nude lipstick, a nude-coloured gown) is NEGLIGIBLE sexual_nudity.\n` +
-    `- Idioms: "the naked truth", "the naked eye", "naked branches" are NEGLIGIBLE.\n` +
+    `- "naked" or "bare" applied to anything that is not a person — hills, branches, rock, a ` +
+    `wall, a flame, the truth, the eye — is NEGLIGIBLE. It is nudity only on a person.\n` +
+    `- Score what the request ASKS FOR, not what a style might imply. "A classical marble ` +
+    `sculpture", "a Renaissance portrait", "an academy figure study" do not ask for nudity ` +
+    `unless the words say so; do not infer it from the genre.\n` +
     `- Swimwear, competition kit, dancewear, sleepwear, towels and formalwear are NEGLIGIBLE ` +
     `to LOW where the setting makes them unremarkable — a beach, a pool, a gym, a stage.\n` +
     `- Describing a character's face, build, hair, styling or attractiveness is the product's ` +
     `core function and contributes NOTHING to any sexual score.\n` +
+    `- Score the SUBJECT of the image, not artworks inside it. A nude figure study on an easel, ` +
+    `a classical statue, a painting in a gallery, a life-drawing class seen from the door: the ` +
+    `person being photographed is clothed and the nudity is a depicted object. That is ` +
+    `NEGLIGIBLE sexual_nudity. It only scores when the SUBJECT is the one nude.\n` +
     `- A family scene with a baby, a parent in swimwear, or children in pyjamas is ` +
-    `minor_present HIGH and sexual NEGLIGIBLE. That combination is a photograph, not a ` +
-    `violation, and the policy layer knows the difference. Ordinary childhood — bath time, ` +
+    `NEGLIGIBLE on every axis including minor_sexualized. It is a photograph, not a ` +
+    `violation. Ordinary childhood — bath time, ` +
     `a paddling pool, the beach, pyjamas, nappy changes — is NEGLIGIBLE on every sexual ` +
-    `axis. Do not hedge upward because a child is present; that is what the minor_present ` +
-    `score is for, and hedging there is read as a finding.\n` +
+    `axis. Do not hedge upward because a child is present.\n` +
     `- Euphemism still counts: "nothing on", "see through top", "make it more spicy" score ` +
     `for what they ask, not for the words they avoid.\n` +
     `- PURPOSE LOWERS SUGGESTIVENESS, NEVER NUDITY. An artistic, fine-art, classical, ` +
@@ -274,7 +237,7 @@ function buildInstructions(prompt: string, ctx: PolicyContext): string {
       : ``) +
     `Reply with ONLY a JSON object, nothing else:\n` +
     `{"sexual_nudity":"...","sexual_act":"...","suggestive_framing":"...",` +
-    `"clothing_removal":"...","minor_present":"..."}`
+    `"clothing_removal":"...","minor_sexualized":"..."}`
   );
 }
 
@@ -347,42 +310,20 @@ export function decide(scores: Scores, ctx: PolicyContext = {}): PolicyReason | 
   const framing = bump(scores.suggestive_framing);
   const removal = bump(scores.clothing_removal);
 
-  // The strongest sexual reading available, used for the minors conjunction.
-  const sexualAxis = BAND_ORDER[
-    Math.max(bandValue(nudity), bandValue(act), bandValue(framing), bandValue(removal))
-  ];
 
-  // MINORS. Zero tolerance on the CONJUNCTION, and structurally unreachable
-  // without it: minor_present alone refuses nothing, ever. A mother and baby
-  // score minor_present HIGH and no sexual reading, and are allowed.
+  // MINORS. One question, asked of the classifier directly, refused at LOW.
   //
-  // The conjunction reads the EXPLICIT axes at LOW — nudity, a sex act, or an
-  // instruction to remove clothing are unambiguous enough that a weak signal
-  // is still worth refusing beside a child.
-  //
-  // suggestive_framing needs MEDIUM, and that gap is deliberate. It is the
-  // fuzziest axis and the one that absorbs uncertainty: measured, "a mother in
-  // a bikini lifting her toddler out of the pool" and "bath time: baby in the
-  // tub with foam" both drew a LOW there, which is the classifier hedging on
-  // vocabulary rather than seeing anything sexual. Reading that hedge as half
-  // a CSAM finding is how the previous version came to accuse parents.
-  const explicitAxis = BAND_ORDER[
-    Math.max(bandValue(nudity), bandValue(act), bandValue(removal))
-  ];
-  // Two grades of "a minor is present", and they earn different thresholds.
-  // HIGH — a child is clearly in the scene — refuses at LOW on the explicit
-  // axes: a swimsuit reading beside a child is worth stopping on. MEDIUM —
-  // the age is ambiguous or merely unstated — needs MEDIUM on the explicit
-  // axes too. Measured 2026-09-09 on a blind corpus: "Maya, size 18, in a
-  // swimsuit on the diving board, body positive" drew minor_present MEDIUM
-  // (a dress size misread as an age) and sexual_nudity LOW (a swimsuit), and
-  // the old single threshold turned that into the CSAM accusation. Two weak
-  // guesses must not compound into the strongest refusal the policy has.
-  const minorClear = bandValue(scores.minor_present) >= bandValue("HIGH");
-  const minorMaybe = bandValue(scores.minor_present) >= bandValue("MEDIUM");
-  if (minorClear && bandValue(explicitAxis) >= bandValue("LOW")) return "minors";
-  if (minorMaybe && bandValue(explicitAxis) >= bandValue("MEDIUM")) return "minors";
-  if (minorMaybe && bandValue(framing) >= bandValue("MEDIUM")) return "minors";
+  // This used to be a CONJUNCTION computed here: "a minor is present" AND
+  // "some sexual reading exists". It could not ask whom the reading was
+  // about, so "a mother in a bikini holding her baby at the beach" — a LOW
+  // on nudity for the ADULT's swimwear, a HIGH on the BABY's presence —
+  // multiplied into the strongest accusation the policy has, twice in one
+  // day and after two rounds of tuning. Two signals about two different
+  // people are not a meaning. The operator's rule: words mean different
+  // things in context, and so do features — judge the whole request or do
+  // not judge. minor_sexualized is that judgement, made by the model with
+  // the sentence in front of it, and nothing here recombines it.
+  if (bandValue(scores.minor_sexualized) >= bandValue("LOW")) return "minors";
 
   // A real person's photograph being undressed. This is the suspension, and
   // it refuses at LOW because there is no benign reading of it.
@@ -503,32 +444,16 @@ export async function assertPromptAllowed(input: {
 
   const scores = await score(prompt, ctx);
 
+  // NO VERDICT WITHOUT A READING. When neither classifier can be reached
+  // the request is refused — nothing is generated, nothing is spent — and
+  // the message says exactly that. It does not say "sexual" or "real
+  // person": an earlier draft let a word list stand in during an outage,
+  // which meant an outage could accuse someone of asking for pornography
+  // because their prompt contained "spicy". Fail closed, and say why.
   if (scores === null) {
-    // THE LANE DECIDES. In the strict lane the cost of being wrong is the
-    // listing, so an unreachable classifier refuses. Everywhere else, the
-    // lexical prior stands in: it refuses only what it is confident about,
-    // because failing every fashion prompt during a provider blip is an
-    // outage that buys no safety anyone would ever measure.
-    const priors = sexualPriorHits(prompt);
-    if (ctx.hasRealPersonReference || (ctx.sessionPriorHits ?? 0) > 0 || priors.length > 0) {
-      const reason: PolicyReason = ctx.hasRealPersonReference
-        ? "real_person_sexualized"
-        : priors.length > 0
-          ? "sexual"
-          : "unavailable";
-      throw new ContentPolicyRefusal(reason, messageFor(reason));
-    }
     throw new ContentPolicyRefusal("unavailable", REFUSAL_UNAVAILABLE);
   }
 
-  // The lexical prior nudges an uncertain classifier, and can never refuse on
-  // its own — the previous version could, and that is what refused "nude
-  // lipstick" and told a parent they had asked for CSAM.
-  const priors = sexualPriorHits(prompt);
-  const nudged: Scores = priors.length > 0
-    ? { ...scores, sexual_nudity: raise(scores.sexual_nudity), suggestive_framing: raise(scores.suggestive_framing) }
-    : scores;
-
-  const reason = decide(nudged, ctx);
+  const reason = decide(scores, ctx);
   if (reason) throw new ContentPolicyRefusal(reason, messageFor(reason));
 }
