@@ -35,7 +35,8 @@ import {
   type Scores,
 } from "@/lib/generations/content-policy";
 
-export type PolicyGate = "prompt" | "output";
+/** prompt: before a render; output: the rendered picture; feed: a post to the community feed. */
+export type PolicyGate = "prompt" | "output" | "feed";
 
 export type PolicyRefusalRecord = {
   userId: string;

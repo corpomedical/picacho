@@ -4,6 +4,8 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { persistGeneratedVideo } from "@/lib/generations/core";
 import { recordSignal } from "@/lib/generations/record-signal";
+import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
+import { recordPolicyRefusal } from "@/lib/generations/policy-log";
 
 // Community feed actions — thin wrappers over the SQL in
 // supabase/applied/2026-08-21/community.sql. Sharing and reporting go
@@ -18,6 +20,11 @@ export async function shareToCommunity(
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again.", postId: null };
+  // A share now costs a picture read (below); the same guard the report
+  // action carries, so a held-down button cannot run up a bill.
+  if (await rateLimited(userData.user.id, "community-share", 60, 10)) {
+    return { error: "That's a lot of sharing at once — give it a minute.", postId: null };
+  }
 
   // The RPC snapshots the generation's media url into the post FOREVER, and
   // a video row can still hold a raw provider-CDN url: pre-2026-09-04 rows
@@ -29,10 +36,53 @@ export async function shareToCommunity(
   // today rather than blocking the share.
   const { data: gen } = await supabase
     .from("generations")
-    .select("result_url, content_type")
+    .select("result_url, content_type, poster_url, status, deleted_at")
     .eq("id", generationId)
     .eq("user_id", userData.user.id)
     .maybeSingle();
+
+  // THE FEED GATE (operator, 2026-09-10). The feed is the surface a Play
+  // reviewer opens first, and the User Generated Content policy holds it to
+  // its own standard, so a post is judged again here — on the picture as it
+  // will be shown, in the STRICT lane whatever lane rendered it. A video is
+  // judged by its poster, which already exists; only a video with no poster
+  // pays for a frame extraction. A refusal is not a verdict on the render
+  // (which passed its own gate and stays in History): it says this one is
+  // not going on the public feed.
+  //
+  // Only a live, finished render is judged: anything else the definer
+  // refuses on its own terms a moment later, and paying two model reads
+  // first would be waste. A video is judged by its poster, and a video
+  // whose poster has not been written yet (the reconcile cron backfills
+  // them hourly) is asked to wait rather than sent through a frame
+  // extraction inside a server action.
+  if (gen?.result_url && gen.status === "succeeded" && !gen.deleted_at) {
+    if (gen.content_type === "video" && !gen.poster_url) {
+      return { error: "This video's preview isn't ready yet — try sharing it again in a few minutes.", postId: null };
+    }
+    const url = gen.content_type === "video" ? (gen.poster_url as string) : gen.result_url;
+    try {
+      await judgeRender({ url, kind: "image", strictLane: true });
+    } catch (err) {
+      if (!(err instanceof OutputPolicyRefusal)) throw err;
+      await recordPolicyRefusal({
+        userId: userData.user.id,
+        gate: "feed",
+        reason: err.reason,
+        strictLane: true,
+        generationId,
+        bands: err.readings,
+      });
+      return {
+        error:
+          err.reason === "unavailable"
+            ? "We couldn't check this picture, so it wasn't shared. Try again in a moment; if it keeps happening, the file may be missing."
+            : "This one can't go on the community feed. It stays in your History.",
+        postId: null,
+      };
+    }
+  }
+
   if (
     gen?.content_type === "video" &&
     typeof gen.result_url === "string" &&

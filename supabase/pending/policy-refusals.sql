@@ -1,5 +1,6 @@
--- The refusal log. Every time either content gate refuses — the prompt gate
--- before a render, or the output gate on a rendered frame — one row.
+-- The refusal log. Every time a content gate refuses — the prompt gate
+-- before a render, the output gate on a rendered frame, or the feed gate on
+-- a post to the community feed — one row.
 --
 -- Four things this is, at once (2026-09-09):
 --   1. SESSION CONTEXT. The prompt gate reads how many refusals this account
@@ -21,7 +22,7 @@ create table if not exists public.policy_refusals (
   id            uuid primary key default gen_random_uuid(),
   created_at    timestamptz not null default now(),
   user_id       uuid not null references auth.users (id) on delete cascade,
-  gate          text not null check (gate in ('prompt', 'output')),
+  gate          text not null check (gate in ('prompt', 'output', 'feed')),
   reason        text not null,
   strict_lane   boolean not null default false,
   prompt_sha256 text,
@@ -32,6 +33,13 @@ create table if not exists public.policy_refusals (
   prompt_bands  jsonb,
   provider      text
 );
+
+-- Idempotent whichever version of this file ran first: "create table if not
+-- exists" keeps an older check constraint, so the gate set is (re)declared
+-- explicitly. Postgres names the inline check policy_refusals_gate_check.
+alter table public.policy_refusals drop constraint if exists policy_refusals_gate_check;
+alter table public.policy_refusals
+  add constraint policy_refusals_gate_check check (gate in ('prompt', 'output', 'feed'));
 
 create index if not exists policy_refusals_user_recent_idx
   on public.policy_refusals (user_id, created_at desc);

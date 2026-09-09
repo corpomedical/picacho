@@ -77,6 +77,57 @@ describe("the prompt informs the picture", () => {
   });
 });
 
+describe("the strict lane — a real person's photograph was edited", () => {
+  const person = { depicted_subject: "person" } as const;
+  it("refuses at MEDIUM on nudity or framing where the ordinary lane refuses at HIGH", () => {
+    expect(decideOutput(both(false, { sexual_nudity: "MEDIUM", ...person }))).toBeNull();
+    expect(decideOutput(both(false, { sexual_nudity: "MEDIUM", ...person }), { strictLane: true })).toBe("sexual");
+    expect(decideOutput(both(false, { suggestive_framing: "MEDIUM", ...person }))).toBeNull();
+    expect(decideOutput(both(false, { suggestive_framing: "MEDIUM", ...person }), { strictLane: true })).toBe("sexual");
+  });
+
+  it("still allows a LOW reading — the slip-dress picture, measured 2026-09-10, reads LOW/LOW", () => {
+    expect(
+      decideOutput(both(false, { sexual_nudity: "LOW", suggestive_framing: "LOW", ...person }), { strictLane: true }),
+    ).toBeNull();
+  });
+
+  it("does not move the act axis or minors, which have no lane", () => {
+    expect(decideOutput(both(false, { sexual_act: "LOW", ...person }), { strictLane: true })).toBeNull();
+    expect(decideOutput(both(false, { minor_sexualized: "LOW" }), { strictLane: true })).toBe("minors");
+  });
+
+  it("gives the artwork override no room: a real person as a nude statue is refused", () => {
+    expect(decideOutput(both(true, { sexual_nudity: "LOW", depicted_subject: "artwork" }))).toBeNull();
+    expect(decideOutput(both(true, { sexual_nudity: "LOW", depicted_subject: "artwork" }), { strictLane: true })).toBe("sexual");
+  });
+
+  it("stacks with a borderline prompt, bounded: LOW + prompt MEDIUM + strict lane reads HIGH", () => {
+    const borderline = { sexual_nudity: "MEDIUM", sexual_act: "NEGLIGIBLE", suggestive_framing: "NEGLIGIBLE", clothing_removal: "NEGLIGIBLE", minor_sexualized: "NEGLIGIBLE" } as const;
+    expect(decideOutput(both(false, { sexual_nudity: "LOW", ...person }), { strictLane: true, promptScores: borderline })).toBe("sexual");
+  });
+
+  it("does not stack with a recent refusal: the lane and the count are one band between them", () => {
+    // LOW + lane + session would read HIGH and refuse — the strict-at-LOW
+    // rule measured and rejected on 2026-09-10. It stays MEDIUM: allowed.
+    expect(decideOutput(both(false, { sexual_nudity: "LOW", ...person }), { strictLane: true, sessionPriorHits: 1 })).toBeNull();
+    expect(decideOutput(both(false, { suggestive_framing: "LOW", ...person }), { strictLane: true, sessionPriorHits: 3 })).toBeNull();
+  });
+
+  it("does not stack with a moderation outage either", () => {
+    const visionOnly = (v: Partial<VisionReading>): OutputReadings => ({ moderation: null, vision: vis(v) });
+    // Vision alone is one band stricter on nudity: MEDIUM refuses, LOW does not…
+    expect(decideOutput(visionOnly({ sexual_nudity: "MEDIUM", ...person }))).toBe("sexual");
+    expect(decideOutput(visionOnly({ sexual_nudity: "LOW", ...person }))).toBeNull();
+    // …and the strict lane adds nothing on top of that band.
+    expect(decideOutput(visionOnly({ sexual_nudity: "LOW", ...person }), { strictLane: true })).toBeNull();
+    expect(decideOutput(visionOnly({ sexual_nudity: "MEDIUM", ...person }), { strictLane: true })).toBe("sexual");
+    // Framing has no outage band; the lane's one band applies.
+    expect(decideOutput(visionOnly({ suggestive_framing: "MEDIUM", ...person }))).toBeNull();
+    expect(decideOutput(visionOnly({ suggestive_framing: "MEDIUM", ...person }), { strictLane: true })).toBe("sexual");
+  });
+});
+
 describe("a recent refusal on the account", () => {
   it("raises every reading by one band, and only one, however many there were", () => {
     // Unflagged, model MEDIUM on nudity: allowed alone; with a prior hit it

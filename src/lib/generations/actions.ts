@@ -5,7 +5,8 @@ import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { recordSignal } from "@/lib/generations/record-signal";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
-import { gatePrompt } from "@/lib/generations/policy-log";
+import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { reelPosterKeyFor } from "@/lib/media/reel-encode";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
 import {
@@ -1090,6 +1091,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
   let continuationSourceUrl: string | null = null;
   let continuationSourceSeconds: number | null = null;
+  let continuationFromUpload = false;
   const continueFromGenerationId = ((formData.get("continue_from_generation_id") as string) || "").trim();
   if (continueFromGenerationId && contentType === "video") {
     if (videoModelId !== "seedance" && videoModelId !== "seedance-2") {
@@ -1100,9 +1102,17 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     }
     const { data: prior } = await supabase
       .from("generations")
-      .select("id, user_id, content_type, status, result_url, video_duration_seconds")
+      .select("id, user_id, content_type, status, result_url, video_duration_seconds, attachments")
       .eq("id", continueFromGenerationId)
       .single();
+    // A continuation carries the prior clip's people forward. If that clip
+    // was cut from an uploaded photo, this one is judged in the strict lane
+    // too — on the compiled prompt (pipeline re-gate) and on the picture;
+    // the entry gate above ran before the prior row was loaded and keeps
+    // its own answer.
+    if (prior && Array.isArray((prior as { attachments?: unknown }).attachments) && ((prior as { attachments: unknown[] }).attachments.length > 0)) {
+      continuationFromUpload = true;
+    }
     const priorUrl = prior ? toMediaUrl(prior.result_url) : null;
     if (
       !prior ||
@@ -1817,7 +1827,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           referenceImageUrls,
           // Same lane the entry gate judged this request in — an UPLOADED
           // photo being edited, not the character's own saved one.
-          strictContentLane: editingAnUpload,
+          strictContentLane: editingAnUpload || continuationFromUpload,
           policyAudit: { userId: userData.user.id, generationId: placeholder.id },
           videoReferenceImageUrls,
           videoStartImageUrl,
@@ -1890,6 +1900,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           dialogueText: wantsDialogue ? dialogueText : undefined,
           dialogueVoiceId: wantsDialogue ? dialogueVoiceId : undefined,
           attempts: result.attempts,
+          strictLane: editingAnUpload || continuationFromUpload,
         });
 
         await createAdminClient()
@@ -3406,6 +3417,10 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
               userId: userData.user!.id,
               job: result.pendingVideoJob,
               attempts: result.attempts,
+              // Same lane the entry gate and the shared compile used: these
+              // rows carry no attachments, so without this finish() would
+              // judge every angle in the ordinary lane.
+              strictLane: Boolean(attachmentReferenceUrl) || Boolean(neutralAttachmentUrl),
             });
           } catch (err) {
             // The render is already in fal's queue but we couldn't record its
@@ -4119,6 +4134,27 @@ export async function getMonthlyUsage(userId: string, periodStart?: string | nul
 
 type UpscaleStartResult = { error: string } | { generationId: string };
 
+/**
+ * The lane a derived render — an upscale, a layer split — inherits from its
+ * source: strict when the source rode an uploaded photo (generations.
+ * attachments, 2026-08-31). Their own rows carry no attachments, so without
+ * this finish() would judge every derived picture in the ordinary lane
+ * (2026-09-10 review). A source that cannot be read is the ordinary lane:
+ * the picture already passed its own gate once.
+ */
+async function sourceIsUploadLane(
+  admin: ReturnType<typeof createAdminClient>,
+  sourceGenerationId: string | null,
+): Promise<boolean> {
+  if (!sourceGenerationId) return false;
+  const { data } = await admin
+    .from("generations")
+    .select("attachments")
+    .eq("id", sourceGenerationId)
+    .maybeSingle<{ attachments: unknown }>();
+  return Array.isArray(data?.attachments) && data.attachments.length > 0;
+}
+
 async function startUpscaleCore(params: {
   userId: string;
   sourceUrl: string;
@@ -4220,6 +4256,7 @@ async function startUpscaleCore(params: {
       userId: params.userId,
       job: pendingJob,
       tier: tierLabel,
+      strictLane: await sourceIsUploadLane(admin, params.sourceGenerationId),
       attempts: [
         {
           attempt: 1,
@@ -4520,6 +4557,7 @@ async function startLayersCore(params: {
   try {
     pendingJob = await submitLayerizeJob(params.sourceUrl, LAYERS_TIERS[params.tier].imageSize);
     await saveLayersJob({
+      strictLane: await sourceIsUploadLane(admin, params.sourceGenerationId),
       generationId,
       userId: params.userId,
       job: pendingJob,
@@ -4930,6 +4968,37 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   }
 
   // Opaque frame -> alpha -> the original layer's exact pixels.
+  // THE PICTURE GATE, strict lane. This lane writes its own terminal row —
+  // no pipeline, no finish() — so until 2026-09-10 an edited layer shipped
+  // with no picture check at all (found by the change's own review). The
+  // prompt gate above is strict for this lane unconditionally; so is this.
+  // A refusal fails the row and gives the credit back, exactly as a
+  // provider failure does two blocks up.
+  try {
+    await judgeRender({ url: attempt.url, kind: "image", strictLane: true });
+  } catch (err) {
+    if (!(err instanceof OutputPolicyRefusal)) throw err;
+    await recordPolicyRefusal({
+      userId,
+      gate: "output",
+      reason: err.reason,
+      strictLane: true,
+      prompt,
+      generationId: editGenerationId,
+      bands: err.readings,
+      provider: "flux",
+    });
+    await admin.from("generations").update({ status: "failed", progress_stage: null }).eq("id", editGenerationId);
+    if (!refunded) {
+      try {
+        await refundGenerationCosts(editGenerationId, { force: true });
+      } catch (refundErr) {
+        console.error(`layer edit output-block refund failed for ${editGenerationId}:`, refundErr);
+      }
+    }
+    return { error: err.userMessage };
+  }
+
   let storedUrl: string;
   // From the table, not from the row the client happened to hold: two tabs
   // editing the same layer would both compute the same next version.

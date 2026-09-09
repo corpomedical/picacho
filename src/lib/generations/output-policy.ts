@@ -320,6 +320,15 @@ export type OutputContext = {
   promptScores?: Scores | null;
   /** Refusals this account has drawn recently — raises every threshold. */
   sessionPriorHits?: number;
+  /**
+   * A real person's photograph was edited — the prompt gate's strict lane,
+   * carried through to the picture. Nudity and framing are read one band
+   * higher, so the unflagged line of HIGH becomes MEDIUM: the same line the
+   * prompt gate draws, for the same reason. Operator's call (2026-09-10,
+   * after reading Play's policy and its enforcement record): every case
+   * Google has acted on publicly is a real photo made less clothed.
+   */
+  strictLane?: boolean;
 };
 
 /**
@@ -344,22 +353,43 @@ export function decideOutput(readings: OutputReadings, ctx: OutputContext = {}):
   const ps = ctx.promptScores;
   const harder = (cat: keyof Scores) => (ps && ps[cat] === "MEDIUM" ? 1 : 0);
 
+  // THE LANE (see OutputContext.strictLane): nudity and framing one band
+  // higher when a real person's photo was edited. Not the act axis, which
+  // already refuses at its lowest useful band, and not minors, which is
+  // zero tolerance in every lane.
+  const lane = (cat: keyof Scores) =>
+    ctx.strictLane === true && (cat === "sexual_nudity" || cat === "suggestive_framing") ? 1 : 0;
+
+  // The reading the rules below see: the model's band, raised by the
+  // bounded priors. The session prior and the lane do NOT stack: one band
+  // between them, or a strict-lane render by an account with one refusal in
+  // the last hour would be judged at LOW — the rule that was measured on
+  // 2026-09-10 and rejected (it refused a woman in a hijab at the gym).
+  // NEGLIGIBLE is immune to the session prior only — a count must not
+  // manufacture a reading — but not to the lane or the prompt, which are
+  // facts about THIS request.
+  const sessionShift = (band: Band) => (bv(bump(band)) - bv(band));
+  const eff = (cat: keyof Scores, band: Band, extra = 0) =>
+    raise(band, Math.max(sessionShift(band), lane(cat), extra) + harder(cat));
+
   // Minors: the vision model is the only reader that can see it, and it is
   // zero tolerance. The moderation endpoint's image reading for this
   // category is always 0 by design, so it is never consulted here.
   if (vis && bv(bump(vis.minor_sexualized)) >= bv("LOW")) return "minors";
 
   if (mod && vis) {
-    const nudity = raise(bump(vis.sexual_nudity), harder("sexual_nudity"));
-    const act = raise(bump(vis.sexual_act), harder("sexual_act"));
-    const framing = raise(bump(vis.suggestive_framing), harder("suggestive_framing"));
+    const nudity = eff("sexual_nudity", vis.sexual_nudity);
+    const act = eff("sexual_act", vis.sexual_act);
+    const framing = eff("suggestive_framing", vis.suggestive_framing);
 
     if (mod.flagged) {
       // Both readers see it: refuse.
       if (bv(nudity) >= bv("MEDIUM") || bv(act) >= bv("LOW")) return "sexual";
       // The one disagreement the model is competent to win: the nudity the
       // endpoint saw is a depicted artwork, and the model is confident there
-      // is nothing on a person.
+      // is nothing on a person. In the strict lane the raised readings mean
+      // this survives only when the model sees nothing at all — a real
+      // person rendered as a nude statue is still that person undressed.
       if (vis.depicted_subject === "artwork" && bv(nudity) <= bv("LOW") && bv(framing) <= bv("LOW")) return null;
       // The endpoint flagged and the model merely hedged. On the output side
       // the picture exists; a wrong allow ships it. Refuse, refund.
@@ -377,12 +407,14 @@ export function decideOutput(readings: OutputReadings, ctx: OutputContext = {}):
     return mod.flagged ? "sexual" : null;
   }
 
-  // Moderation unreachable: the model alone, one band stricter than when it
-  // has a second opinion to lean on.
-  const nudity = raise(bump(vis!.sexual_nudity), harder("sexual_nudity"));
-  const act = raise(bump(vis!.sexual_act), harder("sexual_act"));
-  const framing = raise(bump(vis!.suggestive_framing), harder("suggestive_framing"));
-  if (bv(nudity) >= bv("MEDIUM") || bv(act) >= bv("LOW") || bv(framing) >= bv("HIGH")) return "sexual";
+  // Moderation unreachable: the model alone, one band stricter on nudity
+  // and the act than when it has a second opinion to lean on. That extra
+  // band and the lane's are the SAME band, not two: an outage must not turn
+  // the strict lane into strict-at-LOW (Math.max inside eff).
+  const nudity = eff("sexual_nudity", vis!.sexual_nudity, 1);
+  const act = eff("sexual_act", vis!.sexual_act, 1);
+  const framing = eff("suggestive_framing", vis!.suggestive_framing);
+  if (bv(nudity) >= bv("HIGH") || bv(act) >= bv("MEDIUM") || bv(framing) >= bv("HIGH")) return "sexual";
   return null;
 }
 
@@ -408,10 +440,15 @@ export async function assertOutputAllowed(input: {
   imageUrl: string;
   promptScores?: Scores | null;
   sessionPriorHits?: number;
+  strictLane?: boolean;
 }): Promise<OutputVerdict> {
   const { providerDownloadUrl } = await import("@/lib/generations/providers/provider-url");
   const url = providerDownloadUrl(input.imageUrl);
-  const ctx: OutputContext = { promptScores: input.promptScores ?? null, sessionPriorHits: input.sessionPriorHits ?? 0 };
+  const ctx: OutputContext = {
+    promptScores: input.promptScores ?? null,
+    sessionPriorHits: input.sessionPriorHits ?? 0,
+    strictLane: input.strictLane === true,
+  };
 
   let readings: OutputReadings = { moderation: null, vision: null };
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -459,6 +496,7 @@ export async function judgeRender(input: {
   kind: "image" | "video";
   promptScores?: Scores | null;
   sessionPriorHits?: number;
+  strictLane?: boolean;
 }): Promise<RenderVerdict> {
   let judged = input.url;
   let frameUrl: string | null = null;
@@ -476,6 +514,7 @@ export async function judgeRender(input: {
     imageUrl: judged,
     promptScores: input.promptScores,
     sessionPriorHits: input.sessionPriorHits,
+    strictLane: input.strictLane,
   });
   return { ...verdict, frameUrl };
 }

@@ -115,6 +115,10 @@ type JobRow = {
     cueAudioUrl?: string;
     label?: string;
     tier?: string;
+    // The prompt gate's lane, recorded by the caller that knew it at
+    // submit time (2026-09-10), so finish() judges the picture in the same
+    // lane. Rows that predate it fall back to the recorded attachments.
+    strictLane?: boolean;
   };
   resume: ResumeState;
   started_at: string;
@@ -756,6 +760,8 @@ export async function saveUpscaleJob(params: {
   /** Display tier ("1080p" | "4K") — rides payload for the collection log
    *  and the per-row progress copy. */
   tier: string;
+  /** The prompt gate's lane for this render — see JobRow.payload.strictLane. */
+  strictLane?: boolean;
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -766,7 +772,7 @@ export async function saveUpscaleJob(params: {
     status_url: params.job.statusUrl,
     response_url: params.job.responseUrl,
     cancel_url: params.job.cancelUrl,
-    payload: { label: params.job.label, tier: params.tier },
+    payload: { label: params.job.label, tier: params.tier, strictLane: params.strictLane === true },
     resume: { attempts: params.attempts } satisfies ResumeState,
     started_at: new Date().toISOString(),
     last_polled_at: new Date().toISOString(),
@@ -793,6 +799,8 @@ export async function saveLayersJob(params: {
   job: QueuedJob;
   attempts: AttemptLog[];
   tier: LayersTier;
+  /** The prompt gate's lane for this render — see JobRow.payload.strictLane. */
+  strictLane?: boolean;
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -803,7 +811,7 @@ export async function saveLayersJob(params: {
     status_url: params.job.statusUrl,
     response_url: params.job.responseUrl,
     cancel_url: params.job.cancelUrl,
-    payload: { label: params.job.label, tier: params.tier },
+    payload: { label: params.job.label, tier: params.tier, strictLane: params.strictLane === true },
     resume: { attempts: params.attempts } satisfies ResumeState,
     started_at: new Date().toISOString(),
     last_polled_at: new Date().toISOString(),
@@ -826,6 +834,8 @@ export async function saveVideoJob(params: {
   dialogueText?: string;
   dialogueVoiceId?: string | null;
   attempts: AttemptLog[];
+  /** The prompt gate's lane for this render — see JobRow.payload.strictLane. */
+  strictLane?: boolean;
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -843,7 +853,7 @@ export async function saveVideoJob(params: {
     // jobHandle so poll/webhook-side provider errors are attributed to the
     // right model. provider: which service is holding it, so the poll,
     // collect and cancel verbs go back to the same place the submit went.
-    payload: { label: params.job.label, provider: params.job.provider },
+    payload: { label: params.job.label, provider: params.job.provider, strictLane: params.strictLane === true },
     resume: {
       dialogueText: params.dialogueText,
       dialogueVoiceId: params.dialogueVoiceId ?? undefined,
@@ -892,16 +902,45 @@ async function finish(
   // serves all three.
   const { data: gen } = await admin
     .from("generations")
-    .select("video_model_id, content_type, character_profile_id")
+    .select("video_model_id, content_type, character_profile_id, attachments")
     .eq("id", generationId)
     .maybeSingle<{
       video_model_id: string | null;
       content_type: string | null;
       character_profile_id: string | null;
+      attachments: string[] | null;
     }>();
 
   const modelId = gen?.video_model_id ?? "";
   const kind = (gen?.content_type === "image" ? "image" : "video") as "video" | "image";
+
+  // The job row, read once and BEFORE it is deleted a little further down:
+  // the lane the prompt gate used rides its payload (every submit site
+  // records it since 2026-09-10 — the single send, multi-angle, layers and
+  // upscale — because only the single send writes `attachments` on the
+  // generation row, and the other three never did), and started_at is the
+  // only record of when this render began. Best-effort: a failed read
+  // costs an unrecorded duration and the attachments fallback, never a
+  // blocked finish.
+  let jobRow: { started_at: string | null; payload: JobRow["payload"] | null } | null = null;
+  try {
+    const { data } = await admin
+      .from("generation_jobs")
+      .select("started_at, payload")
+      .eq("generation_id", generationId)
+      .maybeSingle<{ started_at: string | null; payload: JobRow["payload"] | null }>();
+    jobRow = data ?? null;
+  } catch {
+    jobRow = null;
+  }
+  // The fallback for rows that predate the payload field: `attachments`
+  // holds the chat-attachment storage paths that rode a single send
+  // (2026-08-31), and an uploaded photo riding the send is what put that
+  // request in the strict lane.
+  const strictLane =
+    typeof jobRow?.payload?.strictLane === "boolean"
+      ? jobRow.payload.strictLane
+      : Array.isArray(gen?.attachments) && gen.attachments.length > 0;
 
   // THE OUTPUT GATE, before the terminal write. finish() is the one choke
   // point every queued result converges on — the poll loop, the fal webhook,
@@ -922,7 +961,7 @@ async function finish(
   let gateFrameUrl: string | null = null;
   if (outcome.status === "succeeded") {
     try {
-      const verdict = await judgeRender({ url: outcome.resultUrl, kind });
+      const verdict = await judgeRender({ url: outcome.resultUrl, kind, strictLane });
       gateFrameUrl = verdict.frameUrl;
       outcome = {
         ...outcome,
@@ -935,6 +974,7 @@ async function finish(
         userId,
         gate: "output",
         reason: err.reason,
+        strictLane,
         generationId,
         bands: err.readings,
         provider: modelId || null,
@@ -952,18 +992,11 @@ async function finish(
   // is deliberately the only one, so the score and the row it describes can
   // never disagree. Best-effort — a failure here must never block a finish.
   let queueSeconds: number | null = null;
-  try {
-    const { data: jobRow } = await admin
-      .from("generation_jobs")
-      .select("started_at")
-      .eq("generation_id", generationId)
-      .maybeSingle();
-    const startedAt = jobRow?.started_at ? Date.parse(jobRow.started_at as string) : NaN;
+  {
+    const startedAt = jobRow?.started_at ? Date.parse(jobRow.started_at) : NaN;
     if (Number.isFinite(startedAt)) {
       queueSeconds = Math.max(0, Math.round((Date.now() - startedAt) / 1000));
     }
-  } catch {
-    queueSeconds = null;
   }
 
   const { data: transitioned, error: transitionError } = await admin

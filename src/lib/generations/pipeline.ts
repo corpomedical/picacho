@@ -1520,6 +1520,7 @@ export async function runRealPipeline(
             kind: options.contentType === "video" ? "video" : "image",
             promptScores,
             sessionPriorHits: priorHits,
+            strictLane: options.strictContentLane === true,
           });
           steps.push({ step: "validate", detail: "Checked the finished picture against the content rules." });
         }
