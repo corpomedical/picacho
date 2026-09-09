@@ -689,6 +689,15 @@ export type RealPipelineOptions = {
   // Also removes two thirds of the AI spend on a three-angle request, since
   // drafting and review now happen once instead of once per angle.
   compileOnly?: boolean;
+  // Content-policy lane for the compiled-prompt gate. TRUE only when the
+  // request carries a photograph the person UPLOADED and is editing — the
+  // path that got the app suspended. Deliberately NOT derived from
+  // referenceImageUrl inside the pipeline: that URL is also the character's
+  // own saved identity photo, present on nearly every character render, and
+  // keying on it put the product's core path in a lane that refuses swimwear
+  // at LOW. The entry gate already computed this distinction; it is passed
+  // through so both gates judge the same request in the same lane.
+  strictContentLane?: boolean;
 };
 
 export async function runRealPipeline(
@@ -1169,9 +1178,7 @@ export async function runRealPipeline(
     try {
       await assertPromptAllowed({
         prompt: reviewedPrompt,
-        hasRealPersonReference: Boolean(
-          options.referenceImageUrl || options.referenceImageUrls?.length,
-        ),
+        hasRealPersonReference: options.strictContentLane === true,
       });
     } catch (policyErr) {
       if (!(policyErr instanceof ContentPolicyRefusal)) throw policyErr;

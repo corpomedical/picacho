@@ -417,16 +417,20 @@ async function score(prompt: string, ctx: PolicyContext): Promise<Scores | null>
     // temperature 0: a safety verdict must not change between identical runs.
     const s = parseScores(await reviewWithOpenAI(instructions, { temperature: 0, maxTokens: 2000 }));
     if (s) return s;
-  } catch {
-    // Fall through to the second classifier.
+  } catch (err) {
+    // Fall through to the second classifier — but say so. A silent catch here
+    // let a dead primary (a rejected parameter, a missing package) hand every
+    // verdict to the backup with no trace, which is how "deterministic at
+    // temperature 0" could quietly become "whatever the backup samples".
+    console.warn("[content-policy] primary classifier failed, trying backup:", err instanceof Error ? err.message : err);
   }
 
   try {
     const { draftWithClaude } = await import("@/lib/generations/providers/anthropic");
     const s = parseScores(await draftWithClaude(instructions));
     if (s) return s;
-  } catch {
-    // Both unreachable.
+  } catch (err) {
+    console.warn("[content-policy] backup classifier failed:", err instanceof Error ? err.message : err);
   }
 
   return null;

@@ -1814,6 +1814,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           imageModelId,
           referenceImageUrl,
           referenceImageUrls,
+          // Same lane the entry gate judged this request in — an UPLOADED
+          // photo being edited, not the character's own saved one.
+          strictContentLane: editingAnUpload,
           videoReferenceImageUrls,
           videoStartImageUrl,
           videoEndImageUrl,
@@ -3150,6 +3153,8 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           skipRefinement,
           brandRules: angleBrandRules,
           compileOnly: true,
+          // Same lane the entry gate judged this send in — see runGeneration.
+          strictContentLane: Boolean(attachmentReferenceUrl) || Boolean(neutralAttachmentUrl),
         },
         maxAttempts,
         // Same cooperative Stop polling runGeneration's pipeline call gets —
@@ -3217,7 +3222,15 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   // If the shared scene didn't compile, every angle would submit an empty or
   // half-formed prompt — three paid Kling renders of nothing. Fail the batch
   // here instead, refund the credits, and say so.
-  if (useRealProviders && !sharedScene?.finalPrompt?.trim()) {
+  // A COMPILE THE POLICY REFUSED MUST NOT FAN OUT. compileOnly returns
+  // `succeeded: false` on success too, so the only signal this guard had
+  // was an empty finalPrompt — and the pipeline's content-policy gate
+  // returns with finalPrompt POPULATED (the refused text, for the log).
+  // A refused compile therefore looked exactly like a good one and went to
+  // N paid video renders. Found in the 2026-09-09 review after the same
+  // shape was fixed in Prompt Studio and missed here.
+  const policyBlocked = Boolean(sharedScene?.contentPolicyBlock);
+  if (useRealProviders && (!sharedScene?.finalPrompt?.trim() || policyBlocked)) {
     const failureLog: AttemptLog[] = sharedScene?.attempts?.length
       ? sharedScene.attempts
       : [
@@ -3261,7 +3274,11 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
       await refundGenerationCosts(p.id as string, { force: true });
     }
 
-    return { error: "Couldn't build a scene for these angles — try rewording the prompt." };
+    return {
+      error: policyBlocked
+        ? sharedScene!.contentPolicyBlock!
+        : "Couldn't build a scene for these angles — try rewording the prompt.",
+    };
   }
 
   const settled = await Promise.allSettled(

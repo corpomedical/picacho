@@ -16,8 +16,19 @@ import { createPortal } from "react-dom";
 // spotlight drew a 0×0 square in the corner (2026-09-09).
 export function findTourAnchor(targetId: string): Element | null {
   if (typeof document === "undefined") return null;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
   for (const el of document.querySelectorAll(`[data-tour-id="${targetId}"]`)) {
-    if (el.getClientRects().length > 0) return el;
+    // getClientRects() is empty only for display:none. The phone drawer
+    // closes with -translate-x-full, which keeps its boxes — measured: a link
+    // inside reports one rect at x=-276, so the old test returned it and the
+    // spotlight drew off the left edge, dimming the whole screen with no
+    // hole (the reported symptom, on the one platform the redesign did not
+    // test). "Visible" here means at least partly INSIDE the viewport.
+    const r = el.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0 && r.right > 0 && r.bottom > 0 && r.left < vw && r.top < vh) {
+      return el;
+    }
   }
   return null;
 }

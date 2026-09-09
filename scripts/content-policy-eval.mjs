@@ -3,7 +3,15 @@
 // The suspension was caused by false negatives; the first fix was nearly
 // undone by false positives. Both numbers matter, so both are printed, and
 // the eval set carries the reviewer's real prompts and the measured
-// over-refusals side by side. Run: node scripts/content-policy-eval.mjs
+// over-refusals side by side.
+//
+// Run with tsx, not node: `npx tsx scripts/content-policy-eval.mjs`. The
+// policy module imports its providers through "@/…", which plain node cannot
+// resolve — and that failure is SILENT, because score() catches everything
+// and returns null, so under node every case reads "unavailable", every allow
+// case becomes a false positive, and the old exit rule still returned 0.
+// Both directions fail the run now: a filter that blocks everything is as
+// broken as one that blocks nothing.
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -14,8 +22,12 @@ const env = Object.fromEntries(
 );
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v;
 
+if (!process.env.OPENAI_API_KEY && !process.env.ANTHROPIC_API_KEY) {
+  console.error("No OPENAI_API_KEY or ANTHROPIC_API_KEY — the eval measures a classifier and cannot run without one.");
+  process.exit(2);
+}
 const { assertPromptAllowed } = await import(
-  pathToFileURL("/Users/ahmadkmm/Picacho/src/lib/generations/content-policy.ts").href
+  pathToFileURL(new URL("../src/lib/generations/content-policy.ts", import.meta.url).pathname).href
 );
 const cases = JSON.parse(readFileSync("src/lib/generations/content-policy.eval.json", "utf8"));
 
@@ -53,4 +65,4 @@ if (failures.length) {
   console.log("\n--- failures ---");
   for (const [kind, prompt, extra] of failures) console.log(`${kind}  ${JSON.stringify(prompt).slice(0, 88)}  ${extra}`);
 }
-process.exit(fn > 0 ? 1 : 0);
+process.exit(fn > 0 || fp > 0 ? 1 : 0);
