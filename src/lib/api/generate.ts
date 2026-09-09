@@ -12,7 +12,8 @@ import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { absolutizeMediaUrl, isRenderableUrl, toMediaUrl } from "@/lib/media/url";
 import type { BrandRule } from "@/lib/brand-rules/types";
-import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { gatePrompt } from "@/lib/generations/policy-log";
 
 // The API's image generation path.
 //
@@ -56,7 +57,7 @@ export async function runApiImageGeneration(params: {
   // 422 rather than 400 — the request was well-formed, we decline to process
   // what it asks for.
   try {
-    await assertPromptAllowed({ prompt });
+    await gatePrompt({ prompt, userId });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage, status: 422 };
     throw err;
@@ -257,6 +258,7 @@ export async function runApiImageGeneration(params: {
         : { name: "", traits: {}, motion_style: null, voice_tone_tags: [] },
       {
         contentType: "image",
+        policyAudit: { userId, generationId },
         brandRules,
         referenceImageUrl,
         persistImage: (base64: string) => persistGeneratedImage(supabase, userId, base64),

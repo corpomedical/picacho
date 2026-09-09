@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { recordSignal } from "@/lib/generations/record-signal";
-import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { gatePrompt } from "@/lib/generations/policy-log";
 import { reelPosterKeyFor } from "@/lib/media/reel-encode";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
 import {
@@ -630,7 +631,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     .filter((t) => typeof t === "string" && t.trim().length > 0)
     .join("\n\n");
   try {
-    await assertPromptAllowed({ prompt: judged, hasRealPersonReference: editingAnUpload });
+    await gatePrompt({ prompt: judged, userId: userData.user.id, hasRealPersonReference: editingAnUpload });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;
@@ -1817,6 +1818,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           // Same lane the entry gate judged this request in — an UPLOADED
           // photo being edited, not the character's own saved one.
           strictContentLane: editingAnUpload,
+          policyAudit: { userId: userData.user.id, generationId: placeholder.id },
           videoReferenceImageUrls,
           videoStartImageUrl,
           videoEndImageUrl,
@@ -2690,8 +2692,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
     }
   })();
   try {
-    await assertPromptAllowed({
+    await gatePrompt({
       prompt: [userInput, scenePlanJudgeText].filter(Boolean).join("\n\n"),
+      userId: userData.user.id,
       // Any image attachment, not only the "identity" role: the strict lane
       // keyed on a role no client actually sends, so it could never fire.
       hasRealPersonReference:
@@ -3155,6 +3158,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
           compileOnly: true,
           // Same lane the entry gate judged this send in — see runGeneration.
           strictContentLane: Boolean(attachmentReferenceUrl) || Boolean(neutralAttachmentUrl),
+          policyAudit: { userId: userData.user.id, generationId: null },
         },
         maxAttempts,
         // Same cooperative Stop polling runGeneration's pipeline call gets —
@@ -4741,7 +4745,7 @@ export async function editLayer(formData: FormData): Promise<LayerEditResult> {
   // a layer is always cut from an image of something, and the strict lane is
   // the correct default when the subject came from a photograph.
   try {
-    await assertPromptAllowed({ prompt, hasRealPersonReference: true });
+    await gatePrompt({ prompt, userId, hasRealPersonReference: true });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;

@@ -33,6 +33,10 @@ import type { BrandRule } from "@/lib/brand-rules/types";
 import { classifyProhibitions } from "@/lib/brand-rules/classify";
 import { ACKNOWLEDGED_WARNING_MARKER } from "@/lib/generations/refund-rules";
 import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import type { Scores } from "@/lib/generations/content-policy";
+import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
+import { recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { OUTPUT_BLOCKED_ISSUE } from "@/lib/generations/refund-rules";
 
 export type ContentType = "video" | "image";
 
@@ -698,6 +702,14 @@ export type RealPipelineOptions = {
   // at LOW. The entry gate already computed this distinction; it is passed
   // through so both gates judge the same request in the same lane.
   strictContentLane?: boolean;
+  /**
+   * Who is sending, and which row — for the two content gates. The prompt
+   * gate judges with this account's recent refusals in front of it, and
+   * both gates log a refusal against the row (policy-log.ts). Absent only
+   * on a path with no account behind it; the gates still run, with no
+   * context and no log.
+   */
+  policyAudit?: { userId: string; generationId?: string | null };
 };
 
 export async function runRealPipeline(
@@ -812,6 +824,10 @@ export async function runRealPipeline(
   // what the two nested retry loops could otherwise multiply to. See
   // ProviderBudget in providers/image.ts.
   const imageBudget = newProviderBudget(MAX_PAID_IMAGE_CALLS);
+
+  // Refusals this account drew in the last hour, read once: the prompt gate
+  // below judges with it, and so does the output gate on whatever renders.
+  const priorHits = options.policyAudit ? await recentRefusalCount(options.policyAudit.userId) : 0;
 
   for (let attemptNumber = 1; attemptNumber <= maxAttempts; attemptNumber++) {
     // Checked before starting a brand-new attempt — including the very
@@ -1175,13 +1191,25 @@ export async function runRealPipeline(
     // costs a cheap classifier call per attempt against a generation that
     // costs a credit, and it is the only check in the system that can say
     // "nothing unvetted reached a model" and mean it.
+    let promptScores: Scores | undefined;
     try {
-      await assertPromptAllowed({
+      promptScores = await assertPromptAllowed({
         prompt: reviewedPrompt,
         hasRealPersonReference: options.strictContentLane === true,
+        sessionPriorHits: priorHits,
       });
     } catch (policyErr) {
       if (!(policyErr instanceof ContentPolicyRefusal)) throw policyErr;
+      if (options.policyAudit) {
+        await recordPolicyRefusal({
+          userId: options.policyAudit.userId,
+          gate: "prompt",
+          reason: policyErr.reason,
+          strictLane: options.strictContentLane === true,
+          prompt: reviewedPrompt,
+          generationId: options.policyAudit.generationId ?? null,
+        });
+      }
       // Terminal, not another attempt. A redraft cannot help: the offending
       // text is the account's own saved trait or rule, and re-running the
       // draft would only re-append it. Looping here would also be the
@@ -1255,6 +1283,7 @@ export async function runRealPipeline(
     let resultUrl: string | null = null;
     let generateFailed = false;
     let nonRetryableFailure = false;
+    let outputBlocked = false;
     for (let genTry = 1; genTry <= GENERATE_RETRIES; genTry++) {
       try {
         if (options.contentType === "video") {
@@ -1477,9 +1506,51 @@ export async function runRealPipeline(
                 }${genTry > 1 ? " (recovered after a retry)" : ""}.`,
           });
         }
+        // THE OUTPUT GATE. The prompt was judged; now the picture is — the
+        // image itself, or a video's extracted frame. It is already persisted
+        // (generateImage / generateVideo did that), which is fine: a refused
+        // one stays unreferenced and is swept like any orphan. What must not
+        // happen is for it to become resultUrl. The refusal is thrown into
+        // the catch below, which makes it TERMINAL for this request:
+        // re-rendering until a picture passes is the soften-and-retry ladder
+        // this incident was about, one layer down.
+        if (resultUrl) {
+          await judgeRender({
+            url: resultUrl,
+            kind: options.contentType === "video" ? "video" : "image",
+            promptScores,
+            sessionPriorHits: priorHits,
+          });
+          steps.push({ step: "validate", detail: "Checked the finished picture against the content rules." });
+        }
         generateFailed = false;
         break;
       } catch (err) {
+        if (err instanceof OutputPolicyRefusal) {
+          // The render happened and was billed to us; it is not delivered,
+          // and the credit goes back (refund-rules.ts, output_blocked). The
+          // step detail is the sentence written for the person; the issue
+          // is the marker every refund site reads.
+          resultUrl = null;
+          generateFailed = true;
+          nonRetryableFailure = true;
+          outputBlocked = true;
+          steps.push({ step: "validate", detail: err.userMessage });
+          if (options.policyAudit) {
+            await recordPolicyRefusal({
+              userId: options.policyAudit.userId,
+              gate: "output",
+              reason: err.reason,
+              strictLane: options.strictContentLane === true,
+              generationId: options.policyAudit.generationId ?? null,
+              bands: err.readings,
+              promptBands: promptScores ?? null,
+              provider:
+                options.contentType === "video" ? (options.videoModelId ?? "kling") : (options.imageModelId ?? null),
+            });
+          }
+          break;
+        }
         const message = err instanceof Error ? err.message : `${mediumLabel} generation failed.`;
 
         // A user-initiated stop mid-render — generateVideo already told
@@ -1532,7 +1603,7 @@ export async function runRealPipeline(
       attempt: attemptNumber,
       steps,
       passed,
-      issues: generateFailed && !resultUrl ? ["provider_error"] : [],
+      issues: outputBlocked ? [OUTPUT_BLOCKED_ISSUE] : generateFailed && !resultUrl ? ["provider_error"] : [],
       compiledPrompt: reviewedPrompt,
     });
 

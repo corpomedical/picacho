@@ -16,7 +16,7 @@
 // credit for a render no provider ever performed.
 
 type RefundStep = { step?: string; detail?: unknown };
-type RefundAttempt = { steps?: RefundStep[] };
+type RefundAttempt = { steps?: RefundStep[]; issues?: string[] };
 
 const REJECTION_4XX = /\berror \(4\d\d\)/;
 // The pipeline logs this exact prefix only after a provider actually
@@ -96,8 +96,17 @@ const VIDEO_RENDERED = /^Rendered the video\b/;
  * video…", matched here. That guard is what keeps this honest: a run that
  * actually rendered something never force-refunds, warning or no warning.
  */
+// The output gate marks the attempt it refused with this issue — pipeline.ts
+// on the inline path, job-runner's finish() on every queued one. An issue
+// rather than a sentence to regex: the step detail is the line written for
+// the person and may be reworded; this must not be. It is checked BEFORE the
+// billed-work rule below on purpose: the render happened and we paid for it,
+// and we refund anyway — see output_blocked in the table.
+export const OUTPUT_BLOCKED_ISSUE = "output_blocked";
+
 export function forceRefundEligible(attempts: RefundAttempt[]): boolean {
   const all = details(attempts);
+  if (attempts.some((a) => a.issues?.includes(OUTPUT_BLOCKED_ISSUE))) return true;
   if (all.some((d) => COMPLETED_RENDER.test(d) || VIDEO_RENDERED.test(d))) return false;
   return all.some((d) => REJECTION_4XX.test(d));
 }
@@ -198,13 +207,24 @@ export function forceRefundEligible(attempts: RefundAttempt[]): boolean {
 // provider's cancel RESPONSE can stand in for that read. The lanes billed on
 // delivery (upscale, layers) refund whenever they are stopped, and say so
 // publicly.
-export type FailureFault = "provider_failed" | "our_error" | "user_cancelled" | "abandoned";
+export type FailureFault =
+  | "provider_failed"
+  | "our_error"
+  | "user_cancelled"
+  | "abandoned"
+  // The render came back and OUR output gate would not show it. The
+  // customer's prompt passed our prompt gate; the provider made something
+  // we refuse to deliver. That is our failure to have predicted, not
+  // theirs, and the provider DID bill us — so this is the one class where
+  // billed work is refunded on purpose. We absorb it. (2026-09-09)
+  | "output_blocked";
 
 export const REFUNDS: Record<FailureFault, boolean> = {
   provider_failed: true,
   our_error: true,
   user_cancelled: false,
   abandoned: false,
+  output_blocked: true,
 };
 
 /** Whether this failure class returns the credit. The single authority. */

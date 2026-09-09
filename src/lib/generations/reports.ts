@@ -85,6 +85,14 @@ function summarizeFailureDetail(attempts: AttemptLog[]): string | null {
   if (!last) return "Generation failed with no recorded attempts.";
   if (last.issues.includes("cancelled")) return null;
 
+  // Either content gate refused: the validate step already holds the
+  // sentence written for the person (pipeline.ts / job-runner.ts), so the
+  // report says that rather than "The result was missing: output_blocked."
+  if (last.issues.includes("content_policy") || last.issues.includes("output_blocked")) {
+    const step = [...last.steps].reverse().find((s) => s.step === "validate");
+    if (step?.detail) return step.detail.slice(0, 500);
+  }
+
   if (last.issues.includes("provider_error") || last.issues.includes("unexpected_error")) {
     const errorStep = [...last.steps]
       .reverse()

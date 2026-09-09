@@ -24,7 +24,8 @@ import {
   PLAN_PROMPT_ASSIST_LIMITS,
   type PlanId,
 } from "@/lib/plans";
-import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { gatePrompt } from "@/lib/generations/policy-log";
 
 // Prompt Studio — the "Enhance" step.
 //
@@ -224,7 +225,7 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
   // version that a downstream provider is likelier to act on. Refusing here
   // also costs the person no assist allowance. See content-policy.ts.
   try {
-    await assertPromptAllowed({ prompt: userInput });
+    await gatePrompt({ prompt: userInput, userId: userData.user.id });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;
@@ -278,7 +279,7 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
     const result = await runRealPipeline(
       userInput,
       characterForPipeline,
-      { contentType, brandRules, compileOnly: true },
+      { contentType, brandRules, compileOnly: true, policyAudit: { userId: userData.user.id } },
       // One attempt: the retry loop exists to react to a FAILED generation,
       // and nothing generates here. A user who doesn't like the wording has
       // a "Try another" button, which is a better use of an assist than a
@@ -589,7 +590,7 @@ export async function planScene(formData: FormData): Promise<PlanSceneResult> {
   // provider is likelier to act on. Refusing here also costs no assist
   // allowance. See lib/generations/content-policy.ts.
   try {
-    await assertPromptAllowed({ prompt: idea });
+    await gatePrompt({ prompt: idea, userId: userData.user.id });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;

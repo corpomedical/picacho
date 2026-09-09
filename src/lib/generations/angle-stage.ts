@@ -14,7 +14,8 @@ import {
   stageFramesPrefix,
 } from "@/lib/generations/angle-stage-config";
 import type { PlanId } from "@/lib/plans";
-import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { gatePrompt } from "@/lib/generations/policy-log";
 
 // The Angle Stage's server half (2026-09-05). Two submit/poll pairs — the
 // 3D proxy and the guided angle re-render — both through fal's queue API,
@@ -301,7 +302,7 @@ export async function renderAngleFrame(
   // reviewer's own eight among them. Gating only new requests would leave
   // the suspended session replayable through the angle stage.
   try {
-    await assertPromptAllowed({ prompt: scene, hasRealPersonReference: true });
+    await gatePrompt({ prompt: scene, userId: userData.user.id, hasRealPersonReference: true });
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
     throw err;

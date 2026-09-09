@@ -133,13 +133,23 @@ describe("the session is scored, not just the prompt", () => {
     expect(decide(s({ suggestive_framing: "LOW" }))).toBeNull();
   });
 
-  it("refuses the same weak step once the session is already escalating", () => {
-    expect(decide(s({ suggestive_framing: "LOW" }), { sessionPriorHits: 2 })).toBe("sexual");
+  it("refuses the same weak step once the session is already escalating — in the strict lane", () => {
+    // The incident's shape: a real photograph, a boudoir refusal, then
+    // "make it more spicy". LOW framing reads as MEDIUM, and the strict
+    // lane refuses framing at MEDIUM.
+    expect(decide(s({ suggestive_framing: "LOW" }), { sessionPriorHits: 1, hasRealPersonReference: true })).toBe(
+      "real_person_sexualized",
+    );
+    // Text-to-image with no photograph keeps its HIGH bar even so: one
+    // band up from LOW is MEDIUM, and MEDIUM framing is allowed there.
+    expect(decide(s({ suggestive_framing: "LOW" }), { sessionPriorHits: 2 })).toBeNull();
   });
 
-  it("raises by one band per prior hit", () => {
+  it("raises by one band, and only one, however many prior hits", () => {
     expect(decide(s({ sexual_nudity: "LOW" }), { sessionPriorHits: 1 })).toBeNull();
-    expect(decide(s({ sexual_nudity: "LOW" }), { sessionPriorHits: 2 })).toBe("sexual");
+    expect(decide(s({ sexual_nudity: "LOW" }), { sessionPriorHits: 5 })).toBeNull();
+    // A reading already at MEDIUM does cross the line with one prior hit.
+    expect(decide(s({ sexual_nudity: "MEDIUM" }), { sessionPriorHits: 1 })).toBe("sexual");
   });
 });
 

@@ -11,7 +11,8 @@ import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { PLAN_LABELS, PLAN_REFERENCE_IMAGE_LIMITS, type PlanId } from "@/lib/plans";
 import { latestMonthlyAnniversary } from "@/lib/generations/core";
-import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
+import { gatePrompt } from "@/lib/generations/policy-log";
 
 // Real incident, 2026-08-09: a plan=none account generated an AI reference
 // photo for free — this function had no plan/credit check at all, unlike
@@ -346,8 +347,9 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   try {
     // This path image-edits a stored photograph of a real person whenever the
     // character already has reference photos, so it takes the strict lane.
-    await assertPromptAllowed({
+    await gatePrompt({
       prompt: judged,
+      userId: data.user.id,
       // Read straight off the request, like the traits above: the parsed
       // anchorPaths are built further down, and the gate must not depend on
       // ordering it does not control.

@@ -6,6 +6,7 @@ import { LAYERS_TIERS, layerStoragePath, type LayersTier } from "@/lib/generatio
 import {
   forceRefundEligible,
   isProviderRejection,
+  OUTPUT_BLOCKED_ISSUE,
   REFUNDS,
   type FailureFault,
 } from "@/lib/generations/refund-rules";
@@ -30,6 +31,8 @@ import {
   type QueuedVideoJob,
 } from "@/lib/generations/providers/video-queue";
 import { providerDownloadUrl } from "@/lib/generations/providers/provider-url";
+import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
+import { recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { mp3DurationSeconds, padMp3WithSilence } from "@/lib/generations/providers/audio-duration";
 import { parseDialogueCue } from "@/lib/generations/dialogue-cue";
 import { mediaUrl } from "@/lib/media/url";
@@ -884,6 +887,62 @@ async function finish(
 ): Promise<boolean> {
   const admin = createAdminClient();
 
+  // The generation row, read first: the output gate needs the kind, and the
+  // circuit breaker and the scorer further down need the model. One read
+  // serves all three.
+  const { data: gen } = await admin
+    .from("generations")
+    .select("video_model_id, content_type, character_profile_id")
+    .eq("id", generationId)
+    .maybeSingle<{
+      video_model_id: string | null;
+      content_type: string | null;
+      character_profile_id: string | null;
+    }>();
+
+  const modelId = gen?.video_model_id ?? "";
+  const kind = (gen?.content_type === "image" ? "image" : "video") as "video" | "image";
+
+  // THE OUTPUT GATE, before the terminal write. finish() is the one choke
+  // point every queued result converges on — the poll loop, the fal webhook,
+  // the reaper, the layers and upscale lanes, the dialogue stages — so a
+  // row that reads "succeeded" has passed here, or it has not passed
+  // anything. For a video the judged picture is its extracted middle frame,
+  // the same one the poster and the identity score use; it is extracted
+  // once here and reused below.
+  //
+  // A refusal does not throw out of finish(): it turns the outcome into a
+  // failure with fault "output_blocked", and the ordinary failed path below
+  // does the rest — the row, the refund (REFUNDS.output_blocked is true: we
+  // absorb the provider's bill), the report, the notification. The lane's
+  // own success notice is dropped with it; the generic failed copy, with
+  // its refund wording, is the true one now, and History carries the
+  // reason. A frame that cannot be extracted is refused too: nothing
+  // unvetted ships.
+  let gateFrameUrl: string | null = null;
+  if (outcome.status === "succeeded") {
+    try {
+      const verdict = await judgeRender({ url: outcome.resultUrl, kind });
+      gateFrameUrl = verdict.frameUrl;
+      outcome = {
+        ...outcome,
+        attempts: appendStep(outcome.attempts, "Checked the finished picture against the content rules.", "validate"),
+      };
+    } catch (err) {
+      if (!(err instanceof OutputPolicyRefusal)) throw err;
+      const attempts = markIssue(appendStep(outcome.attempts, err.userMessage, "validate"), OUTPUT_BLOCKED_ISSUE);
+      await recordPolicyRefusal({
+        userId,
+        gate: "output",
+        reason: err.reason,
+        generationId,
+        bands: err.readings,
+        provider: modelId || null,
+      });
+      outcome = { status: "failed", attempts, fault: "output_blocked" };
+    }
+  }
+
   // How long this render actually took, read BEFORE the job row is deleted a
   // few lines below — after that the only record of when it started is gone.
   // Wall clock per stage per model is the reliability data the circuit breaker
@@ -1068,19 +1127,6 @@ async function finish(
   // moment it breaks rather than when somebody notices. Reading the model id
   // from the generation row keeps this correct for every path that lands
   // here — poll, webhook or reaper.
-  const { data: gen } = await admin
-    .from("generations")
-    .select("video_model_id, content_type, character_profile_id")
-    .eq("id", generationId)
-    .maybeSingle<{
-      video_model_id: string | null;
-      content_type: string | null;
-      character_profile_id: string | null;
-    }>();
-
-  const modelId = gen?.video_model_id ?? "";
-  const kind = (gen?.content_type === "image" ? "image" : "video") as "video" | "image";
-
   if (modelId) {
     if (outcome.status === "succeeded") {
       await recordModelSuccess(modelId, kind);
@@ -1124,7 +1170,7 @@ async function finish(
       // canExtractFrameFrom rejects it, which is how scoring silently
       // no-op'd from 2026-09-04. Only the wire value changes; result_url
       // above stays relative.
-      const frameUrl = await extractVideoFrame(providerDownloadUrl(outcome.resultUrl));
+      const frameUrl = gateFrameUrl ?? (await extractVideoFrame(providerDownloadUrl(outcome.resultUrl)));
 
       // The poster: the frame's bytes, stored at a deterministic path in
       // generated-images (already served by the media route and swept by
@@ -1246,6 +1292,13 @@ async function finish(
   // precisely when most queued failures land — the actions.ts pre-render
   // crash paths still use it, since a session always exists there.
   return true;
+}
+
+/** Tag the last attempt with an issue marker (idempotent). */
+function markIssue(attempts: AttemptLog[], issue: string): AttemptLog[] {
+  const last = attempts[attempts.length - 1];
+  if (last && !last.issues.includes(issue)) last.issues.push(issue);
+  return attempts;
 }
 
 function appendStep(attempts: AttemptLog[], detail: string, step: AttemptLog["steps"][number]["step"]) {

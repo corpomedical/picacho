@@ -191,12 +191,16 @@ function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): stri
   if (blocked) return blocked;
 
   // The platform content policy blocking the COMPILED prompt at the
-  // pipeline's last gate. Its step detail is already the sentence written
-  // for the person (pipeline.ts), so it is shown verbatim. Checked here,
-  // ahead of the provider-error regex below, which keys on "error (4xx)"
-  // and would never see it — a refusal that fell through to the generic
-  // line would tell someone nothing about the one thing they can change.
-  const policyAttempt = attempts.find((a) => a.issues?.includes("content_policy"));
+  // pipeline's last gate, or the OUTPUT gate declining to show the picture
+  // that came back (2026-09-10). Either step detail is already the sentence
+  // written for the person (pipeline.ts / job-runner.ts), so it is shown
+  // verbatim. Checked here, ahead of the provider-error regex below, which
+  // keys on "error (4xx)" and would never see it — a refusal that fell
+  // through to the generic line would tell someone nothing about the one
+  // thing they can change.
+  const policyAttempt = attempts.find(
+    (a) => a.issues?.includes("content_policy") || a.issues?.includes("output_blocked"),
+  );
   if (policyAttempt) {
     const step = [...(policyAttempt.steps ?? [])].reverse().find((st) => st.step === "validate");
     if (step?.detail) return step.detail;

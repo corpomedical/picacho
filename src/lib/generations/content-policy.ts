@@ -301,9 +301,17 @@ export function decide(scores: Scores, ctx: PolicyContext = {}): PolicyReason | 
   // with two prior hits turned every NEGLIGIBLE category into LOW, and
   // sexual_act refuses at LOW — so an ordinary follow-up prompt in a flagged
   // session was refused for a sex act nobody had scored. Caught by
-  // "raises by one band per prior hit" in the test suite.
-  const bump = (b: Band) =>
-    escalating && b !== "NEGLIGIBLE" ? raise(b, ctx.sessionPriorHits ?? 0) : b;
+  // "raises by one band, and only one" in the test suite.
+  //
+  // ONE band, however many prior hits (2026-09-10, the day the count was
+  // first wired). It used to be one band per hit, which was unmeasured and
+  // unbounded: three refusals in an hour turned LOW into HIGH on every
+  // category, and a sundress on the beach was refused in the ordinary lane
+  // — a number deciding what a sentence means, the exact shape the operator
+  // ruled out. The count itself still reaches the classifier as CONTEXT
+  // (above), where it is weighed against the words rather than added to
+  // them; this is only the bounded prior on top of that.
+  const bump = (b: Band) => (escalating && b !== "NEGLIGIBLE" ? raise(b, 1) : b);
 
   const nudity = bump(scores.sexual_nudity);
   const act = bump(scores.sexual_act);
@@ -431,11 +439,11 @@ export async function assertPromptAllowed(input: {
   hasRealPersonReference?: boolean;
   /** Earlier requests in this session that already scored sexual. */
   sessionPriorHits?: number;
-}): Promise<void> {
+}): Promise<Scores | undefined> {
   const prompt = (input.prompt ?? "").trim();
   // Nothing to judge. Callers guard emptiness themselves; this is a no-op for
   // an empty string, not a silent allow for a missing prompt.
-  if (!prompt) return;
+  if (!prompt) return undefined;
 
   const ctx: PolicyContext = {
     hasRealPersonReference: input.hasRealPersonReference === true,
@@ -456,4 +464,8 @@ export async function assertPromptAllowed(input: {
 
   const reason = decide(scores, ctx);
   if (reason) throw new ContentPolicyRefusal(reason, messageFor(reason));
+  // Returned on allow so the OUTPUT gate can read them: a category this
+  // gate scored MEDIUM — allowed as borderline — has its rendered picture
+  // judged one band harder on that category. See output-policy.ts.
+  return scores;
 }

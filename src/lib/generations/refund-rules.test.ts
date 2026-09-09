@@ -6,6 +6,7 @@ import {
   acknowledgedPolicyWarning,
   isProviderRejection,
   forceRefundEligible,
+  OUTPUT_BLOCKED_ISSUE,
   refundsOnFault,
   REFUNDS,
 } from "./refund-rules";
@@ -191,6 +192,22 @@ describe("forceRefundEligible", () => {
     expect(forceRefundEligible(run("fal.ai (Veo) error (500): internal"))).toBe(false);
     expect(forceRefundEligible([])).toBe(false);
   });
+
+  // The one billed failure that refunds: the picture came back and the
+  // output gate would not show it (2026-09-10). The render cost us money and
+  // the person gets the credit back anyway — the alternative is charging
+  // for a picture nobody was allowed to see. The marker is the issue, not
+  // the sentence: the same attempt without it is an ordinary billed failure.
+  it("refunds an output-policy block even though the render was billed", () => {
+    const steps = [
+      { step: "generate", detail: "Generated via GPT Image 2." },
+      { step: "validate", detail: "The picture that came back didn't pass our check, so it wasn't shown." },
+    ];
+    expect(forceRefundEligible([{ steps }])).toBe(false);
+    expect(forceRefundEligible([{ steps, issues: [OUTPUT_BLOCKED_ISSUE] }])).toBe(true);
+    // Anywhere in the run, not only the last attempt.
+    expect(forceRefundEligible([{ steps, issues: [OUTPUT_BLOCKED_ISSUE] }, { steps: [] }])).toBe(true);
+  });
 });
 
 // The fault table decides where a customer's money goes, and until it moved
@@ -223,10 +240,11 @@ describe("REFUNDS by fault", () => {
 
   // A new fault class must be a deliberate money decision, not something that
   // inherits an answer by being added to a union.
-  it("covers exactly the four known faults", () => {
+  it("covers exactly the five known faults", () => {
     expect(Object.keys(REFUNDS).sort()).toEqual([
       "abandoned",
       "our_error",
+      "output_blocked",
       "provider_failed",
       "user_cancelled",
     ]);
