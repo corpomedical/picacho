@@ -33,8 +33,12 @@ export const COOKIE_CONSENT_EVENT = "picacho:cookie-consent";
 export function setCookieConsent(value: CookieConsent): void {
   try {
     window.localStorage.setItem(COOKIE_CONSENT_KEY, value);
-    window.dispatchEvent(new CustomEvent(COOKIE_CONSENT_EVENT, { detail: value }));
   } catch {
     // Storage unavailable — the banner still hides for this visit.
   }
+  // Dispatched OUTSIDE the storage try, on purpose. The tour waits on this
+  // event; storage is only the memory of the answer. With both in one try, a
+  // browser that blocks localStorage threw on setItem and the dispatch never
+  // ran, so consent was given and nothing that listens for it ever heard.
+  window.dispatchEvent(new CustomEvent(COOKIE_CONSENT_EVENT, { detail: value }));
 }

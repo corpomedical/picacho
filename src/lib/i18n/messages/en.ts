@@ -1333,7 +1333,7 @@ const en = {
     s3p3: "One-off changes are fine too: \"in a red suit today\" changes the outfit for that take only, without touching the saved character.",
     s4h: "Reading your results",
     s4p1: "Your take lands on the dark panel above the box where you type. The plate in its corner carries the identity match, and the button on the image downloads it. Video takes also get Expand view and Upscale up there.",
-    s4p2: "The identity match score (0–100) compares the result against the identity photo. 85+ is a strong match; a low score usually means a safety filter pushed the generation onto a weaker fallback model — just run it again. Not every take carries one: the free daily render is deliberately left unscored, and so is anything generated without a character.",
+    s4p2: "The identity match score (0–100) compares the result against the identity photo. 85+ is a strong match. A low score means the face did not hold — run it again, and if it keeps slipping, check the identity photo is sharp and front-facing. Not every take carries one: the free daily render is deliberately left unscored, and so is anything generated without a character.",
     s4p3: "Open Session transcript for the working — the exact prompt that was sent, every step the pipeline logged, and which model actually produced it; fallbacks are never hidden. Each take in there carries its own actions: copy the prompt, like or dislike, report a problem, and — on images — \"Use as reference photo\", which adds it to the character's gallery. That's the only way generated images enter the gallery.",
     s5h: "Videos",
     s5p1: "Videos anchor to the same identity photo. Motion style and voice tone traits apply here — they describe how your character moves and sounds.",

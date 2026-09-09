@@ -22,6 +22,7 @@ import {
   parseScores,
   sexualPriorHits,
   minorPriorHit,
+  refusalMessages,
   type Scores,
   type Band,
 } from "./content-policy";
@@ -206,5 +207,25 @@ describe("the lexical prior is a prior, not a blocklist", () => {
     expect(minorPriorHit("an intimate portrait of a mother and her baby")).toBe(true);
     // …and that alone decides nothing.
     expect(decide(s({ minor_present: "HIGH" }))).toBeNull();
+  });
+});
+
+describe("the refusal messages", () => {
+  it("never coach a reword of the same request", () => {
+    // softenPromptForSafety existed to reword a refused prompt until a
+    // filter passed it, and that is why the app was cited under AI-Generated
+    // Content as well as Sexual Content. A refusal that tells someone how to
+    // get the same thing through is that mechanism handed to the user.
+    for (const msg of Object.values(refusalMessages)) {
+      expect(msg).not.toMatch(/\b(?:rephras|reword|different wording|try wording|adjust the wording)/i);
+    }
+  });
+
+  it("may say what IS allowed — that is redirection, not evasion", () => {
+    // "Describe a scene instead — what your character is doing, where they
+    // are, and the light" names compliant use. It does not help the refused
+    // request pass; it replaces it. That distinction is the whole reason
+    // this guard is two tests and not one regex.
+    expect(refusalMessages.sexual).toMatch(/describe a scene/i);
   });
 });

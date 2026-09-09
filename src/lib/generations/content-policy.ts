@@ -166,6 +166,14 @@ const REFUSAL_UNAVAILABLE =
   "The safety check could not run just now, so nothing was generated and nothing was spent. " +
   "Please try again in a moment.";
 
+/** Exported for the test suite, which guards their wording. */
+export const refusalMessages = {
+  sexual: REFUSAL_SEXUAL,
+  minors: REFUSAL_MINORS,
+  real_person_sexualized: REFUSAL_REAL_PERSON,
+  unavailable: REFUSAL_UNAVAILABLE,
+} as const;
+
 // ---------------------------------------------------------------------------
 // The classifier
 // ---------------------------------------------------------------------------

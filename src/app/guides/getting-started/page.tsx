@@ -299,7 +299,8 @@ const CHAPTERS: Chapter[] = [
         body: (
           <>
             The first chip on the composer is your character, with their photo and their face-lock
-            meter. Beside it sit the engine, the clip length, and the frame shape.
+            meter. In image mode that is the whole row — the engine, clip length and frame shape
+            chips only appear once you switch to video.
           </>
         ),
         callout: {
@@ -396,6 +397,8 @@ const CHAPTERS: Chapter[] = [
             Four are featured: <strong>Seedance 2.0</strong>, <strong>Kling O3 Pro</strong>,{" "}
             <strong>Gemini Omni Flash 1.1</strong> and <strong>Veo 3.1</strong>. Each shows its
             price in credits before you commit. <strong>More models</strong> opens the rest.
+            On the free plan your one video a day runs on <strong>Wan Turbo</strong> — the four
+            above unlock with credits, and the composer says so before you send.
           </>
         ),
         callout: {

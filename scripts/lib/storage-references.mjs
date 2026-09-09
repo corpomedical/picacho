@@ -53,23 +53,49 @@ export function storageKey(value) {
  * Correction three — a watermarked copy counts as referenced when its
  * sibling original does — lives in isReferenced below.
  */
+// Every row, not the first page. PostgREST caps a response at 1,000 rows
+// regardless of `limit`, and a set that silently stops there is a purge that
+// starts deleting referenced files the day a table outgrows a page. Ordered
+// by id so pages cannot overlap or skip while rows are being inserted.
+async function allRows(rest, table, select) {
+  const out = [];
+  const PAGE = 1000;
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = await rest(`${table}?select=${select}&order=id.asc&limit=${PAGE}&offset=${offset}`);
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
+// THE BUCKETS THIS SET IS VALID FOR. It reads the columns that point into
+// these four, and no others — character-references is pointed at by
+// character_profiles.reference_image_urls / outfit_image_urls, which this
+// does NOT read, so a caller that audits that bucket against this set would
+// see every character photo as unreferenced. Callers must check.
+export const REFERENCE_SET_COVERS = new Set([
+  "generated-images",
+  "generated-videos",
+  "chat-attachments",
+  "layer-sources",
+]);
+
 export async function referencedKeys(rest) {
   const referenced = new Set();
   const add = (v) => {
     const k = storageKey(v);
     if (k) referenced.add(k);
   };
-  for (const g of await rest("generations?select=*&limit=2000")) {
+  for (const g of await allRows(rest, "generations", "id,result_url,poster_url,attachments")) {
     add(g.result_url);
     add(g.poster_url);
     for (const a of g.attachments ?? []) add(a);
   }
-  for (const r of await rest("user_reels?select=*")) {
+  for (const r of await allRows(rest, "user_reels", "id,storage_path,poster_path")) {
     add(r.storage_path);
     add(r.poster_path);
   }
-  for (const c of await rest("community_posts?select=*&limit=2000")) add(c.media_url);
-  for (const l of await rest("generation_layers?select=*&limit=2000")) add(l.storage_path);
+  for (const c of await allRows(rest, "community_posts", "id,media_url")) add(c.media_url);
+  for (const l of await allRows(rest, "generation_layers", "id,storage_path")) add(l.storage_path);
   return referenced;
 }
 
