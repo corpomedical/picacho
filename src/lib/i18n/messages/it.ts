@@ -1377,7 +1377,7 @@ const it = {
     aiGeneration: "Generazione IA",
     skipRefinementLabel: "Salta la bozza IA",
     skipRefinementHelp:
-      "Invia il tuo prompt direttamente al generatore, saltando il passaggio di bozza con Claude. Più veloce ed economico, ma perde la rifinitura extra di quei passaggi.",
+      "Invia il tuo prompt direttamente al generatore, saltando il passaggio di bozza con Claude. Più veloce ed economico, ma perde la rifinitura extra di quei passaggi. Le regole sui contenuti vengono controllate in entrambi i casi.",
     emailPreferences: "Preferenze email",
     marketingEmailsLabel: "Novità e offerte sul prodotto",
     marketingEmailsHelp:

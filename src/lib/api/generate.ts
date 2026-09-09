@@ -12,6 +12,7 @@ import { forceRefundEligible } from "@/lib/generations/refund-rules";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { absolutizeMediaUrl, isRenderableUrl, toMediaUrl } from "@/lib/media/url";
 import type { BrandRule } from "@/lib/brand-rules/types";
+import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 
 // The API's image generation path.
 //
@@ -44,6 +45,22 @@ export async function runApiImageGeneration(params: {
   origin: string;
 }): Promise<ApiGenerationResult> {
   const { supabase, userId, prompt, characterId } = params;
+
+  // The platform content policy, before ownership, allowance or reservation —
+  // so a refused request costs nothing and writes no row. See
+  // lib/generations/content-policy.ts.
+  //
+  // This entry matters more than the composer, not less: it takes a raw
+  // prompt over HTTP with no UI in front of it, so it is the path a script
+  // would use. A gate the composer calls and the API does not is not a gate.
+  // 422 rather than 400 — the request was well-formed, we decline to process
+  // what it asks for.
+  try {
+    await assertPromptAllowed({ prompt });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage, status: 422 };
+    throw err;
+  }
 
   // Ownership, explicitly. The composer can lean on RLS for this; a service
   // client cannot, and "select by id" against a service client is an IDOR

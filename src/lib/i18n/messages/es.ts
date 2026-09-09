@@ -1378,7 +1378,7 @@ const es = {
     aiGeneration: "Generación con IA",
     skipRefinementLabel: "Omitir el borrador de IA",
     skipRefinementHelp:
-      "Envía tu prompt directamente al generador, saltando el paso de borrador con Claude. Más rápido y económico, pero pierde el pulido que aporta.",
+      "Envía tu prompt directamente al generador, saltando el paso de borrador con Claude. Más rápido y económico, pero pierde el pulido que aporta. Las reglas de contenido se comprueban igualmente.",
     emailPreferences: "Preferencias de correo",
     marketingEmailsLabel: "Novedades y ofertas del producto",
     marketingEmailsHelp:

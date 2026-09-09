@@ -1378,7 +1378,7 @@ const pt = {
     aiGeneration: "Geração com IA",
     skipRefinementLabel: "Pular o rascunho de IA",
     skipRefinementHelp:
-      "Envia seu prompt direto para o gerador, pulando a etapa de rascunho com Claude. Mais rápido e barato, mas perde o refinamento extra dessas etapas.",
+      "Envia seu prompt direto para o gerador, pulando a etapa de rascunho com Claude. Mais rápido e barato, mas perde o refinamento extra dessas etapas. As regras de conteúdo são verificadas de qualquer forma.",
     emailPreferences: "Preferências de e-mail",
     marketingEmailsLabel: "Novidades e ofertas do produto",
     marketingEmailsHelp:

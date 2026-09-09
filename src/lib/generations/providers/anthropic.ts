@@ -97,33 +97,33 @@ export async function draftWithClaude(instructions: string): Promise<string> {
   ) {
     throw new Error(`Claude's draft was cut short (stop_reason=${data.stop_reason}).`);
   }
-  return textBlock.text.trim();
+
+  const text = textBlock.text.trim();
+
+  // A PROSE REFUSAL IS NOT A DRAFT. Claude declining in a sentence comes back
+  // with stop_reason "end_turn" and non-empty text, which is byte-identical
+  // in shape to a successful rewrite — so before this check the refusal
+  // itself became the prompt and was posted to the image provider. It is
+  // visible in production: a fal 422 on 2026-09-09 carries
+  // `"prompt": "I can't rewrite this prompt. The core instructio…"`.
+  //
+  // Throwing (rather than returning something) routes the caller to its
+  // deterministic fallback, which keeps the user's typed request verbatim.
+  // That is only safe because the request has already passed the platform
+  // content policy at the entry point (lib/generations/content-policy.ts) —
+  // before that gate existed, falling back here made a refused prompt MORE
+  // likely to reach a provider, not less.
+  //
+  // Deliberately narrow: anchored to the opening of the reply, so a scene
+  // description that happens to contain "I can't" in dialogue is untouched.
+  if (/^(?:i(?:'m| am)? ?(?:can'?t|cannot|won'?t|not able|unable|sorry)|sorry[,.]|i apologi[sz]e)\b/i.test(text)) {
+    throw new Error(`Claude declined to draft this prompt: ${text.slice(0, 120)}`);
+  }
+
+  return text;
 }
 
 
-// Rewrites a prompt that an image model's safety classifier rejected, so it
-// can be retried on the SAME model instead of falling back to a different
-// one. The classifier's false positives are nearly always wording ("form-
-// fitting", "skin-tight", suggestive-sounding phrasing on a photorealistic
-// person), not actual content — real case, 2026-08-13: an ordinary superhero
-// pose was rejected, the Flux fallback repainted the character, and the user
-// reported the result had "0 match" to their character. Keeping the retry on
-// GPT Image 2 preserves its identity anchor; this rewrite is what makes that
-// retry usually pass.
-export async function softenPromptForSafety(prompt: string): Promise<string> {
-  const instructions =
-    "An image-generation safety filter rejected the prompt below, almost certainly because of " +
-    "wording rather than content — it describes a normal, safe-for-work character scene. Rewrite " +
-    "it so a strict classifier clearly reads it as wholesome: keep the scene, character " +
-    "description, pose, outfit, and mood identical in substance; replace phrasing that could be " +
-    "misread (e.g. \"form-fitting\", \"skin-tight\", anything that could sound suggestive); and " +
-    "where natural, make explicit that the person is an adult and fully clothed. Return ONLY the " +
-    "rewritten prompt, no preamble.\n\nPROMPT:\n" +
-    prompt;
-  const softened = (await draftWithClaude(instructions)).trim();
-  if (!softened) throw new Error("Safety rewrite came back empty.");
-  return softened;
-}
 
 
 // ---------------------------------------------------------------------------

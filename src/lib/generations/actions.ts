@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { recordSignal } from "@/lib/generations/record-signal";
+import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { reelPosterKeyFor } from "@/lib/media/reel-encode";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
 import {
@@ -574,6 +575,34 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         "\"a woman walking through a neon-lit street at night\".",
     };
   }
+
+  // THE PLATFORM CONTENT POLICY. Read lib/generations/content-policy.ts for
+  // the incident that put it here.
+  //
+  // Placed at the entry, ahead of checkGenerationAllowance and the
+  // generations insert, so a refusal costs the person nothing — no credit,
+  // no daily free slot, no row. Deliberately not inside the pipeline: by the
+  // time the pipeline runs, money has already moved.
+  //
+  // hasRealPersonReference is "is there any image attachment at all", not the
+  // render-style classifier's verdict, and that is on purpose.
+  // finalizeChatAttachment DOES work out photoreal-vs-illustrated at upload,
+  // but only returns it to the browser — so the only copy at send time is
+  // client-supplied, and a field a crafted request can set to "illustrated"
+  // is not a safety input. Re-running the vision call here would cost one on
+  // every send. Rounding every attachment up to "treat it as a real person"
+  // is free, cannot be spoofed, and errs the right way: the strict branch
+  // only refuses requests to SEXUALIZE the photo, which is the correct
+  // answer for a drawing too.
+  const editingAnUpload =
+    (attachmentRoles?.length ?? 0) > 0 || attachmentStoragePaths.length > 0;
+  try {
+    await assertPromptAllowed({ prompt: userInput, hasRealPersonReference: editingAnUpload });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
+
   // A character is no longer required — a person may just want to generate
   // a one-off image/video from an uploaded photo, or from the prompt alone,
   // with nothing saved to a character. Real request, 2026-08-09: this used
@@ -2590,6 +2619,20 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
         "\"a woman walking through a neon-lit street at night\".",
     };
   }
+
+  // Same platform content policy as runGeneration, at the same point and for
+  // the same reason — this is a second entry that reaches a provider, and a
+  // gate only one entry calls is not a gate. See content-policy.ts.
+  try {
+    await assertPromptAllowed({
+      prompt: userInput,
+      hasRealPersonReference: Boolean(attachmentReferenceUrl),
+    });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
+
   if (!characterId) return { error: "Pick a character to generate with." };
   if (angleIds.length === 0 && !sceneRaw) return { error: "Pick at least one angle." };
 

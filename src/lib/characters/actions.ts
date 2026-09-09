@@ -4,14 +4,14 @@ import { redirect } from "next/navigation";
 import { mediaUrl } from "@/lib/media/url";
 import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
-import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
+import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-images";
 import { describeOutfitImage, classifyRenderStyle } from "@/lib/generations/providers/describe-image";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
-import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { PLAN_LABELS, PLAN_REFERENCE_IMAGE_LIMITS, type PlanId } from "@/lib/plans";
 import { latestMonthlyAnniversary } from "@/lib/generations/core";
+import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 
 // Real incident, 2026-08-09: a plan=none account generated an AI reference
 // photo for free — this function had no plan/credit check at all, unlike
@@ -325,6 +325,18 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
   const prompt = (formData.get("prompt") as string)?.trim();
   if (!prompt) return { error: "Describe what they look like first." };
 
+  // The platform content policy — before the plan check, so a refusal costs
+  // no AI-photo allowance. This entry generates a PERSON from a free-text
+  // description, which makes it the most direct route to the thing the
+  // policy exists to stop; it also runs entirely outside runGeneration, so
+  // the composer's gate never covered it. See content-policy.ts.
+  try {
+    await assertPromptAllowed({ prompt });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
+  }
+
   // The character's existing reference photos (storage paths) and typed
   // visual traits, sent by the form. Used below to keep every generated
   // photo the SAME person: without an anchor, each generation is a fresh
@@ -521,36 +533,17 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
     if (model.provider === "fal") {
       bytes = await downloadImage(await generateImageWithFlux(fullPrompt, anchorUrl));
     } else {
-      try {
-        const base64 = await generateImageWithOpenAI(fullPrompt, anchorUrl);
-        bytes = Buffer.from(base64, "base64");
-      } catch (err) {
-        // OpenAI's safety classifier is aggressive about photorealistic
-        // people — real report: "a beautiful blonde woman" was flagged.
-        // Scene generation already falls back to Flux on exactly this case
-        // (see providers/image.ts); this path was missing the same
-        // fallback, so an ordinary description just failed. Only the
-        // safety case falls back — an outage or bad key says nothing about
-        // whether Flux would do better.
-        if (!(err instanceof ImageSafetyRejection)) throw err;
-        // Soften the wording and retry on GPT first — that keeps the
-        // identity anchor, which the Flux fallback loses (see
-        // providers/image.ts for the full reasoning). Flux is last resort.
-        let recovered: Buffer | null = null;
-        if (process.env.ANTHROPIC_API_KEY) {
-          try {
-            const softened = await softenPromptForSafety(fullPrompt);
-            recovered = Buffer.from(await generateImageWithOpenAI(softened, anchorUrl), "base64");
-          } catch {
-            recovered = null;
-          }
-        }
-        if (!recovered) {
-          if (!process.env.FAL_KEY) throw err;
-          recovered = await downloadImage(await generateImageWithFlux(fullPrompt, anchorUrl));
-        }
-        bytes = recovered;
-      }
+      // No soften-and-retry, and no hop to Flux on a safety refusal — the
+      // same ladder removed from providers/image.ts on 2026-09-09, for the
+      // same reason: rewording a prompt a content filter just rejected, then
+      // shopping it to a provider with a looser filter, is a mechanism for
+      // defeating that filter. The description a person types here is now
+      // gated by lib/generations/content-policy.ts before we get this far,
+      // so a refusal at this point means the provider disagreed with a
+      // prompt we already passed — which fails, and costs the person their
+      // AI-photo allowance back rather than producing something else.
+      const base64 = await generateImageWithOpenAI(fullPrompt, anchorUrl);
+      bytes = Buffer.from(base64, "base64");
     }
 
     const path = `${data.user.id}/${crypto.randomUUID()}.png`;

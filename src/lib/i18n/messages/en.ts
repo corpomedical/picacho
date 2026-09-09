@@ -1461,7 +1461,7 @@ const en = {
     aiGeneration: "AI generation",
     skipRefinementLabel: "Skip the AI draft",
     skipRefinementHelp:
-      "Send your prompt straight to the generator, skipping the Claude draft step. Faster and cheaper, but drops the polish it adds.",
+      "Send your prompt straight to the generator, skipping the Claude draft step. Faster and cheaper, but drops the polish it adds. Content rules are checked either way.",
     emailPreferences: "Email preferences",
     marketingEmailsLabel: "Product news and offers",
     marketingEmailsHelp:

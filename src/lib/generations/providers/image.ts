@@ -1,8 +1,7 @@
-import { generateImageWithOpenAI, ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
+import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
-import { softenPromptForSafety } from "@/lib/generations/providers/anthropic";
 import { buildImageReferences } from "@/lib/generations/providers/image-references";
 
 // A hard ceiling on PAID calls for one generation, counted across every
@@ -55,12 +54,13 @@ export async function generateImage(
   prompt: string,
   referenceImageUrl: string | string[] | null | undefined,
   persistBase64: (base64: string) => Promise<string>,
-  // Called if the request had to be completed by a different model than the
-  // one asked for, so the caller can record that in the pipeline log rather
-  // than reporting a model that didn't actually produce the result.
-  // finalModelName is set when a different model than the requested one
-  // actually produced the image, so the pipeline log can report the truth
-  // (it used to always print the requested model, even after a fallback).
+  // Records that a different model than the one asked for produced the
+  // image. NOTHING CALLS THIS ANY MORE: the only fallback that ever fired
+  // was the safety ladder removed on 2026-09-09, and a model is no longer
+  // substituted mid-request for any reason. Kept so the pipeline's
+  // "which model actually rendered this" reporting keeps its shape; if a
+  // legitimate substitution is ever reintroduced, wire it here — but never
+  // one triggered by a content refusal (see the note further down).
   onFallback?: (note: string, finalModelName?: string) => void,
   // Shared across every attempt of one generation — see ProviderBudget.
   budget?: ProviderBudget,
@@ -111,68 +111,33 @@ export async function generateImage(
 
   const openAiRefs = combinedRefs;
 
-  try {
-    chargeBudget(budget);
-    const base64 = await generateImageWithOpenAI(prompt, openAiRefs);
-    return persistBase64(base64);
-  } catch (err) {
-    // OpenAI's safety classifier is aggressive about photorealistic people —
-    // which is precisely what this product generates — and rejected 3 of the
-    // 8 failed generations measured on 2026-08-10. Flux has its own, much
-    // less restrictive filter, and it's already wired up and paid for, so
-    // falling back to it turns an outright failure into a delivered image.
-    //
-    // Only for the safety case: an auth error, an outage, or a rate limit
-    // says nothing about whether a different model would do better, and
-    // silently double-spending on those would be wrong.
-    if (!(err instanceof ImageSafetyRejection)) throw err;
-
-    // First recovery: soften the wording and retry on GPT itself. This keeps
-    // the image-edit identity anchor, which is the whole product promise —
-    // the old behavior jumped straight to Flux, whose plain image-to-image
-    // repaints the person (real report: "0 match" to the character). Works
-    // for multi-character too, since the retry stays on the same endpoint.
-    let softenedPrompt: string | null = null;
-    if (process.env.ANTHROPIC_API_KEY) {
-      try {
-        softenedPrompt = await softenPromptForSafety(prompt);
-        chargeBudget(budget);
-        const base64 = await generateImageWithOpenAI(softenedPrompt, openAiRefs);
-        // The softened text is included because it's otherwise invisible:
-        // the pipeline log shows the ORIGINAL prompt, so when a softened
-        // render ignores an instruction there is no way to tell whether the
-        // rewrite dropped it (2026-08-26: a "new camera angle" render went
-        // through softening, leaving exactly that question unanswerable).
-        onFallback?.(
-          `OpenAI's safety filter rejected the wording — automatically softened it and retried on GPT Image 2, keeping the identity anchor. Softened prompt: "${softenedPrompt.slice(0, 300)}"`,
-        );
-        return persistBase64(base64);
-      } catch (softenErr) {
-        // An exhausted budget is not a recoverable rejection — it is the
-        // stop sign. Everything else falls through to the Flux attempt.
-        if (softenErr instanceof ProviderBudgetExhausted) throw softenErr;
-        // Softening failed or the retry was rejected too — fall through,
-        // keeping the softened wording (if any) for the Flux attempt below:
-        // Flux has its own trigger-happy checker, and the plain rewrite
-        // helps there exactly as much as it does on GPT.
-      }
-    }
-
-    if (process.env.FAL_KEY) {
-      // FLUX.2 Pro edit takes the same combined reference array as GPT —
-      // identity anchoring survives the lane switch now (the v1 fallback
-      // repainted the person: the real "0% match" report). Multi-character
-      // is included since 2026-08-26: /edit accepts several people, so the
-      // old no-fallback throw is gone.
-      onFallback?.(
-        "OpenAI's safety filter rejected the prompt — generated with Flux 2 Pro instead, carrying the same reference photos.",
-        "Flux 2 Pro",
-      );
-      chargeBudget(budget);
-      return persistRemoteImage(
-        await generateImageWithFlux(softenedPrompt ?? prompt, openAiRefs),
-      );
-    }
-    throw err;
-  }
+  // NO FALLBACK ON A SAFETY REFUSAL. Read this before adding one back.
+  //
+  // Until 2026-09-09 this catch did the opposite: a provider's content
+  // refusal was the ONE error class allowed to continue, into a three-stage
+  // ladder — ask Claude to reword the prompt "so a strict classifier clearly
+  // reads it as wholesome", retry GPT, then hand the reworded text to Flux,
+  // chosen in the comment here for having a "much less restrictive filter".
+  // Every other error (auth, outage, rate limit) was rethrown. So the system
+  // treated "this content is not allowed" as the signal to try harder, and
+  // told the user so: "OpenAI's safety filter rejected the prompt —
+  // generated with Flux 2 Pro instead."
+  //
+  // Google Play suspended the app on 2026-09-09 citing Sexual Content and
+  // AI-Generated Content. Whatever else that ladder was, it is a mechanism
+  // for defeating a content filter, and it is not defensible in a
+  // Play-distributed app whatever the intent behind it was.
+  //
+  // The intent WAS honest — GPT's classifier is genuinely aggressive about
+  // photorealistic people, which is exactly what this product makes, and it
+  // rejected 3 of 8 failed generations measured on 2026-08-10. The answer to
+  // that is a more precise gate of our own in front of the provider (see
+  // lib/generations/content-policy.ts, which now runs before any prompt gets
+  // here), not shopping for a provider that says yes. If a prompt our own
+  // policy passed is still refused downstream, that render fails and the
+  // credit is refunded — the pipeline already treats a safety refusal as
+  // non-retryable and force-refunds it.
+  chargeBudget(budget);
+  const base64 = await generateImageWithOpenAI(prompt, openAiRefs);
+  return persistBase64(base64);
 }

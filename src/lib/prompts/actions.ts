@@ -24,6 +24,7 @@ import {
   PLAN_PROMPT_ASSIST_LIMITS,
   type PlanId,
 } from "@/lib/plans";
+import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 
 // Prompt Studio — the "Enhance" step.
 //
@@ -214,6 +215,19 @@ export async function compilePrompt(formData: FormData): Promise<CompilePromptRe
   if (!userInput) return { error: "Write what you want to create first." };
   if (userInput.length > MAX_INPUT_LENGTH) {
     return { error: `That's longer than ${MAX_INPUT_LENGTH} characters — trim it a little.` };
+  }
+
+  // The platform content policy applies to Enhance too, even though nothing
+  // renders here (compileOnly). Enhance's whole job is to turn a thin line
+  // into a rich, specific one — so left ungated it is an ASSIST toward the
+  // violation, taking "make it more spicy" and handing back the detailed
+  // version that a downstream provider is likelier to act on. Refusing here
+  // also costs the person no assist allowance. See content-policy.ts.
+  try {
+    await assertPromptAllowed({ prompt: userInput });
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+    throw err;
   }
 
   const [{ data: studioFlag }, { data: providersFlag }] = await Promise.all([
