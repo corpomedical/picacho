@@ -8,14 +8,47 @@ export const dynamic = "force-dynamic";
 
 // The in-app tutorial, reachable from the sidebar's settings menu.
 //
-// The visuals are high-fidelity replicas of the real UI (composer, character
-// gallery, result bubble, action row), rebuilt in code with the same Tailwind
-// vocabulary the actual components use — not screenshots. Screenshots bake
-// their text into pixels, so they can't translate and go stale the moment
-// the UI changes; here every visible label is live i18n text overlaid on the
-// drawing, and where the real app already has the string (the Identity photo
-// badge, the match score line, the Live badge) the tutorial reuses that exact
-// key, so the guide can never disagree with the product.
+// The visuals are high-fidelity replicas of the real UI (stage, character
+// gallery, composer, transcript bubble), rebuilt in code with the same
+// Tailwind vocabulary the actual components use — not screenshots.
+// Screenshots bake their text into pixels, so they can't translate and go
+// stale the moment the UI changes; here every visible label is live i18n
+// text overlaid on the drawing, and where the real app already has the
+// string (the Identity photo badge, the Identity match label, the Live
+// badge, Enhance, Render) the tutorial reuses that exact key, so the guide
+// can never disagree with the product.
+//
+// REDRAWN 2026-09-09 after the Stage x Control Room merge (ebcdc63). What
+// changed is WHICH surface these replicas depict, not whether it exists:
+//
+//   - A take now lands on the STAGE — a dark #1b1c20 box above the composer
+//     that does not flip with the theme, with a proof plate in its corner
+//     carrying the identity match. FlowVisual and ResultVisual used to draw
+//     the take as a chat bubble. That bubble is still real, but it lives in
+//     the Session transcript, which starts CLOSED (generate-form.tsx:3054) —
+//     so the tutorial was teaching a secondary surface as the primary one.
+//     The stage is drawn with the same fixed Darkroom literals the real one
+//     uses (#cfc8ba text, #a39a88 muted, #e0a468 accent, #141519 plate),
+//     because those are deliberately not theme tokens.
+//
+//   - "Passed on attempt 1 of 3" is unreachable: every call site guards on
+//     attempts.length > 1 (the 2026-09-05 audit removed the n=1 case because
+//     it implied a guarantee the gate never made). The old ResultVisual drew
+//     exactly that suppressed case, so it is gone from here too.
+//
+//   - An identity score is CONDITIONAL, not universal — the gate skips the
+//     free daily render by design (lib/generations/actions.ts, !consumeFree),
+//     and a take with no character is never scored. The prose says so now.
+//
+//   - "Drafted -> Validated -> Generated" was never a control the product
+//     draws. The real trace is a variable-length <ol> of the steps that were
+//     actually logged, and its labels live in t.history (Drafted, Reviewed,
+//     Generating, Validated). The three-chip row is gone rather than
+//     re-lettered: a fixed trio would misstate a variable list.
+//
+//   - The composer's mode controls are LABELED pills, not unlabeled icon
+//     circles — see the "A×B redesign" comment in generate-form.tsx, which
+//     deleted the confusable 16px glyphs on purpose.
 
 type Tu = Awaited<ReturnType<typeof getServerMessages>>["t"]["tutorial"];
 type Msgs = Awaited<ReturnType<typeof getServerMessages>>["t"];
@@ -55,7 +88,7 @@ export default async function TutorialPage() {
         </Section>
 
         <Section heading={tu.s3h} paragraphs={[tu.s3p1, tu.s3p2, tu.s3p3]}>
-          <ComposerVisual tu={tu} />
+          <ComposerVisual t={t} tu={tu} />
         </Section>
 
         <Section heading={tu.s4h} paragraphs={[tu.s4p1, tu.s4p2, tu.s4p3]}>
@@ -136,7 +169,51 @@ function ArrowDown() {
   );
 }
 
-/* 1 — the loop: identity photo -> your words -> same person, scored */
+// The stage, as generate-form draws it: a #1b1c20 box that deliberately does
+// NOT flip with the theme, so everything painted on it is a fixed Darkroom
+// literal rather than a token. Same radius and shadow as the real one.
+function StageBox({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={
+        "relative overflow-hidden rounded-[16px] bg-atelier-stage shadow-[0_1px_2px_rgba(33,29,22,0.06),0_24px_60px_-28px_rgba(33,29,22,0.28)] " +
+        className
+      }
+    >
+      {children}
+    </div>
+  );
+}
+
+// The proof plate that sits in the stage's bottom-left corner once a take
+// has landed: the character's photo as it was at submit time, the "Identity
+// match" eyebrow, and the score. Drawn only where a score genuinely exists —
+// see the note on conditional scoring in the header comment.
+function ProofPlate({ t, score }: { t: Msgs; score: number }) {
+  return (
+    <div className="absolute bottom-4 left-[18px] flex items-center gap-3.5 rounded-[12px] border border-onmedia/[0.08] bg-[#141519]/[0.66] p-3 pr-[18px] backdrop-blur-[10px]">
+      <Portrait className="h-[42px] w-[42px] flex-shrink-0 rounded-[8px]" />
+      <div>
+        <p className="text-[10px] font-medium uppercase tracking-widest text-onmedia/55">
+          {t.generate.identityMatchLabel}
+        </p>
+        <span className="font-numeral text-2xl font-semibold tabular-nums text-[#e0a468]">
+          {score}%
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/* 1 — the loop: identity photo -> your words -> the same face on the stage,
+   scored. The middle step is the composer's prompt line, which is where the
+   words are actually typed; the take lands on the stage, not in a bubble. */
 function FlowVisual({ t }: { t: Msgs }) {
   const tu = t.tutorial;
   return (
@@ -148,17 +225,21 @@ function FlowVisual({ t }: { t: Msgs }) {
         </span>
       </div>
       <ArrowDown />
-      {/* the user's message, exactly as the chat renders one */}
-      <div className="max-w-[280px] rounded-[18px] rounded-br-[6px] bg-atelier-surface px-4 py-2.5 text-xs leading-relaxed text-atelier-ink shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
-        {tu.visPromptSample}
+      {/* the composer's prompt line — a bare line inside the floating card,
+          which is how the real one reads (no tinted fill: that is hero-only,
+          and hero mode is unreachable) */}
+      <div className="w-full max-w-[420px] rounded-[22px] bg-atelier-surface/90 px-4 py-3 shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04)]">
+        <p className="text-xs leading-relaxed text-atelier-ink">{tu.visPromptSample}</p>
       </div>
       <ArrowDown />
-      <div className="flex items-end gap-2">
-        <Portrait className="h-20 w-20" />
-        <span className="mb-1 rounded-full bg-atelier-surface/95 px-2 py-0.5 font-numeral text-[10px] font-medium tabular-nums text-atelier-accent shadow-[0_0_0_1px_var(--frost-ring)]">
-          {formatMsg(t.generate.identityMatch, { n: 92 })}
-        </span>
-      </div>
+      {/* Wide enough that the plate sits BESIDE the face rather than over it.
+          The real stage letterboxes a portrait the same way (object-contain). */}
+      <StageBox className="w-full max-w-[420px]">
+        <div className="flex h-[150px] w-full items-center justify-center">
+          <Portrait className="h-full w-[104px] rounded-none" />
+        </div>
+        <ProofPlate t={t} score={92} />
+      </StageBox>
     </div>
   );
 }
@@ -203,8 +284,12 @@ function CharacterVisual({ t }: { t: Msgs }) {
 }
 
 /* 3 — the composer, same bones as the real one in generate-form: a
-   borderless floating glass dock, its edge drawn by the frost shadow ring */
-function ComposerVisual({ tu }: { tu: Tu }) {
+   borderless floating glass dock, its edge drawn by the frost shadow ring.
+   The controls beside Render are LABELED pills — the A×B redesign deleted
+   the unlabeled icon circles this used to draw, and the ones it drew
+   (multi-angle, storyboard) are video-only anyway, in a section about
+   images. Enhance is what an image composer actually offers here. */
+function ComposerVisual({ t, tu }: { t: Msgs; tu: Tu }) {
   return (
     <div className="frost-ground rounded-[12px] border border-atelier-rule p-5">
       <div className="rounded-[22px] bg-atelier-surface/90 p-3.5 shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] backdrop-blur-xl">
@@ -227,14 +312,17 @@ function ComposerVisual({ tu }: { tu: Tu }) {
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
           </span>
           <div className="flex items-center gap-1.5">
-            {/* angles + storyboard, as on the video composer */}
-            <span className="flex h-8 w-8 items-center justify-center rounded-full text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m2 8 10 6 10-6" /><path d="m2 12 10 6 10-6" /></svg>
+            {/* Prompt Studio, the one extra an image composer offers — an
+                ochre-outlined pill, appearing once there's something to
+                enhance */}
+            <span className="flex items-center gap-1.5 rounded-full border border-atelier-accent/40 px-3 py-1.5 text-xs font-semibold text-atelier-accent">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8" /></svg>
+              {t.generate.enhance}
             </span>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full text-atelier-muted shadow-[inset_0_0_0_1px_var(--color-atelier-rule)]">
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="7" width="14" height="12" rx="2" /><path d="M7 3h14v12" /></svg>
-            </span>
-            <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-atelier-ink text-atelier-paper shadow-[0_8px_18px_-8px_rgba(35,37,45,0.5)]">
+            {/* the send button carries the word from sm up — ink for a
+                render, ochre for an Ask */}
+            <span className="flex h-9 items-center justify-center gap-2 rounded-[10px] bg-atelier-ink px-[18px] text-[13.5px] font-medium text-atelier-paper shadow-[0_8px_18px_-8px_rgba(35,37,45,0.5)]">
+              {t.generate.sendRender}
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>
             </span>
           </div>
@@ -244,50 +332,67 @@ function ComposerVisual({ tu }: { tu: Tu }) {
   );
 }
 
-/* 4 — a finished result, exactly as the chat shows one */
+/* 4 — a finished take, on the two surfaces it actually lives on.
+   Top: the stage, which is what you meet — the take, a Download ghost, and
+   the proof plate carrying the score. Bottom: the Session transcript, closed
+   until you open it, where the working and the per-take actions live. */
 function ResultVisual({ t }: { t: Msgs }) {
-  const tu = t.tutorial;
-  const steps = [tu.visDrafted, tu.visValidated, tu.visGenerated];
   return (
-    <div className="frost-ground rounded-[12px] border border-atelier-rule p-5">
-      <div className="max-w-[380px] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4 py-3.5 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
-        <div className="flex flex-wrap items-center gap-2.5">
-          {steps.map((label, i) => (
-            <span key={label} className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-atelier-rule" />
-              <span className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{label}</span>
-              {i < steps.length - 1 && <span className="ml-1 h-px w-3 bg-atelier-rule" />}
+    <div className="frost-ground space-y-4 rounded-[12px] border border-atelier-rule p-5">
+      <StageBox>
+        <div className="flex h-[196px] w-full items-center justify-center">
+          <Portrait className="h-full w-[150px] rounded-none" />
+        </div>
+        {/* the ghost cluster: Download is the only one an IMAGE take gets —
+            Expand view and Upscale are both stageTakeIsVideo-gated */}
+        <div className="absolute right-3.5 top-3.5 flex gap-2">
+          <span
+            title={t.generate.download}
+            className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-onmedia/10 text-[#cfc8ba]"
+          >
+            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><path d="M7 10l5 5 5-5" /><path d="M12 15V3" /></svg>
+          </span>
+        </div>
+        <ProofPlate t={t} score={92} />
+      </StageBox>
+
+      <div>
+        <p className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">
+          {t.generate.sessionTranscript}
+        </p>
+        {/* the transcript bubble — still exactly this shape, just no longer
+            the first thing you see */}
+        <div className="max-w-[380px] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4 py-3.5 shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]">
+          {/* the real bubble puts badge and score on ONE row */}
+          <div className="flex items-center gap-2">
+            <Badge tone="success">{t.generate.live}</Badge>
+            <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(t.generate.identityMatch, { n: 92 })}</p>
+          </div>
+          {/* the action row: copy · like · dislike · use as reference · report.
+              Five icons on an image take; the reference button is gated on
+              promotable, so a video take gets four. */}
+          <div className="mt-2.5 flex items-center gap-1 text-atelier-muted">
+            <span title={t.generate.copyPrompt} className="flex h-7 w-7 items-center justify-center rounded-full">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
             </span>
-          ))}
-        </div>
-        <Portrait className="mt-3 h-36 w-full" />
-        <div className="mt-2.5 flex items-center gap-2">
-          <Badge tone="success">{t.generate.live}</Badge>
-          <p className="font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(t.generate.passedOnAttempt, { n: 1 })}</p>
-        </div>
-        <p className="mt-1 font-numeral text-xs tabular-nums text-atelier-accent">{formatMsg(t.generate.identityMatch, { n: 92 })}</p>
-        {/* the hover action row: copy · like · dislike · use as reference · report */}
-        <div className="mt-2 flex items-center gap-1 text-atelier-muted">
-          <span className="flex h-7 w-7 items-center justify-center rounded-full">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" /></svg>
-          </span>
-          <span className="flex h-7 w-7 items-center justify-center rounded-full">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v11" /><path d="M7 10 11 3a2 2 0 0 1 2 2v4h5.5a2 2 0 0 1 1.94 2.49l-1.6 6.5A2 2 0 0 1 16.9 20H10a3 3 0 0 1-3-3v-7Z" /></svg>
-          </span>
-          <span className="flex h-7 w-7 items-center justify-center rounded-full">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V3" /><path d="M17 14 13 21a2 2 0 0 1-2-2v-4H5.5a2 2 0 0 1-1.94-2.49l1.6-6.5A2 2 0 0 1 7.1 4H14a3 3 0 0 1 3 3v7Z" /></svg>
-          </span>
-          <span className="relative flex h-7 w-7 items-center justify-center rounded-full bg-atelier-ink/5 text-atelier-ink">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /><circle cx="9" cy="9" r="2" /><path d="M16 5h6" /><path d="M19 2v6" /></svg>
-          </span>
-          <span className="flex h-7 w-7 items-center justify-center rounded-full">
-            <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1Z" /><path d="M4 22V4" /></svg>
-          </span>
-        </div>
-        {/* callout onto the highlighted button */}
-        <div className="mt-1.5 flex items-center gap-1.5 pl-[84px]">
-          <svg viewBox="0 0 24 24" className="h-3 w-3 -scale-y-100 text-atelier-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>
-          <span className="text-[10px] text-atelier-muted">{t.generate.useAsReference}</span>
+            <span title={t.generate.likeResult} className="flex h-7 w-7 items-center justify-center rounded-full">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10v11" /><path d="M7 10 11 3a2 2 0 0 1 2 2v4h5.5a2 2 0 0 1 1.94 2.49l-1.6 6.5A2 2 0 0 1 16.9 20H10a3 3 0 0 1-3-3v-7Z" /></svg>
+            </span>
+            <span title={t.generate.dislikeResult} className="flex h-7 w-7 items-center justify-center rounded-full">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 14V3" /><path d="M17 14 13 21a2 2 0 0 1-2-2v-4H5.5a2 2 0 0 1-1.94-2.49l1.6-6.5A2 2 0 0 1 7.1 4H14a3 3 0 0 1 3 3v7Z" /></svg>
+            </span>
+            <span title={t.generate.useAsReference} className="relative flex h-7 w-7 items-center justify-center rounded-full bg-atelier-ink/5 text-atelier-ink">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /><circle cx="9" cy="9" r="2" /><path d="M16 5h6" /><path d="M19 2v6" /></svg>
+            </span>
+            <span title={t.generate.reportProblem} className="flex h-7 w-7 items-center justify-center rounded-full">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1Z" /><path d="M4 22V4" /></svg>
+            </span>
+          </div>
+          {/* callout onto the highlighted button */}
+          <div className="mt-1.5 flex items-center gap-1.5 pl-[84px]">
+            <svg viewBox="0 0 24 24" className="h-3 w-3 -scale-y-100 text-atelier-muted" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19V5" /><path d="m5 12 7-7 7 7" /></svg>
+            <span className="text-[10px] text-atelier-muted">{t.generate.useAsReference}</span>
+          </div>
         </div>
       </div>
     </div>

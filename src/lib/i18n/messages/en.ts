@@ -1322,19 +1322,19 @@ const en = {
     subtitle: "Everything from your first character to videos, credits, and fixing wonky results.",
     s1h: "The big idea",
     s1p1: "Picacho makes images and videos of your characters — the same person, every single time. You create a character once, with a photo and a few traits, and from then on you just describe scenes in plain words.",
-    s1p2: "Every take is anchored to your character's identity photo, so the face carries over. A match score under each image tells you how well it held.",
+    s1p2: "Every take is anchored to your character's identity photo, so the face carries over. Most takes come back with a match score telling you how well it held.",
     s2h: "Step 1 — Create your character",
     s2p1: "Give them a name and add photos. The first photo in the gallery is the Identity photo — the anchor every take starts from. A sharp, well-lit, front-facing photo works best.",
     s2p2: "Traits come in two kinds. Identity traits (hair, distinguishing features) are always enforced — they make the character who they are. Outfit and personality are defaults: used when a scene doesn't say otherwise, and stepping aside when it does. A business meeting means business attire, even if the saved outfit is casual.",
     s2p3: "No photo? Describe the character and generate one right on the character page. The gallery holds up to 5 photos — keep it to photos that genuinely show the same person.",
     s3h: "Step 2 — Generate images",
     s3p1: "Pick a character, then ask in plain language: \"Nova at a café in Paris, reading the morning paper.\" The scene always wins — location, action, and whatever clothing the moment implies.",
-    s3p2: "Want a different anchor for one shot? Choose another gallery photo before generating, or attach a photo to the message — an attachment beats the saved gallery for that one request.",
+    s3p2: "Want a different anchor for one shot? Choose another gallery photo before generating, or attach a photo with the + button beside the prompt — an attachment beats the saved gallery for that one request.",
     s3p3: "One-off changes are fine too: \"in a red suit today\" changes the outfit for that take only, without touching the saved character.",
     s4h: "Reading your results",
-    s4p1: "Every result shows its pipeline: Drafted → Validated → Generated. Open it to see exactly how your request was interpreted and which model actually produced the image — fallbacks are never hidden.",
-    s4p2: "The identity match score (0–100) compares the result against the identity photo. 85+ is a strong match; a low score usually means a safety filter pushed the generation onto a weaker fallback model — just run it again.",
-    s4p3: "Hover a result for actions: copy the exact prompt, like or dislike, report a problem, and \"Use as reference photo\", which adds the image to the character's gallery. That's the only way generated images enter the gallery — you choose.",
+    s4p1: "Your take lands on the dark panel above the box where you type. The plate in its corner carries the identity match, and the button on the image downloads it. Video takes also get Expand view and Upscale up there.",
+    s4p2: "The identity match score (0–100) compares the result against the identity photo. 85+ is a strong match; a low score usually means a safety filter pushed the generation onto a weaker fallback model — just run it again. Not every take carries one: the free daily render is deliberately left unscored, and so is anything generated without a character.",
+    s4p3: "Open Session transcript for the working — the exact prompt that was sent, every step the pipeline logged, and which model actually produced it; fallbacks are never hidden. Each take in there carries its own actions: copy the prompt, like or dislike, report a problem, and — on images — \"Use as reference photo\", which adds it to the character's gallery. That's the only way generated images enter the gallery.",
     s5h: "Videos",
     s5p1: "Videos anchor to the same identity photo. Motion style and voice tone traits apply here — they describe how your character moves and sounds.",
     s5p2: "Add dialogue and a voice: type what they say, pick a voice, and the lips are synced to it.",
@@ -1347,12 +1347,13 @@ const en = {
     s7p1: "Safety filters are strict about photorealistic people. Plain, neutral wording passes best — and when a filter still objects, Picacho automatically rewrites and retries before falling back.",
     s7p2: "Character drifting? Check the identity photo (sharp, front-facing), and keep the gallery honest — promote only results where the face is truly right.",
     s7p3: "Something still off? The pipeline log under the result tells you the truth about what happened, and the report button sends it straight to us.",
-    visIdentity: "Identity photo",
+    // visIdentity / visMatch were dead on arrival — the page renders those
+    // from t.character.identityPhoto and t.generate.identityMatch, so the
+    // guide can never drift from the product. visDrafted / visValidated /
+    // visGenerated went with the three-chip pipeline row: the real trace is
+    // a variable-length list of the steps actually logged, and its labels
+    // live in t.history. All five removed 2026-09-09.
     visDefaultTag: "default",
-    visMatch: "Identity match: 92%",
-    visDrafted: "Drafted",
-    visValidated: "Validated",
-    visGenerated: "Generated",
     visPromptSample: "Nova at a café in Paris, reading the morning paper",
     visCredits: "Monthly credits",
     visRefunded: "Failed → retried automatically",
