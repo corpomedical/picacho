@@ -102,7 +102,7 @@ import {
   type VideoResolution,
 } from "@/lib/generations/providers/video-resolution";
 import { useLocale } from "@/lib/i18n/provider";
-import { localizeServerText } from "@/lib/i18n/server-text";
+import { isPolicyRefusal, localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages";
 import { cn } from "@/lib/cn";
@@ -981,6 +981,100 @@ function ComposerToast({ message, onDone }: { message: string; onDone: () => voi
         )}
       >
         {message}
+      </div>
+    </div>
+  );
+}
+
+// The helpline directory the self-harm refusal names in every language
+// (content-policy.test.ts holds each catalog to carrying it).
+const HELPLINE_DIRECTORY = "findahelpline.com";
+
+// The prompt gate's answer, fused to the composer's top edge — the same flat
+// strip as the credits and usage banners below it (operator's pick,
+// 2026-09-10). These used to go to ComposerToast, which leaves after 4.2 s
+// whatever it says: rendered at phone width, the self-harm refusal and its
+// helplines wrapped to 7 lines in English and 9 in Portuguese, inside a pill
+// that had risen into the Stage and was gone before it could be read. This
+// stays until it is dismissed, the refused prompt is edited, or the next send
+// clears it. Ink text rather than the strips' muted grey: it answers what the
+// person just did, and it may carry a number they need.
+function PolicyRefusalBanner({
+  message,
+  hero,
+  dismissLabel,
+  onDismiss,
+}: {
+  message: string;
+  // The hero layout's composer has a larger corner radius to match.
+  hero: boolean;
+  dismissLabel: string;
+  onDismiss: () => void;
+}) {
+  // Opens on the next frame and stays mounted through the dismiss, so it
+  // animates both ways — InsufficientCreditsBanner's pattern.
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  // Hands the dismissal to the parent once the strip has folded away. In an
+  // effect rather than the click handler so an unmount (a newer message
+  // replacing this one) cancels it instead of clearing that newer message.
+  useEffect(() => {
+    if (!dismissed) return;
+    const id = setTimeout(onDismiss, 300);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dismissed]);
+
+  const visible = open && !dismissed;
+  const at = message.indexOf(HELPLINE_DIRECTORY);
+
+  return (
+    <div
+      className={cn(
+        "grid transition-all duration-300 ease-out",
+        visible ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0",
+      )}
+    >
+      <div className="overflow-hidden">
+        <div
+          role="status"
+          className={cn(
+            "flex items-start gap-2.5 bg-atelier-surface/90 px-4 py-2.5 text-xs text-atelier-muted shadow-[0_0_0_1px_var(--frost-ring)] backdrop-blur-xl transition-transform duration-300 ease-out",
+            hero ? "rounded-t-[28px]" : "rounded-t-[26px]",
+            visible ? "translate-y-0" : "-translate-y-2",
+          )}
+        >
+          <p className="flex-1 leading-relaxed text-atelier-ink">
+            {at < 0 ? (
+              message
+            ) : (
+              <>
+                {message.slice(0, at)}
+                <a
+                  href={`https://${HELPLINE_DIRECTORY}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-medium text-atelier-accent underline underline-offset-2 hover:text-atelier-accent/80"
+                >
+                  {HELPLINE_DIRECTORY}
+                </a>
+                {message.slice(at + HELPLINE_DIRECTORY.length)}
+              </>
+            )}
+          </p>
+          <button
+            type="button"
+            onClick={() => setDismissed(true)}
+            aria-label={dismissLabel}
+            className="flex-shrink-0 cursor-pointer rounded-full p-1 text-atelier-muted transition-colors hover:bg-atelier-ink/5 hover:text-atelier-ink"
+          >
+            <XIcon className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -5824,10 +5918,16 @@ function GenerateFormInner({
   // banner strip is fused to the composer's top edge, the (now standalone,
   // fully-rounded) form flattens its top corners so the two read as one
   // piece — the same seam contract the old in-card composer had.
+  // A prompt-gate refusal takes the banner slot ahead of the credits and
+  // usage strips — it is the answer to what was just sent — and in the hero
+  // layout too, which sends as well whenever a caller passes heroMode. See
+  // PolicyRefusalBanner.
+  const policyRefusal = error && isPolicyRefusal(error) ? error : null;
   const composerBannerVisible =
-    !isHero &&
-    ((cannotAfford && !freeTierClient && !blockingFenceVisible && Boolean(selectedVideoModel)) ||
-      approachingLimit);
+    policyRefusal !== null ||
+    (!isHero &&
+      ((cannotAfford && !freeTierClient && !blockingFenceVisible && Boolean(selectedVideoModel)) ||
+        approachingLimit));
 
   // First-login walkthrough (or a replay via ?tour=1 from the sidebar's
   // settings menu — see the effect above that strips that param). Steps are
@@ -6500,7 +6600,16 @@ function GenerateFormInner({
             2026-08-26). Video mode is left exactly as it was: whether the
             free slot covers a given VIDEO model is a server-side rule this
             strip doesn't know, so it keeps warning there. */}
-        {!isHero &&
+        {policyRefusal ? (
+          <PolicyRefusalBanner
+            // A different refusal is a new message: remount so it animates in.
+            key={policyRefusal}
+            message={localizeServerText(policyRefusal, t)}
+            hero={isHero}
+            dismissLabel={g.dismissBanner}
+            onDismiss={() => setError((cur) => (cur === policyRefusal ? "" : cur))}
+          />
+        ) : !isHero &&
         cannotAfford &&
         !freeTierClient &&
         !blockingFenceVisible &&
@@ -6558,7 +6667,11 @@ function GenerateFormInner({
           // unless a banner strip is fused above it.
           "relative z-10 isolate transform-gpu p-4 backdrop-blur-xl",
           isHero
-            ? "rounded-[28px] bg-atelier-surface/80"
+            ? cn(
+                "bg-atelier-surface/80",
+                // Only a refusal strip ever sits on the hero composer.
+                composerBannerVisible ? "rounded-b-[28px]" : "rounded-[28px]",
+              )
             : cn(
                 "bg-atelier-surface/90",
                 composerBannerVisible ? "rounded-b-[22px]" : "rounded-[22px]",
@@ -6569,7 +6682,11 @@ function GenerateFormInner({
             absolute "rise from behind" positioning is always anchored to
             the form's own top edge, regardless of whether UsageBanner is
             also rendered above it pushing the form down. */}
-        {error && <ComposerToast key={error} message={localizeServerText(error, t)} onDone={() => setError("")} />}
+        {/* Everything but a prompt-gate refusal, which holds still in the
+            banner slot above instead (PolicyRefusalBanner). */}
+        {error && !policyRefusal && (
+          <ComposerToast key={error} message={localizeServerText(error, t)} onDone={() => setError("")} />
+        )}
         {/* Decorative shadow layer, separate from the form itself: the
             Safari shadow-corner mask fix would also clip the "+" dropdown
             and the loadout sheets, which are children of this form and need
@@ -6579,7 +6696,9 @@ function GenerateFormInner({
           className={cn(
             "pointer-events-none absolute inset-0 -z-10 shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)] [-webkit-mask-image:-webkit-radial-gradient(white,black)]",
             isHero
-              ? "rounded-[28px]"
+              ? composerBannerVisible
+                ? "rounded-b-[28px]"
+                : "rounded-[28px]"
               : composerBannerVisible
                 ? "rounded-b-[22px]"
                 : "rounded-[22px]",
@@ -7369,7 +7488,12 @@ function GenerateFormInner({
                 id="prompt"
                 rows={2}
                 value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
+                onChange={(e) => {
+                  setPrompt(e.target.value);
+                  // Editing the refused prompt retires its refusal strip; any
+                  // other message is the toast's and keeps its own clock.
+                  setError((cur) => (isPolicyRefusal(cur) ? "" : cur));
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();

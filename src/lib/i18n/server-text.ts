@@ -124,6 +124,27 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Couldn't remove this from the community — try again.": "unshareFailed",
 };
 
+// The prompt gate's answers (content-policy.ts refusalMessages). The composer
+// holds these in a strip on its top edge until they are dismissed, instead of
+// its timed toast (operator's pick, 2026-09-10): the toast left after 4.2 s
+// whatever it said, and the self-harm refusal carries helplines. Keys rather
+// than sentences, so this follows the EXACT map and the contract pinning it.
+const PROMPT_GATE_KEYS: ReadonlySet<keyof Messages["serverText"]> = new Set([
+  "policySexual",
+  "policyMinors",
+  "policyRealPerson",
+  "policyServices",
+  "policySelfHarm",
+  "policyDeception",
+  "policyUnavailable",
+] as const);
+
+/** Whether a server string (the English wire form) is a prompt-gate refusal. */
+export function isPolicyRefusal(text: string): boolean {
+  const key = EXACT[text];
+  return key !== undefined && PROMPT_GATE_KEYS.has(key);
+}
+
 // The layer-edit lane force-refunds every failure and says so after the
 // reason (actions.ts editLayer: `${message.slice(0, 160)} Nothing was
 // charged.`), so a mapped reason reaches the screen with this on its tail.
