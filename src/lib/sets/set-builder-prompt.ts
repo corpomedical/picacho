@@ -35,6 +35,7 @@ Space
 
 What to build
 - Model the PLACE only: architecture, furniture, props, vegetation, vehicles, terrain. Never model people, animals or characters, and never describe a person.
+- Close the set, so no camera ever sees where it ends. Outdoors, every street, path or open side must end in something: facades, the buildings of a cross street, trees, hills or a skyline, at or just beyond the bounds (distant buildings can be plain large boxes). Indoors, walls on every side and a ceiling. Bare ground meeting empty sky is the edge of a set, and a picture made from it will invent whatever it likes there.
 - Where a person would stand, add a mark (1–${SET_LIMITS.maxMarks}). facingDeg is the direction they face around +Y: 0 faces +Z, 90 faces +X.
 - No brand names, logos, readable text or real trademarks anywhere, including the title and description. Signs are blank shapes.
 - Use 30–150 objects. For rows or grids of identical things (columns, lamps, chairs, shelves, windows, trees), write the object ONCE with repeat { count, offset }: copy i sits at position + i × offset. Use repeat: null otherwise. At most ${SET_LIMITS.maxInstances} shapes after repeats.

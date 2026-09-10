@@ -57,6 +57,19 @@ The real answer is the test fixture `src/lib/sets/fixtures-rainy-market.json`.
 
 n = 1 build and 3 stills. Every figure above is a lead for the eval in section 4, not a result.
 
+**First production run (2026-09-11, the operator's admin account).** Brief "A street in europe with restaurants and coffee shops": ready on the first attempt, $0.4321, 66 objects expanding to 351 shapes, 3 marks, 3 cameras. One still, shot from a camera the operator placed: GPT Image 2, identity 89 on the first attempt (above the gate's 70), brand rules and the output check passed, 1 credit. The still kept the frame's facade, awning, café tables, kerb and planters and put the character on the mark. Where the camera looked past the end of the set into empty sky, the image model invented buildings.
+
+**Closing the set (same day).** That gap is the one thing a Set exists to prevent: whatever the image model invents there changes from shot to shot. A rule was added to the builder's instructions ("Close the set, so no camera ever sees where it ends"). Measured by standing at each set's first mark and rendering the eight compass directions at eye height, judged blind by three judges per sheet (majority of three):
+
+| Set | Instructions | Directions where the set visibly ends |
+|---|---|---|
+| Rainy market (first probe) | before | 3 of 8 |
+| European street (production) | before | 4 of 8 |
+| Rainy market, rebuilt | after | 0 of 8 |
+| European street, rebuilt | after | 0 of 8 |
+
+The two rebuilds cost $0.3094 (1,698 in / 5,849 out) and $0.2536 (1,723 in, 1,680 of them read from cache, / 5,029 out), so the rule costs nothing measurable. n = 2 builds per version: a strong lead, not a verdict. Sets built before the rule keep their open edges until rebuilt.
+
 ---
 
 ## 1. What Astra is through our API today
