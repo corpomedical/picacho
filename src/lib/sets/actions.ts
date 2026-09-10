@@ -38,6 +38,7 @@ import {
   setBuildInput,
 } from "@/lib/sets/set-builder-prompt";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
+import { closeRetryInput, decideAfterValidAnswer, RETRY_SMALLER } from "@/lib/sets/build-retry";
 import {
   SETS_SESSION_EXPIRED,
   SET_BRIEF_TOO_LONG,
@@ -83,16 +84,14 @@ import {
 // THE CHARACTER never reaches Astra: no photo, no name, no appearance.
 
 const JPEG_DATA_URI = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
-// Sent back to Astra, after the brief, when a build ran out of room.
-const RETRY_SMALLER = "\n\nYour previous answer for this brief was too long. Use at most 80 objects and lean on repeat.";
 // What a reserved row holds until its brief has passed the gate: a refused
 // brief is never written, not even for the seconds the gate takes.
 const RESERVED = "-";
 
-function astraRequest(brief: string, userId: string, retrySmaller: boolean) {
+function astraRequest(input: string, userId: string) {
   return {
     instructions: SET_BUILDER_INSTRUCTIONS,
-    input: setBuildInput(brief) + (retrySmaller ? RETRY_SMALLER : ""),
+    input,
     schemaName: SET_SPEC_SCHEMA_NAME,
     schema: SET_SPEC_JSON_SCHEMA as unknown as Record<string, unknown>,
     maxOutputTokens: SET_BUILD_MAX_OUTPUT_TOKENS,
@@ -104,6 +103,16 @@ function astraRequest(brief: string, userId: string, retrySmaller: boolean) {
 /** OpenAI refused the person's own brief: logged like any refusal of their words. */
 async function logBriefRefusedByAstra(userId: string, brief: string) {
   await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief });
+}
+
+/**
+ * OpenAI refused a CLOSING retry — the brief it had already accepted, plus
+ * Astra's own set and our instruction. Mostly text the model wrote, so it
+ * is logged under the provider and never counts as the person's session
+ * context (policy-log.ts recentRefusalCount).
+ */
+async function logClosingRetryRefused(userId: string, brief: string) {
+  await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief, provider: "astra" });
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +187,7 @@ export async function submitSetBuild(briefInput: string): Promise<{ error: strin
     return { error: SET_BUILD_COULDNT_START };
   }
 
-  const submitted = await submitAstraJob(astraRequest(brief, userId, false));
+  const submitted = await submitAstraJob(astraRequest(setBuildInput(brief), userId));
   if (!submitted.ok) {
     console.error("submitSetBuild astra submit failed:", submitted.kind, submitted.detail);
     await admin
@@ -216,12 +225,33 @@ type PollResult =
   | { error: null; state: "ready" }
   | { error: null; state: "failed"; message: string };
 
+/** How open a set is, measured (closure.ts). Never costs a build: a check that cannot run reads as closed. */
+async function closureOf(spec: SetSpec): Promise<{ open: number; sides: string[] }> {
+  try {
+    const THREE = await import("three");
+    const { measureClosure, describeOpenSides } = await import("@/lib/sets/closure");
+    const report = measureClosure(THREE, spec);
+    return { open: report.openBearings.length, sides: describeOpenSides(spec, report.openSides) };
+  } catch (err) {
+    console.error("[sets] closure measurement failed:", err instanceof Error ? err.message : err);
+    return { open: 0, sides: [] };
+  }
+}
+
 // One tick of a build, driven by the page. Exactly one tick may act on a
 // finished answer: it CLAIMS the row by swapping response_id for a sentinel,
 // so two tabs polling the same set cannot both save, both retry, or both
 // count the cost. Every write after the claim is conditioned on still
 // holding it; deleting the set clears it, and the tick then records what
 // the build cost and cancels anything it started.
+//
+// THE ONE RETRY is spent on the first problem found: an answer that ran out
+// of room or came back unusable is built again; a valid set that is OPEN —
+// a side a camera can see past, measured by closure.ts — is sent back to
+// be closed, and is kept meanwhile as a DRAFT in the spec column. A draft
+// has passed every check, so from then on nothing ends in a failed build:
+// whatever happens to the closing retry, the person gets the better of the
+// two sets, or the draft.
 export async function pollSetBuild(setId: string): Promise<PollResult> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
@@ -231,7 +261,7 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
 
   const { data: row } = await admin
     .from("location_sets")
-    .select("id, status, brief, response_id, attempts, cost_usd, failure, updated_at")
+    .select("id, status, brief, response_id, attempts, cost_usd, failure, updated_at, spec")
     .eq("id", setId)
     .eq("user_id", userId)
     .is("deleted_at", null)
@@ -243,6 +273,11 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
   const stale = Date.now() - Date.parse(row.updated_at as string) > SET_BUILD_STALE_MS;
   const responseId = row.response_id as string | null;
   const priorCost = Number(row.cost_usd ?? 0);
+  const attempts = Number(row.attempts ?? 1);
+  const brief = row.brief as string;
+  const kept = row.spec ? normaliseSetSpec(row.spec) : null;
+  const draft = kept?.ok ? kept.spec : null;
+
   const closeFailed = async (failure: string, costUsd: number) => {
     await admin
       .from("location_sets")
@@ -257,11 +292,36 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
     await admin.from("location_sets").update({ cost_usd: costUsd }).eq("id", setId);
     return { error: SET_NOT_FOUND };
   };
+  const finishReady = async (spec: SetSpec, costUsd: number, holdsClaim: boolean): Promise<PollResult> => {
+    let write = admin
+      .from("location_sets")
+      .update({
+        status: "ready",
+        spec,
+        title: spec.title,
+        description: spec.description,
+        response_id: null,
+        failure: null,
+        cost_usd: costUsd,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", setId)
+      .eq("status", "building");
+    write = holdsClaim ? write.eq("response_id", "claiming") : write.is("deleted_at", null);
+    const { data: saved, error: saveError } = await write.select("id");
+    if (saveError) {
+      console.error("pollSetBuild save failed:", saveError.message);
+      return closeFailed("save", costUsd);
+    }
+    if (!saved?.length) return holdsClaim ? deletedMeanwhile(costUsd) : { error: null, state: "building" };
+    return { error: null, state: "ready" };
+  };
 
   // No answer to collect: another tick holds the claim, or the submit never
-  // recorded its id. Either finishes, or goes stale and is closed here.
+  // recorded its id. Either finishes, or goes stale — and a stale build with
+  // a draft delivers the draft rather than failing.
   if (!responseId || responseId === "claiming") {
-    if (stale) return closeFailed("lost", priorCost);
+    if (stale) return draft ? finishReady(draft, priorCost, false) : closeFailed("lost", priorCost);
     return { error: null, state: "building" };
   }
 
@@ -269,7 +329,7 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
   if (polled.state === "working") {
     if (stale) {
       await cancelAstraJob(responseId);
-      return closeFailed("lost", priorCost);
+      return draft ? finishReady(draft, priorCost, false) : closeFailed("lost", priorCost);
     }
     return { error: null, state: "building" };
   }
@@ -318,57 +378,93 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
             .eq("response_id", "claiming");
           return { error: null, state: "building" };
         }
-        return closeFailed("refused", cost);
+        return draft ? finishReady(draft, cost, true) : closeFailed("refused", cost);
       }
-      const { data: saved, error: saveError } = await admin
-        .from("location_sets")
-        .update({
-          status: "ready",
-          spec,
-          title: spec.title,
-          description: spec.description,
-          response_id: null,
-          failure: null,
-          cost_usd: cost,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", setId)
-        .eq("response_id", "claiming")
-        .select("id");
-      if (saveError) {
-        console.error("pollSetBuild save failed:", saveError.message);
-        return closeFailed("save", cost);
+
+      const closure = await closureOf(spec);
+      const draftOpen = draft ? (await closureOf(draft)).open : null;
+      console.info("[sets] closure", { setId, attempt: attempts, open: closure.open, sides: closure.sides, draftOpen });
+      const next = decideAfterValidAnswer({
+        open: closure.open,
+        attempts,
+        maxAttempts: SET_BUILD_MAX_ATTEMPTS,
+        stale,
+        draftOpen,
+      });
+      if (next.kind === "retry-close") {
+        const retry = await submitAstraJob(astraRequest(closeRetryInput(brief, closure.sides, spec), userId));
+        if (retry.ok) {
+          const { data: resumed, error: resumeError } = await admin
+            .from("location_sets")
+            .update({
+              spec,
+              title: spec.title,
+              description: spec.description,
+              response_id: retry.responseId,
+              attempts: attempts + 1,
+              cost_usd: cost,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", setId)
+            .eq("response_id", "claiming")
+            .select("id");
+          if (resumeError || !resumed?.length) {
+            // Nobody could ever collect this job: stop it before it bills.
+            await cancelAstraJob(retry.responseId);
+            if (!resumeError) return deletedMeanwhile(cost);
+            // A write that failed is not a deletion: the set in hand is
+            // still a good set, so deliver it.
+            console.error("pollSetBuild closing-retry write failed:", resumeError.message);
+            return finishReady(spec, cost, true);
+          }
+          return { error: null, state: "building" };
+        }
+        // The closing retry could not start. The set in hand is still a
+        // good set; deliver it.
+        if (retry.kind === "refused") await logClosingRetryRefused(userId, brief);
+        return finishReady(spec, cost, true);
       }
-      if (!saved?.length) return deletedMeanwhile(cost);
-      return { error: null, state: "ready" };
+      return finishReady(next.use === "draft" && draft ? draft : spec, cost, true);
     }
     failure = "invalid";
   } else {
     failure = polled.kind;
-    if (polled.kind === "refused") await logBriefRefusedByAstra(userId, row.brief as string);
+    if (polled.kind === "refused") {
+      // With a draft in hand this answer was a closing retry: its input was
+      // mostly the model's own set, not the person's words.
+      if (draft) await logClosingRetryRefused(userId, brief);
+      else await logBriefRefusedByAstra(userId, brief);
+    }
   }
 
+  // A closing retry that came back unusable leaves the draft, which is not.
+  if (draft) return finishReady(draft, cost, true);
+
   // One automatic retry at our cost, never after a safety stop.
-  const attempts = Number(row.attempts ?? 1);
   if (failure !== "refused" && failure !== "cancelled" && attempts < SET_BUILD_MAX_ATTEMPTS && !stale) {
-    const retry = await submitAstraJob(astraRequest(row.brief as string, userId, failure === "incomplete"));
+    const input = setBuildInput(brief) + (failure === "incomplete" ? RETRY_SMALLER : "");
+    const retry = await submitAstraJob(astraRequest(input, userId));
     if (retry.ok) {
-      const { data: resumed } = await admin
+      const { data: resumed, error: resumeError } = await admin
         .from("location_sets")
         .update({ response_id: retry.responseId, attempts: attempts + 1, cost_usd: cost, updated_at: new Date().toISOString() })
         .eq("id", setId)
         .eq("response_id", "claiming")
         .select("id");
-      if (!resumed?.length) {
+      if (resumeError || !resumed?.length) {
         // Nobody could ever collect this job: stop it before it bills.
         await cancelAstraJob(retry.responseId);
+        if (resumeError) {
+          console.error("pollSetBuild retry write failed:", resumeError.message);
+          return closeFailed("save", cost);
+        }
         return deletedMeanwhile(cost);
       }
       return { error: null, state: "building" };
     }
     if (retry.kind === "refused") {
       failure = "refused";
-      await logBriefRefusedByAstra(userId, row.brief as string);
+      await logBriefRefusedByAstra(userId, brief);
     }
   }
   return closeFailed(failure, cost);
@@ -551,44 +647,53 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
   const userId = userData.user.id;
   const admin = createAdminClient();
 
-  const { data: row } = await admin
-    .from("location_sets")
-    .select("status, response_id, thumb_path")
-    .eq("id", setId)
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .maybeSingle();
-  if (!row) return { error: SET_DELETE_FAILED };
+  // The job id is cleared ON THE VALUE READ, and the read is repeated if the
+  // row moved on in between: a tick can swap the claim for a retry's id
+  // between this read and this write, and cancelling the stale value would
+  // leave that retry running, uncollected and unbilled to the set.
+  for (let tries = 0; tries < 3; tries++) {
+    const { data: row } = await admin
+      .from("location_sets")
+      .select("status, response_id, thumb_path")
+      .eq("id", setId)
+      .eq("user_id", userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (!row) return { error: SET_DELETE_FAILED };
 
-  const now = new Date().toISOString();
-  const { data: gone, error } = await admin
-    .from("location_sets")
-    .update({
-      deleted_at: now,
-      updated_at: now,
-      // Clearing the id is what tells a tick holding the claim that the set
-      // is gone (every write after a claim is conditioned on it).
-      response_id: null,
-      brief: RESERVED,
-      title: "",
-      description: "",
-      spec: null,
-      layout: null,
-      thumb_path: null,
-    })
-    .eq("id", setId)
-    .eq("user_id", userId)
-    .is("deleted_at", null)
-    .select("id");
-  if (error || !gone?.length) {
-    if (error) console.error("deleteSet failed:", error.message);
-    return { error: SET_DELETE_FAILED };
+    const now = new Date().toISOString();
+    let write = admin
+      .from("location_sets")
+      .update({
+        deleted_at: now,
+        updated_at: now,
+        // Clearing the id is what tells a tick holding the claim that the set
+        // is gone (every write after a claim is conditioned on it).
+        response_id: null,
+        brief: RESERVED,
+        title: "",
+        description: "",
+        spec: null,
+        layout: null,
+        thumb_path: null,
+      })
+      .eq("id", setId)
+      .eq("user_id", userId)
+      .is("deleted_at", null);
+    write = row.response_id === null ? write.is("response_id", null) : write.eq("response_id", row.response_id as string);
+    const { data: gone, error } = await write.select("id");
+    if (error) {
+      console.error("deleteSet failed:", error.message);
+      return { error: SET_DELETE_FAILED };
+    }
+    if (!gone?.length) continue;
+    if (row.status === "building" && typeof row.response_id === "string" && row.response_id !== "claiming") {
+      await cancelAstraJob(row.response_id);
+    }
+    if (row.thumb_path) {
+      await admin.storage.from("generated-images").remove([row.thumb_path as string]);
+    }
+    return { error: null };
   }
-  if (row.status === "building" && typeof row.response_id === "string" && row.response_id !== "claiming") {
-    await cancelAstraJob(row.response_id);
-  }
-  if (row.thumb_path) {
-    await admin.storage.from("generated-images").remove([row.thumb_path as string]);
-  }
-  return { error: null };
+  return { error: SET_DELETE_FAILED };
 }

@@ -74,7 +74,7 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
 
   // --- ground: wider than the set, so no camera inside the bounds sees its edge ---
   {
-    const size = Math.max(spec.bounds.x, spec.bounds.z) * 6;
+    const size = groundHalfExtent(spec) * 2;
     const geo = track(new THREE.PlaneGeometry(size, size));
     geo.rotateX(-Math.PI / 2);
     const mat = track(
@@ -156,6 +156,11 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
       root.clear();
     },
   };
+}
+
+/** Half the width of the interpreter's own floor (closure.ts measures against it). */
+export function groundHalfExtent(spec: SetSpec): number {
+  return Math.max(spec.bounds.x, spec.bounds.z) * 3;
 }
 
 function unitGeometry(THREE: Three, o: SetObject): ThreeNS.BufferGeometry {

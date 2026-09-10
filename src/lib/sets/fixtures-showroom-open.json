@@ -1,0 +1,1363 @@
+{
+ "title": "Crimson Coupe Showroom",
+ "description": "A crimson sports coupe rests on a charcoal display pad inside a modern dealership. Polished concrete, tall glazing, brushed metal and a walnut reception counter frame the showroom. Afternoon sunlight and cool ceiling strips reflect across sculpted bodywork and dark glass.",
+ "bounds": {
+  "x": 24,
+  "z": 20,
+  "height": 7
+ },
+ "sky": {
+  "kind": "gradient",
+  "colors": [
+   "#7499be",
+   "#e6e7e5"
+  ]
+ },
+ "ground": {
+  "color": "#a9abae",
+  "roughness": 0.28
+ },
+ "fog": null,
+ "lights": [
+  {
+   "kind": "sun",
+   "color": "#fff0db",
+   "intensity": 1.5,
+   "position": [
+    10,
+    18,
+    12
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "groundColor": null,
+   "angleDeg": 35,
+   "distance": 0
+  },
+  {
+   "kind": "hemisphere",
+   "color": "#dbeaff",
+   "intensity": 0.55,
+   "position": [
+    0,
+    6,
+    0
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "groundColor": "#65616a",
+   "angleDeg": 60,
+   "distance": 0
+  },
+  {
+   "kind": "spot",
+   "color": "#ffffff",
+   "intensity": 48,
+   "position": [
+    -3,
+    5.7,
+    2
+   ],
+   "target": [
+    0,
+    0.8,
+    0
+   ],
+   "groundColor": null,
+   "angleDeg": 36,
+   "distance": 14
+  },
+  {
+   "kind": "spot",
+   "color": "#e6efff",
+   "intensity": 42,
+   "position": [
+    3,
+    5.7,
+    -3
+   ],
+   "target": [
+    0,
+    0.8,
+    -0.5
+   ],
+   "groundColor": null,
+   "angleDeg": 38,
+   "distance": 14
+  }
+ ],
+ "objects": [
+  {
+   "shape": "box",
+   "position": [
+    0,
+    0.06,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    23.8,
+    0.12,
+    19.8
+   ],
+   "color": "#bfc1c3",
+   "roughness": 0.25,
+   "metalness": 0.1,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "plane",
+   "position": [
+    -10,
+    0.125,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.012,
+    0.01,
+    19
+   ],
+   "color": "#898c90",
+   "roughness": 0.5,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 11,
+    "offset": [
+     2,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "plane",
+   "position": [
+    0,
+    0.126,
+    -8
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    23,
+    0.01,
+    0.012
+   ],
+   "color": "#898c90",
+   "roughness": 0.5,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 9,
+    "offset": [
+     0,
+     0,
+     2
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    3.1,
+    -9.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    24,
+    6.2,
+    0.3
+   ],
+   "color": "#e0ded9",
+   "roughness": 0.8,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    2.8,
+    -9.38
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    9,
+    5.2,
+    0.12
+   ],
+   "color": "#252a30",
+   "roughness": 0.7,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    6.3,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    24,
+    0.3,
+    20
+   ],
+   "color": "#dededb",
+   "roughness": 0.7,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -11.5,
+    3.1,
+    -8
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.18,
+    6,
+    0.18
+   ],
+   "color": "#666c72",
+   "roughness": 0.3,
+   "metalness": 0.75,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     4
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    11.5,
+    3.1,
+    -8
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.18,
+    6,
+    0.18
+   ],
+   "color": "#666c72",
+   "roughness": 0.3,
+   "metalness": 0.75,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     4
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -11.55,
+    3.1,
+    -6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.035,
+    5.8,
+    3.8
+   ],
+   "color": "#a5bdc8",
+   "roughness": 0.12,
+   "metalness": 0.48,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 4,
+    "offset": [
+     0,
+     0,
+     4
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    11.55,
+    3.1,
+    -6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.035,
+    5.8,
+    3.8
+   ],
+   "color": "#a5bdc8",
+   "roughness": 0.12,
+   "metalness": 0.48,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 4,
+    "offset": [
+     0,
+     0,
+     4
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -8,
+    5.95,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.14,
+    0.25,
+    19
+   ],
+   "color": "#444a50",
+   "roughness": 0.35,
+   "metalness": 0.6,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     4,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -8,
+    5.79,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.16,
+    0.035,
+    15
+   ],
+   "color": "#f3f7ff",
+   "roughness": 0.2,
+   "metalness": 0.1,
+   "emissive": "#eaf3ff",
+   "emissiveIntensity": 3,
+   "castShadow": false,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     4,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    0,
+    0.2,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    7,
+    0.16,
+    7
+   ],
+   "color": "#33373c",
+   "roughness": 0.45,
+   "metalness": 0.15,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    0.83,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.86,
+    0.46,
+    4.45
+   ],
+   "color": "#ad1425",
+   "roughness": 0.2,
+   "metalness": 0.75,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    1.065,
+    1.33
+   ],
+   "rotation": [
+    5,
+    0,
+    0
+   ],
+   "size": [
+    1.8,
+    0.19,
+    1.65
+   ],
+   "color": "#c51d30",
+   "roughness": 0.18,
+   "metalness": 0.7,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    1.11,
+    -1.62
+   ],
+   "rotation": [
+    -4,
+    0,
+    0
+   ],
+   "size": [
+    1.88,
+    0.22,
+    1.16
+   ],
+   "color": "#b71529",
+   "roughness": 0.18,
+   "metalness": 0.7,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    1.32,
+    -0.28
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.48,
+    0.51,
+    1.6
+   ],
+   "color": "#17242d",
+   "roughness": 0.12,
+   "metalness": 0.45,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    1.34,
+    0.57
+   ],
+   "rotation": [
+    -35,
+    0,
+    0
+   ],
+   "size": [
+    1.43,
+    0.055,
+    0.88
+   ],
+   "color": "#273945",
+   "roughness": 0.1,
+   "metalness": 0.4,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    1.36,
+    -1.12
+   ],
+   "rotation": [
+    34,
+    0,
+    0
+   ],
+   "size": [
+    1.42,
+    0.055,
+    0.8
+   ],
+   "color": "#202e38",
+   "roughness": 0.1,
+   "metalness": 0.4,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    1.61,
+    -0.29
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.5,
+    0.09,
+    1.27
+   ],
+   "color": "#b81528",
+   "roughness": 0.18,
+   "metalness": 0.7,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -0.91,
+    1.02,
+    -0.22
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.12,
+    0.3,
+    1.72
+   ],
+   "color": "#b11729",
+   "roughness": 0.22,
+   "metalness": 0.7,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.82,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -0.95,
+    0.65,
+    1.43
+   ],
+   "rotation": [
+    0,
+    0,
+    90
+   ],
+   "size": [
+    0.74,
+    0.27,
+    0.74
+   ],
+   "color": "#17191d",
+   "roughness": 0.8,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.9,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -0.95,
+    0.65,
+    -1.46
+   ],
+   "rotation": [
+    0,
+    0,
+    90
+   ],
+   "size": [
+    0.74,
+    0.29,
+    0.74
+   ],
+   "color": "#17191d",
+   "roughness": 0.8,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.9,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -1.095,
+    0.65,
+    1.43
+   ],
+   "rotation": [
+    0,
+    0,
+    90
+   ],
+   "size": [
+    0.52,
+    0.025,
+    0.52
+   ],
+   "color": "#9fa5ad",
+   "roughness": 0.24,
+   "metalness": 0.92,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     2.19,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -1.105,
+    0.65,
+    -1.46
+   ],
+   "rotation": [
+    0,
+    0,
+    90
+   ],
+   "size": [
+    0.52,
+    0.025,
+    0.52
+   ],
+   "color": "#9fa5ad",
+   "roughness": 0.24,
+   "metalness": 0.92,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     2.21,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -1.115,
+    0.65,
+    1.43
+   ],
+   "rotation": [
+    0,
+    0,
+    90
+   ],
+   "size": [
+    0.21,
+    0.025,
+    0.21
+   ],
+   "color": "#343b43",
+   "roughness": 0.3,
+   "metalness": 0.8,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     2.23,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -1.125,
+    0.65,
+    -1.46
+   ],
+   "rotation": [
+    0,
+    0,
+    90
+   ],
+   "size": [
+    0.21,
+    0.025,
+    0.21
+   ],
+   "color": "#343b43",
+   "roughness": 0.3,
+   "metalness": 0.8,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     2.25,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    0.76,
+    2.24
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.19,
+    0.23,
+    0.045
+   ],
+   "color": "#12171c",
+   "roughness": 0.45,
+   "metalness": 0.4,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -0.68,
+    1,
+    2.19
+   ],
+   "rotation": [
+    0,
+    0,
+    -6
+   ],
+   "size": [
+    0.41,
+    0.065,
+    0.07
+   ],
+   "color": "#e9f4ff",
+   "roughness": 0.12,
+   "metalness": 0.35,
+   "emissive": "#e8f5ff",
+   "emissiveIntensity": 1.8,
+   "castShadow": false,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.36,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    0.59,
+    2.21
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.95,
+    0.065,
+    0.24
+   ],
+   "color": "#20252b",
+   "roughness": 0.4,
+   "metalness": 0.4,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    1.04,
+    -2.23
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.67,
+    0.065,
+    0.035
+   ],
+   "color": "#b90e25",
+   "roughness": 0.18,
+   "metalness": 0.2,
+   "emissive": "#ff293b",
+   "emissiveIntensity": 0.6,
+   "castShadow": false,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    0,
+    0.64,
+    -2.24
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.68,
+    0.15,
+    0.09
+   ],
+   "color": "#262b30",
+   "roughness": 0.3,
+   "metalness": 0.6,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "sphere",
+   "position": [
+    -1.05,
+    1.29,
+    0.36
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.3,
+    0.13,
+    0.25
+   ],
+   "color": "#b11729",
+   "roughness": 0.22,
+   "metalness": 0.7,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     2.1,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    6.4,
+    0.7,
+    -6.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    4,
+    1.16,
+    1.35
+   ],
+   "color": "#77513c",
+   "roughness": 0.52,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    6.4,
+    1.32,
+    -6.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    4.2,
+    0.08,
+    1.5
+   ],
+   "color": "#e1dfd8",
+   "roughness": 0.22,
+   "metalness": 0.1,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    6.4,
+    1.67,
+    -6.7
+   ],
+   "rotation": [
+    -8,
+    0,
+    0
+   ],
+   "size": [
+    0.75,
+    0.48,
+    0.07
+   ],
+   "color": "#252c33",
+   "roughness": 0.4,
+   "metalness": 0.4,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7.3,
+    0.49,
+    -6.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.4,
+    0.58,
+    1.3
+   ],
+   "color": "#45494c",
+   "roughness": 0.85,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     2,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7.3,
+    0.95,
+    -7.02
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.4,
+    0.62,
+    0.26
+   ],
+   "color": "#45494c",
+   "roughness": 0.85,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     2,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -6.3,
+    0.49,
+    -4.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.5,
+    0.12,
+    1.5
+   ],
+   "color": "#343a40",
+   "roughness": 0.27,
+   "metalness": 0.2,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    -6.3,
+    0.29,
+    -4.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.25,
+    0.34,
+    0.25
+   ],
+   "color": "#626971",
+   "roughness": 0.3,
+   "metalness": 0.7,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    3,
+    0.68,
+    1.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.12,
+    1.1,
+    0.12
+   ],
+   "color": "#858c92",
+   "roughness": 0.28,
+   "metalness": 0.65,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    3,
+    0.16,
+    1.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.6,
+    0.08,
+    0.5
+   ],
+   "color": "#3e464e",
+   "roughness": 0.3,
+   "metalness": 0.6,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    3,
+    1.27,
+    1.6
+   ],
+   "rotation": [
+    25,
+    0,
+    0
+   ],
+   "size": [
+    0.58,
+    0.06,
+    0.42
+   ],
+   "color": "#172630",
+   "roughness": 0.2,
+   "metalness": 0.3,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  }
+ ],
+ "marks": [
+  {
+   "label": "Display edge",
+   "x": 1.8,
+   "z": 1.3,
+   "facingDeg": 270
+  },
+  {
+   "label": "Reception counter",
+   "x": 6.4,
+   "z": -5.2,
+   "facingDeg": 180
+  }
+ ],
+ "cameras": [
+  {
+   "label": "Showroom wide",
+   "position": [
+    8,
+    3.5,
+    8
+   ],
+   "target": [
+    0,
+    1.1,
+    0
+   ],
+   "fovDeg": 57
+  },
+  {
+   "label": "Front three quarter",
+   "position": [
+    4.8,
+    2,
+    5.8
+   ],
+   "target": [
+    0.5,
+    1,
+    0.6
+   ],
+   "fovDeg": 46
+  },
+  {
+   "label": "Low bodywork",
+   "position": [
+    -4.5,
+    0.65,
+    5.5
+   ],
+   "target": [
+    0,
+    0.95,
+    0.3
+   ],
+   "fovDeg": 49
+  }
+ ]
+}

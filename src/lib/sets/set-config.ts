@@ -6,18 +6,26 @@
 // and refunded by the image lane untouched. A credit price per build waits
 // for a ledger that can hold charges that are not renders (design Phase 2).
 //
-// The cost being bounded, from lib/astra/prices.ts and the 2026-09-10
-// measurement (1,626 input and 5,593 output tokens, $0.296):
+// The cost being bounded, from lib/astra/prices.ts and eight builds on the
+// current instructions (2026-09-11): input 1,837–1,843 tokens with short
+// briefs (1,822 of them usually read from cache), output 4,727–6,535,
+// $0.24–$0.33 a build.
 //
-//   worst case per attempt = 1,800 input tokens all billed as cache writes
+//   first attempt, worst case = 2,400 input tokens (the ~1,850-token prefix
+//     plus a 500-character brief in any script), all billed as cache writes,
 //     + output to the 10,000-token cap
-//     = 1,800 × $12.50/1M + 10,000 × $50/1M = $0.0225 + $0.50 = $0.5225
-//   worst case per build   = 2 attempts (one automatic retry) = $1.045
+//     = 2,400 × $12.50/1M + 10,000 × $50/1M = $0.03 + $0.50 = $0.53
+//   the one retry, worst case = the CLOSING retry, which may send the set
+//     back (build-retry.ts: at most 16,000 characters ≈ 7,150 tokens at 2.24
+//     characters per token, a conservative figure for minified JSON)
+//     = 10,000 input tokens: 10,000 × $12.50/1M + $0.50 = $0.625
+//   worst case per build = $0.53 + $0.625 = $1.155
 //
-//   Monthly worst case at the caps below, one retry on every build:
-//     Basic 1 → $1.05 of $9      Starter 2 → $2.09 of $19   Growth 5 → $5.23 of $79
-//     Studio 10 → $10.45 of $299  Elite 25 → $26.13 of $499
-//   At the measured $0.30 with no retries the same caps cost under a third of that.
+//   Monthly worst case at the caps below, a worst-case retry on every build:
+//     Basic 1 → $1.16 of $9      Starter 2 → $2.31 of $19   Growth 5 → $5.78 of $79
+//     Studio 10 → $11.55 of $299  Elite 25 → $28.88 of $499
+//   At the measured $0.24–$0.43 with no retry the same caps cost a quarter to a
+//   third of that.
 
 import type { PlanId } from "../plans";
 
@@ -57,10 +65,26 @@ export const SET_DIRECTION_MAX_CHARS = 300;
 
 export const SET_BUILD_EFFORT = "low" as const;
 export const SET_BUILD_MAX_OUTPUT_TOKENS = 10_000;
-/** Instructions plus schema (1,626 measured) plus a full-length brief. */
-export const SET_BUILD_INPUT_TOKENS = 1_800;
+/**
+ * Instructions plus schema (1,837–1,843 measured with short briefs on
+ * 2026-09-11, before a ~40-token clarification) plus a full-length brief in
+ * any script (500 characters; up to ~500 tokens in CJK).
+ */
+export const SET_BUILD_INPUT_TOKENS = 2_400;
 /** The first try plus one automatic retry at our cost; then the slot comes back. */
 export const SET_BUILD_MAX_ATTEMPTS = 2;
+// A closing retry sends the set back to be mended (build-retry.ts) — only
+// when the mend can fit. A mend re-emits the whole set under the same
+// 10,000-token output cap: at 0.52 answer tokens per character sent back
+// (a real set: 10,736 characters, 5,546 tokens), 16,000 characters is
+// ~8,300 tokens, leaving room for the walls it adds. Real sets measured
+// 9,700–16,100 characters (2026-09-11). Past this, or within 40 shapes of
+// the 400-shape limit (added walls would be dropped by the normaliser), the
+// retry is a fresh build told which sides to close.
+export const SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS = 16_000;
+export const SET_CLOSE_RETRY_INSTANCE_ROOM = 40;
+/** Instructions, brief, feedback and the capped previous set. */
+export const SET_CLOSE_RETRY_INPUT_TOKENS = 10_000;
 // A build answers in ~90 s, and background mode keeps an uncollected answer
 // for about ten minutes after it finishes. Past this, a build still marked
 // "building" is lost, and is closed as failed so it stops holding a slot.

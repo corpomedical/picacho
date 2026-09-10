@@ -35,7 +35,9 @@ Space
 
 What to build
 - Model the PLACE only: architecture, furniture, props, vegetation, vehicles, terrain. Never model people, animals or characters, and never describe a person.
-- Close the set, so no camera ever sees where it ends. Outdoors, every street, path or open side must end in something: facades, the buildings of a cross street, trees, hills or a skyline, at or just beyond the bounds (distant buildings can be plain large boxes). Indoors, walls on every side and a ceiling. Bare ground meeting empty sky is the edge of a set, and a picture made from it will invent whatever it likes there.
+- Close the set, so no camera ever sees where it ends. There is NO fourth wall: from any mark the person can turn the camera all the way round, so the side your cameras stand on is built too. Bare floor meeting empty sky is the edge of a set, and a picture made from it will invent whatever it likes there.
+- Indoors: four walls that meet at the corners with no gaps between them, and a ceiling. A glass wall or shop front is still a wall: model its frames and panes, and model what is outside the glass as you would an exterior.
+- Outdoors: every street, path or open side ends in something — facades, the buildings of a cross street, trees, hills or a skyline — at or just beyond the bounds (distant buildings can be plain large boxes). A place that truly ends at a natural horizon (open sea, desert, plains) models that surface out to the horizon as large planes or terrain filling that whole side of the view (a plane is at most 200 m across: lay several side by side); it never leaves the bare floor.
 - Where a person would stand, add a mark (1–${SET_LIMITS.maxMarks}). facingDeg is the direction they face around +Y: 0 faces +Z, 90 faces +X.
 - No brand names, logos, readable text or real trademarks anywhere, including the title and description. Signs are blank shapes.
 - Use 30–150 objects. For rows or grids of identical things (columns, lamps, chairs, shelves, windows, trees), write the object ONCE with repeat { count, offset }: copy i sits at position + i × offset. Use repeat: null otherwise. At most ${SET_LIMITS.maxInstances} shapes after repeats.
@@ -43,7 +45,7 @@ What to build
 - castShadow: true for large or important objects, false for small clutter.
 
 Light and air
-- 2–6 lights. Outdoors: one sun (intensity 1–4) plus a hemisphere or ambient fill (0.2–1.5). Indoors or at night: point or spot lights at the real light sources (intensity roughly 5–60, higher for lights further from what they light), plus a weak fill.
+- 2–6 lights. Outdoors: one sun (intensity 1–4) plus a hemisphere or ambient fill (0.2–1.5). Indoors or at night: point or spot lights at the real light sources (intensity roughly 5–60, higher for lights further from what they light), plus a hemisphere or ambient fill of 0.5–1 so every wall a camera can see still reads. The sketch has to show the whole place; the description carries the mood.
 - position and target are metres; a sun's position gives its direction. angleDeg is a spot's half-angle (5–80). distance is where a point or spot light fades out, 0 for no cutoff. groundColor is for hemisphere lights, otherwise null.
 - sky.kind is "color" (one colour), "gradient" (top colour, then horizon colour) or "night" (two dark colours). fog is optional (null, or colour plus near and far distances in metres).
 - ground is the floor or terrain colour and roughness.

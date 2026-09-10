@@ -59,6 +59,10 @@ describe("the builder's rules", () => {
     // judged blind by three judges per set. The image model invents whatever
     // it likes in a gap, and a set exists so the place stays the same.
     expect(SET_BUILDER_INSTRUCTIONS).toContain("Close the set, so no camera ever sees where it ends.");
+    // Both interiors built on the first closed-set rule (production,
+    // 2026-09-11) left out the wall behind their cameras — the theatre's
+    // fourth wall. A camera here turns all the way round.
+    expect(SET_BUILDER_INSTRUCTIONS).toContain("There is NO fourth wall");
   });
 
   it("appends only the person's brief after the stable prefix", () => {

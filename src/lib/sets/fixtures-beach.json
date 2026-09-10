@@ -1,0 +1,1220 @@
+{
+ "title": "Sunset Lifeguard Beach",
+ "description": "A weathered timber lifeguard tower overlooks a broad sandy beach and quiet ocean at sunset. Pale dune grasses fringe the shore. Amber light grazes salt-worn boards, damp sand and thin lines of surf beneath a rose-colored horizon.",
+ "bounds": {
+  "x": 100,
+  "z": 100,
+  "height": 25
+ },
+ "sky": {
+  "kind": "gradient",
+  "colors": [
+   "#626d96",
+   "#d49b9a",
+   "#f4bb83"
+  ]
+ },
+ "ground": {
+  "color": "#c5a47b",
+  "roughness": 0.95
+ },
+ "fog": {
+  "color": "#d9a89a",
+  "near": 90,
+  "far": 750
+ },
+ "lights": [
+  {
+   "kind": "sun",
+   "color": "#ffb477",
+   "intensity": 2.4,
+   "position": [
+    45,
+    12,
+    80
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "groundColor": null,
+   "angleDeg": 25,
+   "distance": 0
+  },
+  {
+   "kind": "hemisphere",
+   "color": "#b4c5e0",
+   "intensity": 0.85,
+   "position": [
+    0,
+    20,
+    0
+   ],
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "groundColor": "#92735a",
+   "angleDeg": 45,
+   "distance": 0
+  }
+ ],
+ "objects": [
+  {
+   "shape": "plane",
+   "position": [
+    0,
+    0.01,
+    -160
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    200,
+    0.01,
+    200
+   ],
+   "color": "#c9ac86",
+   "roughness": 0.96,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": null
+  },
+  {
+   "shape": "plane",
+   "position": [
+    0,
+    0.025,
+    200
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    200,
+    0.01,
+    200
+   ],
+   "color": "#657f89",
+   "roughness": 0.26,
+   "metalness": 0.15,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": null
+  },
+  {
+   "shape": "plane",
+   "position": [
+    0,
+    0.03,
+    17
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    200,
+    0.01,
+    6
+   ],
+   "color": "#a18c77",
+   "roughness": 0.35,
+   "metalness": 0.05,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -45,
+    0.065,
+    21
+   ],
+   "rotation": [
+    0,
+    2,
+    0
+   ],
+   "size": [
+    9.6,
+    0.07,
+    0.4
+   ],
+   "color": "#e4d6c2",
+   "roughness": 0.65,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 10,
+    "offset": [
+     10,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -45,
+    0.07,
+    27
+   ],
+   "rotation": [
+    0,
+    -2,
+    0
+   ],
+   "size": [
+    9.4,
+    0.07,
+    0.22
+   ],
+   "color": "#c4c5bb",
+   "roughness": 0.6,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 10,
+    "offset": [
+     10,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "sphere",
+   "position": [
+    -42,
+    -1.5,
+    -38
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    24,
+    9,
+    22
+   ],
+   "color": "#c0a17a",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 7,
+    "offset": [
+     14,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "sphere",
+   "position": [
+    -45,
+    -1,
+    -13
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    24,
+    6,
+    32
+   ],
+   "color": "#d0b18a",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     50,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "sphere",
+   "position": [
+    -140,
+    -1,
+    -55
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    55,
+    15,
+    45
+   ],
+   "color": "#b69973",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 9,
+    "offset": [
+     35,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -9,
+    1.55,
+    3
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.24,
+    3.1,
+    0.24
+   ],
+   "color": "#85735d",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     4,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -9,
+    1.55,
+    7
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.24,
+    3.1,
+    0.24
+   ],
+   "color": "#85735d",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     4,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    1.55,
+    7
+   ],
+   "rotation": [
+    0,
+    0,
+    58
+   ],
+   "size": [
+    0.16,
+    4.7,
+    0.16
+   ],
+   "color": "#97816a",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    1.55,
+    7.18
+   ],
+   "rotation": [
+    0,
+    0,
+    -58
+   ],
+   "size": [
+    0.16,
+    4.7,
+    0.16
+   ],
+   "color": "#97816a",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    3.1,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    5.6,
+    0.24,
+    5.8
+   ],
+   "color": "#aea08a",
+   "roughness": 0.88,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    4.53,
+    3.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    3.8,
+    2.62,
+    0.16
+   ],
+   "color": "#d1d0ba",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -8.82,
+    4.53,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.16,
+    2.62,
+    3.2
+   ],
+   "color": "#c1c4af",
+   "roughness": 0.88,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -5.18,
+    4.53,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.16,
+    2.62,
+    3.2
+   ],
+   "color": "#c1c4af",
+   "roughness": 0.88,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    3.72,
+    6.55
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    3.8,
+    1,
+    0.18
+   ],
+   "color": "#d0cfb9",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    5.64,
+    6.55
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    3.8,
+    0.4,
+    0.18
+   ],
+   "color": "#bfc4b2",
+   "roughness": 0.85,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -8.75,
+    4.83,
+    6.55
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.12,
+    1.22,
+    0.2
+   ],
+   "color": "#ece1c8",
+   "roughness": 0.75,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 3,
+    "offset": [
+     1.75,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7.88,
+    4.83,
+    6.56
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.62,
+    1.22,
+    0.04
+   ],
+   "color": "#718b90",
+   "roughness": 0.18,
+   "metalness": 0.4,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": false,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.75,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    5.96,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    4.6,
+    0.24,
+    4.2
+   ],
+   "color": "#778c88",
+   "roughness": 0.72,
+   "metalness": 0.15,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -9.65,
+    3.76,
+    2.35
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.12,
+    1.1,
+    0.12
+   ],
+   "color": "#d3cbb4",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     1.3
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -4.35,
+    3.76,
+    2.35
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.12,
+    1.1,
+    0.12
+   ],
+   "color": "#d3cbb4",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     1.3
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -9.65,
+    4.3,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.15,
+    0.14,
+    5.6
+   ],
+   "color": "#dfd2b9",
+   "roughness": 0.85,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     5.3,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    4.3,
+    7.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    5.4,
+    0.14,
+    0.15
+   ],
+   "color": "#dfd2b9",
+   "roughness": 0.85,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    0.2,
+    -1.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.55,
+    0.16,
+    0.43
+   ],
+   "color": "#a49379",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 10,
+    "offset": [
+     0,
+     0.3,
+     0.4
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7.8,
+    1.5,
+    0.2
+   ],
+   "rotation": [
+    -37,
+    0,
+    0
+   ],
+   "size": [
+    0.15,
+    0.22,
+    5
+   ],
+   "color": "#87755e",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.6,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7.8,
+    2.5,
+    0.2
+   ],
+   "rotation": [
+    -37,
+    0,
+    0
+   ],
+   "size": [
+    0.12,
+    0.12,
+    5
+   ],
+   "color": "#c0b39a",
+   "roughness": 0.85,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.6,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7.8,
+    0.7,
+    -1.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    0.12,
+    1.4,
+    0.12
+   ],
+   "color": "#bbae94",
+   "roughness": 0.9,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 2,
+    "offset": [
+     1.6,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "box",
+   "position": [
+    -7,
+    4.7,
+    3.28
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "size": [
+    1.7,
+    0.7,
+    0.08
+   ],
+   "color": "#d1bea0",
+   "roughness": 0.8,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "capsule",
+   "position": [
+    -10.2,
+    1.45,
+    5
+   ],
+   "rotation": [
+    0,
+    0,
+    -14
+   ],
+   "size": [
+    0.65,
+    2.9,
+    0.22
+   ],
+   "color": "#bd6445",
+   "roughness": 0.65,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "cone",
+   "position": [
+    -38,
+    2.7,
+    -31
+   ],
+   "rotation": [
+    0,
+    0,
+    -12
+   ],
+   "size": [
+    0.55,
+    1.4,
+    0.55
+   ],
+   "color": "#95825b",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 12,
+    "offset": [
+     6.5,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cone",
+   "position": [
+    -37.6,
+    2.6,
+    -30.7
+   ],
+   "rotation": [
+    8,
+    0,
+    20
+   ],
+   "size": [
+    0.4,
+    1.5,
+    0.4
+   ],
+   "color": "#b09b68",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 12,
+    "offset": [
+     6.5,
+     0,
+     0
+    ]
+   }
+  },
+  {
+   "shape": "cone",
+   "position": [
+    -43,
+    1.9,
+    -22
+   ],
+   "rotation": [
+    10,
+    0,
+    8
+   ],
+   "size": [
+    0.7,
+    1.3,
+    0.7
+   ],
+   "color": "#a08c61",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     4
+    ]
+   }
+  },
+  {
+   "shape": "cone",
+   "position": [
+    43,
+    1.9,
+    -22
+   ],
+   "rotation": [
+    -8,
+    0,
+    -10
+   ],
+   "size": [
+    0.7,
+    1.3,
+    0.7
+   ],
+   "color": "#a08c61",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     4
+    ]
+   }
+  },
+  {
+   "shape": "cylinder",
+   "position": [
+    17,
+    0.25,
+    -9
+   ],
+   "rotation": [
+    0,
+    65,
+    90
+   ],
+   "size": [
+    0.45,
+    4.7,
+    0.45
+   ],
+   "color": "#897b68",
+   "roughness": 1,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "sphere",
+   "position": [
+    32,
+    0.4,
+    8
+   ],
+   "rotation": [
+    0,
+    25,
+    0
+   ],
+   "size": [
+    2.3,
+    1,
+    1.5
+   ],
+   "color": "#7c7870",
+   "roughness": 0.95,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  },
+  {
+   "shape": "sphere",
+   "position": [
+    34,
+    0.22,
+    9
+   ],
+   "rotation": [
+    0,
+    -15,
+    0
+   ],
+   "size": [
+    1.3,
+    0.6,
+    1.1
+   ],
+   "color": "#91867a",
+   "roughness": 0.95,
+   "metalness": 0,
+   "emissive": null,
+   "emissiveIntensity": 0,
+   "castShadow": true,
+   "repeat": null
+  }
+ ],
+ "marks": [
+  {
+   "label": "Open sand",
+   "x": 0,
+   "z": 0,
+   "facingDeg": 0
+  },
+  {
+   "label": "Tower steps",
+   "x": -7,
+   "z": -3,
+   "facingDeg": 0
+  },
+  {
+   "label": "Waterline",
+   "x": 5,
+   "z": 15,
+   "facingDeg": 0
+  }
+ ],
+ "cameras": [
+  {
+   "label": "Beach wide",
+   "position": [
+    17,
+    5,
+    -22
+   ],
+   "target": [
+    0,
+    1.5,
+    2
+   ],
+   "fovDeg": 54
+  },
+  {
+   "label": "Tower approach",
+   "position": [
+    7,
+    2.2,
+    -10
+   ],
+   "target": [
+    0,
+    1.3,
+    0
+   ],
+   "fovDeg": 45
+  },
+  {
+   "label": "Low shoreline",
+   "position": [
+    5,
+    0.6,
+    9
+   ],
+   "target": [
+    0,
+    1.5,
+    0
+   ],
+   "fovDeg": 58
+  }
+ ]
+}

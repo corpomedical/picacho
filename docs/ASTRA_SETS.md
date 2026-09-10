@@ -48,7 +48,7 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 
 ```
 1,626 × $10/1M + 5,593 × $50/1M = $0.01626 + $0.27965 = $0.296
-Worst case per attempt (set-config.ts): 1,800 × $12.50/1M + 10,000 × $50/1M = $0.5225; two attempts $1.045
+Worst case per attempt (set-config.ts as first written): 1,800 × $12.50/1M + 10,000 × $50/1M = $0.5225; two attempts $1.045 (since re-measured: $1.155, see the cap table in 3.1)
 ```
 
 The real answer is the test fixture `src/lib/sets/fixtures-rainy-market.json`.
@@ -69,6 +69,21 @@ n = 1 build and 3 stills. Every figure above is a lead for the eval in section 4
 | European street, rebuilt | after | 0 of 8 |
 
 The two rebuilds cost $0.3094 (1,698 in / 5,849 out) and $0.2536 (1,723 in, 1,680 of them read from cache, / 5,029 out), so the rule costs nothing measurable. n = 2 builds per version: a strong lead, not a verdict. Sets built before the rule keep their open edges until rebuilt.
+
+**The fourth wall, and a measure instead of judges (2026-09-11).** The operator's next two builds were interiors, built on the closed-set rule, six minutes after it went live: "A moder set podcast studio." ($0.29) and "A modern sports car on a dealership" ($0.28). Both left out the wall behind their cameras — the theatre's fourth wall — and the showroom's side glazing also stopped short of its back wall. The podcast studio's near-black background hid its missing wall from the eye.
+
+Closure is now MEASURED on every build (`src/lib/sets/closure.ts`): from every mark at eye height, a fan of 5 rays (±8°) on each of 16 bearings; a bearing is open when at least 2 of the 5 escape past everything built and, just below the horizon, meet the interpreter's bare floor rather than anything the set modelled (a sea or dunes are a horizon; bare floor is an edge). The downward rays look no further than a set can build (300 m). It agreed direction for direction with the three blind judges on all four sets they scored, named the podcast studio's missing +Z wall and the showroom's +Z wall and +X corner gap, and runs in 10–60 ms (18–42 ms on a 400-shape, 4-mark set).
+
+The instructions now say there is no fourth wall, walls meet at the corners, a glass front is still a wall, and a natural horizon is modelled to the horizon. Eight builds on them (the operator's three briefs word for word, plus a diner with big windows, a bedroom, a beach, a forest clearing, a rooftop at night), all valid first time at $0.2394–$0.3288 (mean $0.279), 85–116 s:
+
+| Brief | Closed from every mark? |
+|---|---|
+| podcast studio, car showroom, European street, diner, bedroom, forest, rooftop | yes (7 of 8) |
+| beach at sunset | no: the modelled sea (dead ahead) and dunes (inland) read closed, but bare floor runs to the sky along the shore both ways, and just either side of dead ahead, where the 200 m-wide sea stops short of the horizon |
+
+The one retry a build already had is now spent on closing: a valid set that measures open is sent back to Astra with the open sides named, to be mended and returned — or, when a mend could not fit (over 16,000 characters to re-emit, or within 40 shapes of the 400 limit), rebuilt with the open sides named. The first set is kept as a draft meanwhile, and the person gets whichever of the two is more closed — or the draft, if anything happens to the retry (`src/lib/sets/build-retry.ts`). A refusal of the closing retry is logged under the provider, never as the person's. Worst case per build is now $0.53 + $0.625 = $1.155 (input re-measured at 1,837–1,843 tokens with short briefs, bounded at 2,400 for a 500-character brief; `set-config.ts` shows the arithmetic). At the measured first-attempt rate (1 in 8 open) the average cost barely moves. Sets over ~110 m with a natural horizon were not in the test builds.
+
+**Not solved: dark sets.** The instructions now ask for a fill light of 0.5–1, and Astra follows (fills 0.65–0.85, against 0.3 in the dark studio), but tints it with the scene's dark palette. Share of near-black pixels in the eye-height panorama: forest at dusk 85%, rooftop at night 77%, podcast studio 57%, against 0–14% for daylit sets. A layout sketch that is black in most directions shows the image model nothing there. The candidate fix is a per-set exposure in the viewer, which needs a still test to prove night stays night; not yet done.
 
 ---
 
@@ -250,19 +265,22 @@ A 5 s Start & end clip is 1 + storyboardFrameExtraCredits = 2 credits (video-mod
 Example: build + start and end stills + one 5 s clip = 2 + 2 + 2 = 6 credits ≈ $3.26 on Studio
 
 Phase 1, before a credit ledger exists: a monthly cap per plan, as the Angle Stage does
-(angle-stage-config.ts). As built (set-config.ts), a counted build can be TWO attempts — a first
-answer that comes back unusable retries once, and the build counts if the retry succeeds:
-  per attempt: 1,800 × $12.50/1M + 10,000 × $50/1M = $0.0225 + $0.50 = $0.5225
-  per build:   2 × $0.5225 = $1.045
-  Basic 1 → $1.05 of $9 = 11.6%     Starter 2 → $2.09 of $19 = 11.0%   Growth 5 → $5.23 of $79 = 6.6%
-  Studio 10 → $10.45 of $299 = 3.5%  Elite 25 → $26.13 of $499 = 5.2%
-  At the measured $0.296 with no retry: Basic $0.30 of $9 = 3.3%, Starter $0.59 of $19 = 3.1%
+(angle-stage-config.ts). As built (set-config.ts, 2026-09-11), a counted build can be TWO attempts —
+the one retry goes to an answer that came back unusable, or to CLOSING a valid set that measures
+open, which may send the set back as input:
+  first attempt: 2,400 × $12.50/1M + 10,000 × $50/1M = $0.03 + $0.50 = $0.53
+  closing retry: 10,000 × $12.50/1M + 10,000 × $50/1M = $0.125 + $0.50 = $0.625
+  per build:     $0.53 + $0.625 = $1.155
+  Basic 1 → $1.16 of $9 = 12.8%     Starter 2 → $2.31 of $19 = 12.2%   Growth 5 → $5.78 of $79 = 7.3%
+  Studio 10 → $11.55 of $299 = 3.9%  Elite 25 → $28.88 of $499 = 5.8%
+  At the measured $0.24–$0.43 with no retry: Basic 2.7–4.8% of $9, Starter 2.5–4.5% of $19
   (Precedent: the chat budget holds worst case at about 10% of the plan price, plans.ts:207-223)
   DECISION BEFORE WIDENING: Basic and Starter pass the 10% precedent in the worst case (every
   build retried, every retry run to the output cap). Accept that, or open Sets to Growth and up.
 
 Failure rule (operator decision): one automatic retry at our cost; after two failures the slot or
-credits come back. The most we absorb on a failed build is 2 × $0.5225 = $1.045.
+credits come back. The most we absorb on a failed build is 2 × $0.53 = $1.06 (a closing retry never
+ends in a failed build: the first set is kept and delivered).
 ```
 
 **What could go wrong**

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { costOfAstraUsageUsd, worstCaseAstraUsd } from "./prices";
-import { SET_BUILD_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS, SET_BUILD_MAX_ATTEMPTS } from "../sets/set-config";
+import {
+  SET_BUILD_INPUT_TOKENS,
+  SET_BUILD_MAX_ATTEMPTS,
+  SET_BUILD_MAX_OUTPUT_TOKENS,
+  SET_CLOSE_RETRY_INPUT_TOKENS,
+  SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS,
+} from "../sets/set-config";
 
 // Every figure here is a usage block the API really returned on Picacho's
 // key, with the cost worked by hand from the dated prices.
@@ -57,9 +63,24 @@ describe("costOfAstraUsageUsd", () => {
 });
 
 describe("the set-build ceiling", () => {
-  it("matches the arithmetic in set-config.ts: $0.5225 an attempt, $1.045 a build", () => {
-    const perAttempt = worstCaseAstraUsd(SET_BUILD_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS);
-    expect(perAttempt).toBeCloseTo(0.5225, 6);
-    expect(perAttempt * SET_BUILD_MAX_ATTEMPTS).toBeCloseTo(1.045, 6);
+  it("matches the arithmetic in set-config.ts: $0.53 first, $0.625 for a closing retry, $1.155 a build", () => {
+    const first = worstCaseAstraUsd(SET_BUILD_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS);
+    const closing = worstCaseAstraUsd(SET_CLOSE_RETRY_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS);
+    expect(first).toBeCloseTo(0.53, 6);
+    expect(closing).toBeCloseTo(0.625, 6);
+    expect(SET_BUILD_MAX_ATTEMPTS).toBe(2);
+    expect(first + closing).toBeCloseTo(1.155, 6);
+  });
+
+  it("bounds the closing retry's input: the set sent back fits the token budget", () => {
+    // 2.24 characters per token: conservative for minified JSON.
+    const previousTokens = Math.ceil(SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS / 2.24);
+    expect(SET_BUILD_INPUT_TOKENS + previousTokens + 200).toBeLessThanOrEqual(SET_CLOSE_RETRY_INPUT_TOKENS);
+  });
+
+  it("leaves a mend room to add walls under the same output cap", () => {
+    // 0.52 answer tokens per character sent back (a real set: 10,736 → 5,546),
+    // plus ~1,500 for added objects and reasoning.
+    expect(Math.ceil(SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS * 0.52) + 1_500).toBeLessThanOrEqual(SET_BUILD_MAX_OUTPUT_TOKENS);
   });
 });
