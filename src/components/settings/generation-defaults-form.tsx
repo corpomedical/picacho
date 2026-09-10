@@ -27,8 +27,19 @@ export function GenerationDefaultsForm({
 }) {
   const { t } = useLocale();
   const s = t.settings;
-  const [model, setModel] = useState(initial.videoModel ?? "");
-  const [duration, setDuration] = useState(initial.durationSeconds ? String(initial.durationSeconds) : "");
+  // Start from values this form can actually save (2026-09-11 review): a
+  // stored model that is no longer offered reads as Picacho's pick, and a
+  // stored length the effective model lacks reads as the model's default.
+  // Otherwise the selects showed one thing, state held another, and every
+  // Save came back "Invalid setting".
+  const initialModel = initial.videoModel && models.some((m) => m.id === initial.videoModel) ? initial.videoModel : "";
+  const initialEffective = models.find((m) => m.id === (initialModel || globalDefaultModelId));
+  const initialDuration =
+    initial.durationSeconds && initialEffective?.durations.some((d) => d.seconds === initial.durationSeconds)
+      ? String(initial.durationSeconds)
+      : "";
+  const [model, setModel] = useState(initialModel);
+  const [duration, setDuration] = useState(initialDuration);
   const [aspect, setAspect] = useState<"" | "16:9" | "9:16">(initial.aspectRatio ?? "");
   const [sound, setSound] = useState(initial.sound);
   const [busy, setBusy] = useState(false);

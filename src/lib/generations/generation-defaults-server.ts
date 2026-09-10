@@ -23,3 +23,24 @@ export async function readGenerationDefaults(supabase: SupabaseServerClient, use
     return NO_DEFAULTS;
   }
 }
+
+/** The two render switches from Settings → Notifications. Fail open: no column, both on. */
+export async function readRenderNotifyPrefs(
+  supabase: SupabaseServerClient,
+  userId: string,
+): Promise<{ ready: boolean; failed: boolean }> {
+  if (!userId) return { ready: true, failed: true };
+  try {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("notify_render_ready, notify_render_failed")
+      .eq("id", userId)
+      .maybeSingle();
+    if (error || !data) return { ready: true, failed: true };
+    const row = data as { notify_render_ready?: boolean; notify_render_failed?: boolean };
+    return { ready: row.notify_render_ready !== false, failed: row.notify_render_failed !== false };
+  } catch {
+    return { ready: true, failed: true };
+  }
+}
+

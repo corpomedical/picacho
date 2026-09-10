@@ -14,6 +14,7 @@ import { absolutizeMediaUrl, isRenderableUrl, toMediaUrl } from "@/lib/media/url
 import type { BrandRule } from "@/lib/brand-rules/types";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt } from "@/lib/generations/policy-log";
+import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
 
 // The API's image generation path.
 //
@@ -374,6 +375,10 @@ export async function runApiImageGeneration(params: {
           force: Boolean(result.rulesBlock?.length) || forceRefundEligible(result.attempts),
         })
       : false;
+
+    // The low-balance heads-up applies to API spend too (2026-09-11 review):
+    // an account rendering only through /api/v1 was never warned. Never throws.
+    if (succeeded) await maybeNotifyLowCredits(userId);
 
     return {
       error: null,

@@ -71,7 +71,9 @@ export function NativePush() {
               ?.data?.path;
             // Same allowlist reasoning as the checkout return path: this value
             // arrives from outside, so it may only ever be an in-app route.
-            if (path && /^\/app\/[a-z0-9/-]*$/i.test(path)) router.push(path);
+            // Our own app paths, optionally with a simple query string
+            // (the low-credit push opens /app/settings?tab=usage).
+            if (path && /^\/app\/[a-z0-9/-]*(\?[a-z0-9=&_-]*)?$/i.test(path)) router.push(path);
           }),
         );
 

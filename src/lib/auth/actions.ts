@@ -365,6 +365,11 @@ export async function signOutOtherDevices(): Promise<{ error: string | null }> {
   if (!userData.user) return { error: "Your session expired — please log in again." };
   try {
     await supabase.from("push_tokens").delete().eq("user_id", userData.user.id);
+    // Browser devices too (2026-09-11 review): the service worker shows a
+    // push with no session at all, so a revoked browser kept receiving
+    // them. This browser re-registers itself on its next page load
+    // (components/web-push-sync.tsx), as logout already relies on.
+    await supabase.from("user_push_subscriptions").delete().eq("user_id", userData.user.id);
   } catch (err) {
     console.error("signOutOtherDevices: push token cleanup failed", err);
   }

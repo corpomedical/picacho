@@ -89,6 +89,12 @@ const ENDPOINT_MAX = 2048;
 const KEY_MAX = 256;
 const DEVICES_PER_ACCOUNT = 10;
 
+// The server POSTs to whatever endpoint is stored here, so it must be a real
+// browser push service and nothing else (2026-09-11 review: any https URL was
+// accepted, which let a signed-in user make the server send requests to a
+// host of their choosing). Chrome/Edge/Opera, Firefox, Safari, legacy Edge.
+const PUSH_SERVICE_HOST = /^(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.push\.apple\.com|[a-z0-9.-]+\.notify\.windows\.com)$/i;
+
 /**
  * A browser registered for pushes. Keyed on the endpoint, which the push
  * service mints per browser profile; the same cross-owner reasoning as
@@ -111,7 +117,8 @@ export async function saveWebPushSubscription(input: {
   const auth = String(input?.auth ?? "");
   let validUrl = false;
   try {
-    validUrl = new URL(endpoint).protocol === "https:";
+    const url = new URL(endpoint);
+    validUrl = url.protocol === "https:" && PUSH_SERVICE_HOST.test(url.hostname) && !url.port;
   } catch {
     validUrl = false;
   }

@@ -60,16 +60,10 @@ export default async function CommunityPage({
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData.user?.id ?? "";
 
-  // Accounts this viewer blocked (2026-09-11, Play UGC policy). Fail-open:
-  // before supabase/pending/community-blocks.sql runs the table is absent,
-  // the read errors, and nobody is blocked.
-  const { data: blockRows } = userId
-    ? await supabase.from("community_blocks").select("blocked_id").eq("blocker_id", userId)
-    : { data: [] as { blocked_id: string }[] };
-  const blockedIds = (blockRows ?? []).map((b) => b.blocked_id as string);
-
+  // Blocked authors are filtered by the row policy itself (pending
+  // community-privacy.sql, 2026-09-11): an inlined id list grew without
+  // bound in the request URL. Deep links below get the same filter for free.
   let query = supabase.from("community_posts").select(POST_COLUMNS).range(from, to);
-  if (blockedIds.length) query = query.not("user_id", "in", `(${blockedIds.join(",")})`);
   query =
     sort === "top"
       ? query.order("hearts_count", { ascending: false }).order("created_at", { ascending: false })
@@ -91,9 +85,7 @@ export default async function CommunityPage({
       .select(POST_COLUMNS)
       .eq("id", item)
       .maybeSingle();
-    if (linked && isRenderableUrl(linked.media_url) && !blockedIds.includes(linked.user_id as string)) {
-      visible.unshift(linked);
-    }
+    if (linked && isRenderableUrl(linked.media_url)) visible.unshift(linked);
   }
 
   // Which of these the current account already hearted (for the filled state).

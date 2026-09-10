@@ -109,27 +109,27 @@ export async function shareToCommunity(
     }
   }
 
+  // The prompt choice rides INTO the definer, so a declined prompt is never
+  // written (2026-09-11 review: inserting it and stripping it in a second
+  // request left it readable in between, and public for good if the strip
+  // failed). The parameter is sent only when the answer is no: a yes works
+  // against the old function too.
   const { data, error } = await supabase.rpc("share_to_community", {
     p_generation_id: generationId,
     p_caption: caption.trim().slice(0, 200) || null,
+    ...(includePrompt ? {} : { p_include_prompt: false }),
   });
+  if (error && !includePrompt && (error.code === "PGRST202" || /could not find the function/i.test(error.message))) {
+    // The three-argument function is not deployed yet (pending
+    // community-privacy.sql). Nothing was inserted; say so rather than
+    // publishing the prompt the person declined.
+    return { error: SHARE_PROMPT_HIDE_FAILED, postId: null };
+  }
   if (error) {
     console.error("shareToCommunity failed:", error.message);
     // The definer raises human-readable messages; surface them.
     return { error: error.message.replace(/^.*Exception: /, ""), postId: null };
   }
-  // The person said no to publishing the prompt: strip it from the snapshot.
-  // If that cannot be done, the post comes DOWN — a share that went public
-  // with the prompt they declined is worse than a share that did not happen.
-  if (!includePrompt && data) {
-    const { error: hideError } = await supabase.rpc("hide_community_post_prompt", { p_post_id: data as string });
-    if (hideError) {
-      console.error("shareToCommunity couldn't hide the prompt; withdrawing the post:", hideError.message);
-      await supabase.from("community_posts").delete().eq("id", data as string).eq("user_id", userData.user.id);
-      return { error: SHARE_PROMPT_HIDE_FAILED, postId: null };
-    }
-  }
-
   // Publishing a render under your own name is the strongest keep signal the
   // product collects — stronger than a download, because it is public. After
   // the RPC succeeded, and fail-soft, so research data can never break a share.
@@ -143,13 +143,17 @@ export async function unshareFromCommunity(generationId: string): Promise<{ erro
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) return { error: "Your session expired — please log in again." };
 
-  const { error } = await supabase
+  const { data: removed, error } = await supabase
     .from("community_posts")
     .delete()
     .eq("generation_id", generationId)
-    .eq("user_id", userData.user.id);
-  if (error) {
-    console.error("unshareFromCommunity failed:", error.message);
+    .eq("user_id", userData.user.id)
+    .select("id");
+  if (error || !removed?.length) {
+    // Zero rows is not success: RLS lets an owner remove only a post that
+    // moderation has not hidden, and a delete that matched nothing must not
+    // tell the person it is gone (2026-09-11 review).
+    if (error) console.error("unshareFromCommunity failed:", error.message);
     return { error: "Couldn't remove this from the community — try again." };
   }
   return { error: null };

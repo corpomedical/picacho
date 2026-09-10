@@ -1,13 +1,13 @@
 import { createAdminClient } from "@/lib/supabase/server";
-import { getMonthlyUsageWith } from "@/lib/generations/core";
+import { getMonthlyUsageWith, monthlyWindowStart } from "@/lib/generations/core";
 import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import { notifyUser } from "@/lib/push/send";
 
 // The low-balance alert (settings survey, 2026-09-11): running dry used to
 // be discovered only at the moment of refusal. After a successful render,
-// if what remains has crossed the line, one push says so — once per billing
-// period, so a person finishing ten renders at 3 credits is not told ten
-// times.
+// if what remains has crossed the line, one push says so — once per monthly
+// allowance window, so a person finishing ten renders at 3 credits is not
+// told ten times.
 //
 // Strictly best-effort, same contract as every notification: this runs on
 // the paths that record paid work, and must never be able to break them.
@@ -42,15 +42,24 @@ export async function maybeNotifyLowCredits(userId: string): Promise<void> {
     const remaining = Math.max(0, limit - used) + ((profile.purchased_credits ?? 0) as number);
     if (remaining > THRESHOLD) return;
 
-    // Once per billing period (or 30 days where no period anchor exists).
-    const since = (profile.current_period_start as string | null) ?? new Date(Date.now() - 30 * 86400_000).toISOString();
-    const last = profile.low_credit_notified_at as string | null;
-    if (last && last >= since) return;
+    // Once per MONTHLY WINDOW — the same window the usage sum counts from.
+    // The raw period anchor is the yearly renewal on an annual plan, which
+    // allowed one alert a year (2026-09-11 review).
+    const since = monthlyWindowStart(profile.current_period_start as string | null).toISOString();
 
-    await admin
+    // Claim the alert atomically: only the call that moves the stamp into
+    // this window sends it. Two renders finishing together (a multi-angle
+    // batch, each angle its own webhook) used to both read "not yet" and
+    // both send.
+    const { data: claimed } = await admin
       .from("profiles")
       .update({ low_credit_notified_at: new Date().toISOString() })
-      .eq("id", userId);
+      .eq("id", userId)
+      // Quoted: the ISO timestamp carries dots and colons.
+      .or(`low_credit_notified_at.is.null,low_credit_notified_at.lt."${since}"`)
+      .select("id");
+    if (!claimed?.length) return;
+
     await notifyUser(userId, {
       message: { key: "lowCredits", params: { n: remaining } },
       path: "/app/settings?tab=usage",

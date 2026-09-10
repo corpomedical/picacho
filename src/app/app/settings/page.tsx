@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
+import { nextMonthlyReset } from "@/lib/generations/core";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
 import { getBrandRules } from "@/lib/brand-rules/actions";
@@ -230,11 +231,14 @@ export default async function SettingsPage({
   // The notification switches, read on their own so that a database without
   // the pending columns (supabase/pending/notifications.sql) degrades to
   // "everything on" instead of failing the main profile select above.
-  const { data: notifyRow } = await supabase
-    .from("profiles")
-    .select("notify_render_ready, notify_render_failed, notify_low_credits")
-    .eq("id", data.user.id)
-    .maybeSingle();
+  const { data: notifyRow } =
+    activeTab === "notifications"
+      ? await supabase
+          .from("profiles")
+          .select("notify_render_ready, notify_render_failed, notify_low_credits")
+          .eq("id", data.user.id)
+          .maybeSingle()
+      : { data: null };
   const notifyPrefs = {
     notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
     notify_render_failed: (notifyRow as { notify_render_failed?: boolean } | null)?.notify_render_failed !== false,
@@ -297,6 +301,9 @@ export default async function SettingsPage({
         .from("community_posts")
         .select("id, generation_id, media_url, content_type, caption, prompt, hearts_count, created_at")
         .eq("user_id", data.user.id)
+        // What anyone else can see: a post moderation hid is visible to no
+        // one but its owner, and RLS would not let the owner remove it.
+        .is("hidden_at", null)
         .order("created_at", { ascending: false })
         .limit(60),
       supabase
@@ -613,12 +620,17 @@ export default async function SettingsPage({
               </p>
               {/* When "this month" ends (2026-09-11): the meter said "N of X
                   this month" and never said when the month turned over. */}
-              {planAllowanceActive && plan !== "none" && profile?.current_period_end && (
+              {/* The end of the MONTHLY window the meter counts — not the
+                  billing period, which on an annual plan is a year away
+                  (2026-09-11 review). Pinned to UTC, the zone the window is
+                  computed in, so the day cannot slip. */}
+              {planAllowanceActive && plan !== "none" && (
                 <p className="mt-1 text-xs text-atelier-muted">
                   {formatMsg(s.renewsOn, {
-                    date: new Date(profile.current_period_end as string).toLocaleDateString(locale, {
+                    date: nextMonthlyReset((profile?.current_period_start as string | null) ?? null).toLocaleDateString(locale, {
                       day: "numeric",
                       month: "long",
+                      timeZone: "UTC",
                     }),
                   })}
                 </p>

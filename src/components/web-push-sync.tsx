@@ -12,18 +12,16 @@ import { saveWebPushSubscription } from "@/lib/push/actions";
 // silently switch push off on the person's OTHER browsers too — so, like
 // the native shell, any browser that already holds a subscription and has
 // permission re-registers itself for whoever is signed in the next time the
-// app opens. Never prompts, never subscribes a browser that did not opt in;
-// once per tab session.
+// app opens. Never prompts, never subscribes a browser that did not opt in.
+// Once per full page load (the app layout persists across client
+// navigations): a once-per-tab-session flag outlived a sign-out and sign-in
+// in the same tab and left push dead while Settings said it was on
+// (2026-09-11 review). The upsert is idempotent and one request.
 export function WebPushSync() {
   useEffect(() => {
     if (isNativeAppClient()) return;
     if (typeof window === "undefined" || !("serviceWorker" in navigator) || !("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
-    try {
-      if (sessionStorage.getItem("picacho.webpush.synced") === "1") return;
-    } catch {
-      // Storage blocked: sync anyway; it is idempotent.
-    }
     navigator.serviceWorker
       .getRegistration("/push-sw.js")
       .then((reg) => reg?.pushManager.getSubscription())
@@ -35,13 +33,6 @@ export function WebPushSync() {
           p256dh: json.keys?.p256dh ?? "",
           auth: json.keys?.auth ?? "",
         });
-      })
-      .then(() => {
-        try {
-          sessionStorage.setItem("picacho.webpush.synced", "1");
-        } catch {
-          // ignore
-        }
       })
       .catch(() => undefined);
   }, []);

@@ -67,6 +67,19 @@ export function monthlyWindowStart(periodStart?: string | null): Date {
   return startOfMonth;
 }
 
+/**
+ * When the current monthly window ends — the day the allowance next
+ * refreshes. The same month arithmetic as latestMonthlyAnniversary, so it
+ * can never disagree with the window the usage sum counts from. For an
+ * annual plan this is next month's anniversary, not the yearly renewal
+ * (2026-09-11 review: the Usage tab showed the yearly date).
+ */
+export function nextMonthlyReset(periodStart?: string | null): Date {
+  const next = new Date(monthlyWindowStart(periodStart));
+  next.setMonth(next.getMonth() + 1);
+  return next;
+}
+
 // Sums credits used since the start of the caller's current monthly window.
 //
 // Takes the client: with a cookie-scoped client RLS narrows this to the

@@ -1431,6 +1431,8 @@ export function GenerateForm(props: {
   // composer's own defaults.
   defaultAspectRatio?: "16:9" | "9:16" | null;
   defaultVideoDurationSeconds?: number | null;
+  notifyRenderReady?: boolean;
+  notifyRenderFailed?: boolean;
   advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
@@ -1899,6 +1901,8 @@ function GenerateFormInner({
   defaultVideoModelId,
   defaultAspectRatio = null,
   defaultVideoDurationSeconds = null,
+  notifyRenderReady = true,
+  notifyRenderFailed = true,
   advancedPlanActive,
   multiAngleAvailable,
   approachingLimit,
@@ -1921,6 +1925,8 @@ function GenerateFormInner({
   defaultVideoModelId: string;
   defaultAspectRatio?: "16:9" | "9:16" | null;
   defaultVideoDurationSeconds?: number | null;
+  notifyRenderReady?: boolean;
+  notifyRenderFailed?: boolean;
   advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
@@ -3649,7 +3655,9 @@ function GenerateFormInner({
     // now, but ordering it last means even an unforeseen failure there can
     // no longer cost the person their result.
     const anyAngleSucceeded = angles.some((a) => a.succeeded);
-    notifyIfHidden(
+    // The account's own switches (Settings → Notifications) govern this
+    // in-tab notification as much as the server's pushes.
+    if (anyAngleSucceeded ? notifyRenderReady : notifyRenderFailed) notifyIfHidden(
       anyAngleSucceeded ? g.notifyReadyTitle : g.notifyFailedTitle,
       anyAngleSucceeded
         ? // Attempt copy only when a retry actually happened — see the
@@ -4826,7 +4834,7 @@ function GenerateFormInner({
     // handler: a backgrounded render finished but never reached the chat, and
     // the composer stayed locked on Stop. notifyIfHidden itself is try/caught
     // now too; ordering it last is the second layer of the same fix.
-    notifyIfHidden(
+    if (succeeded ? notifyRenderReady : notifyRenderFailed) notifyIfHidden(
       succeeded ? g.notifyReadyTitle : g.notifyFailedTitle,
       succeeded
         ? // Attempt copy only when a retry actually happened — see the

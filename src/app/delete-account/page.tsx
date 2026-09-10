@@ -4,6 +4,7 @@ import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { getServerMessages } from "@/lib/i18n/server";
 import { localeAlternates, marketingSocial } from "@/lib/i18n/metadata";
+import { formatMsg } from "@/lib/i18n/format";
 import { createClient } from "@/lib/supabase/server";
 import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
 
@@ -41,7 +42,16 @@ export default async function DeleteAccountPage() {
     // The fallback address is a real inbox; the page must render regardless.
   }
 
-  const steps = [d.fromAppStep1, d.fromAppStep2, d.fromAppStep3];
+  // The steps quote the app's own labels, in the reader's language, so the
+  // words on this page are the words on the screen (2026-09-11 review: the
+  // Portuguese page named a section the Portuguese UI calls something else).
+  const labels = {
+    settings: t.settings.title,
+    account: t.settings.account,
+    dangerZone: t.settings.dangerZone,
+    deleteAccount: t.settings.deleteMyAccount,
+  };
+  const steps = [d.fromAppStep1, formatMsg(d.fromAppStep2, labels), formatMsg(d.fromAppStep3, labels)];
   const deleted = d.deletedItems.split("|");
   const [before, after] = d.cantSignInBody.split("{email}");
 
@@ -74,7 +84,7 @@ export default async function DeleteAccountPage() {
             <p className="mt-3 text-sm text-neutral-600">
               {before}
               <a
-                href={`mailto:${supportEmail}?subject=${encodeURIComponent("Delete my account")}`}
+                href={`mailto:${supportEmail}?subject=${encodeURIComponent(d.mailSubject)}`}
                 className="font-medium text-neutral-900 underline underline-offset-2"
               >
                 {supportEmail}

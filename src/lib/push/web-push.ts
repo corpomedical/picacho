@@ -53,6 +53,9 @@ export async function sendToWebPushDevice(
       },
       body: new Uint8Array(body),
       signal: AbortSignal.timeout(10_000),
+      // A push service answers; it does not redirect. Following one would
+      // send a signed request wherever the endpoint's host pointed it.
+      redirect: "error",
     });
 
     if (res.status === 404 || res.status === 410) {

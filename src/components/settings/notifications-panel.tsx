@@ -67,6 +67,18 @@ export function NotificationsPanel({
       try {
         const reg = await navigator.serviceWorker.register("/push-sw.js");
         const sub = await reg.pushManager.getSubscription();
+        // "On for this device" must be true on the server as well: a
+        // sign-out anywhere deletes the account's browser rows, and the
+        // browser alone still reports a subscription. Re-saving is an
+        // idempotent upsert (2026-09-11 review).
+        if (sub && Notification.permission === "granted") {
+          const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } };
+          await saveWebPushSubscription({
+            endpoint: json.endpoint ?? "",
+            p256dh: json.keys?.p256dh ?? "",
+            auth: json.keys?.auth ?? "",
+          }).catch(() => undefined);
+        }
         if (cancelled) return;
         setPermission(Notification.permission);
         setSubscribed(Boolean(sub));

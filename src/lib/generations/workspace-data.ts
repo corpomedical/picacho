@@ -12,7 +12,7 @@ import {
 } from "@/lib/generations/providers/video-models";
 import type { createClient } from "@/lib/supabase/server";
 import { resolveComposerDefaults, type AspectRatioPref } from "@/lib/generations/generation-defaults";
-import { readGenerationDefaults } from "@/lib/generations/generation-defaults-server";
+import { readGenerationDefaults, readRenderNotifyPrefs } from "@/lib/generations/generation-defaults-server";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -75,6 +75,10 @@ export type GenerateWorkspaceData = {
   // resolved against what is offered — null means the composer's default.
   defaultAspectRatio: AspectRatioPref | null;
   defaultVideoDurationSeconds: number | null;
+  // The account's "A render finishes / fails" switches (Settings →
+  // Notifications) — the composer's own in-tab notification obeys them too.
+  notifyRenderReady: boolean;
+  notifyRenderFailed: boolean;
   advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
@@ -140,6 +144,12 @@ export async function getGenerateWorkspaceData(
   // Now a transient is absorbed by one retry, and a persistent failure
   // throws with the read's name so the function log carries the real cause
   // instead of a minified React #419.
+  // Started before the guarded reads and awaited with them: the account's
+  // composer defaults and notification switches are independent reads, and
+  // serialising them added a round trip to every /app load (2026-09-11
+  // review). Both fail open inside.
+  const defaultsRead = readGenerationDefaults(supabase, userId ?? "");
+  const notifyRead = readRenderNotifyPrefs(supabase, userId ?? "");
   const [characters, videoModelSetting, profile] = await Promise.all([
     // No user, no characters — and no query. With userId undefined this
     // used to fire `.eq("user_id", undefined)`, which Postgres rejects as
@@ -210,11 +220,8 @@ export async function getGenerateWorkspaceData(
   // The account's own defaults, resolved against what is actually offered:
   // a model picked in Settings that has since gone dormant or been retired
   // falls back to the global default rather than opening on nothing.
-  const resolvedDefaults = resolveComposerDefaults(
-    await readGenerationDefaults(supabase, userId ?? ""),
-    videoModels,
-    globalDefaultVideoModelId,
-  );
+  const [storedDefaults, notifyPrefs] = await Promise.all([defaultsRead, notifyRead]);
+  const resolvedDefaults = resolveComposerDefaults(storedDefaults, videoModels, globalDefaultVideoModelId);
   const defaultVideoModelId = resolvedDefaults.videoModelId;
 
   // Storyboard and multi-image reference are Studio-and-up (admins get a
@@ -275,6 +282,8 @@ export async function getGenerateWorkspaceData(
     defaultVideoModelId,
     defaultAspectRatio: resolvedDefaults.aspectRatio,
     defaultVideoDurationSeconds: resolvedDefaults.durationSeconds,
+    notifyRenderReady: notifyPrefs.ready,
+    notifyRenderFailed: notifyPrefs.failed,
     advancedPlanActive,
     multiAngleAvailable,
     approachingLimit,
