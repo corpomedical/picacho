@@ -1,7 +1,7 @@
 import type { SVGProps } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getMonthlyUsage } from "@/lib/generations/actions";
 import { PLAN_LIMITS, PLAN_LABELS, type PlanId } from "@/lib/plans";
 import { PRICING_TIERS } from "@/lib/pricing";
@@ -149,7 +149,7 @@ export default async function SettingsPage({
 }: {
   searchParams: Promise<{ saved?: string; error?: string; tab?: string }>;
 }) {
-  const { t } = await getServerMessages();
+  const { t, locale } = await getServerMessages();
   const s = t.settings;
   const { saved, error, tab } = await searchParams;
   const activeTab: TabId = VALID_TABS.includes(tab as TabId) ? (tab as TabId) : "account";
@@ -221,7 +221,7 @@ export default async function SettingsPage({
     supabase
       .from("profiles")
       .select(
-        "username, company, gender, plan, plan_status, plan_source, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access, current_period_start, current_period_end",
+        "username, full_name, company, gender, plan, plan_status, plan_source, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access, current_period_start, current_period_end",
       )
       .eq("id", data.user.id)
       .single(),
@@ -240,6 +240,39 @@ export default async function SettingsPage({
     notify_render_failed: (notifyRow as { notify_render_failed?: boolean } | null)?.notify_render_failed !== false,
     notify_low_credits: (notifyRow as { notify_low_credits?: boolean } | null)?.notify_low_credits !== false,
   };
+
+  // Referral outcome for the invite card (Account tab). Profiles are
+  // readable only by their owner, so the count of who joined through this
+  // link is taken with the service role — scoped to rows naming THIS account
+  // as referrer, returning nothing but two numbers.
+  let referralStats: { joined: number; rewarded: number } | null = null;
+  if (activeTab === "account" && profile?.username) {
+    try {
+      const { data: referred } = await createAdminClient()
+        .from("profiles")
+        .select("referral_rewarded_at")
+        .eq("referred_by", data.user.id)
+        .limit(1000);
+      referralStats = {
+        joined: (referred ?? []).length,
+        rewarded: (referred ?? []).filter((r) => r.referral_rewarded_at != null).length,
+      };
+    } catch {
+      referralStats = null;
+    }
+  }
+
+  // Usage tab: purchases, newest first (own rows, by RLS).
+  let purchases: { id: string; credits: number; amount_cents: number; currency: string; created_at: string; refunded_at: string | null }[] = [];
+  if (activeTab === "usage") {
+    const { data: rows } = await supabase
+      .from("credit_purchases")
+      .select("id, credits, amount_cents, currency, created_at, refunded_at")
+      .eq("user_id", data.user.id)
+      .order("created_at", { ascending: false })
+      .limit(12);
+    purchases = (rows ?? []) as typeof purchases;
+  }
 
   // Generation tab data — only when the tab is open.
   let generationModels: ReturnType<typeof buildVideoModelOptions> = [];
@@ -425,7 +458,11 @@ export default async function SettingsPage({
                 <div className="space-y-5">
                   <UsernameForm initialUsername={username ?? ""} />
                   <div className="border-t border-atelier-rule/60 pt-5">
-                    <ProfileForm initialCompany={profile?.company ?? ""} initialGender={profile?.gender ?? ""} />
+                    <ProfileForm
+                      initialFullName={(profile?.full_name as string | null) ?? ""}
+                      initialCompany={profile?.company ?? ""}
+                      initialGender={profile?.gender ?? ""}
+                    />
                   </div>
                 </div>
               </SettingsSection>
@@ -433,7 +470,7 @@ export default async function SettingsPage({
               {/* Only with a real username: a link built from anything else
                   resolves for nobody (the /r route matches profiles.username
                   exactly). */}
-              {username && <InviteCard username={username} />}
+              {username && <InviteCard username={username} stats={referralStats} />}
 
 
               {/* Not a card: a 32px sheet around one underlined link was the
@@ -574,6 +611,23 @@ export default async function SettingsPage({
                 {usedThisMonth === 1 ? s.generationCountOne : formatMsg(s.generationCountOther, { n: usedThisMonth })}
                 {limit > 0 && ` ${formatMsg(s.ofLimitThisMonth, { limit })}`}
               </p>
+              {/* When "this month" ends (2026-09-11): the meter said "N of X
+                  this month" and never said when the month turned over. */}
+              {planAllowanceActive && plan !== "none" && profile?.current_period_end && (
+                <p className="mt-1 text-xs text-atelier-muted">
+                  {formatMsg(s.renewsOn, {
+                    date: new Date(profile.current_period_end as string).toLocaleDateString(locale, {
+                      day: "numeric",
+                      month: "long",
+                    }),
+                  })}
+                </p>
+              )}
+              {(profile?.bonus_credits ?? 0) > 0 && (
+                <p className="mt-1 text-xs text-atelier-muted">
+                  {formatMsg(s.bonusIncluded, { n: profile?.bonus_credits ?? 0 })}
+                </p>
+              )}
 
               {/* Everything below is omitted inside the iOS/Android app.
 
@@ -668,6 +722,28 @@ export default async function SettingsPage({
               all — same reader-app reasoning as the plan card above. */}
           {activeTab === "usage" && !nativeApp && (
             <BuyCreditsPanel purchasedCredits={purchasedCredits} currencySymbol={currencySymbol} />
+          )}
+
+          {activeTab === "usage" && !nativeApp && (
+            <SettingsSection title={s.purchaseHistoryTitle}>
+              {purchases.length === 0 ? (
+                <p className="text-sm text-atelier-muted">{s.purchaseHistoryEmpty}</p>
+              ) : (
+                <ul className="divide-y divide-atelier-rule/60">
+                  {purchases.map((p) => (
+                    <li key={p.id} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0 text-sm">
+                      <span className="text-atelier-ink">{formatMsg(s.purchaseCredits, { n: p.credits })}</span>
+                      <span className="font-numeral tabular-nums text-atelier-muted">
+                        {new Intl.NumberFormat(locale, { style: "currency", currency: (p.currency || "usd").toUpperCase() }).format(p.amount_cents / 100)}
+                        {" · "}
+                        {new Date(p.created_at).toLocaleDateString(locale)}
+                        {p.refunded_at && ` · ${s.purchaseRefunded}`}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </SettingsSection>
           )}
 
           {/* Play Billing store (2026-09-02): rendered for the native shell,

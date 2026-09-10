@@ -9,9 +9,13 @@ import { useLocale } from "@/lib/i18n/provider";
 const STANDARD_GENDERS = ["Woman", "Man", "Non-binary"];
 
 export function ProfileForm({
+  initialFullName = "",
   initialCompany,
   initialGender,
 }: {
+  // Collected at signup and used to address our emails, and until 2026-09-11
+  // editable nowhere.
+  initialFullName?: string;
   initialCompany: string;
   initialGender: string;
 }) {
@@ -31,6 +35,11 @@ export function ProfileForm({
 
   return (
     <form action={updateProfileDetails} className="space-y-5">
+      <div>
+        <Label htmlFor="full_name">{s.fullNameLabel}</Label>
+        <Input id="full_name" name="full_name" defaultValue={initialFullName} placeholder={s.optional} maxLength={80} autoComplete="name" />
+      </div>
+
       <div>
         <Label htmlFor="company">{s.companyLabel}</Label>
         <Input id="company" name="company" defaultValue={initialCompany} placeholder={s.optional} />

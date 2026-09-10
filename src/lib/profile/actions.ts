@@ -231,13 +231,16 @@ export async function updateProfileDetails(formData: FormData) {
   if (!data.user) redirect("/login");
 
   const company = ((formData.get("company") as string) || "").trim().slice(0, 120) || null;
+  // The name our emails address you by (drip, notices). Editable since
+  // 2026-09-11; full_name is in the column grant (profiles-column-grants.sql).
+  const fullName = ((formData.get("full_name") as string) || "").trim().slice(0, 80) || null;
   const genderChoice = (formData.get("gender") as string) || "";
   const genderOther = ((formData.get("gender_other") as string) || "").trim().slice(0, 60);
   const gender = genderChoice === "self-describe" ? genderOther || null : genderChoice || null;
 
   const { error } = await supabase
     .from("profiles")
-    .update({ company, gender })
+    .update({ company, gender, full_name: fullName })
     .eq("id", data.user.id);
 
   if (error) {

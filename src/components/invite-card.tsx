@@ -2,13 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
+import { formatMsg } from "@/lib/i18n/format";
 import { isNativeAppClient } from "@/lib/native/platform";
 import { capPlugin } from "@/lib/native/bridge";
 
 // The referral card (give 5, get 5 — trigger and cap live in the database,
 // see supabase referrals.sql). The link is the user's username, which is
 // already unique and already theirs — no codes to mint or remember.
-export function InviteCard({ username }: { username: string }) {
+export function InviteCard({
+  username,
+  stats,
+}: {
+  username: string;
+  // How the link has done (2026-09-11): the card looked identical whether it
+  // had brought five people or none. Null when it could not be read.
+  stats?: { joined: number; rewarded: number } | null;
+}) {
   const { t } = useLocale();
   const s = t.settings;
   const [copied, setCopied] = useState(false);
@@ -106,6 +115,12 @@ export function InviteCard({ username }: { username: string }) {
           {copied ? s.inviteCopied : s.inviteCopy}
         </button>
       </div>
+
+      {stats && (
+        <p className="mt-3 font-numeral text-xs tabular-nums text-atelier-muted">
+          {stats.joined > 0 ? formatMsg(s.referralStats, { joined: stats.joined, rewarded: stats.rewarded }) : s.referralNone}
+        </p>
+      )}
     </div>
   );
 }
