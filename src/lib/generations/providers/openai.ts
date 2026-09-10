@@ -4,6 +4,7 @@
 // than asking the same model to check its own work.
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { utilityModel } from "@/lib/generations/providers/openai-model";
 import { identityScorerVersion } from "@/lib/generations/scorer-version";
 
 // Characters v2: image-level identity verification. Compares a finished
@@ -21,7 +22,7 @@ export async function scoreIdentityMatch(
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
   try {
-    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const model = utilityModel();
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -84,7 +85,7 @@ export async function scoreIdentityMatch(
       unusable: parsed.unusable === true,
       // Stamped next to the value it qualifies, so a score is never a bare
       // number whose origin has to be guessed from its timestamp.
-      scorerVersion: identityScorerVersion(process.env.OPENAI_MODEL),
+      scorerVersion: identityScorerVersion(utilityModel()),
     };
   } catch {
     return null;
@@ -119,7 +120,7 @@ export async function reviewWithOpenAI(
   // `model` lets a caller name a specific reader — the content policy's
   // vote at a band edge asks a second, larger model — without changing the
   // default every other caller relies on.
-  const model = opts.model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const model = opts.model || utilityModel();
 
   // A 429 is a queue, not an answer. The content policy fails closed on an
   // unreadable reply, so a rate-limit blip under a burst of renders would

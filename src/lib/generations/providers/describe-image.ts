@@ -22,6 +22,7 @@
 //                  with a line about needing rights to the source image.
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { utilityModel } from "@/lib/generations/providers/openai-model";
 
 export type DescribeMode = "scene" | "standalone";
 
@@ -100,7 +101,7 @@ export async function classifyRenderStyle(
   if (!apiKey) return null;
 
   try {
-    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const model = utilityModel();
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -226,7 +227,7 @@ export async function describeSubjectImage(imageUrl: string): Promise<string | n
   if (!apiKey) return null;
 
   try {
-    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const model = utilityModel();
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -285,7 +286,7 @@ export async function describeOutfitImage(imageUrl: string): Promise<string | nu
   if (!apiKey) return null;
 
   try {
-    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const model = utilityModel();
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
       {
@@ -341,7 +342,7 @@ export async function describeImageAsPrompt(
   if (!apiKey) return null;
 
   try {
-    const model = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+    const model = utilityModel();
     const res = await fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
       {

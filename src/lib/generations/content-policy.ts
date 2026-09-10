@@ -75,6 +75,10 @@
 //      If the classifier cannot be reached, the honest answer is "the check
 //      could not run", never an accusation.
 
+// Relative, not "@/": this file must stay loadable by vitest (the pure
+// halves are unit-tested), and openai-model.ts is alias-free for that reason.
+import { utilityModel } from "./providers/openai-model";
+
 export type Band = "NEGLIGIBLE" | "LOW" | "MEDIUM" | "HIGH";
 
 const BAND_ORDER: Band[] = ["NEGLIGIBLE", "LOW", "MEDIUM", "HIGH"];
@@ -607,7 +611,7 @@ async function readBackup(instructions: string): Promise<Scores | null> {
 
 /** The larger OpenAI reader for the vote — never the same model as the primary. */
 function largerModel(): string {
-  const primary = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const primary = utilityModel();
   return primary === "gpt-5.4" ? "gpt-5.4-mini" : "gpt-5.4";
 }
 

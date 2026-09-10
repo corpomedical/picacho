@@ -15,7 +15,8 @@ import {
 } from "@/lib/generations/angle-stage-config";
 import type { PlanId } from "@/lib/plans";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
-import { gatePrompt } from "@/lib/generations/policy-log";
+import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 
 // The Angle Stage's server half (2026-09-05). Two submit/poll pairs — the
 // 3D proxy and the guided angle re-render — both through fal's queue API,
@@ -343,6 +344,27 @@ export async function pollAngleFrame(
   }
   const image = (polled.result as { images?: { url?: string }[] }).images?.[0];
   if (!image?.url) return { error: "That angle couldn't be re-rendered — try a slightly different one." };
+
+  // THE PICTURE CHECK (2026-09-11). Stage frames were the one image lane
+  // that reached a person's storage without it: the re-render is an edit of
+  // a character photo, so it is judged in the strict lane like every other
+  // edit of a real person's image. A refused frame is never written — and
+  // since the monthly cap counts stored frames, it costs no frame slot.
+  try {
+    await judgeRender({ url: image.url, kind: "image", strictLane: true });
+  } catch (err) {
+    if (!(err instanceof OutputPolicyRefusal)) throw err;
+    await recordPolicyRefusal({
+      userId,
+      gate: "output",
+      reason: err.reason,
+      strictLane: true,
+      generationId,
+      bands: err.readings,
+      provider: "angle-stage",
+    });
+    return { error: err.userMessage };
+  }
 
   const imgRes = await fetchWithTimeout(image.url, {}, 30_000);
   if (!imgRes.ok) return { error: "That angle couldn't be fetched — try again." };

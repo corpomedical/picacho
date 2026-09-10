@@ -343,7 +343,7 @@ const VISION_SEED = 7;
 async function readVision(image: string, model?: string): Promise<VisionReading | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
-  const which = model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
+  const which = model || (await import("@/lib/generations/providers/openai-model")).utilityModel();
   try {
     const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
     const res = await sendWithOneRetry(() => fetchWithTimeout(
@@ -760,7 +760,7 @@ export async function assertOutputAllowed(input: {
       // is "unavailable" — not shown, credit back, nobody accused.
       // The unseeded reader is sampled three times here and its own median
       // stands for it — one reader's coin is not a strong reader.
-      const primaryModel = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+      const primaryModel = (await import("@/lib/generations/providers/openai-model")).utilityModel();
       const [larger, more] = await Promise.all([
         readVision(image, primaryModel === "gpt-5.4" ? "gpt-5.4-mini" : "gpt-5.4"),
         other ? Promise.all([readVisionClaude(image), readVisionClaude(image)]) : Promise.resolve([null, null]),

@@ -12,7 +12,8 @@ import { toUserFacingError } from "@/lib/generations/user-facing-error";
 import { PLAN_LABELS, PLAN_REFERENCE_IMAGE_LIMITS, type PlanId } from "@/lib/plans";
 import { latestMonthlyAnniversary } from "@/lib/generations/core";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
-import { gatePrompt } from "@/lib/generations/policy-log";
+import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 
 // Real incident, 2026-08-09: a plan=none account generated an AI reference
 // photo for free — this function had no plan/credit check at all, unlike
@@ -578,6 +579,29 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
     const previewUrl = mediaUrl("character-references", path);
 
+    // THE PICTURE CHECK (2026-09-11). AI character photos were saved
+    // without it. Judged from the stored file (the OpenAI lane returns bytes,
+    // not a URL), BEFORE the photo can join a character row; a refused photo
+    // is deleted and the allowance comes back through the catch below. An
+    // edit of an existing character photo is the strict lane, as the prompt
+    // gate above already treats it.
+    try {
+      await judgeRender({ url: previewUrl, kind: "image", strictLane: anchorPaths.length > 0 });
+    } catch (err) {
+      if (err instanceof OutputPolicyRefusal) {
+        await supabase.storage.from("character-references").remove([path]);
+        await recordPolicyRefusal({
+          userId: data.user.id,
+          gate: "output",
+          reason: err.reason,
+          strictLane: anchorPaths.length > 0,
+          bands: err.readings,
+          provider: model.provider,
+        });
+      }
+      throw err;
+    }
+
     // Auto-persist (2026-08-27, operator lost a full Perspective set to the
     // unpressed Save button): when the form names an EXISTING character,
     // append the photo to its row right here. A photo that cost an
@@ -633,6 +657,9 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
     } else if (reservedRowId) {
       await admin.from("reference_image_generations").delete().eq("id", reservedRowId);
     }
+    // A picture the check refused says so in its own words (they name no
+    // category and accuse no one); everything else is sanitized as before.
+    if (err instanceof OutputPolicyRefusal) return { error: err.userMessage };
     const message = err instanceof Error ? err.message : "Couldn't generate that image.";
     // Full detail (including any raw provider JSON) goes to the server log
     // for debugging; the user only ever sees the sanitized version.
