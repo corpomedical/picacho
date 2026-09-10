@@ -1038,6 +1038,7 @@ const it = {
     validatedAfterRetries: "Convalidato rispetto alle regole del tuo personaggio — superato al tentativo {n}. I tentativi falliti non hanno consumato la tua quota.",
     result: "Risultato",
     download: "Scarica",
+    videoFileMissing: "Il file di questo video non è più disponibile: è stato rimosso dall'archivio.",
     downloadUnavailable: "Scarica (disponibile quando sarà collegato un provider reale)",
     noResult: "Nessun risultato — la pipeline non ha prodotto un tentativo valido.",
     noResultAngle: "Nessun risultato — la pipeline non ha prodotto un tentativo valido per questa angolazione.",

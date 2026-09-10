@@ -425,6 +425,11 @@ export default async function HistoryDetailPage({
                       <QuietVideo
                         pending="spinner"
                         src={generation.result_url}
+                        // The saved frame paints instantly AND is the quiet
+                        // state if the mp4 itself is slow or gone (2026-09-11:
+                        // a purged file left this spinner running forever).
+                        poster={generation.poster_url ? (thumbUrl(generation.poster_url, 1600) ?? generation.poster_url) : undefined}
+                        unavailableLabel={h.videoFileMissing}
                         controls
                         aria-label={generation.prompt_input}
                         className="aspect-video w-full rounded-[6px] bg-neutral-950"

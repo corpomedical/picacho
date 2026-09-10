@@ -1112,6 +1112,7 @@ const en = {
     validatedAfterRetries: "Validated against your character rules — passed on attempt {n}. Failed attempts didn't use your allowance.",
     result: "Result",
     download: "Download",
+    videoFileMissing: "This video's file is no longer available — it was removed from storage.",
     downloadUnavailable: "Download (available once a real provider is connected)",
     noResult: "No result — the pipeline couldn't produce a passing attempt.",
     noResultAngle: "No result — the pipeline couldn't produce a passing attempt for this angle.",

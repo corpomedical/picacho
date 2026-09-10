@@ -1039,6 +1039,7 @@ const pt = {
     validatedAfterRetries: "Validado contra as regras do seu personagem — aprovado na tentativa {n}. Tentativas malsucedidas não consumiram sua cota.",
     result: "Resultado",
     download: "Baixar",
+    videoFileMissing: "O arquivo deste vídeo não está mais disponível — foi removido do armazenamento.",
     downloadUnavailable: "Baixar (disponível quando houver um provedor real conectado)",
     noResult: "Sem resultado — o processo não conseguiu uma tentativa válida.",
     noResultAngle: "Sem resultado — o processo não conseguiu uma tentativa válida para este ângulo.",

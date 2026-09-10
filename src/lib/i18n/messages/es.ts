@@ -1039,6 +1039,7 @@ const es = {
     validatedAfterRetries: "Validado contra las reglas de tu personaje — aprobado en el intento {n}. Los intentos fallidos no consumieron tu cuota.",
     result: "Resultado",
     download: "Descargar",
+    videoFileMissing: "El archivo de este video ya no está disponible: fue eliminado del almacenamiento.",
     downloadUnavailable: "Descargar (disponible cuando haya un proveedor real conectado)",
     noResult: "Sin resultado — el proceso no logró un intento válido.",
     noResultAngle: "Sin resultado — el proceso no logró un intento válido para este ángulo.",
