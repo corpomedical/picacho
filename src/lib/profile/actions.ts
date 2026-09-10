@@ -402,8 +402,11 @@ export async function deleteAccount(formData: FormData) {
     .select("username")
     .eq("id", data.user.id)
     .maybeSingle();
+  // The real username or, where none exists, the FULL email address — never
+  // the email prefix, which is not a string this account has ever been shown
+  // as its username (2026-09-11; the page derives identically).
   const expected = (
-    (confirmProfile?.username as string | null) ?? (data.user.email ?? "").split("@")[0]
+    (confirmProfile?.username as string | null) ?? (data.user.email ?? "")
   )
     .trim()
     .toLowerCase();

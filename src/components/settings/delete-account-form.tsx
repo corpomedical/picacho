@@ -11,10 +11,14 @@ import { useLocale } from "@/lib/i18n/provider";
 const FIELD =
   "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
 
-export function DeleteAccountForm({ username }: { username: string }) {
+export function DeleteAccountForm({ confirmWith }: { confirmWith: string }) {
   const { t } = useLocale();
   const [confirmText, setConfirmText] = useState("");
-  const canDelete = confirmText.trim().toLowerCase() === username.toLowerCase();
+  // confirmWith is the account's real username or, where none exists, the
+  // full email address — the same derivation deleteAccount checks, so the
+  // page can never ask for a string the server will refuse. An empty
+  // confirmWith can never delete.
+  const canDelete = confirmWith.length > 0 && confirmText.trim().toLowerCase() === confirmWith.toLowerCase();
 
   return (
     <form action={deleteAccount} className="space-y-3">
@@ -24,7 +28,7 @@ export function DeleteAccountForm({ username }: { username: string }) {
       <div>
         <label htmlFor="confirm_delete" className="mb-1.5 block text-[13px] text-atelier-muted">
           {t.settings.typeToConfirm.split("{username}")[0]}
-          <span className="font-semibold text-atelier-ink">{username}</span>
+          <span className="font-semibold text-atelier-ink">{confirmWith}</span>
           {t.settings.typeToConfirm.split("{username}")[1]}
         </label>
         <input

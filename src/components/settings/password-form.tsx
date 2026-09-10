@@ -99,7 +99,10 @@ export function PasswordForm() {
           mounted sr-only region for exactly this; its header says so. */}
       <SettingsStatus
         state={error ? "error" : status === "saved" ? "saved" : "idle"}
-        message={error ?? (status === "saved" ? t.settings.passwordUpdated : null)}
+        // `||`, not `??`: error starts as "" and an empty string is not
+          // nullish, so the saved message — the one instruction this flow
+          // depends on — never rendered (2026-09-11).
+          message={error || (status === "saved" ? t.settings.passwordUpdated : null)}
       />
       <Button
         type="submit"

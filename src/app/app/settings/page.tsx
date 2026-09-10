@@ -172,7 +172,7 @@ export default async function SettingsPage({
     .single();
   const brandRulesPaused = !brandFlag?.enabled;
 
-  const [{ data: profile }, usedThisMonth, { data: supportEmailSetting }] = await Promise.all([
+  const [{ data: profile }, { data: supportEmailSetting }] = await Promise.all([
     // marketing_opt_out reads fine with the session client: the 2026-08-18
     // profiles lockdown (bottom of schema.sql) narrowed the UPDATE grant,
     // not SELECT — only the WRITE goes through the service role, in
@@ -180,15 +180,29 @@ export default async function SettingsPage({
     supabase
       .from("profiles")
       .select(
-        "username, company, gender, plan, plan_status, plan_source, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access",
+        "username, company, gender, plan, plan_status, plan_source, stripe_customer_id, skip_ai_refinement, marketing_opt_out, bonus_credits, purchased_credits, role, api_access, current_period_start, current_period_end",
       )
       .eq("id", data.user.id)
       .single(),
-    getMonthlyUsage(data.user.id),
     supabase.from("app_settings").select("value").eq("key", "support_email").single(),
   ]);
+  // AFTER the profile, not alongside it: the meter must count the BILLING
+  // month (current_period_start — what checkGenerationAllowance enforces),
+  // not the calendar month. Measured 2026-09-11: a mid-month renewal showed
+  // "exhausted" here while the composer allowed, and vice versa.
+  const usedThisMonth = await getMonthlyUsage(
+    data.user.id,
+    (profile?.current_period_start as string | null) ?? null,
+  );
 
-  const username = profile?.username ?? (data.user.email ?? "").split("@")[0];
+  // No username is NO USERNAME — never the email prefix dressed up as one.
+  // The old fallback asked people to confirm deletion with a string that was
+  // not their username, pre-filled the username form with a value the server
+  // would reject, and minted /r/<email-prefix> referral links that resolve
+  // for nobody. Where a username is genuinely absent (legacy rows), the
+  // delete confirmation asks for the email address and the invite card
+  // simply waits until one is chosen.
+  const username = (profile?.username as string | null) ?? null;
   const plan = (profile?.plan ?? "none") as PlanId;
 
   // API access: Elite includes it, an admin grant covers the exceptions.
@@ -295,7 +309,7 @@ export default async function SettingsPage({
             <div className="space-y-4">
               <SettingsSection title={s.account} description={s.accountDesc}>
                 <div className="space-y-5">
-                  <UsernameForm initialUsername={username} />
+                  <UsernameForm initialUsername={username ?? ""} />
                   <EmailForm initialEmail={data.user.email ?? ""} />
                   <div className="border-t border-atelier-rule/60 pt-5">
                     <ProfileForm initialCompany={profile?.company ?? ""} initialGender={profile?.gender ?? ""} />
@@ -303,7 +317,10 @@ export default async function SettingsPage({
                 </div>
               </SettingsSection>
 
-              <InviteCard username={username} />
+              {/* Only with a real username: a link built from anything else
+                  resolves for nobody (the /r route matches profiles.username
+                  exactly). */}
+              {username && <InviteCard username={username} />}
 
               <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
                 <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
@@ -340,7 +357,7 @@ export default async function SettingsPage({
                 title={s.dangerZone}
                 description={s.dangerDesc}
               >
-                <DeleteAccountForm username={username} />
+                <DeleteAccountForm confirmWith={username ?? (data.user.email ?? "").toLowerCase()} />
               </SettingsSection>
             </div>
           )}
@@ -437,6 +454,12 @@ export default async function SettingsPage({
                       {s.manageBilling}
                     </button>
                   </form>
+                </div>
+              ) : profile?.plan_source === "play" && plan !== "none" ? (
+                <div className="mt-4 rounded-control border border-atelier-rule bg-atelier-paper p-4">
+                  <p className="text-sm text-atelier-ink">
+                    {formatMsg(s.playStoreManagedElsewhere, { plan: PLAN_LABELS[plan] })}
+                  </p>
                 </div>
               ) : (
                 nextTier && (
