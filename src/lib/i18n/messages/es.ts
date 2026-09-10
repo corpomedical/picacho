@@ -1837,6 +1837,11 @@ const es = {
     outputSexual: "La imagen generada no ha pasado nuestro control, así que no se ha mostrado. Tu solicitud estaba bien — se te ha devuelto el crédito.",
     outputMinors: "La imagen generada no ha pasado nuestro control y no se ha mostrado. Se te ha devuelto el crédito.",
     outputUnavailable: "No hemos podido revisar la imagen generada, así que no se ha mostrado. Se te ha devuelto el crédito — vuelve a intentarlo en un momento.",
+    shareTooFast: "Estás compartiendo mucho a la vez — espera un minuto.",
+    sharePreviewNotReady: "La vista previa de este vídeo aún no está lista — prueba a compartirlo de nuevo dentro de unos minutos.",
+    feedUnchecked: "No hemos podido revisar esta imagen, así que no se ha compartido. Vuelve a intentarlo en un momento; si sigue pasando, puede que falte el archivo.",
+    feedRefused: "Esta toma no se puede publicar en el feed de la Comunidad. Se queda en tu Historial.",
+    unshareFailed: "No se pudo quitar de la comunidad — inténtalo de nuevo.",
   },
   apiKeys: {
     title: "Claves de API",

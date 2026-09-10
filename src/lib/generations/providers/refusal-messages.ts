@@ -134,9 +134,9 @@ export const providerRefusalMessages = {
  * lives here and not there.
  *
  * Every refusal the product writes is tested against it: refusalMessages in
- * content-policy.ts, the picture gate's sentences in output-policy.ts, and
- * the provider refusals above — and each one's translations against
- * REFUSAL_GUARDS below.
+ * content-policy.ts, the picture gate's sentences in output-policy.ts, the
+ * feed gate's in community/actions.ts, and the provider refusals above — and
+ * each one's translations against REFUSAL_GUARDS below.
  *
  * Wider than its first version (rephras|reword|different wording|try
  * wording|adjust the wording), which passed both provider refusals it was

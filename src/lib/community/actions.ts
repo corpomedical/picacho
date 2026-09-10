@@ -78,6 +78,11 @@ export async function shareToCommunity(
         generationId,
         bands: err.readings,
       });
+      // Both sentences are the wire: lib/i18n/server-text.ts translates them
+      // where the share button shows them, and truth-contracts pins them, so
+      // rewording one here fails the suite until that map and the four
+      // catalogs follow. content-policy.test.ts holds every language to the
+      // refusal rules — only the could-not-check sentence says try again.
       return {
         error:
           err.reason === "unavailable"

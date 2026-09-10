@@ -1837,6 +1837,11 @@ const pt = {
     outputSexual: "A imagem gerada não passou na nossa verificação, então não foi mostrada. Não havia nada de errado com o seu pedido — o crédito foi devolvido.",
     outputMinors: "A imagem gerada não passou na nossa verificação e não foi mostrada. O crédito foi devolvido.",
     outputUnavailable: "Não conseguimos verificar a imagem gerada, então ela não foi mostrada. O crédito foi devolvido — tente de novo em instantes.",
+    shareTooFast: "Você está compartilhando muita coisa de uma vez — espere um minuto.",
+    sharePreviewNotReady: "A prévia deste vídeo ainda não está pronta — tente compartilhar de novo daqui a alguns minutos.",
+    feedUnchecked: "Não conseguimos verificar esta imagem, então ela não foi compartilhada. Tente de novo em instantes; se continuar acontecendo, talvez o arquivo esteja faltando.",
+    feedRefused: "Este take não pode ser publicado no feed da Comunidade. Ele continua no seu Histórico.",
+    unshareFailed: "Não foi possível remover da comunidade — tente de novo.",
   },
   apiKeys: {
     title: "Chaves de API",

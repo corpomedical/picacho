@@ -500,3 +500,80 @@ describe("our gates' refusals in every language", () => {
   }
 });
 
+// The feed gate's two sentences (lib/community/actions.ts shareToCommunity):
+// a post the strict-lane picture check refused, and one it could not check.
+// Copied here because a "use server" module cannot load under vitest; the
+// first test pins each copy against that source. They answer to the picture
+// gate's rules with one difference: a share costs nothing, so neither
+// sentence says a word about money, in any language.
+const FEED_REFUSALS = [
+  {
+    name: "feed gate: refused",
+    msg: "This one can't go on the community feed. It stays in your History.",
+    couldNotRun: false,
+  },
+  {
+    name: "feed gate: could not check",
+    msg: "We couldn't check this picture, so it wasn't shared. Try again in a moment; if it keeps happening, the file may be missing.",
+    couldNotRun: true,
+  },
+];
+
+// Each catalog's own name for History, where a refused post stays.
+const HISTORY = { es: /\bHistorial\b/, pt: /\bHistórico\b/, it: /\bCronologia\b/ } as const;
+
+describe("the feed gate's refusals in every language", () => {
+  it("the server still says exactly these sentences", () => {
+    const source = readFileSync(new URL("../community/actions.ts", import.meta.url), "utf8");
+    for (const { name, msg } of FEED_REFUSALS) expect(source, name).toContain(msg);
+  });
+
+  it("English readers get the wire sentence itself", () => {
+    for (const { name, msg } of FEED_REFUSALS) expect(localizeServerText(msg, en), name).toBe(msg);
+  });
+
+  it("a refused post is final: try again only where the picture could not be checked", () => {
+    for (const { name, msg, couldNotRun } of FEED_REFUSALS) {
+      expect(REFUSAL_GUARDS.en.again.test(msg), name).toBe(couldNotRun);
+    }
+  });
+
+  it("no coaching, no word about money, no category named, and a refused post stays in History", () => {
+    // Like the picture gate, the feed gate judged the picture, not what was
+    // asked — and the render it refused passed its own gate and is kept.
+    for (const { name, msg } of FEED_REFUSALS) {
+      expect(msg, name).not.toMatch(REFUSAL_COACHING);
+      expect(msg, name).not.toMatch(REFUSAL_GUARDS.en.money);
+      expect(msg, name).not.toMatch(/sexual|\bnud|minor|real person|self-harm|suicid/i);
+    }
+    expect(FEED_REFUSALS[0].msg).toMatch(/\bstays in your History\b/);
+  });
+
+  for (const L of LOCALES) {
+    const read = FEED_REFUSALS.map((r) => ({ ...r, local: localizeServerText(r.msg, L.t) }));
+
+    it(`${L.name}: both sentences reach the reader translated`, () => {
+      for (const { name, msg, local } of read) expect(local, name).not.toBe(msg);
+    });
+
+    it(`${L.name}: no coaching, no word about money, no category named`, () => {
+      for (const { name, local } of read) {
+        expect(local, name).not.toMatch(L.coaching);
+        expect(local, name).not.toMatch(REFUSAL_COACHING);
+        expect(local, name).not.toMatch(L.money);
+        expect(local, name).not.toMatch(L.accusation);
+      }
+    });
+
+    it(`${L.name}: "try again" exactly where the English says it`, () => {
+      for (const { name, msg, local } of read) {
+        expect(L.again.test(local), name).toBe(REFUSAL_GUARDS.en.again.test(msg));
+      }
+    });
+
+    it(`${L.name}: a refused post still says it stays in History`, () => {
+      expect(read[0].local).toMatch(HISTORY[L.name]);
+    });
+  }
+});
+

@@ -111,6 +111,17 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "The picture that came back didn't pass our check and wasn't shown. The credit is back.": "outputMinors",
   "We couldn't check the picture that came back, so it wasn't shown. The credit is back — please try again in a moment.":
     "outputUnavailable",
+  // Sharing to the community feed (lib/community/actions.ts
+  // shareToCommunity, unshareFromCommunity) — the share button's error line,
+  // and Settings → Privacy's for a removal. The feed gate's two sentences are
+  // among them: this post can't go on the feed, and the picture couldn't be
+  // checked.
+  "That's a lot of sharing at once — give it a minute.": "shareTooFast",
+  "This video's preview isn't ready yet — try sharing it again in a few minutes.": "sharePreviewNotReady",
+  "We couldn't check this picture, so it wasn't shared. Try again in a moment; if it keeps happening, the file may be missing.":
+    "feedUnchecked",
+  "This one can't go on the community feed. It stays in your History.": "feedRefused",
+  "Couldn't remove this from the community — try again.": "unshareFailed",
 };
 
 // The layer-edit lane force-refunds every failure and says so after the

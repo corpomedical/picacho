@@ -275,6 +275,9 @@ describe("localized server strings still match what the server says", () => {
     // validate step.
     "./content-policy.ts",
     "./output-policy.ts",
+    // Sharing to the community feed, the feed gate's refusals among them —
+    // the share button's error line.
+    "../community/actions.ts",
   ]
     .map((p) => src(p))
     .join("\n")

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
+import { localizeServerText } from "@/lib/i18n/server-text";
 import { SHARE_PROMPT_HIDE_FAILED } from "@/lib/community/messages";
 import {
   shareToCommunity,
@@ -116,7 +117,7 @@ export function CommunityShareButton({
             role="alert"
             className="text-[11px] text-red-600 dark:text-red-400"
           >
-            {error}
+            {localizeServerText(error, t)}
           </p>
         )}
       </span>
@@ -170,8 +171,10 @@ export function CommunityShareButton({
             <span>{c.sharePromptLabel}</span>
           </label>
           {error && (
+            // The actions' errors are the server's English — the feed
+            // gate's refusal among them.
             <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">
-              {error}
+              {localizeServerText(error, t)}
             </p>
           )}
           <button

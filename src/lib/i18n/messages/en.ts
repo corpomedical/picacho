@@ -1967,6 +1967,18 @@ const en = {
     outputSexual: "The picture that came back didn't pass our check, so it wasn't shown. Your request was fine — the credit is back.",
     outputMinors: "The picture that came back didn't pass our check and wasn't shown. The credit is back.",
     outputUnavailable: "We couldn't check the picture that came back, so it wasn't shown. The credit is back — please try again in a moment.",
+    // Sharing to the community feed (lib/community/actions.ts), pinned
+    // against that source like every entry above. The feed gate's two
+    // sentences are held by content-policy.test.ts in all four catalogs to
+    // the refusal rules: no advice on getting past it, no word about money
+    // (a share costs nothing), no category named; "try again" in
+    // feedUnchecked only, because feedRefused is final — and it keeps saying
+    // the take stays in History.
+    shareTooFast: "That's a lot of sharing at once — give it a minute.",
+    sharePreviewNotReady: "This video's preview isn't ready yet — try sharing it again in a few minutes.",
+    feedUnchecked: "We couldn't check this picture, so it wasn't shared. Try again in a moment; if it keeps happening, the file may be missing.",
+    feedRefused: "This one can't go on the community feed. It stays in your History.",
+    unshareFailed: "Couldn't remove this from the community — try again.",
   },
   apiKeys: {
     title: "API keys",
