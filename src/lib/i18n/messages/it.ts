@@ -1297,7 +1297,7 @@ const it = {
     s6p2: "Se una ripresa fallisce, Picacho riprova automaticamente prima di arrendersi — e se qualcosa va comunque storto da parte nostra, scrivici e rimettiamo il credito sul tuo account.",
     s6p3: "Serve di più? I crediti acquistati si sommano alla quota mensile e non scadono. Trovi tutto in Utilizzo e piano.",
     s7h: "Consigli e risoluzione dei problemi",
-    s7p1: "I filtri di sicurezza sono severi con le persone fotorealistiche. Un linguaggio semplice e neutro passa meglio — e se un filtro obietta comunque, Picacho riscrive e riprova automaticamente prima di ripiegare.",
+    s7p1: "Le regole sui contenuti di Picacho valutano ciò che chiedi, e i modelli di immagini e video applicano controlli di sicurezza propri. Un rifiuto da una qualsiasi delle due parti è definitivo: la ripresa si ferma lì, e Picacho non riscrive una richiesta rifiutata né la riprova al posto tuo.",
     s7p2: "Il personaggio deriva? Controlla la foto identità (nitida, frontale) e tieni onesta la galleria — promuovi solo risultati in cui il volto è davvero giusto.",
     s7p3: "Qualcosa non torna? Il registro del processo sotto il risultato dice la verità su cosa è successo, e il pulsante di segnalazione ce lo invia direttamente.",
     visDefaultTag: "predefinito",

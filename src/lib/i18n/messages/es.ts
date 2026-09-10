@@ -1298,7 +1298,7 @@ const es = {
     s6p2: "Si una toma falla, Picacho la reintenta automáticamente antes de darla por perdida — y si aun así algo va mal por nuestra parte, avísanos y te devolvemos el crédito a la cuenta.",
     s6p3: "¿Necesitas más? Los créditos comprados se suman a la cuota mensual y no caducan. Lo ves todo en Uso y plan.",
     s7h: "Consejos y solución de problemas",
-    s7p1: "Los filtros de seguridad son estrictos con personas fotorrealistas. El lenguaje sencillo y neutro pasa mejor — y si un filtro aún se queja, Picacho reescribe y reintenta automáticamente antes de recurrir al plan B.",
+    s7p1: "Las reglas de contenido de Picacho revisan lo que pides, y los modelos de imagen y de vídeo aplican sus propios controles de seguridad. Un rechazo de cualquiera de las dos partes es definitivo: la toma se detiene ahí, y Picacho no reescribe una solicitud rechazada ni la reintenta por ti.",
     s7p2: "¿El personaje se desvía? Revisa la foto de identidad (nítida, de frente) y mantén la galería honesta — promociona solo resultados donde el rostro sea realmente correcto.",
     s7p3: "¿Algo sigue mal? El registro del proceso bajo el resultado te cuenta la verdad de lo ocurrido, y el botón de informar nos lo envía directamente.",
     visDefaultTag: "por defecto",

@@ -3,14 +3,16 @@
 // (OpenAI's image endpoints don't return a durable hosted URL).
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { IMAGE_REQUEST_REFUSED } from "@/lib/generations/providers/refusal-messages";
 
 // Thrown specifically when OpenAI's safety classifier rejects the prompt, so
-// callers can tell it apart from an outage, a bad key, or a rate limit and
-// react differently. Measured 2026-08-10: this was the single most common
-// named cause of failed generations (3 of 8), and it is close to unavoidable
-// for this product — the classifier is aggressive about photorealistic
-// people, which is exactly what Picacho exists to make. image.ts catches
-// this and retries on Flux rather than failing the generation.
+// callers can tell it apart from an outage, a bad key, or a rate limit.
+// Measured 2026-08-10: this was the single most common named cause of failed
+// generations (3 of 8) — the classifier is aggressive about photorealistic
+// people, which is exactly what Picacho makes. It is FINAL: image.ts used to
+// catch it and reword-and-retry, then hop to Flux, and that ladder was
+// removed on 2026-09-09. No caller retries it or sends it elsewhere now; the
+// render it belongs to fails.
 export class ImageSafetyRejection extends Error {
   constructor(message: string) {
     super(message);
@@ -184,20 +186,17 @@ export async function generateImageWithOpenAI(
 
   if (!res.ok) {
     const text = await res.text();
-    // GPT Image's safety classifier is aggressive and rejects a lot of
-    // perfectly innocent descriptions (it flags this as a distinct
-    // "image_generation_user_error" with a safety_violations list). Dumping
+    // GPT Image's safety classifier flags this as a distinct
+    // "image_generation_user_error" with a safety_violations list. Dumping
     // that raw JSON — including OpenAI's internal request ID — straight into
-    // the UI is neither helpful nor good practice, so this specific case
-    // gets a plain, actionable message instead. Anything else (auth,
-    // billing, rate limit, etc.) still surfaces the real API response, since
-    // that detail is what's actually useful for debugging those.
+    // the UI is neither helpful nor good practice, so this case gets a plain
+    // refusal instead: what happened, and no advice on getting past it (see
+    // refusal-messages.ts for why, and for what the sentence must keep).
+    // Anything else (auth, billing, rate limit, etc.) still surfaces the real
+    // API response, since that detail is what's actually useful for
+    // debugging those.
     if (text.includes("safety system") || text.includes("safety_violations")) {
-      throw new ImageSafetyRejection(
-        "That description was flagged by OpenAI's safety filter and couldn't be generated. " +
-          "Try simpler, unambiguous wording (for example, describing age and appearance " +
-          "plainly rather than combining conflicting details), or upload a photo instead.",
-      );
+      throw new ImageSafetyRejection(IMAGE_REQUEST_REFUSED);
     }
     throw new Error(`OpenAI image API error (${res.status}): ${text.slice(0, 300)}`);
   }

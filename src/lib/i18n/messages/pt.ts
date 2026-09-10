@@ -1298,7 +1298,7 @@ const pt = {
     s6p2: "Se um take falha, o Picacho tenta de novo automaticamente antes de desistir — e se ainda assim algo der errado do nosso lado, avise-nos e devolvemos o crédito à sua conta.",
     s6p3: "Precisa de mais? Créditos comprados se somam à cota mensal e não expiram. Veja tudo em Uso e plano.",
     s7h: "Dicas e solução de problemas",
-    s7p1: "Os filtros de segurança são rígidos com pessoas fotorrealistas. Linguagem simples e neutra passa melhor — e quando um filtro ainda reclama, o Picacho reescreve e tenta de novo automaticamente antes de recorrer ao plano B.",
+    s7p1: "As regras de conteúdo do Picacho avaliam o que você pede, e os modelos de imagem e de vídeo têm verificações de segurança próprias. Uma recusa de qualquer um dos lados é definitiva: o take para ali, e o Picacho não reescreve um pedido recusado nem tenta de novo por você.",
     s7p2: "Personagem mudando de rosto? Confira a foto de identidade (nítida, de frente) e mantenha a galeria honesta — promova só resultados em que o rosto esteja realmente certo.",
     s7p3: "Algo ainda errado? O registro do processo sob o resultado conta a verdade sobre o que aconteceu, e o botão de reporte envia direto para nós.",
     visDefaultTag: "padrão",

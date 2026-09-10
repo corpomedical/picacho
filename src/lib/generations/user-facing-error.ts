@@ -9,7 +9,7 @@
 // user, run it through this first.
 //
 // Messages we wrote ourselves (missing API key, "describe them first",
-// the OpenAI safety-filter message in openai-images.ts, etc.) don't match
+// the provider refusals in providers/refusal-messages.ts, etc.) don't match
 // either pattern below and pass through unchanged — only actual raw
 // provider dumps get swapped for a generic, safe fallback.
 const RAW_PROVIDER_ERROR_PREFIX = /^[\w.() -]+ error \(\d+\):/i;

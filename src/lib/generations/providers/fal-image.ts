@@ -5,14 +5,16 @@ import {
   LAYER_RECUT_RESOLUTION,
 } from "@/lib/generations/layers";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
+import { IMAGE_RESULT_REFUSED } from "@/lib/generations/providers/refusal-messages";
 
 // Thrown when Flux's own safety checker flags the result. fal.ai does NOT
 // error in that case — it returns HTTP 200 with the image replaced by a
 // solid black frame and has_nsfw_concepts[i] = true. Real incident,
 // 2026-08-14: two "swimsuit selfie" generations sailed through as
 // "succeeded" with pure black pictures. Failing loudly here lets the
-// pipeline treat it like any other rejected generation (retry, refund,
-// honest log) instead of delivering a black rectangle as a success.
+// pipeline treat it as the refusal it is — final, not retried (the message
+// carries "safety", which pipeline.ts's SAFETY_REJECTION reads), with an
+// honest log — instead of delivering a black rectangle as a success.
 export class FluxSafetyRejection extends Error {
   constructor(message: string) {
     super(message);
@@ -90,10 +92,7 @@ export async function generateImageWithFlux(
 
   const nsfwFlags: unknown = data?.has_nsfw_concepts;
   if (Array.isArray(nsfwFlags) && nsfwFlags.some(Boolean)) {
-    throw new FluxSafetyRejection(
-      "Flux's safety checker flagged this image and blacked it out. " +
-        "Try plainer wording for the outfit and pose.",
-    );
+    throw new FluxSafetyRejection(IMAGE_RESULT_REFUSED);
   }
 
   const url: string | undefined =

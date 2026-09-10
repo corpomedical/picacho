@@ -134,9 +134,13 @@ export async function generateImage(
   // that is a more precise gate of our own in front of the provider (see
   // lib/generations/content-policy.ts, which now runs before any prompt gets
   // here), not shopping for a provider that says yes. If a prompt our own
-  // policy passed is still refused downstream, that render fails and the
-  // credit is refunded — the pipeline already treats a safety refusal as
-  // non-retryable and force-refunds it.
+  // policy passed is still refused downstream, that render fails: the
+  // pipeline treats a safety refusal as non-retryable (SAFETY_REJECTION).
+  // It is NOT force-refunded, whatever this comment used to say — the
+  // refusal's message carries no "error (4xx)", so forceRefundEligible never
+  // counts it as a provider rejection, and the credit comes back only through
+  // the automatic_refunds switch and under the daily refund cap. See
+  // refusal-messages.ts, which is why that sentence makes no money claim.
   chargeBudget(budget);
   const base64 = await generateImageWithOpenAI(prompt, openAiRefs);
   return persistBase64(base64);

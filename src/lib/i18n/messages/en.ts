@@ -1374,7 +1374,10 @@ const en = {
     s6p2: "If a take fails, Picacho retries it automatically before giving up — and if something still goes wrong on our side, tell us and we\u2019ll put the credit back on your account.",
     s6p3: "Need more? Purchased credits sit on top of the monthly allowance and never expire. See it all under Usage & plan.",
     s7h: "Tips & troubleshooting",
-    s7p1: "Safety filters are strict about photorealistic people. Plain, neutral wording passes best — and when a filter still objects, Picacho automatically rewrites and retries before falling back.",
+    // Until 2026-09-10 this tip coached wording that "passes best" and
+    // promised Picacho "rewrites and retries before falling back" — the
+    // softening ladder removed on 2026-09-09. Now it says what a refusal is.
+    s7p1: "Picacho's content rules check what you ask for, and the image and video models run safety checks of their own. A refusal from either is final — the take stops there, and Picacho does not rewrite a refused request or retry it for you.",
     s7p2: "Character drifting? Check the identity photo (sharp, front-facing), and keep the gallery honest — promote only results where the face is truly right.",
     s7p3: "Something still off? The pipeline log under the result tells you the truth about what happened, and the report button sends it straight to us.",
     // visIdentity / visMatch were dead on arrival — the page renders those
