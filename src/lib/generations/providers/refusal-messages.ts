@@ -134,7 +134,9 @@ export const providerRefusalMessages = {
  * lives here and not there.
  *
  * Every refusal the product writes is tested against it: refusalMessages in
- * content-policy.ts, and the provider refusals above.
+ * content-policy.ts, the picture gate's sentences in output-policy.ts, and
+ * the provider refusals above — and each one's translations against
+ * REFUSAL_GUARDS below.
  *
  * Wider than its first version (rephras|reword|different wording|try
  * wording|adjust the wording), which passed both provider refusals it was
@@ -147,3 +149,38 @@ export const providerRefusalMessages = {
  */
 export const REFUSAL_COACHING =
   /\b(?:rephras|reword|wording|phrasing|plainer|plainly|simpler|unambiguous)|\b(?:upload|attach)[^.]*\binstead\b|\b(?:another|different|other) (?:model|engine|provider)\b/i;
+
+/**
+ * The same lint in every language a refusal is read in — for the test
+ * suites only, like REFUSAL_COACHING. An English pattern cannot read Spanish,
+ * so each language has its own, shaped like the English: `coaching` (advice
+ * on phrasing, another input, another model), `again` (an invitation to send
+ * it again), `money` (any word about charging, spending, credits or refunds).
+ * Here rather than in either suite so the provider refusals and our own
+ * gates' refusals cannot drift onto different definitions of any of them.
+ */
+export const REFUSAL_GUARDS = {
+  en: {
+    coaching: REFUSAL_COACHING,
+    again: /\btry (?:it )?again\b|\bretry\b|\bresend\b/i,
+    money: /\b(?:spent|charged|charge|credits?|refund\w*|free)\b/i,
+  },
+  es: {
+    coaching:
+      /\b(?:reformul|redact|redacci|palabras|sencill|simple|ambig)|\b(?:sube|adjunta)[^.]*\ben su lugar\b|\b(?:otro|distinto|diferente) (?:modelo|motor|proveedor)\b/i,
+    again: /\bde nuevo\b|\botra vez\b|\bvuelve a\b|\breintent|\bint[eé]nt/i,
+    money: /\b(?:cobr|cargo|gast|crédit|reembols|devol|gratis|gratuit)/i,
+  },
+  pt: {
+    coaching:
+      /\b(?:reformul|reescrev|redaç|palavras|simples|ambígu)|\b(?:envie|anexe|carregue)[^.]*\bem vez disso\b|\b(?:outro|diferente) (?:modelo|motor|provedor)\b/i,
+    again: /\bde novo\b|\bnovamente\b|\boutra vez\b|\btent[ea]|\breenvi/i,
+    money: /\b(?:cobr|gast|crédit|reembols|estorn|devolv|grátis|gratuit)/i,
+  },
+  it: {
+    coaching:
+      /\b(?:riformul|riscriv|formulazion|parole|semplic|ambigu)|\b(?:carica|allega)[^.]*\binvece\b|\b(?:altro|diverso) (?:modello|motore|fornitore|provider)\b/i,
+    again: /\bdi nuovo\b|\bancora una volta\b|\briprov|\bprova\b|\breinvi/i,
+    money: /\b(?:addebit|pagat|pagament|spes[aoi]\b|credit|rimbors|gratis|gratuit)/i,
+  },
+} as const;

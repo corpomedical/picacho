@@ -1947,6 +1947,26 @@ const en = {
     // The sentence the layer-edit lane puts after every failure's reason, all
     // of them force-refunded (actions.ts editLayer) — see localizeServerText.
     nothingCharged: "Nothing was charged.",
+    // Our own content gates' refusals: the prompt gate's
+    // (lib/generations/content-policy.ts) and the picture gate's
+    // (output-policy.ts), pinned against those sources like every entry
+    // above. content-policy.test.ts reads all four catalogs for the rules
+    // the English keeps: no advice on getting past a refusal; "try again"
+    // only where the check could not run; a word about money only where the
+    // English has one, and "nothing was spent" / "the credit is back" kept
+    // where it does; no category named by the could-not-run sentences or
+    // the picture gate's; and the self-harm line's two helplines, 988 still
+    // marked as the US one.
+    policySexual: "This request asks for sexual or nude content, which Picacho does not generate. Describe a scene instead — what your character is doing, where they are, and the light.",
+    policyMinors: "Picacho does not generate sexual or suggestive content involving anyone who could be a minor. If that is not what you meant, rewrite the scene without the suggestive element.",
+    policyRealPerson: "This request asks to undress or sexualize a photograph of a real person. Picacho does not do this, whoever is in the photo and whoever is asking.",
+    policyServices: "This request asks for content that advertises or solicits sexual services, which Picacho does not generate. Describe a scene instead — what your character is doing, where they are, and the light.",
+    policySelfHarm: "Picacho does not generate pictures that present self-harm or suicide as desirable. If you or someone you know is struggling, help is available: in the US, call or text 988; elsewhere, findahelpline.com lists free, confidential lines.",
+    policyDeception: "This request would place a real, identifiable person in an event that did not happen, presented as real. Picacho does not generate that.",
+    policyUnavailable: "The safety check could not run just now, so nothing was generated and nothing was spent. Please try again in a moment.",
+    outputSexual: "The picture that came back didn't pass our check, so it wasn't shown. Your request was fine — the credit is back.",
+    outputMinors: "The picture that came back didn't pass our check and wasn't shown. The credit is back.",
+    outputUnavailable: "We couldn't check the picture that came back, so it wasn't shown. The credit is back — please try again in a moment.",
   },
   apiKeys: {
     title: "API keys",

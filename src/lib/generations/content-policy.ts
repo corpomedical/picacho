@@ -141,7 +141,18 @@ const REFUSAL_UNAVAILABLE =
   "The safety check could not run just now, so nothing was generated and nothing was spent. " +
   "Please try again in a moment.";
 
-/** Exported for the test suite, which guards their wording. */
+/**
+ * Exported for the test suite, which guards their wording.
+ *
+ * Read in four languages. The server only ever says the English above — the
+ * wire format, and what the pipeline log keeps — and lib/i18n/server-text.ts
+ * swaps in the catalog's sentence where a person reads it. Rewording one
+ * here fails truth-contracts.test.ts until that map and the four catalogs
+ * follow, and content-policy.test.ts holds each language to this file's
+ * rule. The self-harm line names the same two helplines in every language,
+ * 988 still marked as the US one (the operator's call, 2026-09-10): the app
+ * knows the reader's language, not their country.
+ */
 export const refusalMessages = {
   sexual: REFUSAL_SEXUAL,
   minors: REFUSAL_MINORS,

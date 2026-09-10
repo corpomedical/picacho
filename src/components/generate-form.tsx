@@ -6370,7 +6370,7 @@ function GenerateFormInner({
                             indistinguishable from a hang — which is exactly
                             what long generations used to look like before the
                             job survived longer than the request did. */}
-                        {liveProgress ?? g.runningPipeline}
+                        {liveProgress ? localizeServerText(liveProgress, t) : g.runningPipeline}
                       </div>
                     )}
                     <PipelineTrace
@@ -7685,7 +7685,9 @@ function GenerateFormInner({
               {(enhanced || enhanceError) && (
                 <div className="mx-2.5 mb-2.5 rounded-control border border-atelier-accent/30 bg-atelier-accent/5 p-3.5">
                   {enhanceError ? (
-                    <p className="text-xs leading-relaxed text-red-600">{enhanceError}</p>
+                    // compilePrompt's errors are the server's English — the
+                    // content gate's refusal among them.
+                    <p className="text-xs leading-relaxed text-red-600">{localizeServerText(enhanceError, t)}</p>
                   ) : (
                     <>
                       <div className="flex items-baseline justify-between gap-3">

@@ -12,6 +12,7 @@ import {
   IMAGE_REQUEST_REFUSED,
   IMAGE_RESULT_REFUSED,
   REFUSAL_COACHING,
+  REFUSAL_GUARDS,
   providerRefusalMessages,
   readOpenAiRefusal,
 } from "./refusal-messages";
@@ -52,7 +53,7 @@ describe("provider refusals", () => {
     // A provider refusal is final: the same request fails the same
     // classifier. "Try again" on one is the retry ladder, run by hand.
     for (const [name, msg] of messages) {
-      expect(msg, name).not.toMatch(/\btry (?:it )?again\b|\bretry\b|\bresend\b/i);
+      expect(msg, name).not.toMatch(REFUSAL_GUARDS.en.again);
     }
   });
 
@@ -69,7 +70,7 @@ describe("provider refusals", () => {
     }
   });
 
-  const MONEY = /\b(?:spent|charged|charge|credits?|refund\w*|free)\b/i;
+  const MONEY = REFUSAL_GUARDS.en.money;
 
   it("the refused-image sentence makes no money claim: a picture was made and billed", () => {
     // Flux's blacked-out 200 and OpenAI's output stage. On a render its
@@ -133,34 +134,12 @@ describe("provider refusals", () => {
 // above, in each language. The English guards cannot read Spanish, so every
 // language gets its own, shaped like the English one: advice on phrasing,
 // another input, another model; an invitation to send it again; money.
+// Those live in refusal-messages.ts (REFUSAL_GUARDS), shared with
+// content-policy.test.ts, which holds our own gates' refusals to the same.
 const LOCALES = [
-  {
-    name: "es",
-    t: es,
-    coaching:
-      /\b(?:reformul|redact|redacci|palabras|sencill|simple|ambig)|\b(?:sube|adjunta)[^.]*\ben su lugar\b|\b(?:otro|distinto|diferente) (?:modelo|motor|proveedor)\b/i,
-    again: /\bde nuevo\b|\botra vez\b|\bvuelve a\b|\breintent|\bint[eé]nt/i,
-    money: /\b(?:cobr|cargo|gast|crédit|reembols|devol|gratis|gratuit)/i,
-    nothingCharged: /\bse cobró nada\b/i,
-  },
-  {
-    name: "pt",
-    t: pt,
-    coaching:
-      /\b(?:reformul|reescrev|redaç|palavras|simples|ambígu)|\b(?:envie|anexe|carregue)[^.]*\bem vez disso\b|\b(?:outro|diferente) (?:modelo|motor|provedor)\b/i,
-    again: /\bde novo\b|\bnovamente\b|\boutra vez\b|\btent[ea]|\breenvi/i,
-    money: /\b(?:cobr|gast|crédit|reembols|estorn|devolv|grátis|gratuit)/i,
-    nothingCharged: /\bnada foi cobrado\b/i,
-  },
-  {
-    name: "it",
-    t: italian,
-    coaching:
-      /\b(?:riformul|riscriv|formulazion|parole|semplic|ambigu)|\b(?:carica|allega)[^.]*\binvece\b|\b(?:altro|diverso) (?:modello|motore|fornitore|provider)\b/i,
-    again: /\bdi nuovo\b|\bancora una volta\b|\briprov|\bprova\b|\breinvi/i,
-    money: /\b(?:addebit|pagat|pagament|spes[aoi]\b|credit|rimbors|gratis|gratuit)/i,
-    nothingCharged: /\baddebitato nulla\b/i,
-  },
+  { name: "es", t: es, ...REFUSAL_GUARDS.es, nothingCharged: /\bse cobró nada\b/i },
+  { name: "pt", t: pt, ...REFUSAL_GUARDS.pt, nothingCharged: /\bnada foi cobrado\b/i },
+  { name: "it", t: italian, ...REFUSAL_GUARDS.it, nothingCharged: /\baddebitato nulla\b/i },
 ] as const;
 
 describe("provider refusals in every language", () => {

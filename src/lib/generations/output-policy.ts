@@ -117,6 +117,20 @@ const MSG_UNAVAILABLE =
   "We couldn't check the picture that came back, so it wasn't shown. The credit is back — " +
   "please try again in a moment.";
 
+/**
+ * Exported for the test suite, which holds every language to them. Read in
+ * four languages: the server only ever says the English above, and
+ * lib/i18n/server-text.ts swaps in the catalog's sentence where a person
+ * reads it. Rewording one here fails truth-contracts.test.ts until that map
+ * and the four catalogs follow. `minors` is the self-harm refusal's sentence
+ * too: a picture refusal names no category.
+ */
+export const outputRefusalMessages = {
+  sexual: MSG_SEXUAL,
+  minors: MSG_MINORS,
+  unavailable: MSG_UNAVAILABLE,
+} as const;
+
 // ---------------------------------------------------------------------------
 // The picture itself
 // ---------------------------------------------------------------------------

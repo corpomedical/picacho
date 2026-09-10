@@ -270,6 +270,11 @@ describe("localized server strings still match what the server says", () => {
     // The image models' safety refusals, thrown by openai-images.ts and
     // fal-image.ts and shown as a render's failure reason.
     "./providers/refusal-messages.ts",
+    // Our own content gates' refusals: the prompt gate's refusalMessages and
+    // the picture gate's sentences — an action's error, or a render's
+    // validate step.
+    "./content-policy.ts",
+    "./output-policy.ts",
   ]
     .map((p) => src(p))
     .join("\n")

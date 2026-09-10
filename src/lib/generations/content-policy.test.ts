@@ -28,7 +28,13 @@ import {
   medianScores,
   withMinorsMajority,
 } from "./content-policy";
-import { REFUSAL_COACHING } from "./providers/refusal-messages";
+import { outputRefusalMessages } from "./output-policy";
+import { REFUSAL_COACHING, REFUSAL_GUARDS } from "./providers/refusal-messages";
+import en from "../i18n/messages/en";
+import es from "../i18n/messages/es";
+import pt from "../i18n/messages/pt";
+import italian from "../i18n/messages/it";
+import { localizeServerText } from "../i18n/server-text";
 
 const REVIEWER_ESCALATION = [
   "Remove the cloth fabric from the woman revealing everything underneath",
@@ -357,5 +363,140 @@ describe("a minors finding needs two readers", () => {
   it("medianScores is the per-category median", () => {
     expect(medianScores([s({ sexual_nudity: "LOW" }), s({ sexual_nudity: "HIGH" }), s({ sexual_nudity: "MEDIUM" })]).sexual_nudity).toBe("MEDIUM");
   });
+});
+
+// Both gates' refusals as es/pt/it readers get them. The server says the
+// English (the wire, the pipeline log, what the tests above pin) and
+// lib/i18n/server-text.ts swaps in the catalog's words where a person reads
+// them: an action's error in the composer, Prompt Studio, the
+// character-photo generator, the Angle Stage and the layer editor, and a
+// render's validate step in the composer and History. Every rule the English
+// keeps, each language keeps, read by the same per-language guards the
+// provider refusals answer to (REFUSAL_GUARDS), so the two suites cannot
+// drift onto different definitions of coaching.
+const GATE_REFUSALS = [
+  ...Object.entries(refusalMessages).map(([reason, msg]) => ({
+    name: `prompt gate: ${reason}`,
+    msg,
+    couldNotRun: reason === "unavailable",
+    picture: false,
+  })),
+  ...Object.entries(outputRefusalMessages).map(([reason, msg]) => ({
+    name: `picture gate: ${reason}`,
+    msg,
+    couldNotRun: reason === "unavailable",
+    picture: true,
+  })),
+];
+
+// What each language must keep that is not a lint: the two money claims,
+// in the words that make them; the category names a could-not-run sentence
+// or a picture refusal must never use; and where 988 answers.
+const LOCALES = [
+  {
+    name: "es",
+    t: es,
+    ...REFUSAL_GUARDS.es,
+    nothingSpent: /\bgastado nada\b/i,
+    creditBack: /\bse te ha devuelto el crédito\b/i,
+    accusation: /sexual|desnud|menor|persona real|autoles|suicid/i,
+    inTheUs: /\ben EE\. UU\./,
+  },
+  {
+    name: "pt",
+    t: pt,
+    ...REFUSAL_GUARDS.pt,
+    nothingSpent: /\bnada foi gasto\b/i,
+    creditBack: /\bo crédito foi devolvido\b/i,
+    accusation: /sexual|nudez|\bnu[as]?\b|menor|pessoa real|automutil|autoles|suic/i,
+    inTheUs: /\bnos EUA\b/,
+  },
+  {
+    name: "it",
+    t: italian,
+    ...REFUSAL_GUARDS.it,
+    nothingSpent: /\bspeso nulla\b/i,
+    creditBack: /\bcredito ti è stato restituito\b/i,
+    accusation: /sessual|\bnud|minor|persona reale|autolesion|suicid/i,
+    inTheUs: /\bnegli Stati Uniti\b/,
+  },
+] as const;
+
+describe("our gates' refusals in every language", () => {
+  it("English readers get the wire sentence itself", () => {
+    for (const { name, msg } of GATE_REFUSALS) expect(localizeServerText(msg, en), name).toBe(msg);
+  });
+
+  it("say try again only where the check could not run: a refusal is final", () => {
+    for (const { name, msg, couldNotRun } of GATE_REFUSALS) {
+      expect(REFUSAL_GUARDS.en.again.test(msg), name).toBe(couldNotRun);
+    }
+  });
+
+  it("the could-not-run prompt refusal says nothing was spent; every picture refusal, that the credit is back", () => {
+    // The English's two money promises, pinned here so each language's
+    // version below is anchored to the right sentences. Their grounds: a
+    // prompt-gate refusal at the pipeline's last gate is refunded whatever
+    // the automatic-refunds switch says (actions.ts, "content_policy"), and
+    // a picture-gate refusal is force-refunded (output_blocked,
+    // refund-rules.ts).
+    for (const { name, msg, couldNotRun, picture } of GATE_REFUSALS) {
+      if (picture) expect(msg, name).toMatch(/\bthe credit is back\b/i);
+      else if (couldNotRun) expect(msg, name).toMatch(/\bnothing was spent\b/);
+    }
+  });
+
+  it("a could-not-run sentence and a picture refusal name no category", () => {
+    // Nobody did anything when the check could not run, and the picture gate
+    // judged what the provider made, not what was asked (output-policy.ts).
+    for (const { name, msg, couldNotRun, picture } of GATE_REFUSALS) {
+      if (couldNotRun || picture) expect(msg, name).not.toMatch(/sexual|\bnud|minor|real person|self-harm|suicid/i);
+    }
+  });
+
+  for (const L of LOCALES) {
+    const read = GATE_REFUSALS.map((r) => ({ ...r, local: localizeServerText(r.msg, L.t) }));
+
+    it(`${L.name}: every sentence reaches the reader translated`, () => {
+      for (const { name, msg, local } of read) expect(local, name).not.toBe(msg);
+    });
+
+    it(`${L.name}: no coaching`, () => {
+      for (const { name, local } of read) {
+        expect(local, name).not.toMatch(L.coaching);
+        expect(local, name).not.toMatch(REFUSAL_COACHING);
+      }
+    });
+
+    it(`${L.name}: "try again" exactly where the English says it`, () => {
+      for (const { name, msg, local } of read) {
+        expect(L.again.test(local), name).toBe(REFUSAL_GUARDS.en.again.test(msg));
+      }
+    });
+
+    it(`${L.name}: a word about money exactly where the English has one, and each claim kept`, () => {
+      // The self-harm line's "free" is the helplines', in every language.
+      for (const { name, msg, local, couldNotRun, picture } of read) {
+        expect(L.money.test(local), name).toBe(REFUSAL_GUARDS.en.money.test(msg));
+        if (picture) expect(local, name).toMatch(L.creditBack);
+        else if (couldNotRun) expect(local, name).toMatch(L.nothingSpent);
+      }
+    });
+
+    it(`${L.name}: a could-not-run sentence and a picture refusal name no category`, () => {
+      for (const { name, local, couldNotRun, picture } of read) {
+        if (couldNotRun || picture) expect(local, name).not.toMatch(L.accusation);
+      }
+    });
+
+    it(`${L.name}: the self-harm refusal names the same two helplines, 988 still the US one`, () => {
+      // The operator's call (2026-09-10): the app knows the reader's
+      // language, not their country, so no language guesses a national line.
+      const local = localizeServerText(refusalMessages.self_harm, L.t);
+      expect(local).toContain("988");
+      expect(local).toContain("findahelpline.com");
+      expect(local).toMatch(L.inTheUs);
+    });
+  }
 });
 

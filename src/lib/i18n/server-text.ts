@@ -86,6 +86,31 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "This request was refused by the image model's safety system, so nothing was generated and nothing was charged.":
     "imageRequestRefused",
   "This image was refused by the image model's safety system, so it can't be shown.": "imageResultRefused",
+  // Our own content gates' refusals — the prompt gate's
+  // (lib/generations/content-policy.ts refusalMessages) and the picture
+  // gate's (output-policy.ts). An action's error in the composer, Prompt
+  // Studio, the character-photo generator, the Angle Stage and the layer
+  // editor; a render's validate step in the composer and History. Every one
+  // is a constant, so they are EXACT: none carries a value to pattern-match.
+  "This request asks for sexual or nude content, which Picacho does not generate. Describe a scene instead — what your character is doing, where they are, and the light.":
+    "policySexual",
+  "Picacho does not generate sexual or suggestive content involving anyone who could be a minor. If that is not what you meant, rewrite the scene without the suggestive element.":
+    "policyMinors",
+  "This request asks to undress or sexualize a photograph of a real person. Picacho does not do this, whoever is in the photo and whoever is asking.":
+    "policyRealPerson",
+  "This request asks for content that advertises or solicits sexual services, which Picacho does not generate. Describe a scene instead — what your character is doing, where they are, and the light.":
+    "policyServices",
+  "Picacho does not generate pictures that present self-harm or suicide as desirable. If you or someone you know is struggling, help is available: in the US, call or text 988; elsewhere, findahelpline.com lists free, confidential lines.":
+    "policySelfHarm",
+  "This request would place a real, identifiable person in an event that did not happen, presented as real. Picacho does not generate that.":
+    "policyDeception",
+  "The safety check could not run just now, so nothing was generated and nothing was spent. Please try again in a moment.":
+    "policyUnavailable",
+  "The picture that came back didn't pass our check, so it wasn't shown. Your request was fine — the credit is back.":
+    "outputSexual",
+  "The picture that came back didn't pass our check and wasn't shown. The credit is back.": "outputMinors",
+  "We couldn't check the picture that came back, so it wasn't shown. The credit is back — please try again in a moment.":
+    "outputUnavailable",
 };
 
 // The layer-edit lane force-refunds every failure and says so after the
