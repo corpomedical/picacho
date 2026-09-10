@@ -20,7 +20,7 @@
 // logged is still a refusal; a count that cannot be read is zero — which is
 // exactly how the gates behaved before this file existed, never an allow of
 // anything and never a refusal of anything. Until the operator runs
-// supabase/pending/policy-refusals.sql the table does not exist and both
+// supabase/applied/2026-09-11/policy-refusals.sql the table does not exist and both
 // calls degrade that way (one warning per process, not one per call), so
 // the code ships ahead of the SQL without a customer noticing either order.
 //

@@ -229,7 +229,7 @@ export default async function SettingsPage({
     supabase.from("app_settings").select("value").eq("key", "support_email").single(),
   ]);
   // The notification switches, read on their own so that a database without
-  // the pending columns (supabase/pending/notifications.sql) degrades to
+  // the columns (supabase/applied/2026-09-11/notifications.sql) degrades to
   // "everything on" instead of failing the main profile select above.
   const { data: notifyRow } =
     activeTab === "notifications"

@@ -43,6 +43,12 @@ const COLUMNS = {
     "bonus_credits", "purchased_credits", "free_generation_last_at",
     "referred_by", "referral_rewarded_at", "marketing_opt_out", "status",
     "stripe_customer_id", "stripe_subscription_id", "current_period_start",
+    // Settings redesign (applied/2026-09-11): the notification switches and
+    // the low-credit stamp, then the composer defaults. Every reader is
+    // fail-open, which is exactly why a missing column would go unnoticed.
+    "notify_render_ready", "notify_render_failed", "notify_low_credits", "low_credit_notified_at",
+    "default_video_model", "default_aspect_ratio", "default_video_duration", "video_sound",
+    "full_name",
   ],
   generations: [
     "angle_group_id", "angle", "attachments", "cancel_requested", "deleted_at",
@@ -65,6 +71,11 @@ const COLUMNS = {
   api_keys: ["key_hash"],
   api_rate_hits: ["scope"],
   admin_push_subscriptions: ["endpoint"],
+  // Browser push for every account and community blocking (applied/2026-09-11).
+  user_push_subscriptions: ["endpoint", "user_id", "p256dh", "auth", "locale", "last_used_at"],
+  community_blocks: ["blocker_id", "blocked_id", "blocked_username"],
+  // The refusal log both content gates write (applied/2026-09-11).
+  policy_refusals: ["user_id", "gate", "reason", "strict_lane", "created_at"],
   notes: ["title", "body"],
   products: ["image_paths"],
   app_settings: ["key", "value"],
