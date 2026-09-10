@@ -5,7 +5,7 @@ import { VIDEO_MODELS } from "./providers/video-models";
 import { MEDIA_BUCKETS } from "../media/url";
 import { USER_STORAGE_BUCKETS } from "../profile/storage-buckets";
 import { CANONICAL_ORIGIN, KNOWN_APP_HOSTS, PURCHASE_ORIGIN } from "../domains";
-import { MAPPED_SERVER_STRINGS } from "../i18n/server-text";
+import { MAPPED_SERVER_STRINGS, NOTHING_CHARGED_TAIL } from "../i18n/server-text";
 
 // THE DUPLICATED-TRUTH CONTRACTS (2026-09-05 audit).
 //
@@ -262,7 +262,15 @@ describe("localized server strings still match what the server says", () => {
   // app silently falls back to English for that string — this pin makes the
   // reword loud instead. Source literals wrapped across lines with '+' are
   // reconstituted before matching.
-  const serverSource = ["./actions.ts", "./core.ts", "./job-runner.ts", "./angle-stage.ts"]
+  const serverSource = [
+    "./actions.ts",
+    "./core.ts",
+    "./job-runner.ts",
+    "./angle-stage.ts",
+    // The image models' safety refusals, thrown by openai-images.ts and
+    // fal-image.ts and shown as a render's failure reason.
+    "./providers/refusal-messages.ts",
+  ]
     .map((p) => src(p))
     .join("\n")
     .replace(/["'`]\s*\+\s*["'`]/g, "")
@@ -273,4 +281,10 @@ describe("localized server strings still match what the server says", () => {
       expect(serverSource, `the server no longer produces this exact string — update lib/i18n/server-text.ts (and the four catalogs) in the same commit`).toContain(wire);
     });
   }
+
+  it("the layer-edit lane still ends a failure's reason with the sentence the translator strips", () => {
+    // localizeServerText translates `<mapped reason> Nothing was charged.`
+    // whole; reword or move the tail and the lane's refusal reads English.
+    expect(src("./actions.ts")).toContain(`{ error: \`\${message.slice(0, 160)}${NOTHING_CHARGED_TAIL}\` }`);
+  });
 });

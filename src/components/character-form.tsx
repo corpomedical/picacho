@@ -968,7 +968,9 @@ export function CharacterForm({
                  would have shown if it were clickable. */
               <p className="mt-1.5 text-xs text-atelier-muted">{c.maxImages}</p>
             )}
-          {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{genError}</p>}
+          {/* The server's words (an image model's refusal) through the
+              same display-time translator as the save error below. */}
+          {genError && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{localizeServerText(genError, t)}</p>}
 
           {/* Perspective (2026-08-27): the one-tap reference sheet — front,
               three-quarter, profile, full-body — through the same generate

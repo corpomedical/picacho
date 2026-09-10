@@ -44,6 +44,7 @@ import { ResultActions } from "@/components/result-actions";
 import { LocalDate } from "@/components/local-date";
 import type { GenerationFeedback } from "@/lib/generations/actions";
 import { getServerMessages } from "@/lib/i18n/server";
+import { localizeServerText } from "@/lib/i18n/server-text";
 import { UpscaleButton } from "@/components/upscale-button";
 import { LayersButton } from "@/components/layers-button";
 import {
@@ -190,6 +191,8 @@ export default async function HistoryDetailPage({
   // surface, not a debug console). Everyone gets the friendly localized
   // line; the raw text auto-files into /admin/reports when a render fails
   // (finish() in job-runner.ts) and the full pipeline_log stays in the DB.
+  // Our own sentences (a provider's refusal) are translated here, at
+  // display — the angle viewer below gets these sanitized rows too.
   const sanitizeAttempts = (list: AttemptLog[]): AttemptLog[] =>
     list.map((attempt) => ({
       ...attempt,
@@ -198,7 +201,7 @@ export default async function HistoryDetailPage({
           ? { ...step, detail: t.generate.stepFailedGeneric }
           : isBudgetExhaustedDetail(step.detail)
             ? { ...step, detail: t.generate.stepAllAttemptsUsed }
-            : step,
+            : { ...step, detail: localizeServerText(step.detail, t) },
       ),
     }));
 

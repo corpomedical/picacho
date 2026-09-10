@@ -20,6 +20,13 @@
 // not tell us. Any suggestion here would be a guess, and a guess is either an
 // accusation or a hint.
 //
+// Read in four languages. The server only ever says the English below — it is
+// what point 2's "safety" match reads — and lib/i18n/server-text.ts swaps in
+// the catalog's sentence where a person reads it. Points 1 and 3, no "try
+// again" and the 160 limit hold in es, pt and it too (refusal-messages.test.ts);
+// point 2 is the wire's alone. Rewording either sentence here fails
+// truth-contracts.test.ts until that map and the four catalogs follow.
+//
 // What refusal-messages.test.ts pins, and why each part matters:
 //
 //   1. No coaching. REFUSAL_COACHING below, which content-policy.ts's

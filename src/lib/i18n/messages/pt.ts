@@ -1824,6 +1824,9 @@ const pt = {
     stageFramesTooFast: "Você está renderizando ângulos rápido demais — espere um momento.",
     stageMonthlyCap: "Você levou {used} takes ao palco neste mês de faturamento — o limite do seu plano. Ele zera com o seu período de faturamento.",
     stageFramesCap: "Este take já tem seus {limit} ângulos em qualidade máxima — escolha o início e o fim entre eles.",
+    imageRequestRefused: "O sistema de segurança do modelo de imagem recusou este pedido, então nada foi gerado e nada foi cobrado.",
+    imageResultRefused: "O sistema de segurança do modelo de imagem recusou esta imagem, então ela não pode ser mostrada.",
+    nothingCharged: "Nada foi cobrado.",
   },
   apiKeys: {
     title: "Chaves de API",

@@ -8,6 +8,7 @@ import { thumbUrl } from "@/lib/media/url";
 import { layerEditCreditCost, layerFileName, type LayerBox } from "@/lib/generations/layers";
 import { useLocale } from "@/lib/i18n/provider";
 import { formatMsg } from "@/lib/i18n/format";
+import { localizeServerText } from "@/lib/i18n/server-text";
 
 // The layer stack (shape B, 2026-09-03): every delivered layer on a
 // checkerboard so transparency is visible, named and z-ordered exactly as
@@ -282,7 +283,9 @@ function LayerEditor({ layerId, credits, scored, onDone }: {
           </button>
         </div>
       </div>
-      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
+      {/* editLayer's reasons are the server's English — Flux's refusal
+          among them, with the lane's "Nothing was charged." after it. */}
+      {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{localizeServerText(error, t)}</p>}
     </div>
   );
 }

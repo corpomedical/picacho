@@ -1934,6 +1934,19 @@ const en = {
     stageFramesTooFast: "You're rendering angles quickly — give it a moment.",
     stageMonthlyCap: "You've staged {used} takes this billing month — the limit on your plan. It resets with your billing period.",
     stageFramesCap: "This take already has its {limit} full-quality angles — pick your start and end from those.",
+    // The image models' own safety refusals
+    // (lib/generations/providers/refusal-messages.ts), pinned against that
+    // source like every entry above. What the English must hold, every
+    // language holds, and refusal-messages.test.ts reads all four catalogs
+    // for it: no advice on getting past the refusal and no "try again";
+    // imageRequestRefused keeps "nothing was charged" (true only because the
+    // render path force-refunds that refusal), imageResultRefused makes no
+    // money claim at all (a picture was made and billed); both under 160.
+    imageRequestRefused: "This request was refused by the image model's safety system, so nothing was generated and nothing was charged.",
+    imageResultRefused: "This image was refused by the image model's safety system, so it can't be shown.",
+    // The sentence the layer-edit lane puts after every failure's reason, all
+    // of them force-refunded (actions.ts editLayer) — see localizeServerText.
+    nothingCharged: "Nothing was charged.",
   },
   apiKeys: {
     title: "API keys",

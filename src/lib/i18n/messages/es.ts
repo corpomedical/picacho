@@ -1824,6 +1824,9 @@ const es = {
     stageFramesTooFast: "Estás renderizando ángulos muy rápido — espera un momento.",
     stageMonthlyCap: "Has puesto {used} tomas en escena este mes de facturación — el límite de tu plan. Se restablece con tu periodo de facturación.",
     stageFramesCap: "Esta toma ya tiene sus {limit} ángulos a máxima calidad — elige el inicio y el fin entre ellos.",
+    imageRequestRefused: "El sistema de seguridad del modelo de imagen rechazó esta solicitud, así que no se generó ni se cobró nada.",
+    imageResultRefused: "El sistema de seguridad del modelo de imagen rechazó esta imagen, así que no se puede mostrar.",
+    nothingCharged: "No se cobró nada.",
   },
   apiKeys: {
     title: "Claves de API",

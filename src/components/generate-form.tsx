@@ -154,7 +154,17 @@ function rulesBlockOf(attempts: AttemptLog[]): string | null {
   return step ? step.detail : null;
 }
 
-function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): string | null {
+// What every surface shows (the turn plate, the multi-angle plate, the
+// hidden-tab notification): the line pickFailureLine chooses, with the
+// server's own words in it — a provider's refusal, a step detail — put into
+// the reader's language at display (lib/i18n/server-text.ts). The catalog's
+// lines pass through untouched, and so does anything not mapped yet.
+function summarizeFailure(attempts: AttemptLog[], t: Messages): string | null {
+  const line = pickFailureLine(attempts, t.generate);
+  return line === null ? null : localizeServerText(line, t);
+}
+
+function pickFailureLine(attempts: AttemptLog[], g: Messages["generate"]): string | null {
   // The user's own rules blocking is its own story — the rule, the words
   // that triggered it, and the suggested rewording, verbatim from the log.
   const blocked = rulesBlockOf(attempts);
@@ -502,12 +512,13 @@ function PipelineTrace({
                     URLs) are admin diagnostics — in the composer everyone
                     gets the friendly line; the full text is preserved in
                     pipeline_log for the history page (admin view) and
-                    /admin/reports. */}
+                    /admin/reports. Our own sentences (a provider's
+                    refusal) go through the display-time translator. */}
                 {isRawProviderError(item.step.detail)
                   ? g.stepFailedGeneric
                   : isBudgetExhaustedDetail(item.step.detail)
                     ? g.stepAllAttemptsUsed
-                    : item.step.detail}
+                    : localizeServerText(item.step.detail, t)}
               </p>
             </div>
           </li>
@@ -1649,7 +1660,7 @@ function SingleTurnBubble({
               <div className="flex items-center gap-2">
                 <Badge tone="danger">{g.couldntValidate}</Badge>
                 <p className="text-xs text-atelier-muted">
-                  {summarizeFailure(turn.attempts, g) ??
+                  {summarizeFailure(turn.attempts, t) ??
                     (turn.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: turn.attempts.length }))}
                 </p>
               </div>
@@ -1734,7 +1745,7 @@ function MultiAngleResult({ angles, prompt }: { angles: MultiAngleClip[]; prompt
             <div className="mt-3 flex items-center gap-2">
               <Badge tone="danger">{g.couldntValidate}</Badge>
               <p className="text-xs text-atelier-muted">
-                {summarizeFailure(active.attempts, g) ??
+                {summarizeFailure(active.attempts, t) ??
                   (active.attempts.length === 1 ? g.noPassingResultOne : formatMsg(g.noPassingResultOther, { n: active.attempts.length }))}
               </p>
             </div>
@@ -3636,7 +3647,7 @@ function GenerateFormInner({
           ((angles[0]?.attempts.length ?? 1) > 1
             ? formatMsg(g.passedOnAttempt, { n: angles[0]?.attempts.length ?? 1 })
             : "")
-        : (summarizeFailure(angles[0]?.attempts ?? [], g) ?? g.noPassingResultOne),
+        : (summarizeFailure(angles[0]?.attempts ?? [], t) ?? g.noPassingResultOne),
     );
     // The send was accepted and has run to completion. confirmScene reads
     // this to decide whether to tear its panel down — a rejected send must
@@ -4735,9 +4746,9 @@ function GenerateFormInner({
     const bestAttempts = failedAttemptsLog ?? result.attempts;
     const failureReason = succeeded
       ? null
-      : ((failedAttemptsLog ? summarizeFailure(failedAttemptsLog, g) : null) ??
+      : ((failedAttemptsLog ? summarizeFailure(failedAttemptsLog, t) : null) ??
         queuedFailure ??
-        summarizeFailure(result.attempts, g));
+        summarizeFailure(result.attempts, t));
     setLiveResult({
       id: result.id,
       succeeded,

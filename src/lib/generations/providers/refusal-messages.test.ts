@@ -18,6 +18,10 @@ import {
 import { forceRefundEligible, REFUSED_BEFORE_RENDER_ISSUE } from "../refund-rules";
 import { isProviderFault } from "../provider-fault";
 import en from "../../i18n/messages/en";
+import es from "../../i18n/messages/es";
+import pt from "../../i18n/messages/pt";
+import italian from "../../i18n/messages/it";
+import { localizeServerText, NOTHING_CHARGED_TAIL } from "../../i18n/server-text";
 
 const src = (p: string) => readFileSync(new URL(p, import.meta.url), "utf8");
 
@@ -121,6 +125,94 @@ describe("provider refusals", () => {
     expect(openai).toContain("new ImageSafetyRejection(refusal.message, refusal.beforeRender)");
     expect(src("./fal-image.ts")).toContain("new FluxSafetyRejection(IMAGE_RESULT_REFUSED)");
   });
+});
+
+// The same sentences as es/pt/it readers get them: the wire stays English
+// (SAFETY_REJECTION and the model breaker read its "safety"), and
+// lib/i18n/server-text.ts swaps in the catalog's words at display. Each rule
+// above, in each language. The English guards cannot read Spanish, so every
+// language gets its own, shaped like the English one: advice on phrasing,
+// another input, another model; an invitation to send it again; money.
+const LOCALES = [
+  {
+    name: "es",
+    t: es,
+    coaching:
+      /\b(?:reformul|redact|redacci|palabras|sencill|simple|ambig)|\b(?:sube|adjunta)[^.]*\ben su lugar\b|\b(?:otro|distinto|diferente) (?:modelo|motor|proveedor)\b/i,
+    again: /\bde nuevo\b|\botra vez\b|\bvuelve a\b|\breintent|\bint[eé]nt/i,
+    money: /\b(?:cobr|cargo|gast|crédit|reembols|devol|gratis|gratuit)/i,
+    nothingCharged: /\bse cobró nada\b/i,
+  },
+  {
+    name: "pt",
+    t: pt,
+    coaching:
+      /\b(?:reformul|reescrev|redaç|palavras|simples|ambígu)|\b(?:envie|anexe|carregue)[^.]*\bem vez disso\b|\b(?:outro|diferente) (?:modelo|motor|provedor)\b/i,
+    again: /\bde novo\b|\bnovamente\b|\boutra vez\b|\btent[ea]|\breenvi/i,
+    money: /\b(?:cobr|gast|crédit|reembols|estorn|devolv|grátis|gratuit)/i,
+    nothingCharged: /\bnada foi cobrado\b/i,
+  },
+  {
+    name: "it",
+    t: italian,
+    coaching:
+      /\b(?:riformul|riscriv|formulazion|parole|semplic|ambigu)|\b(?:carica|allega)[^.]*\binvece\b|\b(?:altro|diverso) (?:modello|motore|fornitore|provider)\b/i,
+    again: /\bdi nuovo\b|\bancora una volta\b|\briprov|\bprova\b|\breinvi/i,
+    money: /\b(?:addebit|pagat|pagament|spes[aoi]\b|credit|rimbors|gratis|gratuit)/i,
+    nothingCharged: /\baddebitato nulla\b/i,
+  },
+] as const;
+
+describe("provider refusals in every language", () => {
+  it("English readers get the wire sentence itself", () => {
+    expect(en.serverText.imageRequestRefused).toBe(IMAGE_REQUEST_REFUSED);
+    expect(en.serverText.imageResultRefused).toBe(IMAGE_RESULT_REFUSED);
+    expect(localizeServerText(IMAGE_REQUEST_REFUSED, en)).toBe(IMAGE_REQUEST_REFUSED);
+  });
+
+  for (const { name, t, coaching, again, money, nothingCharged } of LOCALES) {
+    const request = t.serverText.imageRequestRefused;
+    const result = t.serverText.imageResultRefused;
+
+    it(`${name}: the wire sentences reach the reader translated`, () => {
+      expect(localizeServerText(IMAGE_REQUEST_REFUSED, t)).toBe(request);
+      expect(localizeServerText(IMAGE_RESULT_REFUSED, t)).toBe(result);
+      expect(request).not.toBe(IMAGE_REQUEST_REFUSED);
+      expect(result).not.toBe(IMAGE_RESULT_REFUSED);
+    });
+
+    it(`${name}: no coaching and no invitation to send it again`, () => {
+      for (const msg of [request, result]) {
+        expect(msg).not.toMatch(coaching);
+        expect(msg).not.toMatch(REFUSAL_COACHING);
+        expect(msg).not.toMatch(again);
+      }
+    });
+
+    it(`${name}: the request keeps "nothing was charged"; the refused image makes no money claim`, () => {
+      // Point 3 in refusal-messages.ts: true for the request only because the
+      // render path force-refunds it, and never promised for a picture that
+      // was made and billed.
+      expect(request).toMatch(nothingCharged);
+      expect(result).not.toMatch(money);
+    });
+
+    it(`${name}: fit the shortest cut any surface makes`, () => {
+      expect(request.length).toBeLessThanOrEqual(160);
+      expect(result.length).toBeLessThanOrEqual(160);
+    });
+
+    it(`${name}: the layer-edit lane's refusal is translated whole, its refund sentence with it`, () => {
+      // editLayer force-refunds every failure and appends the fact (actions.ts);
+      // truth-contracts pins that tail. An unmapped reason stays all English.
+      expect(localizeServerText(`${IMAGE_RESULT_REFUSED}${NOTHING_CHARGED_TAIL}`, t)).toBe(
+        `${result} ${t.serverText.nothingCharged}`,
+      );
+      expect(t.serverText.nothingCharged).toMatch(nothingCharged);
+      const unmapped = `The edit failed.${NOTHING_CHARGED_TAIL}`;
+      expect(localizeServerText(unmapped, t)).toBe(unmapped);
+    });
+  }
 });
 
 // The shape OpenAI's image-generation guide documents for a refusal. The

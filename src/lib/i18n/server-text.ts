@@ -77,7 +77,23 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That angle couldn't be re-rendered — try a slightly different one.": "stageFrameFailed",
   "That angle couldn't be fetched — try again.": "stageFrameFetchFailed",
   "You're rendering angles quickly — give it a moment.": "stageFramesTooFast",
+  // An image model's own safety refusal
+  // (lib/generations/providers/refusal-messages.ts) — a render's failure
+  // reason in the composer and History, and the character-photo and
+  // layer-edit errors. Translated here, at display, and nowhere earlier:
+  // pipeline.ts's SAFETY_REJECTION and provider-fault.ts read the English
+  // "safety" on the wire to stop the retry and spare the model breaker.
+  "This request was refused by the image model's safety system, so nothing was generated and nothing was charged.":
+    "imageRequestRefused",
+  "This image was refused by the image model's safety system, so it can't be shown.": "imageResultRefused",
 };
+
+// The layer-edit lane force-refunds every failure and says so after the
+// reason (actions.ts editLayer: `${message.slice(0, 160)} Nothing was
+// charged.`), so a mapped reason reaches the screen with this on its tail.
+// Translated whole only when the reason before it is mapped — anything else
+// stays all English rather than half-translated.
+export const NOTHING_CHARGED_TAIL = " Nothing was charged.";
 
 // Parameterized server strings — the numbers ride into the localized copy.
 const PATTERNS: {
@@ -113,6 +129,10 @@ export function localizeServerText(text: string, t: Messages): string {
   for (const p of PATTERNS) {
     const m = text.match(p.re);
     if (m) return formatMsg(t.serverText[p.key], p.params(m));
+  }
+  if (text.endsWith(NOTHING_CHARGED_TAIL)) {
+    const reasonKey = EXACT[text.slice(0, -NOTHING_CHARGED_TAIL.length)];
+    if (reasonKey) return `${t.serverText[reasonKey]} ${t.serverText.nothingCharged}`;
   }
   return text;
 }

@@ -1823,6 +1823,9 @@ const it = {
     stageFramesTooFast: "Stai renderizzando angolazioni troppo in fretta — aspetta un momento.",
     stageMonthlyCap: "Hai portato {used} riprese sul palco questo mese di fatturazione — il limite del tuo piano. Si azzera con il tuo periodo di fatturazione.",
     stageFramesCap: "Questa ripresa ha già le sue {limit} angolazioni a piena qualità — scegli inizio e fine tra quelle.",
+    imageRequestRefused: "Il sistema di sicurezza del modello di immagini ha rifiutato questa richiesta, quindi non è stato generato né addebitato nulla.",
+    imageResultRefused: "Il sistema di sicurezza del modello di immagini ha rifiutato questa immagine, quindi non può essere mostrata.",
+    nothingCharged: "Non è stato addebitato nulla.",
   },
   apiKeys: {
     title: "Chiavi API",
