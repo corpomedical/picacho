@@ -27,6 +27,16 @@ export default async function AppLayout({
     redirect("/login");
   }
 
+  // Two-step verification: a session whose account has a verified factor
+  // but hasn't presented it this sign-in goes to the challenge first —
+  // without this, user MFA would be decoration (the admin layout has had
+  // the same gate since 2026-09-05). Only ENROLLED accounts have nextLevel
+  // aal2, so this can never gate someone with no factor.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    redirect("/verify-2fa");
+  }
+
   const [
     { data: profile },
     { data: recentJobs },

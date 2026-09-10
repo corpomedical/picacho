@@ -92,6 +92,7 @@ describe("sitemap: every public page registers itself", () => {
       "/forgot-password",
       "/reset-password",
       "/admin-verify",
+      "/verify-2fa",
     ]);
     const pages: string[] = [];
     const walk = (dir: URL, route: string) => {

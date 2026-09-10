@@ -12,7 +12,7 @@ const LABEL = "mb-1.5 block text-[11px] font-medium uppercase tracking-widest te
 const FIELD =
   "w-full rounded-control border border-atelier-rule bg-transparent px-3.5 py-2.5 text-sm text-atelier-ink placeholder:text-atelier-muted/80 outline-none transition-colors focus:border-atelier-accent";
 
-export function PasswordForm() {
+export function PasswordForm({ hasPassword = true }: { hasPassword?: boolean }) {
   const { t } = useLocale();
   const [currentPassword, setCurrentPassword] = useState("");
   const [password, setPassword] = useState("");
@@ -48,7 +48,11 @@ export function PasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <div>
+      {/* A Google-only account has no current password to type — say so
+          instead of presenting a field that can only be left blank
+          (2026-09-11; the server already skips the re-check for these). */}
+      {!hasPassword && <p className="text-sm text-atelier-muted">{t.settings.noPasswordYetNote}</p>}
+      <div hidden={!hasPassword}>
         <label htmlFor="current_password" className={LABEL}>{t.settings.currentPasswordLabel}</label>
         <input
           id="current_password"
@@ -100,9 +104,9 @@ export function PasswordForm() {
       <SettingsStatus
         state={error ? "error" : status === "saved" ? "saved" : "idle"}
         // `||`, not `??`: error starts as "" and an empty string is not
-          // nullish, so the saved message — the one instruction this flow
-          // depends on — never rendered (2026-09-11).
-          message={error || (status === "saved" ? t.settings.passwordUpdated : null)}
+        // nullish, so the saved message — the one instruction this flow
+        // depends on — never rendered (2026-09-11).
+        message={error || (status === "saved" ? t.settings.passwordUpdated : null)}
       />
       <Button
         type="submit"
@@ -112,7 +116,7 @@ export function PasswordForm() {
         pending={status === "saving"}
         pendingLabel={t.common.saving}
       >
-        {t.settings.updatePassword}
+        {hasPassword ? t.settings.updatePassword : t.settings.setPasswordCta}
       </Button>
     </form>
   );

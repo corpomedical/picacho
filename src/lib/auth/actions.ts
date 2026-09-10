@@ -59,6 +59,14 @@ export async function login(formData: FormData) {
     redirect(`/login?error=${code}`);
   }
 
+  // An account with a verified authenticator steps up BEFORE it lands in
+  // the app (2026-09-11) — /app/layout.tsx enforces the same, so this is
+  // the fast path, not the gate.
+  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  if (aal && aal.nextLevel === "aal2" && aal.currentLevel !== "aal2") {
+    redirect("/verify-2fa");
+  }
+
   redirect("/app");
 }
 
@@ -336,4 +344,29 @@ export async function logout() {
 
   await supabase.auth.signOut();
   redirect("/login");
+}
+
+/**
+ * Revoke every session EXCEPT this one (settings → Security, 2026-09-11).
+ * Push tokens go with them — same reasoning as logout above: the server
+ * cannot tell which token belongs to which device, a device still in use
+ * re-registers on its next launch, and a stranger receiving "your render
+ * finished" is the larger harm. The current session keeps working, so this
+ * returns a result instead of redirecting.
+ */
+export async function signOutOtherDevices(): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+  try {
+    await supabase.from("push_tokens").delete().eq("user_id", userData.user.id);
+  } catch (err) {
+    console.error("signOutOtherDevices: push token cleanup failed", err);
+  }
+  const { error } = await supabase.auth.signOut({ scope: "others" });
+  if (error) {
+    console.error("signOutOtherDevices failed:", error.message);
+    return { error: "Couldn't sign the other devices out — try again." };
+  }
+  return { error: null };
 }

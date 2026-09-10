@@ -19,6 +19,9 @@ import { InviteCard } from "@/components/invite-card";
 import { UsernameForm } from "@/components/settings/username-form";
 import { EmailForm } from "@/components/settings/email-form";
 import { PasswordForm } from "@/components/settings/password-form";
+import { MfaCard } from "@/components/settings/mfa-card";
+import { ConnectedAccountsCard } from "@/components/settings/connected-accounts-card";
+import { SessionsCard } from "@/components/settings/sessions-card";
 import { ThemePicker } from "@/components/settings/theme-picker";
 import { DeleteAccountForm } from "@/components/settings/delete-account-form";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
@@ -203,6 +206,10 @@ export default async function SettingsPage({
   // delete confirmation asks for the email address and the invite card
   // simply waits until one is chosen.
   const username = (profile?.username as string | null) ?? null;
+  // Whether an email+password identity exists — a Google-only account gets
+  // the set-a-password variant of the form (the server already skips the
+  // current-password re-check for it).
+  const hasPassword = (data.user.identities ?? []).some((i) => i.provider === "email");
   const plan = (profile?.plan ?? "none") as PlanId;
 
   // API access: Elite includes it, an admin grant covers the exceptions.
@@ -310,7 +317,6 @@ export default async function SettingsPage({
               <SettingsSection title={s.account} description={s.accountDesc}>
                 <div className="space-y-5">
                   <UsernameForm initialUsername={username ?? ""} />
-                  <EmailForm initialEmail={data.user.email ?? ""} />
                   <div className="border-t border-atelier-rule/60 pt-5">
                     <ProfileForm initialCompany={profile?.company ?? ""} initialGender={profile?.gender ?? ""} />
                   </div>
@@ -332,10 +338,6 @@ export default async function SettingsPage({
                     blast query would actually do. */}
                 <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
               </SettingsSection>
-
-              {/* Only shown where it's actually usable — an API-keys card on a
-                  Starter account is an advert dressed as a setting. */}
-              {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
 
               {/* Not a card: a 32px sheet around one underlined link was the
                   clearest case of the density the survey flagged. */}
@@ -379,9 +381,31 @@ export default async function SettingsPage({
           )}
 
           {activeTab === "security" && (
-            <SettingsSection title={s.security} description={s.securitySubtitle}>
-              <PasswordForm />
-            </SettingsSection>
+            <div className="space-y-4">
+              <SettingsSection title={s.security} description={s.securitySubtitle}>
+                <div className="space-y-5">
+                  <PasswordForm hasPassword={hasPassword} />
+                  {/* The email change is a password-gated credential change —
+                      it lived on the Account tab between a referral card and
+                      a marketing toggle (2026-09-11 IA pass). */}
+                  <div className="border-t border-atelier-rule/60 pt-5">
+                    <EmailForm initialEmail={data.user.email ?? ""} />
+                  </div>
+                  <div className="border-t border-atelier-rule/60 pt-5">
+                    <MfaCard />
+                  </div>
+                  <div className="border-t border-atelier-rule/60 pt-5">
+                    <ConnectedAccountsCard />
+                  </div>
+                  <div className="border-t border-atelier-rule/60 pt-5">
+                    <SessionsCard />
+                  </div>
+                </div>
+              </SettingsSection>
+              {/* Live credentials belong with the rest of them, not between
+                  a referral card and a logout link. */}
+              {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
+            </div>
           )}
 
           {activeTab === "usage" && (
