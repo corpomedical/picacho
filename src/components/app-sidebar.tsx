@@ -198,6 +198,17 @@ function LayersIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function SetsIcon(props: SVGProps<SVGSVGElement>) {
+  // A floor, a back wall and a figure on its mark — a set, not a cube.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M3 17.5 12 21l9-3.5M3 17.5V6.5L12 3l9 3.5v11" />
+      <circle cx="12" cy="10.5" r="1.6" />
+      <path d="M12 12.5v4" />
+    </svg>
+  );
+}
+
 function UpscaleIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -365,6 +376,7 @@ export function AppSidebar({
   supportEmail,
   skipAiRefinement,
   voiceModeEnabled,
+  setsVisible = false,
 }: {
   isAdmin: boolean;
   username: string;
@@ -375,6 +387,8 @@ export function AppSidebar({
   supportEmail: string;
   voiceModeEnabled: boolean;
   skipAiRefinement: boolean;
+  /** Sets (Astra) — shown only when the flag is on and the account may open it. */
+  setsVisible?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -835,6 +849,7 @@ export function AppSidebar({
             plus a New badge while a tool is new. When the next tool lands,
             drop the badge from the previous one here — one edit. */}
         {[
+          ...(setsVisible ? [{ href: "/app/sets", label: t.nav.sets, Icon: SetsIcon, badge: t.nav.newBadge }] : []),
           { href: "/app/upscale", label: t.nav.upscale, Icon: UpscaleIcon, badge: t.nav.newBadge },
           { href: "/app/layers", label: t.nav.layers, Icon: LayersIcon, badge: t.nav.newBadge },
         ].map((tool) => (

@@ -278,6 +278,8 @@ describe("localized server strings still match what the server says", () => {
     // Sharing to the community feed, the feed gate's refusals among them —
     // the share button's error line.
     "../community/actions.ts",
+    // Sets: every sentence its actions and pages return.
+    "../sets/messages.ts",
   ]
     .map((p) => src(p))
     .join("\n")

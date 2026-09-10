@@ -579,7 +579,7 @@ export async function generateReferenceImage(formData: FormData): Promise<Genera
 
     const previewUrl = mediaUrl("character-references", path);
 
-    // THE PICTURE CHECK (2026-09-11). AI character photos were saved
+    // THE PICTURE CHECK (2026-09-10). AI character photos were saved
     // without it. Judged from the stored file (the OpenAI lane returns bytes,
     // not a URL), BEFORE the photo can join a character row; a refused photo
     // is deleted and the allowance comes back through the catch below. An

@@ -1,0 +1,1370 @@
+{
+ "bounds": {
+  "z": 26,
+  "height": 10,
+  "x": 18
+ },
+ "lights": [
+  {
+   "distance": 19,
+   "groundColor": null,
+   "kind": "point",
+   "target": [
+    -3,
+    0,
+    0
+   ],
+   "position": [
+    -3.7,
+    4.5,
+    1.5
+   ],
+   "color": "#ffd49a",
+   "intensity": 48,
+   "angleDeg": 45
+  },
+  {
+   "distance": 11,
+   "groundColor": null,
+   "kind": "point",
+   "target": [
+    0,
+    1,
+    -4
+   ],
+   "position": [
+    0,
+    2.85,
+    -5.2
+   ],
+   "color": "#ffb969",
+   "intensity": 27,
+   "angleDeg": 45
+  },
+  {
+   "distance": 15,
+   "groundColor": null,
+   "kind": "point",
+   "target": [
+    3,
+    0,
+    -8
+   ],
+   "position": [
+    5.2,
+    3.6,
+    -8.5
+   ],
+   "color": "#a9c6df",
+   "intensity": 16,
+   "angleDeg": 45
+  },
+  {
+   "distance": 0,
+   "groundColor": "#25232a",
+   "kind": "hemisphere",
+   "target": [
+    0,
+    0,
+    0
+   ],
+   "position": [
+    0,
+    9,
+    0
+   ],
+   "color": "#71869f",
+   "intensity": 0.35,
+   "angleDeg": 45
+  }
+ ],
+ "ground": {
+  "color": "#292d32",
+  "roughness": 0.26
+ },
+ "description": "Rain-dark cobbles run between shuttered brick shops. A single noodle stall glows beneath a faded red-and-cream striped awning. Amber lamplight pools across puddles, wet metal shutters catch blue reflections, and narrow gutters shine in the misty night.",
+ "fog": {
+  "color": "#18212b",
+  "near": 15,
+  "far": 48
+ },
+ "cameras": [
+  {
+   "position": [
+    2.8,
+    2.5,
+    10.5
+   ],
+   "fovDeg": 55,
+   "label": "Street establishing",
+   "target": [
+    0,
+    1.3,
+    -2
+   ]
+  },
+  {
+   "position": [
+    3.4,
+    1.65,
+    3.6
+   ],
+   "fovDeg": 44,
+   "label": "Stall approach",
+   "target": [
+    0,
+    1.3,
+    -2.5
+   ]
+  },
+  {
+   "position": [
+    -2.2,
+    0.45,
+    4.8
+   ],
+   "fovDeg": 57,
+   "label": "Puddle level",
+   "target": [
+    0,
+    1.3,
+    -2
+   ]
+  }
+ ],
+ "objects": [
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.32,
+   "metalness": 0,
+   "color": "#45464a",
+   "shape": "box",
+   "position": [
+    -5,
+    0.12,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 2,
+    "offset": [
+     10,
+     0,
+     0
+    ]
+   },
+   "size": [
+    2,
+    0.24,
+    26
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.8,
+   "metalness": 0,
+   "color": "#493a37",
+   "shape": "box",
+   "position": [
+    -7.45,
+    4,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    2.9,
+    8,
+    26
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.78,
+   "metalness": 0,
+   "color": "#444548",
+   "shape": "box",
+   "position": [
+    7.45,
+    4.2,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    2.9,
+    8.4,
+    26
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.55,
+   "metalness": 0.3,
+   "color": "#252b2e",
+   "shape": "box",
+   "position": [
+    -5.92,
+    1.9,
+    -10
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     5
+    ]
+   },
+   "size": [
+    0.2,
+    3.3,
+    4.2
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.5,
+   "metalness": 0.45,
+   "color": "#343c40",
+   "shape": "box",
+   "position": [
+    5.92,
+    1.9,
+    -10
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     5
+    ]
+   },
+   "size": [
+    0.2,
+    3.3,
+    4.2
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.7,
+   "metalness": 0,
+   "color": "#655b51",
+   "shape": "box",
+   "position": [
+    -5.77,
+    2,
+    -12.3
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 6,
+    "offset": [
+     0,
+     0,
+     4.9
+    ]
+   },
+   "size": [
+    0.45,
+    3.55,
+    0.35
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.7,
+   "metalness": 0,
+   "color": "#555958",
+   "shape": "box",
+   "position": [
+    5.77,
+    2,
+    -12.3
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 6,
+    "offset": [
+     0,
+     0,
+     4.9
+    ]
+   },
+   "size": [
+    0.45,
+    3.55,
+    0.35
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.37,
+   "metalness": 0.65,
+   "color": "#555c5e",
+   "shape": "box",
+   "position": [
+    -5.78,
+    0.55,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 12,
+    "offset": [
+     0,
+     0.24,
+     0
+    ]
+   },
+   "size": [
+    0.035,
+    0.035,
+    24.6
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.37,
+   "metalness": 0.65,
+   "color": "#596066",
+   "shape": "box",
+   "position": [
+    5.78,
+    0.55,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 12,
+    "offset": [
+     0,
+     0.24,
+     0
+    ]
+   },
+   "size": [
+    0.035,
+    0.035,
+    24.6
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.67,
+   "metalness": 0,
+   "color": "#29292a",
+   "shape": "box",
+   "position": [
+    -5.7,
+    3.85,
+    -10
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     5
+    ]
+   },
+   "size": [
+    0.32,
+    0.5,
+    4.1
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.67,
+   "metalness": 0,
+   "color": "#303b3c",
+   "shape": "box",
+   "position": [
+    5.7,
+    3.85,
+    -10
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     5
+    ]
+   },
+   "size": [
+    0.32,
+    0.5,
+    4.1
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.19,
+   "metalness": 0.3,
+   "color": "#18252e",
+   "shape": "box",
+   "position": [
+    -5.97,
+    5.65,
+    -10
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     5
+    ]
+   },
+   "size": [
+    0.1,
+    1.55,
+    1.6
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.19,
+   "metalness": 0.3,
+   "color": "#202b35",
+   "shape": "box",
+   "position": [
+    5.97,
+    5.8,
+    -10
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 5,
+    "offset": [
+     0,
+     0,
+     5
+    ]
+   },
+   "size": [
+    0.1,
+    1.6,
+    1.6
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.55,
+   "metalness": 0,
+   "color": "#70655b",
+   "shape": "box",
+   "position": [
+    -5.85,
+    4.75,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 2,
+    "offset": [
+     11.7,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.35,
+    0.18,
+    26
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.32,
+   "metalness": 0.75,
+   "color": "#242d32",
+   "shape": "cylinder",
+   "position": [
+    -5.55,
+    3.8,
+    -7.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 2,
+    "offset": [
+     11.1,
+     0,
+     15
+    ]
+   },
+   "size": [
+    0.14,
+    7.1,
+    0.14
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.35,
+   "metalness": 0,
+   "color": "#42464a",
+   "shape": "box",
+   "position": [
+    -3.8,
+    0.018,
+    -11.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 39,
+    "offset": [
+     0,
+     0,
+     0.6
+    ]
+   },
+   "size": [
+    7.6,
+    0.036,
+    0.035
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.38,
+   "metalness": 0,
+   "color": "#484b4e",
+   "shape": "box",
+   "position": [
+    -3.6,
+    0.015,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 13,
+    "offset": [
+     0.6,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.027,
+    0.03,
+    25.5
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.06,
+   "metalness": 0.45,
+   "color": "#1b2934",
+   "shape": "plane",
+   "position": [
+    0.7,
+    0.043,
+    2.1
+   ],
+   "rotation": [
+    0,
+    16,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    2.5,
+    0,
+    4.2
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.04,
+   "metalness": 0.5,
+   "color": "#302e29",
+   "shape": "plane",
+   "position": [
+    -2.6,
+    0.045,
+    0.4
+   ],
+   "rotation": [
+    0,
+    -13,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    1.5,
+    0,
+    3.2
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.06,
+   "metalness": 0.4,
+   "color": "#34302b",
+   "shape": "plane",
+   "position": [
+    0.2,
+    0.044,
+    -3.25
+   ],
+   "rotation": [
+    0,
+    8,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    3,
+    0,
+    1.1
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.05,
+   "metalness": 0.45,
+   "color": "#1c2a35",
+   "shape": "plane",
+   "position": [
+    2.6,
+    0.044,
+    -8.8
+   ],
+   "rotation": [
+    0,
+    -8,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    1.5,
+    0,
+    3
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.1,
+   "metalness": 0.4,
+   "color": "#151d24",
+   "shape": "plane",
+   "position": [
+    -3.93,
+    0.046,
+    0
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 2,
+    "offset": [
+     7.86,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.12,
+    0,
+    25.8
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.63,
+   "metalness": 0,
+   "color": "#633d29",
+   "shape": "box",
+   "position": [
+    0,
+    0.65,
+    -5.6
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    3.6,
+    1.3,
+    1.5
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.25,
+   "metalness": 0.7,
+   "color": "#8c9190",
+   "shape": "box",
+   "position": [
+    0,
+    1.34,
+    -5.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    3.9,
+    0.12,
+    1.85
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.7,
+   "metalness": 0,
+   "color": "#4f382b",
+   "shape": "box",
+   "position": [
+    -1.9,
+    1.65,
+    -6.3
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 2,
+    "offset": [
+     3.8,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.12,
+    3.3,
+    0.12
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.64,
+   "metalness": 0,
+   "color": "#45352b",
+   "shape": "box",
+   "position": [
+    0,
+    1.9,
+    -6.4
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    3.9,
+    2.5,
+    0.12
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.57,
+   "metalness": 0,
+   "color": "#923f36",
+   "shape": "box",
+   "position": [
+    -1.875,
+    3.12,
+    -5.25
+   ],
+   "rotation": [
+    -10,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 6,
+    "offset": [
+     0.75,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.375,
+    0.07,
+    2.8
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.6,
+   "metalness": 0,
+   "color": "#c6b698",
+   "shape": "box",
+   "position": [
+    -1.5,
+    3.12,
+    -5.25
+   ],
+   "rotation": [
+    -10,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 6,
+    "offset": [
+     0.75,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.375,
+    0.07,
+    2.8
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.6,
+   "metalness": 0,
+   "color": "#923f36",
+   "shape": "box",
+   "position": [
+    -1.875,
+    2.75,
+    -3.87
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 6,
+    "offset": [
+     0.75,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.375,
+    0.27,
+    0.055
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.6,
+   "metalness": 0,
+   "color": "#c6b698",
+   "shape": "box",
+   "position": [
+    -1.5,
+    2.75,
+    -3.87
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 6,
+    "offset": [
+     0.75,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.375,
+    0.27,
+    0.055
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 4,
+   "emissive": "#ffd092",
+   "roughness": 0.3,
+   "metalness": 0,
+   "color": "#ffe0ac",
+   "shape": "box",
+   "position": [
+    0,
+    2.86,
+    -5.3
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    1.45,
+    0.09,
+    0.16
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.25,
+   "metalness": 0.85,
+   "color": "#a1a5a1",
+   "shape": "cylinder",
+   "position": [
+    -1,
+    1.7,
+    -5.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.65,
+    0.6,
+    0.65
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.2,
+   "metalness": 0.8,
+   "color": "#b1b2a9",
+   "shape": "cylinder",
+   "position": [
+    -1,
+    2.015,
+    -5.7
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.69,
+    0.035,
+    0.69
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.3,
+   "metalness": 0,
+   "color": "#d7cdb7",
+   "shape": "sphere",
+   "position": [
+    0.25,
+    1.46,
+    -5.05
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": {
+    "count": 3,
+    "offset": [
+     0.48,
+     0,
+     0
+    ]
+   },
+   "size": [
+    0.34,
+    0.15,
+    0.34
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.5,
+   "metalness": 0,
+   "color": "#492b20",
+   "shape": "cylinder",
+   "position": [
+    1.5,
+    1.55,
+    -5.8
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.2,
+    0.3,
+    0.2
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.67,
+   "metalness": 0,
+   "color": "#725038",
+   "shape": "box",
+   "position": [
+    2.6,
+    0.3,
+    -6.1
+   ],
+   "rotation": [
+    0,
+    4,
+    0
+   ],
+   "repeat": {
+    "count": 2,
+    "offset": [
+     0,
+     0.6,
+     0
+    ]
+   },
+   "size": [
+    0.85,
+    0.6,
+    0.75
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.4,
+   "metalness": 0.7,
+   "color": "#222c30",
+   "shape": "cylinder",
+   "position": [
+    -3.7,
+    0.2,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.55,
+    0.4,
+    0.55
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.34,
+   "metalness": 0.8,
+   "color": "#283135",
+   "shape": "cylinder",
+   "position": [
+    -3.7,
+    2.45,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.16,
+    4.5,
+    0.16
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 3,
+   "emissive": "#ffd39a",
+   "roughness": 0.2,
+   "metalness": 0,
+   "color": "#ffe0ae",
+   "shape": "box",
+   "position": [
+    -3.7,
+    4.5,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.42,
+    0.6,
+    0.42
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.35,
+   "metalness": 0.7,
+   "color": "#242c30",
+   "shape": "cone",
+   "position": [
+    -3.7,
+    4.91,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.77,
+    0.3,
+    0.77
+   ]
+  },
+  {
+   "castShadow": true,
+   "emissiveIntensity": 0,
+   "emissive": null,
+   "roughness": 0.35,
+   "metalness": 0.7,
+   "color": "#242c30",
+   "shape": "box",
+   "position": [
+    -3.7,
+    4.18,
+    1.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.55,
+    0.08,
+    0.55
+   ]
+  },
+  {
+   "castShadow": false,
+   "emissiveIntensity": 2,
+   "emissive": "#b2c9df",
+   "roughness": 0.3,
+   "metalness": 0.2,
+   "color": "#bfd0df",
+   "shape": "box",
+   "position": [
+    5.5,
+    3.6,
+    -8.5
+   ],
+   "rotation": [
+    0,
+    0,
+    0
+   ],
+   "repeat": null,
+   "size": [
+    0.25,
+    0.22,
+    0.6
+   ]
+  }
+ ],
+ "title": "Rainlit Noodle Market",
+ "marks": [
+  {
+   "z": -2,
+   "x": 0,
+   "facingDeg": 180,
+   "label": "Stall frontage"
+  },
+  {
+   "z": 1.8,
+   "x": -2.8,
+   "facingDeg": 150,
+   "label": "Lamplit cobbles"
+  }
+ ],
+ "sky": {
+  "kind": "night",
+  "colors": [
+   "#080e18",
+   "#202c38"
+  ]
+ }
+}

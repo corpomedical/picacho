@@ -95,6 +95,16 @@ export async function recordPolicyRefusal(rec: PolicyRefusalRecord): Promise<voi
  * past an allowed request — the person is told "your request was fine",
  * and judging their next one harder for an hour would make that a lie.
  * Zero on any failure — see the header.
+ *
+ * Only rows with no provider (2026-09-10): a prompt-gate refusal that names
+ * a provider is a reading of text a MODEL wrote — Astra's description of a
+ * Set — not of anything the person typed, and it must not make their next
+ * hour stricter. A refusal of the person's OWN words by a provider (OpenAI
+ * refusing a Set's brief, reason "astra_refused") is written without a
+ * provider for exactly that reason: it is about what they asked, and
+ * counts. Before this line no prompt-gate row set a provider (read from
+ * production the same day: 0 of 3), so nothing already counted stops
+ * counting.
  */
 export async function recentRefusalCount(userId: string, windowMs = CONTEXT_WINDOW_MS): Promise<number> {
   try {
@@ -104,6 +114,7 @@ export async function recentRefusalCount(userId: string, windowMs = CONTEXT_WIND
       .select("id", { count: "exact", head: true })
       .eq("user_id", userId)
       .eq("gate", "prompt")
+      .is("provider", null)
       .neq("reason", "unavailable")
       .gte("created_at", new Date(Date.now() - windowMs).toISOString());
     if (error) {

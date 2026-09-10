@@ -97,7 +97,20 @@ const COLUMNS = {
   // excludes anyone with a row. A missing table fails the claim and skips
   // everyone — silently, since a failed claim reads as "already claimed".
   drip_sends: ["user_id", "template", "sent_at"],
+  // Astra Sets (pending/astra-sets.sql). Every column the actions write is
+  // listed: the service role writes them, so a missing one fails a build
+  // mid-flight rather than at the page.
+  location_sets: [
+    "user_id", "status", "brief", "title", "description", "spec", "layout",
+    "response_id", "attempts", "failure", "cost_usd", "thumb_path", "updated_at", "deleted_at",
+  ],
+  location_set_shots: ["set_id", "generation_id", "user_id", "created_at"],
 };
+
+// Feature-flag rows the code reads by key. A missing row reads as OFF
+// everywhere (every reader defaults closed), which is why nobody would
+// notice — the switch simply never appears in Admin > Feature flags.
+const FLAGS = ["astra_sets", "astra_photo_sets", "astra_previz", "experimental_models", "chat_agent", "voice_mode"];
 
 // RPCs the app calls (schema.sql + pending files).
 const RPCS = [
@@ -187,7 +200,9 @@ async function main() {
       continue;
     }
     const body = await res.json().catch(() => ({}));
-    if (body.code === "42P01") {
+    // 42P01 from Postgres; PGRST205 when PostgREST's schema cache has no
+    // such table, which is how a never-created table answers today.
+    if (body.code === "42P01" || body.code === "PGRST205") {
       bad(`table ${table} does not exist`);
     } else if (body.code === "42703") {
       // Narrow it down: probe each column alone.
@@ -216,6 +231,14 @@ async function main() {
       res.ok || new RegExp(`public\\.${name}\\s*\\(`).test(text) || /perhaps you meant/i.test(text);
     if (exists) ok(name);
     else bad(`function ${name} — ${String(body.message ?? res.status).slice(0, 100)}`);
+  }
+
+  console.log("\nfeature flags:");
+  const fres = await fetch(`${BASE}/rest/v1/feature_flags?select=key&key=in.(${FLAGS.join(",")})`, { headers: h });
+  const present = fres.ok ? (await fres.json()).map((r) => r.key) : [];
+  for (const f of FLAGS) {
+    if (present.includes(f)) ok(f);
+    else bad(`feature flag ${f}`);
   }
 
   console.log("\nbuckets:");

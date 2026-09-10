@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import type { PlanId } from "@/lib/plans";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
+import { isSetsEnabled } from "@/lib/sets/enabled";
+import { setsEligible } from "@/lib/sets/set-config";
 import { RatePrompt } from "@/components/rate-prompt";
 import { NativePush } from "@/components/native-push";
 import { WebPushSync } from "@/components/web-push-sync";
@@ -81,6 +83,10 @@ export default async function AppLayout({
   const isAdmin = profile?.role === "admin";
 
   const voiceModeEnabled = await isVoiceModeEnabled(supabase);
+  // Sets shows in the sidebar only to accounts that can open it (admins in
+  // Phase 1). Eligibility first: it costs nothing, and spares everyone else
+  // the flag read.
+  const setsVisible = setsEligible(profile?.plan, isAdmin) && (await isSetsEnabled(supabase));
 
   // Ask for a rating only once someone has had enough successful results to
   // hold an opinion, and only once ever (rating_prompted_at is stamped by
@@ -117,6 +123,7 @@ export default async function AppLayout({
         supportEmail={supportEmailSetting?.value ?? SUPPORT_EMAIL_FALLBACK}
         skipAiRefinement={profile?.skip_ai_refinement === true}
         voiceModeEnabled={voiceModeEnabled}
+        setsVisible={setsVisible}
       />
       {/* Registers this device for push, once there's a session to
           attach it to. No-ops entirely on the web. */}

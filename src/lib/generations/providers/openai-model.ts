@@ -1,11 +1,11 @@
-// The model behind every OpenAI "utility" reader (2026-09-11): the identity
+// The model behind every OpenAI "utility" reader (2026-09-10): the identity
 // scorer, both content gates' primary readers, image descriptions, the
 // brand-rule classifier. They all read OPENAI_MODEL, and all of them depend on
 // a model that takes temperature 0 and a seed — the gates' repeatable
 // readings are built on it, and the identity scorer stamps every score with
 // the model that produced it.
 //
-// GPT-6 Astra takes neither parameter. Setting OPENAI_MODEL=gpt-6-astra
+// GPT-6 Astra takes neither parameter. Setting OPENAI_MODEL to the Astra model
 // "to try Astra" would quietly break six readers at once — both gates would
 // lose their OpenAI reader and the score dataset would split — so a gpt-6
 // value is refused here, loudly, and the default stands. Astra has its own

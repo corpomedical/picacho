@@ -122,6 +122,31 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
     "feedUnchecked",
   "This one can't go on the community feed. It stays in your History.": "feedRefused",
   "Couldn't remove this from the community — try again.": "unshareFailed",
+  // Sets (lib/sets/messages.ts) — the Sets pages' error lines, and a failed
+  // build's card.
+  "Sets aren't available right now.": "setsUnavailable",
+  "Sets are in private testing and aren't part of any plan yet.": "setsNotOpen",
+  "That set isn't available.": "setNotFound",
+  "This set is still being built.": "setNotReady",
+  "Describe the place in a few more words.": "setBriefTooShort",
+  "Keep the description under 500 characters.": "setBriefTooLong",
+  "You're building sets quickly — give it a minute and try again.": "setBuildTooFast",
+  "The set couldn't be started — try again in a moment.": "setBuildCouldntStart",
+  "You've built 1 set this billing month — the limit on your plan. It resets with your billing period.":
+    "setMonthlyCapOne",
+  "This set couldn't be built, and the build is back in your allowance. Try describing the place differently.":
+    "setBuildFailed",
+  "This set couldn't be built from that description. The build is back in your allowance.": "setBuildRefused",
+  "This build took too long and was lost. The build is back in your allowance — try again.": "setBuildLost",
+  "This set couldn't be built this time, and the build is back in your allowance. Try again in a moment.":
+    "setBuildFailedRetry",
+  "That frame couldn't be read — try again.": "setFrameUnreadable",
+  "That frame is too large — try again.": "setFrameTooLarge",
+  "Couldn't save the frame — try again.": "setFrameSaveFailed",
+  "Pick one of your characters to shoot in this set.": "setPickCharacter",
+  "You're shooting quickly — give it a moment.": "setShootTooFast",
+  "Couldn't delete this set — try again.": "setDeleteFailed",
+  "Couldn't save that — try again.": "setSaveFailed",
 };
 
 // The prompt gate's answers (content-policy.ts refusalMessages). The composer
@@ -177,6 +202,11 @@ const PATTERNS: {
     re: /^This take already has its (\d+) full-quality angles — pick your start and end from those\./,
     key: "stageFramesCap",
     params: (m) => ({ limit: m[1] }),
+  },
+  {
+    re: /^You've built (\d+) sets this billing month — the limit on your plan\./,
+    key: "setMonthlyCap",
+    params: (m) => ({ used: m[1] }),
   },
 ];
 

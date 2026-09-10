@@ -345,7 +345,7 @@ export async function pollAngleFrame(
   const image = (polled.result as { images?: { url?: string }[] }).images?.[0];
   if (!image?.url) return { error: "That angle couldn't be re-rendered — try a slightly different one." };
 
-  // THE PICTURE CHECK (2026-09-11). Stage frames were the one image lane
+  // THE PICTURE CHECK (2026-09-10). Stage frames were the one image lane
   // that reached a person's storage without it: the re-render is an edit of
   // a character photo, so it is judged in the strict lane like every other
   // edit of a real person's image. A refused frame is never written — and
