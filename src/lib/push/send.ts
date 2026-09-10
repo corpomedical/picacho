@@ -25,7 +25,7 @@ const FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects";
 // device from before the locale column, or one whose value is unreadable,
 // gets English, exactly what it got before.
 export type PushMessage = {
-  key: "videoReady" | "videoFailed" | "videoFailedRefunded" | "layersReady";
+  key: "videoReady" | "videoFailed" | "videoFailedRefunded" | "layersReady" | "lowCredits";
   params?: Record<string, string | number>;
 };
 
@@ -51,6 +51,8 @@ function resolvePushText(
       return { title: t.videoFailedTitle, body: t.videoFailedRefundedBody };
     case "layersReady":
       return { title: t.layersReadyTitle, body: formatMsg(t.layersReadyBody, params) };
+    case "lowCredits":
+      return { title: t.lowCreditsTitle, body: formatMsg(t.lowCreditsBody, params) };
   }
 }
 
@@ -108,14 +110,75 @@ async function accessToken(): Promise<string | null> {
   }
 }
 
+// The person's own switch for this message (Settings → Notifications,
+// 2026-09-11). FAIL OPEN in both directions that matter: before the
+// operator runs the pending SQL the columns do not exist and the select
+// errors — every message keeps flowing, exactly as before the feature; a
+// column that reads false is the person's explicit "don't".
+async function allowedByPrefs(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  key: PushMessage["key"],
+): Promise<boolean> {
+  try {
+    const { PREF_FOR_KEY } = await import("@/lib/push/prefs");
+    const pref = PREF_FOR_KEY[key];
+    const { data, error } = await admin.from("profiles").select(pref).eq("id", userId).maybeSingle();
+    if (error || !data) return true;
+    return (data as Record<string, unknown>)[pref] !== false;
+  } catch {
+    return true;
+  }
+}
+
+// The browser twin of the FCM fan-out below: web-push devices the person
+// enabled in Settings → Notifications. Silent when VAPID is unconfigured
+// or the pending SQL has not created the table yet.
+async function notifyWebDevices(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  notification: Notification,
+): Promise<void> {
+  try {
+    const { data: devices, error } = await admin
+      .from("user_push_subscriptions")
+      .select("endpoint, p256dh, auth, locale")
+      .eq("user_id", userId)
+      .limit(10);
+    if (error || !devices?.length) return;
+    const { sendToWebPushDevice } = await import("@/lib/push/web-push");
+    await Promise.all(
+      devices.map((d) => {
+        const text = resolvePushText(notification.message, d.locale as string | null);
+        const payload = Buffer.from(
+          JSON.stringify({ title: text.title, body: text.body, path: notification.path }),
+        );
+        return sendToWebPushDevice(
+          { endpoint: d.endpoint as string, p256dh: d.p256dh as string, auth: d.auth as string },
+          payload,
+          "user_push_subscriptions",
+        );
+      }),
+    );
+  } catch {
+    // Never let a notification problem surface into the calling path.
+  }
+}
+
 export async function notifyUser(userId: string, notification: Notification): Promise<void> {
+  const admin = createAdminClient();
+  if (!(await allowedByPrefs(admin, userId, notification.message.key))) return;
+
+  // Browser devices go first and do not depend on FCM being configured —
+  // web push runs on the VAPID keys the admin channel already uses.
+  await notifyWebDevices(admin, userId, notification);
+
   const projectId = process.env.FCM_PROJECT_ID;
   const token = await accessToken();
   // Not configured yet — see MOBILE_APP.md. Silent, because the web app runs
   // perfectly well without push and this is called on every completion.
   if (!projectId || !token) return;
 
-  const admin = createAdminClient();
   const { data: devices } = await admin
     .from("push_tokens")
     .select("token, locale")

@@ -1,13 +1,17 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { getLocale } from "@/lib/i18n/server";
+import { NOTIFICATION_PREFS, type NotificationPref } from "@/lib/push/prefs";
 
-// Registering and forgetting a device for push notifications.
+// Registering and forgetting devices for push notifications, and the
+// per-account switches that decide what reaches them.
 //
-// Called from the mobile shell once the person has granted permission. On the
-// web these are never invoked — there's no Capacitor runtime to produce a
-// token — so nothing here needs a browser fallback.
+// Two channels: the native shell's FCM token (registerPushToken, called by
+// NativePush once the person grants permission) and, since 2026-09-11, a
+// browser's Web Push subscription (saveWebPushSubscription, from
+// Settings → Notifications). The switches apply to both.
 
 // The TS signature says "ios" | "android", but a server action is a public
 // POST endpoint — the wire can carry anything, so the value is re-checked at
@@ -75,4 +79,111 @@ export async function forgetPushToken(token: string): Promise<void> {
   if (!userData.user || !token) return;
 
   await supabase.from("push_tokens").delete().eq("token", token).eq("user_id", userData.user.id);
+}
+
+// ---------------------------------------------------------------------------
+// Browser (Web Push) devices — Settings → Notifications, 2026-09-11
+// ---------------------------------------------------------------------------
+
+const ENDPOINT_MAX = 2048;
+const KEY_MAX = 256;
+const DEVICES_PER_ACCOUNT = 10;
+
+/**
+ * A browser registered for pushes. Keyed on the endpoint, which the push
+ * service mints per browser profile; the same cross-owner reasoning as
+ * registerPushToken applies (a shared browser changing hands must move to
+ * the new account), so the write goes through the service role and is keyed
+ * on the exact endpoint the browser itself produced. Capped per account —
+ * the oldest devices yield.
+ */
+export async function saveWebPushSubscription(input: {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+
+  const endpoint = String(input?.endpoint ?? "");
+  const p256dh = String(input?.p256dh ?? "");
+  const auth = String(input?.auth ?? "");
+  let validUrl = false;
+  try {
+    validUrl = new URL(endpoint).protocol === "https:";
+  } catch {
+    validUrl = false;
+  }
+  if (!validUrl || endpoint.length > ENDPOINT_MAX || !p256dh || !auth || p256dh.length > KEY_MAX || auth.length > KEY_MAX) {
+    return { error: "Couldn't register for notifications." };
+  }
+
+  const admin = createAdminClient();
+  const { error } = await admin.from("user_push_subscriptions").upsert(
+    {
+      endpoint,
+      user_id: userData.user.id,
+      p256dh,
+      auth,
+      locale: await getLocale(),
+      last_used_at: new Date().toISOString(),
+    },
+    { onConflict: "endpoint" },
+  );
+  if (error) {
+    console.error("saveWebPushSubscription failed:", error.message);
+    return { error: "Couldn't register for notifications." };
+  }
+
+  // Keep the newest few; a person who re-enables in five browsers over a
+  // year should not fan every push out to all of them forever.
+  const { data: rows } = await admin
+    .from("user_push_subscriptions")
+    .select("endpoint, last_used_at")
+    .eq("user_id", userData.user.id)
+    .order("last_used_at", { ascending: false, nullsFirst: false });
+  const stale = (rows ?? []).slice(DEVICES_PER_ACCOUNT).map((r) => r.endpoint as string);
+  if (stale.length) await admin.from("user_push_subscriptions").delete().in("endpoint", stale);
+
+  return { error: null };
+}
+
+/** This browser stops receiving pushes. Owner-scoped: only your own row. */
+export async function removeWebPushSubscription(endpoint: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+  if (!endpoint) return { error: null };
+  await createAdminClient()
+    .from("user_push_subscriptions")
+    .delete()
+    .eq("endpoint", String(endpoint))
+    .eq("user_id", userData.user.id);
+  return { error: null };
+}
+
+/**
+ * One of the three switches. Written through the service role because the
+ * 2026-08-18 profiles lockdown narrowed the UPDATE grant — the same path as
+ * setMarketingEmails. The column name is checked against the fixed list, so
+ * the wire cannot name any other profiles column.
+ */
+export async function setNotificationPref(pref: NotificationPref, enabled: boolean): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+  if (!(NOTIFICATION_PREFS as readonly string[]).includes(pref) || typeof enabled !== "boolean") {
+    return { error: "Invalid setting." };
+  }
+  const { error } = await createAdminClient()
+    .from("profiles")
+    .update({ [pref]: enabled })
+    .eq("id", userData.user.id);
+  if (error) {
+    console.error("setNotificationPref failed:", error.message);
+    return { error: "Couldn't save that — try again." };
+  }
+  revalidatePath("/app/settings");
+  return { error: null };
 }

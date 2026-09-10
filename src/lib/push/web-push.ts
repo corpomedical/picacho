@@ -26,13 +26,50 @@ type AdminPushMessage = {
   path?: string;
 };
 
+type WebPushDevice = { endpoint: string; p256dh: string; auth: string };
+
+// One device, one send — shared by the admin fan-out below and the user
+// fan-out in send.ts (2026-09-11). Prunes dead endpoints from whichever
+// table the subscription came from, stamps live ones.
+export async function sendToWebPushDevice(
+  device: WebPushDevice,
+  payload: Buffer,
+  table: "admin_push_subscriptions" | "user_push_subscriptions",
+): Promise<void> {
+  const keys = loadVapidKeys(process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
+  if (!keys) return;
+  const subject = process.env.VAPID_SUBJECT || "mailto:hello@picacho.ai";
+  const admin = createAdminClient();
+  try {
+    const body = encryptWebPush(device.p256dh, device.auth, payload);
+    const res = await fetch(device.endpoint, {
+      method: "POST",
+      headers: {
+        authorization: vapidAuthHeader(new URL(device.endpoint).origin, keys, subject),
+        "content-encoding": "aes128gcm",
+        "content-type": "application/octet-stream",
+        ttl: String(TTL_SECONDS),
+        urgency: "high",
+      },
+      body: new Uint8Array(body),
+      signal: AbortSignal.timeout(10_000),
+    });
+
+    if (res.status === 404 || res.status === 410) {
+      // Device unsubscribed or the subscription rotated — prune, or the
+      // push service eventually throttles us for hammering dead endpoints.
+      await admin.from(table).delete().eq("endpoint", device.endpoint);
+    } else if (res.ok) {
+      await admin.from(table).update({ last_used_at: new Date().toISOString() }).eq("endpoint", device.endpoint);
+    }
+  } catch {
+    // One device failing must not stop the others.
+  }
+}
+
 export async function notifyAdmins(message: AdminPushMessage): Promise<void> {
   try {
-    const keys = loadVapidKeys(process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY);
-    // Not configured yet — silent, same contract as notifyUser.
-    if (!keys) return;
-    const subject = process.env.VAPID_SUBJECT || "mailto:hello@picacho.ai";
-
+    if (!loadVapidKeys(process.env.VAPID_PUBLIC_KEY, process.env.VAPID_PRIVATE_KEY)) return;
     const admin = createAdminClient();
     const { data: devices } = await admin
       .from("admin_push_subscriptions")
@@ -43,39 +80,7 @@ export async function notifyAdmins(message: AdminPushMessage): Promise<void> {
     const payload = Buffer.from(
       JSON.stringify({ title: message.title, body: message.body, path: message.path ?? "" }),
     );
-
-    await Promise.all(
-      devices.map(async (device) => {
-        try {
-          const body = encryptWebPush(device.p256dh, device.auth, payload);
-          const res = await fetch(device.endpoint, {
-            method: "POST",
-            headers: {
-              authorization: vapidAuthHeader(new URL(device.endpoint).origin, keys, subject),
-              "content-encoding": "aes128gcm",
-              "content-type": "application/octet-stream",
-              ttl: String(TTL_SECONDS),
-              urgency: "high",
-            },
-            body: new Uint8Array(body),
-            signal: AbortSignal.timeout(10_000),
-          });
-
-          if (res.status === 404 || res.status === 410) {
-            // Device unsubscribed or the subscription rotated — prune, or the
-            // push service eventually throttles us for hammering dead endpoints.
-            await admin.from("admin_push_subscriptions").delete().eq("endpoint", device.endpoint);
-          } else if (res.ok) {
-            await admin
-              .from("admin_push_subscriptions")
-              .update({ last_used_at: new Date().toISOString() })
-              .eq("endpoint", device.endpoint);
-          }
-        } catch {
-          // One device failing must not stop the others.
-        }
-      }),
-    );
+    await Promise.all(devices.map((d) => sendToWebPushDevice(d, payload, "admin_push_subscriptions")));
   } catch {
     // Never let a notification problem surface into the calling path.
   }

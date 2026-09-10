@@ -44,6 +44,7 @@ import { getDialogueCreditWeight } from "@/lib/generations/providers/video-model
 
 import { recordModelFailure, recordModelSuccess } from "@/lib/generations/model-health";
 import { notifyUser, type PushMessage } from "@/lib/push/send";
+import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
 
 // Fire-and-poll orchestrator.
 //
@@ -1154,6 +1155,11 @@ async function finish(
           : { key: "videoFailed" }),
     path: outcome.notify?.path ?? `/app/history/${generationId}`,
   });
+
+  // The low-balance heads-up (Settings → Notifications, 2026-09-11): after
+  // work that spent credits, one push once per billing period when what is
+  // left has crossed the line. Never throws; see lib/push/low-credits.ts.
+  if (outcome.status === "succeeded") await maybeNotifyLowCredits(userId);
 
   // Feed the circuit breaker. A model that fails three times in a row takes
   // itself out of service, so a broken provider stops costing money the

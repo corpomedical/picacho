@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.27.0",
+    build: 40,
+    date: "2026-09-11",
+    title: "Settings, rebuilt to tell the truth and to answer to you",
+    items: [
+      "The settings page was lying in four places, and those came first. With no username on the account it invented one from the email address — pre-filling a value the server would reject, asking people to confirm account deletion with a string that was not their username, and handing out referral links that led nowhere. Saving an email or password change showed nothing, including the one instruction the email flow depends on, because of an empty string that is not the same as no string. The usage meter counted the calendar month while billing counts from the renewal date. And a subscriber billed through Google Play saw an Upgrade button whose only possible outcome was an error. All four are fixed.",
+      "Security grew from one password form into the whole story of signing in: two-step verification for every account, enforced rather than decorative, with the off switch always reachable while signed in; connected accounts, so a password account can attach Google and a Google account can set a password it never had; one honest \"sign out other devices\" button instead of an invented device list; and the email change and API keys moved here, beside the other credentials.",
+      "Notifications is a tab of its own. Three switches decide what Picacho may tell you — a render finishing, a render failing, credits running low — and they govern the phone app and the browser alike. Browsers get notifications for the first time: a render that takes minutes can finish with the tab closed, and a browser you keep using re-registers itself after you sign out elsewhere, exactly as the app does. The low-credit heads-up is new: once per billing period, when five credits or fewer remain, instead of discovering it at the moment a render is refused. Email preferences moved here too, next to the other things we are allowed to send.",
+    ],
+  },
+  {
     version: "1.26.0",
     build: 39,
     date: "2026-09-09",

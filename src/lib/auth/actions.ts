@@ -336,6 +336,11 @@ export async function logout() {
   if (userData.user) {
     try {
       await supabase.from("push_tokens").delete().eq("user_id", userData.user.id);
+      // Browser devices too (2026-09-11), for the same reason; a browser the
+      // person keeps using re-registers itself on its next visit
+      // (components/web-push-sync.tsx), exactly as the native shell does.
+      // Before the pending SQL runs the table is absent and this is a no-op.
+      await supabase.from("user_push_subscriptions").delete().eq("user_id", userData.user.id);
     } catch (err) {
       // Never block a sign-out on housekeeping.
       console.error("logout: push token cleanup failed", err);

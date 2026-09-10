@@ -26,6 +26,7 @@ import { ThemePicker } from "@/components/settings/theme-picker";
 import { DeleteAccountForm } from "@/components/settings/delete-account-form";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
 import { MarketingEmailsToggle } from "@/components/settings/marketing-emails-toggle";
+import { NotificationsPanel } from "@/components/settings/notifications-panel";
 import { ApiKeysCard } from "@/components/settings/api-keys-card";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { logout } from "@/lib/auth/actions";
@@ -35,7 +36,6 @@ import { formatMsg } from "@/lib/i18n/format";
 import { isEUVisitor } from "@/lib/geo";
 import { cn } from "@/lib/cn";
 import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
-
 
 // The upsell ladder for the "next tier" card below — each plan nudges toward
 // the one after it. Basic slots in as the first paid step (2026-08-19): a
@@ -83,6 +83,15 @@ function BrandIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function NotificationsIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+
 function UsageIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -103,8 +112,8 @@ function SupportIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-type TabId = "account" | "appearance" | "security" | "usage" | "brand" | "support";
-const VALID_TABS: TabId[] = ["account", "appearance", "security", "usage", "brand", "support"];
+type TabId = "account" | "appearance" | "security" | "notifications" | "usage" | "brand" | "support";
+const VALID_TABS: TabId[] = ["account", "appearance", "security", "notifications", "usage", "brand", "support"];
 
 export default async function SettingsPage({
   searchParams,
@@ -189,6 +198,20 @@ export default async function SettingsPage({
       .single(),
     supabase.from("app_settings").select("value").eq("key", "support_email").single(),
   ]);
+  // The notification switches, read on their own so that a database without
+  // the pending columns (supabase/pending/notifications.sql) degrades to
+  // "everything on" instead of failing the main profile select above.
+  const { data: notifyRow } = await supabase
+    .from("profiles")
+    .select("notify_render_ready, notify_render_failed, notify_low_credits")
+    .eq("id", data.user.id)
+    .maybeSingle();
+  const notifyPrefs = {
+    notify_render_ready: (notifyRow as { notify_render_ready?: boolean } | null)?.notify_render_ready !== false,
+    notify_render_failed: (notifyRow as { notify_render_failed?: boolean } | null)?.notify_render_failed !== false,
+    notify_low_credits: (notifyRow as { notify_low_credits?: boolean } | null)?.notify_low_credits !== false,
+  };
+
   // AFTER the profile, not alongside it: the meter must count the BILLING
   // month (current_period_start — what checkGenerationAllowance enforces),
   // not the calendar month. Measured 2026-09-11: a mid-month renewal showed
@@ -266,6 +289,7 @@ export default async function SettingsPage({
     { id: "account", label: s.account, icon: AccountIcon },
     { id: "appearance", label: s.appearance, icon: AppearanceIcon },
     { id: "security", label: s.security, icon: SecurityIcon },
+    { id: "notifications", label: s.notificationsTab, icon: NotificationsIcon },
     { id: "usage", label: s.usageAndPlan, icon: UsageIcon },
     { id: "brand", label: t.brandRules.tab, icon: BrandIcon },
     { id: "support", label: s.support, icon: SupportIcon },
@@ -330,13 +354,6 @@ export default async function SettingsPage({
 
               <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
                 <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
-              </SettingsSection>
-
-              <SettingsSection title={s.emailPreferences} description={s.emailPreferencesDesc}>
-                {/* enabled = NOT opted out; a missing profile row degrades to
-                    the column's default (false → emails on), matching what the
-                    blast query would actually do. */}
-                <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
               </SettingsSection>
 
               {/* Not a card: a 32px sheet around one underlined link was the
@@ -405,6 +422,28 @@ export default async function SettingsPage({
               {/* Live credentials belong with the rest of them, not between
                   a referral card and a logout link. */}
               {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
+            </div>
+          )}
+
+          {activeTab === "notifications" && (
+            <div className="space-y-4">
+              <SettingsSection title={s.notificationsTitle} description={s.notificationsDesc}>
+                <NotificationsPanel
+                  initial={notifyPrefs}
+                  vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
+                  nativeApp={nativeApp}
+                />
+              </SettingsSection>
+
+              {/* Email lives beside push (2026-09-11 IA pass): both answer
+                  "what is Picacho allowed to send me" — it sat on the Account
+                  tab between a referral card and an API-keys card. enabled =
+                  NOT opted out; a missing profile row degrades to the
+                  column's default (false → emails on), matching what the
+                  blast query would actually do. */}
+              <SettingsSection title={s.emailPreferences} description={s.emailPreferencesDesc}>
+                <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
+              </SettingsSection>
             </div>
           )}
 

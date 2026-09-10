@@ -6,6 +6,7 @@ import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { recordSignal } from "@/lib/generations/record-signal";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { reelPosterKeyFor } from "@/lib/media/reel-encode";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
@@ -2293,6 +2294,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       await autoReportFailedGeneration(placeholder.id, userData.user.id, attempts);
     }
   }
+
+  // The low-balance heads-up for the inline lane (images) — the queued lane
+  // fires it from job-runner's finish(). Never throws.
+  if (succeeded && !gateOutcome?.unusable) await maybeNotifyLowCredits(userData.user.id);
 
   revalidatePath("/app/generate");
   revalidatePath("/app/history");
