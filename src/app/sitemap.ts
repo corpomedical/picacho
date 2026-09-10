@@ -18,6 +18,9 @@ const PUBLIC_ROUTES = [
   "/privacy",
   "/terms",
   "/content-policy",
+  // The public account-deletion page Google Play requires beside the in-app
+  // path (2026-09-11) — declared in the Data safety form.
+  "/delete-account",
   // Public showcase gallery + the comparison landing pages — marketing
   // pages that exist precisely to rank, so they belong here.
   "/gallery",

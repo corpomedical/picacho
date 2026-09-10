@@ -27,6 +27,14 @@ import { DeleteAccountForm } from "@/components/settings/delete-account-form";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
 import { MarketingEmailsToggle } from "@/components/settings/marketing-emails-toggle";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
+import {
+  BlockedAccountsList,
+  CookieChoiceControl,
+  SharedPostsList,
+  type BlockedRow,
+  type SharedPostRow,
+} from "@/components/settings/privacy-panel";
+import { toMediaUrl, thumbUrl, isRenderableUrl } from "@/lib/media/url";
 import { ApiKeysCard } from "@/components/settings/api-keys-card";
 import { LanguageSwitcher } from "@/components/language-switcher";
 import { logout } from "@/lib/auth/actions";
@@ -92,6 +100,15 @@ function NotificationsIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function PrivacyIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <path d="M12 3l7 3v5c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V6l7-3z" />
+      <path d="M9.5 12l2 2 3.5-4" />
+    </svg>
+  );
+}
+
 function UsageIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -112,8 +129,8 @@ function SupportIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-type TabId = "account" | "appearance" | "security" | "notifications" | "usage" | "brand" | "support";
-const VALID_TABS: TabId[] = ["account", "appearance", "security", "notifications", "usage", "brand", "support"];
+type TabId = "account" | "appearance" | "security" | "notifications" | "privacy" | "usage" | "brand" | "support";
+const VALID_TABS: TabId[] = ["account", "appearance", "security", "notifications", "privacy", "usage", "brand", "support"];
 
 export default async function SettingsPage({
   searchParams,
@@ -212,6 +229,46 @@ export default async function SettingsPage({
     notify_low_credits: (notifyRow as { notify_low_credits?: boolean } | null)?.notify_low_credits !== false,
   };
 
+  // Privacy tab data — only when the tab is open: a list of every shared post
+  // is not worth two queries on every other settings visit. Both fail open
+  // (the blocks table arrives with supabase/pending/community-blocks.sql).
+  let sharedPosts: SharedPostRow[] = [];
+  let blocked: BlockedRow[] = [];
+  if (activeTab === "privacy") {
+    const [{ data: postRows }, { data: blockRows }] = await Promise.all([
+      supabase
+        .from("community_posts")
+        .select("id, generation_id, media_url, content_type, caption, prompt, hearts_count, created_at")
+        .eq("user_id", data.user.id)
+        .order("created_at", { ascending: false })
+        .limit(60),
+      supabase
+        .from("community_blocks")
+        .select("blocked_id, blocked_username")
+        .eq("blocker_id", data.user.id)
+        .order("created_at", { ascending: false }),
+    ]);
+    sharedPosts = (postRows ?? [])
+      .filter((r) => isRenderableUrl(r.media_url as string))
+      .map((r) => {
+        const display = toMediaUrl(r.media_url as string) ?? (r.media_url as string);
+        const isVideo = r.content_type === "video";
+        return {
+          id: r.id as string,
+          generationId: r.generation_id as string,
+          thumb: isVideo ? display : (thumbUrl(display, 320) ?? display),
+          isVideo,
+          text: ((r.caption as string | null) ?? (r.prompt as string | null)) || null,
+          hearts: (r.hearts_count as number | null) ?? 0,
+          createdAt: r.created_at as string,
+        };
+      });
+    blocked = (blockRows ?? []).map((b) => ({
+      blockedId: b.blocked_id as string,
+      username: (b.blocked_username as string | null) ?? null,
+    }));
+  }
+
   // AFTER the profile, not alongside it: the meter must count the BILLING
   // month (current_period_start — what checkGenerationAllowance enforces),
   // not the calendar month. Measured 2026-09-11: a mid-month renewal showed
@@ -290,6 +347,7 @@ export default async function SettingsPage({
     { id: "appearance", label: s.appearance, icon: AppearanceIcon },
     { id: "security", label: s.security, icon: SecurityIcon },
     { id: "notifications", label: s.notificationsTab, icon: NotificationsIcon },
+    { id: "privacy", label: s.privacyTab, icon: PrivacyIcon },
     { id: "usage", label: s.usageAndPlan, icon: UsageIcon },
     { id: "brand", label: t.brandRules.tab, icon: BrandIcon },
     { id: "support", label: s.support, icon: SupportIcon },
@@ -443,6 +501,20 @@ export default async function SettingsPage({
                   blast query would actually do. */}
               <SettingsSection title={s.emailPreferences} description={s.emailPreferencesDesc}>
                 <MarketingEmailsToggle initialEnabled={profile?.marketing_opt_out !== true} />
+              </SettingsSection>
+            </div>
+          )}
+
+          {activeTab === "privacy" && (
+            <div className="space-y-4">
+              <SettingsSection title={s.sharedPostsTitle} description={s.sharedPostsDesc}>
+                <SharedPostsList initial={sharedPosts} />
+              </SettingsSection>
+              <SettingsSection title={s.blockedTitle} description={s.blockedDesc}>
+                <BlockedAccountsList initial={blocked} />
+              </SettingsSection>
+              <SettingsSection title={s.cookieTitle} description={s.cookieDesc}>
+                <CookieChoiceControl />
               </SettingsSection>
             </div>
           )}

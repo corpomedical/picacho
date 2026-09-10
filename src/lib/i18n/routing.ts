@@ -33,6 +33,7 @@ export const LOCALIZED_PATHS = [
   "/privacy",
   "/terms",
   "/content-policy",
+  "/delete-account",
   "/gallery",
   "/compare/heygen",
   "/compare/hedra",

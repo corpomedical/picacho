@@ -6,6 +6,7 @@ import { persistGeneratedVideo } from "@/lib/generations/core";
 import { recordSignal } from "@/lib/generations/record-signal";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { SHARE_PROMPT_HIDE_FAILED } from "@/lib/community/messages";
 
 // Community feed actions — thin wrappers over the SQL in
 // supabase/applied/2026-08-21/community.sql. Sharing and reporting go
@@ -16,6 +17,10 @@ import { recordPolicyRefusal } from "@/lib/generations/policy-log";
 export async function shareToCommunity(
   generationId: string,
   caption: string,
+  // The share sheet asks whether the prompt goes public with the post
+  // (2026-09-11). Defaults to the old behaviour for any caller that does
+  // not ask.
+  includePrompt: boolean = true,
 ): Promise<{ error: string | null; postId: string | null }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -113,6 +118,18 @@ export async function shareToCommunity(
     // The definer raises human-readable messages; surface them.
     return { error: error.message.replace(/^.*Exception: /, ""), postId: null };
   }
+  // The person said no to publishing the prompt: strip it from the snapshot.
+  // If that cannot be done, the post comes DOWN — a share that went public
+  // with the prompt they declined is worse than a share that did not happen.
+  if (!includePrompt && data) {
+    const { error: hideError } = await supabase.rpc("hide_community_post_prompt", { p_post_id: data as string });
+    if (hideError) {
+      console.error("shareToCommunity couldn't hide the prompt; withdrawing the post:", hideError.message);
+      await supabase.from("community_posts").delete().eq("id", data as string).eq("user_id", userData.user.id);
+      return { error: SHARE_PROMPT_HIDE_FAILED, postId: null };
+    }
+  }
+
   // Publishing a render under your own name is the strongest keep signal the
   // product collects — stronger than a download, because it is public. After
   // the RPC succeeded, and fail-soft, so research data can never break a share.
@@ -223,3 +240,58 @@ export async function setCommunityPostHidden(postId: string, hidden: boolean): P
   if (!data) return { error: "Couldn't update this post." };
   return { error: null };
 }
+
+// ---------------------------------------------------------------------------
+// Blocking (2026-09-11) — Play's UGC policy requires it beside reporting.
+// One-directional: you stop seeing their posts. Owner-scoped by RLS; the
+// author is resolved from the post server-side, so the client never needs
+// (or gets) another account's id.
+// ---------------------------------------------------------------------------
+
+export async function blockPostAuthor(postId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+  if (await rateLimited(userData.user.id, "community-block", 60, 20)) {
+    return { error: "That's a lot of changes at once — give it a minute." };
+  }
+
+  const { data: post } = await supabase
+    .from("community_posts")
+    .select("user_id, username")
+    .eq("id", String(postId))
+    .maybeSingle();
+  if (!post) return { error: "That post isn't available any more." };
+  if (post.user_id === userData.user.id) return { error: "That's your own post." };
+
+  const { error } = await supabase.from("community_blocks").upsert(
+    {
+      blocker_id: userData.user.id,
+      blocked_id: post.user_id,
+      blocked_username: post.username ?? null,
+    },
+    { onConflict: "blocker_id,blocked_id", ignoreDuplicates: true },
+  );
+  if (error) {
+    console.error("blockPostAuthor failed:", error.message);
+    return { error: "Couldn't block that account — try again." };
+  }
+  return { error: null };
+}
+
+export async function unblockUser(blockedId: string): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  if (!userData.user) return { error: "Your session expired — please log in again." };
+  const { error } = await supabase
+    .from("community_blocks")
+    .delete()
+    .eq("blocker_id", userData.user.id)
+    .eq("blocked_id", String(blockedId));
+  if (error) {
+    console.error("unblockUser failed:", error.message);
+    return { error: "Couldn't unblock — try again." };
+  }
+  return { error: null };
+}
+

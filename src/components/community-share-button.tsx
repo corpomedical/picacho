@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useLocale } from "@/lib/i18n/provider";
+import { SHARE_PROMPT_HIDE_FAILED } from "@/lib/community/messages";
 import {
   shareToCommunity,
   unshareFromCommunity,
@@ -44,6 +45,10 @@ export function CommunityShareButton({
   const [shared, setShared] = useState(initialShared);
   const [open, setOpen] = useState(false);
   const [caption, setCaption] = useState("");
+  // Whether the prompt goes public with the post — asked, not assumed
+  // (2026-09-11). On by default: the feed is sold as "ideas worth
+  // borrowing", and the choice is right there to take back.
+  const [includePrompt, setIncludePrompt] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
@@ -61,10 +66,10 @@ export function CommunityShareButton({
   async function handleShare() {
     setBusy(true);
     setError("");
-    const { error: shareError } = await shareToCommunity(generationId, caption);
+    const { error: shareError } = await shareToCommunity(generationId, caption, includePrompt);
     setBusy(false);
     if (shareError) {
-      setError(shareError);
+      setError(shareError === SHARE_PROMPT_HIDE_FAILED ? c.sharePromptFailed : shareError);
       return;
     }
     setShared(true);
@@ -155,6 +160,15 @@ export function CommunityShareButton({
             maxLength={200}
             className="mt-2 w-full rounded-control border border-atelier-rule bg-transparent p-2 text-xs text-atelier-ink placeholder:text-atelier-muted/80 focus:border-atelier-accent focus:outline-none"
           />
+          <label className="mt-2 flex cursor-pointer items-start gap-2 text-[11px] leading-snug text-atelier-muted">
+            <input
+              type="checkbox"
+              checked={includePrompt}
+              onChange={(e) => setIncludePrompt(e.target.checked)}
+              className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 accent-[var(--color-atelier-accent)]"
+            />
+            <span>{c.sharePromptLabel}</span>
+          </label>
           {error && (
             <p className="mt-1.5 text-[11px] text-red-600 dark:text-red-400">
               {error}

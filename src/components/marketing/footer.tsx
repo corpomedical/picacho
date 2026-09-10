@@ -87,6 +87,9 @@ export async function MarketingFooter({ dark = false }: { dark?: boolean } = {})
             <Link href="/content-policy" className={link}>
               {t.marketing.footer.contentPolicy}
             </Link>
+            <Link href="/delete-account" className={link}>
+              {t.marketing.footer.deleteAccount}
+            </Link>
           </div>
           {/* Comparison pages — hidden in the native app like the Pricing
               link above, because they are wall-to-wall prices (Apple 3.1.1 /

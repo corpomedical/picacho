@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useBackCloser } from "@/lib/native/back-stack";
 import { useModalFocus } from "@/lib/use-modal-focus";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { useLocale } from "@/lib/i18n/provider";
+import { formatMsg } from "@/lib/i18n/format";
 import {
+  blockPostAuthor,
   recordCommunityView,
   reportCommunityPost,
   setCommunityHeart,
@@ -160,7 +163,7 @@ function ResilientImage({
 }
 
 export function CommunityFeed({
-  posts,
+  posts: allPosts,
   heartedIds,
   isAdmin,
   initialPostId,
@@ -175,6 +178,17 @@ export function CommunityFeed({
   const { t } = useLocale();
   const c = t.community;
   const g = t.generate;
+  const router = useRouter();
+  // Accounts blocked in THIS session drop out at once (by the username the
+  // post carries); the server filters them from every later page load.
+  const [blockedNames, setBlockedNames] = useState<Set<string>>(new Set());
+  const posts = useMemo(
+    () => allPosts.filter((p) => !(p.username && blockedNames.has(p.username))),
+    [allPosts, blockedNames],
+  );
+  const [blockConfirmId, setBlockConfirmId] = useState<string | null>(null);
+  const [blockSending, setBlockSending] = useState(false);
+  const [blockError, setBlockError] = useState<string | null>(null);
   const [feedIndex, setFeedIndex] = useState<number | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [hearted, setHearted] = useState<Set<string>>(() => new Set(heartedIds));
@@ -326,6 +340,22 @@ export function CommunityFeed({
     setHiddenState((prev) => ({ ...prev, [post.id]: !now }));
     const { error } = await setCommunityPostHidden(post.id, !now);
     if (error) setHiddenState((prev) => ({ ...prev, [post.id]: now }));
+  }
+
+  async function blockAuthor(post: CommunityPostView) {
+    setBlockSending(true);
+    setBlockError(null);
+    const { error } = await blockPostAuthor(post.id);
+    setBlockSending(false);
+    if (error) {
+      setBlockError(error);
+      return;
+    }
+    setBlockConfirmId(null);
+    setReportOpenId(null);
+    setFeedIndex(null);
+    if (post.username) setBlockedNames((prev) => new Set(prev).add(post.username as string));
+    router.refresh();
   }
 
   async function submitReport(post: CommunityPostView) {
@@ -694,6 +724,50 @@ export function CommunityFeed({
                       {reportError && (
                         <p className="mt-2 text-[11px] leading-snug text-red-600">{localizeServerText(reportError, t)}</p>
                       )}
+
+                      {/* Block, beside report — Play's UGC policy asks for
+                          both (2026-09-11). One step to confirm, because
+                          the post vanishes from under the person's thumb. */}
+                      <div className="mt-3 border-t border-atelier-rule/60 pt-3">
+                        {blockConfirmId === post.id ? (
+                          <>
+                            <p className="text-[11px] leading-snug text-atelier-muted">{c.blockConfirm}</p>
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={() => blockAuthor(post)}
+                                disabled={blockSending}
+                                className="flex-1 rounded-control bg-atelier-ink py-1.5 text-xs font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-50"
+                              >
+                                {c.blockConfirmCta}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setBlockConfirmId(null)}
+                                className="flex-1 rounded-control border border-atelier-rule py-1.5 text-xs font-medium text-atelier-ink"
+                              >
+                                {c.blockCancel}
+                              </button>
+                            </div>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBlockError(null);
+                              setBlockConfirmId(post.id);
+                            }}
+                            className="w-full text-left text-xs font-medium text-atelier-muted underline underline-offset-2 hover:text-atelier-ink"
+                          >
+                            {post.username ? formatMsg(c.blockAuthor, { name: post.username }) : c.blockAuthorNoName}
+                          </button>
+                        )}
+                        {blockError && (
+                          <p className="mt-2 text-[11px] leading-snug text-red-600">
+                            {localizeServerText(blockError, t) === blockError ? c.blockFailed : localizeServerText(blockError, t)}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </section>
