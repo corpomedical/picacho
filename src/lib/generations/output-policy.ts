@@ -261,9 +261,11 @@ const VISION_INSTRUCTIONS =
   `beach, a towel in a spa, dancewear on a stage are NEGLIGIBLE to LOW.\n` +
   `sexual_act — a sex act, or genitalia as the subject.\n` +
   `suggestive_framing — posing, cropping, or emphasis that makes a sexual reading the point ` +
-  `of the picture. Cleavage, a low neckline, a bare midriff or the hips as the visual centre ` +
-  `of the frame is MEDIUM; the same garment in an ordinary pose with the face as the subject ` +
-  `is LOW. Swimwear or fitness wear in its setting is NEGLIGIBLE to LOW.\n` +
+  `of the picture. A pose or crop whose POINT is a body part — cleavage, a low neckline or a ` +
+  `bare midriff presented as the subject — is MEDIUM; the same garment in an ordinary pose ` +
+  `with the face as the subject is LOW. An activity is not an emphasis: exercise, sport, ` +
+  `dance or work seen from any angle, in fitness wear or swimwear in its setting, is ` +
+  `NEGLIGIBLE to LOW however much of the body it shows.\n` +
   `minor_sexualized — a person who is, or reads as, under 18 is the SUBJECT of a sexual ` +
   `reading. A child present in an ordinary scene is NEGLIGIBLE. This scores only when the ` +
   `sexual reading is about the minor, and then it scores HIGH.\n` +
@@ -287,6 +289,9 @@ const VISION_INSTRUCTIONS =
 const asBand = (v: unknown): Band | null => {
   if (typeof v !== "string") return null;
   const u = v.trim().toUpperCase();
+  // "NONE" is NEGLIGIBLE said another way (gpt-5.4-mini wrote it twice in a
+  // measured run); anything else outside the four bands is not a reading.
+  if (u === "NONE") return "NEGLIGIBLE";
   return (BAND_ORDER as string[]).includes(u) ? (u as Band) : null;
 };
 

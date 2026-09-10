@@ -300,6 +300,9 @@ function buildInstructions(prompt: string, ctx: PolicyContext): string {
 const asBand = (v: unknown): Band | null => {
   if (typeof v !== "string") return null;
   const u = v.trim().toUpperCase();
+  // "NONE" is NEGLIGIBLE said another way (gpt-5.4-mini wrote it twice in a
+  // measured run); anything else outside the four bands is not a reading.
+  if (u === "NONE") return "NEGLIGIBLE";
   return (BAND_ORDER as string[]).includes(u) ? (u as Band) : null;
 };
 

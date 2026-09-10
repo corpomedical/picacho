@@ -164,6 +164,8 @@ describe("parseVision fails closed", () => {
     // Letter case is not a reading: claude-sonnet-5 answers in lowercase.
     expect(parseVision(ok.toLowerCase())?.sexual_nudity).toBe("LOW");
     expect(parseVision(ok.replace('"person"', '"Person"'))?.depicted_subject).toBe("person");
+    // "NONE" is NEGLIGIBLE; "SAFE" is still not a reading (it could mean LOW).
+    expect(parseVision(ok.replace('"sexual_act":"NEGLIGIBLE"', '"sexual_act":"NONE"'))?.sexual_act).toBe("NEGLIGIBLE");
     expect(parseVision(`Looking {closely}.\n${ok}`)?.depicted_subject).toBe("person");
   });
   it("returns null for anything incomplete or unrecognised", () => {
