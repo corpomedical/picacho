@@ -27,6 +27,9 @@ import { DeleteAccountForm } from "@/components/settings/delete-account-form";
 import { SkipRefinementToggle } from "@/components/settings/skip-refinement-toggle";
 import { MarketingEmailsToggle } from "@/components/settings/marketing-emails-toggle";
 import { NotificationsPanel } from "@/components/settings/notifications-panel";
+import { GenerationDefaultsForm } from "@/components/settings/generation-defaults-form";
+import { buildVideoModelOptions, readExperimentalModelsFlag } from "@/lib/generations/workspace-data";
+import { readGenerationDefaults } from "@/lib/generations/generation-defaults-server";
 import {
   BlockedAccountsList,
   CookieChoiceControl,
@@ -109,6 +112,15 @@ function PrivacyIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function GenerationIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="6" width="13" height="12" rx="2" />
+      <path d="M16 10l5-3v10l-5-3" />
+    </svg>
+  );
+}
+
 function UsageIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
@@ -129,8 +141,8 @@ function SupportIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-type TabId = "account" | "appearance" | "security" | "notifications" | "privacy" | "usage" | "brand" | "support";
-const VALID_TABS: TabId[] = ["account", "appearance", "security", "notifications", "privacy", "usage", "brand", "support"];
+type TabId = "account" | "generation" | "appearance" | "security" | "notifications" | "privacy" | "usage" | "brand" | "support";
+const VALID_TABS: TabId[] = ["account", "generation", "appearance", "security", "notifications", "privacy", "usage", "brand", "support"];
 
 export default async function SettingsPage({
   searchParams,
@@ -228,6 +240,18 @@ export default async function SettingsPage({
     notify_render_failed: (notifyRow as { notify_render_failed?: boolean } | null)?.notify_render_failed !== false,
     notify_low_credits: (notifyRow as { notify_low_credits?: boolean } | null)?.notify_low_credits !== false,
   };
+
+  // Generation tab data — only when the tab is open.
+  let generationModels: ReturnType<typeof buildVideoModelOptions> = [];
+  let generationGlobalModel = "kling";
+  const generationDefaults = await (activeTab === "generation"
+    ? readGenerationDefaults(supabase, data.user.id)
+    : Promise.resolve(null));
+  if (activeTab === "generation") {
+    generationModels = buildVideoModelOptions(await readExperimentalModelsFlag(supabase));
+    const { data: gm } = await supabase.from("app_settings").select("value").eq("key", "video_model").maybeSingle();
+    generationGlobalModel = (gm?.value as string | undefined) ?? "kling";
+  }
 
   // Privacy tab data — only when the tab is open: a list of every shared post
   // is not worth two queries on every other settings visit. Both fail open
@@ -344,6 +368,7 @@ export default async function SettingsPage({
 
   const NAV: { id: TabId; label: string; icon: (props: SVGProps<SVGSVGElement>) => React.JSX.Element }[] = [
     { id: "account", label: s.account, icon: AccountIcon },
+    { id: "generation", label: s.generationTab, icon: GenerationIcon },
     { id: "appearance", label: s.appearance, icon: AppearanceIcon },
     { id: "security", label: s.security, icon: SecurityIcon },
     { id: "notifications", label: s.notificationsTab, icon: NotificationsIcon },
@@ -410,9 +435,6 @@ export default async function SettingsPage({
                   exactly). */}
               {username && <InviteCard username={username} />}
 
-              <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
-                <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
-              </SettingsSection>
 
               {/* Not a card: a 32px sheet around one underlined link was the
                   clearest case of the density the survey flagged. */}
@@ -480,6 +502,21 @@ export default async function SettingsPage({
               {/* Live credentials belong with the rest of them, not between
                   a referral card and a logout link. */}
               {apiEnabled && <ApiKeysCard keys={apiKeys} enabled />}
+            </div>
+          )}
+
+          {activeTab === "generation" && generationDefaults && (
+            <div className="space-y-4">
+              <SettingsSection title={s.generationDefaultsTitle} description={s.generationDefaultsDesc}>
+                <GenerationDefaultsForm
+                  models={generationModels}
+                  globalDefaultModelId={generationGlobalModel}
+                  initial={generationDefaults}
+                />
+              </SettingsSection>
+              <SettingsSection title={s.aiGeneration} description={s.aiGenerationDesc}>
+                <SkipRefinementToggle initialEnabled={profile?.skip_ai_refinement === true} />
+              </SettingsSection>
             </div>
           )}
 

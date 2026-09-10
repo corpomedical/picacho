@@ -703,6 +703,12 @@ export type RealPipelineOptions = {
   // through so both gates judge the same request in the same lane.
   strictContentLane?: boolean;
   /**
+   * The account's "generate sound with videos" choice (Settings →
+   * Generation, 2026-09-11). False asks the model for a silent clip; the
+   * dialogue pipeline, which brings its own audio, is unaffected.
+   */
+  nativeAudio?: boolean;
+  /**
    * Who is sending, and which row — for the two content gates. The prompt
    * gate judges with this account's recent refusals in front of it, and
    * both gates log a refusal against the row (policy-log.ts). Absent only
@@ -1310,7 +1316,7 @@ export async function runRealPipeline(
             outfitImageUrl: options.outfitImageUrl,
             propImageUrl: options.propImageUrl,
             storyboardShots: options.videoStoryboardShots,
-            generateNativeAudio: !usingSeparateDialoguePipeline,
+            generateNativeAudio: !usingSeparateDialoguePipeline && options.nativeAudio !== false,
             durationSeconds: options.videoDurationSeconds,
             aspectRatio: options.videoAspectRatio,
             resolution: options.videoResolution ?? null,

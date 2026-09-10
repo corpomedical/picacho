@@ -84,6 +84,8 @@ export default async function GeneratePage() {
     charactersForForm,
     videoModels,
     defaultVideoModelId,
+    defaultAspectRatio,
+    defaultVideoDurationSeconds,
     advancedPlanActive,
     multiAngleAvailable,
     approachingLimit,
@@ -261,6 +263,8 @@ export default async function GeneratePage() {
         characters={charactersForForm}
         videoModels={videoModels}
         defaultVideoModelId={defaultVideoModelId}
+        defaultAspectRatio={defaultAspectRatio}
+        defaultVideoDurationSeconds={defaultVideoDurationSeconds}
         advancedPlanActive={advancedPlanActive}
         multiAngleAvailable={multiAngleAvailable}
         approachingLimit={approachingLimit}

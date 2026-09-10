@@ -11,6 +11,8 @@ import {
   type VideoDurationOption,
 } from "@/lib/generations/providers/video-models";
 import type { createClient } from "@/lib/supabase/server";
+import { resolveComposerDefaults, type AspectRatioPref } from "@/lib/generations/generation-defaults";
+import { readGenerationDefaults } from "@/lib/generations/generation-defaults-server";
 
 type SupabaseServerClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -35,11 +37,44 @@ export type VideoModelOption = {
   defaultDurationSeconds: number;
 };
 
+/**
+ * The video models the composer offers — cheapest first, dormant models only
+ * with the experimental_models flag on. Exported so Settings → Generation
+ * offers exactly the same list (2026-09-11).
+ */
+export function buildVideoModelOptions(experimentalModels: boolean): VideoModelOption[] {
+  return VIDEO_MODELS_BY_PRICE.filter((m) => experimentalModels || !isDormantVideoModel(m.id)).map((m) => ({
+    id: m.id,
+    name: m.name,
+    description: m.description,
+    durations: [...m.durations],
+    defaultDurationSeconds: getDefaultDurationSeconds(m),
+  }));
+}
+
+/** The experimental_models flag. Read failure means OFF. */
+export async function readExperimentalModelsFlag(supabase: SupabaseServerClient): Promise<boolean> {
+  try {
+    const { data } = await supabase
+      .from("feature_flags")
+      .select("enabled")
+      .eq("key", "experimental_models")
+      .maybeSingle<{ enabled: boolean | null }>();
+    return data?.enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 export type GenerateWorkspaceData = {
   hasCharacter: boolean;
   charactersForForm: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
+  // The account's own starting point (Settings → Generation), already
+  // resolved against what is offered — null means the composer's default.
+  defaultAspectRatio: AspectRatioPref | null;
+  defaultVideoDurationSeconds: number | null;
   advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
@@ -159,7 +194,7 @@ export async function getGenerateWorkspaceData(
       c.render_style === "photoreal" ? true : c.render_style === "illustrated" ? false : null,
   }));
 
-  const defaultVideoModelId = videoModelSetting?.value ?? "kling";
+  const globalDefaultVideoModelId = videoModelSetting?.value ?? "kling";
   // Dormant models stay out of the composer until the experimental_models
   // flag is on (2026-09-06). Read here rather than passed down because this
   // is the one place the picker's list is built — and it is only half the
@@ -168,27 +203,19 @@ export async function getGenerateWorkspaceData(
   //
   // Read failure means OFF: an unreadable flag must never be the thing that
   // reveals an unproven model.
-  let experimentalModels = false;
-  try {
-    const { data: expFlag } = await supabase
-      .from("feature_flags")
-      .select("enabled")
-      .eq("key", "experimental_models")
-      .maybeSingle<{ enabled: boolean | null }>();
-    experimentalModels = expFlag?.enabled === true;
-  } catch {
-    experimentalModels = false;
-  }
+  const experimentalModels = await readExperimentalModelsFlag(supabase);
   // Cheapest first — see VIDEO_MODELS_BY_PRICE.
-  const videoModels: VideoModelOption[] = VIDEO_MODELS_BY_PRICE.filter(
-    (m) => experimentalModels || !isDormantVideoModel(m.id),
-  ).map((m) => ({
-    id: m.id,
-    name: m.name,
-    description: m.description,
-    durations: [...m.durations],
-    defaultDurationSeconds: getDefaultDurationSeconds(m),
-  }));
+  const videoModels: VideoModelOption[] = buildVideoModelOptions(experimentalModels);
+
+  // The account's own defaults, resolved against what is actually offered:
+  // a model picked in Settings that has since gone dormant or been retired
+  // falls back to the global default rather than opening on nothing.
+  const resolvedDefaults = resolveComposerDefaults(
+    await readGenerationDefaults(supabase, userId ?? ""),
+    videoModels,
+    globalDefaultVideoModelId,
+  );
+  const defaultVideoModelId = resolvedDefaults.videoModelId;
 
   // Storyboard and multi-image reference are Studio-and-up (admins get a
   // free pass, same as the generation-cap exemption below). Moved down from
@@ -246,6 +273,8 @@ export async function getGenerateWorkspaceData(
     charactersForForm,
     videoModels,
     defaultVideoModelId,
+    defaultAspectRatio: resolvedDefaults.aspectRatio,
+    defaultVideoDurationSeconds: resolvedDefaults.durationSeconds,
     advancedPlanActive,
     multiAngleAvailable,
     approachingLimit,

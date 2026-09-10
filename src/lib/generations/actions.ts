@@ -7,6 +7,7 @@ import { recordSignal } from "@/lib/generations/record-signal";
 import { ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
+import { readGenerationDefaults } from "@/lib/generations/generation-defaults-server";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { reelPosterKeyFor } from "@/lib/media/reel-encode";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
@@ -866,6 +867,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
 
   const promptIsFinal = formData.get("prompt_is_final") === "1" || storyboardShots !== null;
   const skipRefinement = userProfile?.skip_ai_refinement === true || promptIsFinal;
+  // Sound with videos (Settings → Generation). Its own fail-open read: the
+  // profile select above carries the plan and must never fail over a column
+  // that has not been added yet.
+  const videoSound = (await readGenerationDefaults(supabase, userData.user.id)).sound;
 
   // Multi-character images need OpenAI's real multi-image edit endpoint —
   // Flux's fal.ai endpoint only ever accepts one reference image, with no
@@ -1853,6 +1858,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoDurationSeconds: contentType === "video" ? videoDurationSeconds : undefined,
           videoAspectRatio: contentType === "video" ? videoAspectRatio : undefined,
           videoResolution,
+          nativeAudio: videoSound,
           skipRefinement,
         skipBrandProhibitions: formData.get("skip_brand_rules") === "1",
           policyWarningAcknowledged,
@@ -2746,6 +2752,7 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
   const useRealProviders = flag?.enabled === true;
   // Same per-user preference as runGeneration (see the comment there).
   const skipRefinement = userProfile?.skip_ai_refinement === true;
+  const videoSound = (await readGenerationDefaults(supabase, userData.user.id)).sound;
 
   // Same per-generation model choice as runGeneration (see the comment
   // there) — one choice applies to every angle in this batch.
@@ -3408,7 +3415,9 @@ export async function runMultiAngleGeneration(formData: FormData): Promise<Multi
             // default. Charging for a resolution and not sending it is the
             // exact drift the single path's videoOptions already prevents.
             resolution: videoResolution ?? undefined,
-            generateNativeAudio: true,
+            // The account's sound choice (Settings → Generation) rides every
+            // angle, like the resolution above.
+            generateNativeAudio: videoSound,
           }),
         };
         // Queued, not finished. Record the handle and leave this angle's row

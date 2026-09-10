@@ -1426,6 +1426,11 @@ export function GenerateForm(props: {
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
+  // The account's own starting point (Settings → Generation, 2026-09-11),
+  // already resolved server-side. Optional: every other call site keeps the
+  // composer's own defaults.
+  defaultAspectRatio?: "16:9" | "9:16" | null;
+  defaultVideoDurationSeconds?: number | null;
   advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
@@ -1892,6 +1897,8 @@ function GenerateFormInner({
   characters,
   videoModels,
   defaultVideoModelId,
+  defaultAspectRatio = null,
+  defaultVideoDurationSeconds = null,
   advancedPlanActive,
   multiAngleAvailable,
   approachingLimit,
@@ -1912,6 +1919,8 @@ function GenerateFormInner({
   characters: CharacterOption[];
   videoModels: VideoModelOption[];
   defaultVideoModelId: string;
+  defaultAspectRatio?: "16:9" | "9:16" | null;
+  defaultVideoDurationSeconds?: number | null;
   advancedPlanActive: boolean;
   multiAngleAvailable: boolean;
   approachingLimit: boolean;
@@ -2525,7 +2534,12 @@ function GenerateFormInner({
   // where the current value isn't valid (e.g. switching from Kling O3's 15s
   // down to Kling 1.6, which tops out at 10s).
   const [videoDurationSeconds, setVideoDurationSeconds] = useState(
-    () => videoModels.find((m) => m.id === defaultVideoModelId)?.defaultDurationSeconds ?? 5,
+    () =>
+      // The account's own default length when it set one (resolved
+      // server-side against this very model), else the model's.
+      defaultVideoDurationSeconds ??
+      videoModels.find((m) => m.id === defaultVideoModelId)?.defaultDurationSeconds ??
+      5,
   );
 
   // Placed here, AFTER videoModelId and videoDurationSeconds exist.
@@ -2581,7 +2595,9 @@ function GenerateFormInner({
   // honored it — fixed server-side (see fal.ts's reframe step), this picker
   // is just the explicit-intent half of that fix. An explicit prompt mention
   // always wins over whichever icon is selected here, even if one is.
-  const [videoAspectRatio, setVideoAspectRatio] = useState<"16:9" | "9:16" | null>(null);
+  // Starts on the account's own default when it set one (Settings →
+  // Generation); an explicit mention in the prompt still wins server-side.
+  const [videoAspectRatio, setVideoAspectRatio] = useState<"16:9" | "9:16" | null>(defaultAspectRatio);
 
   // Optional free resolution upgrade (2026-08-30). Veo 3.1 bills 720p and
   // 1080p identically ("$0.40 with audio for 720p or 1080p", fal's own
