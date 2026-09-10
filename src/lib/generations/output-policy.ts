@@ -51,7 +51,7 @@ const BAND_ORDER: Band[] = ["NEGLIGIBLE", "LOW", "MEDIUM", "HIGH"];
 const bv = (b: Band) => BAND_ORDER.indexOf(b);
 const raise = (b: Band, n = 1): Band => BAND_ORDER[Math.min(3, bv(b) + n)];
 
-export type OutputReason = "sexual" | "minors" | "unavailable";
+export type OutputReason = "sexual" | "minors" | "self_harm" | "unavailable";
 
 export class OutputPolicyRefusal extends Error {
   readonly reason: OutputReason;
@@ -90,6 +90,8 @@ export type VisionReading = {
   sexual_act: Band;
   suggestive_framing: Band;
   minor_sexualized: Band;
+  /** Self-harm or suicide shown approvingly, or as the subject (2026-09-11). */
+  self_harm: Band;
   /** Where any nudity or suggestiveness actually sits in the frame. */
   depicted_subject: "person" | "artwork" | "none";
 };
@@ -97,6 +99,13 @@ export type VisionReading = {
 export type OutputReadings = {
   moderation: ModerationReading | null;
   vision: VisionReading | null;
+  /**
+   * Present when the verdict went to a vote: every reading that took part,
+   * in order — primary, the other family, then the larger model — for the
+   * log. Two entries means the two disagreed and the third was unreachable
+   * (the verdict is then "unavailable").
+   */
+  votes?: VisionReading[];
 };
 
 const MSG_SEXUAL =
@@ -163,6 +172,22 @@ async function loadImage(url: string): Promise<string | null> {
   }
 }
 
+// A 429 is a queue, not an answer: every reader here fails closed on an
+// unreadable reply, so a rate-limit blip under a burst of renders would turn
+// into "unavailable" refusals. Wait what the server asks (capped) and ask
+// once more.
+async function sendWithOneRetry(send: () => Promise<Response>): Promise<Response> {
+  let res = await send();
+  if (res.status === 429) {
+    const ms = Number(res.headers.get("retry-after-ms"));
+    const sec = Number(res.headers.get("retry-after"));
+    const wait = Number.isFinite(ms) && ms > 0 ? Math.min(ms, 5000) : Number.isFinite(sec) && sec > 0 ? Math.min(sec * 1000, 5000) : 1500;
+    await new Promise((r) => setTimeout(r, wait));
+    res = await send();
+  }
+  return res;
+}
+
 // ---------------------------------------------------------------------------
 // Reader A — the moderation endpoint
 // ---------------------------------------------------------------------------
@@ -188,17 +213,19 @@ async function readModeration(image: string): Promise<ModerationReading | null> 
   if (!apiKey) return null;
   try {
     const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
-    const res = await fetchWithTimeout(
-      "https://api.openai.com/v1/moderations",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({
-          model: "omni-moderation-latest",
-          input: [{ type: "image_url", image_url: { url: image } }],
-        }),
-      },
-      20_000,
+    const res = await sendWithOneRetry(() =>
+      fetchWithTimeout(
+        "https://api.openai.com/v1/moderations",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+          body: JSON.stringify({
+            model: "omni-moderation-latest",
+            input: [{ type: "image_url", image_url: { url: image } }],
+          }),
+        },
+        20_000,
+      ),
     );
     if (!res.ok) {
       console.warn(`[output-policy] moderation endpoint ${res.status}: ${(await res.text()).slice(0, 200)}`);
@@ -234,18 +261,34 @@ const VISION_INSTRUCTIONS =
   `beach, a towel in a spa, dancewear on a stage are NEGLIGIBLE to LOW.\n` +
   `sexual_act — a sex act, or genitalia as the subject.\n` +
   `suggestive_framing — posing, cropping, or emphasis that makes a sexual reading the point ` +
-  `of the picture.\n` +
+  `of the picture. Cleavage, a low neckline, a bare midriff or the hips as the visual centre ` +
+  `of the frame is MEDIUM; the same garment in an ordinary pose with the face as the subject ` +
+  `is LOW. Swimwear or fitness wear in its setting is NEGLIGIBLE to LOW.\n` +
   `minor_sexualized — a person who is, or reads as, under 18 is the SUBJECT of a sexual ` +
   `reading. A child present in an ordinary scene is NEGLIGIBLE. This scores only when the ` +
-  `sexual reading is about the minor, and then it scores HIGH.\n\n` +
+  `sexual reading is about the minor, and then it scores HIGH.\n` +
+  `self_harm — self-harm, suicide or an eating disorder shown approvingly, romanticised, or ` +
+  `as the subject of the picture: fresh self-inflicted wounds presented as beautiful, the act ` +
+  `itself, a method. Healed scars, a memorial, a clinical or recovery setting are NEGLIGIBLE ` +
+  `to LOW.\n\n` +
   `depicted_subject — where any nudity or suggestiveness actually sits: "person" if it is on ` +
   `a photographic person in the scene; "artwork" if it is a statue, painting, sculpture, ` +
   `figure study or other depicted object; "none" if there is none.\n\n` +
-  `Judge the picture, not a caption. Reply with ONLY a JSON object:\n` +
+  `Judge the picture, not a caption. First, in two or three plain sentences, say what is ` +
+  `actually in the frame: who is there, what they wear, how they are posed, and what the ` +
+  `picture is evidently for. Then, on the last line, give ONLY the JSON object:\n` +
   `{"sexual_nudity":"...","sexual_act":"...","suggestive_framing":"...","minor_sexualized":"...",` +
-  `"depicted_subject":"person"|"artwork"|"none"}`;
+  `"self_harm":"...","depicted_subject":"person"|"artwork"|"none"}`;
 
-const isBand = (v: unknown): v is Band => typeof v === "string" && (BAND_ORDER as string[]).includes(v);
+// A band is read case-insensitively: claude-sonnet-5 answers "negligible"
+// where the instructions say NEGLIGIBLE (measured 2026-09-11: twenty valid
+// readings thrown away over three runs), and a reader lost to letter case
+// is a reader lost for nothing.
+const asBand = (v: unknown): Band | null => {
+  if (typeof v !== "string") return null;
+  const u = v.trim().toUpperCase();
+  return (BAND_ORDER as string[]).includes(u) ? (u as Band) : null;
+};
 
 /** Exported for the test suite: every null is a fail-closed path. */
 export function parseVision(raw: string): VisionReading | null {
@@ -258,55 +301,129 @@ export function parseVision(raw: string): VisionReading | null {
     return null;
   }
   if (!o || typeof o !== "object") return null;
-  for (const k of ["sexual_nudity", "sexual_act", "suggestive_framing", "minor_sexualized"]) {
-    if (!isBand(o[k])) return null;
+  const bands: Partial<Record<"sexual_nudity" | "sexual_act" | "suggestive_framing" | "minor_sexualized" | "self_harm", Band>> = {};
+  for (const k of ["sexual_nudity", "sexual_act", "suggestive_framing", "minor_sexualized", "self_harm"] as const) {
+    const b = asBand(o[k]);
+    if (!b) return null;
+    bands[k] = b;
   }
-  const subj = o.depicted_subject;
+  const subj = typeof o.depicted_subject === "string" ? o.depicted_subject.trim().toLowerCase() : "";
   if (subj !== "person" && subj !== "artwork" && subj !== "none") return null;
   return {
-    sexual_nudity: o.sexual_nudity as Band,
-    sexual_act: o.sexual_act as Band,
-    suggestive_framing: o.suggestive_framing as Band,
-    minor_sexualized: o.minor_sexualized as Band,
+    sexual_nudity: bands.sexual_nudity as Band,
+    sexual_act: bands.sexual_act as Band,
+    suggestive_framing: bands.suggestive_framing as Band,
+    minor_sexualized: bands.minor_sexualized as Band,
+    self_harm: bands.self_harm as Band,
     depicted_subject: subj,
   };
 }
 
-async function readVision(image: string): Promise<VisionReading | null> {
+const VISION_SEED = 7;
+
+async function readVision(image: string, model?: string): Promise<VisionReading | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
+  const which = model || process.env.OPENAI_MODEL || "gpt-5.4-mini";
   try {
     const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
-    const res = await fetchWithTimeout(
+    const res = await sendWithOneRetry(() => fetchWithTimeout(
       "https://api.openai.com/v1/chat/completions",
       {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
         body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || "gpt-5.4-mini",
+          model: which,
           messages: [
             { role: "system", content: VISION_INSTRUCTIONS },
             {
               role: "user",
               content: [
                 { type: "text", text: "Score this picture." },
-                { type: "image_url", image_url: { url: image, detail: "low" } },
+                // Full detail: the 1024px copy is read as it is, not as a
+                // 512px thumbnail. The difference is a few hundred tokens
+                // and it is what "look at the picture" means.
+                { type: "image_url", image_url: { url: image, detail: "high" } },
               ],
             },
           ],
           max_completion_tokens: 2000,
           temperature: 0,
+          seed: VISION_SEED,
         }),
       },
       25_000,
-    );
+    ));
     if (!res.ok) {
-      console.warn(`[output-policy] vision model ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      console.warn(`[output-policy] vision model ${which} ${res.status}: ${(await res.text()).slice(0, 200)}`);
       return null;
     }
     const data = await res.json();
-    return parseVision(String(data?.choices?.[0]?.message?.content ?? ""));
-  } catch {
+    const text = String(data?.choices?.[0]?.message?.content ?? "");
+    const parsed = parseVision(text);
+    if (!parsed) console.warn(`[output-policy] vision model ${which} reply unreadable: ${text.replace(/\s+/g, " ").slice(-160)}`);
+    return parsed;
+  } catch (err) {
+    console.warn(`[output-policy] vision model ${which} threw:`, err instanceof Error ? err.message : err);
+    return null;
+  }
+}
+
+// The arbiter from the other model family: claude-sonnet-5 reads the same
+// picture with the same instructions. Only ever asked as part of a vote.
+async function readVisionClaude(image: string): Promise<VisionReading | null> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return null;
+  const m = /^data:([^;]+);base64,([\s\S]+)$/.exec(image);
+  if (!m) return null;
+  try {
+    const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
+    const call = (withThinkingParam: boolean) =>
+      fetchWithTimeout(
+        "https://api.anthropic.com/v1/messages",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+          body: JSON.stringify({
+            model: "claude-sonnet-5",
+            max_tokens: 1500,
+            // No `temperature`: this model rejects it as deprecated (400,
+            // measured 2026-09-11).
+            ...(withThinkingParam ? { thinking: { type: "disabled" } } : {}),
+            system: VISION_INSTRUCTIONS,
+            messages: [
+              {
+                role: "user",
+                content: [
+                  { type: "image", source: { type: "base64", media_type: m[1], data: m[2] } },
+                  { type: "text", text: "Score this picture." },
+                ],
+              },
+            ],
+          }),
+        },
+        25_000,
+      );
+    let res = await sendWithOneRetry(() => call(true));
+    if (!res.ok) {
+      const text = await res.text();
+      if (res.status === 400 && text.includes("thinking")) res = await sendWithOneRetry(() => call(false));
+      else {
+        console.warn(`[output-policy] arbiter ${res.status}: ${text.slice(0, 200)}`);
+        return null;
+      }
+      if (!res.ok) {
+        console.warn(`[output-policy] arbiter ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        return null;
+      }
+    }
+    const data = (await res.json()) as { content?: Array<{ type: string; text?: string }>; stop_reason?: string };
+    const text = (data.content ?? []).filter((c) => c.type === "text").map((c) => c.text ?? "").join("\n");
+    const parsed = parseVision(text);
+    if (!parsed) console.warn(`[output-policy] arbiter reply unreadable (stop ${data.stop_reason ?? "?"}): ${text.replace(/\s+/g, " ").slice(-160)}`);
+    return parsed;
+  } catch (err) {
+    console.warn("[output-policy] arbiter threw:", err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -376,6 +493,11 @@ export function decideOutput(readings: OutputReadings, ctx: OutputContext = {}):
   // zero tolerance. The moderation endpoint's image reading for this
   // category is always 0 by design, so it is never consulted here.
   if (vis && bv(bump(vis.minor_sexualized)) >= bv("LOW")) return "minors";
+  // Self-harm shown approvingly: the vision model's call, at MEDIUM, in
+  // every lane — the moderation endpoint's self-harm categories are text
+  // signals and are not consulted for a picture. Not raised by the session
+  // prior, which is about sexual escalation.
+  if (vis && bv(vis.self_harm) >= bv("MEDIUM")) return "self_harm";
 
   if (mod && vis) {
     const nudity = eff("sexual_nudity", vis.sexual_nudity);
@@ -403,8 +525,11 @@ export function decideOutput(readings: OutputReadings, ctx: OutputContext = {}):
   }
 
   if (mod) {
-    // Vision unreachable: the endpoint's own verdict stands.
-    return mod.flagged ? "sexual" : null;
+    // No vision reading: the picture has NOT been judged. The endpoint's
+    // score is calibrated for nudity and says nothing about a minor, a
+    // self-harm depiction, or an act it does not flag — and the gate asked
+    // two vision readers before arriving here. Closed, and said so.
+    return "unavailable";
   }
 
   // Moderation unreachable: the model alone, one band stricter on nudity
@@ -416,6 +541,115 @@ export function decideOutput(readings: OutputReadings, ctx: OutputContext = {}):
   const framing = eff("suggestive_framing", vis!.suggestive_framing);
   if (bv(nudity) >= bv("HIGH") || bv(act) >= bv("MEDIUM") || bv(framing) >= bv("HIGH")) return "sexual";
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// The edge, and the vote
+// ---------------------------------------------------------------------------
+
+const VISION_BANDS: (keyof Omit<VisionReading, "depicted_subject">)[] = [
+  "sexual_nudity",
+  "sexual_act",
+  "suggestive_framing",
+  "minor_sexualized",
+  "self_harm",
+];
+
+/**
+ * True when moving any ONE vision category by ONE band — or reading the
+ * subject as the other kind of thing — would flip the verdict.
+ *
+ * Temperature 0 is not determinism: measured 2026-09-10, the same picture
+ * read framing LOW in three runs and MEDIUM in the fourth, and the verdict
+ * flipped with it. Readings on the line are the only ones that can flip, so
+ * those — and only those — are decided by a majority of three independent
+ * readers (assertOutputAllowed). Pure; exported for the tests.
+ */
+export function isVisionEdge(readings: OutputReadings, ctx: OutputContext = {}): boolean {
+  const vis = readings.vision;
+  if (!vis) return false;
+  const verdict = (v: VisionReading) => Boolean(decideOutput({ ...readings, vision: v }, ctx));
+  const base = verdict(vis);
+  for (const cat of VISION_BANDS) {
+    // A NEGLIGIBLE reading is the model saying there is nothing there; the
+    // vote is for a model hedging between two bands of something it DID
+    // see (the same rule as the prompt gate's isEdge, for the same reason:
+    // minors refuses at LOW, so every all-clear picture would otherwise be
+    // an edge).
+    if (vis[cat] === "NEGLIGIBLE") continue;
+    for (const step of [-1, 1]) {
+      const shifted = BAND_ORDER[bv(vis[cat]) + step];
+      if (!shifted) continue;
+      if (verdict({ ...vis, [cat]: shifted }) !== base) return true;
+    }
+  }
+  for (const subject of ["person", "artwork", "none"] as const) {
+    if (subject !== vis.depicted_subject && verdict({ ...vis, depicted_subject: subject }) !== base) return true;
+  }
+  return false;
+}
+
+/**
+ * The majority. Per category the median band of the readings; with three
+ * readers a single outlier, up or down, cannot decide. With only two (an
+ * arbiter down) the STRICTER band is taken — this is the output side, and a
+ * wrong allow ships the picture. The subject is the majority kind; a
+ * three-way split reads as "person", the kind the rules are strictest on.
+ * Pure; exported for the tests.
+ */
+/**
+ * A MINORS FINDING NEEDS TWO READERS — the same rule as the prompt gate,
+ * for the same reason: it is the gravest accusation the gate can make and
+ * it refuses at LOW, so one reader's hedge is never the whole of it. Pure.
+ */
+export function withMinorsMajorityVision(reading: VisionReading, panel: VisionReading[]): VisionReading {
+  if (bv(reading.minor_sexualized) < bv("LOW")) return reading;
+  const seen = panel.filter((r) => bv(r.minor_sexualized) >= bv("LOW")).length;
+  return seen >= 2 ? reading : { ...reading, minor_sexualized: "NEGLIGIBLE" };
+}
+
+export function voteVision(readings: VisionReading[], base?: OutputReadings, ctx: OutputContext = {}): VisionReading {
+  const pick = (cat: (typeof VISION_BANDS)[number]): Band => {
+    const sorted = readings.map((r) => bv(r[cat])).sort((a, b) => a - b);
+    return BAND_ORDER[sorted[Math.floor(sorted.length / 2)]];
+  };
+  // The subject: the majority kind; a tie goes to the kind the rules are
+  // strictest on — a person, then "none" (a flagged picture with nothing
+  // on a person is refused), then an artwork (the one kind with an override).
+  const strictness: VisionReading["depicted_subject"][] = ["person", "none", "artwork"];
+  const counts = new Map<VisionReading["depicted_subject"], number>();
+  for (const r of readings) counts.set(r.depicted_subject, (counts.get(r.depicted_subject) ?? 0) + 1);
+  const best = Math.max(...counts.values());
+  const subject = strictness.find((k) => counts.get(k) === best) ?? "person";
+  const median: VisionReading = {
+    sexual_nudity: pick("sexual_nudity"),
+    sexual_act: pick("sexual_act"),
+    suggestive_framing: pick("suggestive_framing"),
+    minor_sexualized: pick("minor_sexualized"),
+    self_harm: pick("self_harm"),
+    depicted_subject: subject,
+  };
+  if (!base) return median;
+
+  // A vote on VERDICTS. Each reading is decided on its own beside the same
+  // moderation reading; more refusals than allows refuses, and with two
+  // readings one refusal is enough (the output side: a wrong allow ships
+  // the picture). When the median's own verdict disagrees with that side,
+  // the winning-side reading nearest the median stands in — two readers
+  // refusing on two different categories is two refusals (2026-09-11
+  // review).
+  const verdict = (v: VisionReading) => {
+    const r = decideOutput({ ...base, vision: v }, ctx);
+    return r !== null && r !== "unavailable";
+  };
+  const verdicts = readings.map(verdict);
+  const refusing = verdicts.filter(Boolean).length;
+  const majorityRefuses = refusing * 2 >= readings.length && refusing > 0;
+  if (verdict(median) === majorityRefuses) return median;
+  const distance = (a: VisionReading) => VISION_BANDS.reduce((d, cat) => d + Math.abs(bv(a[cat]) - bv(median[cat])), 0);
+  return readings
+    .filter((_, i) => verdicts[i] === majorityRefuses)
+    .sort((a, b) => distance(a) - distance(b))[0];
 }
 
 // ---------------------------------------------------------------------------
@@ -450,16 +684,96 @@ export async function assertOutputAllowed(input: {
     strictLane: input.strictLane === true,
   };
 
+  // TWO VISION READERS ALWAYS, A THIRD WHEN NEEDED (2026-09-11) — the same
+  // shape as the prompt gate. The moderation endpoint and both model
+  // families read the picture in parallel. When the two vision verdicts
+  // agree and neither reading sits on the line, the primary's reading
+  // stands; no single sample can allow or refuse alone. When they
+  // disagree, or either is an edge, the larger model reads too and the
+  // majority of verdicts decides. Disagreement with no third reader is
+  // "unavailable": not shown, credit back, nobody accused.
   let readings: OutputReadings = { moderation: null, vision: null };
+  let image: string | null = null;
+  let other: VisionReading | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const image = await loadImage(url);
+    image = await loadImage(url);
     if (image) {
-      const [moderation, vision] = await Promise.all([readModeration(image), readVision(image)]);
-      readings = { moderation, vision };
-      if (moderation || vision) break;
+      const [moderation, vision, claude] = await Promise.all([readModeration(image), readVision(image), readVisionClaude(image)]);
+      other = claude;
+      readings = { moderation, vision: vision ?? claude };
+      // A vision reading ends the loop; the endpoint alone does not, because
+      // without a vision reading the picture is not judged (2026-09-11
+      // review: a transient double failure was terminal on the first try).
+      if (vision || claude) break;
     }
     // Nothing read: one retry, then fail closed below.
     await new Promise((r) => setTimeout(r, 1500));
+  }
+
+  if (image && readings.vision) {
+    const first = readings.vision;
+    const verdictOf = (v: VisionReading) => {
+      const r = decideOutput({ ...readings, vision: v }, ctx);
+      return r !== null && r !== "unavailable";
+    };
+    const edgeOf = (v: VisionReading) => isVisionEdge({ ...readings, vision: v }, ctx);
+    const mini = first === other ? null : first; // when the primary was down, `first` IS the other family's reading
+    const twoUp = mini !== null && other !== null;
+    if (!twoUp) console.warn("[output-policy] one vision reader down; the other stands");
+    const agree = mini && other ? verdictOf(mini) === verdictOf(other) : true;
+    const needThird = !agree || edgeOf(first) || (other ? edgeOf(other) : false);
+
+    if (!needThird && mini && other) {
+      readings = { ...readings, vision: withMinorsMajorityVision(first, [mini, other]) };
+    }
+
+    if (needThird) {
+      // ON THE LINE, THE STRONG READERS DECIDE. Measured 2026-09-11 on the
+      // one picture that still flipped: the small primary read the deciding
+      // category LOW three runs out of five and MEDIUM the other two, under
+      // a fixed seed, while claude-sonnet-5 and gpt-5.4 read it identically
+      // every time. A verdict the small model casts is a coin; at an edge it
+      // never casts one. The two strong readers agreeing is the verdict.
+      // When they split, this side REFUSES: a wrong allow ships the picture,
+      // a wrong refusal costs a refunded re-render. With only one strong
+      // reader reachable, that reader and the primary decide as a pair (one
+      // refusal wins, as everywhere on this side); with neither, the picture
+      // is "unavailable" — not shown, credit back, nobody accused.
+      // The unseeded reader is sampled three times here and its own median
+      // stands for it — one reader's coin is not a strong reader.
+      const primaryModel = process.env.OPENAI_MODEL || "gpt-5.4-mini";
+      const [larger, more] = await Promise.all([
+        readVision(image, primaryModel === "gpt-5.4" ? "gpt-5.4-mini" : "gpt-5.4"),
+        other ? Promise.all([readVisionClaude(image), readVisionClaude(image)]) : Promise.resolve([null, null]),
+      ]);
+      const claudeSamples = [other, ...more].filter((v): v is VisionReading => v !== null);
+      const claude = claudeSamples.length ? voteVision(claudeSamples) : null;
+      const strong = [claude, larger].filter((v): v is VisionReading => v !== null);
+      if (strong.length === 0) {
+        console.warn("[output-policy] on the line with no strong reader reachable; unavailable");
+        throw new OutputPolicyRefusal("unavailable", MSG_UNAVAILABLE, { ...readings, votes: [mini].filter((v): v is VisionReading => v !== null) });
+      }
+      // ANY REFUSING SAMPLE DECIDES. Every sample that read this picture —
+      // the primary, each of the unseeded reader's three, the larger model
+      // — is decided on its own; if any one of them refuses, the picture is
+      // refused, and the reading kept is that refusing sample nearest the
+      // panel's median. This is the side rule this gate already takes on a
+      // tie, applied to the whole panel: measured 2026-09-11, a low-cut
+      // sweater on a real person's photo split one strong reader's own
+      // samples half and half, and a majority of a coin is a coin. A
+      // picture on which any reader saw the line crossed is not shown; a
+      // wrong refusal costs a refunded re-render. A minors finding still
+      // needs two samples (withMinorsMajorityVision).
+      const samples = [mini, ...claudeSamples, larger].filter((v): v is VisionReading => v !== null);
+      const median = voteVision(samples);
+      const refusing = samples.filter((v) => verdictOf(withMinorsMajorityVision(v, samples)));
+      const distance = (a: VisionReading) => VISION_BANDS.reduce((d, cat) => d + Math.abs(bv(a[cat]) - bv(median[cat])), 0);
+      const voted = refusing.length
+        ? withMinorsMajorityVision(refusing.sort((a, b) => distance(a) - distance(b))[0], samples)
+        : withMinorsMajorityVision(median, samples);
+      readings = { ...readings, vision: voted, votes: [mini, claude, larger].filter((v): v is VisionReading => v !== null) };
+      console.info("[output-policy] vote", { mini, claude, larger, samples: samples.length, refusing: refusing.length, voted });
+    }
   }
 
   const reason = decideOutput(readings, ctx);
@@ -468,7 +782,7 @@ export async function assertOutputAllowed(input: {
     console.warn("[output-policy] both readers unreachable; refusing closed");
     throw new OutputPolicyRefusal("unavailable", MSG_UNAVAILABLE, readings);
   }
-  throw new OutputPolicyRefusal(reason, reason === "minors" ? MSG_MINORS : MSG_SEXUAL, readings);
+  throw new OutputPolicyRefusal(reason, reason === "sexual" ? MSG_SEXUAL : MSG_MINORS, readings);
 }
 
 export type RenderVerdict = OutputVerdict & {

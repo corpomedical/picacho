@@ -95,6 +95,11 @@ async function isAuthentic(req: Request, rawBody: Buffer): Promise<boolean> {
   return false;
 }
 
+// finish() runs the picture gate here — a frame extraction, two readers and,
+// on a borderline picture, two more — so this route needs the same ceiling
+// the generate pages have (2026-09-11).
+export const maxDuration = 300;
+
 export async function POST(req: Request) {
   const rawBody = Buffer.from(await req.arrayBuffer());
 

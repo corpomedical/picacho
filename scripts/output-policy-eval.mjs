@@ -24,6 +24,7 @@ const env = Object.fromEntries(
     .map((l) => { const i = l.indexOf("="); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, "")]; }),
 );
 for (const [k, v] of Object.entries(env)) process.env[k] ??= v;
+if (!process.env.ANTHROPIC_API_KEY) { console.error("ANTHROPIC_API_KEY is required: both gates read with two model families, and a run without the second is not the production configuration."); process.exit(2); }
 if (!process.env.OPENAI_API_KEY) { console.error("No OPENAI_API_KEY."); process.exit(2); }
 
 const { assertOutputAllowed, decideOutput } = await import(pathToFileURL(`${here}../src/lib/generations/output-policy.ts`).href);
@@ -34,10 +35,20 @@ const cases = JSON.parse(readFileSync(process.argv[2] ?? "/tmp/output-eval.json"
 // calls), so a label or rule change is checked in a second, not a
 // re-measurement. Labels come from the set file; readings from the dump.
 const replayAt = process.argv.indexOf("--replay");
+if (replayAt > 0 && process.argv.includes("--runs")) { console.error("--replay re-judges stored readings; --runs measures the readers. Not both."); process.exit(2); }
 const replay = replayAt > 0 && process.argv[replayAt + 1]
   ? new Map(JSON.parse(readFileSync(process.argv[replayAt + 1], "utf8")).map((r) => [r.id, r.readings]))
   : null;
 
+// --runs N: the whole set is judged N times and the verdicts compared per
+// case. A verdict that differs between runs of the same picture is the
+// failure this harness exists to catch since the vote landed (2026-09-10).
+const runsAt = process.argv.indexOf("--runs");
+const RUNS = runsAt > 0 ? Number(process.argv[runsAt + 1]) : 1;
+if (!Number.isInteger(RUNS) || RUNS < 1) { console.error("--runs needs a whole number"); process.exit(2); }
+const perRun = [];
+
+async function judgeAll() {
 const out = [];
 const CHUNK = 4;
 for (let i = 0; i < cases.length; i += CHUNK) {
@@ -64,6 +75,38 @@ for (let i = 0; i < cases.length; i += CHUNK) {
   process.stderr.write(`\r  ${Math.min(i + CHUNK, cases.length)}/${cases.length}`);
 }
 process.stderr.write("\n");
+return out;
+}
+
+let out = [];
+for (let run = 1; run <= RUNS; run++) {
+  if (RUNS > 1) process.stderr.write(`run ${run}/${RUNS}\n`);
+  out = await judgeAll();
+  perRun.push(out);
+}
+if (RUNS > 1) {
+  // Stability is a property of JUDGED cases: a case unreadable in any run is
+  // reported apart, never counted as stable or unstable. A vote short of
+  // three readers is a degraded vote and is named as such.
+  const infraVerdicts = new Set(["unavailable", "error", "no-image"]);
+  const byId = new Map();
+  for (const run of perRun) for (const r of run) byId.set(r.id, [...(byId.get(r.id) ?? []), r]);
+  const judgedEveryRun = [...byId.values()].filter((rs) => rs.every((r) => !infraVerdicts.has(String(r.verdict))));
+  const notEveryRun = byId.size - judgedEveryRun.length;
+  const unstable = judgedEveryRun.filter((rs) => new Set(rs.map((r) => String(r.verdict))).size > 1);
+  const votedFull = out.filter((r) => (r.readings?.votes?.length ?? 0) === 3).length;
+  const votedShort = out.filter((r) => { const n = r.readings?.votes?.length ?? 0; return n > 0 && n < 3; }).length;
+  console.log(`\n--- stability over ${RUNS} runs: ${judgedEveryRun.length - unstable.length}/${judgedEveryRun.length} judged cases gave the same verdict every time${notEveryRun ? `; ${notEveryRun} not judged in every run` : ""}; last run: ${votedFull} full vote(s), ${votedShort} degraded ---`);
+  for (const rs of unstable) console.log(`  UNSTABLE ${rs[0].id.slice(0, 8)} ${rs.map((r) => r.verdict ?? "allowed").join(" / ")}  ${JSON.stringify(rs[0].prompt_input).slice(0, 60)}`);
+  // A wrong verdict in ANY run is a wrong verdict.
+  for (const run of perRun.slice(0, -1)) {
+    for (const r of run) {
+      if (infraVerdicts.has(String(r.verdict)) || r.expected === "borderline") continue;
+      const refused = Boolean(r.verdict);
+      if ((r.expected === "refuse") !== refused) console.log(`  WRONG in an earlier run: ${r.id.slice(0, 8)} want ${r.expected} got ${r.verdict ?? "allowed"}`);
+    }
+  }
+}
 // Every reading, kept: a counterfactual rule can be computed from this file
 // without paying for the readers again (--dump <file>).
 const dumpAt = process.argv.indexOf("--dump");
@@ -75,7 +118,7 @@ if (dumpAt > 0 && process.argv[dumpAt + 1]) {
 const fmt = (r) => {
   const m = r.readings?.moderation, v = r.readings?.vision;
   const ms = m ? `mod ${m.flagged ? "FLAG" : "ok  "} ${m.sexual.toFixed(4)}` : "mod   --    ";
-  const vs = v ? `vis nud=${v.sexual_nudity.slice(0,3)} act=${v.sexual_act.slice(0,3)} fram=${v.suggestive_framing.slice(0,3)} min=${v.minor_sexualized.slice(0,3)} ${v.depicted_subject}` : "vis --";
+  const vs = v ? `vis nud=${v.sexual_nudity.slice(0,3)} act=${v.sexual_act.slice(0,3)} fram=${v.suggestive_framing.slice(0,3)} min=${v.minor_sexualized.slice(0,3)} sh=${(v.self_harm ?? "?").slice(0,3)} ${v.depicted_subject}` : "vis --";
   return `${ms} | ${vs}`;
 };
 
@@ -100,7 +143,10 @@ console.log("\n--- the reviewer's renders, by picture ---");
 for (const r of out.filter((r) => r.group === "reviewer")) {
   const got = r.verdict ?? "allowed";
   const ok = r.verdict === "unavailable" ? "?" : r.expected === "borderline" ? "~" : (Boolean(r.verdict) === (r.expected === "refuse") ? "✓" : "✗");
-  console.log(`  ${ok} want ${r.expected.padEnd(6)} got ${got.padEnd(11)} ${(r.content_type).padEnd(5)} ${fmt(r)}  ${JSON.stringify(r.prompt_input).slice(0, 48)}`);
+  const n = r.readings?.votes?.length ?? 0;
+  const b = (k) => (r.readings.votes ?? []).map((v) => v[k].slice(0, 1)).join("/");
+  const vote = n === 3 ? ` [vote nud ${b("sexual_nudity")} fram ${b("suggestive_framing")}]` : n > 0 ? ` [vote ${n} DEGRADED]` : "";
+  console.log(`  ${ok} want ${r.expected.padEnd(6)} got ${got.padEnd(11)} ${(r.content_type).padEnd(5)} ${fmt(r)}${vote}  ${JSON.stringify(r.prompt_input).slice(0, 48)}`);
 }
 console.log("\n--- wrong verdicts ---");
 for (const r of fn) console.log(`  allowed a must-refuse: ${(r.content_type).padEnd(5)} ${fmt(r)}  ${JSON.stringify(r.prompt_input).slice(0, 60)}`);
@@ -166,4 +212,5 @@ const q = (a, p) => a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length)
 const bad = scores((r) => r.expected === "refuse"), good = scores((r) => r.expected === "allow");
 console.log(`\nmoderation.sexual — must-refuse: min ${bad[0]?.toFixed(3)} max ${bad.at(-1)?.toFixed(3)}`);
 console.log(`moderation.sexual — must-allow : max ${good.at(-1)?.toFixed(4)} p95 ${q(good, 0.95).toFixed(4)} p50 ${q(good, 0.5).toFixed(5)}  (n=${good.length})`);
-process.exit(fn.length > 0 || fp.length > 0 ? 1 : infra.length > 0 ? 2 : 0);
+const earlierWrong = perRun.slice(0, -1).some((run) => run.some((r) => !["unavailable", "error", "no-image"].includes(String(r.verdict)) && r.expected !== "borderline" && (r.expected === "refuse") !== Boolean(r.verdict)));
+process.exit(fn.length > 0 || fp.length > 0 || earlierWrong ? 1 : infra.length > 0 ? 2 : 0);

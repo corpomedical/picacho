@@ -35,6 +35,10 @@ export async function draftWithClaude(instructions: string): Promise<string> {
           // ceiling is high enough that a 2-4 sentence prompt can never
           // hit it.
           max_tokens: 3000,
+          // No `temperature`: claude-sonnet-5 rejects the parameter as
+          // deprecated (400, measured 2026-09-11). Determinism on the
+          // content policy's readings comes from the OpenAI readers' seed
+          // and from the majority vote, not from this call.
           ...(withThinkingParam ? { thinking: { type: "disabled" } } : {}),
           messages: [{ role: "user", content: instructions }],
         }),
@@ -43,6 +47,14 @@ export async function draftWithClaude(instructions: string): Promise<string> {
     );
 
   let res = await call(true);
+  // A 429 is a queue, not an answer: wait what the server asks (capped) and
+  // ask once more. The content policy's backup reader fails closed on an
+  // unreadable reply, so a rate-limit blip must not read as an outage.
+  if (res.status === 429) {
+    const sec = Number(res.headers.get("retry-after"));
+    await new Promise((r) => setTimeout(r, Number.isFinite(sec) && sec > 0 ? Math.min(sec * 1000, 5000) : 1500));
+    res = await call(true);
+  }
 
   if (!res.ok) {
     const text = await res.text();

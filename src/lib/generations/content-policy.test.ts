@@ -23,6 +23,10 @@ import {
   parseScores,
   refusalMessages,
   type Scores,
+  isEdge,
+  voteScores,
+  medianScores,
+  withMinorsMajority,
 } from "./content-policy";
 
 const REVIEWER_ESCALATION = [
@@ -52,6 +56,9 @@ const s = (over: Partial<Scores> = {}): Scores => ({
   suggestive_framing: "NEGLIGIBLE",
   clothing_removal: "NEGLIGIBLE",
   minor_sexualized: "NEGLIGIBLE",
+  sexual_services: "NEGLIGIBLE",
+  self_harm: "NEGLIGIBLE",
+  real_person_deception: "NEGLIGIBLE",
   ...over,
 });
 
@@ -154,10 +161,15 @@ describe("the session is scored, not just the prompt", () => {
 });
 
 describe("parseScores fails closed", () => {
+  it("reads lowercase bands — letter case is not a reading", () => {
+    expect(
+      parseScores('{"sexual_nudity":"low","sexual_act":"negligible","suggestive_framing":"medium","clothing_removal":"negligible","minor_sexualized":"negligible","sexual_services":"negligible","self_harm":"negligible","real_person_deception":"negligible"}')?.suggestive_framing,
+    ).toBe("MEDIUM");
+  });
   it("reads a complete verdict", () => {
     expect(
       parseScores(
-        '{"sexual_nudity":"LOW","sexual_act":"NEGLIGIBLE","suggestive_framing":"MEDIUM","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE"}',
+        '{"sexual_nudity":"LOW","sexual_act":"NEGLIGIBLE","suggestive_framing":"MEDIUM","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE","sexual_services":"NEGLIGIBLE","self_harm":"NEGLIGIBLE","real_person_deception":"NEGLIGIBLE"}',
       ),
     ).toEqual({
       sexual_nudity: "LOW",
@@ -165,12 +177,15 @@ describe("parseScores fails closed", () => {
       suggestive_framing: "MEDIUM",
       clothing_removal: "NEGLIGIBLE",
       minor_sexualized: "NEGLIGIBLE",
+      sexual_services: "NEGLIGIBLE",
+      self_harm: "NEGLIGIBLE",
+      real_person_deception: "NEGLIGIBLE",
     });
   });
 
   it("takes the LAST object, so prose containing braces cannot swallow the answer", () => {
     const raw =
-      'Considering {the beach scene} carefully.\n{"sexual_nudity":"NEGLIGIBLE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE"}';
+      'Considering {the beach scene} carefully.\n{"sexual_nudity":"NEGLIGIBLE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE","sexual_services":"NEGLIGIBLE","self_harm":"NEGLIGIBLE","real_person_deception":"NEGLIGIBLE"}';
     expect(parseScores(raw)).not.toBeNull();
   });
 
@@ -184,7 +199,7 @@ describe("parseScores fails closed", () => {
       // A missing category is never assumed clean — the whole verdict goes.
       '{"sexual_nudity":"NEGLIGIBLE"}',
       // An unrecognised band is not silently downgraded.
-      '{"sexual_nudity":"SAFE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE"}',
+      '{"sexual_nudity":"SAFE","sexual_act":"NEGLIGIBLE","suggestive_framing":"NEGLIGIBLE","clothing_removal":"NEGLIGIBLE","minor_sexualized":"NEGLIGIBLE","sexual_services":"NEGLIGIBLE","self_harm":"NEGLIGIBLE","real_person_deception":"NEGLIGIBLE"}',
     ]) {
       expect(parseScores(raw), JSON.stringify(raw)).toBeNull();
     }
@@ -263,3 +278,81 @@ describe("the refusal messages", () => {
     expect(refusalMessages.sexual).toMatch(/describe a scene/i);
   });
 });
+
+describe("the edge, and the vote", () => {
+  const inside = s({ sexual_nudity: "NEGLIGIBLE" });
+  it("is not an edge when every category is comfortably inside its band", () => {
+    expect(isEdge(inside)).toBe(false);
+  });
+  it("is an edge when one band on one category would flip the verdict", () => {
+    // Ordinary lane: nudity MEDIUM allows, HIGH refuses — on the line.
+    expect(isEdge(s({ sexual_nudity: "MEDIUM" }))).toBe(true);
+    // Strict lane: framing LOW allows, MEDIUM refuses — on the line.
+    expect(isEdge(s({ suggestive_framing: "LOW" }), { hasRealPersonReference: true })).toBe(true);
+    // A refusal that would survive any single-band change is not an edge.
+    expect(isEdge(s({ sexual_act: "HIGH" }))).toBe(false);
+    // A hedged LOW on the act — which refuses on its own — is an edge: one
+    // band down and it is allowed, so it goes to the vote rather than
+    // straight to an accusation.
+    expect(isEdge(s({ sexual_act: "LOW" }))).toBe(true);
+  });
+  it("takes the per-category median, so one outlier cannot decide", () => {
+    const voted = voteScores([
+      s({ suggestive_framing: "MEDIUM" }),
+      s({ suggestive_framing: "LOW" }),
+      s({ suggestive_framing: "LOW", sexual_nudity: "MEDIUM" }),
+    ]);
+    expect(voted.suggestive_framing).toBe("LOW");
+    expect(voted.sexual_nudity).toBe("NEGLIGIBLE");
+    expect(decide(voted)).toBeNull();
+  });
+  it("is a vote on verdicts: two readers refusing on different categories is a refusal", () => {
+    const voted = voteScores([
+      s({ sexual_nudity: "HIGH" }), // refuses on nudity
+      s({ suggestive_framing: "HIGH" }), // refuses on framing
+      s({ sexual_nudity: "MEDIUM", suggestive_framing: "MEDIUM" }), // allows
+    ]);
+    // The per-category median (MEDIUM, MEDIUM) would allow; two of three readers refuse.
+    expect(decide(voted)).toBe("sexual");
+  });
+  it("is an edge at MEDIUM on a category the picture gate reads, even where the verdict is safe", () => {
+    expect(isEdge(s({ sexual_nudity: "MEDIUM" }))).toBe(true);
+    // Removal at LOW is two bands from its line and feeds no picture rule.
+    expect(isEdge(s({ clothing_removal: "LOW" }))).toBe(false);
+  });
+});
+
+describe("the three refusals that are not the nudity axis", () => {
+  it("refuse at MEDIUM and allow the documentary, recovery and parody readings at LOW", () => {
+    expect(decide(s({ sexual_services: "LOW" }))).toBeNull();
+    expect(decide(s({ sexual_services: "MEDIUM" }))).toBe("sexual_services");
+    expect(decide(s({ self_harm: "LOW" }))).toBeNull();
+    expect(decide(s({ self_harm: "MEDIUM" }))).toBe("self_harm");
+    expect(decide(s({ real_person_deception: "LOW" }))).toBeNull();
+    expect(decide(s({ real_person_deception: "HIGH" }))).toBe("real_person_deception");
+  });
+  it("are not raised by the session prior", () => {
+    expect(decide(s({ self_harm: "LOW" }), { sessionPriorHits: 3 })).toBeNull();
+  });
+  it("each carry a message that names what is not allowed and accuses no one", () => {
+    expect(refusalMessages.self_harm).toMatch(/988/);
+    expect(refusalMessages.sexual_services).toMatch(/describe a scene/i);
+    expect(refusalMessages.real_person_deception).toMatch(/did not happen/);
+  });
+});
+
+describe("a minors finding needs two readers", () => {
+  it("clears a minors reading that only one reader made, and keeps one two readers made", () => {
+    const one = withMinorsMajority(s({ minor_sexualized: "LOW" }), [s({ minor_sexualized: "LOW" }), s()]);
+    expect(decide(one)).toBeNull();
+    const two = withMinorsMajority(s({ minor_sexualized: "LOW" }), [s({ minor_sexualized: "LOW" }), s({ minor_sexualized: "MEDIUM" }), s()]);
+    expect(decide(two)).toBe("minors");
+    // The rest of the reading is untouched: a cleared minors reading can still refuse on nudity.
+    const rest = withMinorsMajority(s({ minor_sexualized: "LOW", sexual_nudity: "HIGH" }), [s({ minor_sexualized: "LOW" }), s()]);
+    expect(decide(rest)).toBe("sexual");
+  });
+  it("medianScores is the per-category median", () => {
+    expect(medianScores([s({ sexual_nudity: "LOW" }), s({ sexual_nudity: "HIGH" }), s({ sexual_nudity: "MEDIUM" })]).sexual_nudity).toBe("MEDIUM");
+  });
+});
+

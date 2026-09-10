@@ -8,6 +8,11 @@ import { PAGE_SIZES, pageBounds, pageHref, pageRange, parsePage, takePage } from
 import { Pager } from "@/components/pager";
 import { CommunityFeed, type CommunityPostView } from "@/components/community-feed";
 
+// The actions this page drives run the picture gate (a poll that finishes a
+// render, a share to the feed): two readers, a third on the line. Same
+// ceiling as the generate page (2026-09-11).
+export const maxDuration = 300;
+
 // The community feed — opt-in shared renders from every account, hearts +
 // views, newest or top. Reads are a single RLS-guarded select over
 // community_posts (the row snapshots everything the feed shows — see

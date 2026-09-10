@@ -55,6 +55,11 @@ import {
 } from "@/lib/generations/upscale";
 import { formatMsg } from "@/lib/i18n/format";
 
+// The actions this page drives run the picture gate (a poll that finishes a
+// render, a share to the feed): two readers, a third on the line. Same
+// ceiling as the generate page (2026-09-11).
+export const maxDuration = 300;
+
 export default async function HistoryDetailPage({
   params,
 }: {
