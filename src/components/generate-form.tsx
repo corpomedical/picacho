@@ -60,7 +60,7 @@ import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import type { AgentMode } from "@/lib/agent/prices";
 import { parseSseFrames } from "@/lib/agent/sse";
 import { classifyMessage } from "@/lib/agent/intent";
-import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type PlanIssue, photorealFallback } from "@/lib/generations/send-plan";
+import { CHARACTERLESS_MODEL_IDS, MODEL_CAPABILITIES, resolveSendPlan, type PlanIssue, likenessRetryTarget } from "@/lib/generations/send-plan";
 import { CINEMA_PRESETS, isProvenPreset, type CinemaPresetCategory } from "@/lib/generations/cinema-presets";
 import { UpscaleButton } from "@/components/upscale-button";
 import {
@@ -95,7 +95,7 @@ import { ANGLE_PRESETS, DEFAULT_ANGLE_IDS, getAnglePreset, type AngleId } from "
 import { type ScenePlan } from "@/lib/generations/scene-plan";
 import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import type { VideoDurationOption } from "@/lib/generations/providers/video-models";
-import { FEATURED_VIDEO_MODEL_IDS, VIDEO_MODELS, getVideoModel } from "@/lib/generations/providers/video-models";
+import { FEATURED_VIDEO_MODEL_IDS, getVideoModel } from "@/lib/generations/providers/video-models";
 import {
   resolutionCreditWeight,
   videoResolutionOffers,
@@ -152,36 +152,6 @@ function rulesBlockOf(attempts: AttemptLog[]): string | null {
     .reverse()
     .find((s) => typeof s.detail === "string" && s.detail.startsWith("Blocked by brand rules:"));
   return step ? step.detail : null;
-}
-
-// The one-tap retry after a provider's likeness fence refused a photoreal
-// reference — and WHERE that retry should go.
-//
-// Rewritten 2026-09-03. It used to match the literal "Seedance 2.5" and send
-// every retry to Seedance 2.0, on the strength of a live test from August. On
-// 2026-09-03 Seedance 2.0 refused reference photos it had accepted eleven
-// days earlier, which makes both halves of that unsafe: a 2.0 refusal showed
-// no button at all, and a 2.5 refusal offered a one-click resubmit — it
-// auto-submits, so it SPENDS — into a model that may now refuse the same
-// photos. So: recognise the refusal on any model, then ask the capability
-// table where to go. Returns the target model id, or null when there is no
-// accepting model left to offer (in which case no button renders and nothing
-// is auto-submitted).
-function photorealRetryTargetOf(attempts: AttemptLog[]): string | null {
-  const last = attempts[attempts.length - 1];
-  if (!last) return null;
-  const refusal = (last.steps ?? []).find(
-    (s) => typeof s.detail === "string" && /likeness|content_policy|partner_validation/i.test(s.detail),
-  );
-  if (!refusal || typeof refusal.detail !== "string") return null;
-  // fal errors carry the model's display name: "fal.ai (Seedance 2.0) error (422)".
-  const named = refusal.detail.match(/fal\.ai \(([^)]+)\) error/);
-  const refusedBy = named
-    ? (VIDEO_MODELS.find((m) => m.name === named[1])?.id ?? null)
-    : null;
-  const target = photorealFallback(refusedBy ?? "");
-  // Never offer to retry on the model that just refused.
-  return target && target !== refusedBy ? target : null;
 }
 
 function summarizeFailure(attempts: AttemptLog[], g: Messages["generate"]): string | null {
@@ -1641,8 +1611,9 @@ function SingleTurnBubble({
   // Offered only on rules-block failures: resubmits this turn's prompt with
   // the caller's own brand prohibitions suspended for that one send.
   onGenerateAnyway?: (turnPrompt: string) => void;
-  // Offered only on Seedance 2.5 likeness rejections: same prompt, same
-  // reference, on the model that accepts photoreal people.
+  // Offered only on a provider's likeness refusal (send-plan's
+  // likenessRetryTarget), never a content refusal: same prompt, same
+  // reference, on a model that accepts photoreal people.
   onRetryPhotoreal?: (turnPrompt: string, targetModelId: string) => void;
 }) {
   const { t } = useLocale();
@@ -1692,7 +1663,7 @@ function SingleTurnBubble({
                 </button>
               )}
               {(() => {
-                const target = onRetryPhotoreal && turn.prompt ? photorealRetryTargetOf(turn.attempts) : null;
+                const target = onRetryPhotoreal && turn.prompt ? likenessRetryTarget(turn.attempts) : null;
                 if (!target) return null;
                 return (
                   <button
@@ -5077,8 +5048,9 @@ function GenerateFormInner({
 
   // The likeness-fence detour: same prompt, same reference, on whichever
   // model the capability table still says accepts photoreal people — never
-  // on the one that just refused (photorealRetryTargetOf resolves it and
-  // returns null when there is no such model, in which case no button is
+  // on the one that just refused (likenessRetryTarget in send-plan.ts
+  // resolves it, and returns null for any refusal that is not the likeness
+  // fence or when no such model is left, in which case no button is
   // rendered and this never runs). The rejected attempt already
   // auto-refunded, so this is a clean fresh charge. The existing
   // model-change effect re-clamps the duration to the target's ceiling
@@ -6443,7 +6415,7 @@ function GenerateFormInner({
                             {(() => {
                               const target =
                                 liveResult.attemptsLog && liveResult.prompt
-                                  ? photorealRetryTargetOf(liveResult.attemptsLog)
+                                  ? likenessRetryTarget(liveResult.attemptsLog)
                                   : null;
                               if (!target) return null;
                               return (

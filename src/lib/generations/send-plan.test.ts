@@ -14,6 +14,7 @@ import {
   type ResolveInput,
   type ModelCapabilities,
   photorealFallback,
+  likenessRetryTarget,
 } from "./send-plan";
 
 const base: ResolveInput = {
@@ -851,5 +852,89 @@ describe("identity.required agrees with the endpoint it describes", () => {
         `${model.id} sends to ${model.falEndpoint}, which cannot start without an image.`,
       ).toBe(true);
     }
+  });
+});
+
+// The composer's one-tap "Retry on {model}" after a refusal (2026-09-10).
+// Every fixture is a verbatim prefix of a real production refusal, cut off
+// before the prompt that followed it. The two content refusals come from
+// the Play review session of 2026-09-09, and the old match — which keyed on
+// fal's content_policy_violation — offered a retry under both.
+describe("likenessRetryTarget — the retry answers the likeness fence and nothing else", () => {
+  const FAL_LIKENESS =
+    'fal.ai (Seedance 2.0) error (422): {"detail":[{"loc":["body","image_urls"],"msg":"The images or videos provided may contain likenesses of real people or other private information that cannot be processed.","type":"content_policy_violation"';
+  const BYTEPLUS_LIKENESS =
+    'BytePlus ModelArk (Seedance 2.0) error (400): {"error":{"code":"InputImageSensitiveContentDetected.PrivacyInformation","message":"The request failed because the input image \'content[1]\' \'content[2]\' \'content[3]\' \'content[4]\' may contain real person.';
+  const KLING_CONTENT =
+    'fal.ai (Kling O3 Pro) error (422): {"detail":[{"loc":["body"],"msg":"The content could not be processed because it contained material flagged by a content checker.","type":"content_policy_violation"';
+  const FLUX_CONTENT =
+    'fal.ai (Flux) error (422): {"detail":[{"loc":["body","prompt"],"msg":"The content could not be processed because it contained material flagged by a content checker.","type":"content_policy_violation"';
+  const refusedWith = (detail: string) => [
+    { steps: [{ step: "draft", detail: "Drafted the prompt." }, { step: "generate", detail }] },
+  ];
+
+  it("offers a photoreal model after ByteDance's likeness fence, via fal or BytePlus", () => {
+    expect(likenessRetryTarget(refusedWith(FAL_LIKENESS))).toBe("kling-o3-pro");
+    expect(likenessRetryTarget(refusedWith(BYTEPLUS_LIKENESS))).toBe("kling-o3-pro");
+  });
+
+  it("offers nothing after a content refusal, though fal gives it the same type", () => {
+    for (const detail of [KLING_CONTENT, FLUX_CONTENT]) {
+      expect(detail).toContain("content_policy_violation");
+      expect(likenessRetryTarget(refusedWith(detail))).toBeNull();
+    }
+  });
+
+  it("holds on the message alone, on a model the button can name", () => {
+    // "Kling O3 Pro" and "Flux" name no catalogue model, so the two real
+    // refusals above would also be stopped by the unknown-refuser rule. These
+    // are not real rows: the same content body under a label that resolves,
+    // and ModelArk's two content codes (providers/byteplus.ts) — so a return
+    // of the old match fails here, not only a return of the old guess.
+    for (const detail of [
+      KLING_CONTENT.replace("Kling O3 Pro", "Seedance 2.0"),
+      'BytePlus ModelArk (Seedance 2.0) error (422): {"error":{"code":"InputTextSensitiveContentDetected"}}',
+      'BytePlus ModelArk (Seedance 2.0) error (422): {"error":{"code":"OutputVideoSensitiveContentDetected"}}',
+    ]) {
+      expect(likenessRetryTarget(refusedWith(detail))).toBeNull();
+    }
+  });
+
+  it("offers nothing on partner_validation alone — nothing shows it means likeness", () => {
+    expect(
+      likenessRetryTarget(
+        refusedWith('fal.ai (Seedance 2.0) error (422): {"detail":[{"type":"partner_validation_failed"}]}'),
+      ),
+    ).toBeNull();
+  });
+
+  it("offers nothing when the refusing model cannot be named, rather than guessing", () => {
+    // The old code's guess for an unnamed refuser was the first accepting
+    // model — and for fal's "Kling O3 Pro" label that was Kling O3 Pro itself.
+    expect(likenessRetryTarget(refusedWith(FAL_LIKENESS.replace("Seedance 2.0", "Kling O3 Pro")))).toBeNull();
+    expect(likenessRetryTarget(refusedWith(FAL_LIKENESS.replace("fal.ai (Seedance 2.0) ", "")))).toBeNull();
+  });
+
+  it("never offers the refusing model, and only one that accepts photoreal people", () => {
+    const offeredAfter: string[] = [];
+    for (const model of VIDEO_MODELS) {
+      const target = likenessRetryTarget(refusedWith(FAL_LIKENESS.replace("Seedance 2.0", model.name)));
+      if (target === null) continue;
+      offeredAfter.push(model.id);
+      expect(target).not.toBe(model.id);
+      expect(MODEL_CAPABILITIES[target as keyof typeof MODEL_CAPABILITIES].photorealPolicy).toBe(
+        "accepts",
+      );
+    }
+    // Guard against the loop passing on nothing: the lanes the fence exists for resolve.
+    expect(offeredAfter).toEqual(expect.arrayContaining(["seedance", "seedance-2"]));
+  });
+
+  it("reads only the last attempt — a refusal a later attempt moved past offers nothing", () => {
+    const attempts = [
+      ...refusedWith(FAL_LIKENESS),
+      { steps: [{ step: "generate", detail: "Generated via Seedance 2.0." }] },
+    ];
+    expect(likenessRetryTarget(attempts)).toBeNull();
   });
 });

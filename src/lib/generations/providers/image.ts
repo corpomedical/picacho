@@ -5,7 +5,8 @@ import { getImageModel } from "@/lib/generations/providers/image-models";
 import { buildImageReferences } from "@/lib/generations/providers/image-references";
 
 // A hard ceiling on PAID calls for one generation, counted across every
-// retry, fallback and soften-and-try-again inside it.
+// retry inside it (and, until the ladder was removed on 2026-09-09, every
+// fallback and soften-and-try-again too).
 //
 // The old shape multiplied: 3 attempts x 2 generate-retries, and each of
 // those could chain GPT Image -> safety rejection -> softened retry -> Flux.
@@ -95,9 +96,10 @@ export async function generateImage(
   // One combined reference array for BOTH providers (2026-08-26): identity
   // first, then outfit, then prop. GPT's multi-image edit always worked
   // this way; FLUX.2 Pro's /edit now takes the same array (up to ten), so
-  // the fallback carries the exact references the primary attempt carried
-  // — the prompt's instruction suffixes about each photo stay true across
-  // the lane switch.
+  // the prompt's instruction suffixes about each photo hold on whichever
+  // image model the person picked. (This used to say they stayed true
+  // "across the lane switch" — there is no lane switch since the Flux
+  // fallback went with the safety ladder on 2026-09-09.)
   const combinedRefs = buildImageReferences({
     identity: referenceImageUrl,
     outfit: outfitImageUrl,

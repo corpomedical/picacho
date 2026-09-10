@@ -517,9 +517,10 @@ const MAX_PAID_IMAGE_CALLS = 4;
 // `InputTextSensitiveContentDetected` and its two siblings. Neither contains
 // "content policy" with a space, so a content refusal fell through to the
 // retry machinery and was re-drafted under an instruction whose stated
-// purpose is that "plain description passes content filters far more
+// purpose was that "plain description passes content filters far more
 // reliably". That is the ladder, reassembled, in the file the removal
-// never opened.
+// never opened. (The instruction itself was rewritten on 2026-09-10 to give
+// the drafter our own reasons instead — see the drafting prompt below.)
 //
 // The tokens below are provider-fault.ts's list, which got this right for the
 // circuit breaker on 2026-08-31 — the same question ("did the provider judge
@@ -893,21 +894,41 @@ export async function runRealPipeline(
             `2 to 4 sentences, no preamble, no markdown, just the prompt itself. The request ` +
             `is ground truth: its setting, action, people, and composition must all survive ` +
             `into the prompt.\n\n` +
-            // Image safety classifiers (OpenAI's especially) reject a lot of
-            // perfectly ordinary requests once a prompt piles on photoreal
-            // intensifiers around a person — "hyper-realistic ultra-detailed
-            // close-up selfie of a woman in a dress" reads to the filter very
-            // differently from "a portrait of a woman in a dress", despite
-            // meaning the same thing. Real incident, 2026-08-10: "Eva in a
-            // black satin dress" was rejected six times over. Keeping the
-            // description plain costs nothing in output quality (the model
-            // renders photorealistically regardless) and measurably reduces
-            // how often we get bounced into the Flux fallback, which holds a
-            // character's likeness less reliably.
+            // What each of these rules is FOR (rewritten 2026-09-10).
+            //
+            // This paragraph used to justify itself to the drafter as getting
+            // past content filters — "plain description passes content
+            // filters far more reliably" — and this comment gave the aim as
+            // fewer bounces "into the Flux fallback". That fallback was the
+            // safety ladder removed on 2026-09-09 (providers/image.ts); no
+            // model is substituted any more. A drafter told its job is to get
+            // past a filter will do that job on a request that should not get
+            // past one, on every send, before any provider has said a word.
+            // So the reasons it is given are now our own:
+            //
+            //   - No photoreal intensifiers around a person: output quality.
+            //     The model renders photorealistically without them, and they
+            //     spend the prompt's words on nothing it can draw.
+            //   - Nothing suggestive the request did not ask for: our policy.
+            //     The product does not sexualize a person who was asked for
+            //     plainly.
+            //   - Nothing the request DID ask for disguised in milder words:
+            //     honesty. Whether a request may be made is decided by the
+            //     gates — content-policy.ts on the person's own words at send,
+            //     and again on this compiled prompt further down — never by a
+            //     drafter quietly softening it until a provider says yes.
+            //
+            // Ordinary requests may be refused less often because of the
+            // first rule (real incident, 2026-08-10: "Eva in a black satin
+            // dress", refused six times under a pile of intensifiers). That
+            // is a side effect. Never tune this wording against a refusal
+            // rate.
             `Describe people plainly and respectfully. Do not stack intensifiers like ` +
-            `"hyper-realistic", "ultra-detailed", or "close-up selfie" around a person, and avoid ` +
-            `suggestive or body-focused phrasing — plain description passes content filters far ` +
-            `more reliably and renders just as well.\n\n` +
+            `"hyper-realistic", "ultra-detailed", or "close-up selfie" around a person — the ` +
+            `model renders photorealistically without them, and they crowd out the details the ` +
+            `request is about. Do not add suggestive or body-focused description the request ` +
+            `did not ask for, and do not disguise what it did ask for in milder words — describe ` +
+            `it as plainly as anything else.\n\n` +
             `Character rulebook. Items marked "(default)" are the character's usual look — use ` +
             `them only when the request doesn't imply otherwise (a business meeting implies ` +
             `business attire even if the default outfit is casual; a beach scene implies ` +

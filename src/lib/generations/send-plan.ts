@@ -592,6 +592,61 @@ export function photorealFallback(fromModelId: string): string | null {
   return null;
 }
 
+// Where the composer's one-tap "Retry on {model}" goes after a refusal — or
+// null, and no button renders. That button AUTO-SUBMITS, so it spends, and it
+// sends the same prompt to a different provider.
+//
+// It exists for exactly one refusal: ByteDance's likeness fence, an access
+// tier that turns away reference photos of real people whatever the prompt
+// says. It must never answer a CONTENT refusal — that is shopping for a
+// provider that says yes, the thing removed on 2026-09-09.
+//
+// Narrowed 2026-09-10, and moved here from generate-form.tsx so it can be
+// tested. It used to match /likeness|content_policy|partner_validation/, and
+// fal writes `content_policy_violation` for EVERY safety refusal — its error
+// docs list it as the one type for anything flagged by automated safety
+// systems. Replayed over the production log, the old match put a retry
+// button under both requests refused in the Play review session of
+// 2026-09-09: a Flux image and a Kling O3 Pro video. Only the message tells
+// the two events apart, so the match is on the message:
+//   fal:      "The images or videos provided may contain likenesses of real
+//             people or other private information..." (22 production rows,
+//             every one Seedance)
+//   BytePlus: InputImageSensitiveContentDetected.PrivacyInformation — the
+//             full code, because its sibling sub-codes may be content
+//             judgements
+// partner_validation is gone too: no production row carries it and fal
+// documents no such error type, so nothing shows it means likeness. If a
+// provider rewords its refusal, the button disappears — a free, harmless
+// failure. The old match failed the other way.
+//
+// The refusing model is read from the error's own prefix ("fal.ai (Seedance
+// 2.0) error", "BytePlus ModelArk (Seedance 2.0) error"). A label naming no
+// catalogue model means NO button. The old code guessed instead, and since
+// fal labels its errors "Kling O3 Pro" while the catalogue says "Kling O3 Pro
+// (reference)", its guess for a Kling O3 Pro refusal was Kling O3 Pro: a
+// retry on the model that had just refused.
+// Relative for the same vitest reason as dialogue-cue above.
+import { VIDEO_MODELS } from "./providers/video-models";
+const LIKENESS_REFUSAL =
+  /likenesses of real people|InputImageSensitiveContentDetected\.PrivacyInformation/i;
+
+export function likenessRetryTarget(
+  attempts: ReadonlyArray<{ steps?: ReadonlyArray<{ detail?: unknown }> | null }>,
+): string | null {
+  const last = attempts[attempts.length - 1];
+  if (!last) return null;
+  const refusal = (last.steps ?? [])
+    .map((s) => s.detail)
+    .find((d): d is string => typeof d === "string" && LIKENESS_REFUSAL.test(d));
+  if (!refusal) return null;
+  const named = refusal.match(/(?:fal\.ai|BytePlus ModelArk) \(([^)]+)\)/);
+  const refusedBy = named ? VIDEO_MODELS.find((m) => m.name === named[1])?.id : undefined;
+  if (!refusedBy) return null;
+  // photorealFallback never returns the model it is handed.
+  return photorealFallback(refusedBy);
+}
+
 export function resolveSendPlan(input: ResolveInput): SendPlan {
   const caps = (MODEL_CAPABILITIES as Record<string, ModelCapabilities | undefined>)[
     input.contentType === "image" ? input.modelId || "gpt-image" : input.modelId
