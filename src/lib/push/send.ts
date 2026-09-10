@@ -52,7 +52,10 @@ function resolvePushText(
     case "layersReady":
       return { title: t.layersReadyTitle, body: formatMsg(t.layersReadyBody, params) };
     case "lowCredits":
-      return { title: t.lowCreditsTitle, body: formatMsg(t.lowCreditsBody, params) };
+      return {
+        title: t.lowCreditsTitle,
+        body: Number(params.n) === 1 ? t.lowCreditsBodyOne : formatMsg(t.lowCreditsBody, params),
+      };
   }
 }
 

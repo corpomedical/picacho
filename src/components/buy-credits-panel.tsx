@@ -48,7 +48,7 @@ export async function BuyCreditsPanel({
 
       {purchasedCredits > 0 && (
         <p className="mt-3 rounded-control border border-atelier-rule/60 bg-atelier-paper px-3.5 py-2.5 font-numeral text-sm tabular-nums text-atelier-ink">
-          {formatMsg(c.currentBalance, { n: purchasedCredits })}
+          {purchasedCredits === 1 ? c.currentBalanceOne : formatMsg(c.currentBalance, { n: purchasedCredits })}
         </p>
       )}
 

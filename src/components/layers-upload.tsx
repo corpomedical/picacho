@@ -240,7 +240,7 @@ export function LayersUpload() {
                 <div className="mt-3 flex items-end justify-between border-t border-atelier-rule pt-3">
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-atelier-muted/80">{t.generate.totalLabel}</p>
                   <p className="font-numeral text-2xl font-semibold tabular-nums text-atelier-accent">
-                    {formatMsg(t.generate.durationCredits, { n: credits })}
+                    {credits === 1 ? t.generate.durationCreditsOne : formatMsg(t.generate.durationCredits, { n: credits })}
                   </p>
                 </div>
                 <Button className="mt-4 w-full" onClick={start} pending={busy} pendingLabel={phase === "uploading" ? L.uploading : L.starting}>

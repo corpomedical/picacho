@@ -137,12 +137,12 @@ export function UpscaleButton({ generationId, seconds, tiers, trigger = "chip" }
                 {t.generate.totalLabel}
               </p>
               <p className="font-numeral text-2xl font-semibold tabular-nums text-atelier-accent">
-                {formatMsg(t.generate.durationCredits, { n: credits })}
+                {credits === 1 ? t.generate.durationCreditsOne : formatMsg(t.generate.durationCredits, { n: credits })}
               </p>
             </div>
 
             <Button className="mt-4 w-full" onClick={start} pending={pending} pendingLabel={h.upscaleStarting}>
-              {formatMsg(h.upscaleGo, { n: credits })}
+              {credits === 1 ? h.upscaleGoOne : formatMsg(h.upscaleGo, { n: credits })}
             </Button>
             {error && <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>}
             <p className="mt-3 text-xs leading-relaxed text-atelier-muted">{h.upscaleFootnote}</p>

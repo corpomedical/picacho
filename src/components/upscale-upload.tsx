@@ -306,7 +306,7 @@ export function UpscaleUpload({ variant = "button" }: {
                     {t.generate.totalLabel}
                   </p>
                   <p className="font-numeral text-2xl font-semibold tabular-nums text-atelier-accent">
-                    {formatMsg(t.generate.durationCredits, { n: credits })}
+                    {credits === 1 ? t.generate.durationCreditsOne : formatMsg(t.generate.durationCredits, { n: credits })}
                   </p>
                 </div>
                 <Button
@@ -315,7 +315,7 @@ export function UpscaleUpload({ variant = "button" }: {
                   pending={busy}
                   pendingLabel={phase === "uploading" ? h.upscaleUploading : h.upscaleStarting}
                 >
-                  {formatMsg(h.upscaleGo, { n: credits })}
+                  {credits === 1 ? h.upscaleGoOne : formatMsg(h.upscaleGo, { n: credits })}
                 </Button>
               </>
             )}

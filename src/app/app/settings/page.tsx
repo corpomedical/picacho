@@ -637,7 +637,9 @@ export default async function SettingsPage({
               )}
               {(profile?.bonus_credits ?? 0) > 0 && (
                 <p className="mt-1 text-xs text-atelier-muted">
-                  {formatMsg(s.bonusIncluded, { n: profile?.bonus_credits ?? 0 })}
+                  {profile?.bonus_credits === 1
+                    ? s.bonusIncludedOne
+                    : formatMsg(s.bonusIncluded, { n: profile?.bonus_credits ?? 0 })}
                 </p>
               )}
 

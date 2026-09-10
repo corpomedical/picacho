@@ -1091,7 +1091,7 @@ function InsufficientCreditsBanner({
           <p className="flex-1">
         {kind === "image"
           ? formatMsg(g.insufficientCreditsImage, { needed, available })
-          : formatMsg(g.insufficientCredits, { model: modelName, seconds, needed, available })}{" "}
+          : formatMsg(needed === 1 ? g.insufficientCreditsOne : g.insufficientCredits, { model: modelName, seconds, needed, available })}{" "}
         {freeReturnsTomorrow && <>{g.freeReturnsTomorrow}{" "}</>}
         {/* An inline underlined action, matching the usage strip's link. A
             filled button here reads as an interruption; this reads as the
@@ -5636,7 +5636,7 @@ function GenerateFormInner({
               }}
               aria-haspopup="listbox"
               aria-expanded={durationMenuOpen}
-              title={formatMsg(g.durationCredits, { n: currentDurationCredits })}
+              title={currentDurationCredits === 1 ? g.durationCreditsOne : formatMsg(g.durationCredits, { n: currentDurationCredits })}
               className={cn(
                 "flex flex-shrink-0 items-center gap-1 rounded-full px-3 py-[7px] text-xs font-medium text-atelier-ink transition-colors disabled:opacity-50",
                 durationMenuOpen
@@ -6649,7 +6649,7 @@ function GenerateFormInner({
                       {g.totalLabel}
                     </span>
                     <span className="font-numeral text-[13px] font-semibold tabular-nums text-atelier-ink">
-                      {formatMsg(g.durationCredits, { n: sendCreditCost })}
+                      {sendCreditCost === 1 ? g.durationCreditsOne : formatMsg(g.durationCredits, { n: sendCreditCost })}
                     </span>
                   </div>
                 )}
@@ -7353,7 +7353,7 @@ function GenerateFormInner({
                       <span />
                     )}
                     <span className="font-numeral text-xs tabular-nums text-atelier-muted">
-                      {formatMsg(g.storyboardCost, { seconds: storyboardTotalSeconds, credits: storyboardCredits })}
+                      {formatMsg(storyboardCredits === 1 ? g.storyboardCostOne : g.storyboardCost, { seconds: storyboardTotalSeconds, credits: storyboardCredits })}
                     </span>
                   </div>
                 </div>
@@ -8156,7 +8156,7 @@ function GenerateFormInner({
                             disabled={submitting}
                             title={
                               extra > 0
-                                ? formatMsg(g.resolutionCostTitle, {
+                                ? formatMsg(extra === 1 ? g.resolutionCostTitleOne : g.resolutionCostTitle, {
                                     res: offer.value.toUpperCase(),
                                     n: extra,
                                   })

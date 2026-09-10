@@ -262,7 +262,9 @@ function LayerEditor({ layerId, credits, scored, onDone }: {
       />
       <div className="mt-2 flex items-center justify-between gap-3">
         <p className="text-[11px] leading-snug text-atelier-muted">
-          {formatMsg(scored ? L.changeScoredNote : L.changeNote, { n: credits })}
+          {credits === 1
+            ? (scored ? L.changeScoredNoteOne : L.changeNoteOne)
+            : formatMsg(scored ? L.changeScoredNote : L.changeNote, { n: credits })}
         </p>
         <div className="flex flex-shrink-0 gap-2">
           <button
@@ -279,7 +281,7 @@ function LayerEditor({ layerId, credits, scored, onDone }: {
             disabled={pending || !prompt.trim()}
             className="rounded-full bg-atelier-ink px-3.5 py-1.5 text-[11px] font-semibold text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-50"
           >
-            {pending ? L.changeWorking : formatMsg(L.changeGo, { n: credits })}
+            {pending ? L.changeWorking : credits === 1 ? L.changeGoOne : formatMsg(L.changeGo, { n: credits })}
           </button>
         </div>
       </div>
