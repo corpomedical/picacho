@@ -41,6 +41,7 @@ import {
   isBudgetExhaustedDetail,
   SESSION_EXPIRED_MESSAGE,
 } from "@/lib/generations/user-facing-error";
+import { isStaleDeployError } from "@/lib/stale-deploy";
 import { createPortal } from "react-dom";
 import {
   storyboardCreditCost,
@@ -386,11 +387,10 @@ async function awaitQueuedGeneration(
 // longer recognizes. No amount of retrying fixes that from the stale tab;
 // only a real page reload fetches the new build. Detecting that specific
 // signature and reloading automatically turns a dead end into a one-second
-// hiccup instead of a silent hang.
-function isStaleDeployError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String(err);
-  return /unexpected response was received from the server/i.test(message);
-}
+// hiccup instead of a silent hang. The detector is the shared one in
+// stale-deploy.ts: this file used to keep its own copy, which knew only the
+// older "unexpected response" wording, so Next 16's UnrecognizedActionError
+// showed submitFailed and never reloaded (2026-09-11).
 
 // Real generations can take anywhere from a few seconds to a few minutes —
 // long enough that switching tabs or apps while waiting is completely

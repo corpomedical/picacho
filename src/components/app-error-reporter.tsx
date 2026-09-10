@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { reportClientError } from "@/lib/generations/reports";
+import { isStaleDeployError } from "@/lib/stale-deploy";
 
 // Renders nothing — mounted once in the logged-in app shell (app/layout.tsx)
 // so a real bug (a JS crash, a rejected promise nobody caught) gets filed as
@@ -26,16 +27,27 @@ const seenMessages = new Set<string>();
 // page — the fix IS a reload, so do that instead of filing a report. The
 // sessionStorage guard stops a reload loop if a reload somehow doesn't
 // clear it.
+//
+// A stale server action is recognised by the shared isStaleDeployError, the
+// one the composer and Sets use: both of Next's wordings, the older
+// "unexpected response" and Next 16's UnrecognizedActionError. This list
+// used to be the only check, and its "Failed to find Server Action" is what
+// Next 16 writes to the SERVER log, never to the browser — so a stale action
+// thrown here was filed as a bug instead of reloading (2026-09-11). The list
+// keeps the signatures the shared helper doesn't cover.
 const STALE_BUILD_SIGNATURES = [
-  "An unexpected response was received from the server",
   "Failed to fetch RSC payload",
   "Failed to find Server Action",
 ];
 
 export function AppErrorReporter() {
   useEffect(() => {
-    function handle(message: string, context: string) {
-      if (STALE_BUILD_SIGNATURES.some((sig) => message.includes(sig))) {
+    function handle(message: string, context: string, err: unknown) {
+      const stale =
+        isStaleDeployError(err) ||
+        isStaleDeployError(message) ||
+        STALE_BUILD_SIGNATURES.some((sig) => message.includes(sig));
+      if (stale) {
         const KEY = "picacho-stale-build-reload";
         let last = 0;
         try { last = Number(sessionStorage.getItem(KEY)) || 0; } catch { /* blocked storage */ }
@@ -98,6 +110,7 @@ export function AppErrorReporter() {
           event.error,
           `${event.filename}:${event.lineno}:${event.colno}`,
         )}`,
+        event.error,
       );
     }
 
@@ -109,6 +122,7 @@ export function AppErrorReporter() {
       handle(
         message,
         `page: ${window.location.pathname}${digestOf(reason)}\n${whereFrom(reason, String(reason))}`,
+        reason,
       );
     }
 
