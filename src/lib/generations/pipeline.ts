@@ -27,6 +27,7 @@ import {
   ProviderBudgetExhausted,
 } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
+import { ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
 import type { BrandRule } from "@/lib/brand-rules/types";
@@ -36,7 +37,7 @@ import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/con
 import type { Scores } from "@/lib/generations/content-policy";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
-import { OUTPUT_BLOCKED_ISSUE } from "@/lib/generations/refund-rules";
+import { OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE } from "@/lib/generations/refund-rules";
 
 export type ContentType = "video" | "image";
 
@@ -1311,6 +1312,7 @@ export async function runRealPipeline(
     let generateFailed = false;
     let nonRetryableFailure = false;
     let outputBlocked = false;
+    let refusedBeforeRender = false;
     for (let genTry = 1; genTry <= GENERATE_RETRIES; genTry++) {
       try {
         if (options.contentType === "video") {
@@ -1597,6 +1599,12 @@ export async function runRealPipeline(
         }
 
         generateFailed = true;
+        // GPT Image's safety system turned the request away before drawing
+        // anything: refunded in full, past the switch and the cap. The
+        // sentence in the step detail carries no status code for the 4xx
+        // rule to find, so the attempt carries the marker instead
+        // (refund-rules.ts, REFUSED_BEFORE_RENDER_ISSUE).
+        if (err instanceof ImageSafetyRejection && err.beforeRender) refusedBeforeRender = true;
         // A spent budget and a content rejection both mean "stop", not "try
         // again": one is the ceiling, the other fails identically forever.
         nonRetryableFailure =
@@ -1631,7 +1639,15 @@ export async function runRealPipeline(
       attempt: attemptNumber,
       steps,
       passed,
-      issues: outputBlocked ? [OUTPUT_BLOCKED_ISSUE] : generateFailed && !resultUrl ? ["provider_error"] : [],
+      // "provider_error" stays beside the refusal marker: it is what the
+      // composer and the auto-report read to show the refusal sentence.
+      issues: outputBlocked
+        ? [OUTPUT_BLOCKED_ISSUE]
+        : generateFailed && !resultUrl
+          ? refusedBeforeRender
+            ? ["provider_error", REFUSED_BEFORE_RENDER_ISSUE]
+            : ["provider_error"]
+          : [],
       compiledPrompt: reviewedPrompt,
     });
 

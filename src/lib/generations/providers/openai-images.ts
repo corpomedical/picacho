@@ -3,7 +3,7 @@
 // (OpenAI's image endpoints don't return a durable hosted URL).
 
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
-import { IMAGE_REQUEST_REFUSED } from "@/lib/generations/providers/refusal-messages";
+import { readOpenAiRefusal } from "@/lib/generations/providers/refusal-messages";
 
 // Thrown specifically when OpenAI's safety classifier rejects the prompt, so
 // callers can tell it apart from an outage, a bad key, or a rate limit.
@@ -13,10 +13,16 @@ import { IMAGE_REQUEST_REFUSED } from "@/lib/generations/providers/refusal-messa
 // catch it and reword-and-retry, then hop to Flux, and that ladder was
 // removed on 2026-09-09. No caller retries it or sends it elsewhere now; the
 // render it belongs to fails.
+//
+// beforeRender is what the refund reads (pipeline.ts turns it into
+// REFUSED_BEFORE_RENDER_ISSUE): true unless OpenAI said the block came from
+// a generated image. See readOpenAiRefusal.
 export class ImageSafetyRejection extends Error {
-  constructor(message: string) {
+  readonly beforeRender: boolean;
+  constructor(message: string, beforeRender: boolean) {
     super(message);
     this.name = "ImageSafetyRejection";
+    this.beforeRender = beforeRender;
   }
 }
 
@@ -195,8 +201,16 @@ export async function generateImageWithOpenAI(
     // Anything else (auth, billing, rate limit, etc.) still surfaces the real
     // API response, since that detail is what's actually useful for
     // debugging those.
-    if (text.includes("safety system") || text.includes("safety_violations")) {
-      throw new ImageSafetyRejection(IMAGE_REQUEST_REFUSED);
+    const refusal = readOpenAiRefusal(text);
+    if (refusal) {
+      // The stage goes to the server log, never to the person: until
+      // 2026-09-10 the whole body was thrown away here, so no past refusal
+      // can say which stage refused it.
+      console.warn("OpenAI refused an image request.", {
+        status: res.status,
+        stage: refusal.stage ?? "not stated",
+      });
+      throw new ImageSafetyRejection(refusal.message, refusal.beforeRender);
     }
     throw new Error(`OpenAI image API error (${res.status}): ${text.slice(0, 300)}`);
   }

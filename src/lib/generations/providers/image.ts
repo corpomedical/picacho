@@ -138,11 +138,13 @@ export async function generateImage(
   // here), not shopping for a provider that says yes. If a prompt our own
   // policy passed is still refused downstream, that render fails: the
   // pipeline treats a safety refusal as non-retryable (SAFETY_REJECTION).
-  // It is NOT force-refunded, whatever this comment used to say — the
-  // refusal's message carries no "error (4xx)", so forceRefundEligible never
-  // counts it as a provider rejection, and the credit comes back only through
-  // the automatic_refunds switch and under the daily refund cap. See
-  // refusal-messages.ts, which is why that sentence makes no money claim.
+  // A refusal before anything was drawn is force-refunded (2026-09-10): the
+  // pipeline marks the attempt REFUSED_BEFORE_RENDER_ISSUE, because OpenAI's
+  // own ledger shows it bills nothing for one (refund-rules.ts). A refusal of
+  // "a generated image" (OpenAI's output stage) is not — the picture was
+  // made — and comes back through the automatic_refunds switch and under the
+  // daily cap, like Flux's. See refusal-messages.ts for which sentence says
+  // what about money, and why.
   chargeBudget(budget);
   const base64 = await generateImageWithOpenAI(prompt, openAiRefs);
   return persistBase64(base64);

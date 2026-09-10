@@ -8,7 +8,14 @@
 
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { REFUSAL_COACHING, providerRefusalMessages } from "./refusal-messages";
+import {
+  IMAGE_REQUEST_REFUSED,
+  IMAGE_RESULT_REFUSED,
+  REFUSAL_COACHING,
+  providerRefusalMessages,
+  readOpenAiRefusal,
+} from "./refusal-messages";
+import { forceRefundEligible, REFUSED_BEFORE_RENDER_ISSUE } from "../refund-rules";
 import { isProviderFault } from "../provider-fault";
 import en from "../../i18n/messages/en";
 
@@ -58,15 +65,46 @@ describe("provider refusals", () => {
     }
   });
 
-  it("make no money claim", () => {
-    // The true one differs by path — a character photo's allowance always
-    // returns, a layer edit appends its own "Nothing was charged.", and a
-    // render's credit waits on the automatic_refunds switch and the daily cap
-    // (refusal-messages.ts, point 3). Make the render path's refund forced
-    // before letting this sentence promise anything.
-    for (const [name, msg] of messages) {
-      expect(msg, name).not.toMatch(/\b(?:spent|charged|charge|credits?|refund\w*|free)\b/i);
+  const MONEY = /\b(?:spent|charged|charge|credits?|refund\w*|free)\b/i;
+
+  it("the refused-image sentence makes no money claim: a picture was made and billed", () => {
+    // Flux's blacked-out 200 and OpenAI's output stage. On a render its
+    // credit waits on the automatic_refunds switch and the daily cap
+    // (refusal-messages.ts, point 3), so any promise here could be false.
+    expect(IMAGE_RESULT_REFUSED).not.toMatch(MONEY);
+  });
+
+  it("the refused-request sentence says nothing was charged, and only where a forced refund makes it true", () => {
+    // Until 2026-09-10 this sentence had to stay silent about money: the
+    // render path did not force its refund. It may promise now only because
+    // each link below holds; break one and the promise is a lie.
+    expect(IMAGE_REQUEST_REFUSED).toMatch(/nothing was charged/);
+    // 1. The reader hands out this sentence only with beforeRender — and
+    //    never for a picture that was made.
+    for (const stage of ["input", "unknown", undefined]) {
+      expect(readOpenAiRefusal(openAiRefusalBody(stage))).toMatchObject({
+        message: IMAGE_REQUEST_REFUSED,
+        beforeRender: true,
+      });
     }
+    expect(readOpenAiRefusal(openAiRefusalBody("output"))?.message).toBe(IMAGE_RESULT_REFUSED);
+    // 2. The throw carries beforeRender, and the pipeline turns it into the
+    //    marker on the attempt.
+    expect(src("./openai-images.ts")).toContain(
+      "new ImageSafetyRejection(refusal.message, refusal.beforeRender)",
+    );
+    const pipeline = src("../pipeline.ts");
+    expect(pipeline).toContain("err instanceof ImageSafetyRejection && err.beforeRender");
+    expect(pipeline).toContain('["provider_error", REFUSED_BEFORE_RENDER_ISSUE]');
+    // 3. The marker forces the refund, past the switch and the cap.
+    expect(
+      forceRefundEligible([
+        {
+          steps: [{ step: "generate", detail: IMAGE_REQUEST_REFUSED }],
+          issues: ["provider_error", REFUSED_BEFORE_RENDER_ISSUE],
+        },
+      ]),
+    ).toBe(true);
   });
 
   it("fit the shortest cut any surface makes", () => {
@@ -78,8 +116,81 @@ describe("provider refusals", () => {
   });
 
   it("are the sentences the providers actually throw", () => {
-    expect(src("./openai-images.ts")).toContain("new ImageSafetyRejection(IMAGE_REQUEST_REFUSED)");
+    const openai = src("./openai-images.ts");
+    expect(openai).toContain("const refusal = readOpenAiRefusal(text);");
+    expect(openai).toContain("new ImageSafetyRejection(refusal.message, refusal.beforeRender)");
     expect(src("./fal-image.ts")).toContain("new FluxSafetyRejection(IMAGE_RESULT_REFUSED)");
+  });
+});
+
+// The shape OpenAI's image-generation guide documents for a refusal. The
+// message is the wording production has recorded; the request id is not real.
+function openAiRefusalBody(stage?: string): string {
+  return JSON.stringify({
+    error: {
+      message:
+        "Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_0000. safety_violations=[sexual].",
+      type: "image_generation_user_error",
+      param: null,
+      code: "moderation_blocked",
+      ...(stage ? { moderation_details: { moderation_stage: stage, categories: ["sexual"] } } : {}),
+    },
+  });
+}
+
+describe("reading OpenAI's refusal", () => {
+  it("an input-stage block was refused before rendering", () => {
+    expect(readOpenAiRefusal(openAiRefusalBody("input"))).toEqual({
+      message: IMAGE_REQUEST_REFUSED,
+      beforeRender: true,
+      stage: "input",
+    });
+  });
+
+  it("an output-stage block refused a picture that was made — the Flux case, not forced", () => {
+    // OpenAI documents this stage as a block on "a generated image".
+    expect(readOpenAiRefusal(openAiRefusalBody("output"))).toEqual({
+      message: IMAGE_RESULT_REFUSED,
+      beforeRender: false,
+      stage: "output",
+    });
+  });
+
+  it("no stage, or 'unknown', counts as before rendering — the kind the ledger measured", () => {
+    // moderation_details is optional ("may also include"). The 2026-09-10
+    // refusal in OpenAI's ledger billed nothing, and we had not kept its
+    // body, so to us it was exactly this case.
+    expect(readOpenAiRefusal(openAiRefusalBody())?.beforeRender).toBe(true);
+    expect(readOpenAiRefusal(openAiRefusalBody("unknown"))?.beforeRender).toBe(true);
+  });
+
+  it("recognises the bodies production actually recorded, cut off before the code", () => {
+    // pipeline_log kept the first 300 characters of the 2026-08-07 refusals:
+    // not parseable, so the wording is what has to match.
+    const recorded =
+      '{\n  "error": {\n    "message": "Your request was rejected by the safety system. If you believe this is an error, contact us at help.openai.com and include the request ID req_0000. safety_violations=[sexual].",\n    "type": "image_generation_user_error",\n    "param": null,';
+    expect(readOpenAiRefusal(recorded)).toMatchObject({ message: IMAGE_REQUEST_REFUSED, beforeRender: true });
+  });
+
+  it("recognises the refusal by its documented code even if the wording changes", () => {
+    const reworded = JSON.stringify({
+      error: { message: "Request blocked.", type: "image_generation_user_error", code: "moderation_blocked" },
+    });
+    expect(readOpenAiRefusal(reworded)?.message).toBe(IMAGE_REQUEST_REFUSED);
+  });
+
+  it("leaves every other error alone", () => {
+    // These stay "OpenAI image API error (4xx): …" in the log, which the 4xx
+    // rule already refunds, or a 5xx that it rightly does not.
+    const unreadable = JSON.stringify({
+      error: { message: "Invalid image file or mode for image 1", type: "invalid_request_error", code: null },
+    });
+    const rateLimited = JSON.stringify({
+      error: { message: "Rate limit reached for gpt-image-2", type: "requests", code: "rate_limit_exceeded" },
+    });
+    expect(readOpenAiRefusal(unreadable)).toBeNull();
+    expect(readOpenAiRefusal(rateLimited)).toBeNull();
+    expect(readOpenAiRefusal("upstream connect error")).toBeNull();
   });
 });
 

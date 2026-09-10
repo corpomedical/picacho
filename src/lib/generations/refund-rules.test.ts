@@ -7,9 +7,11 @@ import {
   isProviderRejection,
   forceRefundEligible,
   OUTPUT_BLOCKED_ISSUE,
+  REFUSED_BEFORE_RENDER_ISSUE,
   refundsOnFault,
   REFUNDS,
 } from "./refund-rules";
+import { IMAGE_REQUEST_REFUSED, IMAGE_RESULT_REFUSED } from "./providers/refusal-messages";
 
 // Incident replay — the 2026-08-29 report. Each case is a real pipeline log
 // shape; the first is the one that charged a user for work no provider did.
@@ -207,6 +209,52 @@ describe("forceRefundEligible", () => {
     expect(forceRefundEligible([{ steps, issues: [OUTPUT_BLOCKED_ISSUE] }])).toBe(true);
     // Anywhere in the run, not only the last attempt.
     expect(forceRefundEligible([{ steps, issues: [OUTPUT_BLOCKED_ISSUE] }, { steps: [] }])).toBe(true);
+  });
+
+  // GPT Image's safety refusal (2026-09-10). A 400 at submit, but the step
+  // detail is a sentence for the person with no "error (400)" in it, so the
+  // 4xx rule never saw it and the refund rode the capped path — generation
+  // 884e4664 used one of its account's daily refunds that way. OpenAI's
+  // ledger for that day shows no image request at all: it billed nothing.
+  describe("a refusal before anything rendered", () => {
+    const refused = (issues: string[]) => [
+      { steps: [{ step: "generate", detail: IMAGE_REQUEST_REFUSED }], issues },
+    ];
+
+    it("forces on the marker, with no status code anywhere in the log", () => {
+      expect(forceRefundEligible(refused(["provider_error", REFUSED_BEFORE_RENDER_ISSUE]))).toBe(true);
+    });
+
+    it("the sentence alone forces nothing — the marker decides, so rewording the copy cannot move money", () => {
+      expect(forceRefundEligible(refused(["provider_error"]))).toBe(false);
+    });
+
+    it("finds the marker in any attempt, not only the last", () => {
+      expect(
+        forceRefundEligible([
+          ...refused(["provider_error", REFUSED_BEFORE_RENDER_ISSUE]),
+          { steps: [{ step: "generate", detail: "This request already used its 4 generation attempts without producing a usable image." }], issues: [] },
+        ]),
+      ).toBe(true);
+    });
+
+    it("a billed render elsewhere in the run still wins, same as for a 4xx", () => {
+      expect(
+        forceRefundEligible([
+          { steps: [{ step: "generate", detail: "Generated via GPT Image 2." }], issues: [] },
+          ...refused(["provider_error", REFUSED_BEFORE_RENDER_ISSUE]),
+        ]),
+      ).toBe(false);
+    });
+
+    // The other half of the rule, unchanged on purpose. Flux's checker answers
+    // HTTP 200 with a blacked-out picture, and fal bills it; OpenAI's
+    // output-stage block, which gets the same sentence, refused "a generated
+    // image". Something was rendered, so these stay behind the switch and the
+    // daily cap.
+    it("does NOT force a refused image: the picture was made and billed", () => {
+      expect(forceRefundEligible([{ steps: [{ step: "generate", detail: IMAGE_RESULT_REFUSED }], issues: ["provider_error"] }])).toBe(false);
+    });
   });
 });
 

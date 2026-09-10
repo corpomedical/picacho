@@ -81,8 +81,9 @@ const VIDEO_RENDERED = /^Rendered the video\b/;
  * automatic_refunds switch (2026-08-31, replacing the two hand-assembled
  * copies in actions.ts and job-runner.ts, which had drifted).
  *
- * Force applies when a provider rejected the request (4xx) AND nothing in the
- * run was provably billed. There is no third condition any more: the
+ * Force applies when a provider rejected the request (a 4xx in the log, or
+ * REFUSED_BEFORE_RENDER_ISSUE on an attempt) AND nothing in the run was
+ * provably billed. There is no third condition any more: the
  * acknowledged-warning exception was dropped on 2026-09-06 (see the marker
  * above), so a refusal now refunds whoever sent it and whatever they were
  * told first — because it cost nothing either way.
@@ -104,10 +105,65 @@ const VIDEO_RENDERED = /^Rendered the video\b/;
 // and we refund anyway — see output_blocked in the table.
 export const OUTPUT_BLOCKED_ISSUE = "output_blocked";
 
+// A provider refused the request before anything was rendered, and the
+// sentence we log for it carries no status code. pipeline.ts sets it
+// alongside "provider_error" when GPT Image's safety system refuses at any
+// stage but "output" (ImageSafetyRejection.beforeRender). It is the same class
+// as a fal 422 or a ModelArk 400 — refused at submit, nothing billed — and
+// the reason it needs a marker is only that REJECTION_4XX reads the step
+// detail, and that detail is a plain sentence for the person
+// (refusal-messages.ts) that must never grow an "error (400)".
+//
+// NOT BILLED — read from OpenAI's own ledger, not inferred. OpenAI's docs say
+// what an image costs (input text tokens + input image tokens + image output
+// tokens) and nothing about what a refusal costs, so the operator read the
+// usage dashboard for 10 Sep 2026, both projects: Images 0 requests, 0
+// images; spend $4.73, exactly the sum of its line items (gpt-5.4 input
+// $1.486 + output $0.49 + cached $0, gpt-5.4-mini input $1.843 + output
+// $0.856 + cached $0.055, moderations $0) — no gpt-image-2 line at all. That
+// day's only GPT Image call was the refusal on generation 884e4664 (05:47:38
+// UTC). It was refused and refunded 9.4 s after the row was written, when the
+// fastest real GPT Image 2 render on record took 28.8 s to reach storage — so
+// it was turned away before drawing anything, and OpenAI billed nothing for
+// it, not even the prompt's input tokens. Before this marker that refusal
+// went through the capped path and used one of the account's daily refunds.
+//
+// "Output" is excluded because OpenAI documents that stage as a block on "a
+// generated image": the picture was made, which is Flux's blacked-out 200 in
+// another shape, and that stays behind the switch and the cap. No output-
+// stage refusal has been seen yet, so whether OpenAI bills one is unmeasured;
+// openai-images.ts now logs the stage of every refusal so the next one says.
+//
+// THE DAILY CAP, AND THE FREE-REFUSAL LOOP IT NO LONGER BOUNDS. A forced
+// refund skips refundedFailureDailyCap and leaves refunded_at unstamped, so a
+// person can be refused by OpenAI as often as they like and never pay. What
+// the loop costs us is not zero: every send pays for our prompt gate's
+// readings before any provider sees it (and the draft, unless skipped), and
+// nothing refunds those. But that loop is already open, uncapped, one step
+// earlier — a send our own prompt gate refuses is force-refunded
+// ("content_policy") after costing exactly those readings. A refusal from
+// OpenAI adds one provider call that the ledger above shows bills nothing. So
+// this opens no new cost: it moves one refusal from the capped path to the
+// one its siblings (fal 422, ModelArk 400, our own gate) already take. What
+// bounds the loop is the send rate — the composer's 3-second cooldown, the
+// API's 30 a minute — and not money. The cap never bounded sends anyway: past
+// it, anyone with credits keeps sending and simply pays. Keeping these
+// refusals under it would charge for a refusal that cost nothing, which is
+// exactly what "charge the user iff the provider charged us" (2026-09-06)
+// forbids.
+//
+// The cost the cap never touched: each refusal is a moderation event on
+// Picacho's OpenAI organisation. If repeated provider refusals ever need a
+// brake, it belongs on the send rate or in policy-log's session prior (which
+// today counts only our own prompt gate's refusals) — a policy decision for
+// the operator, not a charge. Not built.
+export const REFUSED_BEFORE_RENDER_ISSUE = "refused_before_render";
+
 export function forceRefundEligible(attempts: RefundAttempt[]): boolean {
   const all = details(attempts);
   if (attempts.some((a) => a.issues?.includes(OUTPUT_BLOCKED_ISSUE))) return true;
   if (all.some((d) => COMPLETED_RENDER.test(d) || VIDEO_RENDERED.test(d))) return false;
+  if (attempts.some((a) => a.issues?.includes(REFUSED_BEFORE_RENDER_ISSUE))) return true;
   return all.some((d) => REJECTION_4XX.test(d));
 }
 
@@ -246,7 +302,9 @@ export function refundsOnFault(fault: FailureFault): boolean {
 //   normal   — bounded, counted on refunded_at (the marker the refund writes)
 //   forced   — NOT bounded, because force is reserved for classes that
 //              provably cost nothing: a brand rule blocking a prompt before
-//              any provider call, a pre-render 4xx refusal
+//              any provider call, a pre-render 4xx refusal (OpenAI's safety
+//              refusal included — see REFUSED_BEFORE_RENDER_ISSUE for why the
+//              loop that leaves open costs nothing new)
 //   settled  — forced past the automatic_refunds switch, but bounded anyway.
 //              An identity settle DELIVERED the render and spent two vision
 //              calls establishing it should not have, so it is the opposite

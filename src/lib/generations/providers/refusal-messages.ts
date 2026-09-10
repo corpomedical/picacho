@@ -31,34 +31,87 @@
 //      word turns a refusal back into something the pipeline retries: the
 //      ladder, one level down.
 //
-//   3. No money claim, because the true one depends on the path. A character
-//      photo's allowance always comes back (characters/actions.ts). A layer
-//      edit is force-refunded and appends its own "Nothing was charged." after
-//      this text (actions.ts). A render's credit is NOT force-refunded: these
-//      sentences carry no "error (4xx)", so forceRefundEligible never sees a
-//      provider rejection, and the refund waits on the automatic_refunds
-//      switch and the daily refund cap. For Flux that is the rule working —
-//      fal billed the blacked-out render. For OpenAI's refusal, a 400, it is
-//      a gap against the pricing FAQ, which promises that a provider refusal
-//      before rendering never counts against your generations. Found
-//      2026-09-10 and left for the operator, because whether OpenAI bills a
-//      refused request decides which way it should close. A sentence
-//      shown on all three paths may only say what is true on all three.
+//   3. A money claim only where every path makes it true. A sentence shown on
+//      several paths may only say what is true on all of them.
+//
+//      IMAGE_REQUEST_REFUSED says nothing was charged, and it is true
+//      wherever it can appear. On a render, the pipeline marks the attempt
+//      REFUSED_BEFORE_RENDER_ISSUE whenever readOpenAiRefusal below picks
+//      this sentence, and forceRefundEligible refunds that marker past the
+//      automatic_refunds switch and the daily cap (refund-rules.ts, which
+//      also holds the ledger reading that shows OpenAI bills nothing for such
+//      a refusal). A character photo's allowance always comes back
+//      (characters/actions.ts).
+//
+//      IMAGE_RESULT_REFUSED says nothing about money, because on a render it
+//      is NOT force-refunded: a picture was made before it was refused. fal
+//      answers 200 with a blacked-out frame and bills it, and OpenAI's
+//      output-stage block refuses "a generated image". The credit comes back
+//      through the automatic_refunds switch and under the daily cap, which is
+//      the charge-iff-we-were-charged rule working. (A layer edit is
+//      force-refunded anyway and appends its own "Nothing was charged." after
+//      this sentence — actions.ts.)
+//
+//      Until 2026-09-10 neither sentence could promise anything: the OpenAI
+//      refusal carried no "error (4xx)" for forceRefundEligible to find, so it
+//      rode the capped path too, against a pricing FAQ that says a refusal
+//      before rendering never counts.
 
 /**
- * GPT Image refused the request (HTTP 400, "safety system" /
- * safety_violations). Nothing comes back, so nothing was generated.
+ * GPT Image refused the request before drawing anything (HTTP 400). Nothing
+ * comes back, nothing was generated, and nothing was charged — see point 3.
  */
 export const IMAGE_REQUEST_REFUSED =
-  "This request was refused by the image model's safety system, so nothing was generated.";
+  "This request was refused by the image model's safety system, so nothing was generated and nothing was charged.";
 
 /**
- * Flux's checker flagged the finished image. fal answers 200 with a black
- * frame in its place, so something WAS rendered (and billed) — it just can't
- * be shown. Kept under 160 characters: the layer-edit lane slices there.
+ * The image was made, then refused. Flux's checker: fal answers 200 with a
+ * black frame in its place. GPT Image's output stage: OpenAI answers 400,
+ * having blocked "a generated image". Either way something WAS rendered —
+ * it just can't be shown. Kept under 160 characters: the layer-edit lane
+ * slices there.
  */
 export const IMAGE_RESULT_REFUSED =
   "This image was refused by the image model's safety system, so it can't be shown.";
+
+/**
+ * Reads an OpenAI image-API error body: null if it is not a safety refusal,
+ * otherwise the sentence to show and whether the refusal came before
+ * anything was rendered.
+ *
+ * OpenAI's image-generation guide names the refusal by `error.code =
+ * "moderation_blocked"` ("use error.code as the stable discriminator") and
+ * says it may carry `moderation_details.moderation_stage`: "input" (the
+ * prompt or the request's images), "output" ("a generated image or downstream
+ * output moderation stage") or "unknown". The body's own wording ("rejected
+ * by the safety system … safety_violations=[…]") is matched too, because that
+ * is what recognised every refusal on record.
+ *
+ * Only "output" says a picture was made. Input, unknown and no stage at all
+ * count as refused before rendering. For the no-stage case that is measured,
+ * not assumed: the one refusal in OpenAI's ledger was of that kind to us (we
+ * discarded the body) and billed nothing (refund-rules.ts).
+ */
+export function readOpenAiRefusal(
+  body: string,
+): { message: string; beforeRender: boolean; stage: string | null } | null {
+  let error: { code?: unknown; moderation_details?: { moderation_stage?: unknown } } | undefined;
+  try {
+    error = JSON.parse(body)?.error;
+  } catch {
+    // Not JSON — the wording checks below still apply.
+  }
+  const refused =
+    error?.code === "moderation_blocked" ||
+    body.includes("safety system") ||
+    body.includes("safety_violations");
+  if (!refused) return null;
+  const rawStage = error?.moderation_details?.moderation_stage;
+  const stage = typeof rawStage === "string" ? rawStage : null;
+  return stage === "output"
+    ? { message: IMAGE_RESULT_REFUSED, beforeRender: false, stage }
+    : { message: IMAGE_REQUEST_REFUSED, beforeRender: true, stage };
+}
 
 /** Every provider refusal a person can read, for the test suite. */
 export const providerRefusalMessages = {
