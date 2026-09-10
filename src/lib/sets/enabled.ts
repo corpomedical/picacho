@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 //      An instant off from the Vercel dashboard, and it also stops any poll
 //      from collecting a build that is already running.
 //   2. feature_flags.astra_sets. One toggle in Admin > Feature flags.
-//      Inserted disabled by supabase/pending/astra-sets.sql.
+//      Inserted disabled by supabase/applied/2026-09-10/astra-sets.sql.
 //   3. A missing OPENAI_API_KEY.
 //
 // Who may use it once it is on is set-config.ts's setsEligible: admins

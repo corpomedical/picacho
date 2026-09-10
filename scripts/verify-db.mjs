@@ -97,7 +97,7 @@ const COLUMNS = {
   // excludes anyone with a row. A missing table fails the claim and skips
   // everyone — silently, since a failed claim reads as "already claimed".
   drip_sends: ["user_id", "template", "sent_at"],
-  // Astra Sets (pending/astra-sets.sql). Every column the actions write is
+  // Astra Sets (applied/2026-09-10/astra-sets.sql). Every column the actions write is
   // listed: the service role writes them, so a missing one fails a build
   // mid-flight rather than at the page.
   location_sets: [

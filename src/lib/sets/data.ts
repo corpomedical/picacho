@@ -57,7 +57,7 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     .order("created_at", { ascending: false })
     .limit(SETS_LIST_LIMIT);
   if (error) {
-    // The table arrives with supabase/pending/astra-sets.sql, and
+    // The table arrives with supabase/applied/2026-09-10/astra-sets.sql, and
     // the switch that opens this page arrives in the same file — so this is
     // an outage, not an ordering problem.
     console.error("getSetsHome failed:", error.message);

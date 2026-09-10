@@ -34,7 +34,7 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 
 ## Status and what was measured while building (2026-09-10)
 
-**Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/pending/astra-sets.sql`.
+**Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/applied/2026-09-10/astra-sets.sql` (run in production 2026-09-11; flags confirmed off, tables present, anonymous key refused).
 
 **Deliberately not built in Phase 1.**
 - The shared `stage-canvas.tsx`: the Angle Stage is a live Studio/Elite lane that cannot be exercised without a paid account and a proxy. Sets has its own viewer; the Stage is untouched.
