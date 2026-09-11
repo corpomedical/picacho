@@ -83,6 +83,19 @@ The instructions now say there is no fourth wall, walls meet at the corners, a g
 
 The one retry a build already had is now spent on closing: a valid set that measures open is sent back to Astra with the open sides named, to be mended and returned — or, when a mend could not fit (over 16,000 characters to re-emit, or within 40 shapes of the 400 limit), rebuilt with the open sides named. The first set is kept as a draft meanwhile, and the person gets whichever of the two is more closed — or the draft, if anything happens to the retry (`src/lib/sets/build-retry.ts`). A refusal of the closing retry is logged under the provider, never as the person's. Worst case per build is now $0.53 + $0.625 = $1.155 (input re-measured at 1,837–1,843 tokens with short briefs, bounded at 2,400 for a 500-character brief; `set-config.ts` shows the arithmetic). At the measured first-attempt rate (1 in 8 open) the average cost barely moves. Sets over ~110 m with a natural horizon were not in the test builds.
 
+**The mend, verified (2026-09-11, after the organisation's prepaid balance ran out and was topped up).** Five real open sets were sent back through the production retry input (`closeRetryInput`), plus one large-horizon build:
+
+| Open set | Retry | Open bearings before → after | Cost | Time | Original objects kept exactly |
+|---|---|---|---|---|---|
+| Production showroom | mend | 5 → 0 | $0.2881 | 53 s | 43 of 43, cameras and marks identical; added the front wall and the corner strips |
+| Production podcast studio | mend | 5 → 0 | $0.2678 | 53 s | 42 of 42; added the front wall and a ceiling |
+| Beach | mend | 9 → 0 | $0.2772 | 56 s | 38 of 38; added sea and sand tiled to the horizon, and flanking dunes |
+| Rainy market (first probe) | mend | 4 → 0 | $0.2901 | 57 s | 42 of 42; added end walls with windows at both ends |
+| Production European street (16,127 characters, over the mend limit) | fresh, told | 7 → 0 | $0.3146 | 80 s | a new set, as expected |
+| "Open ocean seen from the end of a long wooden pier at noon." | first build | 0 | $0.2166 | 60 s | — |
+
+Two blind judges per mended set agreed with the measure on the market, the showroom and the street; on the podcast studio they agreed but called two views too dark to be sure; on the pier they split. On the beach both judges still saw flat sand running to the sky in two views: Astra closed the shoreline the way the rule allows — sand modelled out to the horizon — which the eye cannot tell from bare floor, and which is also what a long beach looks like. The measure is left as it is: telling "real" sand from floor by colour would be a rule about what a surface looks like, not what the set is.
+
 **Not solved: dark sets.** The instructions now ask for a fill light of 0.5–1, and Astra follows (fills 0.65–0.85, against 0.3 in the dark studio), but tints it with the scene's dark palette. Share of near-black pixels in the eye-height panorama: forest at dusk 85%, rooftop at night 77%, podcast studio 57%, against 0–14% for daylit sets. A layout sketch that is black in most directions shows the image model nothing there. The candidate fix is a per-set exposure in the viewer, which needs a still test to prove night stays night; not yet done.
 
 ---
