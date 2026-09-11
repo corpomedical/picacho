@@ -516,6 +516,8 @@ Flag: `astra_previz`.
 
 ### The eval (operator-run; 3 runs each; blind corpus written by someone who has not seen the prompts)
 
+**The runner is built** (`scripts/astra-sets-eval/`, 2026-09-11; its `README.md` is the operator's guide). Every command is a dry run unless it says `--spend --max-usd <n>`: nothing is called, the plan and its ceiling are printed, and each run ends with `network: 0 live calls, 0 blocked`. A real run reserves every call at its worst case before sending it, stops at the ceiling, and keeps an append-only ledger. It never touches the database, and imports the product's own modules (the model id included) rather than copying them. Built: A, B, D's build leg, the Canary and `report`, which says whether A–D pass at `SET_BUILD_EFFORT`. Not built yet: C's engine leg (the stills and their identity scores), D's stills leg and its photos with people, and E's model calls. The corpus template is format-only; the real corpus must be written blind, outside the repo.
+
 | Part | What | Pass bar |
 |---|---|---|
 | A. Validity and cost | 30 briefs (10 interiors, 10 exteriors, 10 stylised) × 3 runs, on Astra `low`, Astra `medium`, claude-sonnet-5 and gpt-5.4-mini | At least 95% valid after `normaliseSetSpec` within one retry. Astra p95 cost at or under the priced credits × $0.28 ($0.56 for words, $1.12 for photos); otherwise raise the price or lower the cap |

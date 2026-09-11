@@ -69,7 +69,7 @@ window.renderSet = async (key, mark, poses) => {
   renderer.toneMappingExposure = BASE_EXPOSURE;
   // A desktop pointer: set-view.tsx turns shadows on unless the pointer is coarse.
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
   document.body.appendChild(renderer.domElement);
 
   const scene = new THREE.Scene();

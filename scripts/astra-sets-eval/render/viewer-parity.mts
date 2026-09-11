@@ -19,7 +19,7 @@ export const MIRRORED_LINES = [
   "renderer.toneMapping = THREE.ACESFilmicToneMapping;",
   "renderer.toneMappingExposure = BASE_EXPOSURE;",
   "renderer.shadowMap.enabled = !coarse;",
-  "renderer.shadowMap.type = THREE.PCFSoftShadowMap;",
+  "renderer.shadowMap.type = THREE.PCFShadowMap;",
   // the scene and the stand-in
   "const built = buildSetScene(THREE, spec, { shadows: !coarse });",
   "if (built.background) scene.background = built.background;",

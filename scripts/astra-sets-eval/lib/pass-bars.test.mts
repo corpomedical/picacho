@@ -163,6 +163,18 @@ describe("D", () => {
     expect(priorHitsConstruction(src)).toEqual({ ok: true, missing: [] });
     expect(priorHitsConstruction({ ...src, policyLog: "" }).ok).toBe(false);
     expect(priorHitsConstruction({ ...src, actions: src.actions.replace(/, provider: "astra"/g, "") }).ok).toBe(false);
+    // Since photo sets (2026-09-11) the person's refusal is logged through a
+    // helper whose prompt is `prompt || null`: still no provider, still counted.
+    const helper = src.actions.replace(
+      'reason: "astra_refused", prompt: brief });',
+      'reason: "astra_refused", prompt: prompt || null });',
+    );
+    expect(priorHitsConstruction({ ...src, actions: helper })).toEqual({ ok: true, missing: [] });
+    // Every astra_refused log carrying a provider: the person's refusals would no longer count.
+    const allProvider = src.actions.replace('prompt: brief });', 'prompt: brief, provider: "astra" });');
+    expect(priorHitsConstruction({ ...src, actions: allProvider }).missing).toContain(
+      "sets/actions.ts: OpenAI refusing the brief logged without a provider",
+    );
   });
 
   it("the outcome table: section 4's two clauses, read literally", () => {

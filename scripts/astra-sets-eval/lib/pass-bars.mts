@@ -381,7 +381,12 @@ export function countsTowardPriorHits(event: RefusalEvent): boolean {
 export function priorHitsConstruction(src: { actions: string; policyLog: string }): { ok: boolean; missing: string[] } {
   const missing: string[] = [];
   if ((src.actions.match(/provider: "astra"/g) ?? []).length < 2) missing.push('sets/actions.ts: words-gate and closing-retry refusals logged with provider: "astra"');
-  if (!/reason: "astra_refused", prompt: brief \}\)/.test(src.actions)) missing.push("sets/actions.ts: OpenAI refusing the brief logged without a provider");
+  // Any astra_refused log call with no provider: the person's own input (a
+  // brief, or a photo's notes since 2026-09-11's logBriefRefusedByAstra).
+  const personLogs = (src.actions.match(/recordPolicyRefusal\(\{[^}]*reason: "astra_refused"[^}]*\}\)/g) ?? []).filter(
+    (call) => !call.includes("provider:"),
+  );
+  if (personLogs.length === 0) missing.push("sets/actions.ts: OpenAI refusing the brief logged without a provider");
   if (!src.policyLog.includes('.is("provider", null)')) missing.push('policy-log.ts: recentRefusalCount filters .is("provider", null)');
   return { ok: missing.length === 0, missing };
 }
