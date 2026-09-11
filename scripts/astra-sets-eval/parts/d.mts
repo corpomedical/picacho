@@ -41,6 +41,10 @@
 // and is not complete (manifest.complete): report never passes a bar on it.
 // The stop reaches the gates too: a brief or photo still waiting for its
 // gate's turn is never sent (words-gate.mts), and is recorded as not reached.
+// A stills leg whose renderer never starts (local Chrome missing, or slow to
+// open its port) leaves the run incomplete too: its stills are recorded as
+// not run and their briefs undetermined, and every outcome, the sheets and
+// the summary are still written, since the builds before it are paid for.
 //
 // `d --photos`: THE 10 LOCATION PHOTOS WITH PEOPLE (section 4), each photo
 // × 3 runs, in submitSetPhotoBuild's order, without the database:
@@ -166,13 +170,24 @@ export function dOutcomeOf(
 /** How the stills leg draws its sketches: local Chrome; the tests put a stand-in here. */
 export const stillsRenderer: { render: typeof renderSets } = { render: renderSets };
 
+/** The note on every still of a stills leg whose renderer never started (Chrome missing, or slow to open its port). */
+export const NO_RENDERER = "the renderer did not start";
+
+/** A still the run never got to — a stop, the budget, or a renderer that never started: the run did not finish. */
+export function unfinishedStill(s: Pick<ShotRecord, "outcome" | "note">): boolean {
+  const note = s.note ?? "";
+  return s.outcome === "not_run" && (/^(not reached|budget)/.test(note) || note.startsWith(NO_RENDERER));
+}
+
 /**
  * The stills leg: each delivered set's first --d-cameras cameras, drawn with
  * the figure on the first mark (local Chrome), then shot on GPT Image with
  * the corpus's first character, set arm, no look (lib/shots.mts). Returns
  * each build's stills. A set whose sketch cannot be drawn gets its stills
- * recorded as not run. With `escalate` the stills go one at a time, in
- * order, each gate reading `priorHits` plus the still prompts refused
+ * recorded as not run; so does every set when the renderer never starts
+ * (NO_RENDERER), since by then the builds are paid for and the run must
+ * still write every outcome. With `escalate` the stills go one at a time,
+ * in order, each gate reading `priorHits` plus the still prompts refused
  * before it (each still is its own runGeneration in the product, whose gate
  * reads the refusals already logged); without it they are shot together,
  * every gate at `priorHits`.
@@ -189,14 +204,21 @@ export async function shootDStills(
   const directions = ctx.corpus.data.directions.length ? ctx.corpus.data.directions : ["(no direction)"];
   const cameras = ctx.flags.dCameras;
   const render = stillsRenderer.render;
-  const drawn = await render({
-    net: ctx.net,
-    repoRoot: ctx.repoRoot,
-    chromePath: ctx.flags.chrome,
-    jobs: sets.map((s) => ({ key: s.buildId, spec: s.spec, mark: { x: s.spec.marks[0].x, z: s.spec.marks[0].z, facingDeg: s.spec.marks[0].facingDeg }, poses: s.spec.cameras.slice(0, cameras).map((_, i) => framePose(s.spec, i)) })),
-    outDir: join(ctx.runDir, "frames"),
-    progress: ctx.progress,
-  });
+  let drawn: Awaited<ReturnType<typeof renderSets>> = [];
+  let noRenderer: string | null = null;
+  try {
+    drawn = await render({
+      net: ctx.net,
+      repoRoot: ctx.repoRoot,
+      chromePath: ctx.flags.chrome,
+      jobs: sets.map((s) => ({ key: s.buildId, spec: s.spec, mark: { x: s.spec.marks[0].x, z: s.spec.marks[0].z, facingDeg: s.spec.marks[0].facingDeg }, poses: s.spec.cameras.slice(0, cameras).map((_, i) => framePose(s.spec, i)) })),
+      outDir: join(ctx.runDir, "frames"),
+      progress: ctx.progress,
+    });
+  } catch (e) {
+    noRenderer = `${NO_RENDERER}: ${e instanceof Error ? e.message.slice(0, 300) : String(e)}`;
+    ctx.progress(`stills leg: ${noRenderer}; the stills of ${sets.length} set(s) are recorded as not run`);
+  }
   const singles: ShotRequest[] = [];
   const unshot: ShotRecord[] = [];
   for (const s of sets) {
@@ -220,7 +242,7 @@ export async function shootDStills(
       };
       const file = r?.ok ? r.files[camera.id] : undefined;
       if (!file) {
-        unshot.push(notRunShot(req, `the sketch could not be drawn${r && !r.ok ? `: ${r.error}` : ""}`, ctx.dry));
+        unshot.push(notRunShot(req, noRenderer ?? `the sketch could not be drawn${r && !r.ok ? `: ${r.error}` : ""}`, ctx.dry));
         continue;
       }
       const bytes = readFileSync(join(ctx.runDir, "frames", file));
@@ -508,7 +530,7 @@ export const partD: PartModule = {
         return;
       }
       for (const [id, stills] of await shootDStills(ctx, sets, { priorHits: prior, k, escalate: f.escalate })) stillsOf.set(id, stills);
-      cutShort ||= [...stillsOf.values()].flat().some((s) => s.outcome === "not_run" && /^(not reached|budget)/.test(s.note ?? ""));
+      cutShort ||= [...stillsOf.values()].flat().some(unfinishedStill);
     };
     const outcomeOf = (rec: BuildRecord, harmful: boolean) => dOutcomeOf(rec, { harmful, stills: stillsOf.get(rec.buildId) ?? null });
     const outcomeRow = (p: Omit<DOutcome, "outcome" | "note" | "countsTowardPriorHits" | "stills" | "shotPromptRefusals">, rec: BuildRecord): DOutcome => {
@@ -615,7 +637,8 @@ export const partD: PartModule = {
     if (!f.escalate) await shootFor(records, 0);
     const complete = buildsComplete && !cutShort && ctx.stopReason() === null;
     ctx.manifest.complete = complete;
-    ctx.manifest.stop = ctx.stopReason() ?? ctx.guard.stopped?.reason ?? null;
+    const noRenderer = [...stillsOf.values()].flat().find((s) => s.outcome === "not_run" && (s.note ?? "").startsWith(NO_RENDERER))?.note ?? null;
+    ctx.manifest.stop = ctx.stopReason() ?? ctx.guard.stopped?.reason ?? noRenderer;
     for (const rec of records) {
       const p = pendingOutcome.get(rec.buildId);
       if (p) outcomes.push(outcomeRow(p, rec));
@@ -639,6 +662,8 @@ export const partD: PartModule = {
 
     const out = [`D ${ctx.runId}${ctx.dry ? "  (DRY RUN: simulated gates and answers; the stills are the frames themselves)" : ""}`];
     if (!complete && !ctx.dry) out.push(`DID NOT FINISH (${String(ctx.manifest.stop ?? "unfinished")}): what it did not finish is undetermined; D does not resume, so rerun it`);
+    // A dry run is the check before the spend: it says so too, and exits 2.
+    if (noRenderer) out.push(`THE STILLS LEG DID NOT RUN (${noRenderer}): its stills are recorded as not run`);
     out.push("--- outcomes ---");
     const tally = new Map<string, number>();
     for (const o of outcomes) tally.set(`${o.harmful ? "harmful" : "benign"} ${o.outcome}`, (tally.get(`${o.harmful ? "harmful" : "benign"} ${o.outcome}`) ?? 0) + 1);
@@ -655,7 +680,7 @@ export const partD: PartModule = {
     writeSummary(ctx, out.join("\n"), { part: "d", simulated: ctx.dry, complete, outcomes: outcomes.length, stills: stills.length, bars });
     writeManifest(ctx);
     if (ctx.stopReason() === "sigint") return 130;
-    if (!ctx.dry && (ctx.guard.stopped || !complete)) return 2;
+    if (noRenderer || (!ctx.dry && (ctx.guard.stopped || !complete))) return 2;
     if (bars.some((b) => b.verdict === "FAIL")) return 1;
     if (bars.some((b) => b.verdict === "UNDETERMINED")) return 2;
     return 0;

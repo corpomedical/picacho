@@ -232,8 +232,10 @@ export function blockedOf(rows: readonly Pick<ShotRecord, "refsRefused" | "engin
  * Every C bar over real stills, per engine: barC on the set arm against the
  * engine's baseline (cBaseline), and the look, the camera heights and the
  * rest as REPORTED lines. An engine with no still in hand is UNDETERMINED;
- * a BLOCKED arm (fal refused its data: references) never passes; a BLOCKED
- * look arm alone leaves the bars (the set arm's) and notes the look lines.
+ * a BLOCKED arm (fal refused its data: references) never passes, nor does
+ * one with more than 10% of its set shots ending with no verdict (barC); a
+ * BLOCKED look arm alone leaves the bars (the set arm's) and notes the look
+ * lines.
  * `composition: false` leaves the composition bar out (a run's own summary:
  * the raters have not rated yet).
  */
@@ -287,25 +289,50 @@ export function cFromRuns(
   return { ...out, blocked: [...blocked] };
 }
 
-/** The sets C shoots: the probe's fixture, an A run's (a real run), or the product's fixtures (a dry run); and the effort an A run's were built at. */
-function setsFor(ctx: RunContext): { sets: CSet[]; from: string; effort: string | null } {
+/**
+ * Whether a C run may shoot an A run's sets on the corpus in hand. The sets
+ * are the A run's own (its rows and stored specs, chooseSets), so of the
+ * corpus only the briefs they were built from tie them to it; a C run on
+ * other briefs is refused. Everything else C reads — the characters and
+ * their photos, the directions, baselines.json — is C's own input, read at
+ * C's start, and may be written after A (README steps 3–4), as may any file
+ * C never reads (and corpus.json, which lists them): those differences are
+ * returned for the manifest and the summary, never refused. An A run that
+ * recorded no file hashes is held to the whole corpus hash.
+ */
+export function corpusAgainstA(
+  a: { hash?: unknown; hashes?: unknown } | undefined,
+  now: { corpusHash: string; hashes: Readonly<Record<string, string>> },
+): { ok: true; differs: string[] } | { ok: false; why: string } {
+  const theirs = a?.hashes && typeof a.hashes === "object" ? (a.hashes as Record<string, unknown>) : null;
+  if (!theirs) return a?.hash === now.corpusHash ? { ok: true, differs: [] } : { ok: false, why: "the corpus is not the one the A run used (corpus hash differs, and the A run records no file hashes to compare the briefs by)" };
+  if (theirs.briefs !== now.hashes.briefs) return { ok: false, why: "the briefs are not the ones the A run built its sets from (briefs hash differs)" };
+  const keys = [...new Set([...Object.keys(theirs), ...Object.keys(now.hashes)])].sort();
+  const changed = keys.filter((k) => theirs[k] !== now.hashes[k]);
+  const photos = changed.filter((k) => k.startsWith("photo:")).length;
+  return { ok: true, differs: [...changed.filter((k) => !k.startsWith("photo:")), ...(photos ? [`${photos} photo(s)`] : [])] };
+}
+
+/** The sets C shoots: the probe's fixture, an A run's (a real run), or the product's fixtures (a dry run); the effort an A run's were built at; and the corpus files that differ from the A run's. */
+function setsFor(ctx: RunContext): { sets: CSet[]; from: string; effort: string | null; corpusDiffers: string[] } {
   const f = ctx.flags;
   const fixture = (name: (typeof FIXTURES)[number]): CSet => ({ key: `fx-${name}`, spec: specOf(fixtureJson(name)), category: "fixture", buildId: `fx-${name}` });
-  if (f.probe) return { sets: [fixture(PROBE_FIXTURE)], from: `the product fixture ${PROBE_FIXTURE}`, effort: null };
+  if (f.probe) return { sets: [fixture(PROBE_FIXTURE)], from: `the product fixture ${PROBE_FIXTURE}`, effort: null, corpusDiffers: [] };
   if (!f.fromRun) {
     if (!ctx.dry) throw new HarnessError("a real C run draws its sets from an A run: pass --from-run <the A run> (a dry run draws the product's fixtures). Nothing was called.");
-    return { sets: FIXTURES.map(fixture), from: "product fixtures", effort: null };
+    return { sets: FIXTURES.map(fixture), from: "product fixtures", effort: null, corpusDiffers: [] };
   }
   const effort = f.effort ?? SET_BUILD_EFFORT;
   const a = readRun(f.fromRun);
   if (a.manifest.part !== "a" || a.manifest.photos === true) throw new HarnessError(`--from-run ${f.fromRun} is not an A words run`);
   if (!ctx.dry && a.manifest.simulated === true) throw new HarnessError(`--from-run ${f.fromRun} is a dry run: a real C run shoots a real A run's sets`);
   if (a.manifest.simulated !== true && a.manifest.complete !== true) throw new HarnessError(`--from-run ${f.fromRun} did not finish (interrupted or stopped): --resume it first`);
-  if ((a.manifest.corpus as { hash?: string } | undefined)?.hash !== ctx.corpus.corpusHash) throw new HarnessError("the corpus is not the one the A run used (corpus hash differs)");
+  const against = corpusAgainstA(a.manifest.corpus as { hash?: unknown; hashes?: unknown } | undefined, ctx.corpus);
+  if (!against.ok) throw new HarnessError(`${against.why}. Nothing was called.`);
   const chosen = chooseSets(a.rows as unknown as BuildRecord[], `astra-${effort}`, runSeed(ctx));
   const sets = chosen.map((r) => ({ key: r.buildId, spec: specOf(JSON.parse(readFileSync(join(f.fromRun as string, r.specFile as string), "utf8"))), category: r.category, buildId: r.buildId }));
   if (sets.length < C_SETS) ctx.out(`  note: only ${sets.length} of ${C_SETS} sets available at astra-${effort} in ${f.fromRun}`);
-  return { sets, from: `${f.fromRun} at astra-${effort}`, effort };
+  return { sets, from: `${f.fromRun} at astra-${effort}`, effort, corpusDiffers: against.differs };
 }
 
 /**
@@ -448,7 +475,7 @@ export const partC: PartModule = {
     if (!drift.ok && !ctx.dry && !f.acceptDrift) {
       throw new HarnessError(`the stills leg mirrors product lines that changed: ${drift.missing.join("; ")}. Update lib/pipeline-strings.mts and lib/shots.mts, or pass --accept-drift (recorded). Nothing was called.`);
     }
-    const { sets, from, effort } = setsFor(ctx);
+    const { sets, from, effort, corpusDiffers } = setsFor(ctx);
     const allCharacters = loadShotCharacters(ctx);
     const characters = f.probe ? allCharacters.slice(0, 1) : allCharacters;
     if (!ctx.dry && characters.some((c) => !c.photo)) throw new HarnessError("every character needs its identity photo in the corpus (README step 3). Nothing was called.");
@@ -456,6 +483,8 @@ export const partC: PartModule = {
       engines: f.engines,
       // The Astra effort of the A run's sets (null for fixtures): report decides C on SET_BUILD_EFFORT's runs.
       effort,
+      // The corpus files that changed since the A run (never its briefs: setsFor refuses that).
+      corpusDiffersFromA: corpusDiffers,
       look: f.look,
       control: f.control && !f.probe,
       threshold: DEFAULT_IDENTITY_THRESHOLD,
@@ -517,6 +546,7 @@ export const partC: PartModule = {
     const out = [
       `C ${ctx.runId}${f.probe ? " (probe)" : ""}${ctx.dry ? "  (DRY RUN: frames are real, stills are the frames themselves)" : ""}`,
       `  sets ${sets.length} (${from}); frames drawn for ${rendered.length - failed}; render errors ${failed}`,
+      ...(corpusDiffers.length ? [`  the corpus changed since the A run in ${corpusDiffers.join(", ")}: the briefs are the A run's, and C reads the rest as it is now`] : []),
       `  lifted sets: ${rendered.filter((r) => r.ok && r.result.lifted).length}; frames a live OrbitControls would have moved: ${rendered.reduce((n, r) => n + (r.ok ? r.result.frames.filter((x) => x.controlsWouldMove).length : 0), 0)}`,
       `  the pipeline and the shot's product lines the stills mirror ${drift.ok ? "match" : `DRIFTED: ${drift.missing.join("; ")}`}`,
       `  stills ${records.length} (characters ${characters.length}; ${f.engines.join(", ")})`,

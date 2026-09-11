@@ -286,6 +286,41 @@ export type CExportedBaselines = {
 /** Section 4's rule for nulls, on the set arm and its baseline alike: more than 10% unscored leaves identity undetermined. */
 export const C_MAX_UNSCORED_SHARE = 0.1;
 
+/** How a still that reached no verdict the C bars read ended, as the arithmetic names it. */
+const UNREAD_WORDS: Readonly<Record<string, string>> = {
+  prompt_blocked: "our prompt gate refused",
+  provider_refused: "the model's own refusal",
+  unjudged: "a gate unavailable",
+  error: "error",
+  unusable: "unusable",
+  not_run: "not run",
+};
+
+/**
+ * The stills that reached no verdict the C bars read: not rendered, and not
+ * judged by the output gate (whose refusals C-output reads) — an error, a
+ * gate unavailable, an unusable frame, the image model's own refusal, our
+ * prompt gate's refusal, not run. Neither the model's refusal nor ours is
+ * counted as a miss or an output refusal: the baselines hold neither (an
+ * export's scores are succeeded renders', its strict-lane count our output
+ * gate's).
+ */
+export function unreadStills(xs: readonly Pick<CShot, "outcome">[]): { n: number; of: number; share: number; tooMany: boolean; line: string | null } {
+  const unread = xs.filter((s) => s.outcome !== "rendered" && s.outcome !== "output_blocked");
+  const share = xs.length ? unread.length / xs.length : 0;
+  const by = new Map<string, number>();
+  for (const s of unread) by.set(s.outcome, (by.get(s.outcome) ?? 0) + 1);
+  const tally = [...by.entries()].map(([k, v]) => `${UNREAD_WORDS[k] ?? k} ${v}`).join(", ");
+  const tooMany = share > C_MAX_UNSCORED_SHARE;
+  return {
+    n: unread.length,
+    of: xs.length,
+    share,
+    tooMany,
+    line: unread.length ? `${unread.length}/${xs.length} reached no verdict (${tally}) = ${pct(share)}${tooMany ? ", over 10%" : ""}` : null,
+  };
+}
+
 /**
  * What an engine's set shots are held to (section 4: "the same characters'
  * ordinary renders"): the operator's export in baselines.json when it has
@@ -296,7 +331,11 @@ export const C_MAX_UNSCORED_SHARE = 0.1;
  * identity threshold (what the gate decides "retry" on); from the control
  * arm, its own "retry" decisions, counted as the set shots' are. A control
  * arm with more than 10% of its renders unscored gives no identity
- * baseline, as the set arm's own nulls rule.
+ * baseline, as the set arm's own nulls rule; one with more than 10% of its
+ * controls ending with no verdict (unreadStills: an error, a gate
+ * unavailable, a refusal; an output-gate refusal is left out, as an export
+ * holds succeeded renders only) gives no baseline at all, as the set arm's
+ * own rule for those.
  */
 export function cBaseline(engine: string, o: { exported: CExportedBaselines; controls: readonly CShot[]; threshold: number }): CBaseline {
   const of = engine === "seedream" ? "gpt-image" : engine;
@@ -311,16 +350,18 @@ export function cBaseline(engine: string, o: { exported: CExportedBaselines; con
       source: `baselines.json, ${of} first attempts (${[...new Set(rows.map((r) => `${r.source}, read ${r.readOn}`))].join("; ")})`,
     };
   }
-  const mine = o.controls.filter((s) => s.engine === of && s.arm === "control" && s.outcome === "rendered");
+  const arm = o.controls.filter((s) => s.engine === of && s.arm === "control");
+  const mine = arm.filter((s) => s.outcome === "rendered");
   const scores = mine.map((s) => s.score).filter((x): x is number => x !== null);
   const decided = mine.filter((s) => s.decision !== null);
   const unscored = mine.length - scores.length;
   const tooFew = mine.length > 0 && unscored / mine.length > C_MAX_UNSCORED_SHARE;
+  const unread = unreadStills(arm);
   return {
-    identityScores: scores.length && !tooFew ? scores : null,
-    missRate: decided.length ? decided.filter((s) => s.decision === "retry").length / decided.length : null,
+    identityScores: scores.length && !tooFew && !unread.tooMany ? scores : null,
+    missRate: decided.length && !unread.tooMany ? decided.filter((s) => s.decision === "retry").length / decided.length : null,
     strictLane,
-    source: `the ${of} control arm, ${scores.length} scored of ${mine.length} rendered${tooFew ? ` (${unscored} unscored, over 10%: no identity baseline)` : ""}`,
+    source: `the ${of} control arm, ${scores.length} scored of ${mine.length} rendered${tooFew ? ` (${unscored} unscored, over 10%: no identity baseline)` : ""}${unread.line ? `; controls ${unread.line}${unread.tooMany ? ": no baseline" : ""}` : ""}`,
   };
 }
 
@@ -420,7 +461,18 @@ export function barC(engine: string, shots: readonly CShot[], base: CBaseline): 
       }),
     );
   }
-  return out;
+  // Section 4's sample is the engine's set shots: the bars above read what
+  // rendered (or the output gate refused), which stands for the sample only
+  // when little of it is missing. Every set shot that reached no verdict is
+  // named, and more than 10% of them, as section 4's rule for nulls, leaves
+  // every C bar of the engine undetermined; a bar the rest already fail
+  // stays failed.
+  const unread = unreadStills(set);
+  if (!unread.line) return out;
+  return out.map((b) => {
+    const named = { ...b, arithmetic: `${b.arithmetic}; set shots ${unread.line}` };
+    return unread.tooMany ? capAtUndetermined(named, `${unread.n} of ${unread.of} set shots reached no verdict (over 10%)`) : named;
+  });
 }
 
 const fmt = (x: number | null) => (x === null ? "–" : x.toFixed(1));

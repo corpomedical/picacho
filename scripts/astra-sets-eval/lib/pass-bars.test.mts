@@ -159,6 +159,43 @@ describe("C", () => {
     expect(cBaseline("seedream", { exported, controls: [], threshold: 70 })).toMatchObject({ identityScores: [90, 80, 75, 60], missRate: 0.25 });
   });
 
+  it("a set shot that reached no verdict counts against the sample: over 10% of them and no C bar passes on the rest", () => {
+    const flux = (over: Partial<CShot>) => shot({ engine: "flux", ...over });
+    const none = (outcome: string, n: number) => Array.from({ length: n }, () => flux({ outcome, score: null, decision: null, compositionScores: [] }));
+    const fifteen = Array.from({ length: 15 }, () => flux({}));
+    const ids = ["C-identity-flux", "C-miss-flux", "C-composition-flux", "C-output-flux"];
+    // The 15 that rendered would pass every bar on their own.
+    expect(barC("flux", fifteen, base).map((b) => [b.id, b.verdict])).toEqual(ids.map((id) => [id, "PASS"]));
+    // fal's outage: 45 of the 60 end as errors, a gate unavailable or the model's own refusal.
+    const outage = barC("flux", [...fifteen, ...none("error", 30), ...none("unjudged", 10), ...none("provider_refused", 5)], base);
+    expect(outage.map((b) => [b.id, b.verdict])).toEqual(ids.map((id) => [id, "UNDETERMINED"]));
+    for (const b of outage) expect(b.arithmetic).toContain("set shots 45/60 reached no verdict (error 30, a gate unavailable 10, the model's own refusal 5) = 75.0%, over 10%");
+    // A bar the rest already fail stays failed.
+    const low = Array.from({ length: 15 }, () => flux({ score: 60 }));
+    expect(barC("flux", [...low, ...none("error", 45)], base).find((b) => b.id === "C-identity-flux")?.verdict).toBe("FAIL");
+    // 10% is the line, as for nulls: 6 of 60 are named and the bars stand; 7 of 60 leave them open.
+    const six = barC("flux", [...Array.from({ length: 54 }, () => flux({})), ...none("prompt_blocked", 3), ...none("unusable", 3)], base);
+    expect(six.every((b) => b.verdict === "PASS")).toBe(true);
+    expect(six[0].arithmetic).toContain("set shots 6/60 reached no verdict (our prompt gate refused 3, unusable 3) = 10.0%");
+    const seven = barC("flux", [...Array.from({ length: 53 }, () => flux({})), ...none("error", 7)], base);
+    expect(seven.every((b) => b.verdict === "UNDETERMINED")).toBe(true);
+  });
+
+  it("a control arm with more than 10% of its controls ending with no verdict gives no baseline", () => {
+    const control = (over: Partial<CShot>) => shot({ arm: "control", score: 82, ...over });
+    const errors = (n: number) => Array.from({ length: n }, () => control({ outcome: "error", score: null, decision: null }));
+    const thin = cBaseline("gpt-image", { exported: null, controls: [...Array.from({ length: 5 }, () => control({})), ...errors(15)], threshold: 70 });
+    expect(thin).toMatchObject({ identityScores: null, missRate: null });
+    expect(thin.source).toContain("controls 15/20 reached no verdict (error 15) = 75.0%, over 10%: no baseline");
+    const held = barC("gpt-image", Array.from({ length: 10 }, () => shot({})), thin);
+    expect(held.find((b) => b.id === "C-identity-gpt-image")?.verdict).toBe("UNDETERMINED");
+    expect(held.find((b) => b.id === "C-miss-gpt-image")?.verdict).toBe("UNDETERMINED");
+    // An output-gate refusal is left out (an export holds succeeded renders only): 2 errors of 20 still stand.
+    const ok = cBaseline("gpt-image", { exported: null, controls: [...Array.from({ length: 17 }, () => control({})), control({ outcome: "output_blocked", score: null, decision: null }), ...errors(2)], threshold: 70 });
+    expect(ok.identityScores).toHaveLength(17);
+    expect(ok.missRate).toBe(0);
+  });
+
   it("zero output refusals pass with no baseline; any refusal with no baseline is undetermined", () => {
     expect(barC("gpt-image", [shot({})], base).find((b) => b.id.startsWith("C-output"))?.verdict).toBe("PASS");
     const blocked = [shot({}), shot({ outcome: "output_blocked", score: null, decision: null })];

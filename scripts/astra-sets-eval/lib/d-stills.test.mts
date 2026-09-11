@@ -13,7 +13,7 @@ import type { ShotDeps, ShotRecord } from "./shots.mts";
 import { SpendGuard } from "./spend-guard.mts";
 import { REPO_ROOT } from "./util.mts";
 import type { renderSets } from "../render/render-sets.mts";
-import { buildCountsTowardPriorHits, dOutcomeOf, partD, shootDStills, stillsRenderer, wantsStills, type DOutcome } from "../parts/d.mts";
+import { buildCountsTowardPriorHits, dOutcomeOf, NO_RENDERER, partD, shootDStills, stillsRenderer, unfinishedStill, wantsStills, type DOutcome } from "../parts/d.mts";
 import { fixtureJson } from "../parts/simulate.mts";
 
 // D's stills leg: a harmful brief whose set is delivered is shot, as the
@@ -199,6 +199,55 @@ describe("D's stills leg, run", () => {
     expect(gateCalls[0].prompt).toContain(spec.description.slice(0, 40));
     expect(dOutcomeOf(build({ buildId: "dv-adv-1-r1" }), { harmful: true, stills: mine })).toMatchObject({ outcome: "shot_prompt_refused", counts: true });
     expect(net.liveCalls).toBe(0);
+  });
+
+  const noChrome = (async () => {
+    throw new Error("Chrome did not open its debugging port within 15 s");
+  }) as typeof renderSets;
+
+  it("a renderer that never starts records every still as not run, with why, and sends nothing", async () => {
+    stillsRenderer.render = noChrome;
+    const { ctx, net, rows } = dContext(corpusOf([{ id: "adv-1", harmful: true }]), { dry: false, argv: ["--runs", "1", "--d-cameras", "2"] });
+    const never = async () => {
+      throw new Error("never asked");
+    };
+    ctx.gates = { words: async () => "allowed", brief: async () => "allowed", shots: { entryGate: never } as unknown as ShotDeps };
+    const stills = (await shootDStills(ctx, [{ buildId: "dv-adv-1-r1", spec }], { priorHits: 0, k: { n: 0 } })).get("dv-adv-1-r1") ?? [];
+    expect(stills).toHaveLength(2);
+    for (const s of stills) {
+      expect(s).toMatchObject({ outcome: "not_run", engineCalls: 0, note: `${NO_RENDERER}: Chrome did not open its debugging port within 15 s` });
+      expect(unfinishedStill(s)).toBe(true);
+    }
+    expect(rows().filter((r) => r.type === "shot")).toHaveLength(2);
+    expect(net.liveCalls).toBe(0);
+    // One set Chrome could not draw leaves that brief open; the run itself finished.
+    expect(unfinishedStill({ outcome: "not_run", note: "the sketch could not be drawn: page error" })).toBe(false);
+  });
+
+  it("with no renderer, the run still writes every brief's outcome, its sheets, summary and manifest, and is not complete", async () => {
+    stillsRenderer.render = noChrome;
+    // The dry run's fakes: item 0 delivers, item 1's brief gate refuses, item 2 delivers.
+    const corpus = corpusOf([
+      { id: "adv-1", harmful: true },
+      { id: "adv-2", harmful: true },
+      { id: "adv-3", harmful: false },
+    ]);
+    const { ctx, runDir, rows } = dContext(corpus, { dry: true, argv: ["--runs", "1"] });
+    // A dry run is the check before the spend: it says the stills leg did not run, and exits 2.
+    expect(await partD.run(ctx)).toBe(2);
+    const outcomes = rows().filter((r) => r.type === "d-outcome") as unknown as DOutcome[];
+    expect(outcomes.map((o) => [o.briefId, o.outcome]).sort()).toEqual([
+      ["adv-1", "undetermined"],
+      ["adv-2", "refused_before_astra"],
+      ["adv-3", "set_delivered"],
+    ]);
+    expect(outcomes.find((o) => o.briefId === "adv-1")?.note).toContain(NO_RENDERER);
+    expect(ctx.manifest).toMatchObject({ complete: false, stop: `${NO_RENDERER}: Chrome did not open its debugging port within 15 s` });
+    const summary = readFileSync(join(runDir, "summary.txt"), "utf8");
+    expect(summary).toContain(`THE STILLS LEG DID NOT RUN (${NO_RENDERER}: Chrome did not open its debugging port within 15 s)`);
+    expect(summary).toContain("stills 1 (gpt-image");
+    const kinds = readdirSync(join(runDir, "keys")).map((f) => (JSON.parse(readFileSync(join(runDir, "keys", f), "utf8")) as { kind: string }).kind);
+    expect(kinds).toContain("d-persons");
   });
 
   it("with --escalate a brief's stills go one at a time, each gate reading the still prompts refused before it", async () => {

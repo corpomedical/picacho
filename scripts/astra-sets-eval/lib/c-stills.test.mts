@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { normaliseSetSpec, type SetSpec } from "../../../src/lib/sets/set-spec.ts";
 import type { Combined } from "./blind-sheet.mts";
 import type { ShotCharacter, ShotRecord } from "./shots.mts";
-import { blockedOf, cBars, cFromRuns, compositionItems, cRatingsOf, cShotsOf, planCShots, probeLines, ratingKey, type FramedSet } from "../parts/c.mts";
+import { blockedOf, cBars, cFromRuns, compositionItems, corpusAgainstA, cRatingsOf, cShotsOf, planCShots, probeLines, ratingKey, type FramedSet } from "../parts/c.mts";
 import { fixtureJson } from "../parts/simulate.mts";
 
 // Part C's plan of stills (the look arm included), and its bars wired to
@@ -192,6 +192,24 @@ describe("C's bars over real stills", () => {
     expect(r.blocked).toEqual(["flux:look"]);
     expect(r.bars.find((b) => b.id === "C-identity-flux")?.verdict).toBe("PASS");
     expect(r.reported.find((b) => b.id === "C-look-identity-flux")?.notes.join(" ")).toMatch(/look arm is BLOCKED/);
+  });
+});
+
+describe("C's corpus against the A run's", () => {
+  const now = { corpusHash: "h2", hashes: { "corpus.json": "c2", briefs: "b1", characters: "ch2", directions: "d1", baselines: "bl", "photo:loc/1.jpg": "p1", "photo:loc/2.jpg": "p2" } };
+  const a = { hash: "h1", hashes: { "corpus.json": "c1", briefs: "b1", characters: "ch1", directions: "d1", "photo:loc/1.jpg": "p0" } };
+
+  it("takes the A run's sets while the briefs are the same, and records what else changed since A", () => {
+    // baselines.json added (and listed in corpus.json), a character's photo or traits fixed, a location photo swapped: C reads those now.
+    expect(corpusAgainstA(a, now)).toEqual({ ok: true, differs: ["baselines", "characters", "corpus.json", "2 photo(s)"] });
+    expect(corpusAgainstA({ ...a, hash: "h2", hashes: now.hashes }, now)).toEqual({ ok: true, differs: [] });
+  });
+
+  it("refuses other briefs, and holds an A run with no file hashes to the whole corpus", () => {
+    expect(corpusAgainstA({ ...a, hashes: { ...a.hashes, briefs: "b0" } }, now)).toMatchObject({ ok: false, why: expect.stringContaining("briefs hash differs") });
+    expect(corpusAgainstA({ hash: "h2" }, now)).toEqual({ ok: true, differs: [] });
+    expect(corpusAgainstA({ hash: "h1" }, now).ok).toBe(false);
+    expect(corpusAgainstA(undefined, now).ok).toBe(false);
   });
 });
 
