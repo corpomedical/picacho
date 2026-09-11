@@ -232,7 +232,7 @@ export type CameraPose = { position: Vec3; target: Vec3; fovDeg: number };
 export type MatchNotes = {
   /** Wider than the stage's widest lens (90°): the widest is used. */
   fovClampedWide?: boolean;
-  /** Longer than the longest lens the stage keeps (20°): that is used, and the camera moves in. */
+  /** Longer than the longest lens the stage keeps (10°, the 135 mm chip): that is used, and the camera moves in. */
   fovClampedNarrow?: boolean;
   /** The factor the distance was multiplied by to keep the subject's size in frame. */
   distanceScaled?: number;
@@ -289,9 +289,10 @@ const finite = (v: unknown, fallback: number) => (typeof v === "number" && Numbe
  *   field of view. So the square takes the reference's field of view across
  *   its SHORTER side: a landscape reference's vertical, a portrait one's
  *   horizontal — 2·atan(aspect·tan(vfov/2)). Held to the field of view a
- *   saved camera keeps (SET_LIMITS 20–90°, normaliseSetLayout): a longer lens
- *   uses 20° and moves the camera in by tan(ref/2)/tan(10°), so the subject
- *   keeps its size in frame; a wider one uses 90°.
+ *   saved camera keeps (SET_LIMITS minLayoutFovDeg–maxFovDeg, 10–90°: the
+ *   135 mm chip to the widest; normaliseSetLayout): a longer lens uses 10°
+ *   and moves the camera in by tan(ref/2)/tan(5°), so the subject keeps its
+ *   size in frame; a wider one uses 90°.
  *
  *   Where. On the side the person is already shooting from — the bearing from
  *   the mark to the current camera, or the way the figure faces when the
@@ -356,9 +357,9 @@ export function solveMatchPose(
   const shortSide = aspect >= 1 ? vfov : (2 * Math.atan(aspect * Math.tan((vfov * DEG) / 2))) / DEG;
   let fovDeg = shortSide;
   let distanceScale = 1;
-  if (shortSide < SET_LIMITS.minFovDeg) {
-    fovDeg = SET_LIMITS.minFovDeg;
-    distanceScale = Math.tan((shortSide * DEG) / 2) / Math.tan((SET_LIMITS.minFovDeg * DEG) / 2);
+  if (shortSide < SET_LIMITS.minLayoutFovDeg) {
+    fovDeg = SET_LIMITS.minLayoutFovDeg;
+    distanceScale = Math.tan((shortSide * DEG) / 2) / Math.tan((SET_LIMITS.minLayoutFovDeg * DEG) / 2);
     notes.fovClampedNarrow = true;
     notes.distanceScaled = distanceScale;
   } else if (shortSide > SET_LIMITS.maxFovDeg) {
@@ -579,8 +580,9 @@ const SAME_PLACE_M = 0.05;
 /**
  * What the page's line says about a match: the camera's lens to the nearest
  * millimetre (lensForFov: a 24 mm frame height, the "35 mm" photographers
- * mean — the lens chips round it further, and do not reach 12 or 68 mm,
- * where the stage's 90° and 20° fall), its height to 0.1 m and its tilt in
+ * mean — the lens chips round it further; the stage's 90° is 12 mm, which no
+ * chip reaches, and its 10° is 137 mm, just past the 135 mm chip), its
+ * height to 0.1 m and its tilt in
  * whole degrees (+ up, − down), all from the pose the camera actually took
  * (`taken`), and which limits of the stage applied (`solved`, what
  * solveMatchPose answered).

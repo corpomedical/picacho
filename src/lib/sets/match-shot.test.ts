@@ -21,7 +21,7 @@ import {
   type ShotMatch,
 } from "./match-shot";
 import { SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS } from "./set-config";
-import { normaliseSetSpec } from "./set-spec";
+import { normaliseSetSpec, SET_LIMITS } from "./set-spec";
 
 // Match this shot (2026-09-11): what the model is asked, what its answer may
 // hold, and where the stage camera stands to match it — checked by
@@ -509,18 +509,25 @@ describe("solveMatchPose — the lens", () => {
   });
 
   it("longer than the stage's longest lens: the longest, moved in so the subject keeps its size in frame", () => {
-    // A 1.7 m figure 20 m away through a 10° lens, the camera at its middle.
-    const { pose, notes } = solve(10, 1.5, { subjectDistanceM: 20, cameraHeightM: 0.85 });
-    const factor = Math.tan(5 * DEG) / Math.tan(10 * DEG);
-    expect(pose.fovDeg).toBe(20);
+    // A 1.7 m figure 20 m away through a 6° lens (about 230 mm), the camera
+    // at its middle; the stage keeps down to 10°, the 135 mm chip's.
+    const { pose, notes } = solve(6, 1.5, { subjectDistanceM: 20, cameraHeightM: 0.85 });
+    const factor = Math.tan(3 * DEG) / Math.tan(5 * DEG);
+    expect(pose.fovDeg).toBe(SET_LIMITS.minLayoutFovDeg);
     expect(notes.fovClampedNarrow).toBe(true);
     expect(notes.distanceScaled).toBeCloseTo(factor, 9);
     expect(Math.hypot(pose.position[0] - MARK.x, pose.position[2] - MARK.z)).toBeCloseTo(20 * factor, 9);
     const cam = cameraAt(pose);
     const top = new THREE.Vector3(MARK.x, 1.7, MARK.z).project(cam).y;
     const foot = new THREE.Vector3(MARK.x, 0, MARK.z).project(cam).y;
-    const inReference = 1.7 / (2 * 20 * Math.tan(5 * DEG));
+    const inReference = 1.7 / (2 * 20 * Math.tan(3 * DEG));
     expect((top - foot) / 2).toBeCloseTo(inReference, 3);
+  });
+
+  it("keeps a long lens the stage has a chip for: a 135 mm reference is not clamped", () => {
+    const { pose, notes } = solve(fovForLens(135), 1.5);
+    expect(pose.fovDeg).toBeCloseTo(fovForLens(135), 9);
+    expect(notes.fovClampedNarrow).toBeUndefined();
   });
 });
 
@@ -669,7 +676,7 @@ describe("solveMatchPose — where the camera stands", () => {
       expect(finiteDeep(solved), label).toBe(true);
       const { position: p, target: t } = solved.pose;
       expect(Math.hypot(t[0] - p[0], t[1] - p[1], t[2] - p[2]), label).toBeGreaterThanOrEqual(0.5 - 1e-9);
-      expect(solved.pose.fovDeg, label).toBeGreaterThanOrEqual(20);
+      expect(solved.pose.fovDeg, label).toBeGreaterThanOrEqual(SET_LIMITS.minLayoutFovDeg);
       expect(solved.pose.fovDeg, label).toBeLessThanOrEqual(90);
     }
   });
@@ -981,8 +988,9 @@ describe("matchSummary", () => {
 
   it("names the lens to the millimetre, the height to 0.1 m and the tilt in whole degrees", () => {
     expect(summary(match(), pose(fovForLens(35), 1.23, -8.4), {})).toEqual({ lensMm: 35, heightM: 1.2, tiltDeg: -8, clamps: [] });
-    // The stage's two ends, which no lens chip sits on: 20° ≈ 68 mm, 90° = 12 mm.
+    // Lenses no chip sits on: 20° ≈ 68 mm, and the stage's two ends, 10° ≈ 137 mm and 90° = 12 mm.
     expect(summary(match(), pose(20, 0.46, 12.6), {})).toMatchObject({ lensMm: 68, heightM: 0.5, tiltDeg: 13 });
+    expect(summary(match(), pose(10, 1.6, 0), {}).lensMm).toBe(137);
     expect(summary(match(), pose(90, 2, -30), {}).lensMm).toBe(12);
     expect(summary(match(), pose(90, 3, 0.3), {}).tiltDeg).toBe(0);
     expect(Object.is(summary(match(), pose(90, 3, -0.3), {}).tiltDeg, -0)).toBe(false);

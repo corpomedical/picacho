@@ -8,6 +8,7 @@ import {
   specTextForGate,
   type SetSpec,
 } from "./set-spec";
+import { LENSES_MM, fovForLens, nearestLens } from "./build-scene";
 import rainyMarket from "./fixtures-rainy-market.json";
 
 // normaliseSetSpec is the trust boundary between what GPT-6 Astra writes
@@ -259,7 +260,20 @@ describe("the person's arrangement", () => {
   it("bounds a placed camera like a model's", () => {
     const l = normaliseSetLayout({ camera: { position: [99, 99, 99], target: [0, 1, 0], fovDeg: 1 } }, spec);
     expect(l?.camera?.position).toEqual([15, 10, 15]);
-    expect(l?.camera?.fovDeg).toBe(SET_LIMITS.minFovDeg);
+    expect(l?.camera?.fovDeg).toBe(SET_LIMITS.minLayoutFovDeg);
+  });
+
+  it("keeps every lens on the stage through a save, the long ones included", () => {
+    // A saved 85 or 135 mm used to come back from a reload at Astra's 20°
+    // floor, about a 68 mm view, with the 85 mm chip still lit.
+    for (const mm of LENSES_MM) {
+      const fovDeg = fovForLens(mm);
+      const l = normaliseSetLayout({ camera: { position: [0, 1.6, 6], target: [0, 1.4, 0], fovDeg } }, spec);
+      expect(l?.camera?.fovDeg, `${mm} mm`).toBe(fovDeg);
+      expect(nearestLens(l?.camera?.fovDeg ?? 0), `${mm} mm`).toBe(mm);
+    }
+    // Astra's own cameras keep the floor its instructions quote.
+    expect(SET_LIMITS.minLayoutFovDeg).toBeLessThan(SET_LIMITS.minFovDeg);
   });
 
   it("refuses what is not an arrangement", () => {

@@ -107,6 +107,14 @@ export const SET_LIMITS = {
   maxCameras: 6,
   minFovDeg: 20,
   maxFovDeg: 90,
+  /**
+   * The narrowest a person's own camera keeps (normaliseSetLayout): the
+   * stage's longest lens chip, 135 mm, is 10.16° (build-scene.ts fovForLens).
+   * Held at Astra's 20° until 2026-09-11, a saved 85 or 135 mm came back from
+   * a reload at about 68 mm. Astra's cameras keep minFovDeg, which its
+   * instructions quote, so what it is told is unchanged.
+   */
+  minLayoutFovDeg: 10,
   maxSkyColors: 3,
   /** A normalised spec cannot exceed this once serialised. */
   maxSpecBytes: 256 * 1024,
@@ -502,7 +510,7 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
     ];
     const target = vec3(c.target, -SET_LIMITS.maxCoordinate, SET_LIMITS.maxCoordinate, [mark.x, 1.4, mark.z]);
     if (Math.hypot(target[0] - position[0], target[1] - position[1], target[2] - position[2]) >= 0.1) {
-      camera = { position, target, fovDeg: num(c.fovDeg, SET_LIMITS.minFovDeg, SET_LIMITS.maxFovDeg, 40) };
+      camera = { position, target, fovDeg: num(c.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxFovDeg, 40) };
     }
   }
   return { markId, mark, camera };
