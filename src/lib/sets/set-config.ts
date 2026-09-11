@@ -105,14 +105,15 @@ export const SET_SHOTS_LIMIT = 48;
 // there. The frame rides a take as an ordinary chat attachment — recorded
 // on the generation, cleaned up when that take is deleted.
 //
-// The thumbnail's name carries a version: v3 cards are taken with the set's
-// own lift, fill light first (exposure.ts, 2026-09-11). A card at any other
-// path is older — black for a night set before any lift (no version), or
-// washed out by exposure alone (v2) — and is taken again, once, the next
-// time the set is opened (isCurrentSetThumb; saveSetThumbnail removes the old
-// file).
+// The thumbnail's name carries a version: v4 cards are taken with the set's
+// own lift, fill light first, measured without the grey figure (exposure.ts,
+// set-view.tsx, 2026-09-11). A card at any other path is older — black for a
+// night set before any lift (no version), washed out by exposure alone (v2),
+// or lifted less where the figure stood near the first mark (v3) — and is
+// taken again, once, the next time the set is opened (isCurrentSetThumb;
+// saveSetThumbnail removes the old file).
 export function setThumbPath(userId: string, setId: string): string {
-  return `${userId}/sets/${setId}.v3.jpg`;
+  return `${userId}/sets/${setId}.v4.jpg`;
 }
 export function isCurrentSetThumb(thumbPath: unknown, userId: string, setId: string): boolean {
   return thumbPath === setThumbPath(userId, setId);

@@ -13,10 +13,12 @@
 //
 // The lift is chosen once per set from what the set actually looks like:
 // the eye-height panorama from its first mark is measured and brightened
-// until its mean reaches a target. Neutral fill light is added first (up to
-// 16 times the set's own fill), and only what fill cannot reach — a night
-// sky filling half the view, a set with no fill light at all — is made up by
-// exposure. The first version lifted by exposure alone, like a camera
+// until its mean reaches a target. Neutral fill light is added first, until
+// the fill totals up to 16 times the set's own, and only what fill cannot
+// reach — a night sky filling half the view, a set with no fill light at
+// all — is made up by exposure. The set is measured without the grey figure
+// (set-view.tsx): the lift belongs to the set, not to where the figure was
+// left. The first version lifted by exposure alone, like a camera
 // (8c9fb44), and exposure scales the lamps with the shadows: on the podcast
 // studio the lamp-lit table went white and the walnut pale peach while the
 // far walls stayed dark. Fill lifts the shadows and barely touches what a

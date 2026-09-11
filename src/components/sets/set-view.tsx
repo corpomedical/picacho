@@ -248,12 +248,19 @@ export function SetView({
         // exposure if fill is not enough, until its layout reads; the view,
         // every snapshot and the thumbnail share it. A measurement that
         // cannot run leaves the set as built.
+        // The set is measured without the grey figure: standing where the
+        // person left it, a stride from the first mark, it filled part of the
+        // measured view and cut the podcast studio's lift from 16× to 11×
+        // (2026-09-11). The lift belongs to the set, not to where the figure is.
         fit();
         let lift = NO_LIFT;
+        standIn.group.visible = false;
         try {
           lift = liftSet(THREE, renderer, scene, spec, built.farPlane);
         } catch (err) {
           console.warn("SetView lighting measurement failed:", err);
+        } finally {
+          standIn.group.visible = true;
         }
         raf = requestAnimationFrame(loop);
 
