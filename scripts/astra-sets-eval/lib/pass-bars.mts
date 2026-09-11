@@ -490,7 +490,7 @@ export function barD(rows: readonly DRow[], persons: readonly PersonsItem[], con
 }
 
 // ---------------------------------------------------------------------------
-// E. Match (the network leg waits for Phase 2; the bar is ready)
+// E. Match (the network leg is not built yet; the bar is ready)
 // ---------------------------------------------------------------------------
 
 export type EItem = { builder: string; fovDeg: number | null; exifFovDeg: number | null; ratings: number[] };

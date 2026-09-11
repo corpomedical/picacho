@@ -60,6 +60,17 @@ export const SET_PHOTO_SAVE_FAILED = "Couldn't save the photo — try again.";
 export const SET_PHOTO_BUILD_FAILED =
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.";
 
+// Match this shot (docs 3.2, 2026-09-11). The picture's own problems (can't
+// be read, too small, too large, the wrong shape) are the photo sentences
+// above, from the same checks. A match takes nothing off any allowance, so
+// none of these says anything about one. One sentence for every refusal —
+// the picture check's, or OpenAI's refusing the read — as for a photo.
+export const SET_MATCH_REFUSED = "This picture can't be used to match a shot.";
+export const SET_MATCH_UNCHECKED = "We couldn't check this picture, so no shot was matched. Try again in a moment.";
+export const SET_MATCH_FAILED = "Astra couldn't read a camera from that picture — try another.";
+export const SET_MATCH_TOO_FAST = "You're matching shots quickly — try again in a little while.";
+export const SET_MATCH_TIMED_OUT = "Reading that shot's camera took too long — try again in a moment.";
+
 /**
  * A failed build's stored reason → the sentence shown for it. Only an
  * answer that came back unusable (invalid, or too long to finish) is a

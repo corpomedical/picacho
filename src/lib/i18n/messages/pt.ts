@@ -1875,6 +1875,20 @@ const pt = {
     comparePhoto: "Sua foto",
     compareNote:
       "A câmera 1 fica onde a foto foi tirada. O esboço é mais iluminado que a foto de propósito; o que deve coincidir é a disposição e o enquadramento.",
+    matchShot: "Igualar um plano",
+    matchHint:
+      "Só a câmera volta: números, sem espaço para palavras sobre ninguém na imagem. Não guardamos a imagem, e ela nunca vai para o modelo de imagem. Cerca de um minuto.",
+    matchReading: "Lendo a câmera do plano… cerca de um minuto",
+    matchedDown: "Igualado: uma lente de uns {mm} mm, câmera a {height} m de altura, inclinada {tilt}° para baixo.",
+    matchedUp: "Igualado: uma lente de uns {mm} mm, câmera a {height} m de altura, inclinada {tilt}° para cima.",
+    matchedLevel: "Igualado: uma lente de uns {mm} mm, câmera a {height} m de altura, nivelada.",
+    matchNoteWide: "A lente mais aberta do set — a da imagem é ainda mais aberta.",
+    matchNoteNarrow: "A lente mais longa que o set guarda — a da imagem é ainda mais longa, então a câmera chegou mais perto para manter o enquadramento.",
+    matchNoteTiltUp: "Inclinação limitada a {deg}° para cima.",
+    matchNoteTiltDown: "Inclinação limitada a {deg}° para baixo.",
+    matchNoteSubject: "O boneco fica dentro do enquadramento.",
+    matchNotePulledIn: "A câmera chegou mais perto — havia algo construído no caminho.",
+    matchReferenceAlt: "O plano que você igualou",
   },
   push: {
     videoReadyTitle: "Seu vídeo está pronto",
@@ -1991,6 +2005,11 @@ const pt = {
     setPhotoSaveFailed: "Não foi possível salvar a foto — tente de novo.",
     setPhotoBuildFailed:
       "Não foi possível construir este set a partir dessa foto, e a construção voltou para a sua cota. Uma foto que mostre mais do lugar pode funcionar melhor.",
+    setMatchRefused: "Esta imagem não pode ser usada para igualar um plano.",
+    setMatchUnchecked: "Não conseguimos verificar esta imagem, então nenhum plano foi igualado. Tente de novo em instantes.",
+    setMatchFailed: "O Astra não conseguiu ler uma câmera nessa imagem — tente outra.",
+    setMatchTooFast: "Você está igualando planos rápido demais — tente de novo daqui a pouco.",
+    setMatchTimedOut: "Ler a câmera desse plano demorou demais — tente de novo daqui a pouco.",
   },
   apiKeys: {
     title: "Chaves de API",

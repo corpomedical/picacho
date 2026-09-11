@@ -191,6 +191,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   return {
     error: null,
     identityBar,
+    // Match this shot rides the photo switch (docs 3.2), admins only; the
+    // page hides the chip otherwise, and matchSetShot checks both again.
+    matchOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
     set: {
       id: row.id as string,
       title: (row.title as string) ?? "",

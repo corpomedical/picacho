@@ -144,6 +144,41 @@ export const SET_PHOTO_NOTES_MAX_CHARS = 300;
 /** The long side of the first-camera view drawn beside the photo on the set page. */
 export const SET_COMPARE_PX = 1024;
 
+// MATCH THIS SHOT (docs 3.2, 2026-09-11; admins only, behind astra_photo_sets). One Astra
+// call reads a reference picture's camera; only numbers come back (match-shot.ts). The
+// research probe read layout and camera from one photo: 1,821 input / 1,608 output tokens
+// (285 reasoning), 41.8 s, $0.103, at the default effort — this asks for less (no layout).
+//
+//   worst case per match = 3,300 input tokens, all billed as cache writes: the instructions,
+//     schema and one line (2,860 characters ≈ 650 tokens at the 4.4 characters a token the set
+//     prefix measured, 8,132 → 1,822–1,843; match-shot.test.ts holds them inside this budget)
+//     + the picture (≤ 2,048 px, the photo build's image budget of ≈ 2,150) = ~2,800, with
+//     ~500 to spare; every match logs its usage
+//     + output to the 2,500-token cap
+//     = 3,300 × $12.50/1M + 2,500 × $50/1M = $0.04125 + $0.125 = $0.16625
+//   The burst brake: 10 an hour → 10 × $0.16625 = $1.6625 an hour per admin at most.
+// Nothing is stored and no allowance moves: admins only, bounded by the brake. Every answer's
+// usage is logged, and one past its input budget is flagged (match-actions.ts).
+export const SET_MATCH_EFFORT = "low" as const;
+export const SET_MATCH_MAX_OUTPUT_TOKENS = 2_500;
+export const SET_MATCH_INPUT_TOKENS = 3_300;
+export const SET_MATCH_PER_HOUR = 10;
+// The match waits for its answer inside the server action, which runs under the set page's
+// 300 s budget (app/app/sets/[id]/page.tsx maxDuration), after a picture check that can read
+// for up to ~100 s. The clock runs from the action's start: no read starts with under 45 s
+// left, no poll starts past 270 s, and the last one (15 s timeout) plus the cancel (10 s)
+// still ends inside the budget.
+export const SET_MATCH_POLL_MS = 2_500;
+export const SET_MATCH_DEADLINE_MS = 270_000;
+/** A read is not started with less than this left before the deadline: the one measured read took 41.8 s. */
+export const SET_MATCH_MIN_READ_MS = 45_000;
+
+// The stage camera's tilt (set-view.tsx). OrbitControls keeps the camera within 0.62π of
+// straight down from what it looks at, so a tilt past ~21° up would move the camera; the aim
+// arrows and a matched shot stop just short of it.
+export const SET_MAX_TILT_UP_DEG = 20;
+export const SET_MAX_TILT_DOWN_DEG = 80;
+
 /**
  * Whether a photo of this size can be built from, and the size it is sent at
  * (long side at most SET_PHOTO_MAX_SIDE_PX, never enlarged). Pure: the

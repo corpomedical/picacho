@@ -113,7 +113,7 @@ describe("the plans", () => {
     expect(ceilingOf(planProbeA(book)).ceilingUsd).toBeCloseTo(0.265, 9);
   });
 
-  it("E is blocked until Phase 2: its plan has no calls", () => {
+  it("E is blocked until its calls are built: its plan has no calls", () => {
     const plan = partE.plan({ repoRoot: REPO_ROOT } as RunContext);
     expect(plan).toMatchObject({ blocked: E_BLOCKED });
     expect("lines" in plan).toBe(false);

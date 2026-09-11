@@ -159,6 +159,13 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Couldn't save the photo — try again.": "setPhotoSaveFailed",
   "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.":
     "setPhotoBuildFailed",
+  // Match this shot (lib/sets/messages.ts, 2026-09-11) — the set page's line
+  // under the "Match a shot" chip.
+  "This picture can't be used to match a shot.": "setMatchRefused",
+  "We couldn't check this picture, so no shot was matched. Try again in a moment.": "setMatchUnchecked",
+  "Astra couldn't read a camera from that picture — try another.": "setMatchFailed",
+  "You're matching shots quickly — try again in a little while.": "setMatchTooFast",
+  "Reading that shot's camera took too long — try again in a moment.": "setMatchTimedOut",
 };
 
 // The prompt gate's answers (content-policy.ts refusalMessages). The composer

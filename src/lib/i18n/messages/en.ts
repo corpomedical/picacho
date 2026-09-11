@@ -1988,6 +1988,24 @@ const en = {
     comparePhoto: "Your photo",
     compareNote:
       "Camera 1 stands where the photo was taken. The sketch is lit brighter than the photo on purpose; the layout and framing are what should match.",
+    // Match this shot (2026-09-11). The hint says only what the answer's
+    // shape guarantees: numbers come back, with no text field to carry
+    // anything about a person (match-shot.ts); nothing is stored; a shot
+    // carries the stage frame, never the reference.
+    matchShot: "Match a shot",
+    matchHint:
+      "Only the camera comes back — numbers, with no room for words about anyone in the picture. We don't keep the picture, and it never goes to the image model. About a minute.",
+    matchReading: "Reading the shot's camera… about a minute",
+    matchedDown: "Matched: a lens near {mm} mm, camera {height} m high, tilted {tilt}° down.",
+    matchedUp: "Matched: a lens near {mm} mm, camera {height} m high, tilted {tilt}° up.",
+    matchedLevel: "Matched: a lens near {mm} mm, camera {height} m high, level.",
+    matchNoteWide: "The stage's widest lens — the picture's is wider.",
+    matchNoteNarrow: "The longest lens the stage keeps — the picture's is longer, so the camera moved closer to keep the framing.",
+    matchNoteTiltUp: "Tilt limited to {deg}° up.",
+    matchNoteTiltDown: "Tilt limited to {deg}° down.",
+    matchNoteSubject: "The figure is kept inside the frame.",
+    matchNotePulledIn: "The camera moved closer — something built was in the way.",
+    matchReferenceAlt: "The shot you matched",
   },
   // Push notifications — resolved PER DEVICE from push_tokens.locale by
   // lib/push/send.ts, because a push arrives while no screen is open to
@@ -2150,6 +2168,15 @@ const en = {
     setPhotoSaveFailed: "Couldn't save the photo — try again.",
     setPhotoBuildFailed:
       "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.",
+    // Match this shot (2026-09-11). setMatchRefused is every refusal of a
+    // reference picture — our picture check's or OpenAI's — so it names no
+    // reader and no category and never says try again; a match moves no
+    // allowance, so none of these mentions one.
+    setMatchRefused: "This picture can't be used to match a shot.",
+    setMatchUnchecked: "We couldn't check this picture, so no shot was matched. Try again in a moment.",
+    setMatchFailed: "Astra couldn't read a camera from that picture — try another.",
+    setMatchTooFast: "You're matching shots quickly — try again in a little while.",
+    setMatchTimedOut: "Reading that shot's camera took too long — try again in a moment.",
   },
   apiKeys: {
     title: "API keys",

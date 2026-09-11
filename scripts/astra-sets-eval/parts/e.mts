@@ -1,10 +1,12 @@
-// Part E: Match this shot. BLOCKED: src/lib/sets/match-shot.ts does not
-// exist, and this runner makes none of E's model calls yet. (Astra has taken
-// photos since Sets from a photo, 2026-09-11 — astra-request.ts
-// photoBuildRequest — so a photo set's camera 1 could be read against EXIF.)
-// What is built now: the ground truth (exif-fov.mts), the bar (pass-bars
-// barE), and the corpus check of match.json. The EXIF reader, both builders'
-// calls and E's rating sheet wait with the network leg.
+// Part E: Match this shot. BLOCKED: this runner makes none of E's model calls
+// yet. The product's side exists: src/lib/sets/match-shot.ts (2026-09-11) —
+// its instructions, schema and parser are what E will send to both builders
+// and read back. (Astra has also taken photos since Sets from a photo,
+// astra-request.ts photoBuildRequest, so a photo set's camera 1 could be
+// read against EXIF too.) What is built here: the ground truth
+// (exif-fov.mts), the bar (pass-bars barE), and the corpus check of
+// match.json. The EXIF reader, both builders' calls and E's rating sheet wait
+// with the network leg.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,7 +14,7 @@ import { writeManifest, writeSummary } from "../lib/context.mts";
 import { HarnessError } from "../lib/util.mts";
 import type { PartModule } from "./common.mts";
 
-export const E_BLOCKED = "BLOCKED: E's model calls are not built in this runner; match-shot.ts does not exist";
+export const E_BLOCKED = "BLOCKED: E's model calls are not built in this runner; match-shot.ts, which they will send, exists";
 
 /** The doc's own Match-this-shot figures, quoted with their line numbers (never retyped). */
 export function docFigures(repoRoot: string): string[] {

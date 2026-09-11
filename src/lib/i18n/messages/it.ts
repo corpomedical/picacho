@@ -1874,6 +1874,20 @@ const it = {
     comparePhoto: "La tua foto",
     compareNote:
       "La camera 1 sta dove è stata scattata la foto. Lo schizzo è volutamente più illuminato della foto; ciò che deve corrispondere sono la disposizione e l'inquadratura.",
+    matchShot: "Abbina un'inquadratura",
+    matchHint:
+      "Torna indietro solo la camera: numeri, senza spazio per parole su chi compare nell'immagine. Non conserviamo l'immagine e non arriva mai al modello di immagini. Circa un minuto.",
+    matchReading: "Lettura della camera dell'inquadratura… circa un minuto",
+    matchedDown: "Abbinata: un obiettivo di circa {mm} mm, camera a {height} m d'altezza, inclinata di {tilt}° verso il basso.",
+    matchedUp: "Abbinata: un obiettivo di circa {mm} mm, camera a {height} m d'altezza, inclinata di {tilt}° verso l'alto.",
+    matchedLevel: "Abbinata: un obiettivo di circa {mm} mm, camera a {height} m d'altezza, in bolla.",
+    matchNoteWide: "L'obiettivo più grandangolare del set — quello dell'immagine lo è ancora di più.",
+    matchNoteNarrow: "L'obiettivo più lungo che il set conserva — quello dell'immagine è ancora più lungo, quindi la camera si è avvicinata per mantenere l'inquadratura.",
+    matchNoteTiltUp: "Inclinazione limitata a {deg}° verso l'alto.",
+    matchNoteTiltDown: "Inclinazione limitata a {deg}° verso il basso.",
+    matchNoteSubject: "La sagoma resta dentro l'inquadratura.",
+    matchNotePulledIn: "La camera si è avvicinata — qualcosa di costruito era in mezzo.",
+    matchReferenceAlt: "L'inquadratura che hai abbinato",
   },
   push: {
     videoReadyTitle: "Il tuo video è pronto",
@@ -1990,6 +2004,11 @@ const it = {
     setPhotoSaveFailed: "Non è stato possibile salvare la foto — riprova.",
     setPhotoBuildFailed:
       "Non è stato possibile costruire questo set da quella foto, e la costruzione torna nella tua quota. Una foto che mostri più del luogo potrebbe funzionare meglio.",
+    setMatchRefused: "Questa immagine non può essere usata per abbinare un'inquadratura.",
+    setMatchUnchecked: "Non siamo riusciti a controllare questa immagine, quindi nessuna inquadratura è stata abbinata. Riprova tra un momento.",
+    setMatchFailed: "Astra non è riuscito a leggere una camera da quell'immagine — provane un'altra.",
+    setMatchTooFast: "Stai abbinando inquadrature molto in fretta — riprova tra un po'.",
+    setMatchTimedOut: "Leggere la camera di quell'inquadratura ha richiesto troppo tempo — riprova tra un momento.",
   },
   apiKeys: {
     title: "Chiavi API",

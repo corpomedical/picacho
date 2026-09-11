@@ -8,9 +8,20 @@ import { formatMsg } from "@/lib/i18n/format";
 import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet } from "@/lib/sets/actions";
+import { matchSetShot } from "@/lib/sets/match-actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
-import { SET_COMPARE_PX, SET_DIRECTION_MAX_CHARS, SET_FRAME_PX, SET_THUMB_PX } from "@/lib/sets/set-config";
+import { matchSummary, placeMatchedCamera, solveMatchPose, type MatchClamp } from "@/lib/sets/match-shot";
+import { SET_PHOTO_UNREADABLE } from "@/lib/sets/messages";
+import { preparePhoto } from "@/lib/sets/photo-client";
+import {
+  SET_COMPARE_PX,
+  SET_DIRECTION_MAX_CHARS,
+  SET_FRAME_PX,
+  SET_MAX_TILT_DOWN_DEG,
+  SET_MAX_TILT_UP_DEG,
+  SET_THUMB_PX,
+} from "@/lib/sets/set-config";
 import type { SetLayout, SetSpec, Vec3 } from "@/lib/sets/set-spec";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 
@@ -45,6 +56,12 @@ type StageApi = {
   frameFigure(): void;
   /** Pan and tilt: turn the camera where it stands, in degrees (left, up). */
   aim(leftDeg: number, upDeg: number): void;
+  /**
+   * Match this shot: the camera to a solved pose (match-shot.ts), pulled
+   * toward the figure if something built stands between them. Returns
+   * whether it was pulled in.
+   */
+  matchTo(pose: Pose): boolean;
 };
 
 const ACCENT = "#c8923a";
@@ -55,10 +72,9 @@ const AIM_STEP = 5;
 const FRAME_HEIGHT_M = 2.3;
 const FRAME_TARGET_Y = 0.95;
 const FRAME_EYE_Y = 1.45;
-// OrbitControls keeps the camera within 0.62π of straight down from what it
-// looks at, so a tilt past ~21° up would move the camera; stop just short.
-const MAX_TILT_UP_DEG = 20;
-const MAX_TILT_DOWN_DEG = 80;
+// How far a tilt may go (SET_MAX_TILT_UP_DEG, SET_MAX_TILT_DOWN_DEG) is in
+// set-config.ts: a matched shot is held to the same limits. The up limit
+// keeps a tilt inside the orbit's maxPolarAngle below.
 
 /** The newest finished still, the look's default. */
 function newestStill(shots: SetShot[]): string | null {
@@ -75,6 +91,7 @@ export function SetView({
   characters,
   initialShots,
   identityBar,
+  matchOn,
 }: {
   setId: string;
   spec: SetSpec;
@@ -86,8 +103,10 @@ export function SetView({
   characters: SetCharacter[];
   initialShots: SetShot[];
   identityBar: number;
+  /** Whether "Match a shot" is offered (admins, the photo switch on); the action checks again. */
+  matchOn: boolean;
 }) {
-  const { t } = useLocale();
+  const { t, locale } = useLocale();
   const s = t.sets;
 
   const startPose: Pose = initialLayout?.camera ?? {
@@ -130,6 +149,17 @@ export function SetView({
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
   const [cameraOneShot, setCameraOneShot] = useState<string | null>(null);
   const compareTakenRef = useRef(false);
+  // Match this shot (2026-09-11): the read in flight, what it said, and the
+  // reference itself — held in this page's memory for the note beside the
+  // line, never saved.
+  const [matching, setMatching] = useState(false);
+  const [matchError, setMatchError] = useState("");
+  const [matched, setMatched] = useState<{
+    photo: string;
+    summary: ReturnType<typeof matchSummary>;
+    pulledIn: boolean;
+  } | null>(null);
+  const matchFileRef = useRef<HTMLInputElement | null>(null);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
@@ -432,8 +462,8 @@ export function SetView({
             if (reach < 1e-6) return;
             const yaw = Math.atan2(view.x, view.z) + (leftDeg * Math.PI) / 180;
             const pitch = Math.min(
-              (MAX_TILT_UP_DEG * Math.PI) / 180,
-              Math.max((-MAX_TILT_DOWN_DEG * Math.PI) / 180, Math.asin(view.y / reach) + (upDeg * Math.PI) / 180),
+              (SET_MAX_TILT_UP_DEG * Math.PI) / 180,
+              Math.max((-SET_MAX_TILT_DOWN_DEG * Math.PI) / 180, Math.asin(view.y / reach) + (upDeg * Math.PI) / 180),
             );
             controls.target.set(
               camera.position.x + reach * Math.cos(pitch) * Math.sin(yaw),
@@ -441,6 +471,21 @@ export function SetView({
               camera.position.z + reach * Math.cos(pitch) * Math.cos(yaw),
             );
             controls.update();
+          },
+          matchTo(pose) {
+            // frameFigure's room, cast the other way: from the figure's eye
+            // toward the solved camera, stopping short of anything built in
+            // between (match-shot.ts placeMatchedCamera). Aimed along the
+            // solved direction, so a pulled-in camera keeps the framing, and
+            // within the orbit's reach, so the controls never move it to fit.
+            const p = standIn.group.position;
+            const placed = placeMatchedCamera(THREE, built.root, [p.x, FRAME_EYE_Y, p.z], pose, controls.maxDistance);
+            camera.position.set(...placed.position);
+            controls.target.set(...placed.target);
+            camera.fov = pose.fovDeg;
+            camera.updateProjectionMatrix();
+            controls.update();
+            return placed.pulledIn;
           },
         };
 
@@ -585,6 +630,83 @@ export function SetView({
     setCameraId(null);
     scheduleSave();
   }
+
+  // Match this shot: the reference is prepared here (upright, at most 2048 px,
+  // a JPEG with no metadata — photo-client.ts), its camera is read on the
+  // server, and only numbers come back. The camera is placed from them
+  // against the figure's mark and the camera as they are when the answer
+  // lands, and saved like any camera move.
+  async function pickReference(file: File | undefined) {
+    if (!file || matching || !ready) return;
+    setMatchError("");
+    setMatched(null);
+    setMatching(true);
+    try {
+      let prepared: Awaited<ReturnType<typeof preparePhoto>>;
+      try {
+        prepared = await preparePhoto(file);
+      } catch {
+        setMatchError(SET_PHOTO_UNREADABLE);
+        return;
+      }
+      if (!prepared.ok) {
+        setMatchError(prepared.error);
+        return;
+      }
+      let res: Awaited<ReturnType<typeof matchSetShot>>;
+      try {
+        res = await matchSetShot(setId, { photoDataUri: prepared.dataUri });
+      } catch (err) {
+        const stale = isStaleDeployError(err);
+        setMatchError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+        if (stale) setTimeout(() => window.location.reload(), 1800);
+        return;
+      }
+      if (res.error !== null) {
+        setMatchError(res.error);
+        return;
+      }
+      const api = apiRef.current;
+      if (!api) {
+        setMatchError(s.loadFailed);
+        return;
+      }
+      const solved = solveMatchPose(res.match, {
+        mark: layoutRef.current.mark,
+        current: api.pose(),
+        referenceAspect: prepared.width / prepared.height,
+        bounds: spec.bounds,
+      });
+      const pulledIn = api.matchTo(solved.pose);
+      setFovDeg(solved.pose.fovDeg);
+      setCameraId(null);
+      scheduleSave();
+      // Said from where the camera actually stands, after any pull toward the figure.
+      setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, api.pose(), solved.notes), pulledIn });
+    } finally {
+      setMatching(false);
+    }
+  }
+
+  const clampNotes: Record<MatchClamp, string> = {
+    wide: s.matchNoteWide,
+    narrow: s.matchNoteNarrow,
+    tiltUp: formatMsg(s.matchNoteTiltUp, { deg: SET_MAX_TILT_UP_DEG }),
+    tiltDown: formatMsg(s.matchNoteTiltDown, { deg: SET_MAX_TILT_DOWN_DEG }),
+    subject: s.matchNoteSubject,
+  };
+  const matchedLine = (() => {
+    if (!matched) return null;
+    const { lensMm, heightM, tiltDeg, clamps } = matched.summary;
+    const vars = {
+      mm: lensMm,
+      height: new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(heightM),
+      tilt: Math.abs(tiltDeg),
+    };
+    const line = formatMsg(tiltDeg < 0 ? s.matchedDown : tiltDeg > 0 ? s.matchedUp : s.matchedLevel, vars);
+    const notes = [...clamps.map((c) => clampNotes[c]), ...(matched.pulledIn ? [s.matchNotePulledIn] : [])];
+    return { line, notes: notes.join(" ") };
+  })();
 
   // THE price, from the function the server charges with: one image take.
   const quote = quoteSend({
@@ -786,7 +908,66 @@ export function SetView({
             <button type="button" onClick={frameFigure} disabled={!ready} className={chip(false)}>
               {s.frameFigure}
             </button>
+            {matchOn && (
+              <>
+                <input
+                  ref={matchFileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // Cleared, so choosing the same picture again still counts as a choice.
+                    e.target.value = "";
+                    void pickReference(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => matchFileRef.current?.click()}
+                  disabled={!ready || matching}
+                  className={chip(false)}
+                >
+                  {s.matchShot}
+                </button>
+              </>
+            )}
           </div>
+          {/* Match this shot: the hint, the read in progress, or what it matched. */}
+          {matchOn && (
+            <div className="space-y-1.5 sm:pl-[4.5rem]">
+              {matching ? (
+                <p className="text-xs text-atelier-muted" aria-live="polite">
+                  {s.matchReading}
+                </p>
+              ) : matched && matchedLine ? (
+                <div className="flex items-start gap-2.5" aria-live="polite">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={matched.photo}
+                    alt={s.matchReferenceAlt}
+                    className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-atelier-rule object-cover"
+                  />
+                  <div className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed">
+                    <p className="text-atelier-ink/85">{matchedLine.line}</p>
+                    {matchedLine.notes && <p className="text-atelier-muted">{matchedLine.notes}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMatched(null)}
+                    aria-label={t.common.dismiss}
+                    title={t.common.dismiss}
+                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm text-atelier-muted transition-colors hover:text-atelier-ink"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : (
+                <p className="max-w-2xl text-xs text-atelier-muted">{s.matchHint}</p>
+              )}
+              {matchError && <p className="text-xs text-red-600">{localizeServerText(matchError, t)}</p>}
+            </div>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.lensLabel}</span>
             {LENSES_MM.map((mm) => (

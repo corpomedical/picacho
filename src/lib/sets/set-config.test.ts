@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  SET_MATCH_DEADLINE_MS,
+  SET_MATCH_EFFORT,
+  SET_MATCH_INPUT_TOKENS,
+  SET_MATCH_MAX_OUTPUT_TOKENS,
+  SET_MATCH_MIN_READ_MS,
+  SET_MATCH_PER_HOUR,
+  SET_MATCH_POLL_MS,
   SET_PHOTO_MAX_ASPECT,
   SET_PHOTO_MIN_SIDE_PX,
   isCurrentSetThumb,
@@ -8,6 +15,7 @@ import {
   setThumbPath,
 } from "./set-config";
 import { SET_PHOTO_TOO_SMALL } from "./messages";
+import { worstCaseAstraUsd } from "../astra/prices";
 
 // A set's card is taken again when it predates the set's current lift
 // (exposure.ts): the path carries the version, and any other path is stale.
@@ -101,5 +109,28 @@ describe("photoFit", () => {
 
   it("says the smallest side it accepts, in the sentence the person reads", () => {
     expect(SET_PHOTO_TOO_SMALL).toContain(String(SET_PHOTO_MIN_SIDE_PX));
+  });
+});
+
+describe("Match this shot's ceiling (2026-09-11)", () => {
+  it("matches the arithmetic in set-config.ts: $0.16625 a match, $1.6625 an hour at the brake", () => {
+    // 3,300 × $12.50/1M + 2,500 × $50/1M = $0.04125 + $0.125
+    const perMatch = worstCaseAstraUsd(SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS);
+    expect(perMatch).toBeCloseTo(0.16625, 9);
+    expect(SET_MATCH_PER_HOUR * perMatch).toBeCloseTo(1.6625, 9);
+    expect(SET_MATCH_EFFORT).toBe("low");
+  });
+
+  it("stops waiting with room left in the set page's 300 s budget", () => {
+    // The last poll starts before the deadline and times out at 15 s; the
+    // cancel after it at 10 s (providers/astra.ts).
+    expect(SET_MATCH_DEADLINE_MS + 15_000 + 10_000).toBeLessThan(300_000);
+    expect(SET_MATCH_POLL_MS).toBeGreaterThanOrEqual(1_000);
+  });
+
+  it("starts a read only with time for one to come back, after a picture check of up to ~100 s", () => {
+    // The research read took 41.8 s; the picture check reads for 10–100 s.
+    expect(SET_MATCH_MIN_READ_MS).toBeGreaterThan(41_800);
+    expect(SET_MATCH_DEADLINE_MS - SET_MATCH_MIN_READ_MS).toBeGreaterThan(100_000);
   });
 });

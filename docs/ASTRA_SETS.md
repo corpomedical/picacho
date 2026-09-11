@@ -1,6 +1,6 @@
 # Astra Sets
 
-Date: 2026-09-10. Status: Phase 0 and Phase 1 are built and switched off (flag `astra_sets`, admins only once on). Of Phase 2, Sets from a photo is built and switched off (flag `astra_photo_sets`, 2026-09-11), and the set finisher is built (a one-minute cron, 2026-09-11); the rest of Phase 2, and Phase 3, are not built. Evidence comes from four places:
+Date: 2026-09-10. Status: Phase 0 and Phase 1 are built and switched off (flag `astra_sets`, admins only once on). Of Phase 2, Sets from a photo and Match this shot are built and switched off (flag `astra_photo_sets`, 2026-09-11), and the set finisher is built (a one-minute cron, 2026-09-11); the rest of Phase 2 (credits), and Phase 3, are not built. Evidence comes from four places:
 - 13 live responses from `gpt-6-astra` on Picacho's own key, recorded 2026-09-10. Total spend was $1.297.
 - OpenAI's documentation.
 - Competitors' own pages.
@@ -36,7 +36,7 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 
 **Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/applied/2026-09-10/astra-sets.sql` (run in production 2026-09-11; flags confirmed off, tables present, anonymous key refused).
 
-**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/applied/2026-09-11/astra-photo-sets.sql`, run in production 2026-09-11: both photo columns present, the switch off). Worst case $1.81625 a build (`set-config.ts`). Match this shot and credits are not built; the finisher is (a one-minute cron instead of the planned webhook, 2026-09-11 — see Phase 2). Photos with people are unmeasured (eval D).
+**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/applied/2026-09-11/astra-photo-sets.sql`, run in production 2026-09-11: both photo columns present, the switch off). Worst case $1.81625 a build (`set-config.ts`). Match this shot is built behind the same switch (no SQL; worst case $0.16625 a match, no live read made yet; see 3.2). The finisher is built (a one-minute cron instead of the planned webhook, 2026-09-11 — see Phase 2); credits are not. Photos with people are unmeasured (eval D).
 
 **Three live photo builds before shipping (2026-09-11)**, through the repo's own code (photo.ts re-encode, astra-request.ts, providers/astra.ts, the normaliser, closure.ts), with no database: one people-free bakery photo made by GPT Image, 1536×1024, sent inline at detail high.
 
@@ -371,10 +371,13 @@ ends in a failed build: the first set is kept and delivered).
 3. **Compare.** The photo and the first-camera snapshot appear side by side, so the user can see whether they match before spending on a shot.
 4. **Shoot.** Same as Feature 1.
 
-**User flow, Match this shot**
-1. On any Set, or on today's Angle Stage proxy, choose "Match a shot" and pick a reference still (a film frame or a photo). It is gated the same way.
-2. Astra returns camera height, pitch, yaw, focal length or field of view, distance to the subject, and framing. Nothing about any person in the image is read.
-3. The stage camera snaps to that position relative to the mark.
+**User flow, Match this shot** (built 2026-09-11, on a ready Set, admins only behind `astra_photo_sets`; not on the Angle Stage)
+1. "Match a shot", beside "Frame the figure", takes a reference still (a film frame or a photo). The browser prepares it like a set's photo (upright, at most 2,048 px, a JPEG with no metadata); the server re-encodes it, applies the same size and shape limits, and runs the same picture check a photo set's photo gets (strict lane) before Astra sees it. Burst brake: 10 an hour.
+2. One Astra call (`src/lib/sets/match-shot.ts`, effort `low`, 2,500 output tokens) reads the CAMERA: height above the ground, tilt, vertical field of view, horizontal distance to the main subject, where that subject sits across the frame, a framing and a confidence. **The answer has no text fields**: every field is a number, a boolean or an enum, so it structurally cannot carry a description of anyone; the instructions also say never to identify or describe a person. Nothing is stored — no row, no upload: the picture exists only in that request, the logs carry the read's usage (and a refusal's reason and readings, as for every picture check), never the picture, and a shot taken afterwards carries the stage frame and the look, never the reference. The action waits for the answer (about a minute) inside the set page's 300 s budget and cancels a read still running at 270 s.
+3. The page places the camera (`solveMatchPose`), relative to the stand-in's mark, on the side the person is already shooting from (or the way the figure faces, when the camera stands on the mark), at the read height and distance.
+   - **Onto the square still.** The still is the centre square of the stage canvas, which on a landscape canvas spans the camera's vertical field of view. So the square takes the reference's field of view across its shorter side (a landscape picture's height, a portrait one's width), and the subject's position is mapped into the square (a 2.39:1 frame is 2.39 squares wide). The camera turns away from the mark until the mark lands where the subject sat — with a tilt that turn is wider than at level, tan θ = (2x − 1)·tan(fov/2)/cos(tilt) — checked in the tests by projecting through a real three.js camera.
+   - **Clamped, and why.** The lens to 20–90°, the field of view a saved camera keeps (`normaliseSetLayout`; a longer lens moves the camera in by tan(ref/2)/tan(10°) so the subject keeps its size); the tilt to −80°…+20°, because OrbitControls would move a camera tilted further up; the subject's place to 15% inside either edge, so the figure stays in the still; the height and distance to where a saved layout keeps a camera. If something built stands between the figure and the camera, the camera is pulled toward the figure along that line, 0.3 m short of it, and keeps the solved direction, so the figure stays where the subject sat (aiming at the solved target point instead lost the figure in a local check). The page says each of these under a line such as "Matched: a lens near 35 mm, camera 1.2 m high, tilted 8° down."
+4. The camera is saved like any camera move, and the person shoots as usual.
 
 **Engines, identity and gates:** same as Feature 1. The only addition is the input-image gate on uploaded photos.
 
@@ -494,7 +497,7 @@ Access: flag `astra_sets` plus an admin check; `ASTRA_DISABLED=1` is checked bef
 
 Flag: `astra_photo_sets`.
 
-- **Image input and camera block.** Image input in `providers/astra.ts`, a camera block in `set-spec.ts`, and `src/lib/sets/match-shot.ts` with tests.
+- **Image input and camera block: built (2026-09-11).** Image input in `providers/astra.ts` (inline data URLs at detail high, never a link), used by photo builds and by Match this shot. No camera block went into `set-spec.ts`: a match has its own strict, text-free schema, and the camera it becomes is an ordinary saved layout camera. `src/lib/sets/match-shot.ts` (instructions, schema, request, parser, `solveMatchPose`) with tests; `src/lib/sets/match-actions.ts` is the action.
 - **Input-image gate** on uploads, via `output-policy.ts:717`.
 - **The finisher: built 2026-09-11, as a one-minute cron instead of the planned webhook.** The plan was `src/app/api/webhooks/openai/route.ts`, verified with Standard Webhooks signatures and `OPENAI_WEBHOOK_SECRET`, fetching the result on `response.completed` within the roughly 10-minute window, with the endpoint subscribed in the OpenAI dashboard. What was built instead is `src/app/api/cron/sets/route.ts` on a `* * * * *` Vercel Cron (`vercel.json`), which runs the same tick the page runs (`advanceSetBuild`, `src/lib/sets/build-tick.ts`) for every set still building. Why:
   - no OpenAI dashboard subscription and no new secret for the operator;
@@ -522,7 +525,7 @@ Flag: `astra_previz`.
 
 ### The eval (operator-run; 3 runs each; blind corpus written by someone who has not seen the prompts)
 
-**The runner is built** (`scripts/astra-sets-eval/`, 2026-09-11; its `README.md` is the operator's guide). Every command is a dry run unless it says `--spend --max-usd <n>`: nothing is called, the plan and its ceiling are printed, and each run ends with `network: 0 live calls, 0 blocked`. A real run reserves every call at its worst case before sending it, stops at the ceiling, and keeps an append-only ledger. It never touches the database, and imports the product's own modules (the model id included) rather than copying them. Built: A, B, D's build leg, the Canary and `report`, which says whether A–D pass at `SET_BUILD_EFFORT`. Not built yet: A's and B's photo arm (photo builds landed after the runner was written), C's engine leg (the stills and their identity scores) and shots carrying a look, D's stills leg and its photos with people, and E's model calls. The corpus template is format-only; the real corpus must be written blind, outside the repo.
+**The runner is built** (`scripts/astra-sets-eval/`, 2026-09-11; its `README.md` is the operator's guide). Every command is a dry run unless it says `--spend --max-usd <n>`: nothing is called, the plan and its ceiling are printed, and each run ends with `network: 0 live calls, 0 blocked`. A real run reserves every call at its worst case before sending it, stops at the ceiling, and keeps an append-only ledger. It never touches the database, and imports the product's own modules (the model id included) rather than copying them. Built: A, B, D's build leg, the Canary and `report`, which says whether A–D pass at `SET_BUILD_EFFORT`. Not built yet: A's and B's photo arm (photo builds landed after the runner was written), C's engine leg (the stills and their identity scores) and shots carrying a look, D's stills leg and its photos with people, and E's model calls (`src/lib/sets/match-shot.ts`, whose instructions and schema they will send, now exists). The corpus template is format-only; the real corpus must be written blind, outside the repo.
 
 | Part | What | Pass bar |
 |---|---|---|

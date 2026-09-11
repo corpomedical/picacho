@@ -23,6 +23,7 @@ import { SetView } from "@/components/sets/set-view";
 
 // A shot awaits runGeneration inside the server action, which runs under
 // THIS route's function budget — the same 300 s the generate page declares.
+// So does Match this shot, which waits for its read (set-config.ts times it).
 export const maxDuration = 300;
 
 export default async function SetPage({ params }: { params: Promise<{ id: string }> }) {
@@ -85,6 +86,7 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
           characters={data.characters}
           initialShots={data.shots}
           identityBar={data.identityBar}
+          matchOn={data.matchOn}
         />
       )}
     </div>

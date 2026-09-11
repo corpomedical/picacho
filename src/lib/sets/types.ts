@@ -74,6 +74,8 @@ export type SetPageData =
       error: null;
       /** The identity score under which a still is flagged (the gate's bar). */
       identityBar: number;
+      /** Whether this person may match a shot here (admins, flag astra_photo_sets); the action checks again. */
+      matchOn: boolean;
       set: SetDetail;
       shots: SetShot[];
       characters: SetCharacter[];
