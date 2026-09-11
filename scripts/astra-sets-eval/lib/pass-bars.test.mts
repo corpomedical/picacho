@@ -306,8 +306,45 @@ describe("E: every read counts", () => {
     expect(barOf([...astra, ...mini], "E-fov")).toMatchObject({ verdict: "PASS", value: "80.0%", n: 10 });
     expect(bars.find((b) => b.id === "E-rating")?.verdict).toBe("PASS");
     expect(bars.find((b) => b.id === "E-route")).toMatchObject({ verdict: "REPORTED", value: "route: astra" });
-    // Mini's own shares are reported beside Astra's, never a bar of their own.
-    expect(bars.filter((b) => b.id.endsWith("-mini")).map((b) => b.verdict)).toEqual(["REPORTED", "REPORTED"]);
+    // Match runs on Astra: mini's shares are reported beside Astra's, each with its measured verdict.
+    const minis = bars.filter((b) => b.id.endsWith("-mini"));
+    expect(minis.map((b) => b.verdict)).toEqual(["REPORTED", "REPORTED"]);
+    expect(minis.map((b) => b.notes)).toEqual([["measured: FAIL"], ["measured: FAIL"]]);
+    expect(minis[0].label).toMatch(/\(Match runs on Astra\)$/);
+  });
+
+  it("the bars are held by the builder Match runs on: mini's on route mini, even where Astra passes both", () => {
+    // Astra FOV 68/80 = 85%, rating 63/90 = 70%: both pass. Mini FOV 72/80 = 90%, rating 36/90 = 40%.
+    const astra = [...times(63, () => read("astra", 41, 5)), ...times(5, () => read("astra", 41, 2)), ...times(12, () => read("astra", 60, 2)), ...times(10, () => read("astra", 41, 2, null))];
+    const minis = [...times(36, () => read("mini", 41, 5)), ...times(36, () => read("mini", 41, 2)), ...times(8, () => read("mini", 60, 2)), ...times(10, () => read("mini", 41, 2, null))];
+    const bars = barE([...astra, ...minis]);
+    const of = (id: string) => bars.find((b) => b.id === id) as BarResult;
+    // Astra cannot be above mini on FOV (85% ≤ 90%): Match runs on mini, and mini fails the rating bar.
+    expect(of("E-route")).toMatchObject({ verdict: "REPORTED", value: "route: mini" });
+    expect(of("E-fov-mini")).toMatchObject({ verdict: "PASS", value: "90.0%" });
+    expect(of("E-rating-mini")).toMatchObject({ verdict: "FAIL", value: "40.0%" });
+    expect(of("E-rating-mini").arithmetic).toMatch(/^36\/90 = 40\.0% < 70%/);
+    // Astra's own passes are reported, never the bars that decide.
+    for (const id of ["E-fov", "E-rating"]) {
+      expect(of(id)).toMatchObject({ verdict: "REPORTED", notes: ["measured: PASS"] });
+      expect(of(id).label).toMatch(/\(Match runs on gpt-5\.4-mini\)$/);
+    }
+  });
+
+  it("with the route open, a bar decides only where both builders agree", () => {
+    const astra = [...times(9, () => read("astra", 41, 5)), read("astra", 70, 2)];
+    // Mini's two missing reads keep the route open; both builders pass both bars whatever they would have done.
+    const agree = barE([...astra, ...times(8, () => read("mini", 41, 5)), ...times(2, () => missing("mini"))]);
+    expect(agree.find((b) => b.id === "E-route")?.value).toBe("route: ?");
+    expect(agree.find((b) => b.id === "E-fov")).toMatchObject({ verdict: "PASS", notes: ["gpt-5.4-mini's: PASS too, so the open route cannot change it"] });
+    expect(agree.find((b) => b.id === "E-rating")?.verdict).toBe("PASS");
+    expect(agree.filter((b) => b.id.endsWith("-mini")).map((b) => b.verdict)).toEqual(["REPORTED", "REPORTED"]);
+    // Four missing: mini's bars could go either way, Astra's pass; the route decides whose count, so neither does yet.
+    const differ = barE([...astra, ...times(6, () => read("mini", 41, 5)), ...times(4, () => missing("mini"))]);
+    expect(differ.find((b) => b.id === "E-route")).toMatchObject({ verdict: "UNDETERMINED", value: "route: ?" });
+    expect(differ.find((b) => b.id === "E-fov")).toMatchObject({ verdict: "REPORTED", notes: ["measured: PASS"] });
+    expect(differ.find((b) => b.id === "E-fov-mini")).toMatchObject({ verdict: "REPORTED", notes: ["measured: UNDETERMINED"] });
+    expect(differ.filter((b) => b.verdict !== "REPORTED").map((b) => b.id)).toEqual(["E-route"]);
   });
 
   it("a photo's three reads are three trials: no median smooths the bad one away", () => {

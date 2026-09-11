@@ -24,9 +24,10 @@
 //
 // MATCH PHOTOS (E, match.json): the reference pictures Match this shot
 // reads. Every one goes through the picture check (OpenAI and Anthropic)
-// and to both builders (OpenAI), so its licence must allow both, and one
-// with people needs everyone recognisable to have consented, or the people
-// to be AI-generated, with consent.covers naming both (MATCH_PHOTO_RECIPIENTS).
+// and to both builders (OpenAI), so its licence must allow both, and every
+// one is laid on both raters' sheets. One with people needs everyone
+// recognisable to have consented, or the people to be AI-generated, with
+// consent.covers naming both companies and the raters (MATCH_PEOPLE_AUDIENCE).
 // Their pictures are hashed into the corpus hash like the others, and no
 // picture serves two rows in any photo file.
 
@@ -73,6 +74,14 @@ export const MATCH_PHOTOS_WANTED = 30;
  * D's photos with people.
  */
 export const MATCH_PHOTO_RECIPIENTS = PEOPLE_PHOTO_RECIPIENTS;
+/**
+ * Everyone who sees a match photo with people: the two companies it is sent
+ * to, and the eval's two raters, whose sheets lay every photo beside the
+ * stage views read from it (parts/e.mts). Its consent.covers must name each.
+ * D's photos with people reach no sheet (its persons sheet shows Astra's
+ * words only), so their consent names the companies alone.
+ */
+export const MATCH_PEOPLE_AUDIENCE = [...MATCH_PHOTO_RECIPIENTS, "raters"] as const;
 
 export type Brief = { id: string; category: Category; brief: string; template: boolean };
 export type AdversarialRow = { id: string; category: AdvCategory; harmful: boolean; brief: string; template: boolean };
@@ -412,10 +421,12 @@ export function validateCorpus(
   // How a photo with people may be sent, for D's photos with people and E's
   // match photos that show anyone: everyone recognisable consented (with the
   // date), or the people are AI-generated; either way consent.covers names
-  // every company that reads the photo. A template row keeps its
-  // placeholders (the date, what the consent covers): --spend refuses the
-  // row whole, so only a real row is held to them.
+  // everyone who sees the photo — the companies that read it, and for a
+  // match photo the raters too. A template row keeps its placeholders (the
+  // date, what the consent covers): --spend refuses the row whole, so only a
+  // real row is held to them.
   const consentOf = (key: "peoplePhotos" | "match", r: Record<string, unknown>, i: number): PhotoConsent | null => {
+    const audience: readonly string[] = key === "match" ? MATCH_PEOPLE_AUDIENCE : PEOPLE_PHOTO_RECIPIENTS;
     const consent = isRecord(r.consent) ? r.consent : null;
     const kind = consent?.kind;
     const template = isTemplateRow(r);
@@ -425,9 +436,10 @@ export function validateCorpus(
     if (kind === "consented" && (on === null || !DATE.test(on))) problems.push(`${key}[${i}]: consented people need consent.confirmedOn (YYYY-MM-DD)`);
     else if (on !== null && !template && !isCalendarDate(on)) problems.push(`${key}[${i}]: consent.confirmedOn ${on} is not a date (YYYY-MM-DD, or leave it out for AI-generated people)`);
     const covers = (Array.isArray(consent?.covers) ? consent.covers : []).filter((x): x is string => typeof x === "string").map((x) => x.trim());
-    const uncovered = PEOPLE_PHOTO_RECIPIENTS.filter((p) => !covers.some((c) => c.toLowerCase() === p.toLowerCase()));
+    const uncovered = audience.filter((p) => !covers.some((c) => c.toLowerCase() === p.toLowerCase()));
     if (uncovered.length && !template) {
-      problems.push(`${key}[${i}]: consent.covers must name ${PEOPLE_PHOTO_RECIPIENTS.join(" and ")}, both of which read the photo (missing: ${uncovered.join(", ")})`);
+      const named = `${audience.slice(0, -1).join(", ")} and ${audience[audience.length - 1]}`;
+      problems.push(`${key}[${i}]: consent.covers must name ${named}, ${audience.length === 2 ? "both of which read" : "everyone who sees"} the photo (missing: ${uncovered.join(", ")})`);
     }
     return kind === "ai-generated" || kind === "consented" ? { kind, covers, confirmedBy: String(consent?.confirmedBy ?? ""), confirmedOn: on } : null;
   };

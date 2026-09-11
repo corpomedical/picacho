@@ -15,7 +15,7 @@
     "containsPeople": true,
     "consent": {
       "kind": "ai-generated",
-      "covers": ["<<FORMAT ONLY — every service the consent (or the picture's licence) covers: OpenAI and Anthropic>>"],
+      "covers": ["<<FORMAT ONLY — everyone the consent (or the picture's licence) covers: OpenAI, Anthropic and raters>>"],
       "confirmedBy": "<<FORMAT ONLY — your pseudonym>>",
       "confirmedOn": "0000-00-00"
     }

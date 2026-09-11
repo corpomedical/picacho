@@ -570,9 +570,10 @@ export function reportDPhotos(rows: readonly DPhotoRow[]): BarResult {
  *             view is held to the photo's EXIF, and its stage view is rated
  *   miss      the builder answered with nothing usable — unparsable, refused,
  *             cut off at the output cap, or still reading at the product's
- *             deadline: inside both denominators, never within ±20%, never a
- *             rating of 4
- *   missing   nothing to judge the builder by: never sent, never answered, or
+ *             deadline (on either builder: transports.mts): inside both
+ *             denominators, never within ±20%, never a rating of 4
+ *   missing   nothing to judge the builder by: never sent, never answered
+ *             (a deadline that passed with no word from OpenAI included), or
  *             a failure on OpenAI's side (a budget or Ctrl-C stop, the wire,
  *             a picture check that could not read the photo). Bounded, as A
  *             bounds a build not run: a bar is decided only if it holds
@@ -637,47 +638,62 @@ function eBar(id: string, label: string, s: EShare, threshold: number, what: str
   return bar({ id, label, verdict, value: pct(s.low), threshold: th, n: s.n, arithmetic });
 }
 
+/** Which builder Match runs on: Astra only above mini on both shares whatever is missing, mini as soon as Astra cannot be above it on one. */
+function eRoute(af: EShare, ar: EShare, mf: EShare, mr: EShare): BarResult {
+  const label = "E Astra beats gpt-5.4-mini on both";
+  const shares = [af, mf, ar, mr];
+  if (shares.some((s) => s.low === null || s.high === null)) {
+    return bar({ id: "E-route", label, verdict: "UNDETERMINED", value: "route: ?", threshold: "both", n: 0, arithmetic: "a builder has no reads to compare" });
+  }
+  const [aF, mF, aR, mR] = shares as { low: number; high: number }[];
+  const beats = aF.low > mF.high + 1e-12 && aR.low > mR.high + 1e-12;
+  const cannot = aF.high <= mF.low + 1e-12 || aR.high <= mR.low + 1e-12;
+  const range = (s: { low: number; high: number }) => (Math.abs(s.high - s.low) < 1e-12 ? pct(s.low) : `${pct(s.low)}–${pct(s.high)}`);
+  return bar({
+    id: "E-route",
+    label,
+    verdict: beats || cannot ? "REPORTED" : "UNDETERMINED",
+    value: beats ? "route: astra" : cannot ? "route: mini" : "route: ?",
+    threshold: "above mini on both",
+    n: af.n + ar.n,
+    arithmetic: `FOV ${range(aF)} vs ${range(mF)}; rating ${range(aR)} vs ${range(mR)}${beats || cannot ? "" : ": the missing or unrated reads decide it"}`,
+  });
+}
+
 /**
  * Section 4, row E: "Vertical field of view within ±20% of the EXIF value on
  * at least 80%. Blind match rating at least 4 on at least 70%. Astra must
- * beat gpt-5.4-mini on both, or Match runs on mini." The two bars are
- * Astra's; mini's shares are reported beside them; the route is Astra only
- * if its share is above mini's on both, whatever the missing reads would
- * have done, and mini as soon as Astra cannot be above it on one.
+ * beat gpt-5.4-mini on both, or Match runs on mini." The two bars are held
+ * by the builder Match runs on, so both builders' shares are held to them,
+ * and the route (eRoute) says whose decide: Astra's on route astra,
+ * gpt-5.4-mini's on route mini, the other builder's REPORTED with its
+ * measured verdict noted. While the route is open, a bar decides only where
+ * both builders' verdicts agree (Astra's line carries it: the route cannot
+ * change it); where they differ, both are REPORTED, and the open route
+ * (UNDETERMINED) keeps E open.
  */
 export function barE(items: readonly EItem[]): BarResult[] {
   const af = eFovShare(items, "astra");
   const ar = eRatingShare(items, "astra");
   const mf = eFovShare(items, "mini");
   const mr = eRatingShare(items, "mini");
-  const out: BarResult[] = [
+  const route = eRoute(af, ar, mf, mr);
+  const decide = (a: BarResult, m: BarResult): [BarResult, BarResult] => {
+    if (route.value === "route: astra") return [a, asReported(m, "Match runs on Astra")];
+    if (route.value === "route: mini") return [asReported(a, "Match runs on gpt-5.4-mini"), m];
+    if (a.verdict === m.verdict) return [{ ...a, notes: [...a.notes, `gpt-5.4-mini's: ${m.verdict} too, so the open route cannot change it`] }, asReported(m, "the route is open")];
+    const open = "the route is open, and decides whose bar this is";
+    return [asReported(a, open), asReported(m, open)];
+  };
+  const [aFov, mFov] = decide(
     eBar("E-fov", "E Astra vertical FOV within ±20% of EXIF", af, E_FOV_BAR, "reads of photos with EXIF", "missing reads"),
-    eBar("E-rating", "E Astra blind match rating ≥ 4", ar, E_RATING_BAR, "reads", "missing or unrated reads"),
-    { ...eBar("E-fov-mini", "E gpt-5.4-mini vertical FOV within ±20% of EXIF (baseline, no bar)", mf, E_FOV_BAR, "reads of photos with EXIF", "missing reads"), verdict: "REPORTED" },
-    { ...eBar("E-rating-mini", "E gpt-5.4-mini blind match rating ≥ 4 (baseline, no bar)", mr, E_RATING_BAR, "reads", "missing or unrated reads"), verdict: "REPORTED" },
-  ];
-  const label = "E Astra beats gpt-5.4-mini on both";
-  const shares = [af, mf, ar, mr];
-  if (shares.some((s) => s.low === null || s.high === null)) {
-    out.push(bar({ id: "E-route", label, verdict: "UNDETERMINED", value: "route: ?", threshold: "both", n: 0, arithmetic: "a builder has no reads to compare" }));
-    return out;
-  }
-  const [aF, mF, aR, mR] = shares as { low: number; high: number }[];
-  const beats = aF.low > mF.high + 1e-12 && aR.low > mR.high + 1e-12;
-  const cannot = aF.high <= mF.low + 1e-12 || aR.high <= mR.low + 1e-12;
-  const range = (s: { low: number; high: number }) => (Math.abs(s.high - s.low) < 1e-12 ? pct(s.low) : `${pct(s.low)}–${pct(s.high)}`);
-  out.push(
-    bar({
-      id: "E-route",
-      label,
-      verdict: beats || cannot ? "REPORTED" : "UNDETERMINED",
-      value: beats ? "route: astra" : cannot ? "route: mini" : "route: ?",
-      threshold: "above mini on both",
-      n: af.n + ar.n,
-      arithmetic: `FOV ${range(aF)} vs ${range(mF)}; rating ${range(aR)} vs ${range(mR)}${beats || cannot ? "" : ": the missing or unrated reads decide it"}`,
-    }),
+    eBar("E-fov-mini", "E gpt-5.4-mini vertical FOV within ±20% of EXIF", mf, E_FOV_BAR, "reads of photos with EXIF", "missing reads"),
   );
-  return out;
+  const [aRating, mRating] = decide(
+    eBar("E-rating", "E Astra blind match rating ≥ 4", ar, E_RATING_BAR, "reads", "missing or unrated reads"),
+    eBar("E-rating-mini", "E gpt-5.4-mini blind match rating ≥ 4", mr, E_RATING_BAR, "reads", "missing or unrated reads"),
+  );
+  return [aFov, aRating, mFov, mRating, route];
 }
 
 // ---------------------------------------------------------------------------

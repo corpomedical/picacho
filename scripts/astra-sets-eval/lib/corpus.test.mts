@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { canarySha, cleanNotes, isCalendarDate, loadCorpus, MATCH_PHOTO_RECIPIENTS, PEOPLE_PHOTO_RECIPIENTS, validateCorpus } from "./corpus.mts";
+import { canarySha, cleanNotes, isCalendarDate, loadCorpus, MATCH_PEOPLE_AUDIENCE, MATCH_PHOTO_RECIPIENTS, PEOPLE_PHOTO_RECIPIENTS, validateCorpus } from "./corpus.mts";
 import { EVAL_DIR, REPO_ROOT } from "./util.mts";
 
 const meta = {
@@ -265,16 +265,29 @@ describe("match rows", () => {
     expect(one({ file: "match-photos/x.heic" }).problems.join(" ")).toMatch(/HEIC is refused/);
   });
 
-  it("a photo with people needs everyone's consent, or AI-generated people, covering OpenAI and Anthropic", () => {
+  it("a photo with people needs everyone's consent, or AI-generated people, covering OpenAI, Anthropic and the raters", () => {
     const one = (consent: unknown) => validateCorpus({ corpus: meta, match: [...matches(29), { id: "mt-x", file: "match-photos/x.jpg", licence: "mine", containsPeople: true, consent }] }, spendOn);
-    const r = one({ kind: "consented", covers, confirmedBy: "w7", confirmedOn: "2026-09-12" });
+    const seen = ["OpenAI", "Anthropic", "raters"];
+    const r = one({ kind: "consented", covers: seen, confirmedBy: "w7", confirmedOn: "2026-09-12" });
     expect(r.problems).toEqual([]);
-    expect(r.data.match[29].consent).toEqual({ kind: "consented", covers, confirmedBy: "w7", confirmedOn: "2026-09-12" });
-    expect(one({ kind: "ai-generated", covers, confirmedBy: "w7" }).problems).toEqual([]);
+    expect(r.data.match[29].consent).toEqual({ kind: "consented", covers: seen, confirmedBy: "w7", confirmedOn: "2026-09-12" });
+    expect(one({ kind: "ai-generated", covers: seen, confirmedBy: "w7" }).problems).toEqual([]);
     expect(one(undefined).problems.join(" ")).toMatch(/match\[29\]: consent.kind must be ai-generated or consented/);
-    expect(one({ kind: "consented", covers, confirmedBy: "w7" }).problems.join(" ")).toMatch(/match\[29\]: consented people need consent.confirmedOn/);
-    expect(one({ kind: "ai-generated", covers: ["OpenAI"], confirmedBy: "w7" }).problems.join(" ")).toMatch(/match\[29\]: consent.covers must name OpenAI and Anthropic.*\(missing: Anthropic\)/);
+    expect(one({ kind: "consented", covers: seen, confirmedBy: "w7" }).problems.join(" ")).toMatch(/match\[29\]: consented people need consent.confirmedOn/);
+    expect(one({ kind: "ai-generated", covers: ["OpenAI", "raters"], confirmedBy: "w7" }).problems.join(" ")).toMatch(/match\[29\]: consent.covers must name OpenAI, Anthropic and raters.*\(missing: Anthropic\)/);
+    // The companies alone are not enough: every E sheet shows the photo to both raters.
+    expect(one({ kind: "consented", covers, confirmedBy: "w7", confirmedOn: "2026-09-12" }).problems.join(" ")).toMatch(/match\[29\]: consent.covers must name OpenAI, Anthropic and raters, everyone who sees the photo \(missing: raters\)/);
     expect(MATCH_PHOTO_RECIPIENTS).toEqual(PEOPLE_PHOTO_RECIPIENTS);
+    expect(MATCH_PEOPLE_AUDIENCE).toEqual([...PEOPLE_PHOTO_RECIPIENTS, "raters"]);
+  });
+
+  it("the shipped template's match row with people stays a template row, its covers placeholder naming the raters", () => {
+    const shipped = (JSON.parse(readFileSync(join(EVAL_DIR, "corpus-template/match.json"), "utf8")) as Record<string, unknown>[]).find((r) => r.containsPeople === true) as Record<string, unknown>;
+    expect(JSON.stringify(shipped.consent)).toMatch(/OpenAI, Anthropic and raters/);
+    const { _template, ...row } = shipped;
+    expect(_template).toBe(true);
+    const r = validateCorpus({ corpus: meta, match: [...matches(29), { ...row, id: "mt-t", file: "match-photos/t.jpg", licence: "generated for the test" }] }, spendOn);
+    expect(r.problems.join(" ")).toMatch(/match\[29\]: a FORMAT-ONLY template row cannot be spent on/);
   });
 
   it("no picture serves two rows, across match.json and the other photo files", () => {

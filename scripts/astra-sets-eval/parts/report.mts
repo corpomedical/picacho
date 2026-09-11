@@ -29,9 +29,11 @@
 //                       Sets from a photo, so the photo arm never decides it.
 //   Match this shot     (E runs) every read in hand, each with the two
 //                       ratings of its stage view (the e-match sheets):
-//                       barE's two bars and the route, on a line of their
-//                       own — Match this shot sits behind astra_photo_sets,
-//                       never SETS_OPEN_TO_PLANS
+//                       barE's two bars — held by the builder the route
+//                       sends Match to, the other builder's reported — and
+//                       the route, on a line of their own. Match this shot
+//                       sits behind astra_photo_sets, never
+//                       SETS_OPEN_TO_PLANS
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -368,15 +370,19 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
         (readId) => scores.get(`${String(r.manifest.runId)}:${readId}`) ?? [],
       ),
     );
+    // The builder Match runs on holds the bars (barE): its two count, the
+    // other builder's are reported; with the route open, a bar counts only
+    // where both builders agree.
     const eBars = capIf(barE(items), eRuns);
-    bars.push(...eBars.filter((b) => !b.id.endsWith("-mini")));
-    reported.push(...eBars.filter((b) => b.id.endsWith("-mini")));
-    const one = (id: string) => verdictOf(eBars.filter((b) => b.id === id));
-    eRelease = { fov: one("E-fov"), rating: one("E-rating"), route: eBars.find((b) => b.id === "E-route")?.value ?? "route: ?" };
+    const counts = (b: BarResult) => b.id === "E-route" || b.verdict !== "REPORTED";
+    bars.push(...eBars.filter(counts));
+    reported.push(...eBars.filter((b) => !counts(b)));
+    const decided = (ids: readonly string[]) => verdictOf(eBars.filter((b) => ids.includes(b.id)));
+    eRelease = { fov: decided(["E-fov", "E-fov-mini"]), rating: decided(["E-rating", "E-rating-mini"]), route: eBars.find((b) => b.id === "E-route")?.value ?? "route: ?" };
     const photos = eRuns.flatMap((r) => r.rows.filter((x) => x.type === "e-photo") as unknown as EPhotoRow[]);
     const refused = photos.filter((p) => p.pictureCheck.startsWith("refused:"));
     if (refused.length) eNotes.push(`E: the picture check refused ${refused.length} photo(s), never sent and outside the bars: ${refused.map((p) => p.photoId).join(", ")}`);
-    for (const p of photos.filter((x) => x.truth.disagreements.length)) warnings.push(`E ${p.photoId}: match.json and the file's EXIF disagree (match.json's figure is used): ${p.truth.disagreements.join("; ")}`);
+    for (const p of photos.filter((x) => x.truth.disagreements.length)) warnings.push(`E ${p.photoId}: the EXIF disagrees: ${p.truth.disagreements.join("; ")}`);
   }
 
   // Canary: the latest real canary run's own verdict.
@@ -429,7 +435,8 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     );
   }
   if (eRelease) {
-    lines.push(`Match this shot (astra_photo_sets; SETS_OPEN_TO_PLANS never opens it) at SET_MATCH_EFFORT = ${SET_MATCH_EFFORT}: E FOV ${eRelease.fov} rating ${eRelease.rating}; ${eRelease.route}`);
+    const whose = eRelease.route === "route: mini" ? " (gpt-5.4-mini's bars: Match runs on it)" : eRelease.route === "route: ?" ? " (a bar settles only where both builders agree)" : "";
+    lines.push(`Match this shot (astra_photo_sets; SETS_OPEN_TO_PLANS never opens it) at SET_MATCH_EFFORT = ${SET_MATCH_EFFORT}: E FOV ${eRelease.fov} rating ${eRelease.rating}; ${eRelease.route}${whose}`);
   }
 
   const dir = join(o.outRoot, newRunId("report", real.length === 0));

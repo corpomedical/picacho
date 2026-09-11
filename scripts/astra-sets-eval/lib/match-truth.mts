@@ -2,7 +2,8 @@
 // before the product's preparation strips its EXIF (photo.ts
 // normaliseSetPhoto keeps no metadata). sharp reads the stored size, the
 // orientation and the raw EXIF block; exif-fov.mts reads the lens from that
-// block and holds it against match.json.
+// block, holds it against match.json, and against the frame the EXIF says
+// the camera wrote (a picture cut from a larger frame keeps its lens).
 //
 //   truth = verticalFovDegFrom35mm(35 mm focal length, the stored width and
 //           height, the file's orientation)
@@ -52,7 +53,7 @@ export async function photoTruth(photoId: string, original: Buffer, declared: Ma
   const stored = { width: meta.width, height: meta.height };
   const orientation = meta.orientation && meta.orientation >= 1 && meta.orientation <= 8 ? meta.orientation : 1;
   const file = readExifFocal(meta.exif ?? null);
-  const focal = mergeExif(declared, file, orientation);
+  const focal = mergeExif(declared, file, orientation, stored);
   return {
     ...focal,
     stored,

@@ -10,6 +10,7 @@ import { evalSafetyId, miniMatchBody } from "./builders.mts";
 import { parseCli } from "./cli.mts";
 import { makeRunDir, type Gates, type RunContext } from "./context.mts";
 import { loadCorpus } from "./corpus.mts";
+import { verticalFovDegFrom35mm } from "./exif-fov.mts";
 import type { LedgerInput } from "./ledger.mts";
 import { NetGuard } from "./net-guard.mts";
 import { preparePhoto } from "./photos.mts";
@@ -67,7 +68,7 @@ async function corpus(): Promise<{ dir: string; files: Record<string, Buffer> }>
   };
   const rows = [
     { id: "mt-1", file: "match-photos/mt-1.jpg", licence: "generated for this test", containsPeople: false },
-    { id: "mt-2", file: "match-photos/mt-2.jpg", licence: "generated for this test", containsPeople: true, exif: { focal35mm: 50, orientation: 1 }, consent: { kind: "ai-generated", covers: ["OpenAI", "Anthropic"], confirmedBy: "test" } },
+    { id: "mt-2", file: "match-photos/mt-2.jpg", licence: "generated for this test", containsPeople: true, exif: { focal35mm: 50, orientation: 1 }, consent: { kind: "ai-generated", covers: ["OpenAI", "Anthropic", "raters"], confirmedBy: "test" } },
     { id: "mt-3", file: "match-photos/mt-3.png", licence: "generated for this test", containsPeople: false },
   ];
   for (const r of rows) writeFileSync(join(dir, r.file), files[r.id]);
@@ -163,6 +164,10 @@ describe("readOutcome: what a read's attempt means for the bars", () => {
     expect(readOutcome(at({ state: "failed", kind: "refused", detail: "", usage: null })).outcome).toBe("miss");
     expect(readOutcome(at({ state: "failed", kind: "incomplete", detail: "", usage: null })).outcome).toBe("miss");
     expect(readOutcome(at({ state: "failed", kind: "cancelled", detail: "", usage: null }, { timedOut: true }))).toMatchObject({ outcome: "miss", why: "timed_out" });
+    // Still reading at the deadline is a miss on either builder (mini's shows as its one call unanswered at it);
+    // a deadline that passed with no word from OpenAI is missing.
+    expect(readOutcome(at({ state: "submit-failed", kind: "unavailable", detail: "" }, { timedOut: true }))).toEqual({ outcome: "miss", why: "timed_out", match: null });
+    expect(readOutcome(at({ state: "failed", kind: "failed", detail: "", usage: null }, { unanswered: true }))).toEqual({ outcome: "missing", why: "unanswered", match: null });
     expect(readOutcome(at({ state: "submit-failed", kind: "refused", detail: "" }))).toMatchObject({ outcome: "miss", why: "refused" });
     expect(readOutcome(at({ state: "failed", kind: "cancelled", detail: "", usage: null, interrupted: true }))).toMatchObject({ outcome: "missing", why: "not_run:interrupted" });
     expect(readOutcome(at({ state: "failed", kind: "failed", detail: "", usage: null }))).toMatchObject({ outcome: "missing", why: "failed" });
@@ -200,10 +205,13 @@ describe.skipIf(!sharp)("E, run", () => {
     expect(reads).toHaveLength(3 * 3 * 2);
     const truth = (id: string) => (photos.find((p) => p.photoId === id) as EPhotoRow).truth;
     expect(truth("mt-1")).toMatchObject({ source: "file", focal35mm: 26, orientation: 1 });
-    expect(truth("mt-2")).toMatchObject({ source: "match.json", orientation: 6, upright: { width: 1200, height: 1600 }, disagreements: ["orientation: match.json 1, the file 6"] });
+    // match.json's lens is used, the file's orientation always (the photo is turned by it), and the line says so.
+    expect(truth("mt-2")).toMatchObject({ source: "match.json", orientation: 6, upright: { width: 1200, height: 1600 }, disagreements: ["orientation: match.json 1, the file 6 (the file's is used: the photo is turned by it)"] });
+    expect(truth("mt-2").exifFovDeg).toBeCloseTo(verticalFovDegFrom35mm(50, 1200, 1600), 12);
     expect(truth("mt-3").exifFovDeg).toBeNull();
     expect((photos.find((p) => p.photoId === "mt-2") as EPhotoRow).sent).toMatchObject({ width: 1200, height: 1600 });
-    expect(out.join("\n")).toMatch(/EXIF DISAGREES for mt-2 \(match.json's figure is used\): orientation: match.json 1, the file 6/);
+    expect(out.join("\n")).toMatch(/EXIF DISAGREES for mt-2: orientation: match.json 1, the file 6 \(the file's is used: the photo is turned by it\)/);
+    expect(out.join("\n")).not.toMatch(/match.json's figure is used/);
     // The fakes: Astra within 5% of each truth; mini 35% wide, and its run 2 cut short.
     expect(reads.filter((r) => r.builder === "astra").every((r) => r.outcome === "read" && (r.exifFovDeg === null ? r.within === null : r.within === true))).toBe(true);
     expect(reads.filter((r) => r.builder === "mini" && r.run === 2).map((r) => [r.outcome, r.why])).toEqual(Array(3).fill(["miss", "invalid"]));
@@ -221,6 +229,8 @@ describe.skipIf(!sharp)("E, run", () => {
       const html = readFileSync(join(runDir, "sheets", s, "index.html"), "utf8");
       for (const w of ["astra", "mini", "mt-1", "e-read"]) expect(html).not.toContain(w);
     }
+    // mt-2 shows people, and every sheet holds every read: no sheet leaves this machine.
+    expect(out.join("\n")).toMatch(/--- rater sheets \(photos of people on every sheet: mt-2\. They stay on this machine: each rater rates here, opening only their own sheet, and no folder is sent/);
     // A photo's bytes never enter the manifest, the ledger or the results: its hash and size do.
     const files = ctx.manifest.photoFiles as Record<string, Record<string, unknown>>;
     for (const f of Object.values(files)) expect(Object.keys(f).sort()).toEqual(["file", "height", "sha256", "width"]);
@@ -345,10 +355,13 @@ describe.skipIf(!sharp)("E, run", () => {
       if (!p.ok || p.cli.cmd !== "report") throw new Error("cli");
       return runReport({ runDirs: [runDir], flags: p.cli.flags, book, repoRoot: REPO_ROOT, outRoot: join(root, "reports"), out: (l = "") => lines.push(l) });
     };
-    // One rater back: every read lacks its second rating, so the rating bar and the route stay open.
+    // One rater back: every read lacks its second rating, so the rating bar and the route stay open —
+    // and with it whose FOV bar decides: Astra's passes, mini's fails, so neither counts yet.
     expect(await reportOf()).toBe(2);
-    expect(lines.find((l) => l.startsWith("  E Astra vertical FOV"))).toMatch(/2\/2 = 100\.0% ≥ 80%.*→ PASS/);
+    expect(lines.find((l) => l.startsWith("  E Astra vertical FOV"))).toMatch(/2\/2 = 100\.0% ≥ 80%.*→ REPORTED  \(measured: PASS\)/);
+    expect(lines.find((l) => l.startsWith("  E gpt-5.4-mini vertical FOV"))).toMatch(/→ REPORTED  \(measured: FAIL\)/);
     expect(lines.find((l) => l.startsWith("  E Astra blind match rating"))).toMatch(/→ UNDETERMINED/);
+    expect(lines.join("\n")).toMatch(/E FOV \? rating \?; route: \?/);
     writeFileSync(join(runDir, "ratings", "r2.json"), JSON.stringify(rate(keys.find((k) => k.raterId === "r2") as SheetKey)));
     expect(await reportOf()).toBe(0);
     expect(lines.find((l) => l.startsWith("  E Astra blind match rating"))).toMatch(/2\/2 = 100\.0% ≥ 70%.*→ PASS/);
@@ -383,6 +396,35 @@ describe.skipIf(!sharp)("E, run", () => {
     expect(unsent.length).toBe(reads.length - submits);
     expect(unsent.every((r) => r.outcome === "missing" && r.usage === null)).toBe(true);
     expect(ctx.manifest.complete).toBe(false);
+    expect(readdirSync(join(ctx.runDir, "keys"))).toEqual([]);
+  });
+
+  it("a stage view that could not be drawn leaves the run unfinished: no sheets, and it says to rerun E", async () => {
+    const { dir } = await corpus();
+    process.env.OPENAI_API_KEY = "test-key-not-real";
+    const json = (b: unknown) => new Response(JSON.stringify(b), { headers: { "content-type": "application/json" } });
+    const text = JSON.stringify({ subject_found: true, camera_height_m: 1.5, pitch_deg: -5, vertical_fov_deg: 40, subject_distance_m: 3, subject_x: 0.5, framing: "full", confidence: "high" });
+    const usage = { input_tokens: 2400, input_tokens_details: { cached_tokens: 600, cache_write_tokens: 0 }, output_tokens: 700 };
+    const done = (id: string, model?: string) => ({ id, status: "completed", ...(model ? { model } : {}), output: [{ type: "message", content: [{ type: "output_text", text }] }], usage });
+    let n = 0;
+    const provider = async (url: string, init?: RequestInit): Promise<Response> => {
+      if (init?.method !== "POST") return json(done(url.split("/").pop() as string));
+      n += 1;
+      return JSON.parse(String(init.body)).background ? json({ id: `resp_astra${String(n).padStart(4, "0")}` }) : json(done(`resp_mini${String(n).padStart(5, "0")}`, "gpt-5.4-mini"));
+    };
+    const { ctx, rows, out } = eContext(dir, { dry: false, argv: ["--spend", "--max-usd", "5", "--allow-unpriced", "mini-5.4,gates", "--runs", "1"], provider });
+    ctx.gates = { words: async () => "allowed", brief: async () => "allowed", picture: async () => "allowed" } as Gates;
+    // One set's page load fails (chrome.mts's 60 s limit, say): renderSets answers for that set alone, and never throws.
+    const drawn = fakeRender([]);
+    const render: EDeps["render"] = async (o) => (await drawn(o)).map((x, i): Rendered => (i === 0 ? { key: x.key, ok: false, error: "evaluate timed out after 60 s" } : x));
+    expect(await runE(ctx, { render, clock: fakeClock(), chromeFound: () => true })).toBe(2);
+    const reads = rows().filter((r) => r.type === "e-read") as unknown as EReadRow[];
+    const lost = reads.filter((r) => r.stage && !r.frame);
+    expect(lost.length).toBeGreaterThan(0);
+    expect(lost.every((r) => r.renderError === "evaluate timed out after 60 s")).toBe(true);
+    expect(ctx.manifest.complete).toBe(false);
+    expect(out.join("\n")).toContain(`DID NOT FINISH (${lost.length} stage view(s) could not be drawn: evaluate timed out after 60 s): E does not resume, so rerun it`);
+    expect(out.join("\n")).toMatch(/--- rater sheets: none until the run finishes ---/);
     expect(readdirSync(join(ctx.runDir, "keys"))).toEqual([]);
   });
 });

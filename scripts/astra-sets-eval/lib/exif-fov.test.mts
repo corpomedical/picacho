@@ -35,13 +35,15 @@ describe("fovWithin (±20%)", () => {
 
 // A synthetic EXIF block, written by hand: a TIFF header, IFD0 (the
 // orientation and the Exif IFD's offset), the Exif IFD (the 35 mm focal
-// length and the focal length), and the focal length's RATIONAL after it.
-type Blob = { le: boolean; header?: boolean; orientation?: number; f35?: number; f35Type?: 3 | 4; focal?: [number, number] };
+// length, the frame's size and the focal length), and the focal length's
+// RATIONAL after it.
+type Blob = { le: boolean; header?: boolean; orientation?: number; f35?: number; f35Type?: 3 | 4; focal?: [number, number]; frame?: [number, number, 3 | 4] };
 function exifBlob(o: Blob): Uint8Array {
   const ifd0: [number, number, number][] = [];
   if (o.orientation !== undefined) ifd0.push([EXIF_TAGS.orientation, 3, o.orientation]);
   const exif: [number, number, number][] = [];
   if (o.f35 !== undefined) exif.push([EXIF_TAGS.focal35mm, o.f35Type ?? 3, o.f35]);
+  if (o.frame) exif.push([EXIF_TAGS.pixelX, o.frame[2], o.frame[0]], [EXIF_TAGS.pixelY, o.frame[2], o.frame[1]]);
   const ifd0At = 8;
   const n0 = ifd0.length + 1;
   const exifAt = ifd0At + 2 + n0 * 12 + 4;
@@ -79,25 +81,26 @@ function exifBlob(o: Blob): Uint8Array {
 }
 
 describe("readExifFocal (a TIFF-IFD walk over a synthetic EXIF block)", () => {
-  it("reads the 35 mm focal length, the focal length and the orientation, in either byte order, with or without the Exif header", () => {
+  it("reads the 35 mm focal length, the focal length, the orientation and the frame's size, in either byte order, with or without the Exif header", () => {
     for (const le of [true, false]) {
       for (const header of [true, false]) {
-        expect(readExifFocal(exifBlob({ le, header, orientation: 6, f35: 26, focal: [57, 10] }))).toEqual({ focal35mm: 26, focalMm: 5.7, orientation: 6 });
+        expect(readExifFocal(exifBlob({ le, header, orientation: 6, f35: 26, focal: [57, 10], frame: [4032, 3024, 4] }))).toEqual({ focal35mm: 26, focalMm: 5.7, orientation: 6, frame: { width: 4032, height: 3024 } });
       }
     }
   });
 
-  it("takes a 35 mm focal length written as a LONG, and a block that holds only some of the tags", () => {
-    expect(readExifFocal(exifBlob({ le: true, f35: 50, f35Type: 4 }))).toEqual({ focal35mm: 50, focalMm: null, orientation: null });
-    expect(readExifFocal(exifBlob({ le: false, focal: [4500, 1000] }))).toEqual({ focal35mm: null, focalMm: 4.5, orientation: null });
+  it("takes a 35 mm focal length or a frame written as SHORT or LONG, and a block that holds only some of the tags", () => {
+    expect(readExifFocal(exifBlob({ le: true, f35: 50, f35Type: 4 }))).toEqual({ focal35mm: 50, focalMm: null, orientation: null, frame: null });
+    expect(readExifFocal(exifBlob({ le: false, focal: [4500, 1000] }))).toEqual({ focal35mm: null, focalMm: 4.5, orientation: null, frame: null });
+    expect(readExifFocal(exifBlob({ le: false, frame: [1600, 1200, 3] })).frame).toEqual({ width: 1600, height: 1200 });
   });
 
-  it("a 35 mm focal length of 0 is unknown, and so is a focal length over 0", () => {
-    expect(readExifFocal(exifBlob({ le: true, f35: 0, focal: [5, 0] }))).toEqual({ focal35mm: null, focalMm: null, orientation: null });
+  it("a 35 mm focal length of 0 is unknown, and so is a focal length over 0 and a frame with a side of 0", () => {
+    expect(readExifFocal(exifBlob({ le: true, f35: 0, focal: [5, 0], frame: [4032, 0, 4] }))).toEqual({ focal35mm: null, focalMm: null, orientation: null, frame: null });
   });
 
   it("never throws: nothing, junk, a truncated block, the wrong byte order or an offset past the end read as nothing", () => {
-    const none = { focal35mm: null, focalMm: null, orientation: null };
+    const none = { focal35mm: null, focalMm: null, orientation: null, frame: null };
     expect(readExifFocal(null)).toEqual(none);
     expect(readExifFocal(new Uint8Array([1, 2, 3]))).toEqual(none);
     expect(readExifFocal(new TextEncoder().encode("Exif\0\0not a tiff header at all"))).toEqual(none);
@@ -122,21 +125,41 @@ describe("readExifFocal (a TIFF-IFD walk over a synthetic EXIF block)", () => {
 });
 
 describe("mergeExif: match.json's EXIF against the file's own", () => {
-  const file = { focal35mm: 26, focalMm: 5.7, orientation: 1 };
+  const stored = { width: 4032, height: 3024 };
+  const file = { focal35mm: 26, focalMm: 5.7, orientation: 1, frame: stored };
 
   it("match.json wins where it gives a figure; the file fills what it leaves out, field by field", () => {
-    expect(mergeExif(null, file, 1)).toEqual({ focal35mm: 26, focalMm: 5.7, source: "file", disagreements: [] });
-    expect(mergeExif({ focal35mm: 26, focalMm: null, orientation: null }, file, 1)).toEqual({ focal35mm: 26, focalMm: 5.7, source: "match.json", disagreements: [] });
-    expect(mergeExif({ focal35mm: null, focalMm: 5.7, orientation: 1 }, { focal35mm: null, focalMm: null, orientation: null }, 1)).toEqual({ focal35mm: null, focalMm: 5.7, source: null, disagreements: [] });
+    expect(mergeExif(null, file, 1, stored)).toEqual({ focal35mm: 26, focalMm: 5.7, source: "file", disagreements: [] });
+    expect(mergeExif({ focal35mm: 26, focalMm: null, orientation: null }, file, 1, stored)).toEqual({ focal35mm: 26, focalMm: 5.7, source: "match.json", disagreements: [] });
+    expect(mergeExif({ focal35mm: null, focalMm: 5.7, orientation: 1 }, { focal35mm: null, focalMm: null, orientation: null, frame: null }, 1, stored)).toEqual({ focal35mm: null, focalMm: 5.7, source: null, disagreements: [] });
   });
 
-  it("reports every field both give that differs, and uses match.json's", () => {
-    const m = mergeExif({ focal35mm: 28, focalMm: 6.0, orientation: 6 }, file, 1);
+  it("reports every field both give that differs, each with the figure used: match.json's lens, the file's orientation", () => {
+    const m = mergeExif({ focal35mm: 28, focalMm: 6.0, orientation: 6 }, file, 1, stored);
     expect(m.focal35mm).toBe(28);
     expect(m.source).toBe("match.json");
-    expect(m.disagreements).toEqual(["35 mm focal length: match.json 28 mm, the file 26 mm", "focal length: match.json 6 mm, the file 5.7 mm", "orientation: match.json 6, the file 1"]);
+    expect(m.disagreements).toEqual([
+      "35 mm focal length: match.json 28 mm, the file 26 mm (match.json's is used)",
+      "focal length: match.json 6 mm, the file 5.7 mm (match.json's is used)",
+      "orientation: match.json 6, the file 1 (the file's is used: the photo is turned by it)",
+    ]);
     // Within what EXIF stores (whole millimetres) and 0.05 mm: no disagreement.
-    expect(mergeExif({ focal35mm: 26.2, focalMm: 5.74, orientation: 1 }, file, 1).disagreements).toEqual([]);
+    expect(mergeExif({ focal35mm: 26.2, focalMm: 5.74, orientation: 1 }, file, 1, stored).disagreements).toEqual([]);
+  });
+
+  it("a picture cut from the frame its EXIF describes: the file's lens is not its own, so it is outside the FOV bar unless match.json gives one", () => {
+    // 4032 × 3024 at 26 mm, cropped to 2016 × 1134 (16:9): a 26 mm truth would be the whole frame's.
+    const cut = { width: 2016, height: 1134 };
+    const m = mergeExif(null, file, 1, cut);
+    expect(m).toMatchObject({ focal35mm: null, source: null });
+    expect(m.disagreements).toEqual(["the file's EXIF describes a 4032 × 3024 frame and the picture is 2016 × 1134, cut from it: the file's lens is the whole frame's, so the photo is outside the FOV bar (match.json can give the crop's own)"]);
+    const own = mergeExif({ focal35mm: 52, focalMm: null, orientation: null }, file, 1, cut);
+    expect(own).toMatchObject({ focal35mm: 52, source: "match.json" });
+    expect(own.disagreements.at(-1)).toMatch(/cut from it: match.json's 35 mm focal length is used, so it must be the crop's own$/);
+    // Only scaled (each side rounded once), or its pixels turned upright: the same picture.
+    for (const same of [{ width: 2016, height: 1512 }, { width: 1023, height: 767 }, { width: 3024, height: 4032 }]) expect(mergeExif(null, file, 1, same)).toMatchObject({ focal35mm: 26, source: "file", disagreements: [] });
+    // No lens anywhere: nothing to say about the frame.
+    expect(mergeExif(null, { ...file, focal35mm: null }, 1, cut).disagreements).toEqual([]);
   });
 });
 
@@ -183,7 +206,8 @@ describe.skipIf(!sharp)("a real file's EXIF (sharp writes it, the reader reads i
     expect(t.upright).toEqual({ width: 1200, height: 1600 });
     // Portrait: a taller field of view than the same lens held landscape.
     expect(t.exifFovDeg).toBeCloseTo(verticalFovDegFrom35mm(50, 1200, 1600), 12);
-    expect(t.disagreements).toEqual(["orientation: match.json 1, the file 6"]);
+    // match.json's orientation is not the one used: the photo is turned by the file's.
+    expect(t.disagreements).toEqual(["orientation: match.json 1, the file 6 (the file's is used: the photo is turned by it)"]);
     const prepared = await preparePhoto("mt-2", file);
     if (!prepared.ok) throw new Error(prepared.error);
     expect([prepared.photo.width, prepared.photo.height]).toEqual([1200, 1600]);
@@ -195,8 +219,22 @@ describe.skipIf(!sharp)("a real file's EXIF (sharp writes it, the reader reads i
     const file = await picture(1200, 800).withExif({ IFD2: { FocalLengthIn35mmFilm: "24" } }).jpeg().toBuffer();
     const t = await photoTruth("mt-3", file, { focal35mm: 35, focalMm: null, orientation: null });
     expect(t.focal35mm).toBe(35);
-    expect(t.disagreements).toEqual(["35 mm focal length: match.json 35 mm, the file 24 mm"]);
+    expect(t.disagreements).toEqual(["35 mm focal length: match.json 35 mm, the file 24 mm (match.json's is used)"]);
     expect(t.exifFovDeg).toBeCloseTo(verticalFovDegFrom35mm(35, 1200, 800), 12);
+  });
+
+  it("a crop that kept its camera's EXIF, the frame's size with it, is outside the FOV bar: its lens is the whole frame's", async () => {
+    // sharp writes the frame as the picture's own size, as a camera does: an editor that crops may not.
+    // The EXIF block goes in by hand, after the JFIF segment, as an APP1 segment.
+    const bare = await picture(2016, 1134).jpeg().toBuffer();
+    const block = exifBlob({ le: true, header: true, orientation: 1, f35: 26, frame: [4032, 3024, 4] });
+    const at = bare[2] === 0xff && bare[3] === 0xe0 ? 4 + bare.readUInt16BE(4) : 2;
+    const app1 = Buffer.from([0xff, 0xe1, (block.length + 2) >> 8, (block.length + 2) & 0xff]);
+    const cropped = Buffer.concat([bare.subarray(0, at), app1, Buffer.from(block), bare.subarray(at)]);
+    const t = await photoTruth("mt-5", cropped, null);
+    expect(t.file).toMatchObject({ focal35mm: 26, frame: { width: 4032, height: 3024 } });
+    expect(t).toMatchObject({ stored: { width: 2016, height: 1134 }, source: null, exifFovDeg: null });
+    expect(t.disagreements).toEqual([expect.stringMatching(/^the file's EXIF describes a 4032 × 3024 frame and the picture is 2016 × 1134, cut from it: .*outside the FOV bar/)]);
   });
 
   it("a file with no EXIF and nothing declared has no truth: outside the FOV bar", async () => {

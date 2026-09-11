@@ -20,6 +20,12 @@
 // pollUntilDeadline, every SET_MATCH_POLL_MS, and a read still working at
 // SET_MATCH_DEADLINE_MS is cancelled, as match-actions.ts does), reserved at
 // the match caps' worst case; gpt-5.4-mini as one POST (miniMatchAttempt).
+// Both builders' reads meet the deadline on one rule: STILL READING at it is
+// timedOut (the builder's own miss) — Astra when OpenAI's answer to the last
+// poll, or to the look after the cancel, says it was still working; mini
+// when its one call is still open, unanswered, at the deadline. A deadline
+// that passed with nothing from OpenAI to say either way (Astra's polls
+// dropped or 5xx) is unanswered: missing, like any failure on the wire.
 //
 // WHEN A REQUEST GOES WRONG (the background submit and the sync POST alike):
 //   a 429 or 5xx       the provider answered no: nothing runs, the ticket is
@@ -250,20 +256,40 @@ export function settleAstra(
 export type MatchClock = { now: () => number; pause: (ms: number) => Promise<void> };
 export const REAL_CLOCK: MatchClock = { now: () => Date.now(), pause: sleep };
 
-/** A read's attempt; timedOut: still reading at the product's deadline, and cancelled. */
-export type MatchAttempt = Attempt & { timedOut?: boolean };
+/**
+ * A read's attempt. timedOut: still reading at the product's deadline (a
+ * miss). unanswered: the deadline passed with nothing from OpenAI to say
+ * whether it was (missing).
+ */
+export type MatchAttempt = Attempt & { timedOut?: boolean; unanswered?: boolean };
 
 const STOPPED = { state: "stopped" } as const;
+
+/** OpenAI's own answer (a 2xx), not pollAstraJob's "working" for a dropped poll or a 5xx. */
+const heard = (o: Observe): boolean => o.status !== null && o.status >= 200 && o.status < 300;
 
 /**
  * One Match-this-shot read on Astra, as match-actions.ts makes it: submitted
  * in background (reserved at the match caps' worst case; the resend and
  * no-answer rules of every submit), then the product's own pollUntilDeadline
- * every SET_MATCH_POLL_MS. A read still working at SET_MATCH_DEADLINE_MS is
+ * every SET_MATCH_POLL_MS. A read not done by SET_MATCH_DEADLINE_MS is
  * cancelled — production has told the person it timed out — and settled
  * from what a last look says it used, or at the worst case. The product's
  * clock also counts the picture check before the read; here the read has
  * the whole 270 s from its own submit, and its latency is kept.
+ *
+ * At the deadline, pollAstraJob's "working" can mean two things: OpenAI
+ * answered that the job is queued or in progress, or the poll was dropped
+ * or got a 5xx (the product reads the wire as "working"). Only the first is
+ * the builder still reading (timedOut, a miss): the last poll's answer says
+ * so, or the look after the cancel finds the job still working or stopped
+ * by the cancel. With neither — every late poll and the look unanswered, or
+ * the look finding it finished at some moment nobody saw — it is
+ * unanswered (missing): the wire kept the answer from us. A read the last
+ * poll heard working that finishes before the cancel lands is still timed
+ * out: the product's own schedule has given up on it by then. A 2xx whose
+ * body pollAstraJob could not read also reads as working here: the status
+ * cannot tell it apart, and it lands on the side that never flatters Astra.
  * Ctrl-C cancels it; an answer that landed first is still the model's.
  */
 export async function astraMatchAttempt(env: TransportEnv, ref: string, req: AstraJobRequest, clock: MatchClock = REAL_CLOCK): Promise<MatchAttempt> {
@@ -275,24 +301,44 @@ export async function astraMatchAttempt(env: TransportEnv, ref: string, req: Ast
   const settled = { settled: true, tag: "astra-match", ref };
   const cancelAndLook = async () => {
     await withNetContext(settled, () => cancelAstraJob(responseId));
-    return pollResultToTransport(await withNetContext(settled, () => pollAstraJob(responseId)));
+    const look: Observe = { status: null };
+    const after = pollResultToTransport(await withNetContext({ ...settled, observe: look }, () => pollAstraJob(responseId)));
+    return { after, heard: heard(look) };
   };
   env.inflight.add(responseId);
   let result: TransportResult;
   let timedOut = false;
+  let unanswered = false;
+  // Whether OpenAI itself answered the latest poll (see above).
+  let lastPollHeard = false;
+  const poll = async (): Promise<AstraPollResult | typeof STOPPED> => {
+    if (env.interrupted()) return STOPPED;
+    const observe: Observe = { status: null };
+    const p = await withNetContext({ ...settled, observe }, () => pollAstraJob(responseId));
+    lastPollHeard = heard(observe);
+    return p;
+  };
   try {
-    const polled = await pollUntilDeadline<AstraPollResult | typeof STOPPED>(
-      async () => (env.interrupted() ? STOPPED : withNetContext(settled, () => pollAstraJob(responseId))),
-      (answer) => answer.state === "working",
-      { now: clock.now, pause: clock.pause, deadlineAt: t0 + SET_MATCH_DEADLINE_MS, intervalMs: SET_MATCH_POLL_MS },
-    );
+    const polled = await pollUntilDeadline<AstraPollResult | typeof STOPPED>(poll, (answer) => answer.state === "working", {
+      now: clock.now,
+      pause: clock.pause,
+      deadlineAt: t0 + SET_MATCH_DEADLINE_MS,
+      intervalMs: SET_MATCH_POLL_MS,
+    });
     if (polled === null || polled.state === "working") {
       // Nobody will collect it now: stopped before it bills any further.
-      timedOut = true;
-      const after = await cancelAndLook();
-      result = { state: "failed", kind: "cancelled", detail: `still reading after ${SET_MATCH_DEADLINE_MS / 1000} s; cancelled, as match-actions.ts does`, usage: after && after.state !== "submit-failed" ? after.usage : null };
+      const { after, heard: lookHeard } = await cancelAndLook();
+      const usage = after && after.state !== "submit-failed" ? after.usage : null;
+      const stillWorking = lookHeard && (after === null || (after.state === "failed" && after.kind === "cancelled"));
+      if (lastPollHeard || stillWorking) {
+        timedOut = true;
+        result = { state: "failed", kind: "cancelled", detail: `still reading after ${SET_MATCH_DEADLINE_MS / 1000} s; cancelled, as match-actions.ts does`, usage };
+      } else {
+        unanswered = true;
+        result = { state: "failed", kind: "failed", detail: `no answer from OpenAI to the polls before the ${SET_MATCH_DEADLINE_MS / 1000} s deadline, so whether it was still reading is unknown; cancelled`, usage };
+      }
     } else if (polled.state === "stopped") {
-      const after = await cancelAndLook();
+      const { after } = await cancelAndLook();
       result =
         after && !(after.state === "failed" && after.kind === "cancelled")
           ? after
@@ -304,10 +350,11 @@ export async function astraMatchAttempt(env: TransportEnv, ref: string, req: Ast
     env.inflight.delete(responseId);
   }
   const usage = result.state === "submit-failed" ? null : result.usage;
-  const meta = settleAstra(env, ticket, worst, usage, "background", false, usage ? undefined : timedOut ? "timed out: usage unknown, settled at the worst case" : undefined);
+  const flag = usage ? undefined : timedOut ? "timed out: usage unknown, settled at the worst case" : unanswered ? "unanswered at the deadline: usage unknown, settled at the worst case" : undefined;
+  const meta = settleAstra(env, ticket, worst, usage, "background", false, flag);
   if (result.state === "done") meta.answerFile = saveAnswer(env, ref, result.text);
   meta.latencyMs = clock.now() - t0;
-  return { r: result, meta, ...(timedOut ? { timedOut } : {}) };
+  return { r: result, meta, ...(timedOut ? { timedOut } : {}), ...(unanswered ? { unanswered } : {}) };
 }
 
 // ---------------------------------------------------------------------------
@@ -316,7 +363,8 @@ export async function astraMatchAttempt(env: TransportEnv, ref: string, req: Ast
 
 type Posted =
   | { ok: true; status: number; json: unknown }
-  | { ok: false; status: number | null; code: string | undefined; detail: string };
+  /** timedOut: no answer by timeoutMs (fetchWithTimeout's FetchTimeoutError), not a connection that dropped first. */
+  | { ok: false; status: number | null; code: string | undefined; detail: string; timedOut?: boolean };
 
 /** One POST, no resend: the caller decides, knowing whether an answer came back. */
 async function postOnce(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<Posted> {
@@ -324,7 +372,8 @@ async function postOnce(url: string, headers: Record<string, string>, body: unkn
   try {
     res = await fetchWithTimeout(url, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(body) }, timeoutMs);
   } catch (e) {
-    return { ok: false, status: null, code: undefined, detail: `no answer (${e instanceof Error ? e.name : "error"})` };
+    const name = e instanceof Error ? e.name : "error";
+    return { ok: false, status: null, code: undefined, detail: `no answer (${name})`, ...(name === "FetchTimeoutError" ? { timedOut: true } : {}) };
   }
   const json = (await res.json().catch(() => null)) as unknown;
   if (res.ok) return { ok: true, status: res.status, json };
@@ -446,18 +495,30 @@ export function miniAttempt(env: TransportEnv, s: BuildState): Promise<Attempt> 
  * One Match-this-shot read on gpt-5.4-mini (builders.mts miniMatchBody):
  * reserved at matchBaselineWorstUsd once mini is priced, metered until then.
  * It waits no longer than the product's deadline; one with no answer by
- * then is booked, never resent.
+ * then is booked, never resent. A sync call answers only once the model is
+ * done, so its call still open and unanswered at SET_MATCH_DEADLINE_MS is
+ * the builder still reading: timedOut, the miss Astra's read gets for the
+ * same. A connection that drops before the deadline stays a failure on the
+ * wire (missing).
  */
-export function miniMatchAttempt(env: TransportEnv, ref: string, photoDataUrl: string): Promise<Attempt> {
+export async function miniMatchAttempt(env: TransportEnv, ref: string, photoDataUrl: string): Promise<MatchAttempt> {
   const key = process.env.OPENAI_API_KEY ?? "";
-  return postAttempt(env, ref, env.book.matchBaselineWorstUsd(MINI_MODEL), "mini-5.4-match", {
+  let timedOut = false;
+  const a = await postAttempt(env, ref, env.book.matchBaselineWorstUsd(MINI_MODEL), "mini-5.4-match", {
     kind: "mini-5.4",
     model: MINI_MODEL,
     provider: "openai",
     url: RESPONSES_URL,
-    send: () => postOnce(RESPONSES_URL, { authorization: `Bearer ${key}` }, miniMatchBody(photoDataUrl, env.part), SET_MATCH_DEADLINE_MS),
+    send: async () => {
+      // Only the last send counts: one before it got a 429 or 5xx (an answer) and was sent again.
+      const posted = await postOnce(RESPONSES_URL, { authorization: `Bearer ${key}` }, miniMatchBody(photoDataUrl, env.part), SET_MATCH_DEADLINE_MS);
+      timedOut = !posted.ok && posted.timedOut === true;
+      return posted;
+    },
     read: (json) => readResponsesAnswer(env, json),
   });
+  if (!timedOut || a.r.state !== "submit-failed") return a;
+  return { ...a, r: { ...a.r, detail: `still reading after ${SET_MATCH_DEADLINE_MS / 1000} s: no answer to its one call; booked, never resent` }, timedOut: true };
 }
 
 export function sonnetAttempt(env: TransportEnv, s: BuildState, mode: "format" | "prompt"): Promise<Attempt> {

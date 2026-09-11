@@ -6,7 +6,10 @@
 //   1. the ground truth, from the ORIGINAL file (lib/match-truth.mts): its
 //      stored size and orientation, and its lens — match.json's figure, or
 //      the file's own EXIF where match.json leaves it out; where both give
-//      one and they differ, it is reported
+//      one and they differ, it is reported, with the figure used (the
+//      file's orientation always: the photo is turned by it). A file whose
+//      EXIF frame is not the picture's shape was cropped: its own lens is
+//      not the picture's
 //   2. the product's own preparation (lib/photos.mts: the browser's step,
 //      then parseSetPhotoDataUri and normaliseSetPhoto — no EXIF leaves).
 //      It only scales, so the field of view is the file's: the shape sent
@@ -32,8 +35,10 @@
 //      in the local Chrome B and C draw in, then laid beside the photo on a
 //      blind sheet (e-match). Builder labels live only in keys/
 //
-// The FOV bar settles here; the rating bar and the route in report, once
-// both raters' sheets are back.
+// The bars are held by the builder Match runs on (pass-bars barE: the
+// route). Both builders' FOV shares print here, and the FOV bar settles
+// here where they agree or the FOV alone sends Match to mini; the rating
+// bar and the route in report, once both raters' sheets are back.
 //
 // The sets to match in come from --from-run (every delivered Astra set of
 // that A run) or, without one, the product's four recorded fixture sets, and
@@ -147,9 +152,11 @@ export type EReadRow = {
 /**
  * What a read's attempt means for the bars (pass-bars barE): a camera; a
  * miss — the builder's own answer, unusable (unparsable, refused, cut off
- * at the output cap, or still reading at the product's deadline); or
- * missing — nothing to judge it by (never sent, never answered, a failure
- * on OpenAI's side, which the product tells the person to try again on).
+ * at the output cap, or still reading at the product's deadline, on either
+ * builder: transports.mts says how each shows it); or missing — nothing to
+ * judge it by (never sent, never answered, a deadline that passed with no
+ * word from OpenAI, a failure on OpenAI's side, which the product tells the
+ * person to try again on).
  */
 export function readOutcome(a: MatchAttempt): { outcome: EOutcome; why: string; match: ShotMatch | null } {
   const r = a.r;
@@ -157,8 +164,9 @@ export function readOutcome(a: MatchAttempt): { outcome: EOutcome; why: string; 
     const parsed = parseMatchShotText(r.text);
     return parsed.ok ? { outcome: "read", why: "read", match: parsed.match } : { outcome: "miss", why: "invalid", match: null };
   }
+  if (a.timedOut) return { outcome: "miss", why: "timed_out", match: null };
+  if (a.unanswered) return { outcome: "missing", why: "unanswered", match: null };
   if (r.state === "failed") {
-    if (a.timedOut) return { outcome: "miss", why: "timed_out", match: null };
     if (r.interrupted) return { outcome: "missing", why: "not_run:interrupted", match: null };
     if (r.kind === "refused" || r.kind === "incomplete") return { outcome: "miss", why: r.kind, match: null };
     return { outcome: "missing", why: r.kind, match: null };
@@ -398,8 +406,11 @@ export async function runE(ctx: RunContext, deps: EDeps): Promise<number> {
 
   // Complete: nothing stopped it, every read the check let through was
   // sent (a read OpenAI failed or never answered is still missing, and
-  // bounded by the bars), and every stage view could be drawn.
-  const complete = stop === null && !renderFailed && reads.every((r) => checks.get(r.row.id) !== "allowed" || attempts.has(r.readId));
+  // bounded by the bars), and every stage view was drawn — renderSets
+  // answers a set's failed page load (Chrome's 60 s limit, say) for that set
+  // alone, and a read with no view can never be rated, nor E resumed.
+  const undrawn = readRows.filter((r) => r.stage && !r.frame);
+  const complete = stop === null && !renderFailed && undrawn.length === 0 && reads.every((r) => checks.get(r.row.id) !== "allowed" || attempts.has(r.readId));
   ctx.manifest.complete = complete;
   ctx.manifest.stop = stop;
 
@@ -428,11 +439,18 @@ export async function runE(ctx: RunContext, deps: EDeps): Promise<number> {
   const withTruth = photoRows.filter((p) => p.truth.exifFovDeg !== null);
   const out = [`E ${ctx.runId}${ctx.dry ? "  (DRY RUN: simulated picture check and answers; the stage views are drawn for real)" : ""}`];
   if (configDetail) out.push(`STOPPED: a request was refused for our configuration (${configDetail}): fix the key or the project's access, then rerun E`);
-  else if (!complete && !ctx.dry) out.push(`DID NOT FINISH (${renderFailed ? `the stage views could not be drawn: ${renderFailed}` : String(stop ?? "unfinished")}): E does not resume, so rerun it`);
+  else if (!complete && !ctx.dry) {
+    const why = [
+      ...(stop !== null ? [String(stop)] : []),
+      ...(renderFailed ? [`the stage views could not be drawn: ${renderFailed}`] : undrawn.length ? [`${undrawn.length} stage view(s) could not be drawn: ${undrawn[0].renderError}`] : []),
+    ];
+    out.push(`DID NOT FINISH (${why.join("; ") || "unfinished"}): E does not resume, so rerun it`);
+  }
   out.push(
-    `  photos ${rows.length}: EXIF truth for ${withTruth.length} (match.json ${withTruth.filter((p) => p.truth.source === "match.json").length}, the file's own EXIF ${withTruth.filter((p) => p.truth.source === "file").length}); no 35 mm focal length, so outside the FOV bar: ${rows.length - withTruth.length}`,
+    `  photos ${rows.length}: EXIF truth for ${withTruth.length} (match.json ${withTruth.filter((p) => p.truth.source === "match.json").length}, the file's own EXIF ${withTruth.filter((p) => p.truth.source === "file").length}); no 35 mm focal length for the picture as it is, so outside the FOV bar: ${rows.length - withTruth.length}`,
   );
-  for (const p of photoRows.filter((x) => x.truth.disagreements.length)) out.push(`  EXIF DISAGREES for ${p.photoId} (match.json's figure is used): ${p.truth.disagreements.join("; ")}`);
+  // Each line names the figure the truth uses (exif-fov.mts mergeExif).
+  for (const p of photoRows.filter((x) => x.truth.disagreements.length)) out.push(`  EXIF DISAGREES for ${p.photoId}: ${p.truth.disagreements.join("; ")}`);
   const mark = (k: string) => photoRows.filter((p) => (k === "refused" ? p.pictureCheck.startsWith("refused:") : p.pictureCheck === k));
   const refused = mark("refused");
   out.push(
@@ -454,10 +472,22 @@ export async function runE(ctx: RunContext, deps: EDeps): Promise<number> {
   const drawn = readRows.filter((r) => r.frame).length;
   const placed = readRows.filter((r) => r.stage).length;
   out.push(`  stage views drawn ${drawn}/${placed}${placed > drawn ? ` (not drawn: ${placed - drawn}; those reads cannot be rated)` : ""}; the camera moved off its solved place for something built: ${readRows.filter((r) => r.stage && r.stage.moved !== "none").length}`);
-  if (bars.length) out.push("--- bars (the rating bar and the route need both raters' sheets: run report) ---", ...bars.map((b) => `  ${barLine(b)}`));
-  else out.push(ctx.dry ? "--- bars: none (simulated rows are never a result) ---" : "--- bars: none ---");
+  if (bars.length) {
+    out.push(
+      "--- bars: FOV (the rating bar and the route need both raters' sheets: run report) ---",
+      "  the builder Match runs on holds the bars: until the route settles, a bar decides only where both builders agree",
+      ...bars.map((b) => `  ${barLine(b)}`),
+    );
+  } else out.push(ctx.dry ? "--- bars: none (simulated rows are never a result) ---" : "--- bars: none ---");
   if (pages.length) {
-    out.push("--- rater sheets (send each rater only their own folder; keys/ stays with the operator; a sheet with a photo of people stays on this machine) ---", ...pages.map((p) => `  ${p}`));
+    // Every rater's sheet holds every drawn read, so one photo of people on it puts people on every sheet.
+    const people = rows.filter((r) => r.containsPeople && items.some((it) => it.groupKey === r.id)).map((r) => r.id);
+    out.push(
+      people.length
+        ? `--- rater sheets (photos of people on every sheet: ${people.join(", ")}. They stay on this machine: each rater rates here, opening only their own sheet, and no folder is sent; keys/ stays with the operator) ---`
+        : "--- rater sheets (send each rater only their own folder; keys/ stays with the operator) ---",
+      ...pages.map((p) => `  ${p}`),
+    );
     out.push(`  ratings come back as ratings-<sheetId>.json: put them in ${join(ctx.runDir, "ratings")}, then run report on this run.`);
   } else if (!ctx.dry) out.push("--- rater sheets: none until the run finishes ---");
   out.push(...spendLines(ctx));
@@ -488,7 +518,7 @@ export const partE: PartModule = {
         `Section 4 prices E at the one measured read, on Batch. A photo never goes into a Batch input file here (it would sit in OpenAI's Files storage, which the product never does), so every read is at standard price, reserved at its worst case: ${SET_MATCH_INPUT_TOKENS.toLocaleString("en-US")} input tokens at the cache-write rate + ${SET_MATCH_MAX_OUTPUT_TOKENS.toLocaleString("en-US")} output = ${usd(b.astraMatchWorstUsd, 5)} (set-config.ts); ${spec} reads = ${usd(spec * b.astraMatchWorstUsd, 2)}. These numbers stand; the doc is not edited.`,
         `Both builders get each photo's prepared bytes (the product's preparation, no EXIF) after one picture check per photo: Astra the product's matchShotRequest, ${MINI_MODEL} the same instructions, schema and input as one Responses call. Astra is polled as the product polls it and cancelled at ${SET_MATCH_DEADLINE_MS / 1000} s.`,
         `The sets to match in: ${f.fromRun ?? "the product's four fixture sets (--from-run <an A run> for built ones)"}, each photo's pinned by the seed. The stage views are drawn in a local, network-locked Chrome.`,
-        "Every read counts on its own (no median over a photo's runs); an answer that does not parse, a refusal, one cut off at the cap and one still reading at the deadline are misses. The FOV bar settles here; the rating bar and the route in report. E does not resume.",
+        "Every read counts on its own (no median over a photo's runs); an answer that does not parse, a refusal, one cut off at the cap and one still reading at the deadline (on either builder) are misses; a deadline that passed with no word from OpenAI is missing. The bars are held by the builder Match runs on: both builders' FOV shares print here, the rating bar and the route come from report. E does not resume.",
       ],
     };
   },

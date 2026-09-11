@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { costOfAstraUsageUsd } from "../../../src/lib/astra/prices.ts";
 import { buildAstraRequestBody } from "../../../src/lib/generations/providers/astra.ts";
 import { photoBuildRequest } from "../../../src/lib/sets/astra-request.ts";
@@ -215,6 +215,116 @@ describe("a Match-this-shot read", () => {
     const inTime = Math.ceil(SET_MATCH_DEADLINE_MS / SET_MATCH_POLL_MS) - 1;
     expect(polls).toBe(inTime + 1);
     expect(guard.settledUsd).toBeCloseTo(costOfAstraUsageUsd(usage), 12);
+  });
+
+  // pollAstraJob reads a dropped poll or a 5xx as "working", as the product
+  // must. Only OpenAI's own word makes a read still reading at the deadline.
+  it("on Astra: polls unanswered until the deadline are no timeout — the read is unanswered (missing), settled at the worst case, never resent", async () => {
+    let polls = 0;
+    const { e, guard, calls } = env(
+      async (u, init) => {
+        if (init?.method === "POST" && !u.endsWith("/cancel")) return json({ id: "resp_match0004" });
+        // The first poll answers; then the wire goes, the cancel and the look with it.
+        if (init?.method !== "POST" && polls++ === 0) return json({ id: "resp_match0004", status: "in_progress" });
+        throw new TypeError("fetch failed");
+      },
+      { part: "e" },
+    );
+    const a = await astraMatchAttempt(e, "e-astra-mt-01-r4", matchAstraRequest(dataUrl, "e"), fakeClock());
+    expect(a.timedOut).toBeUndefined();
+    expect(a.unanswered).toBe(true);
+    expect(a.r).toMatchObject({ state: "failed", kind: "failed", detail: expect.stringMatching(/no answer from OpenAI to the polls before the 270 s deadline/) });
+    expect(a.meta).toMatchObject({ billedUsd: book.astraMatchWorstUsd, costFlag: expect.stringMatching(/^unanswered at the deadline/) });
+    expect(guard.settledUsd).toBeCloseTo(book.astraMatchWorstUsd, 12);
+    expect(calls.filter((c) => c.endsWith("/cancel"))).toHaveLength(1);
+    expect(calls.filter((c) => c === "https://api.openai.com/v1/responses")).toHaveLength(1);
+  });
+
+  it("on Astra: 5xx polls and a look that finds it finished — its answer came at a moment nobody saw: unanswered, settled from its usage", async () => {
+    let cancelled = false;
+    const { e, guard } = env(
+      async (u, init) => {
+        if (init?.method === "POST" && u.endsWith("/cancel")) {
+          cancelled = true;
+          return json({});
+        }
+        if (init?.method === "POST") return json({ id: "resp_match0005" });
+        return cancelled ? json(completed("resp_match0005")) : json({ error: { code: "server_error" } }, 503);
+      },
+      { part: "e" },
+    );
+    const a = await astraMatchAttempt(e, "e-astra-mt-01-r5", matchAstraRequest(dataUrl, "e"), fakeClock());
+    expect(a).toMatchObject({ unanswered: true, r: { state: "failed", kind: "failed" } });
+    expect(a.timedOut).toBeUndefined();
+    expect(guard.settledUsd).toBeCloseTo(costOfAstraUsageUsd(usage), 12);
+  });
+
+  it("on Astra: 5xx polls, and a look that finds the cancel stopped it — OpenAI's word that it was still reading: timed out", async () => {
+    let cancelled = false;
+    const { e } = env(
+      async (u, init) => {
+        if (init?.method === "POST" && u.endsWith("/cancel")) {
+          cancelled = true;
+          return json({});
+        }
+        if (init?.method === "POST") return json({ id: "resp_match0006" });
+        return cancelled ? json({ id: "resp_match0006", status: "cancelled", usage }) : json({ error: { code: "server_error" } }, 502);
+      },
+      { part: "e" },
+    );
+    const a = await astraMatchAttempt(e, "e-astra-mt-01-r6", matchAstraRequest(dataUrl, "e"), fakeClock());
+    expect(a).toMatchObject({ timedOut: true, r: { state: "failed", kind: "cancelled" } });
+    expect(a.unanswered).toBeUndefined();
+  });
+
+  it("on Astra: heard working at the last poll, finished before the cancel landed — the product had given up on it: timed out", async () => {
+    let cancelled = false;
+    const { e, guard } = env(
+      async (u, init) => {
+        if (init?.method === "POST" && u.endsWith("/cancel")) {
+          cancelled = true;
+          return json({});
+        }
+        if (init?.method === "POST") return json({ id: "resp_match0007" });
+        return json(cancelled ? completed("resp_match0007") : { id: "resp_match0007", status: "in_progress" });
+      },
+      { part: "e" },
+    );
+    const a = await astraMatchAttempt(e, "e-astra-mt-01-r7", matchAstraRequest(dataUrl, "e"), fakeClock());
+    expect(a).toMatchObject({ timedOut: true, r: { state: "failed", kind: "cancelled" } });
+    expect(guard.settledUsd).toBeCloseTo(costOfAstraUsageUsd(usage), 12);
+  });
+
+  it("on gpt-5.4-mini: its one call still open, unanswered, at the product's deadline is still reading (timed out, as on Astra), booked and never resent; one dropped before is not", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      let signal: AbortSignal | null = null;
+      const hung = env(
+        (_u, init) =>
+          new Promise<Response>((_, reject) => {
+            signal = init?.signal ?? null;
+            signal?.addEventListener("abort", () => reject(Object.assign(new Error("This operation was aborted"), { name: "AbortError" })));
+          }),
+        { part: "e" },
+      );
+      const pending = miniMatchAttempt(hung.e, "e-mini-mt-01-r3", dataUrl);
+      await vi.advanceTimersByTimeAsync(SET_MATCH_DEADLINE_MS - 1);
+      expect((signal as AbortSignal | null)?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      const a = await pending;
+      expect(a.timedOut).toBe(true);
+      expect(a.r).toMatchObject({ state: "submit-failed", kind: "unavailable", detail: expect.stringMatching(/^still reading after 270 s/) });
+      expect(hung.calls).toHaveLength(1);
+      expect(hung.guard.unpricedMeterEvents).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+    const dropped = env(async () => {
+      throw new TypeError("socket hang up");
+    });
+    const b = await miniMatchAttempt(dropped.e, "e-mini-mt-01-r4", dataUrl);
+    expect(b.r).toMatchObject({ state: "submit-failed", kind: "unavailable" });
+    expect(b.timedOut).toBeUndefined();
   });
 
   it("on Astra: a 429 releases its money and is sent again under a fresh reservation; a submit with no answer is booked at the worst case, never resent", async () => {

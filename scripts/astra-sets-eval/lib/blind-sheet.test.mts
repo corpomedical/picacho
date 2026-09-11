@@ -119,6 +119,8 @@ describe("the Match-this-shot sheet (e-match)", () => {
     for (const word of ["astra", "Astra", "mini", "gpt", "e-read", "photos/", "frames/"]) expect(html).not.toContain(word);
     expect(html).toContain("How closely does the right image&#39;s camera match the photo&#39;s camera?");
     expect(html).toContain("Judge the camera, not the place");
+    // A photo with no subject still gets the figure (the product's still has it): raters judge height, tilt and lens alone.
+    expect(html).toContain("When the photo has no clear subject (an empty street, a landscape), the figure only stands where the camera looks: ignore its size and judge the height, tilt and lens alone.");
     // Every read of a photo is its own item, and one photo's items never sit side by side when that can be avoided.
     const groups = p.key.items.map((k) => k.groupKey);
     expect(groups.filter((g) => g === "mt-hidden-a")).toHaveLength(6);

@@ -271,7 +271,7 @@ describe("report, Match this shot", () => {
   });
 
   it("settles both bars and the route from the reads and both raters' scores, apart from the release line", async () => {
-    const e = run("e-real", { part: "e", complete: true }, [{ type: "e-photo", photoId: "mt-9", pictureCheck: "refused:minors", truth: { disagreements: ["orientation: match.json 1, the file 6"] } }, ...reads], [eSheet("e-real", reads, (b) => (b === "astra" ? 5 : 3))]);
+    const e = run("e-real", { part: "e", complete: true }, [{ type: "e-photo", photoId: "mt-9", pictureCheck: "refused:minors", truth: { disagreements: ["orientation: match.json 1, the file 6 (the file's is used: the photo is turned by it)"] } }, ...reads], [eSheet("e-real", reads, (b) => (b === "astra" ? 5 : 3))]);
     const r = await report([e]);
     expect(r.bar("E Astra vertical FOV")).toMatch(/4\/4 = 100\.0% ≥ 80%.*→ PASS/);
     expect(r.bar("E Astra blind match rating")).toMatch(/4\/4 = 100\.0% ≥ 70%.*→ PASS/);
@@ -279,20 +279,34 @@ describe("report, Match this shot", () => {
     expect(r.text).toMatch(/Match this shot .* at SET_MATCH_EFFORT = \w+: E FOV ✓ rating ✓; route: astra/);
     expect(r.text).toMatch(/SETS_OPEN_TO_PLANS needs A–D PASS .*: A \? B \? C \? D \?/);
     expect(r.text).toMatch(/refused 1 photo\(s\), never sent and outside the bars: mt-9/);
-    expect(r.text).toMatch(/E mt-9: match.json and the file's EXIF disagree/);
+    expect(r.text).toMatch(/E mt-9: the EXIF disagrees: orientation: match.json 1, the file 6 \(the file's is used: the photo is turned by it\)/);
     expect(r.code).toBe(0);
   });
 
   it("an unfinished E run may fail a bar, never pass one; a miss counts against the builder", async () => {
-    const open = run("e-open", { part: "e", complete: false }, reads, [eSheet("e-open", reads, () => 5)]);
+    const open = run("e-open", { part: "e", complete: false }, reads, [eSheet("e-open", reads, (b) => (b === "astra" ? 5 : 3))]);
     const r = await report([open]);
     expect(r.bar("E Astra vertical FOV")).toMatch(/→ UNDETERMINED.*would pass, but e-open did not finish/);
     expect(r.text).toMatch(/e-open: INCOMPLETE .* Rerun E/);
     expect(r.code).toBe(2);
-    const misses = ["mt-1", "mt-2"].flatMap((p) => [1, 2].map((run) => eRead("astra", p, run, { outcome: "miss", why: "invalid", fovDeg: null })));
-    const bad = run("e-bad", { part: "e", complete: true }, misses, [eSheet("e-bad", misses, () => 5)]);
+    // Every Astra read a miss: Astra cannot be above mini, so Match runs on mini, whose own reads fail too.
+    const misses = ["mt-1", "mt-2"].flatMap((p) => [1, 2].flatMap((run) => [eRead("astra", p, run, { outcome: "miss", why: "invalid", fovDeg: null }), eRead("mini", p, run, { fovDeg: 60 })]));
+    const bad = run("e-bad", { part: "e", complete: true }, misses, [eSheet("e-bad", misses, () => 3)]);
     const b = await report([bad]);
-    expect(b.bar("E Astra vertical FOV")).toMatch(/0\/4 = 0\.0% < 80%; 4 misses counted in → FAIL/);
+    expect(b.bar("E Astra vertical FOV")).toMatch(/0\/4 = 0\.0% < 80%; 4 misses counted in → REPORTED  \(measured: FAIL\)/);
+    expect(b.bar("E gpt-5.4-mini vertical FOV")).toMatch(/0\/4 = 0\.0% < 80%.*→ FAIL/);
+    expect(b.text).toMatch(/E FOV ✗ rating ✗; route: mini \(gpt-5\.4-mini's bars: Match runs on it\)/);
     expect(b.code).toBe(1);
+  });
+
+  it("route mini: the release line carries gpt-5.4-mini's bars, and Astra's passes are only reported", async () => {
+    // Level on FOV (a tie is not beating), so Match runs on mini; its views are rated 3, Astra's 5.
+    const level = ["mt-1", "mt-2"].flatMap((p) => [1, 2].flatMap((run) => [eRead("astra", p, run), eRead("mini", p, run)]));
+    const e = run("e-mini", { part: "e", complete: true }, level, [eSheet("e-mini", level, (b) => (b === "astra" ? 5 : 3))]);
+    const r = await report([e]);
+    expect(r.bar("E Astra blind match rating")).toMatch(/4\/4 = 100\.0% ≥ 70%.*→ REPORTED  \(measured: PASS\)/);
+    expect(r.bar("E gpt-5.4-mini blind match rating")).toMatch(/0\/4 = 0\.0% < 70%.*→ FAIL/);
+    expect(r.text).toMatch(/Match this shot .* at SET_MATCH_EFFORT = \w+: E FOV ✓ rating ✗; route: mini/);
+    expect(r.code).toBe(1);
   });
 });

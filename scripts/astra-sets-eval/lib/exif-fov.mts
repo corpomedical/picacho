@@ -31,24 +31,30 @@ export function uprightSize(width: number, height: number, orientation: number):
 // The EXIF reader: a small TIFF-IFD walk, no dependency
 // ---------------------------------------------------------------------------
 
-/** What E reads from a photo's EXIF. Null: the tag is absent, malformed, or (a 35 mm focal length of 0) unknown. */
-export type ExifFocal = { focal35mm: number | null; focalMm: number | null; orientation: number | null };
+/**
+ * What E reads from a photo's EXIF. Null: the tag is absent, malformed, or (a
+ * 35 mm focal length of 0) unknown. frame: the size of the image the camera
+ * wrote (PixelXDimension × PixelYDimension), which an editor that crops may
+ * leave behind.
+ */
+export type ExifFocal = { focal35mm: number | null; focalMm: number | null; orientation: number | null; frame: { width: number; height: number } | null };
 
-export const EXIF_TAGS = { orientation: 0x0112, exifIfd: 0x8769, focalLength: 0x920a, focal35mm: 0xa405 } as const;
+export const EXIF_TAGS = { orientation: 0x0112, exifIfd: 0x8769, focalLength: 0x920a, pixelX: 0xa002, pixelY: 0xa003, focal35mm: 0xa405 } as const;
 const SHORT = 3;
 const LONG = 4;
 const RATIONAL = 5;
 const IFD = 13;
 
-const NONE: ExifFocal = { focal35mm: null, focalMm: null, orientation: null };
+const NONE: ExifFocal = { focal35mm: null, focalMm: null, orientation: null, frame: null };
 
 /**
- * The three tags E needs, from a raw EXIF block (sharp's metadata().exif:
+ * The tags E needs, from a raw EXIF block (sharp's metadata().exif:
  * "Exif\0\0" and then a TIFF header, in either byte order; the header may
  * also come bare). IFD0 holds the orientation (0x0112, SHORT) and the offset
  * of the Exif IFD (0x8769); the Exif IFD holds FocalLengthIn35mmFilm
- * (0xA405, SHORT — 0 means unknown) and FocalLength (0x920A, RATIONAL: two
- * LONGs at an offset). Offsets count from the TIFF header. Never throws:
+ * (0xA405, SHORT — 0 means unknown), FocalLength (0x920A, RATIONAL: two
+ * LONGs at an offset) and PixelXDimension and PixelYDimension (0xA002 and
+ * 0xA003, SHORT or LONG). Offsets count from the TIFF header. Never throws:
  * anything truncated, out of bounds or of the wrong type reads as null.
  */
 export function readExifFocal(block: Uint8Array | null | undefined): ExifFocal {
@@ -101,10 +107,13 @@ export function readExifFocal(block: Uint8Array | null | undefined): ExifFocal {
   const exif = entries(whole(ifd0.get(EXIF_TAGS.exifIfd)));
   const f35 = whole(exif.get(EXIF_TAGS.focal35mm));
   const fmm = rational(exif.get(EXIF_TAGS.focalLength));
+  const px = whole(exif.get(EXIF_TAGS.pixelX));
+  const py = whole(exif.get(EXIF_TAGS.pixelY));
   return {
     focal35mm: f35 !== null && f35 > 0 ? f35 : null,
     focalMm: fmm !== null && Number.isFinite(fmm) && fmm > 0 ? fmm : null,
     orientation: o !== null && o >= 1 && o <= 8 ? o : null,
+    frame: px !== null && py !== null && px > 0 && py > 0 ? { width: px, height: py } : null,
   };
 }
 
@@ -120,36 +129,59 @@ export type FocalTruth = {
   focalMm: number | null;
   /** Where the 35 mm-equivalent focal length came from: match.json wins; the file's own EXIF fills what it leaves out. */
   source: "match.json" | "file" | null;
-  /** Each field both match.json and the file give, where they differ. Reported, never settled silently. */
+  /** Where match.json and the file differ, or the file's frame is not the picture: each says which figure is used. Reported, never settled silently. */
   disagreements: string[];
 };
+
+/** Two sizes of one shape, within a pixel, either way round (an editor that turns the pixels upright may keep the frame's size as it was). */
+function sameShape(a: { width: number; height: number }, b: { width: number; height: number }): boolean {
+  return aspectHeld(a, b) || aspectHeld(a, { width: b.height, height: b.width });
+}
 
 /**
  * The lens a photo's ground truth uses: match.json's figure where it gives
  * one, the file's own EXIF where it leaves it out (field by field). Where
  * both give a figure and they differ — the 35 mm focal length to the whole
  * millimetre EXIF stores, the real focal length by more than 0.05 mm, the
- * orientation at all — the difference is reported. The orientation the
- * truth uses is always the file's (fileOrientation: what the photo is
- * turned by when it is prepared).
+ * orientation at all — the difference is reported with the figure the truth
+ * uses: match.json's for the lens, and always the file's for the orientation
+ * (fileOrientation: what the photo is turned by when it is prepared).
+ *
+ * A 35 mm-equivalent focal length describes the camera's whole frame, and
+ * the truth holds it over the picture's own pixels (stored), so it is true
+ * only of a picture as the camera wrote it. An editor that crops keeps the
+ * lens, and some keep the frame's size too: where that size (frame) is not
+ * the picture's shape, the picture was cut from it, and the file's lens says
+ * nothing about it — the photo is outside the FOV bar unless match.json gives
+ * a lens, which is then used (the writer's own figure for the crop). Either
+ * way it is reported. A crop that kept the frame's shape, or dropped its
+ * size, cannot be seen here: WRITER.md asks for uncropped pictures.
  */
-export function mergeExif(declared: DeclaredExif, file: ExifFocal, fileOrientation: number): FocalTruth {
+export function mergeExif(declared: DeclaredExif, file: ExifFocal, fileOrientation: number, stored: { width: number; height: number }): FocalTruth {
   const d = declared ?? { focal35mm: null, focalMm: null, orientation: null };
   const disagreements: string[] = [];
   if (d.focal35mm !== null && file.focal35mm !== null && Math.round(d.focal35mm) !== Math.round(file.focal35mm)) {
-    disagreements.push(`35 mm focal length: match.json ${d.focal35mm} mm, the file ${file.focal35mm} mm`);
+    disagreements.push(`35 mm focal length: match.json ${d.focal35mm} mm, the file ${file.focal35mm} mm (match.json's is used)`);
   }
   if (d.focalMm !== null && file.focalMm !== null && Math.abs(d.focalMm - file.focalMm) > 0.05) {
-    disagreements.push(`focal length: match.json ${d.focalMm} mm, the file ${file.focalMm} mm`);
+    disagreements.push(`focal length: match.json ${d.focalMm} mm, the file ${file.focalMm} mm (match.json's is used)`);
   }
   if (d.orientation !== null && d.orientation !== fileOrientation) {
-    disagreements.push(`orientation: match.json ${d.orientation}, the file ${fileOrientation}`);
+    disagreements.push(`orientation: match.json ${d.orientation}, the file ${fileOrientation} (the file's is used: the photo is turned by it)`);
   }
-  const focal35mm = d.focal35mm ?? file.focal35mm;
+  const cut = file.frame !== null && !sameShape(file.frame, stored) ? file.frame : null;
+  const fileLens = cut ? null : file.focal35mm;
+  if (cut && (d.focal35mm !== null || file.focal35mm !== null)) {
+    disagreements.push(
+      `the file's EXIF describes a ${cut.width} × ${cut.height} frame and the picture is ${stored.width} × ${stored.height}, cut from it: ${
+        d.focal35mm !== null ? "match.json's 35 mm focal length is used, so it must be the crop's own" : "the file's lens is the whole frame's, so the photo is outside the FOV bar (match.json can give the crop's own)"
+      }`,
+    );
+  }
   return {
-    focal35mm,
+    focal35mm: d.focal35mm ?? fileLens,
     focalMm: d.focalMm ?? file.focalMm,
-    source: d.focal35mm !== null ? "match.json" : file.focal35mm !== null ? "file" : null,
+    source: d.focal35mm !== null ? "match.json" : fileLens !== null ? "file" : null,
     disagreements,
   };
 }
