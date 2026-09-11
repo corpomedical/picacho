@@ -21,9 +21,14 @@
 //
 // THE TAP. JSON answers from OpenAI and Anthropic are cloned and their
 // {model, usage} handed to onMeter — except inside a "settled" context (a
-// call whose cost the spend guard reserves and settles itself), so no cost
-// is counted twice. The prompt sent to /v1/images/edits and to fal's edit
-// endpoints is handed to onPromptTap, for the pipeline-parity check.
+// call whose cost the spend guard reserves and settles itself), and except
+// an image answer (/v1/images/…), which is billed per picture and settled
+// by the stills leg (shots.mts) — so no cost is counted twice. The prompt
+// sent to /v1/images/edits and to fal's edit endpoints is handed to
+// onPromptTap, for the pipeline-parity check. Every live call's outcome goes
+// to onLiveResponse: its status, or -1 when the request went out and no
+// answer came back (the stills leg books such a render: it may have been
+// made, and billed).
 
 import { AsyncLocalStorage } from "node:async_hooks";
 
@@ -93,6 +98,7 @@ export function withNetContext<T>(ctx: NetContext, fn: () => Promise<T>): Promis
 
 export type MeterRecord = { host: string; model: string; usage: Record<string, unknown>; ctx: NetContext };
 export type PromptTap = { url: string; prompt: string; ctx: NetContext };
+/** A live call's outcome: its HTTP status, or -1 when it went out and no answer came back. */
 export type LiveResponse = { host: string; path: string; method: string; status: number; ctx: NetContext };
 export type LocalRoute = { body: Uint8Array | string; contentType: string; status?: number };
 
@@ -198,6 +204,7 @@ export class NetGuard {
         ctx.observe.status = -1;
         ctx.observe.retryAfter = null;
       }
+      this.onLiveResponse?.({ host: v.host, path, method, status: -1, ctx });
       throw err;
     }
     if (ctx.observe) {
@@ -205,7 +212,7 @@ export class NetGuard {
       ctx.observe.retryAfter = res.headers.get("retry-after");
     }
     this.onLiveResponse?.({ host: v.host, path, method, status: res.status, ctx });
-    if ((v.host === "api.openai.com" || v.host === "api.anthropic.com") && !ctx.settled && this.onMeter) {
+    if ((v.host === "api.openai.com" || v.host === "api.anthropic.com") && !ctx.settled && !path.startsWith("/v1/images/") && this.onMeter) {
       const type = res.headers.get("content-type") ?? "";
       if (type.includes("application/json")) {
         try {

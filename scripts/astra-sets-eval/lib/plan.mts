@@ -160,6 +160,7 @@ export function planProbeA(book: PriceBook): PlannedCall[] {
 }
 
 function imageLines(book: PriceBook, engine: Engine, stills: number, what: string): PlannedCall[] {
+  if (stills <= 0) return [];
   const pipeline = engine !== "seedream";
   const renders = stills * (pipeline ? GENERATE_RETRIES : 1);
   return [
@@ -174,15 +175,23 @@ function imageLines(book: PriceBook, engine: Engine, stills: number, what: strin
   ];
 }
 
+/**
+ * C's calls. Per engine: every set's first `cameras` cameras × characters on
+ * their own sketch; on the engines a look can ride (GPT Image and FLUX, the
+ * product's rule), the later cameras again carrying camera 1's still as the
+ * look (`look`); and a control per set and character on the product engines.
+ */
 export function planC(o: {
   sets: number;
   cameras: number;
   characters: number;
   engines: readonly Engine[];
   control: boolean;
+  look: boolean;
   book: PriceBook;
 }): PlannedCall[] {
   const setShots = o.sets * o.cameras * o.characters;
+  const lookShots = o.look ? o.sets * Math.max(0, o.cameras - 1) * o.characters : 0;
   const controlsPerEngine = o.control ? o.sets * o.characters : 0;
   const lines: PlannedCall[] = [];
   let entry = 0;
@@ -190,17 +199,17 @@ export function planC(o: {
   let output = 0;
   let drafts = 0;
   for (const e of o.engines) {
+    const product = e !== "seedream";
+    const stills = setShots + (product ? lookShots + controlsPerEngine : 0);
     lines.push(...imageLines(o.book, e, setShots, "set shots"));
-    entry += setShots;
-    pipelineGates += setShots;
-    output += setShots;
-    if (e !== "seedream" && controlsPerEngine > 0) {
+    if (product) {
+      lines.push(...imageLines(o.book, e, lookShots, "look shots (the later cameras again, carrying camera 1's still)"));
       lines.push(...imageLines(o.book, e, controlsPerEngine, "controls"));
-      entry += controlsPerEngine;
-      pipelineGates += controlsPerEngine;
-      output += controlsPerEngine;
       drafts += controlsPerEngine;
     }
+    entry += stills;
+    pipelineGates += stills;
+    output += stills;
   }
   lines.push(judgementLine(o.book, "entry prompt gate", "prompt-gate", entry));
   lines.push(judgementLine(o.book, "pipeline prompt gate", "prompt-gate", pipelineGates));
@@ -210,32 +219,35 @@ export function planC(o: {
   return lines;
 }
 
+/** `c --probe`: one fixture set, one camera, one character, each engine; no control, and no look (one camera has no later camera). */
 export function planProbeC(o: { engines: readonly Engine[]; book: PriceBook }): PlannedCall[] {
-  return planC({ sets: 1, cameras: 1, characters: 1, engines: o.engines, control: false, book: o.book });
+  return planC({ sets: 1, cameras: 1, characters: 1, engines: o.engines, control: false, look: false, book: o.book });
 }
 
 /**
- * D's calls. `stills` is false while D's stills leg is not built (design §9,
- * second sitting): the plan then holds only what this runner can call.
+ * D's calls. `stills` is how many brief runs may get stills: the harmful
+ * briefs × runs (the stills leg shoots only a harmful brief's delivered
+ * set), each on its first `dCameras` cameras, on GPT Image. The ceiling
+ * assumes every one of them gets through.
  */
 export function planD(o: {
   briefs: number;
   runs: number;
   dCameras: number;
   transport: "batch" | "background";
-  stills: boolean;
+  stills: number;
   book: PriceBook;
 }): PlannedCall[] {
   const n = o.briefs * o.runs;
-  const stills = n * o.dCameras;
+  const stills = o.stills * o.dCameras;
   const lines: PlannedCall[] = [
     judgementLine(o.book, "brief gate", "prompt-gate", n),
     astraLine(o.book, `Astra ${SET_BUILD_EFFORT}, D`, n, o.transport === "batch"),
     judgementLine(o.book, "words gate", "prompt-gate", n * 2),
   ];
-  if (o.stills) {
+  if (stills > 0) {
     lines.push(
-      ...imageLines(o.book, "gpt-image", stills, "stills (only for briefs that get through)"),
+      ...imageLines(o.book, "gpt-image", stills, "stills (harmful briefs that get a set)"),
       judgementLine(o.book, "gates on the stills (entry + pipeline)", "prompt-gate", stills * 2),
       judgementLine(o.book, "output gate on the stills", "output-gate", stills),
       judgementLine(o.book, "identity score on the stills", "identity-scorer", stills),

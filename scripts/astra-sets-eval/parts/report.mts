@@ -16,6 +16,16 @@
 //                       the other Astra arm is REPORTED beside it
 //   persons (D)         every item on every real persons sheet counts: an
 //                       item nobody rated leaves the bar UNDETERMINED
+//   stills (C)          every real C run's stills pooled (probes set aside),
+//                       with the composition sheets' ratings: barC per
+//                       engine, all three engines section 4 names (one with
+//                       no still in hand is UNDETERMINED, a BLOCKED arm never
+//                       passes), and the look — its objects question, and
+//                       identity and composition with it against without —
+//                       with the camera heights and the rest, REPORTED
+//   stills (D)          D's outcomes carry the stills leg's verdicts; the
+//                       d-stills sheet (stills that passed the output gate,
+//                       rated off limits or not) is REPORTED, outside the bar
 //   the photo arm       (runs whose manifest says photos: A and B on the
 //                       location photos, D on the photos with people) is read
 //                       apart: its own bars — A photo validity and cost
@@ -59,6 +69,8 @@ import {
   photoArm,
   priorHitsConstruction,
   reportDPhotos,
+  reportDStills,
+  shotPromptRefusalsCount,
   type BarResult,
   type BItem,
   type DRow,
@@ -67,6 +79,7 @@ import {
 import { tokenCounts, type PriceBook } from "../lib/prices.mts";
 import { canonicalJson, newRunId, pct, usd } from "../lib/util.mts";
 import { readRun } from "./b.mts";
+import { cFromRuns } from "./c.mts";
 import { dPhotoRow, type DOutcome, type DPhotoOutcome } from "./d.mts";
 import { eItems, type EPhotoRow, type EReadRow } from "./e.mts";
 
@@ -158,9 +171,9 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   const real = runs.filter((r) => !r.simulated);
   const problems: string[] = [];
   const warnings: string[] = [];
-  const finishes = (r: LoadedRun) => ["a", "d", "e", "canary"].includes(r.part) && r.manifest.probe !== true;
+  const finishes = (r: LoadedRun) => ["a", "c", "d", "e", "canary"].includes(r.part) && r.manifest.probe !== true;
   const incomplete = real.filter((r) => !r.complete && finishes(r));
-  for (const r of incomplete) warnings.push(`${runName(r)}: INCOMPLETE (interrupted, stopped or unfinished): it may fail a bar, never pass one. ${r.part === "d" || r.part === "e" ? `Rerun ${r.part.toUpperCase()}` : "--resume it"}`);
+  for (const r of incomplete) warnings.push(`${runName(r)}: INCOMPLETE (interrupted, stopped or unfinished): it may fail a bar, never pass one. ${r.part === "c" || r.part === "d" || r.part === "e" ? `Rerun ${r.part.toUpperCase()}` : "--resume it"}`);
 
   // Ratings, imported against their keys. A sheet whose import has a
   // problem is left out whole: none of its ratings reach a bar.
@@ -226,19 +239,21 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
       notes: [],
     };
   };
-  /** Every item on every persons sheet of these runs: one nobody rated counts as lacking two ratings. */
-  const personsOf = (rs: readonly LoadedRun[]): PersonsItem[] => {
+  /** Every item on every persons sheet (or D's stills sheet) of these runs: one nobody rated counts as lacking two ratings. */
+  const personsOf = (rs: readonly LoadedRun[], kind: "d-persons" | "d-stills" = "d-persons"): PersonsItem[] => {
     const universe = new Set<string>();
-    for (const r of rs) for (const key of r.keys) if (key.kind === "d-persons") for (const it of key.items) universe.add(canonicalJson({ ...it.source, kind: key.kind }));
+    for (const r of rs) for (const key of r.keys) if (key.kind === kind) for (const it of key.items) universe.add(canonicalJson({ ...it.source, kind: key.kind }));
     return [...universe].map((k) => ({
       choices: (combined.get(k)?.ratings ?? []).map((x) => x.choice).filter((x): x is "yes" | "no" | "unsure" => typeof x === "string"),
     }));
   };
-  const construction = () =>
-    priorHitsConstruction({
-      sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(o.repoRoot, f), "utf8")).join("\n"),
-      policyLog: readFileSync(join(o.repoRoot, "src/lib/generations/policy-log.ts"), "utf8"),
-    });
+  const construction = () => {
+    const policyLog = readFileSync(join(o.repoRoot, "src/lib/generations/policy-log.ts"), "utf8");
+    return {
+      ...priorHitsConstruction({ sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(o.repoRoot, f), "utf8")).join("\n"), policyLog }),
+      shotPromptsCount: shotPromptRefusalsCount(policyLog),
+    };
+  };
   const words = real.filter((r) => !r.photos);
 
   // A
@@ -280,8 +295,17 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     if (ag) reported.push(ag);
   }
 
-  // C: the engine leg is not built yet, so no real C run exists to settle it.
-  const cNote = real.some((r) => r.part === "c") ? "C: a real C run is in hand but the engine leg is not built; nothing to settle" : "C: not run (the engine leg is design §9's second sitting)";
+  // C: every real C run's stills (probes set aside), pooled, with the composition sheets' ratings.
+  const cRuns = words.filter((r) => r.part === "c" && r.manifest.probe !== true);
+  let cNote: string | null = "C: no real C run in hand";
+  if (cRuns.length) {
+    const c = cFromRuns(cRuns, ofKind("c-composition"));
+    const cBarsIn = capIf(c.bars, cRuns);
+    bars.push(...cBarsIn);
+    reported.push(...c.reported);
+    release.C = verdictOf(cBarsIn);
+    cNote = c.blocked.length ? `C: ${c.blocked.join(", ")} BLOCKED (fal refused the data: references; the runner uploads nothing)` : null;
+  }
 
   // D
   const dRuns = words.filter((r) => r.part === "d");
@@ -296,6 +320,8 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     bars.push(...dBars);
     priorHitsBar = dBars.find((b) => b.id === "D-prior-hits") ?? null;
     release.D = verdictOf(dBars.filter((b) => b.id !== "D-over-refusal"));
+    // The stills that passed the output gate, rated off limits or not: a gate false negative, never the bar.
+    if (dRuns.some((r) => r.keys.some((k) => k.kind === "d-stills"))) reported.push(reportDStills(personsOf(dRuns, "d-stills")));
   }
 
   // THE PHOTO ARM (Sets from a photo): the same bars over the photo runs,
@@ -408,7 +434,7 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   lines.push("--- bars ---");
   for (const b of bars) lines.push(`  ${barLine(b)}`);
   for (const b of reported) lines.push(`  ${barLine(b)}`);
-  lines.push(`  ${cNote}`);
+  if (cNote) lines.push(`  ${cNote}`);
   if (!dOutcomes.length) lines.push("  D: no real D run in hand");
   if (!aBuilds.length) lines.push("  A: no real A run in hand");
   else if (!astraArms.includes(shipped)) lines.push(`  A: no ${shipped} builds in hand (SET_BUILD_EFFORT = ${SET_BUILD_EFFORT} is the arm that ships)`);

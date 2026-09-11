@@ -147,6 +147,50 @@ describe("the Match-this-shot sheet (e-match)", () => {
   });
 });
 
+describe("the composition sheet's extra question (C's look shots)", () => {
+  // Six stills; the look shots (odd ones) also show the first still and ask
+  // whether its objects are the same.
+  const cItems: SheetItemIn[] = Array.from({ length: 6 }, (_, i) => ({
+    source: { shotId: `cl-secret-${i}`, engine: ["gpt-image", "flux"][i % 2], setKey: `set-${i % 3}` },
+    groupKey: `set-${i % 3}`,
+    images: [
+      { role: "sketch", path: `/runs/frames/f-${i}.jpg` },
+      { role: "still", path: `/runs/stills/s-${i}.png` },
+      ...(i % 2 ? [{ role: "first" as const, path: `/runs/stills/first-${i}.png` }] : []),
+    ],
+    ...(i % 2 ? { asks: ["objects"] } : {}),
+  }));
+  const p = planSheet({ kind: "c-composition", raterId: "r1", seed: 4, items: cItems });
+  const q = QUESTIONS["c-composition"];
+  const file = (ratings: unknown[]) => ({ sheetId: p.sheetId, raterId: "r1", ratings });
+  const asked = p.key.items.filter((k) => k.asks?.includes("objects")).map((k) => k.itemId);
+  const plain = p.key.items.filter((k) => !k.asks).map((k) => k.itemId);
+
+  it("asks it only of the look shots, beside the first still, with nothing of the key on the page", () => {
+    const html = renderSheetHtml(p, q);
+    expect(html.split("Are the objects, vehicles and finishes the same as in the first still?").length - 1).toBe(3);
+    expect(html.split('alt="First still"').length - 1).toBe(3);
+    for (const k of p.key.items) for (const v of [k.source.shotId, k.source.engine]) expect(html).not.toContain(String(v));
+    expect(asked).toHaveLength(3);
+    for (const id of asked) expect(html).toContain(`name="x-objects-${id}"`);
+    for (const id of plain) expect(html).not.toContain(`name="x-objects-${id}"`);
+  });
+
+  it("imports the extra score beside the composition score, and holds it to the same rules", () => {
+    const all = [...asked.map((itemId) => ({ itemId, score: 4, extras: { objects: 5 } })), ...plain.map((itemId) => ({ itemId, score: 3 }))];
+    const ok = importRatings(p.key, [file(all)]);
+    expect(ok.problems).toEqual([]);
+    expect(ok.rows.filter((r) => r.extras).map((r) => r.extras)).toEqual([{ objects: 5 }, { objects: 5 }, { objects: 5 }]);
+    const missing = [...asked.map((itemId) => ({ itemId, score: 4 })), ...plain.map((itemId) => ({ itemId, score: 3 }))];
+    expect(importRatings(p.key, [file(missing)]).problems.join(" ")).toMatch(/3 rated item\(s\) lack the score of a question they were also asked/);
+    expect(importRatings(p.key, [file(missing)], { allowIncomplete: true }).warnings.join(" ")).toMatch(/lack the score/);
+    const high = all.map((r) => ("extras" in r ? { ...r, extras: { objects: 6 } } : r));
+    expect(importRatings(p.key, [file(high)]).problems.join(" ")).toMatch(/"objects" score must be a whole number 1–5/);
+    const stray = all.map((r) => (plain.includes(r.itemId) ? { ...r, extras: { objects: 4 } } : r));
+    expect(importRatings(p.key, [file(stray)]).problems.join(" ")).toMatch(/answers a question it was not asked/);
+  });
+});
+
 describe("importRatings", () => {
   const p = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 5, items: items.slice(0, 3) });
   const ids = p.key.items.map((k) => k.itemId);

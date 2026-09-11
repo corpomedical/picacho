@@ -72,8 +72,12 @@ describe("parseCli", () => {
     if (c.cmd !== "part") throw new Error("part");
     expect(c.flags.engines).toEqual(["gpt-image", "seedream"]);
     expect(c.flags.control).toBe(false);
+    expect(c.flags.look).toBe(true);
     expect(c.flags.only).toEqual(["int-01", "ext-02"]);
     expect(c.flags.seed).toBe(42);
+    const noLook = ok(["c", "corp", "--no-look"]);
+    expect(noLook.cmd === "part" && noLook.flags.look).toBe(false);
+    expect(err(["d", "corp", "--no-look"])).toMatch(/--no-look does not apply to d/);
     expect(ok(["a", "c", "--no-words-gate"]).cmd === "part" && (ok(["a", "c", "--no-words-gate"]) as { flags: { wordsGate: boolean } }).flags.wordsGate).toBe(false);
   });
 

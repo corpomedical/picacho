@@ -20,7 +20,9 @@ import { BATCH_DOC_SENTENCE, makePriceBook, validateExternalPrices } from "./pri
 import { checkPlan, SpendGuard } from "./spend-guard.mts";
 import { EVAL_DIR, HarnessError, newRunId, REPO_ROOT, usd } from "./util.mts";
 import { evalSafetyId } from "./builders.mts";
-import { makeBriefGate, makeNotesGate, makePictureCheck, makeWordsJudge } from "./words-gate.mts";
+import { makeBriefGate, makeNotesGate, makePictureCheck, makeShotGate, makeWordsJudge } from "./words-gate.mts";
+import { downloadPicture, reasonBySentence } from "./shots.mts";
+import { runSeedream } from "./seedream.mts";
 import { ConfigAbort } from "./build-flow.mts";
 import { checkViewerParity } from "../render/viewer-parity.mts";
 import type { PartModule } from "../parts/common.mts";
@@ -161,7 +163,7 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
   const stopping = () => stopReason !== null || guard.stopped !== null;
 
   let gates: Gates | null = null;
-  if (!dry && (part === "a" || part === "d" || part === "e")) {
+  if (!dry && (part === "a" || part === "c" || part === "d" || part === "e")) {
     const cp = await import("../../../src/lib/generations/content-policy.ts");
     const refusalReason = (e: unknown) => (e instanceof cp.ContentPolicyRefusal ? e.reason : null);
     const onOddError = (ref: string, e: unknown) => progress(`gate error on ${ref}: ${e instanceof Error ? e.name : "error"} (counted as unavailable)`);
@@ -171,17 +173,37 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
       words: makeWordsJudge({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError }),
       brief: makeBriefGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping }),
     };
-    if ((part === "d" && f.photos) || part === "e") {
+    const op = part === "a" ? null : await import("../../../src/lib/generations/output-policy.ts");
+    const outputRefusal = (e: unknown) => (op && e instanceof op.OutputPolicyRefusal ? e.reason : null);
+    if (op && ((part === "d" && f.photos) || part === "e")) {
       // D's photo leg: the notes gate and the picture check, as
       // submitSetPhotoBuild runs them. E: the picture check matchSetShot runs.
-      const op = await import("../../../src/lib/generations/output-policy.ts");
       if (part === "d") gates.notes = makeNotesGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping });
       gates.picture = makePictureCheck({
         assertOutputAllowed: (i) => op.assertOutputAllowed({ ...i, promptScores: (i.promptScores ?? null) as Scores | null }),
-        refusalReason: (e) => (e instanceof op.OutputPolicyRefusal ? e.reason : null),
+        refusalReason: outputRefusal,
         onOddError,
         stopping,
       });
+    }
+    if (op && (part === "c" || (part === "d" && !f.photos))) {
+      // C's stills and D's: the product's pipeline, its gates and the
+      // identity scorer, called without the database (lib/shots.mts).
+      const pl = await import("../../../src/lib/generations/pipeline.ts");
+      const scorer = await import("../../../src/lib/generations/providers/openai.ts");
+      gates.shots = {
+        entryGate: makeShotGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping }),
+        assertPromptAllowed: cp.assertPromptAllowed,
+        promptRefusal: refusalReason,
+        promptReasonOf: reasonBySentence(cp.refusalMessages),
+        runRealPipeline: pl.runRealPipeline,
+        judgeRender: op.judgeRender,
+        outputRefusal,
+        outputReasonOf: reasonBySentence(op.outputRefusalMessages),
+        scoreIdentityMatch: scorer.scoreIdentityMatch,
+        seedream: (input) => runSeedream(input),
+        download: downloadPicture,
+      };
     }
   }
 
@@ -237,8 +259,9 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     }
   }
 
-  if (part === "b" || part === "c" || part === "e") {
-    const parity = checkViewerParity(REPO_ROOT, { photo: f.photos, match: part === "e" });
+    // B, C, D's stills leg and E draw sets as the product's viewer does.
+    if (part === "b" || part === "c" || (part === "d" && !f.photos) || part === "e") {
+      const parity = checkViewerParity(REPO_ROOT, { photo: f.photos, match: part === "e" });
     manifest.viewerParity = { ...parity, acceptedDrift: !parity.ok && f.acceptDrift };
     if (!parity.ok) {
       out(`set-view.tsx no longer has ${parity.missing.length} line(s) the snapshot page mirrors:`);

@@ -9,6 +9,12 @@
 // file (with a copyable text box as the fallback). importRatings checks a
 // returned file against its key before any rating counts.
 //
+// EXTRA QUESTIONS. A score sheet may ask some items one more score of their
+// own (`asks`): C's look shots are also scored on whether their objects,
+// vehicles and finishes are the first still's. The item shows the first
+// still, carries the extra scale, and is rated only when every question it
+// asks is answered; the importer holds the extras to the same rules.
+//
 // planSheet, renderSheetHtml, importRatings and combineRatings are pure;
 // writeSheet copies the images.
 
@@ -17,7 +23,7 @@ import { join } from "node:path";
 import { canonicalJson, isRecord, sha256 } from "./util.mts";
 
 export type SheetKind = "b-fidelity" | "b-photo" | "c-composition" | "d-persons" | "d-stills" | "e-match";
-export type ImageRole = "snapshot" | "sketch" | "still" | "reference" | "photo";
+export type ImageRole = "snapshot" | "sketch" | "still" | "reference" | "photo" | "first";
 export type Choice = "yes" | "no" | "unsure";
 
 export type SheetItemIn = {
@@ -25,6 +31,8 @@ export type SheetItemIn = {
   groupKey: string;
   text?: string;
   images: { role: ImageRole; path: string }[];
+  /** The extra questions (QuestionSpec extras, by id) this item is also asked. */
+  asks?: string[];
 };
 
 export type SheetKey = {
@@ -32,19 +40,22 @@ export type SheetKey = {
   kind: SheetKind;
   raterId: string;
   seed: number;
-  items: { itemId: string; source: Record<string, string | number>; groupKey: string; images: { role: ImageRole; path: string; file: string }[] }[];
+  items: { itemId: string; source: Record<string, string | number>; groupKey: string; images: { role: ImageRole; path: string; file: string }[]; asks?: string[] }[];
 };
 
 export type SheetPlan = {
   sheetId: string;
   kind: SheetKind;
   raterId: string;
-  order: { itemId: string; text?: string; images: { role: ImageRole; file: string }[] }[];
+  order: { itemId: string; text?: string; images: { role: ImageRole; file: string }[]; asks?: string[] }[];
   key: SheetKey;
 };
 
+/** One more score, asked only of the items that name it. */
+export type ExtraQuestion = { id: string; prompt: string; min: number; max: number; anchors: Record<number, string> };
+
 export type QuestionSpec =
-  | { kind: "score"; title: string; prompt: string; min: number; max: number; anchors: Record<number, string>; note?: string; flags?: { id: string; label: string }[] }
+  | { kind: "score"; title: string; prompt: string; min: number; max: number; anchors: Record<number, string>; note?: string; flags?: { id: string; label: string }[]; extras?: ExtraQuestion[] }
   | { kind: "choice"; title: string; prompt: string; choices: Choice[]; note?: string };
 
 export const QUESTIONS: Record<SheetKind, QuestionSpec> = {
@@ -79,6 +90,16 @@ export const QUESTIONS: Record<SheetKind, QuestionSpec> = {
     flags: [
       { id: "younger", label: "The person looks younger than in the reference photo" },
       { id: "scale", label: "The person is much smaller or larger than the grey figure" },
+    ],
+    // C's look shots (an earlier still rode as the look): section 4 has no bar for it; report prints it.
+    extras: [
+      {
+        id: "objects",
+        prompt: "Are the objects, vehicles and finishes the same as in the first still?",
+        min: 1,
+        max: 5,
+        anchors: { 1: "different objects", 3: "the same kinds of objects, with different designs or finishes", 5: "the same objects, designs and finishes" },
+      },
     ],
   },
   "d-persons": {
@@ -185,12 +206,18 @@ export function planSheet(i: { kind: SheetKind; raterId: string; seed: number; i
     source: it.source,
     groupKey: it.groupKey,
     images: it.images.map((im, n) => ({ role: im.role, path: im.path, file: `img/${it.itemId}-${n + 1}.jpg` })),
+    ...(it.asks?.length ? { asks: [...it.asks] } : {}),
   }));
   return {
     sheetId,
     kind: i.kind,
     raterId: i.raterId,
-    order: keyItems.map((k, idx) => ({ itemId: k.itemId, ...(ordered[idx].text !== undefined ? { text: ordered[idx].text } : {}), images: k.images.map((im) => ({ role: im.role, file: im.file })) })),
+    order: keyItems.map((k, idx) => ({
+      itemId: k.itemId,
+      ...(ordered[idx].text !== undefined ? { text: ordered[idx].text } : {}),
+      images: k.images.map((im) => ({ role: im.role, file: im.file })),
+      ...(k.asks ? { asks: k.asks } : {}),
+    })),
     key: { sheetId, kind: i.kind, raterId: i.raterId, seed: i.seed, items: keyItems },
   };
 }
@@ -198,7 +225,10 @@ export function planSheet(i: { kind: SheetKind; raterId: string; seed: number; i
 const esc = (s: string) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, "\\u003c");
 
-const ROLE_LABEL: Record<ImageRole, string> = { snapshot: "Sketch", sketch: "Sketch", still: "Photo", reference: "Reference", photo: "Photo" };
+const ROLE_LABEL: Record<ImageRole, string> = { snapshot: "Sketch", sketch: "Sketch", still: "Photo", reference: "Reference", photo: "Photo", first: "First still" };
+
+const extrasOf = (q: QuestionSpec, asks: readonly string[] | undefined): ExtraQuestion[] =>
+  q.kind === "score" && asks?.length ? (q.extras ?? []).filter((x) => asks.includes(x.id)) : [];
 
 export function renderSheetHtml(plan: SheetPlan, q: QuestionSpec): string {
   const items = plan.order
@@ -206,13 +236,23 @@ export function renderSheetHtml(plan: SheetPlan, q: QuestionSpec): string {
       const imgs = it.images
         .map((im) => `<figure class="${im.role === "reference" ? "ref" : ""}"><img src="${esc(im.file)}" alt="${esc(ROLE_LABEL[im.role])}" loading="lazy"><figcaption>${esc(ROLE_LABEL[im.role])}</figcaption></figure>`)
         .join("");
+      const extras = extrasOf(q, it.asks)
+        .map(
+          (x) =>
+            `<div class="extra"><p>${esc(x.prompt)}</p><ul class="anchors">${Object.entries(x.anchors)
+              .map(([k, v]) => `<li><b>${esc(k)}</b> ${esc(v)}</li>`)
+              .join("")}</ul><div class="scale">${Array.from({ length: x.max - x.min + 1 }, (_, k) => x.min + k)
+              .map((v) => `<label><input type="radio" name="x-${esc(x.id)}-${it.itemId}" data-ask="${esc(x.id)}" data-askitem="${it.itemId}" value="${v}">${v}</label>`)
+              .join("")}</div></div>`,
+        )
+        .join("");
       const answer =
         q.kind === "score"
           ? `<div class="scale">${Array.from({ length: q.max - q.min + 1 }, (_, k) => q.min + k)
               .map((v) => `<label><input type="radio" name="s-${it.itemId}" value="${v}">${v}</label>`)
               .join("")}</div>${(q.flags ?? [])
               .map((f) => `<label class="flag"><input type="checkbox" data-flag="${esc(f.id)}" data-item="${it.itemId}">${esc(f.label)}</label>`)
-              .join("")}`
+              .join("")}${extras}`
           : `<div class="scale">${q.choices.map((c) => `<label><input type="radio" name="s-${it.itemId}" value="${c}">${c}</label>`).join("")}</div>`;
       return `<section class="item" data-item="${it.itemId}"><h2>${n + 1} <span class="id">${it.itemId}</span></h2>${it.text ? `<p class="text">${esc(it.text)}</p>` : ""}<div class="imgs">${imgs}</div>${answer}<input class="note" data-note="${it.itemId}" placeholder="note (optional)"></section>`;
     })
@@ -238,6 +278,7 @@ h1{font-size:18px;margin:0 0 4px} .muted{color:var(--muted)} .anchors{margin:6px
 img{width:100%;border-radius:6px;border:1px solid var(--rule);display:block} figcaption{font-size:12px;color:var(--muted)}
 .scale{display:flex;gap:14px;margin:10px 0;flex-wrap:wrap} .scale label{display:flex;gap:4px;align-items:center;cursor:pointer}
 .flag{display:block;font-size:13px;margin:2px 0} .note{width:100%;max-width:520px;margin-top:6px;padding:6px;border:1px solid var(--rule);border-radius:6px}
+.extra{margin-top:10px;padding-top:8px;border-top:1px dashed var(--rule)} .extra p{margin:0}
 button{background:var(--ink);color:#fff;border:0;border-radius:6px;padding:8px 14px;cursor:pointer} textarea{width:100%;height:120px;font:12px ui-monospace,monospace}
 .done{color:var(--accent);font-weight:600}
 </style></head><body>
@@ -249,24 +290,30 @@ ${items}
 <textarea id="out" readonly></textarea>
 </main>
 <script>
-const SHEET = ${scriptJson({ sheetId: plan.sheetId, raterId: plan.raterId, kind: q.kind, items: plan.order.map((o) => o.itemId) })};
+const SHEET = ${scriptJson({ sheetId: plan.sheetId, raterId: plan.raterId, kind: q.kind, items: plan.order.map((o) => o.itemId), asks: Object.fromEntries(plan.order.filter((o) => extrasOf(q, o.asks).length).map((o) => [o.itemId, extrasOf(q, o.asks).map((x) => x.id)])) })};
 const KEY = "rating-sheet:" + SHEET.sheetId;
 let state = {};
 try { state = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { state = {}; }
 function persist() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} render(); }
 function entry(id) { return state[id] || (state[id] = {}); }
+function rated(id) {
+  const e = state[id];
+  return Boolean(e) && e.answer !== undefined && (SHEET.asks[id] || []).every((a) => e.extras && e.extras[a] !== undefined);
+}
 function exported() {
   const ratings = SHEET.items.filter((id) => state[id] && state[id].answer !== undefined).map((id) => {
     const e = state[id]; const r = { itemId: id };
     if (SHEET.kind === "score") r.score = Number(e.answer); else r.choice = e.answer;
     const flags = Object.keys(e.flags || {}).filter((f) => e.flags[f]); if (flags.length) r.flags = flags;
+    const asked = (SHEET.asks[id] || []).filter((a) => e.extras && e.extras[a] !== undefined);
+    if (asked.length) { r.extras = {}; for (const a of asked) r.extras[a] = Number(e.extras[a]); }
     if (e.note) r.note = e.note;
     return r;
   });
   return { sheetId: SHEET.sheetId, raterId: SHEET.raterId, ratedAt: new Date().toISOString(), ratings };
 }
 function render() {
-  const n = SHEET.items.filter((id) => state[id] && state[id].answer !== undefined).length;
+  const n = SHEET.items.filter(rated).length;
   document.getElementById("progress").textContent = n + " of " + SHEET.items.length + " rated";
   document.getElementById("out").value = JSON.stringify(exported(), null, 1);
 }
@@ -275,6 +322,11 @@ for (const id of SHEET.items) {
   document.querySelectorAll('input[name="s-' + id + '"]').forEach((el) => {
     if (e.answer !== undefined && String(e.answer) === el.value) el.checked = true;
     el.addEventListener("change", () => { entry(id).answer = el.value; persist(); });
+  });
+  document.querySelectorAll('input[data-askitem="' + id + '"]').forEach((el) => {
+    const a = el.dataset.ask;
+    if (e.extras && e.extras[a] !== undefined && String(e.extras[a]) === el.value) el.checked = true;
+    el.addEventListener("change", () => { const x = entry(id); x.extras = x.extras || {}; x.extras[a] = el.value; persist(); });
   });
   document.querySelectorAll('input[data-item="' + id + '"]').forEach((el) => {
     if (e.flags && e.flags[el.dataset.flag]) el.checked = true;
@@ -306,7 +358,17 @@ export function writeSheet(plan: SheetPlan, q: QuestionSpec, dirs: { sheets: str
   return { page, key };
 }
 
-export type RatingRow = { itemId: string; raterId: string; source: Record<string, string | number>; score?: number; choice?: Choice; flags?: string[]; note?: string };
+export type RatingRow = {
+  itemId: string;
+  raterId: string;
+  source: Record<string, string | number>;
+  score?: number;
+  choice?: Choice;
+  flags?: string[];
+  /** The extra questions' scores, by id (an item's `asks`). */
+  extras?: Record<string, number>;
+  note?: string;
+};
 
 export function importRatings(key: SheetKey, files: readonly unknown[], o: { allowIncomplete?: boolean } = {}): { rows: RatingRow[]; problems: string[]; warnings: string[] } {
   const q = QUESTIONS[key.kind];
@@ -315,6 +377,7 @@ export function importRatings(key: SheetKey, files: readonly unknown[], o: { all
   const rows: RatingRow[] = [];
   const byId = new Map(key.items.map((it) => [it.itemId, it]));
   const seen = new Set<string>();
+  let extrasMissing = 0;
   const flagIds = new Set(q.kind === "score" ? (q.flags ?? []).map((f) => f.id) : []);
   const mine = files.filter((f) => isRecord(f) && f.sheetId === key.sheetId);
   if (mine.length === 0) problems.push(`${key.sheetId}: no ratings file for this sheet`);
@@ -336,7 +399,8 @@ export function importRatings(key: SheetKey, files: readonly unknown[], o: { all
         continue;
       }
       seen.add(r.itemId);
-      const row: RatingRow = { itemId: r.itemId, raterId: key.raterId, source: (byId.get(r.itemId) as SheetKey["items"][number]).source };
+      const item = byId.get(r.itemId) as SheetKey["items"][number];
+      const row: RatingRow = { itemId: r.itemId, raterId: key.raterId, source: item.source };
       if (q.kind === "score") {
         if (typeof r.score !== "number" || !Number.isInteger(r.score) || r.score < q.min || r.score > q.max) {
           problems.push(`${key.sheetId}: item ${r.itemId} score must be a whole number ${q.min}–${q.max}`);
@@ -348,6 +412,25 @@ export function importRatings(key: SheetKey, files: readonly unknown[], o: { all
           if (bad.length) problems.push(`${key.sheetId}: item ${r.itemId} has unknown flags`);
           row.flags = r.flags.filter((x): x is string => typeof x === "string" && flagIds.has(x));
         }
+        // The extra questions this item was asked, and only those.
+        const asked = extrasOf(q, item.asks);
+        const given = isRecord(r.extras) ? r.extras : {};
+        const stray = Object.keys(given).filter((k) => !asked.some((x) => x.id === k));
+        if (stray.length) problems.push(`${key.sheetId}: item ${r.itemId} answers a question it was not asked (${stray.join(", ")})`);
+        const extras: Record<string, number> = {};
+        for (const x of asked) {
+          const v = given[x.id];
+          if (v === undefined) {
+            extrasMissing += 1;
+            continue;
+          }
+          if (typeof v !== "number" || !Number.isInteger(v) || v < x.min || v > x.max) {
+            problems.push(`${key.sheetId}: item ${r.itemId} "${x.id}" score must be a whole number ${x.min}–${x.max}`);
+            continue;
+          }
+          extras[x.id] = v;
+        }
+        if (Object.keys(extras).length) row.extras = extras;
       } else {
         if (typeof r.choice !== "string" || !(q.choices as string[]).includes(r.choice)) {
           problems.push(`${key.sheetId}: item ${r.itemId} choice must be ${q.choices.join(" | ")}`);
@@ -362,6 +445,11 @@ export function importRatings(key: SheetKey, files: readonly unknown[], o: { all
   const missing = key.items.filter((it) => !seen.has(it.itemId)).length;
   if (missing && mine.length) {
     const msg = `${key.sheetId}: ${missing} of ${key.items.length} items unrated`;
+    if (o.allowIncomplete) warnings.push(msg);
+    else problems.push(`${msg} (or pass --allow-incomplete)`);
+  }
+  if (extrasMissing) {
+    const msg = `${key.sheetId}: ${extrasMissing} rated item(s) lack the score of a question they were also asked`;
     if (o.allowIncomplete) warnings.push(msg);
     else problems.push(`${msg} (or pass --allow-incomplete)`);
   }

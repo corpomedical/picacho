@@ -94,6 +94,22 @@ describe("NetGuard", () => {
     expect(observe.status).toBe(-1);
   });
 
+  it("leaves an image answer to the stills leg (billed per picture), and reports a call sent with no answer as -1", async () => {
+    const g = new NetGuard({ mode: "live", realFetch: fakeFetch([]) });
+    const meters: MeterRecord[] = [];
+    const seen: number[] = [];
+    g.onMeter = (m) => meters.push(m);
+    g.onLiveResponse = (r) => seen.push(r.status);
+    const form = new FormData();
+    form.set("prompt", "p");
+    await g.fetch("https://api.openai.com/v1/images/edits", { method: "POST", body: form });
+    expect(meters).toEqual([]);
+    const dead = new NetGuard({ mode: "live", realFetch: (async () => { throw new TypeError("socket hang up"); }) as typeof fetch });
+    dead.onLiveResponse = (r) => seen.push(r.status);
+    await expect(dead.fetch("https://fal.run/fal-ai/flux-2-pro/edit", { method: "POST", body: "{}" })).rejects.toThrow();
+    expect(seen).toEqual([200, -1]);
+  });
+
   it("taps the prompt sent to an image edit", async () => {
     const g = new NetGuard({ mode: "live", realFetch: fakeFetch([]) });
     const taps: string[] = [];

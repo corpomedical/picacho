@@ -43,6 +43,8 @@ export type Flags = {
   effort: "low" | "medium" | null;
   engines: Engine[];
   control: boolean;
+  /** C's look arm: the later cameras again, carrying camera 1's still (--no-look skips it). */
+  look: boolean;
   escalate: boolean;
   dCameras: number;
   raters: string[];
@@ -90,6 +92,7 @@ const SPECS: Record<string, Spec> = {
   "--effort": { kind: "str", scopes: ["c", "d"] },
   "--engines": { kind: "list", scopes: ["c"] },
   "--no-control": { kind: "bool", scopes: ["c"] },
+  "--no-look": { kind: "bool", scopes: ["c"] },
   "--escalate": { kind: "bool", scopes: ["d"] },
   "--d-cameras": { kind: "int", scopes: ["d"] },
   // A writes the persons sheet for its own Astra specs (Part D's bar reads it).
@@ -130,6 +133,7 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
   --effort low|medium       c d        which Astra arm's sets (c); D's build effort
   --engines ...             c          gpt-image,flux,seedream
   --no-control              c          skip the ordinary-render control arm
+  --no-look                 c          skip the look arm (the later cameras again, carrying camera 1's still)
   --escalate                d          carry sessionPriorHits across briefs
   --d-cameras N             d          stills per delivered set (default 1)
   --raters a,b              a b c d e  rater ids (default r1,r2)
@@ -170,6 +174,7 @@ function defaults(): Flags {
     effort: null,
     engines: [...ENGINES],
     control: true,
+    look: true,
     escalate: false,
     dCameras: 1,
     raters: ["r1", "r2"],
@@ -338,6 +343,7 @@ export function parseCli(argv: readonly string[]): { ok: true; cli: Cli } | { ok
     flags.engines = [...new Set(e)] as Engine[];
   }
   flags.control = raw["--no-control"] !== true;
+  flags.look = raw["--no-look"] !== true;
   flags.escalate = raw["--escalate"] === true;
   const raters = str("--raters");
   if (raters !== null) {

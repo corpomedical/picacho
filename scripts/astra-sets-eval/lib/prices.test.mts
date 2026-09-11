@@ -14,7 +14,7 @@ import { MATCH_SHOT_INPUT_TEXT, MATCH_SHOT_INSTRUCTIONS, MATCH_SHOT_JSON_SCHEMA 
 import { COST_BASIS_USD_PER_CREDIT } from "../../../src/lib/generations/providers/video-models.ts";
 import { defaultCredits } from "./pass-bars.mts";
 import { baselineInputBoundChars, costOfTokens, makePriceBook, matchBaselineInputBound, tokenCounts, validateExternalPrices, type ExternalPrices } from "./prices.mts";
-import { ceilingOf, planA, planAPhotos, planC, planCanary, planD, planDPhotos, planE, planProbeA } from "./plan.mts";
+import { ceilingOf, planA, planAPhotos, planC, planCanary, planD, planDPhotos, planE, planProbeA, planProbeC } from "./plan.mts";
 import { checkPlan } from "./spend-guard.mts";
 import { partE } from "../parts/e.mts";
 import type { RunContext } from "./context.mts";
@@ -111,26 +111,54 @@ describe("the plans", () => {
     expect(checkPlan(plan, 10, ["gates", "sonnet-5"]).excessUsd).toBeGreaterThan(0);
   });
 
-  it("C: GPT Image 80 stills × 2 renders × $0.17 reserved; FLUX 160 and Seedream 60 renders", () => {
-    const plan = planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image", "flux", "seedream"], control: true, book });
-    const renders = (k: string) => plan.filter((l) => l.kind === k).reduce((s, l) => s + l.count, 0);
-    expect(renders("gpt-image")).toBe(160);
-    expect(renders("flux")).toBe(160);
-    expect(renders("seedream")).toBe(60);
-    expect(ceilingOf(plan.filter((l) => l.kind === "gpt-image")).ceilingUsd).toBeCloseTo(27.2, 9);
-    const count = (label: string) => plan.find((l) => l.label.startsWith(label))?.count;
-    expect(count("entry prompt gate")).toBe(220);
-    expect(count("pipeline prompt gate")).toBe(220);
-    expect(count("output gate")).toBe(220);
-    expect(count("identity score")).toBe(220);
-    expect(count("drafter")).toBe(40);
+  const renders = (plan: ReturnType<typeof planC>, k: string) => plan.filter((l) => l.kind === k).reduce((s, l) => s + l.count, 0);
+  const countOf = (plan: ReturnType<typeof planC>, label: string) => plan.find((l) => l.label.startsWith(label))?.count;
+
+  it("C: 60 set + 40 look + 20 control GPT Image stills × 2 renders × $0.17 = $40.80 reserved; FLUX 240 and Seedream 60 renders", () => {
+    const plan = planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image", "flux", "seedream"], control: true, look: true, book });
+    expect(renders(plan, "gpt-image")).toBe(240);
+    expect(renders(plan, "flux")).toBe(240);
+    expect(renders(plan, "seedream")).toBe(60);
+    // (60 + 40 + 20) × 2 × $0.17 (IMAGE_COST_USD, GENERATE_RETRIES = 2)
+    expect(ceilingOf(plan.filter((l) => l.kind === "gpt-image")).ceilingUsd).toBeCloseTo(120 * 2 * 0.17, 9);
+    expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(40.8, 9);
+    expect(plan.find((l) => l.kind === "gpt-image" && l.label.startsWith("look shots"))?.count).toBe(80);
+    expect(plan.some((l) => l.kind === "seedream" && l.label.startsWith("look shots"))).toBe(false);
+    for (const g of ["entry prompt gate", "pipeline prompt gate", "output gate", "identity score"]) expect(countOf(plan, g)).toBe(300);
+    expect(countOf(plan, "drafter")).toBe(40);
+    expect(ceilingOf(plan).unpriced.sort()).toEqual(["drafter", "flux", "gates", "scorer", "seedream"]);
   });
 
-  it("D: 40 × $1.155 standard, plus stills once the stills leg exists", () => {
-    const noStills = planD({ briefs: 40, runs: 1, dCameras: 1, transport: "background", stills: false, book });
+  it("C without the look is section 4's 60 + 20 controls: $27.20 reserved on GPT Image; the look adds 40 × 2 × $0.17 = $13.60", () => {
+    const plan = planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image", "flux", "seedream"], control: true, look: false, book });
+    expect(renders(plan, "gpt-image")).toBe(160);
+    expect(renders(plan, "flux")).toBe(160);
+    expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(27.2, 9);
+    expect(countOf(plan, "entry prompt gate")).toBe(220);
+    const look = planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image"], control: true, look: true, book });
+    expect(ceilingOf(look).ceilingUsd - ceilingOf(planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image"], control: true, look: false, book })).ceilingUsd).toBeCloseTo(13.6, 9);
+  });
+
+  it("c --probe: one still per engine, no control, no look: GPT Image 2 × $0.17 = $0.34", () => {
+    const plan = planProbeC({ engines: ["gpt-image", "flux", "seedream"], book });
+    expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(0.34, 9);
+    expect(renders(plan, "flux")).toBe(2);
+    expect(renders(plan, "seedream")).toBe(1);
+    expect(plan.some((l) => l.label.startsWith("look shots") || l.label.startsWith("controls"))).toBe(false);
+    expect(countOf(plan, "entry prompt gate")).toBe(3);
+  });
+
+  it("D: 40 × $1.155 standard, plus 2 GPT Image renders a still for every harmful brief run that may get a set", () => {
+    const noStills = planD({ briefs: 40, runs: 1, dCameras: 1, transport: "background", stills: 0, book });
     expect(ceilingOf(noStills).ceilingUsd).toBeCloseTo(46.2, 9);
-    const withStills = planD({ briefs: 40, runs: 1, dCameras: 1, transport: "background", stills: true, book });
+    expect(noStills.some((l) => l.kind === "gpt-image")).toBe(false);
+    // Every brief harmful: 46.20 + 40 × 2 × $0.17 = $59.80.
+    const withStills = planD({ briefs: 40, runs: 1, dCameras: 1, transport: "background", stills: 40, book });
     expect(ceilingOf(withStills).ceilingUsd).toBeCloseTo(59.8, 9);
+    // 20 harmful × 3 runs × 2 cameras: 138.60 + 120 × 2 × $0.17 = $179.40.
+    const two = planD({ briefs: 40, runs: 3, dCameras: 2, transport: "background", stills: 20 * 3, book });
+    expect(ceilingOf(two).ceilingUsd).toBeCloseTo(138.6 + 120 * 0.34, 9);
+    expect(two.find((l) => l.label.startsWith("output gate on the stills"))?.count).toBe(120);
   });
 
   it("A photos: 20 photos × 3 runs at standard price (never Batch) = 60 × $1.81625 = $108.975; Astra only", () => {

@@ -4,12 +4,13 @@
 //
 // Progress goes to stderr as ids only, never brief text. Everything a run
 // writes lands in its own directory under out/ (ignored by git): the
-// manifest, the ledger, results, answers, specs, frames, sheets, keys,
-// ratings and the summary — and an A photo run's photos/, the re-encoded
-// bytes each location photo was sent as (B lays them beside camera 1), or an
-// E run's, the re-encoded bytes each reference photo was read from (its sheet
-// lays them beside the stage view). A D photo run keeps no copy of its
-// photos with people.
+// manifest, the ledger, results, answers, specs, frames, stills, sheets,
+// keys, ratings and the summary — and an A photo run's photos/, the
+// re-encoded bytes each location photo was sent as (B lays them beside
+// camera 1), or an E run's, the re-encoded bytes each reference photo was
+// read from (its sheet lays them beside the stage view). A D photo run
+// keeps no copy of its photos with people; C and D keep no still the
+// output gate refused.
 
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -26,6 +27,7 @@ import type { SpendGuard } from "./spend-guard.mts";
 import type { GateReading, GateVerdict, NotReached } from "./words-gate.mts";
 import type { WordsVerdict } from "./build-flow.mts";
 import type { BarResult } from "./pass-bars.mts";
+import type { ShotDeps } from "./shots.mts";
 
 /** The gates a real run calls. D's answer NOT_REACHED once the run is stopping: a call still queued is never sent. */
 export type Gates = {
@@ -34,6 +36,8 @@ export type Gates = {
   /** D's photo leg: the photographer's notes, and the picture itself (the notes gate only for a D photo run; the picture check for it and E). */
   notes?: (notes: string, priorHits: number, ref: string) => Promise<GateReading | NotReached>;
   picture?: (dataUrl: string, o: { promptScores: unknown; priorHits: number }, ref: string) => Promise<GateVerdict | NotReached>;
+  /** C's stills and D's: the product's pipeline, gates and scorer (set only for a real C run and D's words leg). */
+  shots?: ShotDeps;
 };
 
 export type RunContext = {

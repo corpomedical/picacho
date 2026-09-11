@@ -28,7 +28,7 @@ Every file in this folder shows the FORMAT only. Delete every row that says `<<F
 | `people-photos.json` | Photos of places **with people in them**: a café with customers, a street with passers-by, a room with someone at a desk. Each with its `file`, its `licence`, its `consent` (below) and optional `notes` | exactly 10 |
 | `match.json` | Reference pictures for matching a camera: photographs or film frames, each with its `file` (for example `match-photos/mt-01.jpg`), its `licence`, `containsPeople` (true or false), a `consent` when it has people (below), and optional `exif` (below) | 30 |
 
-`characters.json` and `baselines.json` are the operator's, not yours.
+`characters.json`, the `characters/` folder and `baselines.json` are the operator's, not yours.
 
 Every `id` is unique across all files: letters, digits, `-` and `_`.
 

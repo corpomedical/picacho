@@ -1,5 +1,6 @@
 // Helpers the parts share: selecting rows, writing rater sheets, preparing
-// a photo arm's photos, and the build summary A, D and the canary print.
+// a photo arm's photos, the stills' characters and environment (C and D),
+// and the build summary A, D and the canary print.
 
 import { randomInt } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -10,6 +11,7 @@ import { planSheet, QUESTIONS, writeSheet, type SheetItemIn, type SheetKind } fr
 import type { Flags } from "../lib/cli.mts";
 import { writeManifest, type RunContext } from "../lib/context.mts";
 import { preparePhoto, PhotoStore, type PhotoFile } from "../lib/photos.mts";
+import { sniffImage, type RenderTap, type ShotCharacter, type ShotEnv, type ShotRecord } from "../lib/shots.mts";
 import type { PlannedCall } from "../lib/spend-guard.mts";
 import { max, median, p95 } from "../lib/stats.mts";
 import { HarnessError, pct, sha256, usd } from "../lib/util.mts";
@@ -99,6 +101,55 @@ export function writeRaterSheets(ctx: RunContext, kind: SheetKind, items: readon
     pages.push(page);
   }
   return pages;
+}
+
+/**
+ * The corpus's characters as the stills send them: the saved traits and the
+ * identity photo's bytes, read from the corpus folder (consented people or
+ * AI personas: README step 3). A missing photo is null — a real run never
+ * gets here with one (the corpus check refuses it); a dry run's template
+ * carries drawn placeholders.
+ */
+export function loadShotCharacters(ctx: Pick<RunContext, "corpus" | "corpusDir">): ShotCharacter[] {
+  return ctx.corpus.data.characters.map((c) => {
+    const path = join(ctx.corpusDir, c.identityPhoto);
+    const bytes = c.identityPhoto && existsSync(path) ? readFileSync(path) : null;
+    return { id: c.id, name: c.name, traits: c.traits, photo: bytes ? { bytes, mime: sniffImage(bytes).mime } : null };
+  });
+}
+
+/** The stills' environment over a run: its money, net guard, tap and stop; the product's functions in a real run. */
+export function makeShotEnv(ctx: RunContext, tap: RenderTap): ShotEnv {
+  return {
+    dry: ctx.dry,
+    runDir: ctx.runDir,
+    net: ctx.net,
+    guard: ctx.guard,
+    book: ctx.book,
+    deps: ctx.dry ? null : (ctx.gates?.shots ?? null),
+    tap,
+    stopping: ctx.stopping,
+    stopWhy: () => ctx.stopReason() ?? ctx.guard.stopped?.reason ?? "stopped",
+    progress: ctx.progress,
+    blocked: new Set(),
+    sim: { n: 0 },
+  };
+}
+
+/** One line per engine and arm: how its stills ended. */
+export function shotTally(records: readonly ShotRecord[]): string[] {
+  const lines: string[] = [];
+  for (const engine of [...new Set(records.map((r) => r.engine))]) {
+    const arms = [...new Set(records.filter((r) => r.engine === engine).map((r) => r.arm))];
+    const parts = arms.map((arm) => {
+      const mine = records.filter((r) => r.engine === engine && r.arm === arm);
+      const by = new Map<string, number>();
+      for (const r of mine) by.set(r.outcome, (by.get(r.outcome) ?? 0) + 1);
+      return `${arm} ${mine.length} (${[...by.entries()].map(([k, v]) => `${k} ${v}`).join(", ")})`;
+    });
+    lines.push(`  ${engine}: ${parts.join("; ")}`);
+  }
+  return lines;
 }
 
 const count = <T,>(xs: readonly T[], f: (x: T) => boolean) => xs.filter(f).length;

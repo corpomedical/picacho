@@ -21,6 +21,10 @@
 //                submitSetPhotoBuild's check of the photo's own bytes, before
 //                it is stored or sent to Astra. Injected the same way
 //                (output-policy.ts), and never logged anywhere.
+//   shot gate    assertPromptAllowed({ prompt: a still's prompt,
+//                hasRealPersonReference, sessionPriorHits }) — runGeneration's
+//                entry gate on a Set's shot (the strict lane: an attachment
+//                rides) or on an ordinary render (a control: nothing rides).
 //
 // "unavailable" is not a reading. Every gate tries again at 1.5 s and 5 s
 // (production hands the answer to the next poll tick, or the person to a
@@ -138,6 +142,12 @@ export function makeBriefGate(deps: GateDeps): (brief: string, priorHits: number
 export function makeNotesGate(deps: GateDeps): (notes: string, priorHits: number, ref: string) => Promise<GateReading | NotReached> {
   const gate = makeGate(deps);
   return (notes, priorHits, ref) => gate({ prompt: notes, hasRealPersonReference: true, sessionPriorHits: priorHits }, "notes-gate", ref, true);
+}
+
+/** C's and D's stills: runGeneration's entry gate on the still's own prompt (shots.mts). */
+export function makeShotGate(deps: GateDeps): (prompt: string, o: { hasRealPersonReference: boolean; priorHits: number }, ref: string) => Promise<GateReading | NotReached> {
+  const gate = makeGate(deps);
+  return (prompt, o, ref) => gate({ prompt, hasRealPersonReference: o.hasRealPersonReference, sessionPriorHits: o.priorHits }, "shot-gate", ref, true);
 }
 
 export type PictureDeps = Omit<GateDeps, "assertPromptAllowed"> & { assertOutputAllowed: AssertOutputAllowed };
