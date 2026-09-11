@@ -12,12 +12,14 @@ import {
   type FinisherDeps,
 } from "./finisher";
 import type { AdvanceSetBuildInput, SetBuildTick } from "./build-tick";
+import { setNoticePath, setNoticeTag } from "./leaving";
 import type { NotifyOptions } from "../push/channels";
 import type { PushMessage } from "../push/send";
 
 // The set finisher (2026-09-11), driven with fakes: the same rules as the
-// page without a session, the same tick, and a notification only for a
-// build this run's own write settled — to browsers only.
+// page without a session, asked before every tick as the page asks them
+// before every poll, the same tick, and a notification only for a build
+// this run's own write settled — to browsers only.
 
 const NOW = Date.parse("2026-09-11T12:00:00.000Z");
 const ADMIN = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -26,6 +28,8 @@ const SUSPENDED = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const PAYING = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
 const NO_PROFILE = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee";
 const set = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
+const ROOT = join(__dirname, "..", "..", "..");
+const readSource = (p: string) => readFileSync(join(ROOT, p), "utf8");
 
 type Op = [string, unknown[]];
 type Call = { table: string; ops: Op[] };
@@ -59,21 +63,26 @@ function fakeAdmin(answer: (call: Call) => Answer) {
 }
 
 type Row = { id: string; user_id: string };
+type Profile = { id: string; plan: string | null; role: string | null; status: string | null };
 type Setup = {
   rows?: Row[];
   rowsError?: boolean;
-  profiles?: { id: string; plan: string | null; role: string | null; status: string | null }[];
-  profilesError?: boolean;
+  /** Read at the moment each profile query runs, so a test may change it mid-run. */
+  profiles?: Profile[];
+  /** Owners whose profile read fails. */
+  profileErrors?: string[];
   /** A set's title as read after its tick; null = deleted since; "error" = the read fails. */
   titles?: Record<string, string | null | "error">;
-  flag?: boolean;
-  photoFlag?: boolean;
+  /** The astra_sets switch, asked afresh at every read. */
+  flag?: boolean | (() => boolean);
+  /** The astra_photo_sets switch, asked afresh at every read. */
+  photoFlag?: boolean | (() => boolean);
   env?: Record<string, string | undefined>;
   advance?: (input: AdvanceSetBuildInput) => Promise<SetBuildTick>;
   notify?: FinisherDeps["notify"];
 };
 
-const PROFILES = [
+const PROFILES: Profile[] = [
   { id: ADMIN, plan: "none", role: "admin", status: "active" },
   { id: ADMIN_2, plan: "starter", role: "admin", status: null },
   { id: SUSPENDED, plan: "elite", role: "admin", status: "suspended" },
@@ -81,21 +90,28 @@ const PROFILES = [
 ];
 
 const building = (): SetBuildTick => ({ result: { error: null, state: "building" }, settledHere: null });
+const switchValue = (v: boolean | (() => boolean) | undefined, fallback: boolean) =>
+  typeof v === "function" ? v() : (v ?? fallback);
 
 function setup(o: Setup = {}) {
   const clock = { t: NOW };
   const counts = { adminMade: 0, flagReads: 0, photoReads: 0 };
   const advanced: AdvanceSetBuildInput[] = [];
-  const notified: { userId: string; notification: { message: PushMessage; path: string }; options: NotifyOptions }[] = [];
+  const notified: {
+    userId: string;
+    notification: { message: PushMessage; path: string; tag?: string };
+    options: NotifyOptions;
+  }[] = [];
   const flagClients: SupabaseClient[] = [];
+  const photoClients: SupabaseClient[] = [];
   const { admin, calls } = fakeAdmin((call) => {
     if (call.table === "location_sets" && argsOf(call, "select")?.[0] === "id, user_id") {
       return o.rowsError ? { data: null, error: { message: "boom" } } : { data: o.rows ?? [], error: null };
     }
     if (call.table === "profiles") {
-      if (o.profilesError) return { data: null, error: { message: "boom" } };
-      const ids = (argsOf(call, "in")?.[1] ?? []) as string[];
-      return { data: (o.profiles ?? PROFILES).filter((p) => ids.includes(p.id)), error: null };
+      const id = eqOf(call, "id") as string;
+      if (o.profileErrors?.includes(id)) return { data: null, error: { message: "boom" } };
+      return { data: (o.profiles ?? PROFILES).find((p) => p.id === id) ?? null, error: null };
     }
     if (call.table === "location_sets" && argsOf(call, "select")?.[0] === "title") {
       const title = o.titles?.[eqOf(call, "id") as string];
@@ -124,15 +140,18 @@ function setup(o: Setup = {}) {
     setsEnabled: async (client) => {
       counts.flagReads++;
       flagClients.push(client);
-      return o.flag ?? true;
+      return switchValue(o.flag, true);
     },
-    photoSetsEnabled: async () => {
+    photoSetsEnabled: async (client) => {
       counts.photoReads++;
-      return o.photoFlag ?? false;
+      photoClients.push(client);
+      return switchValue(o.photoFlag, false);
     },
   };
-  return { deps, admin, calls, counts, advanced, notified, clock, flagClients };
+  return { deps, admin, calls, counts, advanced, notified, clock, flagClients, photoClients };
 }
+
+const profileReads = (calls: Call[]) => calls.filter((c) => c.table === "profiles");
 
 let info: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
@@ -234,39 +253,97 @@ describe("the same rules as the page, without a session", () => {
       [set(5), ADMIN_2],
     ]);
     for (const a of f.advanced) expect(a.admin).toBe(f.admin);
-    // Each owner's profile is read once, in one query.
-    const profileReads = f.calls.filter((c) => c.table === "profiles");
-    expect(profileReads).toHaveLength(1);
-    expect(argsOf(profileReads[0], "select")).toEqual(["id, plan, role, status"]);
-    expect(argsOf(profileReads[0], "in")).toEqual(["id", [ADMIN, SUSPENDED, PAYING, NO_PROFILE, ADMIN_2]]);
+    // Each build's owner is read on its own, just before its tick, as the
+    // page reads the person's profile before each poll.
+    const reads = profileReads(f.calls);
+    expect(reads.map((c) => eqOf(c, "id"))).toEqual([ADMIN, SUSPENDED, PAYING, NO_PROFILE, ADMIN_2, SUSPENDED]);
+    for (const c of reads) {
+      expect(c.ops).toEqual([["select", ["plan, role, status"]], ["eq", ["id", eqOf(c, "id")]], ["maybeSingle", []]]);
+    }
     // The skip is logged by id and reason only.
     const skips = info.mock.calls.filter((c: unknown[]) => String(c[0]).includes("may not use Sets"));
     expect(skips.map((c: unknown[]) => c[1])).toEqual([
-      { userId: SUSPENDED, reason: "suspended", sets: [set(2), set(6)] },
-      { userId: PAYING, reason: "not eligible", sets: [set(3)] },
-      { userId: NO_PROFILE, reason: "not eligible", sets: [set(4)] },
+      { setId: set(2), userId: SUSPENDED, reason: "suspended" },
+      { setId: set(3), userId: PAYING, reason: "not eligible" },
+      { setId: set(4), userId: NO_PROFILE, reason: "not eligible" },
+      { setId: set(6), userId: SUSPENDED, reason: "suspended" },
     ]);
   });
 
-  it("a failed profile read is an error, and nothing is advanced on a guess", async () => {
-    const f = setup({ rows: [{ id: set(1), user_id: ADMIN }], profilesError: true });
-    expect(await runSetsFinisher(f.deps)).toEqual({ status: 500, body: { error: "profiles query failed" } });
-    expect(f.advanced).toEqual([]);
+  it("a failed profile read is an error for that build alone, and it is not advanced on a guess", async () => {
+    const f = setup({
+      rows: [
+        { id: set(1), user_id: ADMIN },
+        { id: set(2), user_id: ADMIN_2 },
+        { id: set(3), user_id: ADMIN },
+      ],
+      profileErrors: [ADMIN_2],
+    });
+    const out = await runSetsFinisher(f.deps);
+    expect(out).toEqual({
+      status: 200,
+      body: { checked: 3, advanced: 2, ready: 0, failed: 0, skipped: 0, deferred: 0, errors: 1 },
+    });
+    expect(f.advanced.map((a) => a.setId)).toEqual([set(1), set(3)]);
   });
 
-  it("asks the photo switch at most once a run, with the service client", async () => {
+  it("the switch turned off during a run stops the next tick, not the next run", async () => {
+    let on = true;
+    const f = setup({
+      rows: Array.from({ length: 6 }, (_, i) => ({ id: set(i + 1), user_id: ADMIN })),
+      flag: () => on,
+      advance: async (input) => {
+        // Turned off while the first ticks are running.
+        if (input.setId === set(1)) on = false;
+        return building();
+      },
+    });
+    const out = await runSetsFinisher(f.deps);
+    // The three already past their check finish, as a page's tick in flight
+    // does; nothing starts after.
+    expect(f.advanced.map((a) => a.setId)).toEqual([set(1), set(2), set(3)]);
+    expect(out.body).toMatchObject({ checked: 6, advanced: 3, skipped: 0, deferred: 3, errors: 0 });
+    expect(info.mock.calls.some((c: unknown[]) => String(c[0]).includes("switch went off during the run"))).toBe(true);
+    // Once a run, then before every tick a worker went to start, always
+    // with the service client.
+    expect(f.counts.flagReads).toBeGreaterThan(1 + 3);
+    expect(f.flagClients.every((c) => c === f.admin)).toBe(true);
+  });
+
+  it("an owner suspended during a run has no further build ticked", async () => {
+    const profiles = PROFILES.map((p) => ({ ...p }));
+    const f = setup({
+      rows: Array.from({ length: 6 }, (_, i) => ({ id: set(i + 1), user_id: ADMIN })),
+      profiles,
+      advance: async (input) => {
+        if (input.setId === set(1)) profiles.find((p) => p.id === ADMIN)!.status = "suspended";
+        return building();
+      },
+    });
+    const out = await runSetsFinisher(f.deps);
+    expect(f.advanced.map((a) => a.setId)).toEqual([set(1), set(2), set(3)]);
+    expect(out.body).toMatchObject({ checked: 6, advanced: 3, skipped: 3, deferred: 0, errors: 0 });
+  });
+
+  it("asks the photo switch when a tick wants it, fresh every time, with the service client", async () => {
+    // Turned off after the first photo retry asked: the next may not resend
+    // the photo, as enabled.ts promises for a build already running (a
+    // switch remembered for the run would have said yes three times).
+    const answers = [true, false, true];
+    let asked = 0;
+    const seen: boolean[] = [];
     const f = setup({
       rows: [1, 2, 3].map((n) => ({ id: set(n), user_id: ADMIN })),
-      photoFlag: true,
+      photoFlag: () => answers[asked++],
       advance: async (input) => {
-        expect(await input.photoSwitchOn()).toBe(true);
-        expect(await input.photoSwitchOn()).toBe(true);
+        seen.push(await input.photoSwitchOn());
         return building();
       },
     });
     await runSetsFinisher(f.deps);
-    expect(f.advanced).toHaveLength(3);
-    expect(f.counts.photoReads).toBe(1);
+    expect([...seen].sort()).toEqual([false, true, true]);
+    expect(f.counts.photoReads).toBe(3);
+    expect(f.photoClients.every((c) => c === f.admin)).toBe(true);
   });
 
   it("never asks the photo switch when no tick wants a retry", async () => {
@@ -296,16 +373,25 @@ describe("who is told, and how", () => {
     const out = await runSetsFinisher(f.deps);
     expect(out.body).toMatchObject({ checked: 6, advanced: 6, ready: 1, failed: 1, errors: 0 });
     expect(f.notified).toHaveLength(2);
+    // The same page and the same tag as the notification a Sets tab shows
+    // for a build it settled itself (leaving.ts): one per set, never two.
     expect(f.notified).toContainEqual({
       userId: ADMIN,
-      notification: { message: { key: "setReady", params: { title: "Night market" } }, path: `/app/sets/${set(1)}` },
+      notification: {
+        message: { key: "setReady", params: { title: "Night market" } },
+        path: `/app/sets/${set(1)}`,
+        tag: `set-${set(1)}`,
+      },
       options: { webOnly: true },
     });
     expect(f.notified).toContainEqual({
       userId: ADMIN,
-      notification: { message: { key: "setFailed" }, path: "/app/sets" },
+      notification: { message: { key: "setFailed" }, path: "/app/sets", tag: `set-${set(2)}` },
       options: { webOnly: true },
     });
+    expect(setNoticePath(set(1), "ready")).toBe(`/app/sets/${set(1)}`);
+    expect(setNoticePath(set(2), "failed")).toBe("/app/sets");
+    expect(setNoticeTag(set(2))).toBe(`set-${set(2)}`);
     // The title is read after the tick, as the owner's, and only if not deleted.
     const titleRead = f.calls.find((c) => c.table === "location_sets" && argsOf(c, "select")?.[0] === "title")!;
     expect(titleRead.ops).toEqual([
@@ -326,8 +412,8 @@ describe("who is told, and how", () => {
     await runSetsFinisher(f.deps);
     const sent = f.notified.map((n) => n.notification);
     expect(sent).toHaveLength(2);
-    expect(sent).toContainEqual({ message: { key: "setReady" }, path: `/app/sets/${set(1)}` });
-    expect(sent).toContainEqual({ message: { key: "setReady" }, path: `/app/sets/${set(2)}` });
+    expect(sent).toContainEqual({ message: { key: "setReady" }, path: `/app/sets/${set(1)}`, tag: `set-${set(1)}` });
+    expect(sent).toContainEqual({ message: { key: "setReady" }, path: `/app/sets/${set(2)}`, tag: `set-${set(2)}` });
   });
 
   it("a set deleted since its tick settled it is not announced", async () => {
@@ -374,15 +460,20 @@ describe("one set's trouble is its own", () => {
 describe("the time budget", () => {
   it("starts nothing new once the budget is spent, and leaves the rest to the next run", async () => {
     const f = setup({ rows: Array.from({ length: 10 }, (_, i) => ({ id: set(i + 1), user_id: ADMIN })) });
+    const startedAt: number[] = [];
     f.deps.advance = async (input) => {
       f.advanced.push(input);
+      startedAt.push(f.clock.t);
       // The first tick is slow enough to use the whole budget.
       f.clock.t = NOW + FINISHER_START_BUDGET_MS;
       return building();
     };
     const out = await runSetsFinisher(f.deps);
-    expect(f.advanced.map((a) => a.setId)).toEqual([set(1)]);
-    expect(out.body).toMatchObject({ checked: 10, advanced: 1, deferred: 9 });
+    // The three workers had each taken a build before the clock moved;
+    // none takes another after.
+    expect(f.advanced.map((a) => a.setId)).toEqual([set(1), set(2), set(3)]);
+    expect(startedAt[0]).toBe(NOW);
+    expect(out.body).toMatchObject({ checked: 10, advanced: 3, deferred: 7 });
   });
 
   it("keeps starting while inside it, oldest first", async () => {
@@ -397,8 +488,50 @@ describe("the time budget", () => {
     expect(out.body).toMatchObject({ advanced: 5, deferred: 0 });
   });
 
-  it("ends inside the route's 300 s even when the last tick it starts is a slow one (~100 s in the words gate, 15 s polling)", () => {
-    expect(FINISHER_START_BUDGET_MS + 100_000 + 15_000).toBeLessThanOrEqual(300_000);
+  it("ends inside the route's limit even when the last tick it starts takes the slowest path — every wait read from the code it runs", () => {
+    // A tick cut off after its claim loses the answer, and a retry it
+    // submitted bills with its id stored nowhere; so the budget is checked
+    // against each wait at its timeout, as the code has them today.
+    const fnBody = (file: string, name: string) => {
+      const source = readSource(file);
+      const start = source.indexOf(`export async function ${name}(`);
+      expect(start, `${file}: ${name}`).toBeGreaterThan(-1);
+      const end = source.indexOf("\nexport ", start + 1);
+      return source.slice(start, end < 0 ? undefined : end);
+    };
+    // The timeout a call hands fetchWithTimeout: its last argument.
+    const timeoutOf = (file: string, name: string) => {
+      const m = /fetchWithTimeout\([\s\S]*?\b(\d{1,3}_000),?\s*\)/.exec(fnBody(file, name));
+      expect(m, `${file}: ${name}`).not.toBeNull();
+      return Number(m![1].replace("_", ""));
+    };
+    const ASTRA = "src/lib/generations/providers/astra.ts";
+    const poll = timeoutOf(ASTRA, "pollAstraJob");
+    const submit = timeoutOf(ASTRA, "submitAstraJob");
+    const cancel = timeoutOf(ASTRA, "cancelAstraJob");
+
+    // The words gate: two rounds (content-policy.ts score), each as slow as
+    // its slowest reader. The OpenAI reader sends at most three times, with
+    // a wait of at most 5 s after each 429; Claude at most three times (a
+    // 429 retry, then one without the thinking setting), with one such wait.
+    const openai = readSource("src/lib/generations/providers/openai.ts");
+    expect(openai).toContain("for (let retry = 0; retry < 2 && res.status === 429; retry++)");
+    const cap = openai.slice(openai.indexOf("function retryAfterMs("), openai.indexOf("export async function reviewWithOpenAI("));
+    expect([...cap.matchAll(/Math\.min\([^)]*?,\s*(\d+)\)/g)].map((m) => Number(m[1]))).toEqual([5000, 5000]);
+    const claude = fnBody("src/lib/generations/providers/anthropic.ts", "draftWithClaude");
+    expect(claude.match(/await call\(/g)).toHaveLength(3);
+    expect(claude).toContain("Math.min(sec * 1000, 5000)");
+    const primary = 3 * timeoutOf("src/lib/generations/providers/openai.ts", "reviewWithOpenAI") + 2 * 5_000;
+    const backup = 3 * timeoutOf("src/lib/generations/providers/anthropic.ts", "draftWithClaude") + 5_000;
+    expect(fnBody("src/lib/generations/content-policy.ts", "score").match(/await Promise\.all\(/g)).toHaveLength(2);
+    const gate = 2 * Math.max(primary, backup);
+
+    // What the budget's comment adds up (finisher.ts), and the route's limit.
+    expect({ poll, gate, submit, cancel }).toEqual({ poll: 15_000, gate: 170_000, submit: 30_000, cancel: 10_000 });
+    const limit = Number(/export const maxDuration = (\d+);/.exec(readSource("src/app/api/cron/sets/route.ts"))![1]) * 1000;
+    // Left for the database, the stored photo, the notification and a cold start.
+    const MARGIN_MS = 15_000;
+    expect(FINISHER_START_BUDGET_MS + poll + gate + submit + cancel + MARGIN_MS).toBeLessThanOrEqual(limit);
   });
 
   it("never has more than three ticks in flight", async () => {
@@ -451,8 +584,7 @@ describe("finisherCanRun", () => {
 });
 
 describe("the route, the schedule and the pages (read as source)", () => {
-  const root = join(__dirname, "..", "..", "..");
-  const read = (p: string) => readFileSync(join(root, p), "utf8");
+  const read = readSource;
 
   it("the route authenticates like every cron, failing closed, before anything runs", () => {
     const route = read("src/app/api/cron/sets/route.ts");

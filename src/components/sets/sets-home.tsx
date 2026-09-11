@@ -8,6 +8,7 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { deleteSet, pollSetBuild, submitSetBuild, submitSetPhotoBuild } from "@/lib/sets/actions";
+import { buildingHintKey, pageSetNotice, photoMetaKey } from "@/lib/sets/leaving";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
 import {
@@ -33,7 +34,12 @@ import { LocalDate } from "@/components/local-date";
 // It can run only while CRON_SECRET is set; the page is told which
 // (finisherOn) and says either "you can leave — it finishes on its own", or
 // what is true without it: background mode keeps an answer for about ten
-// minutes, so a build nobody collects by then is lost.
+// minutes, so a build nobody collects by then is lost (lib/sets/leaving.ts
+// picks the line). A tab left open in the background keeps polling every
+// 5 s, so it usually collects a build before the finisher's next minute
+// comes round; the finisher then has nothing to settle and sends nothing.
+// So this page keeps the promise itself: a build it settles while its tab
+// is hidden gets the finisher's notification, shown from here.
 //
 // FROM A PHOTO (2026-09-11; admins, behind astra_photo_sets): the photo is
 // prepared here (photo-client.ts) and checked on the server before anything
@@ -51,12 +57,62 @@ const ACCESS_ERRORS = new Set([SETS_UNAVAILABLE, SETS_NOT_OPEN, SETS_SESSION_EXP
 
 type PreparedPhoto = { dataUri: string; width: number; height: number };
 
+// A build this tab settled while hidden: the finisher's notification, shown
+// from here (leaving.ts pageSetNotice). Only when the tab is hidden, since a
+// visible card already says it, and only with permission already granted:
+// this never asks. The service worker first, as the composer's
+// notifyIfHidden does and for the same reason (generate-form.tsx: Android
+// Chrome forbids the page's own Notification constructor), and through it
+// the tap opens the set as the push's would. A notification already on
+// screen with this set's tag is the finisher's push for the same build, and
+// is left as it is. Best-effort, and never throws.
+function announceIfHidden(notice: { title: string; body: string; path: string; tag: string }) {
+  try {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    if (document.visibilityState !== "hidden") return;
+    const inPage = () => {
+      const n = new Notification(notice.title, { body: notice.body, tag: notice.tag });
+      n.onclick = () => window.focus();
+    };
+    const sw = navigator.serviceWorker;
+    if (!sw?.getRegistration) {
+      inPage();
+      return;
+    }
+    void sw
+      .getRegistration()
+      .then(async (registration) => {
+        if (!registration) return inPage();
+        const shown =
+          typeof registration.getNotifications === "function"
+            ? await registration.getNotifications({ tag: notice.tag }).catch(() => [])
+            : [];
+        if (shown.length > 0) return;
+        await registration.showNotification(notice.title, {
+          body: notice.body,
+          tag: notice.tag,
+          data: { path: notice.path },
+          icon: "/icon-192-maskable.png",
+          badge: "/icon-192-maskable.png",
+        });
+      })
+      .catch(() => {
+        // No way left to notify: skip silently.
+      });
+  } catch {
+    // The card already shows the result; a notification must never break the poll.
+  }
+}
+
 export function SetsHome({
   initialSets,
   usedThisMonth,
   monthlyLimit,
   photoSetsOn,
   finisherOn,
+  notifyReady,
+  notifyFailed,
 }: {
   initialSets: SetSummary[];
   usedThisMonth: number;
@@ -65,9 +121,15 @@ export function SetsHome({
   photoSetsOn: boolean;
   /** The finisher can run (finisher.ts finisherCanRun): a build completes with the page closed. */
   finisherOn: boolean;
+  /** The render switches in Settings → Notifications, which the finisher's pushes answer to as well. */
+  notifyReady: boolean;
+  notifyFailed: boolean;
 }) {
   const { t } = useLocale();
   const s = t.sets;
+  // The words of the finisher's notifications, as plain strings so the poll
+  // below does not restart every time a refresh hands down a new dictionary.
+  const { setReadyTitle, setReadyBodyUntitled, setFailedTitle, setFailedBody } = t.push;
   const router = useRouter();
 
   const [sets, setSets] = useState<SetSummary[]>(initialSets);
@@ -101,7 +163,13 @@ export function SetsHome({
   // tick that throws (a dropped connection, a laptop waking) must never end
   // the loop, because the answer it is waiting for is already paid for and
   // lasts only minutes at OpenAI — so it backs off and tries again, and a
-  // tab running an old deploy reloads itself onto the new one.
+  // tab running an old deploy reloads itself onto the new one. A build that
+  // leaves "building" here is announced if the tab is hidden, under the
+  // person's switches (announceIfHidden). The poll cannot tell its own
+  // settle from the finisher's, which the poll after it also sees. It does
+  // not need to: when the finisher settled it, its push to this browser is
+  // on screen with the set's tag and the page's notification is dropped;
+  // when this browser got no push, the page's is the only one.
   useEffect(() => {
     if (!buildingIds) return;
     let cancelled = false;
@@ -145,6 +213,11 @@ export function SetsHome({
               : x,
           ),
         );
+        if (res.state === "ready" ? notifyReady : notifyFailed) {
+          announceIfHidden(
+            pageSetNotice(id, res.state, { setReadyTitle, setReadyBodyUntitled, setFailedTitle, setFailedBody }),
+          );
+        }
       }
       if (cancelled) return;
       if (settled) router.refresh();
@@ -156,7 +229,16 @@ export function SetsHome({
       cancelled = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [buildingIds, router]);
+  }, [
+    buildingIds,
+    router,
+    notifyReady,
+    notifyFailed,
+    setReadyTitle,
+    setReadyBodyUntitled,
+    setFailedTitle,
+    setFailedBody,
+  ]);
 
   async function build() {
     if (starting || photoStarting) return;
@@ -368,7 +450,7 @@ export function SetsHome({
             </label>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-0.5 text-xs text-atelier-muted">
-                <p>{finisherOn ? s.photoMetaFinishes : s.photoMeta}</p>
+                <p>{s[photoMetaKey(finisherOn)]}</p>
                 <p className="tabular-nums">{usageLine}</p>
               </div>
               <div className="flex items-center gap-3">
@@ -478,15 +560,7 @@ export function SetsHome({
                     </span>
                   )}
                   {x.status === "building" && (
-                    <p className="text-xs text-atelier-muted">
-                      {x.fromPhoto
-                        ? finisherOn
-                          ? s.statusBuildingPhotoHintFinishes
-                          : s.statusBuildingPhotoHint
-                        : finisherOn
-                          ? s.statusBuildingHintFinishes
-                          : s.statusBuildingHint}
-                    </p>
+                    <p className="text-xs text-atelier-muted">{s[buildingHintKey(x.fromPhoto, finisherOn)]}</p>
                   )}
                   {x.status === "failed" && x.failure && (
                     <p className="text-xs text-atelier-muted">{localizeServerText(x.failure, t)}</p>

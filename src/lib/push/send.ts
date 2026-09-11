@@ -37,6 +37,11 @@ type Notification = {
   // Deep link, so tapping the notification opens the generation rather than
   // dumping the person on the home screen to find it themselves.
   path: string;
+  // Browsers only: a notification with the same tag replaces this one rather
+  // than stacking beside it. Sets use it (lib/sets/leaving.ts), because a
+  // Sets tab in the background shows its own notification for a build it
+  // collected itself.
+  tag?: string;
 };
 
 // Google requires a short-lived OAuth token minted from the service account,
@@ -134,7 +139,12 @@ async function notifyWebDevices(
       devices.map((d) => {
         const text = resolvePushText(notification.message, d.locale as string | null);
         const payload = Buffer.from(
-          JSON.stringify({ title: text.title, body: text.body, path: notification.path }),
+          JSON.stringify({
+            title: text.title,
+            body: text.body,
+            path: notification.path,
+            ...(notification.tag ? { tag: notification.tag } : {}),
+          }),
         );
         return sendToWebPushDevice(
           { endpoint: d.endpoint as string, p256dh: d.p256dh as string, auth: d.auth as string },

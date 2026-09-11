@@ -6,6 +6,7 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
 import { getSetPage } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
+import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
 import { SetView } from "@/components/sets/set-view";
 
@@ -18,7 +19,7 @@ import { SetView } from "@/components/sets/set-view";
 // with the finisher running (finisherCanRun, read here on the server) it
 // completes on its own and the owner's browser is told — the "ready"
 // notification opens this page; without it, only an open Sets page collects
-// it.
+// it. The line is the Sets list's own (lib/sets/leaving.ts buildingHintKey).
 
 // A shot awaits runGeneration inside the server action, which runs under
 // THIS route's function budget — the same 300 s the generate page declares.
@@ -64,14 +65,7 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
         <p className="text-sm text-atelier-muted">{localizeServerText(data.error, t)}</p>
       ) : data.set.status === "building" ? (
         <p className="text-sm text-atelier-muted">
-          {s.statusBuilding}{" "}
-          {data.set.fromPhoto
-            ? finisherOn
-              ? s.statusBuildingPhotoHintFinishes
-              : s.statusBuildingPhotoHint
-            : finisherOn
-              ? s.statusBuildingHintFinishes
-              : s.statusBuildingHint}{" "}
+          {s.statusBuilding} {s[buildingHintKey(data.set.fromPhoto, finisherOn)]}{" "}
           <Link href="/app/sets" className="font-medium text-atelier-accent underline underline-offset-2">
             {s.back}
           </Link>

@@ -403,8 +403,9 @@ export async function submitSetPhotoBuild(input: {
 
 // One tick of a build, for the page: the person's own session and access,
 // then exactly the tick the finisher runs (build-tick.ts, where the claim,
-// the gates and the one retry are described). The page is watching, so a
-// build this settles sends no notification; only the finisher's do.
+// the gates and the one retry are described). A build this settles is
+// never pushed: the page announces it itself, with a notification of its
+// own when its tab is hidden (sets-home.tsx). Only the finisher pushes.
 export async function pollSetBuild(setId: string): Promise<PollResult> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };

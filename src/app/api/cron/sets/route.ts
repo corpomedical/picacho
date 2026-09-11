@@ -17,8 +17,9 @@ import { runSetsFinisher } from "@/lib/sets/finisher";
 // (finisherCanRun).
 
 export const runtime = "nodejs";
-// A run stops starting ticks at 180 s (FINISHER_START_BUDGET_MS) so the
-// slowest tick it started still ends inside this.
+// A run starts no tick after its first 60 s (FINISHER_START_BUDGET_MS): the
+// slowest path a tick can take, every timeout it waits on added up in
+// finisher.ts, then ends by 285 s, inside this.
 export const maxDuration = 300;
 
 export async function GET(request: Request) {

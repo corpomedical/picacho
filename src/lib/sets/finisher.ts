@@ -18,6 +18,11 @@
 // any database read (enabled.ts's first two levels, which stop the page's
 // poll the same way), then the flag, then the owner's access rule
 // (access-rule.ts, the one setsAccess applies to the person signed in).
+// The page asks the flag and the owner's access before every poll's tick,
+// so the finisher asks them again before every tick it starts, and a photo
+// build's retry asks the photo switch at the moment it wants it, as the
+// page's does. A switch turned off or an owner suspended during a run
+// therefore stops the next tick, not the next run.
 //
 // RACES. The page and the finisher can tick the same set at the same
 // moment, and two finisher runs can overlap (a run may take minutes; the
@@ -28,8 +33,10 @@
 // building. So exactly one tick reports settledHere, and one notification
 // goes out.
 //
-// ONLY THE FINISHER NOTIFIES: when the page's own tick settles a build, the
-// person is watching it happen.
+// ONLY THE FINISHER PUSHES. When the page's own tick settles a build, the
+// page tells the person itself: the card changes, and a tab in the
+// background shows a notification in the same words, with the same tag
+// (leaving.ts, sets-home.tsx).
 //
 // Relative imports only, and every dependency passed in: the test suite
 // loads this file as it is and drives it with fakes (finisher.test.ts).
@@ -39,6 +46,7 @@ import type { NotifyOptions } from "../push/channels";
 import type { PushMessage } from "../push/send";
 import { setsAccessForProfile } from "./access-rule";
 import type { AdvanceSetBuildInput, SetBuildTick } from "./build-tick";
+import { setNoticePath, setNoticeTag } from "./leaving";
 import { SETS_SUSPENDED } from "./messages";
 
 /**
@@ -53,13 +61,29 @@ export const FINISHER_BATCH = 25;
 /** Ticks in flight at once. */
 export const FINISHER_CONCURRENCY = 3;
 /**
- * Past this, a run starts nothing new, so it ends inside the route's 300 s.
- * A tick takes up to ~100 s when the words gate reads slowly, plus up to
- * 15 s polling OpenAI (providers/astra.ts): 180 + 115 = 295 s. A tick the
- * platform cuts off anyway is a page's request cut short: its claim goes
- * stale, and a later tick delivers the draft or closes the build as lost.
+ * Past this, a run starts no tick, so that the slowest tick it started still
+ * ends inside the route's 300 s. A tick must never be cut off: once it has
+ * claimed an answer (build-tick.ts) no other tick can collect it, so a
+ * first attempt is lost, and a retry it submitted bills at OpenAI with its
+ * id stored nowhere. So the budget is sized to the slowest path a tick can
+ * take, every wait at its timeout, not to the usual one:
+ *
+ *   poll OpenAI (providers/astra.ts pollAstraJob)                  15 s
+ *   the words gate (content-policy.ts score): two rounds, each
+ *     reader at most 3 sends of 25 s with 2 waits of 5 s between  170 s
+ *   the retry's submit (submitAstraJob)                            30 s
+ *   its cancel, when the write after it fails (cancelAstraJob)     10 s
+ *                                                                 225 s
+ *
+ * 60 + 225 = 285 s, leaving 15 s for the database, the stored photo, the
+ * owner's notification and a cold start. The gate usually reads in 10–100 s,
+ * so this is a ceiling, not an estimate. A run starts every minute and
+ * takes the oldest rows first, so a tick not started here waits at most a
+ * minute, and a run stops starting ticks about when the next one begins.
+ * finisher.test.ts reads those timeouts from the code and fails if they
+ * outgrow the budget.
  */
-export const FINISHER_START_BUDGET_MS = 180_000;
+export const FINISHER_START_BUDGET_MS = 60_000;
 
 /**
  * Whether the finisher can run at all: the cron route refuses every call
@@ -73,7 +97,7 @@ export function finisherCanRun(env: Record<string, string | undefined> = process
 
 export type FinisherNotify = (
   userId: string,
-  notification: { message: PushMessage; path: string },
+  notification: { message: PushMessage; path: string; tag?: string },
   options: NotifyOptions,
 ) => Promise<void>;
 
@@ -87,9 +111,9 @@ export type FinisherDeps = {
   /** push/send.ts notifyUser. */
   notify: FinisherNotify;
   now: () => number;
-  /** enabled.ts isSetsEnabled. */
+  /** enabled.ts isSetsEnabled: once a run, then again before every tick. */
   setsEnabled: (admin: SupabaseClient) => Promise<boolean>;
-  /** enabled.ts isPhotoSetsEnabled, asked at most once a run. */
+  /** enabled.ts isPhotoSetsEnabled, asked by a tick when a photo build wants its retry. */
   photoSetsEnabled: (admin: SupabaseClient) => Promise<boolean>;
 };
 
@@ -103,9 +127,12 @@ export type FinisherSummary = {
   failed: number;
   /** Their owner may not use Sets (suspended, or not eligible): not touched. */
   skipped: number;
-  /** Not started before the time budget ran out: the next run takes them. */
+  /**
+   * Not started: the time budget ran out, or the switch went off during the
+   * run. The next run takes them, or finds the switch off.
+   */
   deferred: number;
-  /** Ticks that threw; the others carried on. */
+  /** Ticks that threw, or whose owner's access could not be read; the others carried on. */
   errors: number;
 };
 
@@ -148,50 +175,53 @@ export async function runSetsFinisher(deps: FinisherDeps): Promise<FinisherOutco
   // The switch off stops collection, as setsAccess stops the page.
   if (!(await deps.setsEnabled(admin))) return { status: 200, body: { skipped: "off" } };
 
-  // Each owner's profile, read once, under the rule the page applies.
-  const owners = [...new Set(builds.map((b) => b.userId))];
-  const { data: profiles, error: profileError } = await admin
-    .from("profiles")
-    .select("id, plan, role, status")
-    .in("id", owners);
-  if (profileError) {
-    // Nobody's access can be checked: nothing is advanced on a guess.
-    console.error("[sets] finisher: owners' profiles query failed", profileError.message);
-    return { status: 500, body: { error: "profiles query failed" } };
-  }
-  const profileOf = new Map(
-    ((profiles ?? []) as Record<string, unknown>[]).map((p) => [p.id as string, p] as const),
-  );
-  const allowed = new Set<string>();
-  let skipped = 0;
-  for (const userId of owners) {
-    const rule = setsAccessForProfile(profileOf.get(userId));
-    if (rule.error === null) {
-      allowed.add(userId);
-      continue;
-    }
-    const theirs = builds.filter((b) => b.userId === userId).map((b) => b.setId);
-    skipped += theirs.length;
-    console.info("[sets] finisher: owner may not use Sets; builds not collected", {
-      userId,
-      reason: rule.error === SETS_SUSPENDED ? "suspended" : "not eligible",
-      sets: theirs,
-    });
-  }
-
   const summary: FinisherSummary = {
     checked: builds.length,
     advanced: 0,
     ready: 0,
     failed: 0,
-    skipped,
+    skipped: 0,
     deferred: 0,
     errors: 0,
   };
 
-  // Asked once a run, and only if some photo build wants its retry.
-  let photoOn: Promise<boolean> | null = null;
-  const photoSwitchOn = () => (photoOn ??= deps.photoSetsEnabled(admin));
+  // Before every tick, what setsAccess asks before every poll's tick, read
+  // fresh: the switch, then the owner's profile under the one rule
+  // (access-rule.ts). The first tick's read repeats the run's own a moment
+  // later; two small reads a tick, at most 25 a run. Once the switch reads
+  // off, no tick starts again in this run.
+  let switchedOff = false;
+  const mayStart = async ({ setId, userId }: Build): Promise<boolean> => {
+    if (switchedOff || !(await deps.setsEnabled(admin))) {
+      switchedOff = true;
+      return false;
+    }
+    const { data: profile, error: profileError } = await admin
+      .from("profiles")
+      .select("plan, role, status")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profileError) {
+      // Their access cannot be checked: nothing is advanced on a guess.
+      summary.errors += 1;
+      console.error("[sets] finisher: owner's profile read failed", { setId }, profileError.message);
+      return false;
+    }
+    const rule = setsAccessForProfile(profile);
+    if (rule.error === null) return true;
+    summary.skipped += 1;
+    console.info("[sets] finisher: owner may not use Sets; build not collected", {
+      setId,
+      userId,
+      reason: rule.error === SETS_SUSPENDED ? "suspended" : "not eligible",
+    });
+    return false;
+  };
+
+  // Asked at the moment a photo build wants its retry — at most once a tick
+  // (build-tick.ts reads the photo once) — exactly as the page's tick asks
+  // it, so turning astra_photo_sets off stops the very next resend.
+  const photoSwitchOn = () => deps.photoSetsEnabled(admin);
 
   // The owner is told only when THIS run's own write settled the build, and
   // only if the set is still theirs to open.
@@ -206,15 +236,18 @@ export async function runSetsFinisher(deps: FinisherDeps): Promise<FinisherOutco
         .maybeSingle();
       // Deleted since the tick settled it: nothing to open, nothing to say.
       if (!readError && !row) return;
+      // The page's own notification for this set opens the same page and
+      // carries the same tag (leaving.ts).
+      const where = { path: setNoticePath(setId, how), tag: setNoticeTag(setId) };
       if (how === "ready") {
         // The title is Astra's, and the strict-lane words gate passed it
         // before the tick saved it (build-tick.ts). A read that failed, or
         // no title, still says the set is ready.
         const title = typeof row?.title === "string" ? row.title.trim() : "";
         const message: PushMessage = title ? { key: "setReady", params: { title } } : { key: "setReady" };
-        await deps.notify(userId, { message, path: `/app/sets/${setId}` }, { webOnly: true });
+        await deps.notify(userId, { message, ...where }, { webOnly: true });
       } else {
-        await deps.notify(userId, { message: { key: "setFailed" }, path: "/app/sets" }, { webOnly: true });
+        await deps.notify(userId, { message: { key: "setFailed" }, ...where }, { webOnly: true });
       }
     } catch (err) {
       // A notification is never worth a build: the set is saved either way.
@@ -238,17 +271,20 @@ export async function runSetsFinisher(deps: FinisherDeps): Promise<FinisherOutco
     await tellOwner(build, tick.settledHere);
   };
 
-  // Oldest first, a few at a time, and nothing new past the budget.
-  const queue = builds.filter((b) => allowed.has(b.userId));
+  // Oldest first, a few at a time, and nothing new past the budget or once
+  // the switch is off.
   let next = 0;
   const worker = async () => {
-    while (next < queue.length) {
+    while (next < builds.length && !switchedOff) {
       if (deps.now() - startedAt >= FINISHER_START_BUDGET_MS) return;
-      await finishOne(queue[next++]);
+      const build = builds[next++];
+      if (await mayStart(build)) await finishOne(build);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(FINISHER_CONCURRENCY, queue.length) }, worker));
-  summary.deferred = queue.length - next;
+  await Promise.all(Array.from({ length: Math.min(FINISHER_CONCURRENCY, builds.length) }, worker));
+  // Every build found is exactly one of: advanced, errors, skipped, deferred.
+  summary.deferred = summary.checked - summary.advanced - summary.errors - summary.skipped;
+  if (switchedOff) console.info("[sets] finisher: the astra_sets switch went off during the run; nothing more started");
 
   console.info(
     `[sets] finisher: checked ${summary.checked}, advanced ${summary.advanced}, ready ${summary.ready}, ` +

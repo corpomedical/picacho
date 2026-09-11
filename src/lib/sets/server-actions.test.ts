@@ -130,7 +130,8 @@ describe('no "use server" file can hand out the build tick', () => {
     expect(poll).toContain("userId: access.userId,");
     expect(poll).toContain("photoSwitchOn: () => isPhotoSetsEnabled(access.supabase),");
     expect(poll).toContain("return tick.result;");
-    // The page is watching: its own settle never notifies.
+    // The page's own settle is never pushed: the page announces it itself
+    // (sets-home.tsx announceIfHidden, pinned in leaving.test.ts).
     expect(poll).not.toMatch(/settledHere|notifyUser/);
   });
 });

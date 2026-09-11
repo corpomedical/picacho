@@ -2004,8 +2004,10 @@ const en = {
     lowCreditsTitle: "You're almost out of credits",
     lowCreditsBody: "{n} credits left.",
     lowCreditsBodyOne: "1 credit left.",
-    // Sets (2026-09-11): sent only by the Sets finisher, to browsers only.
-    // {title} is the set's own, which Astra wrote and the words gate passed.
+    // Sets (2026-09-11): pushed by the Sets finisher, to browsers only, and
+    // shown by a Sets tab in the background for a build it collected itself
+    // (without a title: lib/sets/leaving.ts pageSetNotice). {title} is the
+    // set's own, which Astra wrote and the words gate passed.
     setReadyTitle: "Your set is ready",
     setReadyBody: "{title} — tap to open it.",
     setReadyBodyUntitled: "Tap to open it.",

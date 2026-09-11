@@ -1,5 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { readRenderNotifyPrefs } from "@/lib/generations/generation-defaults-server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
@@ -15,7 +16,10 @@ import { SetsHome } from "@/components/sets/sets-home";
 //
 // Whether a build can be left to finish is read here, on the server
 // (finisherCanRun: the finisher cron runs only with CRON_SECRET set), and
-// handed down as a yes or no — never the secret.
+// handed down as a yes or no — never the secret. So are the person's two
+// render switches (Settings → Notifications), which govern the notification
+// a tab in the background shows for a build it collected itself, as they
+// govern the finisher's push.
 
 // A set from a photo runs the picture check inside its server action
 // (submitSetPhotoBuild: two readers, a third on the line, 10–100 s), and a
@@ -28,7 +32,7 @@ export default async function SetsPage() {
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
 
-  const data = await getSetsHome();
+  const [data, notify] = await Promise.all([getSetsHome(), readRenderNotifyPrefs(supabase, userData.user.id)]);
   if (data.error === SETS_SESSION_EXPIRED) redirect("/login");
   if (data.error === SETS_UNAVAILABLE || data.error === SETS_NOT_OPEN) notFound();
 
@@ -59,6 +63,8 @@ export default async function SetsPage() {
           monthlyLimit={data.monthlyLimit}
           photoSetsOn={data.photoSetsOn}
           finisherOn={finisherCanRun()}
+          notifyReady={notify.ready}
+          notifyFailed={notify.failed}
         />
       )}
     </div>

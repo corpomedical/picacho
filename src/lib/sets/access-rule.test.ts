@@ -56,7 +56,10 @@ describe("the page and the finisher ask the one rule (read as source)", () => {
     expect(access).not.toMatch(/"suspended"|setsEligible\(/);
   });
 
-  it("the finisher applies it to every build's owner", () => {
-    expect(read("finisher.ts")).toContain("setsAccessForProfile(profileOf.get(userId))");
+  it("the finisher applies it to every build's owner, before each tick, and keeps no copy of its own", () => {
+    const finisher = read("finisher.ts");
+    expect(finisher).toContain("const rule = setsAccessForProfile(profile);");
+    // "suspended" appears only as the reason it logs, read off the rule's answer.
+    expect(finisher).not.toMatch(/status\s*[!=]==\s*"suspended"|setsEligible\(/);
   });
 });

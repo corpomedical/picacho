@@ -15,6 +15,10 @@ self.addEventListener("push", (event) => {
       data: { path: data.path || null },
       icon: "/icon-192-maskable.png",
       badge: "/icon-192-maskable.png",
+      // A set's notification carries its set's tag, and so does the one a
+      // Sets tab shows for a build it collected itself: one set, one
+      // notification. Untagged pushes stack as they always did.
+      ...(data.tag ? { tag: data.tag } : {}),
     }),
   );
 });
@@ -23,6 +27,8 @@ self.addEventListener("push", (event) => {
 // its own "ready" notification through this worker's registration (it has
 // no path): that tap must bring the tab forward WITHOUT navigating, or it
 // unmounts the very chat the result just arrived in (2026-09-11 review).
+// A Sets tab's own notification does carry a path, the one the finisher's
+// push would have: its tap opens the set, like the push's.
 // An uncontrolled tab cannot be navigated by the worker, so a tap with a
 // path opens that path in a new window rather than silently only focusing.
 self.addEventListener("notificationclick", (event) => {
