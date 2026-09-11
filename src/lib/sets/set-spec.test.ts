@@ -134,6 +134,38 @@ describe("bounds on everything the model controls", () => {
     expect(s.objects.every((o) => (o.repeat?.count ?? 1) <= SET_LIMITS.maxRepeat)).toBe(true);
   });
 
+  it("never drops a wall to the shape budget: the smallest things are repeated fewer times instead", () => {
+    // The first photo build's shape: loaves of bread listed first, the
+    // street beyond the window last. The old list-order cap cut the walls.
+    const loaf = (i: number) => box({ size: [0.3, 0.15, 0.2], position: [i * 0.1, 1, 0], repeat: { count: 20, offset: [0.35, 0, 0] } });
+    const wall = (x: number) => box({ size: [0.2, 3, 10], position: [x, 1.5, 0] });
+    const s = ok({ objects: [...Array.from({ length: 40 }, (_, i) => loaf(i)), wall(-5), wall(5), wall(8)] });
+    expect(s.objects).toHaveLength(43);
+    expect(specInstanceCount(s)).toBe(SET_LIMITS.maxInstances);
+    const walls = s.objects.filter((o) => o.size[2] === 10);
+    expect(walls).toHaveLength(3);
+    expect(walls.every((w) => w.repeat === null)).toBe(true);
+  });
+
+  it("trims the smallest repeated things first, and leaves a set within budget exactly as it was", () => {
+    // A fence of 50 panels, then ten rows of 50 cups: 550 shapes, 150 over.
+    const fence = box({ size: [3, 1.2, 0.1], repeat: { count: SET_LIMITS.maxRepeat, offset: [3, 0, 0] } });
+    const cup = box({ size: [0.1, 0.1, 0.1], repeat: { count: SET_LIMITS.maxRepeat, offset: [0.2, 0, 0] } });
+    const s = ok({ objects: [fence, ...Array.from({ length: 10 }, () => cup)] });
+    expect(specInstanceCount(s)).toBe(SET_LIMITS.maxInstances);
+    expect(s.objects).toHaveLength(11);
+    expect(s.objects[0].repeat?.count).toBe(SET_LIMITS.maxRepeat);
+    // The rows listed last give way first: 150 over is three rows cut to one
+    // cup (49 each) and three more cups from the row before.
+    expect(s.objects.slice(1).map((o) => o.repeat?.count ?? 1)).toEqual([50, 50, 50, 50, 50, 50, 47, 1, 1, 1]);
+    const within = ok({ objects: [fence, cup] });
+    expect(within.objects.map((o) => o.repeat?.count)).toEqual([SET_LIMITS.maxRepeat, SET_LIMITS.maxRepeat]);
+  });
+
+  it("can always fit by trimming repeats alone: fewer objects are allowed than shapes", () => {
+    expect(SET_LIMITS.maxObjects).toBeLessThan(SET_LIMITS.maxInstances);
+  });
+
   it("turns a repeat of one into no repeat, and bounds the offset", () => {
     const s = ok({ objects: [box({ repeat: { count: 1, offset: [9, 9, 9] } }), box({ repeat: { count: 3, offset: [500, 0, 0] } })] });
     expect(s.objects[0].repeat).toBeNull();

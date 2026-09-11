@@ -100,6 +100,19 @@ describe("the photo rules", () => {
     expect(SET_PHOTO_RULES).toContain("Choose bounds that contain this position.");
   });
 
+  it("pin which way camera 1 looks, so the set is never the photo's mirror image", () => {
+    // The first real photo build came back mirrored: three.js is right-handed,
+    // and a camera looking toward +Z sees +X on its left.
+    expect(SET_PHOTO_RULES).toContain("Put cameras[0] on the +Z side of the set, looking toward -Z");
+    expect(SET_PHOTO_RULES).toContain("whatever is on the left of the photo goes at negative x");
+    expect(SET_PHOTO_RULES).toContain("Never mirror the photo.");
+  });
+
+  it("put the structure first in the shape budget", () => {
+    expect(SET_PHOTO_RULES).toContain("List the floor, walls, ceiling and whatever closes each side first");
+    expect(SET_PHOTO_RULES).toContain("repeat small props fewer times rather than leave out anything structural");
+  });
+
   it("never let a person in the photo be modelled, identified or described", () => {
     expect(SET_PHOTO_RULES).toContain("Never model a person.");
     expect(SET_PHOTO_RULES).toContain("Never identify, name or describe anyone");

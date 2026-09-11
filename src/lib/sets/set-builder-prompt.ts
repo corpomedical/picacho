@@ -223,11 +223,19 @@ export function setBuildInput(brief: string): string {
 //     venue carries its brands and its address on its face.
 //   - The photo outranks the notes: the notes are the person's words about
 //     what the frame cannot show, gated like a brief.
+//   - Handedness, and which way camera 1 looks. three.js is right-handed: a
+//     camera looking toward +Z sees +X on its LEFT. The first real photo
+//     build (a bakery, 2026-09-11) put camera 1 looking toward +Z and every
+//     left-of-photo object at -X — Astra's "+X is right" — so the whole set
+//     came back mirrored: counter and window tables swapped sides. Standing
+//     camera 1 on +Z looking toward -Z makes "+X is right" true.
 export const SET_PHOTO_RULES = `There is no written brief. The attached photograph is the brief: rebuild the place it shows, as it is — its layout, proportions, materials, colours and light — at real-world scale in metres.
 
 - cameras[0] is the photographer. Place it where the photo was taken from: the same height above the ground and the same line of sight, with its target on the point the photo is centred on, and fovDeg set to the photo's VERTICAL field of view (20–90). Seen from cameras[0], the set must line up with the photo. Choose bounds that contain this position. The other cameras follow the usual rules.
+- The axes are right-handed. Put cameras[0] on the +Z side of the set, looking toward -Z: from there +X is on its right and -X on its left. So whatever is on the left of the photo goes at negative x, whatever is on the right at positive x, and whatever is further from the photographer at smaller z. Never mirror the photo.
 - Never model a person. Where someone stands in the photo, or where someone could stand, put a mark facing the way they face. Never identify, name or describe anyone, in the title, the description or any label: a label names the spot ("By the counter"), never who was there.
 - Build what the photo shows first. Close every side it does not show with a plausible continuation of the same place, so no camera sees where the set ends.
+- A photo is full of small things; the 400-shape budget is for the whole set. List the floor, walls, ceiling and whatever closes each side first, then furniture, then small props, and repeat small props fewer times rather than leave out anything structural.
 - Signs, posters and screens are blank shapes. Do not copy any text, logo or brand, and do not name the real place, business, street or address, even if you recognise it.
 - Notes from the photographer, when there are any, describe what the photo cannot show. Where they disagree with the photo, follow the photo.`;
 

@@ -208,6 +208,39 @@ export function parseSetSpecText(text: string): NormaliseResult {
   return normaliseSetSpec(raw);
 }
 
+/**
+ * Hold a set to the drawn-shape budget by repeating its SMALLEST things
+ * fewer times — never by dropping an object. Returns whether anything was
+ * trimmed; a set within budget is left exactly as it was.
+ *
+ * Until 2026-09-11 the budget was spent in list order: every object after
+ * the 400th shape was dropped whole. The first photo build of a bakery
+ * listed its loaves of bread early and the street beyond its window last,
+ * and the cap cut a 7 m facade and a 12 m wall, so the set came back open on
+ * three sides. Walls are almost always single objects, and there are at most
+ * maxObjects (300) objects against maxInstances (400) shapes, so trimming
+ * repeats alone always fits: no object — no wall — is ever lost to the
+ * budget. Smallest first, by an object's largest dimension; between equals,
+ * the one listed later.
+ */
+function fitInstanceBudget(objects: SetObject[], maxInstances: number): boolean {
+  let total = objects.reduce((n, o) => n + (o.repeat?.count ?? 1), 0);
+  if (total <= maxInstances) return false;
+  const order = objects
+    .map((o, i) => ({ i, size: Math.max(o.size[0], o.size[1], o.size[2]) }))
+    .sort((a, b) => a.size - b.size || b.i - a.i);
+  for (const { i } of order) {
+    if (total <= maxInstances) break;
+    const o = objects[i];
+    const count = o.repeat?.count ?? 1;
+    if (count <= 1 || !o.repeat) continue;
+    const next = Math.max(1, count - (total - maxInstances));
+    total -= count - next;
+    o.repeat = next > 1 ? { count: next, offset: o.repeat.offset } : null;
+  }
+  return true;
+}
+
 export function normaliseSetSpec(input: unknown): NormaliseResult {
   const root = obj(input);
   if (!root) return { ok: false, reason: "not_object" };
@@ -292,9 +325,8 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
   }
 
   const objects: SetObject[] = [];
-  let instances = 0;
   for (const entry of list(root.objects)) {
-    if (objects.length >= L.maxObjects || instances >= L.maxInstances) {
+    if (objects.length >= L.maxObjects) {
       notes.push("objects_capped");
       break;
     }
@@ -304,20 +336,12 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
     const size = vec3(o.size, L.minSize, L.maxSize, [1, 1, 1]);
     let repeat: SetObject["repeat"] = null;
     const r = obj(o.repeat);
-    let count = 1;
     if (r) {
-      count = int(r.count, 1, L.maxRepeat, 1);
-      if (count > L.maxInstances - instances) {
-        count = L.maxInstances - instances;
-        notes.push("repeat_truncated");
-      }
+      const count = int(r.count, 1, L.maxRepeat, 1);
       if (count > 1) {
         repeat = { count, offset: vec3(r.offset, -L.maxRepeatOffset, L.maxRepeatOffset, [1, 0, 0]) };
-      } else {
-        count = 1;
       }
     }
-    instances += count;
     objects.push({
       shape: o.shape as SetShape,
       position: vec3(o.position, -C, C, [0, size[1] / 2, 0]),
@@ -333,6 +357,7 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
     });
   }
   if (objects.length === 0) return { ok: false, reason: "empty" };
+  if (fitInstanceBudget(objects, L.maxInstances)) notes.push("repeat_truncated");
 
   // Marks stand ON the set: pulled inside its footprint. Ids are ours, by
   // position — never the model's, which the page would otherwise key on.

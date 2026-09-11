@@ -36,7 +36,19 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 
 **Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/applied/2026-09-10/astra-sets.sql` (run in production 2026-09-11; flags confirmed off, tables present, anonymous key refused).
 
-**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/pending/astra-photo-sets.sql`). Worst case $1.81625 a build (`set-config.ts`). Match this shot, the webhook finisher and credits are not built. Image tokens and photos with people are unmeasured (eval D, E).
+**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/pending/astra-photo-sets.sql`). Worst case $1.81625 a build (`set-config.ts`). Match this shot, the webhook finisher and credits are not built. Photos with people are unmeasured (eval D).
+
+**Three live photo builds before shipping (2026-09-11)**, through the repo's own code (photo.ts re-encode, astra-request.ts, providers/astra.ts, the normaliser, closure.ts), with no database: one people-free bakery photo made by GPT Image, 1536×1024, sent inline at detail high.
+
+| Build | Rules | Time | Tokens in / out | Cost | Result |
+|---|---|---|---|---|---|
+| 1 | as built | 123 s | 3,991 / 9,078 | $0.4938 | Closed, but **mirrored**: counter and window tables swapped sides |
+| 2 | + axes rule | 138 s | 4,071 (1,844 cached) / 10,580 | $0.5531 | Not mirrored, but **open on three sides**: the 400-shape cap cut a 7 m facade and a 12 m wall |
+| 3 | + axes rule, + budget rule, new normaliser | 183 s | 4,126 (1,844 cached) / 12,455 | $0.6474 | Not mirrored, closed; 97 objects in 365 shapes; camera 1 lines up with the photo |
+
+- **The mirror.** three.js is right-handed: a camera looking toward +Z sees +X on its left. Build 1 put camera 1 looking toward +Z and every left-of-photo object at -X, so the set came back as the photo's mirror image. The photo rules now stand camera 1 on +Z looking toward -Z, where "+X is right" is true, and say never to mirror.
+- **The shape budget.** The normaliser used to spend the 400-shape budget in list order, dropping every object after the 400th shape. Astra listed loaves of bread early and the street beyond the window last. It now trims the repeats of the smallest objects first and never drops an object: at most 300 objects fit in 400 shapes, so trimming always suffices, and walls are single objects. A set within budget normalises exactly as before, and every stored set is. Build 2's own answer, re-normalised, measures closed. The photo rules also now say to list the structure first and repeat small props less.
+- **Measured costs** sit inside the photo caps: at most 12,455 output tokens against 16,000, and image input about 2,100 tokens on top of the cached prefix. The prompt cache held across builds.
 
 **Deliberately not built in Phase 1.**
 - The shared `stage-canvas.tsx`: the Angle Stage is a live Studio/Elite lane that cannot be exercised without a paid account and a proxy. Sets has its own viewer; the Stage is untouched.
