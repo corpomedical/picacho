@@ -9,6 +9,7 @@ import {
   normaliseSetPhoto,
   parseSetPhotoDataUri,
   photoDataUrl,
+  photoForRetry,
   photoSourceColumns,
   readPhotoSources,
   readStoredPhoto,
@@ -114,6 +115,20 @@ describe.skipIf(!sharp)("normaliseSetPhoto (sharp)", () => {
     if (r.ok) expect(r.height).toBeGreaterThan(r.width);
   });
 
+  it("accepts a 2.4:1 photo the browser accepted, at the size the browser sent and at full size", async () => {
+    // The browser scales 2400 × 1000 to 2048 × 853 (2.4009:1); sharp
+    // rounds the same way from the full-size photo.
+    for (const [w, h] of [
+      [2048, 853],
+      [2400, 1000],
+      [853, 2048],
+    ]) {
+      const r = await normaliseSetPhoto(await make(w, h).jpeg().toBuffer());
+      expect(r.ok, `${w}×${h}`).toBe(true);
+      if (r.ok) expect([r.width, r.height]).toEqual(w > h ? [2048, 853] : [853, 2048]);
+    }
+  });
+
   it("refuses a photo too small or too wide, and bytes that do not decode", async () => {
     expect(await normaliseSetPhoto(await make(600, 900).jpeg().toBuffer())).toEqual({ ok: false, error: SET_PHOTO_TOO_SMALL });
     expect(await normaliseSetPhoto(await make(3000, 1000).jpeg().toBuffer())).toEqual({ ok: false, error: SET_PHOTO_BAD_SHAPE });
@@ -140,14 +155,32 @@ describe("before astra-photo-sets.sql runs, every set is a text build", () => {
     expect(isMissingColumn(undefined)).toBe(false);
   });
 
-  it("reads no photo sources when the columns are not there", async () => {
+  it("reads no photo sources when the columns are not there — an answer: every set is a text build", async () => {
     const db = fakeDb({ data: null, error: { code: "42703", message: "column location_sets.source_photo_path does not exist" } });
-    expect((await readPhotoSources(db, [SET], USER)).size).toBe(0);
+    const got = await readPhotoSources(db, [SET], USER);
+    expect(got.sources.size).toBe(0);
+    expect(got.known).toBe(true);
   });
 
-  it("reads no photo sources when the read itself throws", async () => {
-    const db = { from: () => { throw new Error("network"); } } as unknown as SupabaseClient;
-    expect((await readPhotoSources(db, [SET], USER)).size).toBe(0);
+  it("reads NOT KNOWN, never \"a text build\", when the read fails for any other reason", async () => {
+    // Once the columns exist, a blip on this read must not turn a photo
+    // build into a text build for the tick that acts on its answer.
+    for (const error of [
+      { code: "PGRST000", message: "Could not connect with the database" },
+      { code: "57014", message: "canceling statement due to statement timeout" },
+      { code: "", message: "TypeError: fetch failed" },
+    ]) {
+      const got = await readPhotoSources(fakeDb({ data: null, error }), [SET], USER);
+      expect(got.sources.size, error.message).toBe(0);
+      expect(got.known, error.message).toBe(false);
+    }
+    const throws = { from: () => { throw new Error("network"); } } as unknown as SupabaseClient;
+    expect(await readPhotoSources(throws, [SET], USER)).toEqual({ sources: new Map(), known: false });
+  });
+
+  it("knows the answer for no sets without asking", async () => {
+    const never = { from: () => { throw new Error("not called"); } } as unknown as SupabaseClient;
+    expect(await readPhotoSources(never, [], USER)).toEqual({ sources: new Map(), known: true });
   });
 
   it("names the photo columns nowhere in src/ but photo.ts (and tests)", () => {
@@ -196,9 +229,61 @@ describe("the photo action's order (actions.ts, read as source: a \"use server\"
     for (let i = 1; i < at.length; i++) expect(at[i], `${steps[i - 1]} before ${steps[i]}`).toBeGreaterThan(at[i - 1]);
   });
 
-  it("sends Astra the photo inline, never a link to where it is stored", () => {
-    expect(body).toContain("photoBuildInput(dataUrl, notes)");
+  it("sends Astra the photo inline, never a link to where it is stored — at the photo caps", () => {
+    // photoBuildRequest is the photo input at the 16,000-token photo cap
+    // (astra-request.test.ts); the text cap would cut the measured build off.
+    expect(body).toContain("submitAstraJob(photoBuildRequest(dataUrl, notes, openAiSafetyId(userId)))");
+    expect(body).not.toMatch(/setAstraRequest\(|"text"\)/);
     expect(body).not.toMatch(/mediaUrl\(|createSignedUrl|getPublicUrl/);
+  });
+
+  it("removes the stored photo on every way out after it is stored", () => {
+    const afterUpload = body.slice(body.indexOf(".upload(setPhotoPath(userId, setId)"));
+    // The upload failing, Astra refusing or failing to start, the job id not recorded.
+    expect(afterUpload.split("await removeSetPhoto(admin, userId, setId);").length - 1).toBe(3);
+  });
+});
+
+describe("the build poll and the delete keep the photo's promises (actions.ts, read as source)", () => {
+  const source = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const fn = (name: string) => {
+    const start = source.indexOf(`export async function ${name}(`);
+    expect(start, name).toBeGreaterThan(0);
+    const end = source.indexOf("\nexport async function", start + 10);
+    return source.slice(start, end < 0 ? undefined : end);
+  };
+  const poll = fn("pollSetBuild");
+
+  it("acts on nothing when it cannot tell what kind of build it is, before anything is claimed", () => {
+    const wait = poll.indexOf('if (!sources.known) return { error: null, state: "building" };');
+    expect(wait).toBeGreaterThan(poll.indexOf("readPhotoSources(admin, [setId], userId)"));
+    expect(wait).toBeLessThan(poll.indexOf('response_id: "claiming"'));
+    expect(wait).toBeLessThan(poll.indexOf("const retryRequest"));
+  });
+
+  it("builds every retry from the one tested function, the photo loaded only through photoForRetry", () => {
+    const loader = poll.slice(poll.indexOf("const retryRequest"), poll.indexOf("const closeFailed"));
+    expect(loader).toContain("retryBuildRequest({ kind, brief }, retry, safetyId)");
+    expect(loader).toContain("retryBuildRequest({ kind, notes, photo: storedPhoto }, retry, safetyId)");
+    expect(loader).toContain("photoForRetry(admin, src, () => isPhotoSetsEnabled(access.supabase))");
+    // Both retries — the closing one and the one after a failed answer —
+    // submit what retryRequest built, and nothing in the poll builds an
+    // input of its own.
+    expect(poll.split("await retryRequest({").length - 1).toBe(2);
+    expect(poll.split("submitAstraJob(request)").length - 1).toBe(2);
+    expect(poll).not.toMatch(/setAstraRequest\(|photoBuildInput\(|setBuildInput\(|closeRetryInput\(/);
+  });
+
+  it("removes the photo whenever it closes a build as failed, whatever it took the kind to be", () => {
+    const close = poll.slice(poll.indexOf("const closeFailed"), poll.indexOf("const deletedMeanwhile"));
+    expect(close).toContain("if (closed?.length) await removeSetPhoto(admin, userId, setId);");
+  });
+
+  it("removes a deleted set's photo and clears its record", () => {
+    const del = fn("deleteSet");
+    const removed = del.indexOf("await removeSetPhoto(admin, userId, setId);");
+    expect(removed).toBeGreaterThan(del.indexOf("if (!gone?.length) continue;"));
+    expect(del.indexOf('.update(CLEAR_PHOTO_SOURCE).eq("id", setId)')).toBeGreaterThan(removed);
   });
 });
 
@@ -217,8 +302,9 @@ describe("readPhotoSources, once the columns exist", () => {
       error: null,
     });
     const got = await readPhotoSources(db, [SET, other], USER);
-    expect([...got.keys()]).toEqual([SET]);
-    expect(got.get(SET)).toEqual({ path: setPhotoPath(USER, SET), sha256: SHA });
+    expect(got.known).toBe(true);
+    expect([...got.sources.keys()]).toEqual([SET]);
+    expect(got.sources.get(SET)).toEqual({ path: setPhotoPath(USER, SET), sha256: SHA });
   });
 
   it("writes and clears the two columns as a pair, pinned to the owner's path", () => {
@@ -251,6 +337,32 @@ describe("readStoredPhoto resends only the bytes that passed the check", () => {
       throw new Error("network");
     });
     expect(await readStoredPhoto(broken, { path: setPhotoPath(USER, SET), sha256: sha })).toBeNull();
+  });
+
+  it("gives a retry the photo only while the photo switch is on, and never reads it when off", async () => {
+    const src = { path: setPhotoPath(USER, SET), sha256: sha };
+    let reads = 0;
+    const admin = fakeStorage(async () => {
+      reads++;
+      return { data: new Blob([bytes]), error: null };
+    });
+    expect(await photoForRetry(admin, src, async () => false)).toBeNull();
+    expect(reads).toBe(0);
+    expect(await photoForRetry(admin, src, async () => true)).toBe(photoDataUrl(bytes));
+    expect(reads).toBe(1);
+  });
+
+  it("gives a retry nothing for a text build, or when the stored bytes changed", async () => {
+    let asked = 0;
+    const on = async () => {
+      asked++;
+      return true;
+    };
+    const admin = fakeStorage(async () => ({ data: new Blob([bytes]), error: null }));
+    expect(await photoForRetry(admin, null, on)).toBeNull();
+    expect(asked).toBe(0);
+    const swapped = fakeStorage(async () => ({ data: new Blob([Buffer.from([0xff, 0xd8, 0xff, 9])]), error: null }));
+    expect(await photoForRetry(swapped, { path: setPhotoPath(USER, SET), sha256: sha }, on)).toBeNull();
   });
 
   it("removes a photo without ever throwing", async () => {

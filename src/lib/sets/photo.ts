@@ -7,10 +7,12 @@
 // the operator runs it they do not exist — and PostgREST fails a whole
 // statement that names a missing column (42703 on a read, PGRST204 on a
 // write). So no existing query names them: a build's kind is read here, in
-// its own query, whose failure reads as "a text build" — which it must be,
-// because a photo build cannot be written without the columns. Text sets
-// keep working in either order; a photo build before the SQL stops at its
-// first write with an admin-facing sentence, before anything is spent.
+// its own query, where a missing column reads as "a text build" — which it
+// must be, because a photo build cannot be written without the columns —
+// and any other failure as "unknown", which the build poll waits out rather
+// than guess. Text sets keep working in either order; a photo build before
+// the SQL stops at its first write with an admin-facing sentence, before
+// anything is spent.
 //
 // THE PHOTO IS THE PERSON'S DATA. It is re-encoded here before anything else
 // sees it (sharp, which drops EXIF — GPS included — and bounds the pixels the
@@ -119,14 +121,26 @@ export const photoDataUrl = (jpeg: Buffer) => `data:image/jpeg;base64,${jpeg.toS
 export type PhotoSource = { path: string; sha256: string };
 
 /**
- * Which of these sets were built from a photo, and where the photo is. ANY
- * error — the columns not there yet above all — reads as "none of them": a
- * text build, which is what every set is until the SQL has run. A row counts
- * only when its path is exactly the owner's own photo path for that set.
+ * `known: false` — the read failed for a reason other than the columns
+ * being missing, so nobody can tell which sets were built from a photo.
  */
-export async function readPhotoSources(db: SupabaseClient, ids: string[], userId: string): Promise<Map<string, PhotoSource>> {
-  const out = new Map<string, PhotoSource>();
-  if (ids.length === 0) return out;
+export type PhotoSourcesRead = { sources: Map<string, PhotoSource>; known: boolean };
+
+/**
+ * Which of these sets were built from a photo, and where the photo is. A row
+ * counts only when its path is exactly the owner's own photo path for that
+ * set.
+ *
+ * The columns not being there yet is an ANSWER: none of them — a text
+ * build, which is what every set is until the SQL has run (known: true).
+ * Any other failure is not an answer (known: false, no sources): a list or
+ * a page may show such a set as a text set for one load, but the build poll
+ * must not act on the guess — it would resend a photo build's notes as a
+ * text brief and leave its photo behind — so it waits for a good read.
+ */
+export async function readPhotoSources(db: SupabaseClient, ids: string[], userId: string): Promise<PhotoSourcesRead> {
+  const sources = new Map<string, PhotoSource>();
+  if (ids.length === 0) return { sources, known: true };
   try {
     const { data, error } = await db
       .from("location_sets")
@@ -135,7 +149,7 @@ export async function readPhotoSources(db: SupabaseClient, ids: string[], userId
       .eq("user_id", userId);
     if (error) {
       warnOnce("source read", error.message);
-      return out;
+      return { sources, known: isMissingColumn(error) };
     }
     for (const row of (data ?? []) as Record<string, unknown>[]) {
       const id = row.id;
@@ -143,12 +157,13 @@ export async function readPhotoSources(db: SupabaseClient, ids: string[], userId
       const sha256 = row.source_photo_sha256;
       if (typeof id !== "string" || typeof path !== "string" || typeof sha256 !== "string") continue;
       if (path !== setPhotoPath(userId, id) || !SHA256_RE.test(sha256)) continue;
-      out.set(id, { path, sha256 });
+      sources.set(id, { path, sha256 });
     }
+    return { sources, known: true };
   } catch (err) {
     warnOnce("source read", err instanceof Error ? err.message : String(err));
+    return { sources: new Map(), known: false };
   }
-  return out;
 }
 
 /**
@@ -170,6 +185,24 @@ export async function readStoredPhoto(admin: SupabaseClient, src: PhotoSource): 
   } catch {
     return null;
   }
+}
+
+/**
+ * The photo a photo build's one retry may resend, or null: then there is no
+ * retry (astra-request.ts retryBuildRequest), never the notes alone. Only
+ * while the photo switch is on — turning it off stops photos going back to
+ * OpenAI; answers already paid for are still collected — and only the bytes
+ * that passed the picture check (readStoredPhoto). The switch is asked
+ * first, so with it off the stored photo is never even read.
+ */
+export async function photoForRetry(
+  admin: SupabaseClient,
+  src: PhotoSource | null,
+  switchOn: () => Promise<boolean>,
+): Promise<string | null> {
+  if (!src) return null;
+  if (!(await switchOn())) return null;
+  return readStoredPhoto(admin, src);
 }
 
 /** Best-effort: remove a set's photo. Harmless when there is none. Never throws. */

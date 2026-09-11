@@ -7,7 +7,7 @@ import { assertPromptAllowed, ContentPolicyRefusal, type Scores } from "@/lib/ge
 import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { runGeneration } from "@/lib/generations/actions";
-import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraInput } from "@/lib/generations/providers/astra";
+import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraJobRequest } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { countSetBuildsThisMonth } from "@/lib/sets/data";
@@ -23,6 +23,7 @@ import {
   SET_PHOTO_BUILD_INPUT_TOKENS,
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
   SET_PHOTO_NOTES_MAX_CHARS,
+  SET_RESERVED_BRIEF,
   setFramePath,
   setPhotoPath,
   setThumbPath,
@@ -35,26 +36,20 @@ import {
   specTextForGate,
   type SetSpec,
 } from "@/lib/sets/set-spec";
-import { photoBuildInput, setBuildInput } from "@/lib/sets/set-builder-prompt";
-import { setAstraRequest } from "@/lib/sets/astra-request";
+import { setBuildInput } from "@/lib/sets/set-builder-prompt";
+import { photoBuildRequest, retryBuildRequest, setAstraRequest, type SetRetry } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
 import { hasSavedOutfit, lookStoragePath } from "@/lib/sets/look";
-import {
-  closeRetryFeedback,
-  closeRetryInput,
-  decideAfterValidAnswer,
-  RETRY_SMALLER,
-  RETRY_SMALLER_PHOTO,
-} from "@/lib/sets/build-retry";
+import { decideAfterValidAnswer } from "@/lib/sets/build-retry";
 import {
   CLEAR_PHOTO_SOURCE,
   isMissingColumn,
   normaliseSetPhoto,
   parseSetPhotoDataUri,
   photoDataUrl,
+  photoForRetry,
   photoSourceColumns,
   readPhotoSources,
-  readStoredPhoto,
   removeSetPhoto,
 } from "@/lib/sets/photo";
 import type { SetKind } from "@/lib/sets/types";
@@ -125,7 +120,7 @@ const JPEG_DATA_URI = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
 // brief is never written, not even for the seconds the gate takes. A photo
 // build keeps it when the photographer adds no notes (the column's CHECK
 // wants 1–500 characters).
-const RESERVED = "-";
+const RESERVED = SET_RESERVED_BRIEF;
 
 /**
  * OpenAI refused the person's own input — their brief, or their photo and
@@ -396,8 +391,9 @@ export async function submitSetPhotoBuild(input: {
     return { error: SET_PHOTO_SAVE_FAILED };
   }
 
-  // The bytes in hand, not a re-read: the same ones the check passed.
-  const submitted = await submitAstraJob(setAstraRequest(photoBuildInput(dataUrl, notes), openAiSafetyId(userId), "photo"));
+  // The bytes in hand, not a re-read: the same ones the check passed; the
+  // photo caps (astra-request.ts).
+  const submitted = await submitAstraJob(photoBuildRequest(dataUrl, notes, openAiSafetyId(userId)));
   if (!submitted.ok) {
     console.error("submitSetPhotoBuild astra submit failed:", submitted.kind, submitted.detail);
     await admin
@@ -482,10 +478,16 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
     .maybeSingle();
   if (!row) return { error: SET_NOT_FOUND };
   if (row.status === "ready") return { error: null, state: "ready" };
-  // Which kind of build this is, read on its own (photo.ts): any error —
-  // the photo columns not there yet — reads as a text build, which every
-  // build is until they are.
-  const src = (await readPhotoSources(admin, [setId], userId)).get(setId) ?? null;
+  // Which kind of build this is, read on its own (photo.ts). The photo
+  // columns not there yet reads as a text build, which every build is until
+  // they are. A read that fails for any other reason is not an answer, and
+  // this tick acts on nothing: on a guess of "text" a photo build's retry
+  // would send its notes as a brief, with no photo and the text caps, and a
+  // failure would leave its photo behind. The next tick reads again;
+  // background mode keeps the answer meanwhile.
+  const sources = await readPhotoSources(admin, [setId], userId);
+  if (!sources.known) return { error: null, state: "building" };
+  const src = sources.sources.get(setId) ?? null;
   const kind: SetKind = src ? "photo" : "text";
   if (row.status === "failed") return { error: null, state: "failed", message: setFailureMessage(row.failure, kind) };
 
@@ -503,19 +505,17 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
   const kept = row.spec ? normaliseSetSpec(row.spec) : null;
   const draft = kept?.ok ? kept.spec : null;
 
-  // What a retry may send. A text build resends its brief — never the
-  // placeholder. A photo build resends its photo only while the photo switch
-  // is on (turning it off stops photos going back to OpenAI; answers already
-  // paid for are still collected) and only if the stored bytes still hash
-  // to what passed the picture check. Null: no retry; the set in hand, or
-  // the failure, stands. Read once, and only when a retry is wanted.
+  // What a retry sends (astra-request.ts retryBuildRequest): a text build
+  // its brief, never the placeholder; a photo build its STORED photo, only
+  // while the photo switch is on and only the bytes that passed the picture
+  // check (photo.ts photoForRetry) — or no retry at all, never the notes
+  // alone. Null: the set in hand, or the failure, stands. The photo is read
+  // once, and only when a retry is wanted.
   let storedPhoto: string | null | undefined;
-  const retryInput = async (tail: (photo: string) => AstraInput, text: () => string): Promise<AstraInput | null> => {
-    if (kind === "text") return brief !== RESERVED ? text() : null;
-    if (storedPhoto === undefined) {
-      storedPhoto = src && (await isPhotoSetsEnabled(access.supabase)) ? await readStoredPhoto(admin, src) : null;
-    }
-    return storedPhoto ? tail(storedPhoto) : null;
+  const retryRequest = async (retry: SetRetry): Promise<AstraJobRequest | null> => {
+    if (kind === "text") return retryBuildRequest({ kind, brief }, retry, safetyId);
+    if (storedPhoto === undefined) storedPhoto = await photoForRetry(admin, src, () => isPhotoSetsEnabled(access.supabase));
+    return retryBuildRequest({ kind, notes, photo: storedPhoto }, retry, safetyId);
   };
 
   const closeFailed = async (failure: string, costUsd: number) => {
@@ -526,8 +526,10 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
       .eq("status", "building")
       .select("id");
     // A failed card cannot be retried, so its photo has no use left; the
-    // row keeps the record that it was a photo build.
-    if (closed?.length && kind === "photo") await removeSetPhoto(admin, userId, setId);
+    // row keeps the record that it was a photo build. Removed whatever this
+    // tick took the kind to be: the path is fixed, and removing it is
+    // harmless for a set built from words, as in deleteSet.
+    if (closed?.length) await removeSetPhoto(admin, userId, setId);
     return { error: null, state: "failed" as const, message: setFailureMessage(failure, kind) };
   };
   // The set was deleted while this tick held the claim: keep the record of
@@ -650,13 +652,10 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
         draftOpen,
       });
       if (next.kind === "retry-close") {
-        const input = await retryInput(
-          (photo) => photoBuildInput(photo, notes, closeRetryFeedback(closure.sides, spec)),
-          () => closeRetryInput(brief, closure.sides, spec),
-        );
+        const request = await retryRequest({ why: "close", openSides: closure.sides, previous: spec });
         // Nothing may be resent: the set in hand is still a good set.
-        if (!input) return finishReady(spec, cost, true);
-        const retry = await submitAstraJob(setAstraRequest(input, safetyId, kind));
+        if (!request) return finishReady(spec, cost, true);
+        const retry = await submitAstraJob(request);
         if (retry.ok) {
           const { data: resumed, error: resumeError } = await admin
             .from("location_sets")
@@ -705,17 +704,13 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
   if (draft) return finishReady(draft, cost, true);
 
   // One automatic retry at our cost, never after a safety stop — and never
-  // without something to send (retryInput).
-  const tooLong = failure === "incomplete";
-  const input =
+  // without something to send (retryRequest).
+  const request =
     failure !== "refused" && failure !== "cancelled" && attempts < SET_BUILD_MAX_ATTEMPTS && !stale
-      ? await retryInput(
-          (photo) => photoBuildInput(photo, notes, tooLong ? RETRY_SMALLER_PHOTO : ""),
-          () => setBuildInput(brief) + (tooLong ? RETRY_SMALLER : ""),
-        )
+      ? await retryRequest({ why: "again", tooLong: failure === "incomplete" })
       : null;
-  if (input) {
-    const retry = await submitAstraJob(setAstraRequest(input, safetyId, kind));
+  if (request) {
+    const retry = await submitAstraJob(request);
     if (retry.ok) {
       const { data: resumed, error: resumeError } = await admin
         .from("location_sets")

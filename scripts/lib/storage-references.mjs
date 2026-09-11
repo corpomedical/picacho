@@ -99,10 +99,13 @@ export async function referencedKeys(rest) {
   // A Set's card and, for a set built from a photo, the photo (2026-09-11).
   // Read with * so this works before supabase/pending/astra-photo-sets.sql
   // adds the photo column (naming it would fail the whole read until then).
-  // Both are bare keys in generated-images.
+  // Both are bare keys in generated-images. The photo counts only while its
+  // set is building or ready: a failed or deleted set's photo was removed
+  // (src/lib/sets/actions.ts), and its row keeps the path as a record — so a
+  // photo still stored for one is a leftover to report, not a reference.
   for (const s of await allRows(rest, "location_sets", "*")) {
     add(s.thumb_path);
-    add(s.source_photo_path);
+    if (!s.deleted_at && (s.status === "building" || s.status === "ready")) add(s.source_photo_path);
   }
   return referenced;
 }

@@ -1796,7 +1796,7 @@ const it = {
     photoPick: "Scegli una foto",
     photoChange: "Scegli un'altra foto",
     photoHint:
-      "Una foto di un luogo, scattata da dove metteresti la camera. Astra lo ricostruisce con la camera 1 dove eri tu. Chiunque vi compaia diventa un segno — Astra non modella né descrive mai le persone.",
+      "Una foto di un luogo, scattata da dove metteresti la camera. Astra lo ricostruisce con la camera 1 dove eri tu. Gli viene chiesto di lasciare fuori le persone: mettere un segno dove c'è qualcuno e non modellarle né descriverle mai.",
     photoNotesLabel: "Ciò che la foto non mostra (facoltativo)",
     photoNotesPlaceholder: "È notte e i lampioni sono accesi. Alle mie spalle c'è una fila di negozi con le serrande abbassate.",
     photoBuildButton: "Costruisci dalla foto",

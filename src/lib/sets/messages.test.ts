@@ -221,4 +221,15 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     expect(en.sets.photoMeta).toContain("keep this page open");
     expect(en.sets.statusBuildingPhotoHint).toContain("Keep this page open");
   });
+
+  it("says what Astra is TOLD about people, never promises what it does, in every language", () => {
+    // Leaving people out is an instruction (set-builder-prompt.ts
+    // SET_PHOTO_RULES), and nothing measures it until eval part D: the form
+    // may not state it as a fact.
+    expect(en.sets.photoHint).toMatch(/\bis told\b/);
+    expect(es.sets.photoHint).toMatch(/\bSe le indica\b/);
+    expect(pt.sets.photoHint).toMatch(/\binstruído\b/);
+    expect(it_.sets.photoHint).toMatch(/\bGli viene chiesto\b/);
+    expect(en.sets.photoHint).not.toMatch(/never (models|describes)|becomes a mark/i);
+  });
 });

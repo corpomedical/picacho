@@ -1797,7 +1797,7 @@ const es = {
     photoPick: "Elegir una foto",
     photoChange: "Elegir otra foto",
     photoHint:
-      "Una foto de un lugar, hecha desde donde pondrías la cámara. Astra lo reconstruye con la cámara 1 donde estabas tú. Quien aparezca en ella se convierte en una marca — Astra nunca modela ni describe a personas.",
+      "Una foto de un lugar, hecha desde donde pondrías la cámara. Astra lo reconstruye con la cámara 1 donde estabas tú. Se le indica que deje fuera a las personas: que ponga una marca donde haya alguien y que nunca las modele ni las describa.",
     photoNotesLabel: "Lo que la foto no muestra (opcional)",
     photoNotesPlaceholder: "Es de noche y las farolas están encendidas. Detrás de mí hay una fila de tiendas con la persiana bajada.",
     photoBuildButton: "Construir desde la foto",

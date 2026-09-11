@@ -60,6 +60,13 @@ export function setBuildsMonthlyLimit(plan: string | null | undefined, isAdmin: 
 
 export const SET_BRIEF_MIN_CHARS = 8;
 export const SET_BRIEF_MAX_CHARS = 500;
+/**
+ * What a reserved build row's brief holds until the person's words have
+ * passed the gate (a refused brief is never written), and what a photo
+ * build keeps there when the photographer adds no notes (the column's CHECK
+ * wants 1–500 characters). Never sent to Astra, never shown.
+ */
+export const SET_RESERVED_BRIEF = "-";
 /** What the person says is happening in one frame. */
 export const SET_DIRECTION_MAX_CHARS = 300;
 
@@ -146,7 +153,13 @@ export function photoFit(
   const short = Math.min(width, height);
   const long = Math.max(width, height);
   if (short < SET_PHOTO_MIN_SIDE_PX) return { ok: false, reason: "small" };
-  if (long / short > SET_PHOTO_MAX_ASPECT) return { ok: false, reason: "shape" };
+  // A pixel to spare on the long side. Scaling to 2048 rounds the short side
+  // to a whole pixel — here for the browser's canvas, and in sharp on the
+  // server, both to the nearest — which can carry a photo at exactly 2.4:1
+  // just past the limit (2400 × 1000 → 2048 × 853 = 2.4009:1), and the
+  // server re-checks the size it was sent. With the pixel, every size this
+  // passes passes again as the size it hands back (set-config.test.ts).
+  if (long > SET_PHOTO_MAX_ASPECT * short + 1) return { ok: false, reason: "shape" };
   const scale = Math.min(1, SET_PHOTO_MAX_SIDE_PX / long);
   return { ok: true, width: Math.round(width * scale), height: Math.round(height * scale) };
 }

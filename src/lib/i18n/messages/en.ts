@@ -1907,7 +1907,7 @@ const en = {
     photoPick: "Choose a photo",
     photoChange: "Choose another photo",
     photoHint:
-      "A photo of a place, taken from where you'd put the camera. Astra rebuilds it with camera 1 where you stood. Anyone in it becomes a mark — Astra never models or describes people.",
+      "A photo of a place, taken from where you'd put the camera. Astra rebuilds it with camera 1 where you stood. It is told to leave people out: to put a mark where anyone stands, and never to model or describe them.",
     photoNotesLabel: "Anything the photo doesn't show (optional)",
     photoNotesPlaceholder: "It's night and the lamps are on. Behind me is a row of shuttered shops.",
     photoBuildButton: "Build from photo",

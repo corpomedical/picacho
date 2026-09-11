@@ -263,8 +263,13 @@ export function SetsHome({
   const atCap = monthlyLimit >= 0 && used >= monthlyLimit;
   const usageLine = monthlyLimit < 0 ? s.unlimitedUsage : formatMsg(s.monthlyUsage, { used, limit: monthlyLimit });
   const fromPhoto = photoSetsOn && mode === "photo";
+  // While a submit runs (the photo check takes up to a minute or two), what
+  // it sent stays on screen and cannot change: success clears the words it
+  // sent, so an edit made meanwhile would vanish unsent, and switching forms
+  // would hide the only line saying what is happening.
+  const submitting = starting || photoStarting;
   const chip = (active: boolean) =>
-    `cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+    `cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-40 ${
       active
         ? "border-atelier-accent bg-atelier-accent/10 text-atelier-ink"
         : "border-atelier-rule text-atelier-muted hover:text-atelier-ink"
@@ -277,10 +282,22 @@ export function SetsHome({
         <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.newTitle}</h2>
         {photoSetsOn && (
           <div className="flex flex-wrap gap-2">
-            <button type="button" aria-pressed={mode === "describe"} onClick={() => setMode("describe")} className={chip(mode === "describe")}>
+            <button
+              type="button"
+              aria-pressed={mode === "describe"}
+              onClick={() => setMode("describe")}
+              disabled={submitting}
+              className={chip(mode === "describe")}
+            >
               {s.modeDescribe}
             </button>
-            <button type="button" aria-pressed={mode === "photo"} onClick={() => setMode("photo")} className={chip(mode === "photo")}>
+            <button
+              type="button"
+              aria-pressed={mode === "photo"}
+              onClick={() => setMode("photo")}
+              disabled={submitting}
+              className={chip(mode === "photo")}
+            >
               {s.fromPhoto}
             </button>
           </div>
@@ -332,7 +349,8 @@ export function SetsHome({
                 onChange={(e) => setNotes(e.target.value.slice(0, SET_PHOTO_NOTES_MAX_CHARS))}
                 rows={2}
                 placeholder={s.photoNotesPlaceholder}
-                className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent"
+                disabled={photoStarting}
+                className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent disabled:opacity-40"
               />
             </label>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -365,7 +383,8 @@ export function SetsHome({
                 rows={3}
                 placeholder={s.briefPlaceholder}
                 aria-label={s.briefLabel}
-                className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent"
+                disabled={starting}
+                className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent disabled:opacity-40"
               />
             </label>
             <p className="text-xs text-atelier-muted">{s.briefHint}</p>

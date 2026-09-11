@@ -5,15 +5,15 @@ import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/l
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
-import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
+import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_RESERVED_BRIEF, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
 import { hasSavedOutfit } from "@/lib/sets/look";
 import { normaliseSetLayout, normaliseSetSpec } from "@/lib/sets/set-spec";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
 // A photo build's brief column holds the photographer's notes, or this
-// placeholder when there were none — never shown (actions.ts RESERVED).
-const RESERVED = "-";
+// placeholder when there were none — never shown.
+const RESERVED = SET_RESERVED_BRIEF;
 
 // The Sets pages' reads (2026-09-10). Server-only; every read runs as the
 // signed-in person, so row-level security is a second owner check behind
@@ -70,12 +70,16 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     console.error("getSetsHome failed:", error.message);
   }
   // Which of them were built from a photo: a read of its own, so the list
-  // above never names a column that may not exist yet (photo.ts).
-  const photos = await readPhotoSources(
-    access.supabase,
-    (rows ?? []).map((r) => r.id as string),
-    access.userId,
-  );
+  // above never names a column that may not exist yet (photo.ts). A read
+  // that fails shows them as text sets for this one load; only the wording
+  // of a card depends on it.
+  const photos = (
+    await readPhotoSources(
+      access.supabase,
+      (rows ?? []).map((r) => r.id as string),
+      access.userId,
+    )
+  ).sources;
   const sets: SetSummary[] = (rows ?? []).map((r) => {
     const status = asStatus(r.status);
     const fromPhoto = photos.has(r.id as string);
@@ -121,7 +125,8 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   const layout = spec && row.layout ? normaliseSetLayout(row.layout, spec) : null;
   // Built from a photo? Read on its own, as the person (their SELECT on the
   // table covers every column), so the read above stays exactly as it was.
-  const photo = (await readPhotoSources(db, [setId], access.userId)).get(setId) ?? null;
+  // A read that fails shows it as a text set for this one load.
+  const photo = (await readPhotoSources(db, [setId], access.userId)).sources.get(setId) ?? null;
   const fromPhoto = photo !== null;
   const brief = (row.brief as string) ?? "";
 
