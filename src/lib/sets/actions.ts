@@ -593,9 +593,9 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
   const cost = Math.round((priorCost + polled.costUsd) * 10_000) / 10_000;
   let failure: string;
 
-  // How many tokens a photo costs Astra is not measured yet: every photo
-  // attempt's usage is logged, and one past its budget (set-config.ts) is
-  // flagged, so the first live builds re-derive the bound.
+  // What a photo costs Astra was measured on three test builds (set-config.ts);
+  // every photo attempt's usage is still logged, and one past its budget is
+  // flagged, so live builds keep checking the bound.
   if (kind === "photo") {
     console.info("[sets] photo usage", { setId, attempt: attempts, usage: polled.usage });
     const bound = attempts <= 1 ? SET_PHOTO_BUILD_INPUT_TOKENS : SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS;

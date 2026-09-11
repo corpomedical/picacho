@@ -86,8 +86,11 @@ export const SET_BUILD_MAX_ATTEMPTS = 2;
 // (a real set: 10,736 characters, 5,546 tokens), 16,000 characters is
 // ~8,300 tokens, leaving room for the walls it adds. Real sets measured
 // 9,700–16,100 characters (2026-09-11). Past this, or within 40 shapes of
-// the 400-shape limit (added walls would be dropped by the normaliser), the
-// retry is a fresh build told which sides to close.
+// the 400-shape limit, the retry is a fresh build told which sides to close.
+// (The 40-shape room was set when the normaliser dropped whatever came past
+// the limit, added walls included; since 2026-09-11 it trims the smallest
+// repeats instead and drops nothing, so a mend's walls would now survive.
+// The room is kept, conservatively, until a mend near the limit is measured.)
 export const SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS = 16_000;
 export const SET_CLOSE_RETRY_INSTANCE_ROOM = 40;
 /** Instructions, brief, feedback and the capped previous set. */
@@ -100,13 +103,16 @@ export const SET_CLOSE_RETRY_INPUT_TOKENS = 10_000;
 // from each attempt's own write, so a live photo attempt is never stale.
 export const SET_BUILD_STALE_MS = 15 * 60 * 1000;
 
-// PHOTO BUILDS (docs 3.2, 2026-09-11). One measured run: 1,992 input / 12,834 output tokens
-// (4,007 reasoning), 264 s, $0.667. The text cap of 10,000 would have cut it off.
+// PHOTO BUILDS (docs 3.2, 2026-09-11). The research probe: 1,992 input / 12,834 output tokens
+// (4,007 reasoning), 264 s, $0.667 — the text cap of 10,000 would have cut it off. Three test
+// builds through this code (docs 3.2 status): 3,991–4,126 input (1,844 of them the cached prefix),
+// 9,078–12,455 output, 123–183 s, $0.49–$0.65.
 //
 //   first attempt, worst case = 4,800 input tokens, all billed as cache writes:
 //     ~1,850 prefix (instructions + schema) + SET_PHOTO_RULES (≤ 2,000 chars ≈ ≤ 500)
 //     + notes (≤ 300 chars, ≤ ~300 tokens in any script) + the photo (≤ 2,048 px, budget ≈ 2,150;
-//     Astra's image-token count is UNMEASURED — every photo build logs its usage)
+//     measured: the rules + a 1536×1024 photo ≈ 2,150–2,280 over the prefix; every photo
+//     build still logs its usage)
 //     + output to the 16,000 cap
 //     = 4,800 × $12.50/1M + 16,000 × $50/1M = $0.06 + $0.80 = $0.86
 //   the one retry, worst case = the CLOSING retry: photo again + the set sent back

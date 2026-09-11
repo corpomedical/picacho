@@ -11,8 +11,8 @@
 // is asked to close them and keep everything else — a mended set rather
 // than a new one, because a new one is as likely to be open somewhere else.
 // When a mend cannot fit — the set is too long to re-emit under the output
-// cap, or too close to the 400-shape limit for added walls to survive the
-// normaliser — the retry is a fresh build told which sides to close.
+// cap, or within 40 shapes of the 400-shape limit (set-config.ts says why
+// that room is kept) — the retry is a fresh build told which sides to close.
 //
 // A photo build (2026-09-11) retries with its photo again, never with the
 // placeholder brief: the feedback below is its own input part after the

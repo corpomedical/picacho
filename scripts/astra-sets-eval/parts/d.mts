@@ -92,7 +92,7 @@ export const partD: PartModule = {
         `Runs: section 4's heading says "3 runs each", its spend block (≤ 40 × $0.54) prices one. D takes ${D_DEFAULT_RUNS} by default (a brief on the gate's edge gets three chances); --runs 1 is the spend block's figure.`,
         "Stills are not in this plan: D's stills leg is not built (design §9, second sitting). With it, D reserves 2 GPT Image renders per still.",
         "The doc's spend block has no retry and no stills; the ceiling above includes the closing retry.",
-        "The 10 location photos with people wait for Phase 2 (image input in providers/astra.ts).",
+        "The 10 location photos with people are not sent yet: Astra takes photos since Sets from a photo (astra-request.ts photoBuildRequest), but D's photo leg is not built in this runner.",
       ],
     };
   },

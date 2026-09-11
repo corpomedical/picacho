@@ -7,7 +7,7 @@
 // prefix (set-builder-prompt.ts) — so a photo build reads from the cache a
 // text build wrote, and the other way round. What differs is the input (a
 // brief, or the photo rules and the photo) and the caps: a photo build writes
-// more (one measured at 12,834 output tokens, past the text cap of 10,000),
+// more (up to 12,834 output tokens measured, past the text cap of 10,000),
 // so it has its own cap and effort knob (set-config.ts shows the arithmetic).
 
 import type { AstraInput, AstraJobRequest } from "../generations/providers/astra";
@@ -45,7 +45,8 @@ export function setAstraRequest(input: AstraInput, safetyIdentifier: string | un
 /**
  * A photo build's first attempt: the photo whose bytes passed the picture
  * check (inline, never a link), the notes, and the PHOTO caps — the one
- * measured build wrote 12,834 output tokens, past the text cap.
+ * research probe wrote 12,834 output tokens, and the test builds up to 12,455,
+ * past the text cap.
  */
 export function photoBuildRequest(photoDataUrl: string, notes: string, safetyIdentifier: string | undefined): AstraJobRequest {
   return setAstraRequest(photoBuildInput(photoDataUrl, notes), safetyIdentifier, "photo");

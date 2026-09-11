@@ -1,7 +1,8 @@
 // What each builder is sent, and how its answer is read.
 //
-// ASTRA. Built by the product's own buildAstraRequestBody, with the fields
-// sets/actions.ts astraRequest() passes. The model id comes in with that
+// ASTRA. The product's own text-build request (sets/astra-request.ts
+// setAstraRequest), with only the arm's effort changed, built into a body by
+// the product's own buildAstraRequestBody. The model id comes in with that
 // body (providers/astra.ts is the only file that names it); this runner never
 // writes it. A Batch line is that body with `background` removed — Batch is
 // itself asynchronous — and nothing else changed: store:false, tools:[],
@@ -29,6 +30,7 @@
 
 import { buildAstraRequestBody, type AstraEffort, type AstraJobRequest } from "../../../src/lib/generations/providers/astra.ts";
 import { SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "../../../src/lib/sets/set-builder-prompt.ts";
+import { setAstraRequest } from "../../../src/lib/sets/astra-request.ts";
 import { SET_BUILD_MAX_OUTPUT_TOKENS } from "../../../src/lib/sets/set-config.ts";
 import type { TransportResult } from "./build-flow.mts";
 import { BASELINE_MODELS } from "./prices.mts";
@@ -39,15 +41,10 @@ export function evalSafetyId(part: string): string {
 }
 
 export function astraJobRequest(input: string, effort: AstraEffort, part: string): AstraJobRequest {
-  return {
-    instructions: SET_BUILDER_INSTRUCTIONS,
-    input,
-    schemaName: SET_SPEC_SCHEMA_NAME,
-    schema: SET_SPEC_JSON_SCHEMA as unknown as Record<string, unknown>,
-    maxOutputTokens: SET_BUILD_MAX_OUTPUT_TOKENS,
-    effort,
-    safetyIdentifier: evalSafetyId(part),
-  };
+  // Exactly what a text build sends (instructions, schema, caps), so a
+  // product change reaches the eval without a copy to update; only the
+  // effort is the arm's own.
+  return { ...setAstraRequest(input, evalSafetyId(part), "text"), effort };
 }
 
 /** The product body minus `background`, for a Batch line. */

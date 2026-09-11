@@ -8,9 +8,9 @@ The operator-run eval from `docs/ASTRA_SETS.md` section 4 ("The eval"): parts A�
 
 | Part | Built now | Not yet |
 |---|---|---|
-| A. Validity and cost | Everything: Astra low and medium on Batch (or background), claude-sonnet-5 and gpt-5.4-mini, the words gate, `--probe`, `--resume` | Anthropic Message Batches for Sonnet (it runs synchronously) |
-| B. Fidelity | Everything: first-camera snapshots in local Chrome, blind sheets, the bar in `report` | — |
-| C. Stills | The plan, the frames, the exact shot prompts, the drift checks, the bars, sample sheets | **The engine leg** (the stills, their gates and identity scores): `c --spend` stops before any call |
+| A. Validity and cost | Text builds: Astra low and medium on Batch (or background), claude-sonnet-5 and gpt-5.4-mini, the words gate, `--probe`, `--resume` | **The photo arm** (section 4's photo builds and their $1.12 cost bar; Sets from a photo landed after this runner was written). Anthropic Message Batches for Sonnet (it runs synchronously) |
+| B. Fidelity | For text builds: first-camera snapshots in local Chrome, blind sheets, the bar in `report` | **The photo arm**: rating a photo set's camera 1 against its photo |
+| C. Stills | The plan, the frames, the shot prompts (each still on its own sketch, with no look: the product has attached an earlier still since 2026-09-11), the drift checks, the bars, sample sheets | **The engine leg** (the stills, their gates and identity scores): `c --spend` stops before any call. **The look**: shots with an earlier still attached |
 | D. Safety | Brief gate → Astra build → words gate → persons sheet; the bar in `report` | **The stills leg**: a harmful brief that gets a set ends UNDETERMINED. **The 10 location photos with people**: Astra takes photos since Sets from a photo (2026-09-11, `src/lib/sets/astra-request.ts` `photoBuildRequest`), but this runner does not send them yet |
 | E. Match | The EXIF field-of-view maths and the bar | Everything that calls a model. A photo set's camera 1 (`photoBuildRequest`) could now be read against EXIF; `match-shot.ts` ("Match this shot") does not exist |
 | Canary | Everything; history in `out/canary/history.jsonl` | Weekly scheduling (launchd or cron) |

@@ -1,8 +1,10 @@
-// Part E: Match this shot. BLOCKED until Phase 2: providers/astra.ts takes
-// text only (AstraJobRequest.input is a string) and src/lib/sets/match-shot.ts
-// does not exist. What is built now: the ground truth (exif-fov.mts), the
-// bar (pass-bars barE), and the corpus check of match.json. The EXIF reader,
-// both builders' calls and E's rating sheet wait with the network leg.
+// Part E: Match this shot. BLOCKED: src/lib/sets/match-shot.ts does not
+// exist, and this runner makes none of E's model calls yet. (Astra has taken
+// photos since Sets from a photo, 2026-09-11 — astra-request.ts
+// photoBuildRequest — so a photo set's camera 1 could be read against EXIF.)
+// What is built now: the ground truth (exif-fov.mts), the bar (pass-bars
+// barE), and the corpus check of match.json. The EXIF reader, both builders'
+// calls and E's rating sheet wait with the network leg.
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -10,7 +12,7 @@ import { writeManifest, writeSummary } from "../lib/context.mts";
 import { HarnessError } from "../lib/util.mts";
 import type { PartModule } from "./common.mts";
 
-export const E_BLOCKED = "BLOCKED: providers/astra.ts takes text only; match-shot.ts is not built";
+export const E_BLOCKED = "BLOCKED: E's model calls are not built in this runner; match-shot.ts does not exist";
 
 /** The doc's own Match-this-shot figures, quoted with their line numbers (never retyped). */
 export function docFigures(repoRoot: string): string[] {

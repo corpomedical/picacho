@@ -174,7 +174,7 @@ export const partC: PartModule = {
       `C ${ctx.runId}  (DRY RUN: frames are real, stills are the frames themselves)`,
       `  sets ${sets.length} (${f.fromRun ? `from ${f.fromRun} at astra-${effort}` : "product fixtures"}); frames drawn for ${rendered.length - failed}; render errors ${failed}`,
       `  lifted sets: ${rendered.filter((r) => r.ok && r.result.lifted).length}; frames a live OrbitControls would have moved: ${rendered.reduce((n, r) => n + (r.ok ? r.result.frames.filter((x) => x.controlsWouldMove).length : 0), 0)}`,
-      `  pipeline strings (GENERATE_RETRIES and the two reference sentences) ${drift.ok ? "match pipeline.ts" : `DRIFTED: ${drift.missing.join("; ")}`}`,
+      `  pipeline strings (GENERATE_RETRIES, and pipeline.ts appending reference-notes.ts) ${drift.ok ? "match" : `DRIFTED: ${drift.missing.join("; ")}`}`,
       `  simulated shots: ${shotNo} (${f.engines.join(", ")}; characters ${characters.length})`,
       "--- sample sheets (simulated) ---",
       ...pages.map((p) => `  ${p}`),

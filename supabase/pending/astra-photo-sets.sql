@@ -42,7 +42,7 @@ alter table public.location_sets add constraint location_sets_source_photo_check
 );
 
 update public.feature_flags
-   set description = 'Sets from a photo: Astra rebuilds a location from an uploaded photo, camera 1 where the photographer stood. Admins only; needs astra_sets on. Worst case $1.82 a build with its one retry (one measured build: $0.67). Run astra-photo-sets.sql first.'
+   set description = 'Sets from a photo: Astra rebuilds a location from an uploaded photo, camera 1 where the photographer stood. Admins only; needs astra_sets on. Worst case $1.82 a build with its one retry (three test builds: $0.49–$0.65). Run astra-photo-sets.sql first.'
  where key = 'astra_photo_sets';
 
 -- No grant or policy change: the owner's SELECT on location_sets is table-level and covers new columns.

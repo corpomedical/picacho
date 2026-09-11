@@ -366,8 +366,8 @@ ends in a failed build: the first set is kept and delivered).
 ### 3.2 Feature 2: Sets from a photo, and Match this shot
 
 **User flow, photo set**
-1. **Upload.** "New set from a photo" takes a location photo. Before it leaves Picacho, the photo is judged by the output gate's readers as an input check (`assertOutputAllowed`, `output-policy.ts:692`). A refused photo never reaches **Astra** and is never stored. The gate's own readers (OpenAI moderation and vision, and Anthropic) do see it, as they see every render, and the Data-safety form must say so.
-2. **Build.** Astra (image input, `detail: high`) returns a SetSpec whose first camera is the photographer's viewpoint. People in the photo become marks; Astra is told never to identify or describe them.
+1. **Upload.** "New set from a photo" takes a location photo. Before it leaves Picacho, the photo is judged by the output gate's readers as an input check (`assertOutputAllowed`, `output-policy.ts:717`). A refused photo never reaches **Astra** and is never stored. The gate's own readers (OpenAI moderation and vision, and Anthropic) do see it, as they see every render, and the Data-safety form must say so.
+2. **Build.** Astra (image input, `detail: high`) returns a SetSpec whose first camera is the photographer's viewpoint. Astra is told to put a mark where anyone in the photo stands, and never to identify or describe them — an instruction until eval part D measures it.
 3. **Compare.** The photo and the first-camera snapshot appear side by side, so the user can see whether they match before spending on a shot.
 4. **Shoot.** Same as Feature 1.
 
@@ -416,7 +416,7 @@ Worst case (3,300 cache-write tokens + 2,500 output cap):
 **Gates:**
 - The brief is gated when the plan is made, as `planScene` does (`prompts/actions.ts:593`).
 - Each action line is gated as model-written text.
-- Every still and clip goes through the pipeline and the output gate. `judgeRender` reads one middle frame per clip (`output-policy.ts:822-825`). That is acceptable here because each clip comes from a single shot's prompt, not a composite.
+- Every still and clip goes through the pipeline and the output gate. `judgeRender` reads one middle frame per clip (`output-policy.ts:847-850`). That is acceptable here because each clip comes from a single shot's prompt, not a composite.
 
 **Pricing**
 
@@ -458,7 +458,7 @@ Production writes are blocked from this tool, so all SQL is staged under `supaba
 
 **Keep Astra away from the utility-model setting.**
 - New `src/lib/generations/providers/openai-model.ts`: a `utilityModel()` that refuses any `gpt-6*` value and logs loudly.
-- Use it at the six `OPENAI_MODEL` sites: `openai.ts:24` and `:122`, `output-policy.ts:346` and `:763-765`, `content-policy.ts:609-612`, and `describe-image.ts`.
+- Use it at the six `OPENAI_MODEL` sites: `openai.ts:24` and `:122`, `output-policy.ts:371` and `:788-790`, `content-policy.ts:609-612`, and `describe-image.ts`.
 
 **Other prerequisites**
 - New `src/lib/openai/safety-id.ts` (hashed user id). Astra uses it from day one; existing OpenAI call sites that already have a user id in scope follow later.
@@ -495,7 +495,7 @@ Access: flag `astra_sets` plus an admin check; `ASTRA_DISABLED=1` is checked bef
 Flag: `astra_photo_sets`.
 
 - **Image input and camera block.** Image input in `providers/astra.ts`, a camera block in `set-spec.ts`, and `src/lib/sets/match-shot.ts` with tests.
-- **Input-image gate** on uploads, via `output-policy.ts:692`.
+- **Input-image gate** on uploads, via `output-policy.ts:717`.
 - **Webhook finisher.** New `src/app/api/webhooks/openai/route.ts`, verified with Standard Webhooks signatures and `OPENAI_WEBHOOK_SECRET`. On `response.completed` it fetches the result within the roughly 10-minute window and saves it. The operator subscribes the endpoint in the OpenAI dashboard (an account setting).
 - **Credit ledger for charges that are not renders.** This is the one real schema change:
   - `supabase/pending/<date>/credit-charges.sql`: a `credit_charges` table, a guarded reserve RPC, and `monthly_credits_used` summing both tables.
@@ -516,7 +516,7 @@ Flag: `astra_previz`.
 
 ### The eval (operator-run; 3 runs each; blind corpus written by someone who has not seen the prompts)
 
-**The runner is built** (`scripts/astra-sets-eval/`, 2026-09-11; its `README.md` is the operator's guide). Every command is a dry run unless it says `--spend --max-usd <n>`: nothing is called, the plan and its ceiling are printed, and each run ends with `network: 0 live calls, 0 blocked`. A real run reserves every call at its worst case before sending it, stops at the ceiling, and keeps an append-only ledger. It never touches the database, and imports the product's own modules (the model id included) rather than copying them. Built: A, B, D's build leg, the Canary and `report`, which says whether A–D pass at `SET_BUILD_EFFORT`. Not built yet: C's engine leg (the stills and their identity scores), D's stills leg and its photos with people, and E's model calls. The corpus template is format-only; the real corpus must be written blind, outside the repo.
+**The runner is built** (`scripts/astra-sets-eval/`, 2026-09-11; its `README.md` is the operator's guide). Every command is a dry run unless it says `--spend --max-usd <n>`: nothing is called, the plan and its ceiling are printed, and each run ends with `network: 0 live calls, 0 blocked`. A real run reserves every call at its worst case before sending it, stops at the ceiling, and keeps an append-only ledger. It never touches the database, and imports the product's own modules (the model id included) rather than copying them. Built: A, B, D's build leg, the Canary and `report`, which says whether A–D pass at `SET_BUILD_EFFORT`. Not built yet: A's and B's photo arm (photo builds landed after the runner was written), C's engine leg (the stills and their identity scores) and shots carrying a look, D's stills leg and its photos with people, and E's model calls. The corpus template is format-only; the real corpus must be written blind, outside the repo.
 
 | Part | What | Pass bar |
 |---|---|---|
