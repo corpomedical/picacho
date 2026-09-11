@@ -10,8 +10,9 @@
 // returned file against its key before any rating counts.
 //
 // EXTRA QUESTIONS. A score sheet may ask some items one more score of their
-// own (`asks`): C's look shots are also scored on whether their objects,
-// vehicles and finishes are the first still's. The item shows the first
+// own (`asks`): C's later cameras (the look shots and their twins alike)
+// are also scored on whether their objects, vehicles and finishes are the
+// first still's. The item shows the first
 // still, carries the extra scale, and is rated only when every question it
 // asks is answered; the importer holds the extras to the same rules.
 //
@@ -91,7 +92,7 @@ export const QUESTIONS: Record<SheetKind, QuestionSpec> = {
       { id: "younger", label: "The person looks younger than in the reference photo" },
       { id: "scale", label: "The person is much smaller or larger than the grey figure" },
     ],
-    // C's look shots (an earlier still rode as the look): section 4 has no bar for it; report prints it.
+    // C's later cameras, with the look or without it (its twin, the baseline): section 4 has no bar for it; report prints it.
     extras: [
       {
         id: "objects",

@@ -32,21 +32,39 @@
 //                    the shot is flagged (pipeline drift).
 //   5. identity      scoreIdentityMatch against the character's photo, then
 //                    identityGateDecision at DEFAULT_IDENTITY_THRESHOLD: a
-//                    "retry" is a miss; there is no free re-render.
+//                    "retry" is a miss; there is no free re-render. A picture
+//                    the scorer calls unusable (a blank or black frame) is
+//                    runGeneration's non-delivery: the take fails and its
+//                    URL is cleared before any gate decision
+//                    (identity-gate-run.ts, actions.ts), so here it is
+//                    "unusable": deleted, never scored against a bar, never
+//                    carried as a look (shootInSet takes only a succeeded
+//                    take).
+//
+// A STOP. The run's stop is asked after the entry gate answers (it takes
+// seconds) and handed to the pipeline as its checkCancelled, which it asks
+// before its attempt and again after its gate on the compiled prompt, right
+// before the render: the product's own Stop checkpoints. The composed route
+// asks before it sends Seedream. A still the stop reaches is not run.
 //
 // REFERENCES. openai-images.ts fetches each reference and refuses anything
 // but http(s), so GPT Image gets every picture as https://eval.invalid/ref/…,
 // served from memory by the net guard. fal fetches its own, so FLUX and
 // Seedream get data: URIs. Nothing is uploaded anywhere: if fal refuses the
 // data: references (`c --probe` asks), that engine's arm is BLOCKED and the
-// rest of its shots are not sent.
+// rest of its shots are not sent. A look shot's request is the largest (the
+// identity, the sketch and the earlier still): fal refusing it blocks that
+// engine's look arm alone, and the set arm goes on.
 //
 // MONEY. A GPT Image still reserves GENERATE_RETRIES renders at
 // IMAGE_COST_USD before anything is sent, and settles by the renders the
 // tap saw: each answered 2xx is billed; each sent with no answer is booked
-// too, flagged, since it may have been made and billed; an answered refusal
-// bills nothing, as OpenAI's ledger shows for a pre-render refusal
-// (refund-rules.ts). FLUX and Seedream are reserved the same way once
+// too, flagged, since it may have been made and billed. An answered refusal
+// bills nothing only where that is measured: a refusal before rendering
+// (OpenAI's ledger, refund-rules.ts). GPT Image's output-stage refusal
+// answers 400 for a picture already drawn, and whether OpenAI bills it is
+// unmeasured (refund-rules.ts), so it is booked as one render, flagged; the
+// reservation covers it. FLUX and Seedream are reserved the same way once
 // external-prices.json prices them; until then each render is a metered
 // ledger line with no price (--allow-unpriced). The gates, the drafter and
 // the scorer are metered by the tap.
@@ -96,6 +114,8 @@ export type ShotOutcome =
   | "unjudged"
   /** No picture and no refusal: a provider error, a timeout, an unreadable answer. */
   | "error"
+  /** Rendered and passed the output gate, but the scorer found it unusable (a blank or black frame): runGeneration fails such a take. */
+  | "unusable"
   /** Never sent: the run stopped, the budget, no first still to carry, or the engine's arm BLOCKED. */
   | "not_run";
 
@@ -122,6 +142,8 @@ export type ShotRequest = {
   direction: string;
   character: ShotCharacter;
   look: LookSource | null;
+  /** A later camera's still, in either arm: camera 1's still of the same set, character and engine (the composition sheet shows it beside this one). */
+  firstShotId?: string | null;
   /** sessionPriorHits for the entry gate (D with --escalate carries the counted refusals). */
   priorHits: number;
 };
@@ -146,6 +168,8 @@ export type ShotRecord = {
   /** The tap's prompt equals expectedPrompt; null when nothing was sent, for a control, or in a dry run. */
   promptParity: boolean | null;
   look: { fromShotId: string; sameCharacter: boolean; savedOutfit: boolean } | null;
+  /** A later camera's still, in either arm: camera 1's still of its set, character and engine; null for camera 1, a control, or D. */
+  firstShotId: string | null;
   entryGate: "allowed" | `refused:${string}` | "unavailable" | "not-reached" | "not-run";
   outcome: ShotOutcome;
   /** The refusing gate's reason (a prompt or output reason, or the provider stage). */
@@ -158,7 +182,7 @@ export type ShotRecord = {
   resultDims: { w: number; h: number } | null;
   identity: { score: number | null; unusable: boolean; scorerVersion: string | null };
   identityDecision: "pass" | "retry" | null;
-  /** Renders sent to the engine (answered 2xx, or sent with no answer). */
+  /** Renders booked for the still: answered 2xx, sent with no answer, and a picture GPT Image drew and then refused at its output stage. */
   engineCalls: number;
   /** What those renders cost at the engine's price; null while the engine is unpriced. */
   billedUsd: number | null;
@@ -336,7 +360,7 @@ function lastStepDetail(r: PipelineView, step: string): string | null {
 export function pipelineOutcome(r: PipelineView, o: { promptReasonOf: (m: string) => string | null; outputReasonOf: (m: string) => string | null }): EngineVerdict {
   const v = (outcome: ShotOutcome, reason: string | null, note: string | null, refsRefused = false): EngineVerdict => ({ outcome, reason, note, refsRefused });
   if (r.succeeded && r.resultUrl) return v("rendered", null, null);
-  if (r.cancelled) return v("not_run", null, "the pipeline stopped before rendering");
+  if (r.cancelled) return v("not_run", null, "not reached: the run stopped, and the pipeline's checkpoint kept the render from being sent");
   if (r.contentPolicyBlock) {
     const reason = o.promptReasonOf(r.contentPolicyBlock) ?? "refused";
     return reason === "unavailable" ? v("unjudged", null, "the pipeline's prompt gate could not run") : v("prompt_blocked", reason, "the pipeline's gate on the compiled prompt");
@@ -372,7 +396,10 @@ export class RenderTap {
     net.onLiveResponse = (r) => {
       prevResponse?.(r);
       this.hosts.add(r.host);
-      // An answered refusal (4xx, 5xx) made no picture and bills nothing.
+      // An answered 4xx or 5xx is not counted here: an error or a refusal
+      // before rendering made no picture. The one answered refusal that
+      // follows a drawn picture (GPT Image's output stage) is booked by
+      // shoot(), from the pipeline's verdict.
       const billable = r.status === -1 || (r.status >= 200 && r.status < 300);
       if (!billable || !r.ctx.ref || !renderEngineOf(r.host, r.path, r.method)) return;
       const c = this.renders.get(r.ctx.ref) ?? { answered: 0, unknown: 0, hosts: new Map<string, number>() };
@@ -416,13 +443,38 @@ export type ShotEnv = {
   stopping: () => boolean;
   stopWhy: () => string;
   progress: (m: string) => void;
-  /** Engines whose arm is BLOCKED (fal refused the data: references): no further still is sent on them. */
-  blocked: Set<Engine>;
+  /** What fal refused data: references for (blockKey): an engine ("flux"), or its look arm alone ("flux:look"). No further still is sent there. */
+  blocked: Set<string>;
   /** The dry run's rotation for the fake output gate. */
   sim: { n: number };
 };
 
 export const BLOCKED_NOTE = "the engine's arm is BLOCKED: fal refused the data: references (nothing is uploaded; see the README)";
+export const LOOK_BLOCKED_NOTE = "the engine's look arm is BLOCKED: fal refused a look shot's data: references (three pictures); the set arm goes on";
+
+/**
+ * What a fal refusal of a still's data: references blocks. A look shot's
+ * request is the largest (the identity, the sketch and the earlier still),
+ * so its refusal blocks that engine's look arm alone; a set shot's or a
+ * control's (two pictures, or one) blocks the engine, the look included.
+ */
+export function blockKey(engine: Engine, arm: ShotArm): string {
+  return arm === "look" ? `${engine}:look` : engine;
+}
+
+/** Why a still is not sent on a blocked engine or arm, or null when it may be. */
+export function blockedNote(blocked: ReadonlySet<string>, engine: Engine, arm: ShotArm): string | null {
+  if (blocked.has(engine)) return BLOCKED_NOTE;
+  return arm === "look" && blocked.has(blockKey(engine, "look")) ? LOOK_BLOCKED_NOTE : null;
+}
+
+/** How a still ends when the scorer calls its picture unusable: runGeneration's non-delivery. */
+export const UNUSABLE_NOTE =
+  "the scorer found the picture unusable (a blank or black frame): runGeneration fails such a take and clears its URL before any identity decision (identity-gate-run.ts, actions.ts), so it is not delivered, not scored against a bar, and never a look";
+
+/** The settle's flag for GPT Image's output-stage refusal, booked as one render. */
+export const OUTPUT_STAGE_FLAG =
+  "GPT Image refused the picture at its output stage: one was drawn, and whether OpenAI bills it is unmeasured (refund-rules.ts), so it is booked";
 
 function baseRecord(req: ShotRequest, prompt: string, expected: string | null, simulated: boolean): ShotRecord {
   return {
@@ -441,6 +493,7 @@ function baseRecord(req: ShotRequest, prompt: string, expected: string | null, s
     sentPrompt: null,
     promptParity: null,
     look: req.look ? { fromShotId: req.look.fromShotId, sameCharacter: req.look.sameCharacter, savedOutfit: req.look.savedOutfit } : null,
+    firstShotId: req.firstShotId ?? null,
     entryGate: "not-run",
     outcome: "not_run",
     reason: null,
@@ -493,24 +546,48 @@ export function readPicture(runDir: string, file: string): ShotPicture | null {
   return { bytes, mime: sniffImage(bytes).mime };
 }
 
-/** Reserve a still's worst case (GENERATE_RETRIES renders, or one queue job) at the engine's price; nothing to reserve while it is unpriced. */
+/**
+ * Reserve a still's worst case (GENERATE_RETRIES renders, or one queue job)
+ * at the engine's price. An unpriced engine has nothing to reserve, so it
+ * asks the guard's stop itself: a priced one's reserve is refused once the
+ * guard has stopped.
+ */
 function reserveRenders(env: Pick<ShotEnv, "guard" | "book">, req: ShotRequest): { ticket: string | null; unit: number | null } | { refused: string } {
   const unit = env.book.image(req.engine);
-  if (unit === null) return { ticket: null, unit: null };
+  if (unit === null) return env.guard.stopped ? { refused: `stopped (${env.guard.stopped.reason})` } : { ticket: null, unit: null };
   const r = env.guard.reserve(req.engine, unit * maxRendersOf(req.engine), req.shotId);
   return r.ok ? { ticket: r.ticket, unit } : { refused: r.reason };
 }
 
-/** Settle a still's renders from the tap's count: answered 2xx and sent-with-no-answer are billed; an unpriced engine's go on the ledger as metered lines. */
-function settleRenders(env: Pick<ShotEnv, "guard">, req: ShotRequest, money: { ticket: string | null; unit: number | null }, c: RenderCount): Pick<ShotRecord, "engineCalls" | "billedUsd" | "costFlag"> {
-  const n = c.answered + c.unknown;
-  const flag = c.unknown ? `${c.unknown} render(s) sent with no answer: booked, as they may have been made and billed` : null;
+/** GPT Image's output-stage refusal: a 400 the tap does not bill, for a picture already drawn. */
+export function refusedAfterRender(engine: Engine, v: Pick<EngineVerdict, "outcome" | "reason">): boolean {
+  return engine === "gpt-image" && v.outcome === "provider_refused" && v.reason === "after render";
+}
+
+/**
+ * Settle a still's renders: the tap's answered 2xx and sent-with-no-answer,
+ * and `afterRender` more (GPT Image's output-stage refusal, a picture drawn
+ * and then refused), each booked; an unpriced engine's go on the ledger as
+ * metered lines.
+ */
+function settleRenders(
+  env: Pick<ShotEnv, "guard">,
+  req: ShotRequest,
+  money: { ticket: string | null; unit: number | null },
+  c: RenderCount,
+  afterRender: number,
+): Pick<ShotRecord, "engineCalls" | "billedUsd" | "costFlag"> {
+  const n = c.answered + c.unknown + afterRender;
+  const flags = [c.unknown ? `${c.unknown} render(s) sent with no answer: booked, as they may have been made and billed` : null, afterRender ? OUTPUT_STAGE_FLAG : null].filter((x): x is string => x !== null);
+  const flag = flags.length ? flags.join("; ") : null;
   if (money.ticket !== null && money.unit !== null) {
     const billed = n * money.unit;
-    env.guard.settle(money.ticket, billed, billed, `${n} render(s) × $${money.unit} (${req.engine})${flag ? `; ${flag}` : ""}`, { renders: c.answered, unknown: c.unknown });
+    env.guard.settle(money.ticket, billed, billed, `${n} render(s) × $${money.unit} (${req.engine})${flag ? `; ${flag}` : ""}`, { renders: c.answered, unknown: c.unknown, refusedAfterRender: afterRender });
     return { engineCalls: n, billedUsd: billed, costFlag: flag };
   }
-  for (const [host, k] of c.hosts) {
+  const hosts = new Map(c.hosts);
+  if (afterRender) hosts.set("api.openai.com", (hosts.get("api.openai.com") ?? 0) + afterRender);
+  for (const [host, k] of hosts) {
     for (let i = 0; i < k; i++) env.guard.meter({ host, model: `${req.engine} (per image)`, usage: { images: 1 }, usd: null, tag: `${req.engine}-render: unpriced`, ref: req.shotId });
   }
   return { engineCalls: n, billedUsd: null, costFlag: flag };
@@ -550,7 +627,9 @@ async function pipelineRoute(env: ShotEnv, deps: ShotDeps, req: ShotRequest, pro
   };
   let result: Awaited<ReturnType<RunRealPipeline>>;
   try {
-    result = await deps.runRealPipeline(prompt, character, options, 1);
+    // The run's stop as runGeneration's Stop: asked before the attempt and
+    // again after the compiled-prompt gate, right before the render.
+    result = await deps.runRealPipeline(prompt, character, options, 1, async () => env.stopping());
   } catch (err) {
     // A picture written before the pipeline gave out was never judged: it is not kept.
     drop();
@@ -581,6 +660,8 @@ async function composedRoute(env: ShotEnv, deps: ShotDeps, req: ShotRequest, pro
     if (reason === null || reason === "unavailable") return v("unjudged", null, "the gate on the composed prompt could not run");
     return v("prompt_blocked", reason, "the gate on the composed prompt (the pipeline's compiled-prompt gate)");
   }
+  // The pipeline's own checkpoint before a render (pipelineRoute's checkCancelled).
+  if (env.stopping()) return v("not_run", null, `not reached: the run stopped (${env.stopWhy()})`);
   if (!req.character.photo || !req.frame) return v("error", null, "no identity photo or sketch to send");
   const sent = await deps.seedream({ prompt: composed, imageUrls: [dataUri(req.character.photo), dataUri(req.frame)], imageSize: SEEDREAM_SQUARE });
   if (!sent.ok) {
@@ -601,7 +682,11 @@ async function composedRoute(env: ShotEnv, deps: ShotDeps, req: ShotRequest, pro
   return { verdict: { outcome: "rendered", reason: null, note: null, refsRefused: false }, picture, file };
 }
 
-/** The identity score (best effort, as the product's: a scorer that fails is "not measured") and the gate's decision. */
+/**
+ * The identity score (best effort, as the product's: a scorer that fails is
+ * "not measured") and the gate's decision. An unusable picture gets none:
+ * runImageIdentityGate returns before deciding, and the take fails.
+ */
 async function identityOf(deps: ShotDeps, req: ShotRequest, still: ShotPicture): Promise<Pick<ShotRecord, "identity" | "identityDecision">> {
   let identity: ShotRecord["identity"] = { score: null, unusable: false, scorerVersion: null };
   if (req.character.photo) {
@@ -614,6 +699,7 @@ async function identityOf(deps: ShotDeps, req: ShotRequest, still: ShotPicture):
       // identity-gate-run.ts: a scoring hiccup never affects the take.
     }
   }
+  if (identity.unusable) return { identity, identityDecision: null };
   const d = identityGateDecision({ score: identity.score, threshold: DEFAULT_IDENTITY_THRESHOLD, retriesUsed: 0 });
   return { identity, identityDecision: d.action === "retry" ? "retry" : "pass" };
 }
@@ -652,7 +738,8 @@ export async function shoot(env: ShotEnv, req: ShotRequest): Promise<ShotRecord>
   const prompt = shotPrompt(req);
   const base = baseRecord(req, prompt, expectedEnginePrompt(req, prompt), env.dry);
   if (env.stopping()) return { ...base, note: `not reached: the run stopped (${env.stopWhy()})` };
-  if (env.blocked.has(req.engine)) return { ...base, note: BLOCKED_NOTE };
+  const blocked = blockedNote(env.blocked, req.engine, req.arm);
+  if (blocked) return { ...base, note: blocked };
   if (env.dry) return simulateShot(env, req, base);
   const deps = env.deps;
   if (!deps) throw new Error(`${req.shotId}: a real still needs the product's functions`);
@@ -661,6 +748,9 @@ export async function shoot(env: ShotEnv, req: ShotRequest): Promise<ShotRecord>
   if (gate === NOT_REACHED) return { ...base, entryGate: "not-reached", note: `not reached: the run stopped (${env.stopWhy()})` };
   if (gate.verdict === "unavailable") return { ...base, entryGate: "unavailable", outcome: "unjudged", note: "the entry gate could not run" };
   if (typeof gate.verdict === "object") return { ...base, entryGate: `refused:${gate.verdict.refused}`, outcome: "prompt_blocked", reason: gate.verdict.refused, note: "runGeneration's entry gate" };
+  // The gate takes seconds, and a stop may land meanwhile. An unpriced
+  // engine reserves nothing, so the guard's refusal alone would not stop it.
+  if (env.stopping()) return { ...base, entryGate: "allowed", note: `not reached: the run stopped (${env.stopWhy()})` };
 
   const money = reserveRenders(env, req);
   if ("refused" in money) return { ...base, entryGate: "allowed", note: `budget: ${money.refused}` };
@@ -672,7 +762,7 @@ export async function shoot(env: ShotEnv, req: ShotRequest): Promise<ShotRecord>
   } catch (err) {
     rendered = { verdict: { outcome: "error", reason: null, note: safeDetail(err instanceof Error ? `${err.name}: ${err.message}` : String(err)), refsRefused: false }, picture: null, file: null };
   }
-  const spent = settleRenders(env, req, money, env.tap.rendersOf(req.shotId));
+  const spent = settleRenders(env, req, money, env.tap.rendersOf(req.shotId), refusedAfterRender(req.engine, rendered.verdict) ? 1 : 0);
   const sent = env.tap.promptOf(req.shotId);
   const parity = base.expectedPrompt === null || sent === null ? null : sent === base.expectedPrompt;
   const row: ShotRecord = {
@@ -687,9 +777,15 @@ export async function shoot(env: ShotEnv, req: ShotRequest): Promise<ShotRecord>
     sentPrompt: parity === false ? sent : null,
     resultFile: rendered.file,
   };
-  if (rendered.verdict.refsRefused && req.engine !== "gpt-image") env.blocked.add(req.engine);
+  if (rendered.verdict.refsRefused && req.engine !== "gpt-image") env.blocked.add(blockKey(req.engine, req.arm));
   if (rendered.verdict.outcome !== "rendered" || !rendered.picture) return row;
-  return { ...row, resultDims: await dimsOf(rendered.picture.bytes), ...(await identityOf(deps, req, rendered.picture)) };
+  const judged = await identityOf(deps, req, rendered.picture);
+  if (judged.identity.unusable) {
+    // runGeneration's non-delivery: the take fails and its URL is cleared.
+    if (rendered.file) rmSync(join(env.runDir, rendered.file), { force: true });
+    return { ...row, ...judged, outcome: "unusable", note: UNUSABLE_NOTE, resultFile: null };
+  }
+  return { ...row, resultDims: await dimsOf(rendered.picture.bytes), ...judged };
 }
 
 // ---------------------------------------------------------------------------
@@ -722,6 +818,7 @@ export async function runShots(
   await Promise.all([
     ...o.groups.map(async (g) => {
       const first = await one(g.first);
+      // shootInSet carries only a succeeded take: a still that rendered and was delivered (not refused, not unusable).
       const still = first.outcome === "rendered" && first.resultFile ? readPicture(env.runDir, first.resultFile) : null;
       await Promise.all([
         ...g.rest.map(one),

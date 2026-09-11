@@ -147,9 +147,9 @@ describe("the Match-this-shot sheet (e-match)", () => {
   });
 });
 
-describe("the composition sheet's extra question (C's look shots)", () => {
-  // Six stills; the look shots (odd ones) also show the first still and ask
-  // whether its objects are the same.
+describe("the composition sheet's extra question (C's later cameras)", () => {
+  // Six stills; the later cameras' (odd ones) also show the first still and
+  // ask whether its objects are the same.
   const cItems: SheetItemIn[] = Array.from({ length: 6 }, (_, i) => ({
     source: { shotId: `cl-secret-${i}`, engine: ["gpt-image", "flux"][i % 2], setKey: `set-${i % 3}` },
     groupKey: `set-${i % 3}`,
@@ -166,7 +166,7 @@ describe("the composition sheet's extra question (C's look shots)", () => {
   const asked = p.key.items.filter((k) => k.asks?.includes("objects")).map((k) => k.itemId);
   const plain = p.key.items.filter((k) => !k.asks).map((k) => k.itemId);
 
-  it("asks it only of the look shots, beside the first still, with nothing of the key on the page", () => {
+  it("asks it only of the items that name it, beside the first still, with nothing of the key on the page", () => {
     const html = renderSheetHtml(p, q);
     expect(html.split("Are the objects, vehicles and finishes the same as in the first still?").length - 1).toBe(3);
     expect(html.split('alt="First still"').length - 1).toBe(3);

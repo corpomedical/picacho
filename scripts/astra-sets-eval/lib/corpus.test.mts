@@ -44,6 +44,16 @@ describe("validateCorpus", () => {
     expect(s.problems.join(" ")).toMatch(/FORMAT-ONLY/);
   });
 
+  it("baselines carry each render's first attempt score: a row that still says scores (match_score, the better of two) is refused", () => {
+    const row = { characterId: "char-a", engine: "gpt-image", source: "q", readOn: "2026-09-11" };
+    const ok = validateCorpus({ corpus: meta, briefs: briefs(10), baselines: { identity: [{ ...row, firstAttemptScores: [80, 64] }] } }, spend);
+    expect(ok.problems).toEqual([]);
+    expect(ok.data.baselines?.identity[0].firstAttemptScores).toEqual([80, 64]);
+    const old = validateCorpus({ corpus: meta, briefs: briefs(10), baselines: { identity: [{ ...row, scores: [80, 64] }] } }, spend);
+    expect(old.problems.join(" ")).toMatch(/"scores" is now "firstAttemptScores".*not match_score/);
+    expect(old.data.baselines?.identity).toEqual([]);
+  });
+
   it("wants 10/10/10 for spend unless partial is allowed", () => {
     expect(validateCorpus({ corpus: meta, briefs: briefs(9) }, spend).ok).toBe(false);
     expect(validateCorpus({ corpus: meta, briefs: briefs(9) }, { ...spend, allowPartial: true }).ok).toBe(true);

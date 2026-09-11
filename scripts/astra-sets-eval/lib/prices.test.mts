@@ -139,13 +139,19 @@ describe("the plans", () => {
     expect(ceilingOf(look).ceilingUsd - ceilingOf(planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image"], control: true, look: false, book })).ceilingUsd).toBeCloseTo(13.6, 9);
   });
 
-  it("c --probe: one still per engine, no control, no look: GPT Image 2 × $0.17 = $0.34", () => {
-    const plan = planProbeC({ engines: ["gpt-image", "flux", "seedream"], book });
-    expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(0.34, 9);
-    expect(renders(plan, "flux")).toBe(2);
+  it("c --probe: camera 1 on each engine and camera 2 with the look on GPT Image and FLUX, no twin, no control: 2 × 2 × $0.17 = $0.68", () => {
+    const plan = planProbeC({ engines: ["gpt-image", "flux", "seedream"], look: true, book });
+    // (1 set shot + 1 look shot) × GENERATE_RETRIES 2 × $0.17 (IMAGE_COST_USD)
+    expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(2 * 2 * 0.17, 9);
+    expect(renders(plan, "flux")).toBe(4);
     expect(renders(plan, "seedream")).toBe(1);
-    expect(plan.some((l) => l.label.startsWith("look shots") || l.label.startsWith("controls"))).toBe(false);
-    expect(countOf(plan, "entry prompt gate")).toBe(3);
+    expect(plan.find((l) => l.kind === "gpt-image" && l.label.startsWith("look shots"))?.count).toBe(2);
+    expect(plan.some((l) => l.label.startsWith("controls"))).toBe(false);
+    for (const g of ["entry prompt gate", "pipeline prompt gate", "output gate", "identity score"]) expect(countOf(plan, g)).toBe(5);
+    // --no-look: one still per engine, $0.34.
+    const bare = planProbeC({ engines: ["gpt-image", "flux", "seedream"], look: false, book });
+    expect(ceilingOf(bare).ceilingUsd).toBeCloseTo(0.34, 9);
+    expect(countOf(bare, "entry prompt gate")).toBe(3);
   });
 
   it("D: 40 × $1.155 standard, plus 2 GPT Image renders a still for every harmful brief run that may get a set", () => {

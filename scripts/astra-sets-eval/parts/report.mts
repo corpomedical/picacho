@@ -16,13 +16,16 @@
 //                       the other Astra arm is REPORTED beside it
 //   persons (D)         every item on every real persons sheet counts: an
 //                       item nobody rated leaves the bar UNDETERMINED
-//   stills (C)          every real C run's stills pooled (probes set aside),
-//                       with the composition sheets' ratings: barC per
-//                       engine, all three engines section 4 names (one with
-//                       no still in hand is UNDETERMINED, a BLOCKED arm never
-//                       passes), and the look — its objects question, and
-//                       identity and composition with it against without —
-//                       with the camera heights and the rest, REPORTED
+//   stills (C)          the real C runs at SET_BUILD_EFFORT (probes set
+//                       aside; the manifest records each run's effort), their
+//                       stills pooled with the composition sheets' ratings
+//                       (found by run and shotId): barC per engine, all three
+//                       engines section 4 names (one with no still in hand is
+//                       UNDETERMINED, a BLOCKED arm never passes), and the
+//                       look — the objects question with it against without,
+//                       and identity and composition likewise — with the
+//                       camera heights and the rest, REPORTED. A C run at the
+//                       other effort is REPORTED beside it, never deciding
 //   stills (D)          D's outcomes carry the stills leg's verdicts; the
 //                       d-stills sheet (stills that passed the output gate,
 //                       rated off limits or not) is REPORTED, outside the bar
@@ -79,7 +82,7 @@ import {
 import { tokenCounts, type PriceBook } from "../lib/prices.mts";
 import { canonicalJson, newRunId, pct, usd } from "../lib/util.mts";
 import { readRun } from "./b.mts";
-import { cFromRuns } from "./c.mts";
+import { cEffortOf, cFromRuns } from "./c.mts";
 import { dPhotoRow, type DOutcome, type DPhotoOutcome } from "./d.mts";
 import { eItems, type EPhotoRow, type EReadRow } from "./e.mts";
 
@@ -295,16 +298,36 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     if (ag) reported.push(ag);
   }
 
-  // C: every real C run's stills (probes set aside), pooled, with the composition sheets' ratings.
+  // C: the real C runs (probes set aside) whose sets were built at the
+  // shipped effort decide it, their stills pooled with the composition
+  // sheets' ratings; a run at the other effort is REPORTED beside it, as A's
+  // and B's other arm. A run that records no effort never decides.
   const cRuns = words.filter((r) => r.part === "c" && r.manifest.probe !== true);
-  let cNote: string | null = "C: no real C run in hand";
-  if (cRuns.length) {
-    const c = cFromRuns(cRuns, ofKind("c-composition"));
-    const cBarsIn = capIf(c.bars, cRuns);
+  const cArmOf = (r: LoadedRun) => {
+    const effort = cEffortOf(r.manifest);
+    return effort ? `astra-${effort}` : "an unrecorded effort";
+  };
+  const cNotes: string[] = [];
+  const blockedLine = (arm: string, blocked: readonly string[]) =>
+    blocked.length ? [`C${arm === shipped ? "" : ` (${arm})`}: ${blocked.map((k) => (k.endsWith(":look") ? `${k.slice(0, -5)}'s look arm` : k)).join(", ")} BLOCKED (fal refused the data: references; the runner uploads nothing)`] : [];
+  const cMine = cRuns.filter((r) => cArmOf(r) === shipped);
+  if (cMine.length) {
+    const c = cFromRuns(cMine, ofKind("c-composition"));
+    const cBarsIn = capIf(c.bars, cMine);
     bars.push(...cBarsIn);
     reported.push(...c.reported);
     release.C = verdictOf(cBarsIn);
-    cNote = c.blocked.length ? `C: ${c.blocked.join(", ")} BLOCKED (fal refused the data: references; the runner uploads nothing)` : null;
+    cNotes.push(...blockedLine(shipped, c.blocked));
+  } else cNotes.push(cRuns.length ? `C: no real C run at ${shipped} in hand (SET_BUILD_EFFORT = ${SET_BUILD_EFFORT} is the arm that decides)` : "C: no real C run in hand");
+  for (const arm of [...new Set(cRuns.map(cArmOf))].filter((a) => a !== shipped)) {
+    const theirs = cRuns.filter((r) => cArmOf(r) === arm);
+    const c = cFromRuns(theirs, ofKind("c-composition"));
+    const notMine = arm.startsWith("astra-") ? notShipped : "its runs record no effort, so they never decide C";
+    const tag = (b: BarResult): BarResult => ({ ...b, id: `${b.id}@${arm}`, label: `${b.label} [${arm}]` });
+    const rep = capIf(c.bars, theirs).map((b) => asReported(tag(b), notMine));
+    reported.push(...rep, ...c.reported.map(tag));
+    otherArms.push(`${arm} C ${measured(rep)}`);
+    cNotes.push(...blockedLine(arm, c.blocked));
   }
 
   // D
@@ -312,7 +335,7 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   const dOutcomes = dRuns.flatMap((r) => r.rows.filter((x) => x.type === "d-outcome") as unknown as DOutcome[]);
   let priorHitsBar: BarResult | null = null;
   if (dOutcomes.length) {
-    const rows: DRow[] = dOutcomes.map((x) => ({ briefId: `${x.briefId}-r${x.run}`, harmful: x.harmful, outcome: x.outcome }));
+    const rows: DRow[] = dOutcomes.map((x) => ({ briefId: `${x.briefId}-r${x.run}`, harmful: x.harmful, outcome: x.outcome, shotPromptRefusals: x.shotPromptRefusals }));
     // Every item on every real words persons sheet (A's and D's).
     const persons = personsOf(words);
     const personsFrom = words.filter((r) => r.keys.some((k) => k.kind === "d-persons"));
@@ -434,7 +457,7 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   lines.push("--- bars ---");
   for (const b of bars) lines.push(`  ${barLine(b)}`);
   for (const b of reported) lines.push(`  ${barLine(b)}`);
-  if (cNote) lines.push(`  ${cNote}`);
+  for (const n of cNotes) lines.push(`  ${n}`);
   if (!dOutcomes.length) lines.push("  D: no real D run in hand");
   if (!aBuilds.length) lines.push("  A: no real A run in hand");
   else if (!astraArms.includes(shipped)) lines.push(`  A: no ${shipped} builds in hand (SET_BUILD_EFFORT = ${SET_BUILD_EFFORT} is the arm that ships)`);

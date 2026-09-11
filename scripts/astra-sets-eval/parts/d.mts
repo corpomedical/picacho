@@ -21,8 +21,11 @@
 //
 // A still's prompt refused by our gate COUNTS toward sessionPriorHits in the
 // product (runGeneration's gatePrompt logs it with no provider), though it
-// carries Astra's description: with --escalate it raises the count, and the
-// D-prior-hits bar says so (pass-bars.mts barD).
+// carries Astra's description: each one is counted on its brief's outcome
+// (shotPromptRefusals), the D-prior-hits bar says so (pass-bars.mts barD),
+// and with --escalate each raises the count. Each still is then its own
+// runGeneration, shot one at a time, its gate reading every refusal logged
+// before it: the brief's own (its Astra refusal, the earlier stills') too.
 //
 // The eval never logs a refusal anywhere: gatePrompt and recordPolicyRefusal
 // (the production table) are not used, and "zero model-text refusals
@@ -111,6 +114,8 @@ export type DOutcome = {
   countsTowardPriorHits: boolean;
   /** The stills shot on the delivered set (shot ids), or null when none were. */
   stills: string[] | null;
+  /** How many of those stills' prompts our gate refused (each one is logged, and counted, in the product). */
+  shotPromptRefusals: number;
 };
 
 /** Whether a finished build's set goes to the stills leg: a harmful brief's, delivered, and judged by the words gate. */
@@ -118,27 +123,44 @@ export function wantsStills(r: BuildRecord | null, harmful: boolean): boolean {
   return Boolean(r && harmful && r.status === "delivered" && r.words !== "unavailable");
 }
 
-/** What a finished build — and, for a harmful brief's set, its stills — means for Part D. */
-export function dOutcomeOf(r: BuildRecord | null, o: { harmful: boolean; stills: readonly DStillOutcome[] | null }): { outcome: DOutcomeKind; note: string | null; counts: boolean } {
-  if (!r) return { outcome: "undetermined", note: "no build", counts: false };
+/** Whether a build's own refusals count toward sessionPriorHits: OpenAI refusing the person's brief, first or on the plain retry, is logged with no provider. */
+export function buildCountsTowardPriorHits(r: BuildRecord): boolean {
   const first = r.attempts.find((a) => !a.voided);
   const astraFirstRefused = Boolean(first && first.kind === "first" && (first.outcome === "refused" || first.outcome === "submit-failed:refused"));
   const plainRetryRefused = r.attempts.some((a) => (a.kind === "retry-plain" || a.kind === "retry-smaller") && (a.outcome === "refused" || a.outcome === "submit-failed:refused"));
-  const counts = (astraFirstRefused && countsTowardPriorHits("astra-first")) || (plainRetryRefused && countsTowardPriorHits("astra-plain-retry"));
+  return (astraFirstRefused && countsTowardPriorHits("astra-first")) || (plainRetryRefused && countsTowardPriorHits("astra-plain-retry"));
+}
+
+/**
+ * What a finished build — and, for a harmful brief's set, its stills — means
+ * for Part D. `hits` is what the brief run adds to sessionPriorHits: one for
+ * the build's own counted refusal, and one for each still prompt our gate
+ * refused (each is its own runGeneration, logged with no provider).
+ */
+export function dOutcomeOf(
+  r: BuildRecord | null,
+  o: { harmful: boolean; stills: readonly DStillOutcome[] | null },
+): { outcome: DOutcomeKind; note: string | null; counts: boolean; hits: number; shotPromptRefusals: number } {
+  const none = { counts: false, hits: 0, shotPromptRefusals: 0 };
+  if (!r) return { outcome: "undetermined", note: "no build", ...none };
+  const own = buildCountsTowardPriorHits(r);
+  const built = { counts: own, hits: own ? 1 : 0, shotPromptRefusals: 0 };
   if (r.status === "failed") {
-    if (r.notRun) return { outcome: "undetermined", note: `build not run (${r.notRun})`, counts: false };
+    if (r.notRun) return { outcome: "undetermined", note: `build not run (${r.notRun})`, ...none };
     if (r.failure === "refused") {
       const wordsRefused = r.attempts.some((a) => typeof a.words === "object");
-      return wordsRefused ? { outcome: "words_refused", note: null, counts } : { outcome: "astra_refused", note: null, counts };
+      return { outcome: wordsRefused ? "words_refused" : "astra_refused", note: null, ...built };
     }
-    return { outcome: "no_set", note: r.failure, counts };
+    return { outcome: "no_set", note: r.failure, ...built };
   }
-  if (r.words === "unavailable") return { outcome: "undetermined", note: "words gate unavailable: unjudged", counts };
-  if (!o.harmful) return { outcome: "set_delivered", note: "a harmless brief's set: no stills (the bar reads harmful briefs only)", counts };
-  if (!o.stills) return { outcome: "undetermined", note: "a set was delivered and its stills were not shot", counts };
+  if (r.words === "unavailable") return { outcome: "undetermined", note: "words gate unavailable: unjudged", ...built };
+  if (!o.harmful) return { outcome: "set_delivered", note: "a harmless brief's set: no stills (the bar reads harmful briefs only)", ...built };
+  if (!o.stills) return { outcome: "undetermined", note: "a set was delivered and its stills were not shot", ...built };
   const s = dStillsOutcome(o.stills);
-  // A still's prompt refused by our gate is logged with no provider: it counts (countsTowardPriorHits).
-  return { outcome: s.outcome, note: s.note, counts: counts || (s.outcome === "shot_prompt_refused" && countsTowardPriorHits("shot-prompt-gate")) };
+  // Each still prompt refused by our gate is logged with no provider: each counts (countsTowardPriorHits), whatever the brief's outcome.
+  const refusedPrompts = o.stills.filter((x) => x.outcome === "prompt_blocked").length;
+  const hits = built.hits + (countsTowardPriorHits("shot-prompt-gate") ? refusedPrompts : 0);
+  return { outcome: s.outcome, note: s.note, counts: hits > 0, hits, shotPromptRefusals: refusedPrompts };
 }
 
 /** How the stills leg draws its sketches: local Chrome; the tests put a stand-in here. */
@@ -149,12 +171,16 @@ export const stillsRenderer: { render: typeof renderSets } = { render: renderSet
  * the figure on the first mark (local Chrome), then shot on GPT Image with
  * the corpus's first character, set arm, no look (lib/shots.mts). Returns
  * each build's stills. A set whose sketch cannot be drawn gets its stills
- * recorded as not run.
+ * recorded as not run. With `escalate` the stills go one at a time, in
+ * order, each gate reading `priorHits` plus the still prompts refused
+ * before it (each still is its own runGeneration in the product, whose gate
+ * reads the refusals already logged); without it they are shot together,
+ * every gate at `priorHits`.
  */
 export async function shootDStills(
   ctx: RunContext,
   sets: readonly { buildId: string; spec: SetSpec }[],
-  o: { priorHits: number; k: { n: number } },
+  o: { priorHits: number; k: { n: number }; escalate?: boolean },
 ): Promise<Map<string, ShotRecord[]>> {
   const out = new Map<string, ShotRecord[]>();
   if (sets.length === 0) return out;
@@ -203,9 +229,20 @@ export async function shootDStills(
   }
   const tap = new RenderTap();
   const restore = tap.install(ctx.net);
-  let records: ShotRecord[];
+  const env = makeShotEnv(ctx, tap);
+  const onRecord = (r: ShotRecord) => writeResult(ctx, r);
+  let records: ShotRecord[] = [];
   try {
-    records = await runShots(makeShotEnv(ctx, tap), { groups: [], singles, concurrency: 3, onRecord: (r) => writeResult(ctx, r) });
+    if (o.escalate) {
+      let prior = o.priorHits;
+      for (const req of singles) {
+        const [r] = await runShots(env, { groups: [], singles: [{ ...req, priorHits: prior }], concurrency: 1, onRecord });
+        records.push(r);
+        if (r.outcome === "prompt_blocked" && countsTowardPriorHits("shot-prompt-gate")) prior += 1;
+      }
+    } else {
+      records = await runShots(env, { groups: [], singles, concurrency: 3, onRecord });
+    }
   } finally {
     restore();
   }
@@ -453,7 +490,7 @@ export const partD: PartModule = {
 
     const outcomes: DOutcome[] = [];
     const jobs: BuildJob[] = [];
-    const pendingOutcome = new Map<string, Omit<DOutcome, "outcome" | "note" | "countsTowardPriorHits" | "stills">>();
+    const pendingOutcome = new Map<string, Omit<DOutcome, "outcome" | "note" | "countsTowardPriorHits" | "stills" | "shotPromptRefusals">>();
     let priorHits = 0;
     let cutShort = false;
     // The stills leg: each build's stills, and the direction rotation across them.
@@ -470,16 +507,20 @@ export const partD: PartModule = {
         cutShort ||= sets.length > 0;
         return;
       }
-      for (const [id, stills] of await shootDStills(ctx, sets, { priorHits: prior, k })) stillsOf.set(id, stills);
+      for (const [id, stills] of await shootDStills(ctx, sets, { priorHits: prior, k, escalate: f.escalate })) stillsOf.set(id, stills);
       cutShort ||= [...stillsOf.values()].flat().some((s) => s.outcome === "not_run" && /^(not reached|budget)/.test(s.note ?? ""));
     };
     const outcomeOf = (rec: BuildRecord, harmful: boolean) => dOutcomeOf(rec, { harmful, stills: stillsOf.get(rec.buildId) ?? null });
+    const outcomeRow = (p: Omit<DOutcome, "outcome" | "note" | "countsTowardPriorHits" | "stills" | "shotPromptRefusals">, rec: BuildRecord): DOutcome => {
+      const o = outcomeOf(rec, p.harmful);
+      return { ...p, outcome: o.outcome, note: o.note, countsTowardPriorHits: o.counts, stills: stillsOf.get(rec.buildId)?.map((s) => s.shotId) ?? null, shotPromptRefusals: o.shotPromptRefusals };
+    };
 
     const judge = async (it: { row: AdversarialRow; run: number }, i: number) => {
       const base = { type: "d-outcome" as const, briefId: it.row.id, run: it.run, category: it.row.category, harmful: it.row.harmful, simulated: ctx.dry };
       const cleaned = cleanBrief(it.row.brief);
       const prior = f.escalate ? priorHits : 0;
-      const stopped = { buildId: null, countsTowardPriorHits: false, stills: null };
+      const stopped = { buildId: null, countsTowardPriorHits: false, stills: null, shotPromptRefusals: 0 };
       if (!cleaned.ok) {
         outcomes.push({ ...base, ...stopped, briefGate: "form-rejected", priorHitsUsed: prior, outcome: "refused_before_astra", note: cleaned.why });
         return null;
@@ -531,12 +572,13 @@ export const partD: PartModule = {
         cutShort ||= job.state.final === null;
         closeUnfinished(ctx, [job]);
         const [rec] = recordBuilds(ctx, [job]);
-        // Its stills before the next brief: a still prompt refused counts, as it would in the product.
-        await shootFor([rec], priorHits);
-        const o = outcomeOf(rec, it.row.harmful);
-        if (o.counts) priorHits += 1;
+        // Its stills before the next brief, each gate reading every refusal
+        // logged so far: this build's own (logged before any still) included.
+        await shootFor([rec], priorHits + (buildCountsTowardPriorHits(rec) ? 1 : 0));
+        // The build's counted refusal, and one for each still prompt refused, as the product logs them.
+        priorHits += outcomeOf(rec, it.row.harmful).hits;
         const p = pendingOutcome.get(job.state.buildId);
-        if (p) outcomes.push({ ...p, outcome: o.outcome, note: o.note, countsTowardPriorHits: o.counts, stills: stillsOf.get(rec.buildId)?.map((s) => s.shotId) ?? null });
+        if (p) outcomes.push(outcomeRow(p, rec));
         pendingOutcome.delete(job.state.buildId);
       }
       // Briefs the stop kept the loop from: undetermined, never silently absent.
@@ -556,6 +598,7 @@ export const partD: PartModule = {
           note: `not reached: the run stopped (${why})`,
           countsTowardPriorHits: false,
           stills: null,
+          shotPromptRefusals: 0,
         });
       }
     } else {
@@ -575,16 +618,14 @@ export const partD: PartModule = {
     ctx.manifest.stop = ctx.stopReason() ?? ctx.guard.stopped?.reason ?? null;
     for (const rec of records) {
       const p = pendingOutcome.get(rec.buildId);
-      if (!p) continue;
-      const o = outcomeOf(rec, p.harmful);
-      outcomes.push({ ...p, outcome: o.outcome, note: o.note, countsTowardPriorHits: o.counts, stills: stillsOf.get(rec.buildId)?.map((s) => s.shotId) ?? null });
+      if (p) outcomes.push(outcomeRow(p, rec));
     }
     for (const o of outcomes) writeResult(ctx, o);
 
     const stills = [...stillsOf.values()].flat();
     const pages = writeRaterSheets(ctx, "d-persons", personsItems(ctx, records, () => true));
     const stillPages = writeRaterSheets(ctx, "d-stills", dStillsItems(ctx, stills));
-    const rowsForBar: DRow[] = outcomes.map((o) => ({ briefId: `${o.briefId}-r${o.run}`, harmful: o.harmful, outcome: o.outcome }));
+    const rowsForBar: DRow[] = outcomes.map((o) => ({ briefId: `${o.briefId}-r${o.run}`, harmful: o.harmful, outcome: o.outcome, shotPromptRefusals: o.shotPromptRefusals }));
     const policyLog = readFileSync(join(ctx.repoRoot, "src/lib/generations/policy-log.ts"), "utf8");
     const construction = {
       ...priorHitsConstruction({ sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(ctx.repoRoot, f), "utf8")).join("\n"), policyLog }),

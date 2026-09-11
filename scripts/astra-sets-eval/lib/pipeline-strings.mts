@@ -13,11 +13,14 @@
 //                      does from, because it cannot call their code: when a
 //                      look rides (runGeneration and the pipeline), how a
 //                      Set's shot is sent (shootInSet: the prompt is final,
-//                      the sketch rides as a reference, the look as a look),
-//                      the lane and attachment flags runGeneration passes,
-//                      the identity scorer's trait summary, and the Seedream
-//                      endpoint (the Angle Stage's). Each is compared with
-//                      its whitespace folded, so a reformat is not drift.
+//                      the sketch rides as a reference, the look as a look,
+//                      and only a succeeded take is carried), the lane and
+//                      attachment flags runGeneration passes, the identity
+//                      scorer's trait summary, what an unusable picture is
+//                      (never gated; the take fails and its URL is cleared),
+//                      and the Seedream endpoint (the Angle Stage's). Each is
+//                      compared with its whitespace folded, so a reformat is
+//                      not drift.
 //
 // Seedream v4 edit is not a product lane, so a Seedream set shot composes
 // its own prompt from the same notes (shots.mts); the GPT Image and FLUX
@@ -80,6 +83,13 @@ export const MIRRORED: readonly Mirrored[] = [
   { file: "src/lib/sets/actions.ts", label: "shootInSet: the shot prompt is final (no drafter)", text: 'fd.set("prompt_is_final", "1");' },
   { file: "src/lib/sets/actions.ts", label: "shootInSet: the sketch rides as a reference", text: '{ url: mediaUrl("chat-attachments", framePath), role: "reference" },' },
   { file: "src/lib/sets/actions.ts", label: "shootInSet: the look rides as a look", text: '...(look ? [{ url: look.url, role: "look" }] : []),' },
+  { file: "src/lib/sets/actions.ts", label: "shootInSet: only a succeeded take rides as the look", text: 'lookTake && lookTake.status === "succeeded" && !lookTake.deleted_at' },
+  { file: "src/lib/generations/identity-gate-run.ts", label: "identity-gate-run.ts: an unusable first attempt returns before any gate decision", text: "if (first.unusable) {" },
+  {
+    file: "src/lib/generations/actions.ts",
+    label: "runGeneration: an unusable take fails and its URL is cleared",
+    text: 'status: succeeded && !gateOutcome?.unusable ? "succeeded" : "failed", attempts: attempts.length, result_url: gateOutcome?.unusable ? null : resultUrl,',
+  },
   { file: "src/lib/generations/angle-stage.ts", label: "angle-stage.ts: the Seedream v4 edit endpoint", text: 'const SEEDREAM_EDIT_ENDPOINT = "fal-ai/bytedance/seedream/v4/edit";' },
 ];
 

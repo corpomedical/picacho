@@ -58,6 +58,7 @@ export const SRC_FILES = [
   "src/lib/generations/identity-gate.ts",
   // The stills (C, D): what they call, and the product lines they mirror.
   "src/lib/generations/actions.ts",
+  "src/lib/generations/identity-gate-run.ts",
   "src/lib/generations/angle-stage.ts",
   "src/lib/generations/refund-rules.ts",
   "src/lib/generations/providers/image.ts",

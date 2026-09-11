@@ -13,11 +13,18 @@
 // has none). A look rides only where the product lets it: a still, one
 // character, GPT Image or FLUX, beside an identity photo (shots.mts
 // lookRides). So the plan grows by 10 sets × 2 later cameras × 2
-// characters = 40 look shots on each of GPT Image and FLUX. The composition
-// sheet asks each look shot one more question, whether its objects,
-// vehicles and finishes are the first still's; report prints that, and
-// identity with the look against without, as REPORTED lines: section 4 has
-// no bar for the look. --no-look drops the arm.
+// characters = 40 look shots on each of GPT Image and FLUX. On the
+// composition sheet every later camera's still, in either arm and on every
+// engine, is shown beside its first still and asked one more question,
+// whether its objects, vehicles and finishes are the first still's: a look
+// shot and its twin are presented alike, and the twin is the look's
+// baseline. Report prints that, and identity and composition with the look
+// against without, as REPORTED lines: section 4 has no bar for the look.
+// --no-look drops the arm.
+//
+// THE EFFORT. The sets come from an A run at --effort (SET_BUILD_EFFORT by
+// default); the manifest records it, and report decides C on the shipped
+// effort's runs only, the other effort REPORTED beside it, as A and B.
 //
 // THE CONTROL ARM: an ordinary render per set and character on each product
 // engine (the same character and engine, no frame, drafter on, strict lane
@@ -30,13 +37,16 @@
 // bars it can settle alone (identity and miss rate against the baseline,
 // output-gate refusals); composition needs the raters, so report settles it.
 //
-// `c --probe`: one fixture set (fixtures-rainy-market.json), one camera, the
-// first character, each engine. It asks whether fal takes data: references
-// (FLUX), what Seedream's square size returns, whether the gates and the
-// scorer answer, and which hosts the tap saw. If fal refuses the data:
-// references, that engine's arm is BLOCKED: the runner never uploads
-// anything, and a C run stops sending that engine's stills the moment fal
-// refuses them.
+// `c --probe`: one fixture set (fixtures-rainy-market.json), the first
+// character, each engine: camera 1 on its own sketch, and camera 2 carrying
+// camera 1's still as the look where a look rides (the largest request: the
+// identity, the sketch and the earlier still). It asks whether fal takes
+// data: references (FLUX), with the look too, what Seedream's square size
+// returns, whether the gates and the scorer answer, and which hosts the tap
+// saw. If fal refuses the data: references, that engine's arm is BLOCKED
+// (only its look arm, if fal refused only the look's request): the runner
+// never uploads anything, and a C run stops sending those stills the moment
+// fal refuses them.
 //
 // A dry run draws the frames for real (local Chrome) and hands each frame
 // back as its still (shots.mts simulateShot), the look arm and the sheets
@@ -66,7 +76,7 @@ import {
 import { checkPipelineStrings } from "../lib/pipeline-strings.mts";
 import { planC, planProbeC } from "../lib/plan.mts";
 import { SEEDREAM_SQUARE } from "../lib/seedream.mts";
-import { lookRides, RenderTap, runShots, sniffImage, type ShotArm, type ShotCharacter, type ShotGroup, type ShotRecord, type ShotRequest } from "../lib/shots.mts";
+import { blockKey, lookRides, RenderTap, runShots, sniffImage, type ShotArm, type ShotCharacter, type ShotGroup, type ShotRecord, type ShotRequest } from "../lib/shots.mts";
 import { HarnessError, sha256, usd } from "../lib/util.mts";
 import { framePose, renderSets, type RenderJob } from "../render/render-sets.mts";
 import { readRun, specOf } from "./b.mts";
@@ -115,6 +125,8 @@ export type FramedSet = { key: string; spec: SetSpec; lifted: boolean; frames: {
  * A control per set and character on each product engine. Shot k (one set,
  * camera and character) takes directions[k % n], the same on every engine
  * and in both arms, so a look shot and its twin differ by the look alone.
+ * Every later camera's still names camera 1's (firstShotId), for the sheet.
+ * `twins: false` (the probe) sends the later cameras only with the look.
  */
 export function planCShots(o: {
   sets: readonly FramedSet[];
@@ -123,6 +135,7 @@ export function planCShots(o: {
   engines: readonly Engine[];
   look: boolean;
   control: boolean;
+  twins?: boolean;
 }): { groups: ShotGroup[]; singles: ShotRequest[] } {
   const groups: ShotGroup[] = [];
   const singles: ShotRequest[] = [];
@@ -151,7 +164,13 @@ export function planCShots(o: {
         });
         const later = set.frames.map((_, i) => i).slice(1);
         const rides = o.look && lookRides({ engine, identityPhoto: ch.photo !== null, characters: 1 });
-        groups.push({ first: req(0, "set"), rest: later.map((i) => req(i, "set")), withLook: rides ? later.map((i) => req(i, "look")) : [] });
+        const first = req(0, "set");
+        const afterFirst = (r: ShotRequest): ShotRequest => ({ ...r, firstShotId: first.shotId });
+        groups.push({
+          first,
+          rest: o.twins === false ? [] : later.map((i) => afterFirst(req(i, "set"))),
+          withLook: rides ? later.map((i) => afterFirst(req(i, "look"))) : [],
+        });
         if (o.control && engine !== "seedream") {
           singles.push({ ...req(0, "control"), shotId: `cc-${set.key}-${ch.id}-${engine}`, camera: null, frame: null, frameFile: null });
         }
@@ -161,13 +180,16 @@ export function planCShots(o: {
   return { groups, singles };
 }
 
-/** The composition sheet's ratings of one still, by its shotId. */
+/** The composition sheet's ratings of one still, by ratingKey (its run and shotId). */
 export type CRatings = { scores: number[]; objects: number[]; younger: number };
 
-/** Real stills as the bars read them, with the composition sheet's ratings when report has them. */
-export function cShotsOf(rows: readonly ShotRecord[], ratings: ReadonlyMap<string, CRatings> = new Map()): CShot[] {
+/** A still's ratings key: shotIds repeat across runs over the same sets, so the run is part of it. */
+export const ratingKey = (run: string, shotId: string) => `${run}|${shotId}`;
+
+/** Real stills of one run as the bars read them, with the composition sheet's ratings when report has them. */
+export function cShotsOf(rows: readonly ShotRecord[], run: string, ratings: ReadonlyMap<string, CRatings> = new Map()): CShot[] {
   return rows.map((r) => {
-    const rated = ratings.get(r.shotId);
+    const rated = ratings.get(ratingKey(run, r.shotId));
     return {
       engine: r.engine,
       arm: r.arm,
@@ -175,8 +197,9 @@ export function cShotsOf(rows: readonly ShotRecord[], ratings: ReadonlyMap<strin
       score: r.identity.score,
       decision: r.identityDecision,
       compositionScores: rated?.scores ?? [],
-      pairKey: r.arm === "control" || !r.cameraId ? undefined : `${r.setKey}|${r.cameraId}|${r.characterId}`,
+      pairKey: r.arm === "control" || !r.cameraId ? undefined : `${run}|${r.setKey}|${r.cameraId}|${r.characterId}`,
       cameraHeightM: r.cameraHeightM,
+      later: Boolean(r.firstShotId),
       objectsScores: rated?.objects ?? [],
       youngerFlags: rated?.younger ?? 0,
       dims: r.resultDims,
@@ -185,13 +208,13 @@ export function cShotsOf(rows: readonly ShotRecord[], ratings: ReadonlyMap<strin
   });
 }
 
-/** The composition sheet's combined ratings, by shotId: each rater's score, the look question's score, and the "looks younger" ticks. */
+/** The composition sheet's combined ratings, by ratingKey: each rater's score, the objects question's score, and the "looks younger" ticks. */
 export function cRatingsOf(combined: readonly Combined[]): Map<string, CRatings> {
   const out = new Map<string, CRatings>();
   for (const c of combined) {
     const id = String(c.source.shotId ?? "");
     if (!id) continue;
-    out.set(id, {
+    out.set(ratingKey(String(c.source.run ?? ""), id), {
       scores: c.ratings.map((x) => x.score).filter((x): x is number => typeof x === "number"),
       objects: c.ratings.map((x) => x.extras?.objects).filter((x): x is number => typeof x === "number"),
       younger: c.ratings.filter((x) => x.flags?.includes("younger")).length,
@@ -200,11 +223,17 @@ export function cRatingsOf(combined: readonly Combined[]): Map<string, CRatings>
   return out;
 }
 
+/** What fal refused data: references for, from a run's rows (shots.mts blockKey): an engine, or its look arm alone. */
+export function blockedOf(rows: readonly Pick<ShotRecord, "refsRefused" | "engine" | "arm">[]): Set<string> {
+  return new Set(rows.filter((r) => r.refsRefused && r.engine !== "gpt-image").map((r) => blockKey(r.engine, r.arm)));
+}
+
 /**
  * Every C bar over real stills, per engine: barC on the set arm against the
  * engine's baseline (cBaseline), and the look, the camera heights and the
  * rest as REPORTED lines. An engine with no still in hand is UNDETERMINED;
- * a BLOCKED arm (fal refused its data: references) never passes.
+ * a BLOCKED arm (fal refused its data: references) never passes; a BLOCKED
+ * look arm alone leaves the bars (the set arm's) and notes the look lines.
  * `composition: false` leaves the composition bar out (a run's own summary:
  * the raters have not rated yet).
  */
@@ -225,29 +254,47 @@ export function cBars(
     if (o.composition === false) bs = bs.filter((b) => !b.id.startsWith("C-composition"));
     if (o.blocked.has(e)) bs = bs.map((b) => capAtUndetermined({ ...b, notes: [...b.notes, "the arm is BLOCKED: fal refused the data: references"] }, "the arm is BLOCKED"));
     bars.push(...bs);
-    reported.push(...reportCLook(e, shots));
+    const lookBlocked = !o.blocked.has(e) && o.blocked.has(blockKey(e, "look"));
+    reported.push(...reportCLook(e, shots).map((b) => (lookBlocked ? { ...b, notes: [...b.notes, "the look arm is BLOCKED: fal refused a look shot's data: references"] } : b)));
     for (const r of [reportCHeights(e, shots), reportCOther(e, shots)]) if (r) reported.push(r);
   }
   return { bars, reported };
 }
 
-/** Report's C: every real C run's stills pooled, the composition sheets' ratings, the first recorded baselines export. */
-export function cFromRuns(runs: readonly { rows: Record<string, unknown>[]; manifest: Record<string, unknown> }[], combined: readonly Combined[]): { bars: BarResult[]; reported: BarResult[]; blocked: string[] } {
-  const rows = runs.flatMap((r) => r.rows.filter((x) => x.type === "shot") as unknown as ShotRecord[]);
-  const blocked = new Set(rows.filter((r) => r.refsRefused && r.engine !== "gpt-image").map((r) => r.engine as string));
+/** The Astra effort a C run's sets were built at (manifest.stills.effort), or null when it records none. */
+export function cEffortOf(manifest: Record<string, unknown>): string | null {
+  const e = (manifest.stills as { effort?: unknown } | undefined)?.effort;
+  return typeof e === "string" ? e : null;
+}
+
+/**
+ * Report's C over the runs it is given (report passes the runs of one
+ * effort): their stills pooled, each still's ratings found by its run and
+ * shotId, the first recorded baselines export.
+ */
+export function cFromRuns(
+  runs: readonly { rows: Record<string, unknown>[]; manifest: Record<string, unknown> }[],
+  combined: readonly Combined[],
+): { bars: BarResult[]; reported: BarResult[]; blocked: string[] } {
+  const ratings = cRatingsOf(combined);
+  const perRun = runs.map((r) => ({ run: String(r.manifest.runId ?? ""), rows: r.rows.filter((x) => x.type === "shot") as unknown as ShotRecord[] }));
+  const blocked = blockedOf(perRun.flatMap((r) => r.rows));
   const exported = (runs.map((r) => r.manifest.baselines).find((b) => b) ?? null) as CExportedBaselines;
-  const out = cBars(cShotsOf(rows, cRatingsOf(combined)), { engines: ENGINES, exported, blocked });
+  const out = cBars(
+    perRun.flatMap((r) => cShotsOf(r.rows, r.run, ratings)),
+    { engines: ENGINES, exported, blocked },
+  );
   return { ...out, blocked: [...blocked] };
 }
 
-/** The sets C shoots: the probe's fixture, an A run's (a real run), or the product's fixtures (a dry run). */
-function setsFor(ctx: RunContext): { sets: CSet[]; from: string } {
+/** The sets C shoots: the probe's fixture, an A run's (a real run), or the product's fixtures (a dry run); and the effort an A run's were built at. */
+function setsFor(ctx: RunContext): { sets: CSet[]; from: string; effort: string | null } {
   const f = ctx.flags;
   const fixture = (name: (typeof FIXTURES)[number]): CSet => ({ key: `fx-${name}`, spec: specOf(fixtureJson(name)), category: "fixture", buildId: `fx-${name}` });
-  if (f.probe) return { sets: [fixture(PROBE_FIXTURE)], from: `the product fixture ${PROBE_FIXTURE}` };
+  if (f.probe) return { sets: [fixture(PROBE_FIXTURE)], from: `the product fixture ${PROBE_FIXTURE}`, effort: null };
   if (!f.fromRun) {
     if (!ctx.dry) throw new HarnessError("a real C run draws its sets from an A run: pass --from-run <the A run> (a dry run draws the product's fixtures). Nothing was called.");
-    return { sets: FIXTURES.map(fixture), from: "product fixtures" };
+    return { sets: FIXTURES.map(fixture), from: "product fixtures", effort: null };
   }
   const effort = f.effort ?? SET_BUILD_EFFORT;
   const a = readRun(f.fromRun);
@@ -258,28 +305,41 @@ function setsFor(ctx: RunContext): { sets: CSet[]; from: string } {
   const chosen = chooseSets(a.rows as unknown as BuildRecord[], `astra-${effort}`, runSeed(ctx));
   const sets = chosen.map((r) => ({ key: r.buildId, spec: specOf(JSON.parse(readFileSync(join(f.fromRun as string, r.specFile as string), "utf8"))), category: r.category, buildId: r.buildId }));
   if (sets.length < C_SETS) ctx.out(`  note: only ${sets.length} of ${C_SETS} sets available at astra-${effort} in ${f.fromRun}`);
-  return { sets, from: `${f.fromRun} at astra-${effort}` };
+  return { sets, from: `${f.fromRun} at astra-${effort}`, effort };
 }
 
-/** The composition sheet: every set or look still that rendered, beside its sketch (and, for a look shot, the first still), the reference photo small. */
-function compositionItems(ctx: RunContext, records: readonly ShotRecord[], characters: readonly ShotCharacter[]): SheetItemIn[] {
-  const byId = new Map(records.map((r) => [r.shotId, r]));
-  const photoOf = new Map(ctx.corpus.data.characters.map((c) => [c.id, join(ctx.corpusDir, c.identityPhoto)]));
+/**
+ * The composition sheet: every set or look still that rendered, beside its
+ * sketch, the reference photo small. Every later camera's still, in either
+ * arm, also shows its first still (camera 1's, firstShotId) and is asked the
+ * objects question, so a look shot and its twin on the same sketch look
+ * alike to a rater and the twin is the look's baseline. Each item's source
+ * carries the run: shotIds repeat across runs over the same sets.
+ */
+export function compositionItems(o: {
+  run: string;
+  runDir: string;
+  records: readonly ShotRecord[];
+  /** Each character's identity photo in the corpus, for those that have one. */
+  photoOf: ReadonlyMap<string, string>;
+}): SheetItemIn[] {
+  const byId = new Map(o.records.map((r) => [r.shotId, r]));
   const items: SheetItemIn[] = [];
-  for (const r of records) {
+  for (const r of o.records) {
     if (r.arm === "control" || r.outcome !== "rendered" || !r.resultFile || !r.frameFile) continue;
-    const first = r.look ? byId.get(r.look.fromShotId) : undefined;
-    const hasPhoto = characters.find((c) => c.id === r.characterId)?.photo;
+    const first = r.firstShotId ? byId.get(r.firstShotId) : undefined;
+    const firstFile = first?.outcome === "rendered" ? first.resultFile : null;
+    const photo = o.photoOf.get(r.characterId);
     items.push({
-      source: { shotId: r.shotId, engine: r.engine, arm: r.arm, setKey: r.setKey, cameraId: r.cameraId ?? "", characterId: r.characterId },
+      source: { run: o.run, shotId: r.shotId, engine: r.engine, arm: r.arm, setKey: r.setKey, cameraId: r.cameraId ?? "", characterId: r.characterId },
       groupKey: r.setKey,
       images: [
-        { role: "sketch", path: join(ctx.runDir, r.frameFile) },
-        { role: "still", path: join(ctx.runDir, r.resultFile) },
-        ...(first?.resultFile ? [{ role: "first" as const, path: join(ctx.runDir, first.resultFile) }] : []),
-        ...(hasPhoto ? [{ role: "reference" as const, path: photoOf.get(r.characterId) as string }] : []),
+        { role: "sketch", path: join(o.runDir, r.frameFile) },
+        { role: "still", path: join(o.runDir, r.resultFile) },
+        ...(firstFile ? [{ role: "first" as const, path: join(o.runDir, firstFile) }] : []),
+        ...(photo ? [{ role: "reference" as const, path: photo }] : []),
       ],
-      ...(r.arm === "look" && first?.resultFile ? { asks: ["objects"] } : {}),
+      ...(firstFile ? { asks: ["objects"] } : {}),
     });
   }
   return items;
@@ -290,10 +350,13 @@ const ALLOWED = (host: string) => (LIVE_HOSTS as readonly string[]).includes(hos
 /** What `c --probe` settles (design §10.3), one line per question. */
 export function probeLines(records: readonly ShotRecord[], seen: { hosts: ReadonlySet<string>; blocked: readonly { host: string }[]; simulated: boolean }): string[] {
   const lines = [seen.simulated ? "--- probe (SIMULATED: the lines' shape only; nothing was asked, so nothing is settled) ---" : "--- probe ---"];
-  const of = (e: Engine) => records.find((r) => r.engine === e);
+  const of = (e: Engine, arm: ShotArm = "set") => records.find((r) => r.engine === e && r.arm === arm);
   const dims = (r: ShotRecord) => (r.resultDims ? `${r.resultDims.w}×${r.resultDims.h}` : "size unread");
+  const plain = (label: string, r: ShotRecord) => `  ${label}: ${r.outcome}${r.outcome === "rendered" ? ` (${dims(r)})` : r.note ? ` (${r.note})` : ""}`;
   const gpt = of("gpt-image");
-  if (gpt) lines.push(`  gpt-image: ${gpt.outcome}${gpt.outcome === "rendered" ? ` (${dims(gpt)})` : gpt.note ? ` (${gpt.note})` : ""}`);
+  if (gpt) lines.push(plain("gpt-image", gpt));
+  const gptLook = of("gpt-image", "look");
+  if (gptLook) lines.push(plain("gpt-image with the look", gptLook));
   const flux = of("flux");
   if (flux) {
     lines.push(
@@ -302,6 +365,17 @@ export function probeLines(records: readonly ShotRecord[], seen: { hosts: Readon
         : flux.refsRefused
           ? `  flux: data: references REFUSED (${flux.note ?? "?"}) → the FLUX arm is BLOCKED. The runner uploads nothing: run C with --engines gpt-image,seedream (the in-app route is the README's fallback)`
           : `  flux: not settled (${flux.outcome}${flux.note ? `: ${flux.note}` : ""})`,
+    );
+  }
+  // The largest request a C run sends: the identity, the sketch and camera 1's still.
+  const fluxLook = of("flux", "look");
+  if (fluxLook) {
+    lines.push(
+      fluxLook.outcome === "rendered"
+        ? `  flux with the look: three data: references ACCEPTED (rendered ${dims(fluxLook)})`
+        : fluxLook.refsRefused
+          ? `  flux with the look: three data: references REFUSED (${fluxLook.note ?? "?"}) → the FLUX look arm is BLOCKED: a C run records FLUX's look shots as not run, and its set arm goes on`
+          : `  flux with the look: not settled (${fluxLook.outcome}${fluxLook.note ? `: ${fluxLook.note}` : ""})`,
     );
   }
   const sd = of("seedream");
@@ -352,10 +426,10 @@ export const partC: PartModule = {
     ];
     if (f.probe) {
       return {
-        title: `C probe: the ${PROBE_FIXTURE} fixture, 1 camera, 1 character, ${f.engines.join(", ")}`,
-        lines: planProbeC({ engines: f.engines, book: b }),
+        title: `C probe: the ${PROBE_FIXTURE} fixture, camera 1${f.look ? " and camera 2 carrying its still" : ""}, 1 character, ${f.engines.join(", ")}`,
+        lines: planProbeC({ engines: f.engines, look: f.look, book: b }),
         notes: [
-          "The probe asks: does fal take data: references (FLUX), what size does Seedream's square option return, do the gates and the scorer answer, which hosts did the tap see. No control, no look.",
+          `The probe asks: does fal take data: references (FLUX)${f.look ? ", with the look too (camera 2 carrying camera 1's still, on GPT Image and FLUX: the largest request)" : ""}, what size does Seedream's square option return, do the gates and the scorer answer, which hosts did the tap see. No control.`,
           notes[2],
         ],
       };
@@ -374,13 +448,15 @@ export const partC: PartModule = {
     if (!drift.ok && !ctx.dry && !f.acceptDrift) {
       throw new HarnessError(`the stills leg mirrors product lines that changed: ${drift.missing.join("; ")}. Update lib/pipeline-strings.mts and lib/shots.mts, or pass --accept-drift (recorded). Nothing was called.`);
     }
-    const { sets, from } = setsFor(ctx);
+    const { sets, from, effort } = setsFor(ctx);
     const allCharacters = loadShotCharacters(ctx);
     const characters = f.probe ? allCharacters.slice(0, 1) : allCharacters;
     if (!ctx.dry && characters.some((c) => !c.photo)) throw new HarnessError("every character needs its identity photo in the corpus (README step 3). Nothing was called.");
     ctx.manifest.stills = {
       engines: f.engines,
-      look: f.look && !f.probe,
+      // The Astra effort of the A run's sets (null for fixtures): report decides C on SET_BUILD_EFFORT's runs.
+      effort,
+      look: f.look,
       control: f.control && !f.probe,
       threshold: DEFAULT_IDENTITY_THRESHOLD,
       seedreamSize: SEEDREAM_SQUARE,
@@ -389,7 +465,8 @@ export const partC: PartModule = {
     };
     ctx.manifest.baselines = ctx.corpus.data.baselines;
 
-    const cameras = f.probe ? 1 : C_CAMERAS;
+    // The probe: camera 1, and camera 2 to carry its still as the look.
+    const cameras = f.probe ? (f.look ? 2 : 1) : C_CAMERAS;
     const jobs: RenderJob[] = sets.map((s) => ({
       key: s.key,
       spec: s.spec,
@@ -418,7 +495,8 @@ export const partC: PartModule = {
       framed.push({ key: set.key, spec: set.spec, lifted: r.result.lifted, frames });
     }
 
-    const plan = planCShots({ sets: framed, characters, directions: ctx.corpus.data.directions, engines: f.engines, look: f.look && !f.probe, control: f.control && !f.probe });
+    // The probe sends camera 2 only with the look: the request it asks about.
+    const plan = planCShots({ sets: framed, characters, directions: ctx.corpus.data.directions, engines: f.engines, look: f.look, control: f.control && !f.probe, twins: !f.probe });
     const tap = new RenderTap();
     const restore = tap.install(ctx.net);
     const env = makeShotEnv(ctx, tap);
@@ -433,7 +511,9 @@ export const partC: PartModule = {
     ctx.manifest.stop = ctx.stopReason() ?? ctx.guard.stopped?.reason ?? null;
     ctx.manifest.blocked = [...env.blocked];
 
-    const pages = f.probe ? [] : writeRaterSheets(ctx, "c-composition", compositionItems(ctx, records, characters));
+    const corpusPhoto = new Map(ctx.corpus.data.characters.map((c) => [c.id, join(ctx.corpusDir, c.identityPhoto)]));
+    const photoOf = new Map(characters.filter((c) => c.photo).map((c) => [c.id, corpusPhoto.get(c.id) as string]));
+    const pages = f.probe ? [] : writeRaterSheets(ctx, "c-composition", compositionItems({ run: ctx.runId, runDir: ctx.runDir, records, photoOf }));
     const out = [
       `C ${ctx.runId}${f.probe ? " (probe)" : ""}${ctx.dry ? "  (DRY RUN: frames are real, stills are the frames themselves)" : ""}`,
       `  sets ${sets.length} (${from}); frames drawn for ${rendered.length - failed}; render errors ${failed}`,
@@ -442,17 +522,20 @@ export const partC: PartModule = {
       `  stills ${records.length} (characters ${characters.length}; ${f.engines.join(", ")})`,
       ...shotTally(records),
     ];
-    if (env.blocked.size) out.push(`  BLOCKED: ${[...env.blocked].join(", ")} (fal refused the data: references; nothing is uploaded)`);
+    if (env.blocked.size) {
+      const what = [...env.blocked].map((k) => (k.endsWith(":look") ? `${k.slice(0, -5)} (its look arm only)` : k));
+      out.push(`  BLOCKED: ${what.join(", ")} (fal refused the data: references; nothing is uploaded)`);
+    }
     if (!complete && !ctx.dry) out.push(`DID NOT FINISH (${String(ctx.manifest.stop ?? "unfinished")}): the stills it did not send are recorded as not run; rerun C`);
     let bars: BarResult[] = [];
     if (f.probe) out.push(...probeLines(records, { hosts: tap.hosts, blocked: ctx.net.blocked, simulated: ctx.dry }));
     else if (ctx.dry) out.push("--- bars: none (simulated rows are never a result) ---");
     else {
-      const c = cBars(cShotsOf(records), { engines: f.engines, exported: ctx.corpus.data.baselines, blocked: env.blocked, composition: false });
+      const c = cBars(cShotsOf(records, ctx.runId), { engines: f.engines, exported: ctx.corpus.data.baselines, blocked: env.blocked, composition: false });
       bars = complete ? c.bars : c.bars.map((b) => capAtUndetermined(b, "the run did not finish"));
       out.push("--- bars (composition needs the raters: run report) ---", ...bars.map(barLine), ...c.reported.map(barLine));
     }
-    if (pages.length) out.push(`--- composition sheets${ctx.dry ? " (simulated)" : ""}: the look shots also ask whether the objects are the first still's ---`, ...pages.map((p) => `  ${p}`));
+    if (pages.length) out.push(`--- composition sheets${ctx.dry ? " (simulated)" : ""}: every later camera's still also asks whether the objects are the first still's ---`, ...pages.map((p) => `  ${p}`));
     out.push(...spendLines(ctx));
     for (const l of out) ctx.out(l);
     writeSummary(ctx, out.join("\n"), { part: "c", probe: f.probe, simulated: ctx.dry, complete, sets: sets.length, frames: rendered.length - failed, stills: records.length, blocked: [...env.blocked], pipelineStrings: drift, bars });

@@ -14,16 +14,22 @@ import { makePriceBook, type ExternalPrices } from "./prices.mts";
 import { SEEDREAM_SQUARE, type SeedreamInput } from "./seedream.mts";
 import {
   BLOCKED_NOTE,
+  blockedNote,
+  blockKey,
   classifyEngineError,
+  LOOK_BLOCKED_NOTE,
   lookRides,
+  OUTPUT_STAGE_FLAG,
   pipelineOutcome,
   reasonBySentence,
+  refusedAfterRender,
   RenderTap,
   renderEngineOf,
   runShots,
   shoot,
   shotPrompt,
   traitSummary,
+  UNUSABLE_NOTE,
   type Engine,
   type ShotCharacter,
   type ShotDeps,
@@ -75,22 +81,23 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 type Calls = {
   gate: { prompt: string; o: { hasRealPersonReference: boolean; priorHits: number } }[];
-  pipeline: { prompt: string; options: RealPipelineOptions; maxAttempts: number | undefined }[];
+  pipeline: { prompt: string; options: RealPipelineOptions; maxAttempts: number | undefined; checkCancelled: (() => Promise<boolean>) | undefined }[];
   composedGate: { prompt: string; hasRealPersonReference?: boolean; sessionPriorHits?: number }[];
   seedream: SeedreamInput[];
   judge: { url: string; strictLane?: boolean; promptScores?: unknown }[];
   scored: string[];
 };
 
-/** A live-mode net guard over a fake fetch: `status` answers each engine call. */
-function fakeNet(status: (url: string) => number = () => 200) {
+/** A live-mode net guard over a fake fetch: `status` answers each engine call (by its URL, and a JSON body's text). */
+function fakeNet(status: (url: string, body: string) => number = () => 200) {
   const sent: string[] = [];
   const net = new NetGuard({
     mode: "live",
-    realFetch: (async (input: RequestInfo | URL) => {
+    realFetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       sent.push(url);
-      return new Response(JSON.stringify({ ok: true }), { status: status(url), headers: { "content-type": "application/json" } });
+      const body = typeof init?.body === "string" ? init.body : "";
+      return new Response(JSON.stringify({ ok: true }), { status: status(url, body), headers: { "content-type": "application/json" } });
     }) as typeof fetch,
   });
   return { net, sent };
@@ -108,8 +115,8 @@ function fakeDeps(net: NetGuard, over: Partial<ShotDeps> & { sendPrompt?: (promp
     assertPromptAllowed: (async (i: { prompt: string; hasRealPersonReference?: boolean; sessionPriorHits?: number }) => (calls.composedGate.push(i), { sexual_nudity: "NEGLIGIBLE" })) as unknown as ShotDeps["assertPromptAllowed"],
     promptRefusal: (e) => (e instanceof Refusal ? e.reason : null),
     promptReasonOf: reasonBySentence({ sexual: "PROMPT SEXUAL", unavailable: "PROMPT UNAVAILABLE" }),
-    runRealPipeline: (async (prompt: string, _c: unknown, options: RealPipelineOptions, maxAttempts?: number) => {
-      calls.pipeline.push({ prompt, options, maxAttempts });
+    runRealPipeline: (async (prompt: string, _c: unknown, options: RealPipelineOptions, maxAttempts?: number, checkCancelled?: () => Promise<boolean>) => {
+      calls.pipeline.push({ prompt, options, maxAttempts, checkCancelled });
       const notes = referenceNotes({ outfit: false, attached: Boolean(options.propImageUrl), look: Boolean(options.lookImageUrl && options.referenceImageUrl), identity: Boolean(options.referenceImageUrl) });
       const sent = over.sendPrompt ? over.sendPrompt(prompt, notes) : prompt + notes;
       const flux = options.imageModelId === "flux";
@@ -274,9 +281,11 @@ describe("one still, per engine", () => {
     expect(r).toMatchObject({ outcome: "rendered", entryGate: "allowed", promptParity: true, sentPrompt: null, engineCalls: 1, billedUsd: 0.17, identityDecision: "pass" });
     expect(r.identity).toEqual({ score: 82, unusable: false, scorerVersion: "test/1" });
     expect(calls.gate).toEqual([{ prompt: r.prompt, o: { hasRealPersonReference: true, priorHits: 0 } }]);
-    const { options, maxAttempts, prompt } = calls.pipeline[0];
+    const { options, maxAttempts, prompt, checkCancelled } = calls.pipeline[0];
     expect(prompt).toBe(r.prompt);
     expect(maxAttempts).toBe(1);
+    // The run's stop, handed over as runGeneration hands over the Stop button.
+    expect(await checkCancelled?.()).toBe(false);
     expect(options).toMatchObject({ contentType: "image", imageModelId: "gpt-image", hasAttachedReference: true, strictContentLane: true, skipRefinement: true, brandRules: [], lookImageUrl: null });
     expect(options.policyAudit).toBeUndefined();
     // openai-images.ts fetches http(s) only: the pictures are local routes.
@@ -425,6 +434,89 @@ describe("one still, per engine", () => {
     expect(sent).toEqual([]);
     expect((await shoot(env, request({ shotId: "next" }))).note).toMatch(/^not reached/);
   });
+
+  // The pipeline answers the render through the net guard (so the tap sees
+  // it), then reports the refusal as pipeline.ts does.
+  const refusingPipeline = (net: NetGuard, beforeRender: boolean) =>
+    (async () => {
+      const form = new FormData();
+      form.set("prompt", "p");
+      await net.fetch("https://api.openai.com/v1/images/edits", { method: "POST", body: form });
+      const issues = beforeRender ? ["provider_error", REFUSED_BEFORE_RENDER_ISSUE] : ["provider_error"];
+      return { attempts: [{ attempt: 1, steps: [{ step: "generate", detail: beforeRender ? IMAGE_REQUEST_REFUSED : IMAGE_RESULT_REFUSED }], passed: false, issues, compiledPrompt: "" }], succeeded: false, finalPrompt: "", resultUrl: null };
+    }) as unknown as ShotDeps["runRealPipeline"];
+
+  it("GPT Image's output-stage refusal (a 400 for a picture already drawn) is booked as one render, flagged; a refusal before rendering bills nothing", async () => {
+    const after = fakeNet((url) => (url.startsWith("https://api.openai.com/v1/images") ? 400 : 200));
+    const a = envOf(after.net, fakeDeps(after.net, { runRealPipeline: refusingPipeline(after.net, false) }).deps);
+    const r = await shoot(a.env, request({ shotId: "cs-after" }));
+    expect(r).toMatchObject({ outcome: "provider_refused", reason: "after render", engineCalls: 1, billedUsd: 0.17, costFlag: OUTPUT_STAGE_FLAG });
+    expect(a.events.find((e) => e.ev === "settle")).toMatchObject({ actualUsd: 0.17, usage: { renders: 0, unknown: 0, refusedAfterRender: 1 } });
+    // Inside the reservation (GENERATE_RETRIES × $0.17): no overshoot, the run goes on.
+    expect(a.guard.stopped).toBeNull();
+
+    const before = fakeNet((url) => (url.startsWith("https://api.openai.com/v1/images") ? 400 : 200));
+    const b = envOf(before.net, fakeDeps(before.net, { runRealPipeline: refusingPipeline(before.net, true) }).deps);
+    expect(await shoot(b.env, request({ shotId: "cs-before" }))).toMatchObject({ outcome: "provider_refused", reason: "before render", engineCalls: 0, billedUsd: 0, costFlag: null });
+    expect(b.events.find((e) => e.ev === "settle")).toMatchObject({ actualUsd: 0 });
+    // FLUX's refusal after drawing answers 200 with a black frame: the tap bills it, and nothing is added.
+    expect(refusedAfterRender("flux", { outcome: "provider_refused", reason: "after render" })).toBe(false);
+    expect(refusedAfterRender("gpt-image", { outcome: "provider_refused", reason: "after render" })).toBe(true);
+  });
+
+  it("a stop that lands while the entry gate is asked sends nothing, on an unpriced engine too", async () => {
+    const { net, sent } = fakeNet();
+    const box: { guard?: SpendGuard } = {};
+    const entryGate: ShotDeps["entryGate"] = async () => {
+      box.guard?.stop("sigint");
+      return { verdict: "allowed", scores: {} };
+    };
+    const { deps, calls } = fakeDeps(net, { entryGate });
+    const { env, guard } = envOf(net, deps);
+    box.guard = guard;
+    const r = await shoot(env, request({ engine: "flux", shotId: "cs-flux" }));
+    expect(r).toMatchObject({ outcome: "not_run", entryGate: "allowed", engineCalls: 0 });
+    expect(r.note).toMatch(/^not reached: the run stopped/);
+    expect(calls.pipeline).toEqual([]);
+    expect(sent).toEqual([]);
+    // An unpriced engine reserves nothing, so it asks the guard's stop itself.
+    const other = fakeNet();
+    const o = envOf(other.net, fakeDeps(other.net).deps);
+    o.env.stopping = () => false;
+    o.guard.stop("budget");
+    expect((await shoot(o.env, request({ engine: "seedream", shotId: "cs-sd" }))).note).toBe("budget: stopped (budget)");
+    expect(other.sent).toEqual([]);
+  });
+
+  it("a stop that lands inside the pipeline is caught at its checkpoint before the render, and the composed route asks before Seedream", async () => {
+    const { net, sent } = fakeNet();
+    const box: { guard?: SpendGuard } = {};
+    // The pipeline's own checkpoints: before its attempt, and after its gate on the compiled prompt, right before the render.
+    const runRealPipeline = (async (_p: string, _c: unknown, _o: RealPipelineOptions, _m: number, checkCancelled: () => Promise<boolean>) => {
+      if (await checkCancelled()) throw new Error("stopped too early");
+      box.guard?.stop("sigint"); // lands while the compiled-prompt gate is asked
+      if (await checkCancelled()) return { attempts: [{ attempt: 1, steps: [], passed: false, issues: ["cancelled"], compiledPrompt: "" }], succeeded: false, finalPrompt: "", resultUrl: null, cancelled: true };
+      throw new Error("rendered after the stop");
+    }) as unknown as ShotDeps["runRealPipeline"];
+    const a = envOf(net, fakeDeps(net, { runRealPipeline }).deps);
+    box.guard = a.guard;
+    const r = await shoot(a.env, request({ engine: "flux", shotId: "cs-flux" }));
+    expect(r).toMatchObject({ outcome: "not_run", engineCalls: 0 });
+    expect(r.note).toMatch(/^not reached/);
+    expect(sent).toEqual([]);
+
+    const sd = fakeNet();
+    const assertPromptAllowed = (async () => {
+      box.guard?.stop("sigint");
+      return {};
+    }) as unknown as ShotDeps["assertPromptAllowed"];
+    const s = fakeDeps(sd.net, { assertPromptAllowed });
+    const b = envOf(sd.net, s.deps);
+    box.guard = b.guard;
+    expect(await shoot(b.env, request({ engine: "seedream", shotId: "cs-sd" }))).toMatchObject({ outcome: "not_run", engineCalls: 0 });
+    expect(s.calls.seedream).toEqual([]);
+    expect(sd.sent).toEqual([]);
+  });
 });
 
 describe("many stills", () => {
@@ -472,6 +564,41 @@ describe("many stills", () => {
     expect(records.filter((r) => r.note === BLOCKED_NOTE).map((r) => r.shotId)).toEqual(["cs-c2-flux"]);
     expect(records.find((r) => r.arm === "look")?.outcome).toBe("not_run");
     expect(calls.pipeline).toHaveLength(1);
+  });
+
+  it("fal refusing only a look shot's request (the largest: three pictures) blocks the look arm alone; the set arm goes on", async () => {
+    // fal answers 413 to a request carrying the look (its prompt has the look's note), 200 otherwise.
+    const { net } = fakeNet((url, body) => (url.startsWith("https://fal.run/") && body.includes(LOOK_REFERENCE_NOTE) ? 413 : 200));
+    const { deps, calls } = fakeDeps(net);
+    const { env } = envOf(net, deps);
+    const two = (set: string) => {
+      const g = group("flux");
+      const id = (r: ShotRequest) => ({ ...r, shotId: `${r.shotId}-${set}`, setKey: set });
+      return { first: id(g.first), rest: g.rest.map(id), withLook: g.withLook.map(id) };
+    };
+    const records = await runShots(env, { groups: [two("s1"), two("s2")], singles: [], concurrency: 1, onRecord: () => {} });
+    expect([...env.blocked]).toEqual([blockKey("flux", "look")]);
+    expect(records.filter((r) => r.arm === "set").every((r) => r.outcome === "rendered")).toBe(true);
+    const looks = records.filter((r) => r.arm === "look");
+    expect(looks.map((r) => [r.outcome, r.refsRefused, r.note === LOOK_BLOCKED_NOTE])).toEqual([
+      ["error", true, false],
+      ["not_run", false, true],
+    ]);
+    // Four set shots and one look shot sent; the second look never.
+    expect(calls.pipeline).toHaveLength(5);
+    expect(blockedNote(env.blocked, "flux", "set")).toBeNull();
+    expect(blockedNote(new Set(["flux"]), "flux", "look")).toBe(BLOCKED_NOTE);
+  });
+
+  it("a picture the scorer calls unusable is runGeneration's failed take: deleted, no identity decision, never carried as the look", async () => {
+    const { net } = fakeNet();
+    const { deps } = fakeDeps(net, { scoreIdentityMatch: (async () => ({ score: 4, notes: "", unusable: true, scorerVersion: "t" })) as unknown as ShotDeps["scoreIdentityMatch"] });
+    const { env } = envOf(net, deps);
+    const records = await runShots(env, { groups: [group("gpt-image")], singles: [], concurrency: 1, onRecord: () => {} });
+    const first = records.find((r) => r.shotId === "cs-c1-gpt-image");
+    expect(first).toMatchObject({ outcome: "unusable", note: UNUSABLE_NOTE, identityDecision: null, resultFile: null, identity: { score: 4, unusable: true }, engineCalls: 1, billedUsd: 0.17 });
+    expect(existsSync(join(root, "stills/cs-c1-gpt-image.png"))).toBe(false);
+    expect(records.find((r) => r.arm === "look")).toMatchObject({ outcome: "not_run", note: expect.stringMatching(/made no still to carry \(unusable\)/) });
   });
 
   it("the dry run's engine hands the frame back as the still, calls nothing, and books the worst case", async () => {

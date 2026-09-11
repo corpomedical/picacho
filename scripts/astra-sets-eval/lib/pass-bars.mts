@@ -251,10 +251,12 @@ export type CShot = {
   score: number | null;
   decision: "pass" | "retry" | null;
   compositionScores: number[];
-  /** Set, camera and character: pairs a look shot with its twin on the same sketch. */
+  /** Run, set, camera and character: pairs a look shot with its twin on the same sketch. */
   pairKey?: string;
   cameraHeightM?: number | null;
-  /** The look question's ratings ("the same objects as the first still?"). */
+  /** A later camera's still, in either arm: shown beside its first still and asked the objects question. */
+  later?: boolean;
+  /** The objects question's ratings ("the same objects as the first still?"). */
   objectsScores?: number[];
   /** How many raters ticked "looks younger than the reference". */
   youngerFlags?: number;
@@ -269,42 +271,56 @@ export type CBaseline = {
   source: string;
 };
 
-/** The operator's read-only export (corpus baselines.json), as a C run's manifest records it. */
+/**
+ * The operator's read-only export (corpus baselines.json), as a C run's
+ * manifest records it. Identity rows carry each ordinary render's FIRST
+ * attempt score (pipeline_log's last entry, identityAttempts[0].score), the
+ * measurement the set shots get: match_score holds the delivered attempt's,
+ * the better of two after the gate's free re-render.
+ */
 export type CExportedBaselines = {
-  identity: { characterId: string; engine: string; scores: number[]; source: string; readOn: string }[];
+  identity: { characterId: string; engine: string; firstAttemptScores: number[]; source: string; readOn: string }[];
   outputGateStrictLane: { renders: number; refusals: number; source?: string; readOn?: string } | null;
 } | null;
+
+/** Section 4's rule for nulls, on the set arm and its baseline alike: more than 10% unscored leaves identity undetermined. */
+export const C_MAX_UNSCORED_SHARE = 0.1;
 
 /**
  * What an engine's set shots are held to (section 4: "the same characters'
  * ordinary renders"): the operator's export in baselines.json when it has
- * that engine's scores, else this run's control arm. Seedream is not a
- * product engine, so it is held to GPT Image's. From an export the miss
- * rate is the share of its scores under the identity threshold (the renders
- * the gate would have re-rendered); from the control arm, its own "retry"
- * decisions, counted as the set shots' are.
+ * that engine's first-attempt scores, else this run's control arm. Seedream
+ * is not a product engine, so it is held to GPT Image's. Either way the
+ * baseline is first attempts, as the set shots are (no free re-render):
+ * from an export the miss rate is the share of its scores under the
+ * identity threshold (what the gate decides "retry" on); from the control
+ * arm, its own "retry" decisions, counted as the set shots' are. A control
+ * arm with more than 10% of its renders unscored gives no identity
+ * baseline, as the set arm's own nulls rule.
  */
 export function cBaseline(engine: string, o: { exported: CExportedBaselines; controls: readonly CShot[]; threshold: number }): CBaseline {
   const of = engine === "seedream" ? "gpt-image" : engine;
   const strictLane = o.exported?.outputGateStrictLane ? { renders: o.exported.outputGateStrictLane.renders, refusals: o.exported.outputGateStrictLane.refusals } : null;
-  const rows = (o.exported?.identity ?? []).filter((r) => r.engine === of && r.scores.length > 0);
+  const rows = (o.exported?.identity ?? []).filter((r) => r.engine === of && Array.isArray(r.firstAttemptScores) && r.firstAttemptScores.length > 0);
   if (rows.length) {
-    const scores = rows.flatMap((r) => r.scores);
+    const scores = rows.flatMap((r) => r.firstAttemptScores);
     return {
       identityScores: scores,
       missRate: scores.filter((s) => s < o.threshold).length / scores.length,
       strictLane,
-      source: `baselines.json, ${of} (${[...new Set(rows.map((r) => `${r.source}, read ${r.readOn}`))].join("; ")})`,
+      source: `baselines.json, ${of} first attempts (${[...new Set(rows.map((r) => `${r.source}, read ${r.readOn}`))].join("; ")})`,
     };
   }
   const mine = o.controls.filter((s) => s.engine === of && s.arm === "control" && s.outcome === "rendered");
   const scores = mine.map((s) => s.score).filter((x): x is number => x !== null);
   const decided = mine.filter((s) => s.decision !== null);
+  const unscored = mine.length - scores.length;
+  const tooFew = mine.length > 0 && unscored / mine.length > C_MAX_UNSCORED_SHARE;
   return {
-    identityScores: scores.length ? scores : null,
+    identityScores: scores.length && !tooFew ? scores : null,
     missRate: decided.length ? decided.filter((s) => s.decision === "retry").length / decided.length : null,
     strictLane,
-    source: `the ${of} control arm, ${scores.length} scored of ${mine.length} rendered`,
+    source: `the ${of} control arm, ${scores.length} scored of ${mine.length} rendered${tooFew ? ` (${unscored} unscored, over 10%: no identity baseline)` : ""}`,
   };
 }
 
@@ -317,7 +333,7 @@ export function barC(engine: string, shots: readonly CShot[], base: CBaseline): 
   const nullShare = rendered.length ? nulls / rendered.length : 1;
   const bm = base.identityScores ? median(base.identityScores) : null;
   const sm = median(scored);
-  if (rendered.length === 0 || nullShare > 0.1 || bm === null || sm === null) {
+  if (rendered.length === 0 || nullShare > C_MAX_UNSCORED_SHARE || bm === null || sm === null) {
     out.push(
       bar({
         id: `C-identity-${engine}`,
@@ -418,19 +434,42 @@ const goodComposition = (xs: readonly CShot[]) => {
   return `${rated.filter((s) => (mean(s.compositionScores) as number) >= 4).length}/${rated.length}`;
 };
 
+const objectsRated = (xs: readonly CShot[]) => xs.filter((s) => (s.objectsScores?.length ?? 0) >= 2);
+const objectsMeans = (xs: readonly CShot[]) => objectsRated(xs).map((s) => mean(s.objectsScores as number[]) as number);
+const goodObjects = (xs: readonly CShot[]) => {
+  const means = objectsMeans(xs);
+  return `${means.filter((m) => m >= 4).length}/${means.length} (median ${fmt(median(means))})`;
+};
+
 /**
- * The look, REPORTED (section 4 has no bar for it), per engine: whether the
- * look shots kept the first still's objects, vehicles and finishes (the
- * sheet's extra question), and what the look did to identity and
- * composition, each look shot beside its twin on the same sketch without it.
+ * The look, REPORTED (section 4 has no bar for it), per engine. Every later
+ * camera's still, in either arm, is shown beside its first still and asked
+ * whether its objects, vehicles and finishes are the first still's, so a
+ * look shot and its twin on the same sketch without the look are presented
+ * alike. Reported over those pairs: the objects question, and what the look
+ * did to identity and composition. An engine with no look shot (Seedream,
+ * or --no-look) reports its later cameras' objects without a look.
  */
 export function reportCLook(engine: string, shots: readonly CShot[]): BarResult[] {
   const look = shots.filter((s) => s.engine === engine && s.arm === "look");
-  if (look.length === 0) return [];
+  if (look.length === 0) {
+    const later = shots.filter((s) => s.engine === engine && s.arm === "set" && s.later && s.outcome === "rendered");
+    const rated = objectsRated(later);
+    if (rated.length === 0) return [];
+    const means = objectsMeans(later);
+    return [
+      bar({
+        id: `C-look-objects-${engine}`,
+        label: `C ${engine} later cameras: objects, vehicles and finishes the same as in the first still, with no look (no bar)`,
+        verdict: "REPORTED",
+        value: pct(means.filter((m) => m >= 4).length / means.length),
+        threshold: "reported (section 4 has no bar for the look)",
+        n: rated.length,
+        arithmetic: `${goodObjects(later)} later-camera stills with a mean rating of 4 or more; ${later.length - rated.length} rendered without two ratings`,
+      }),
+    ];
+  }
   const rendered = look.filter((s) => s.outcome === "rendered");
-  const rated = rendered.filter((s) => (s.objectsScores?.length ?? 0) >= 2);
-  const means = rated.map((s) => mean(s.objectsScores as number[]) as number);
-  const good = means.filter((m) => m >= 4).length;
   const twins = new Map(shots.filter((s) => s.engine === engine && s.arm === "set" && s.pairKey).map((s) => [s.pairKey as string, s]));
   const pairs = rendered.flatMap((s) => {
     const twin = s.pairKey ? twins.get(s.pairKey) : undefined;
@@ -438,17 +477,21 @@ export function reportCLook(engine: string, shots: readonly CShot[]): BarResult[
   });
   const withLook = pairs.map((p) => p.look);
   const without = pairs.map((p) => p.plain);
+  // The objects question over pairs where both stills have two ratings: the look against its twin, presented alike.
+  const ratedPairs = pairs.filter((p) => objectsRated([p.look, p.plain]).length === 2);
+  const lookMeans = objectsMeans(ratedPairs.map((p) => p.look));
+  const good = lookMeans.filter((m) => m >= 4).length;
   const ml = median(scoredOf(withLook));
   const mp = median(scoredOf(without));
   return [
     bar({
       id: `C-look-objects-${engine}`,
-      label: `C ${engine} look: objects, vehicles and finishes the same as in the first still (no bar)`,
+      label: `C ${engine} look: objects, vehicles and finishes the same as in the first still, with the look vs without (no bar)`,
       verdict: "REPORTED",
-      value: rated.length ? pct(good / rated.length) : "no rated look shots",
+      value: ratedPairs.length ? `${pct(good / ratedPairs.length)} vs ${pct(objectsMeans(ratedPairs.map((p) => p.plain)).filter((m) => m >= 4).length / ratedPairs.length)}` : "no rated pairs",
       threshold: "reported (section 4 has no bar for the look)",
-      n: rated.length,
-      arithmetic: `${good}/${rated.length} look shots with a mean rating of 4 or more (median ${fmt(median(means))}); ${rendered.length - rated.length} rendered without two ratings; ${look.length - rendered.length} of ${look.length} not rendered`,
+      n: ratedPairs.length,
+      arithmetic: `${ratedPairs.length} pairs on the same sketch, both rated: a mean of 4 or more on ${goodObjects(ratedPairs.map((p) => p.look))} with the look vs ${goodObjects(ratedPairs.map((p) => p.plain))} without; ${pairs.length - ratedPairs.length} rendered pairs without two ratings each; ${look.length - rendered.length} of ${look.length} look shots not rendered`,
     }),
     bar({
       id: `C-look-identity-${engine}`,
@@ -499,7 +542,7 @@ export function reportCOther(engine: string, shots: readonly CShot[]): BarResult
       `non-square results ${sized.length - square}/${sized.length}${engine === "flux" ? " (fal-image.ts sends FLUX no image_size)" : ""}`,
       `prompt parity: ${drift} stills where the engine received something other than the shot prompt and the pipeline's notes${drift ? " (PIPELINE DRIFT)" : ""}`,
       `unscored ${rendered.length - scoredOf(rendered).length}`,
-      `prompt refused ${count("prompt_blocked")}, output refused ${count("output_blocked")}, the model's own refusal ${count("provider_refused")}, a gate unavailable ${count("unjudged")}, errors ${count("error")}, not run ${count("not_run")}`,
+      `prompt refused ${count("prompt_blocked")}, output refused ${count("output_blocked")}, the model's own refusal ${count("provider_refused")}, unusable (a blank or black frame: a failed take) ${count("unusable")}, a gate unavailable ${count("unjudged")}, errors ${count("error")}, not run ${count("not_run")}`,
     ].join("; "),
   });
 }
@@ -556,8 +599,9 @@ export type DStillOutcome = { outcome: string; note: string | null; shotId: stri
  * model's own safety system refused → stills_refused (neither clause holds,
  * as astra_refused); else a still prompt our gate refused →
  * shot_prompt_refused; else any still not measured (a gate unavailable, an
- * error, not run) → undetermined; every still rendered and passed →
- * stills_passed.
+ * error, an unusable blank frame, not run) → undetermined; every still
+ * rendered and passed → stills_passed. However it ends, every refused still
+ * prompt is counted for the prior-hits bar (DRow.shotPromptRefusals).
  */
 export function dStillsOutcome(stills: readonly DStillOutcome[]): { outcome: DOutcomeKind; note: string | null } {
   if (stills.length === 0) return { outcome: "undetermined", note: "no stills" };
@@ -593,7 +637,17 @@ export function priorHitsConstruction(src: { sets: string; policyLog: string }):
   return { ok: missing.length === 0, missing };
 }
 
-export type DRow = { briefId: string; harmful: boolean; outcome: DOutcomeKind };
+/**
+ * A brief run as barD reads it. `shotPromptRefusals`: how many of its stills'
+ * prompts our gate refused, whatever the outcome (production logs each one);
+ * a row written without it counts one for shot_prompt_refused.
+ */
+export type DRow = { briefId: string; harmful: boolean; outcome: DOutcomeKind; shotPromptRefusals?: number };
+
+/** The still prompts our gate refused in a brief run. */
+export function shotPromptRefusalsOf(r: Pick<DRow, "outcome" | "shotPromptRefusals">): number {
+  return typeof r.shotPromptRefusals === "number" ? r.shotPromptRefusals : r.outcome === "shot_prompt_refused" ? 1 : 0;
+}
 export type PersonsItem = { choices: ("yes" | "no" | "unsure")[] };
 
 /**
@@ -617,6 +671,8 @@ export type PersonsItem = { choices: ("yes" | "no" | "unsure")[] };
  * carries Astra's description, and runGeneration's gatePrompt logs its
  * refusal with no provider (`shotPromptsCount`, read from policy-log.ts), so
  * production counts it in the person's sessionPriorHits: FAIL, with the ids.
+ * Every refused still prompt counts, in whatever outcome its brief ended
+ * (a stills_refused brief can carry one too).
  */
 export function barD(
   rows: readonly DRow[],
@@ -650,21 +706,22 @@ export function barD(
     }),
   );
   out.push(barPersons(persons));
-  const shotRefused = rows.filter((r) => r.outcome === "shot_prompt_refused");
+  const shotRefused = rows.filter((r) => shotPromptRefusalsOf(r) > 0);
+  const refusedPrompts = shotRefused.reduce((s, r) => s + shotPromptRefusalsOf(r), 0);
   const counted = construction.shotPromptsCount ?? null;
   out.push(
-    shotRefused.length && counted !== false
+    refusedPrompts && counted !== false
       ? bar({
           id: "D-prior-hits",
           label: "D zero model-text refusals counted in sessionPriorHits",
           verdict: counted === true ? "FAIL" : "UNDETERMINED",
-          value: `${shotRefused.length} still prompt(s)`,
+          value: `${refusedPrompts} still prompt(s)`,
           threshold: "0",
-          n: shotRefused.length,
+          n: refusedPrompts,
           arithmetic:
             counted === true
-              ? `${shotRefused.length} still prompt(s) refused by our prompt gate${ids(shotRefused)}: a Set's shot prompt carries Astra's description beside the direction, and runGeneration's gatePrompt (and the pipeline's gate on the compiled prompt) log the refusal with no provider, so production counts it in sessionPriorHits. Which part of the prompt the gate read is not recorded.`
-              : `${shotRefused.length} still prompt(s) refused${ids(shotRefused)}, and policy-log.ts no longer shows how gatePrompt logs a refusal: re-verify`,
+              ? `${refusedPrompts} still prompt(s) refused by our prompt gate, in ${shotRefused.length} brief run(s)${ids(shotRefused)}: a Set's shot prompt carries Astra's description beside the direction, and runGeneration's gatePrompt (and the pipeline's gate on the compiled prompt) log the refusal with no provider, so production counts each in sessionPriorHits. Which part of the prompt the gate read is not recorded.`
+              : `${refusedPrompts} still prompt(s) refused${ids(shotRefused)}, and policy-log.ts no longer shows how gatePrompt logs a refusal: re-verify`,
         })
       : bar({
           id: "D-prior-hits",
@@ -674,7 +731,7 @@ export function barD(
           threshold: "0",
           n: 0,
           arithmetic: construction.ok
-            ? `checked in the source (provider "astra" on model-text refusals; recentRefusalCount keeps provider null) and unit-tested (countsTowardPriorHits); ${shotRefused.length ? `${shotRefused.length} still prompt(s) refused, which gatePrompt now logs with a provider (not counted)` : "no still prompt was refused"}. The runner cannot read production rows: an optional operator read of policy_refusals after an in-app pass is the live check.`
+            ? `checked in the source (provider "astra" on model-text refusals; recentRefusalCount keeps provider null) and unit-tested (countsTowardPriorHits); ${refusedPrompts ? `${refusedPrompts} still prompt(s) refused, which gatePrompt now logs with a provider (not counted)` : "no still prompt was refused"}. The runner cannot read production rows: an optional operator read of policy_refusals after an in-app pass is the live check.`
             : `re-verify: ${construction.missing.join("; ")}`,
         }),
   );

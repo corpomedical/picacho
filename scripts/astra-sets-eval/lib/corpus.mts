@@ -107,8 +107,15 @@ export type MatchRow = {
   consent: PhotoConsent | null;
   template: boolean;
 };
+/**
+ * An operator's read-only export for C. Identity rows carry each ordinary
+ * render's FIRST attempt score (pipeline_log's last entry,
+ * identityAttempts[0].score), the measurement the set shots get: match_score
+ * holds the delivered attempt's, the better of two whenever the identity
+ * gate re-rendered, so it would hold the set shots to a best-of-two baseline.
+ */
 export type Baselines = {
-  identity: { characterId: string; engine: string; scores: number[]; source: string; readOn: string }[];
+  identity: { characterId: string; engine: string; firstAttemptScores: number[]; source: string; readOn: string }[];
   outputGateStrictLane: { renders: number; refusals: number; window: string; source: string; readOn: string } | null;
 };
 /** What every photo row carries: the picture (a relative path inside the corpus) and the photographer's notes, cleaned ("" when none). */
@@ -532,13 +539,20 @@ export function validateCorpus(
       const out: Baselines = { identity: [], outputGateStrictLane: null };
       if (b._template === true) template = true;
       for (const [i, row] of (Array.isArray(b.identity) ? b.identity : []).entries()) {
-        if (!isRecord(row) || typeof row.characterId !== "string" || typeof row.engine !== "string" || !Array.isArray(row.scores) || typeof row.source !== "string" || typeof row.readOn !== "string") {
-          problems.push(`baselines.identity[${i}]: needs characterId, engine, scores, source, readOn`);
+        // match_score is the delivered attempt's (the better of two after a free re-render): never a first-attempt baseline.
+        if (isRecord(row) && "scores" in row && !("firstAttemptScores" in row)) {
+          problems.push(
+            `baselines.identity[${i}]: "scores" is now "firstAttemptScores": each render's first attempt score (pipeline_log's last entry, identityAttempts[0].score), not match_score, which holds the better of two after the identity gate's re-render (corpus-template/baselines.json)`,
+          );
           continue;
         }
-        const scores = row.scores.filter((s): s is number => typeof s === "number" && s >= 0 && s <= 100);
-        if (scores.length !== row.scores.length) problems.push(`baselines.identity[${i}]: scores are numbers 0–100`);
-        out.identity.push({ characterId: row.characterId, engine: row.engine, scores, source: row.source, readOn: row.readOn });
+        if (!isRecord(row) || typeof row.characterId !== "string" || typeof row.engine !== "string" || !Array.isArray(row.firstAttemptScores) || typeof row.source !== "string" || typeof row.readOn !== "string") {
+          problems.push(`baselines.identity[${i}]: needs characterId, engine, firstAttemptScores, source, readOn`);
+          continue;
+        }
+        const scores = row.firstAttemptScores.filter((s): s is number => typeof s === "number" && s >= 0 && s <= 100);
+        if (scores.length !== row.firstAttemptScores.length) problems.push(`baselines.identity[${i}]: firstAttemptScores are numbers 0–100`);
+        out.identity.push({ characterId: row.characterId, engine: row.engine, firstAttemptScores: scores, source: row.source, readOn: row.readOn });
       }
       const g = b.outputGateStrictLane;
       if (isRecord(g)) {

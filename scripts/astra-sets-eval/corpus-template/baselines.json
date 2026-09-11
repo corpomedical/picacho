@@ -1,12 +1,12 @@
 {
   "_template": true,
-  "_readme": "Optional: an operator's read-only export from production. The runner never reads production itself. Without it, C compares against its own control arm, and nonzero output-gate refusals are UNDETERMINED.",
+  "_readme": "Optional: an operator's read-only export from production. The runner never reads production itself. Without it, C compares against its own control arm, and nonzero output-gate refusals are UNDETERMINED. firstAttemptScores are each ordinary render's FIRST attempt score: generations.pipeline_log's last entry, identityAttempts[0].score, for these characters' succeeded image renders on this engine. Not match_score: since the identity gate went on, match_score holds the delivered attempt's score, the better of two whenever the gate re-rendered, while the set shots are scored on their first attempt only.",
   "identity": [
     {
       "characterId": "char-a",
       "engine": "gpt-image",
-      "scores": [],
-      "source": "<<FORMAT ONLY — the query or screen these match_score values came from>>",
+      "firstAttemptScores": [],
+      "source": "<<FORMAT ONLY — the query these first-attempt scores came from (pipeline_log -> last entry -> identityAttempts[0].score)>>",
       "readOn": "0000-00-00"
     }
   ],

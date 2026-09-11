@@ -180,6 +180,7 @@ function imageLines(book: PriceBook, engine: Engine, stills: number, what: strin
  * their own sketch; on the engines a look can ride (GPT Image and FLUX, the
  * product's rule), the later cameras again carrying camera 1's still as the
  * look (`look`); and a control per set and character on the product engines.
+ * `twins: false` (the probe) sends the later cameras only with the look.
  */
 export function planC(o: {
   sets: number;
@@ -188,9 +189,10 @@ export function planC(o: {
   engines: readonly Engine[];
   control: boolean;
   look: boolean;
+  twins?: boolean;
   book: PriceBook;
 }): PlannedCall[] {
-  const setShots = o.sets * o.cameras * o.characters;
+  const setShots = o.sets * (o.twins === false ? Math.min(1, o.cameras) : o.cameras) * o.characters;
   const lookShots = o.look ? o.sets * Math.max(0, o.cameras - 1) * o.characters : 0;
   const controlsPerEngine = o.control ? o.sets * o.characters : 0;
   const lines: PlannedCall[] = [];
@@ -219,9 +221,13 @@ export function planC(o: {
   return lines;
 }
 
-/** `c --probe`: one fixture set, one camera, one character, each engine; no control, and no look (one camera has no later camera). */
-export function planProbeC(o: { engines: readonly Engine[]; book: PriceBook }): PlannedCall[] {
-  return planC({ sets: 1, cameras: 1, characters: 1, engines: o.engines, control: false, look: false, book: o.book });
+/**
+ * `c --probe`: one fixture set, one character, each engine: camera 1 on its
+ * own sketch, and (`look`) camera 2 carrying camera 1's still on the engines
+ * a look rides, with no twin; no control.
+ */
+export function planProbeC(o: { engines: readonly Engine[]; look: boolean; book: PriceBook }): PlannedCall[] {
+  return planC({ sets: 1, cameras: o.look ? 2 : 1, characters: 1, engines: o.engines, control: false, look: o.look, twins: false, book: o.book });
 }
 
 /**
