@@ -115,7 +115,7 @@ describe('no "use server" file can hand out the build tick', () => {
     expect(poll.params.trim()).toBe("setId: string");
   });
 
-  it("the page's poll runs the tick for the session's own person, with the photo switch it always used, and hands back only the result", () => {
+  it("the page's poll runs the tick for the session's own person, with the photo switch it always used, and hands back the result and whether it settled the build", () => {
     const { actions } = actionsOf(readFileSync(join(__dirname, "actions.ts"), "utf8"));
     const poll = actions.find((a) => a.name === "pollSetBuild")!.body;
     const steps = [
@@ -129,9 +129,10 @@ describe('no "use server" file can hand out the build tick', () => {
     for (let i = 1; i < at.length; i++) expect(at[i], `${steps[i - 1]} before ${steps[i]}`).toBeGreaterThan(at[i - 1]);
     expect(poll).toContain("userId: access.userId,");
     expect(poll).toContain("photoSwitchOn: () => isPhotoSetsEnabled(access.supabase),");
-    expect(poll).toContain("return tick.result;");
+    expect(poll).toContain("return tick.settledHere ? { ...tick.result, settledHere: true } : tick.result;");
     // The page's own settle is never pushed: the page announces it itself
-    // (sets-home.tsx announceIfHidden, pinned in leaving.test.ts).
-    expect(poll).not.toMatch(/settledHere|notifyUser/);
+    // (sets-home.tsx announceIfHidden, pinned in leaving.test.ts), and the
+    // flag tells it the settle was its own.
+    expect(poll).not.toMatch(/notifyUser/);
   });
 });

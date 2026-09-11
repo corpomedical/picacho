@@ -32,10 +32,18 @@ export function NotificationsPanel({
   initial,
   vapidPublicKey,
   nativeApp,
+  setsOn,
 }: {
   initial: Record<NotificationPref, boolean>;
   vapidPublicKey: string | null;
   nativeApp: boolean;
+  /**
+   * This person can open Sets (read on the server with Sets' own rules): a
+   * set's "ready" and "failed" notifications answer to the two render
+   * switches too (push/prefs.ts), so their help says so. Never true for
+   * anyone Sets are not open to, so nobody else reads about them here.
+   */
+  setsOn: boolean;
 }) {
   const { t } = useLocale();
   const s = t.settings;
@@ -174,8 +182,8 @@ export function NotificationsPanel({
   }
 
   const rows: { pref: NotificationPref; label: string; help: string }[] = [
-    { pref: "notify_render_ready", label: s.notifyRenderReadyLabel, help: s.notifyRenderReadyHelp },
-    { pref: "notify_render_failed", label: s.notifyRenderFailedLabel, help: s.notifyRenderFailedHelp },
+    { pref: "notify_render_ready", label: s.notifyRenderReadyLabel, help: setsOn ? s.notifyRenderReadyHelpSets : s.notifyRenderReadyHelp },
+    { pref: "notify_render_failed", label: s.notifyRenderFailedLabel, help: setsOn ? s.notifyRenderFailedHelpSets : s.notifyRenderFailedHelp },
     { pref: "notify_low_credits", label: s.notifyLowCreditsLabel, help: s.notifyLowCreditsHelp },
   ];
 

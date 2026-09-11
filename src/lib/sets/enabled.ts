@@ -5,8 +5,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 //
 //   1. ASTRA_DISABLED=1 in the environment. Checked FIRST, before any
 //      database read, so it still works when the database is what is wrong.
-//      An instant off from the Vercel dashboard, and it also stops any poll
-//      from collecting a build that is already running.
+//      Set in the Vercel dashboard, it reaches the running app with the next
+//      deployment (Vercel applies an environment change only to new
+//      deployments, so redeploy); then it also stops any poll, and the
+//      finisher, from collecting a build that is already running. For an
+//      off that acts at once, turn the flag below off.
 //   2. feature_flags.astra_sets. One toggle in Admin > Feature flags.
 //      Inserted disabled by supabase/applied/2026-09-10/astra-sets.sql.
 //   3. A missing OPENAI_API_KEY.

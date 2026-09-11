@@ -116,3 +116,15 @@ describe("the file exports exactly one action", () => {
     expect(body.indexOf("const access = await setsAccess();")).toBeLessThan(body.indexOf("readyOwnedSet(setId, userId)"));
   });
 });
+
+describe("the page runs a match and a shot one at a time", () => {
+  // Next runs a page's server actions one after another, so a match beside a
+  // shot would sit in the queue saying "reading" (cross-review, 2026-09-11).
+  const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+  it("a match does not start during a shot, nor a shot during a match", () => {
+    expect(view).toContain("if (!file || matching || shooting || !ready) return;");
+    expect(view).toContain("if (shooting || matching || !characterId || !ready) return;");
+    expect(view).toContain("disabled={!ready || matching || shooting}");
+    expect(view).toContain("disabled={shooting || matching || !characterId || loadFailed || !ready}");
+  });
+});

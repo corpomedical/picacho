@@ -48,6 +48,8 @@ import { formatMsg } from "@/lib/i18n/format";
 import { isEUVisitor } from "@/lib/geo";
 import { cn } from "@/lib/cn";
 import { SUPPORT_EMAIL_FALLBACK } from "@/lib/domains";
+import { isSetsEnabled } from "@/lib/sets/enabled";
+import { setsEligible } from "@/lib/sets/set-config";
 
 // The upsell ladder for the "next tier" card below — each plan nudges toward
 // the one after it. Basic slots in as the first paid step (2026-08-19): a
@@ -244,6 +246,12 @@ export default async function SettingsPage({
     notify_render_failed: (notifyRow as { notify_render_failed?: boolean } | null)?.notify_render_failed !== false,
     notify_low_credits: (notifyRow as { notify_low_credits?: boolean } | null)?.notify_low_credits !== false,
   };
+  // Whether the render switches' help also names sets: only for someone
+  // Sets are open to (Sets' own rules, access.ts), and only read on this tab.
+  const setsOn =
+    activeTab === "notifications" &&
+    setsEligible(profile?.plan ?? null, profile?.role === "admin") &&
+    (await isSetsEnabled(supabase));
 
   // Referral outcome for the invite card (Account tab). Profiles are
   // readable only by their owner, so the count of who joined through this
@@ -571,6 +579,8 @@ export default async function SettingsPage({
                   initial={notifyPrefs}
                   vapidPublicKey={process.env.VAPID_PUBLIC_KEY ?? null}
                   nativeApp={nativeApp}
+                  // Sets are on the web only (the Android app shows webOnly): the app never names them.
+                  setsOn={setsOn && !nativeApp}
                 />
               </SettingsSection>
 

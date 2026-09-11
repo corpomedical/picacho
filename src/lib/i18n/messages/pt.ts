@@ -1508,6 +1508,8 @@ const pt = {
     notifyRenderReadyHelp: "Seu vídeo ou sua pilha de camadas está pronta para abrir.",
     notifyRenderFailedLabel: "Um render falha",
     notifyRenderFailedHelp: "Algo deu errado — e se os créditos voltaram.",
+    notifyRenderReadyHelpSets: "Seu vídeo, sua pilha de camadas ou seu set está pronto para abrir.",
+    notifyRenderFailedHelpSets: "Algo deu errado com um render ou um set — e se os créditos ou a construção voltaram.",
     notifyLowCreditsLabel: "Créditos acabando",
     notifyLowCreditsHelp: "Um aviso por mês quando você tiver 5 créditos ou menos.",
     notifySaveFailed: "Não foi possível salvar. Tente de novo.",

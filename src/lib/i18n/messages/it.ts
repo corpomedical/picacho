@@ -1507,6 +1507,8 @@ const it = {
     notifyRenderReadyHelp: "Il tuo video o la tua pila di livelli è pronta da aprire.",
     notifyRenderFailedLabel: "Un render fallisce",
     notifyRenderFailedHelp: "Qualcosa è andato storto — e se i crediti sono tornati.",
+    notifyRenderReadyHelpSets: "Il tuo video, la tua pila di livelli o il tuo set è pronto da aprire.",
+    notifyRenderFailedHelpSets: "Qualcosa è andato storto con un render o un set — e se i crediti o la costruzione sono tornati.",
     notifyLowCreditsLabel: "Crediti in esaurimento",
     notifyLowCreditsHelp: "Un avviso al mese quando ti restano 5 crediti o meno.",
     notifySaveFailed: "Impossibile salvare. Riprova.",

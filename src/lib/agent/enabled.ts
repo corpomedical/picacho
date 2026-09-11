@@ -13,7 +13,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 //
 //   1. AGENT_CHAT_DISABLED=1 in the environment. Checked FIRST, before any
 //      database call, so it still works when the database is the thing that
-//      is wrong. An instant off from the Vercel dashboard.
+//      is wrong. Set in the Vercel dashboard, it takes effect with the next
+//      deployment (Vercel applies an environment change only to new
+//      deployments); the flag below is the off that acts at once.
 //   2. feature_flags.chat_agent. One toggle in Admin > Feature flags, no
 //      deploy. Inserted disabled by applied/2026-08-30/agent-chat.sql.
 //   3. A missing ANTHROPIC_API_KEY, same as draftWithClaude already treats it.

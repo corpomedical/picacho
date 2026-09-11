@@ -406,7 +406,7 @@ export async function submitSetPhotoBuild(input: {
 // the gates and the one retry are described). A build this settles is
 // never pushed: the page announces it itself, with a notification of its
 // own when its tab is hidden (sets-home.tsx). Only the finisher pushes.
-export async function pollSetBuild(setId: string): Promise<PollResult> {
+export async function pollSetBuild(setId: string): Promise<PollResult & { settledHere?: true }> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   if (!UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
@@ -416,7 +416,9 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
     userId: access.userId,
     photoSwitchOn: () => isPhotoSetsEnabled(access.supabase),
   });
-  return tick.result;
+  // Whether THIS poll's own write settled the build. The page announces a
+  // build it settled itself; one the finisher settled, the finisher pushed.
+  return tick.settledHere ? { ...tick.result, settledHere: true } : tick.result;
 }
 
 // ---------------------------------------------------------------------------

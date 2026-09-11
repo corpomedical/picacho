@@ -650,7 +650,10 @@ export function SetView({
   // against the figure's mark, the camera and the canvas as they are when
   // the answer lands, and saved like any camera move.
   async function pickReference(file: File | undefined) {
-    if (!file || matching || !ready) return;
+    // Never beside a shot: Next runs a page's server actions one at a time,
+    // so a match started during a shot would say "reading" while it waited
+    // for the whole shot, and a shot during a match would wait out the read.
+    if (!file || matching || shooting || !ready) return;
     setMatchError("");
     setMatched(null);
     setMatching(true);
@@ -749,7 +752,9 @@ export function SetView({
   });
 
   async function shoot() {
-    if (shooting || !characterId || !ready) return;
+    // Not during a match (pickReference says why): the frame would be taken
+    // now, from a camera the match is about to move.
+    if (shooting || matching || !characterId || !ready) return;
     setError("");
     setLastMiss(null);
     const frame = apiRef.current?.snapshot(SET_FRAME_PX);
@@ -951,7 +956,7 @@ export function SetView({
                 <button
                   type="button"
                   onClick={() => matchFileRef.current?.click()}
-                  disabled={!ready || matching}
+                  disabled={!ready || matching || shooting}
                   className={chip(false)}
                 >
                   {s.matchShot}
@@ -1116,7 +1121,7 @@ export function SetView({
               <button
                 type="button"
                 onClick={() => void shoot()}
-                disabled={shooting || !characterId || loadFailed || !ready}
+                disabled={shooting || matching || !characterId || loadFailed || !ready}
                 className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
               >
                 {shooting

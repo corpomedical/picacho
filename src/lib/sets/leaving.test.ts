@@ -109,6 +109,19 @@ describe("the notification a Sets tab shows for a build it settled itself", () =
       expect(announce).toContain("data: { path: notice.path },");
     });
 
+    it("a build the finisher settled is the finisher's to announce, unless its push cannot reach this browser", () => {
+      // The poll passes whether its own write settled the build (pollSetBuild's settledHere).
+      expect(poll).toContain("res.settledHere === true,");
+      // Not settled here: the finisher pushed to this browser's subscription, if it has one.
+      const guard = announce.indexOf("if (!settledHere) {");
+      const subscribed = announce.indexOf("registration.pushManager?.getSubscription()");
+      const leaves = announce.indexOf("if (subscribed) return;");
+      for (const [name, at] of Object.entries({ guard, subscribed, leaves })) expect(at, name).toBeGreaterThan(-1);
+      expect(subscribed).toBeGreaterThan(guard);
+      expect(leaves).toBeGreaterThan(subscribed);
+      expect(leaves).toBeLessThan(announce.indexOf("showNotification("));
+    });
+
     it("gets the switches from the server, as the composer does", () => {
       const page = readSource("src/app/app/sets/page.tsx");
       expect(page).toContain("readRenderNotifyPrefs(supabase, userData.user.id)");
@@ -125,5 +138,23 @@ describe("the notification a Sets tab shows for a build it settled itself", () =
     const push = worker.slice(worker.indexOf('self.addEventListener("push"'), worker.indexOf('self.addEventListener("notificationclick"'));
     expect(push).toContain("...(data.tag ? { tag: data.tag } : {}),");
     expect(push).toContain("data: { path: data.path || null },");
+  });
+
+  it("the worker that carries the tag takes over at once, not after every tab has closed", () => {
+    const worker = readSource("public/push-sw.js");
+    expect(worker).toContain('self.addEventListener("install", () => self.skipWaiting());');
+    expect(worker).toContain('self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));');
+    // Taking over at once is safe only while the worker serves no requests.
+    expect(worker).not.toContain('addEventListener("fetch"');
+  });
+
+  it("a set's tap never takes an unrelated tab: the set's own tab, else a Sets tab, else a new window", () => {
+    const worker = readSource("public/push-sw.js");
+    const click = worker.slice(worker.indexOf('self.addEventListener("notificationclick"'));
+    const sets = click.slice(click.indexOf('tag.startsWith("set-")'), click.indexOf("const win = wins.find"));
+    expect(sets).toContain("pathOf(w) === path");
+    expect(sets).toContain('pathOf(w).startsWith("/app/sets")');
+    expect(sets).toContain("return clients.openWindow(path);");
+    expect(setNoticeTag("x")).toBe("set-x");
   });
 });

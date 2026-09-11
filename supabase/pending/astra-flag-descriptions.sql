@@ -10,14 +10,17 @@
 --                 the three characters a Mac shows for UTF-8 read as Mac
 --                 Roman. This file is ASCII only, so it cannot happen again.
 -- astra_photo_sets now also covers Match this shot (docs/ASTRA_SETS.md,
--- Phase 2: one switch for photo sets and matching).
+-- Phase 2: one switch for photo sets and matching). And astra_sets no longer
+-- says ASTRA_DISABLED=1 "turns it off instantly": Vercel applies an
+-- environment change only to new deployments, so it needs a redeploy; the
+-- switch itself is the off that acts at once.
 --
 -- ONLY descriptions change. No switch is turned on or off, and the code
 -- reads nothing from these sentences, so this can run before or after the
 -- push, and a second paste is harmless.
 
 update public.feature_flags
-   set description = 'Sets: GPT-6 Astra builds a 3D location from a description; you place your character''s stand-in and a camera and shoot stills there. Admins only while in testing. A build costs about $0.25-$0.45 of OpenAI time (worst case $1.16 with its one retry). ASTRA_DISABLED=1 in Vercel turns it off instantly.'
+   set description = 'Sets: GPT-6 Astra builds a 3D location from a description; you place your character''s stand-in and a camera and shoot stills there. Admins only while in testing. A build costs about $0.25-$0.45 of OpenAI time (worst case $1.16 with its one retry). Turning this switch off stops it at once, the per-minute finisher included; ASTRA_DISABLED=1 in Vercel also stops it after a redeploy, even with the database down.'
  where key = 'astra_sets';
 
 update public.feature_flags

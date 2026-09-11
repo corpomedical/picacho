@@ -1594,6 +1594,10 @@ const en = {
     notifyRenderReadyHelp: "Your video or layer stack is ready to open.",
     notifyRenderFailedLabel: "A render fails",
     notifyRenderFailedHelp: "Something went wrong — and whether the credits came back.",
+    // Shown instead to people who can open Sets, whose "ready" and "failed"
+    // notifications answer to these two switches too (push/prefs.ts).
+    notifyRenderReadyHelpSets: "Your video, layer stack or set is ready to open.",
+    notifyRenderFailedHelpSets: "Something went wrong with a render or a set — and whether the credits or the build came back.",
     notifyLowCreditsLabel: "Credits run low",
     notifyLowCreditsHelp: "One heads-up a month when you're down to 5 credits or fewer.",
     notifySaveFailed: "Couldn't save that — try again.",

@@ -39,7 +39,9 @@ import { LocalDate } from "@/components/local-date";
 // 5 s, so it usually collects a build before the finisher's next minute
 // comes round; the finisher then has nothing to settle and sends nothing.
 // So this page keeps the promise itself: a build it settles while its tab
-// is hidden gets the finisher's notification, shown from here.
+// is hidden gets the finisher's notification, shown from here — and one the
+// finisher settled is left to the finisher's push, unless this browser has
+// no subscription for it to arrive by.
 //
 // FROM A PHOTO (2026-09-11; admins, behind astra_photo_sets): the photo is
 // prepared here (photo-client.ts) and checked on the server before anything
@@ -57,16 +59,21 @@ const ACCESS_ERRORS = new Set([SETS_UNAVAILABLE, SETS_NOT_OPEN, SETS_SESSION_EXP
 
 type PreparedPhoto = { dataUri: string; width: number; height: number };
 
-// A build this tab settled while hidden: the finisher's notification, shown
-// from here (leaving.ts pageSetNotice). Only when the tab is hidden, since a
-// visible card already says it, and only with permission already granted:
-// this never asks. The service worker first, as the composer's
-// notifyIfHidden does and for the same reason (generate-form.tsx: Android
-// Chrome forbids the page's own Notification constructor), and through it
-// the tap opens the set as the push's would. A notification already on
-// screen with this set's tag is the finisher's push for the same build, and
-// is left as it is. Best-effort, and never throws.
-function announceIfHidden(notice: { title: string; body: string; path: string; tag: string }) {
+// A build that left "building" while this tab was hidden: the finisher's
+// notification, shown from here (leaving.ts pageSetNotice). Only when the
+// tab is hidden, since a visible card already says it, and only with
+// permission already granted: this never asks. The service worker first, as
+// the composer's notifyIfHidden does and for the same reason
+// (generate-form.tsx: Android Chrome forbids the page's own Notification
+// constructor), and through it the tap opens the set as the push's would.
+//
+// ONE NOTIFICATION PER SET. When this tab's own poll settled the build
+// (`settledHere`), nobody else announces it. When the finisher settled it,
+// the finisher pushed to this browser's subscription — so the page speaks
+// only for a browser that has none (the push could not reach it). Either
+// way, a notification already on screen with this set's tag is left as it
+// is. Best-effort, and never throws.
+function announceIfHidden(notice: { title: string; body: string; path: string; tag: string }, settledHere: boolean) {
   try {
     if (typeof window === "undefined" || !("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
@@ -77,6 +84,7 @@ function announceIfHidden(notice: { title: string; body: string; path: string; t
     };
     const sw = navigator.serviceWorker;
     if (!sw?.getRegistration) {
+      // No service worker, so no push subscription: the finisher cannot have told this browser.
       inPage();
       return;
     }
@@ -84,6 +92,10 @@ function announceIfHidden(notice: { title: string; body: string; path: string; t
       .getRegistration()
       .then(async (registration) => {
         if (!registration) return inPage();
+        if (!settledHere) {
+          const subscribed = await registration.pushManager?.getSubscription().catch(() => null);
+          if (subscribed) return;
+        }
         const shown =
           typeof registration.getNotifications === "function"
             ? await registration.getNotifications({ tag: notice.tag }).catch(() => [])
@@ -165,11 +177,9 @@ export function SetsHome({
   // lasts only minutes at OpenAI — so it backs off and tries again, and a
   // tab running an old deploy reloads itself onto the new one. A build that
   // leaves "building" here is announced if the tab is hidden, under the
-  // person's switches (announceIfHidden). The poll cannot tell its own
-  // settle from the finisher's, which the poll after it also sees. It does
-  // not need to: when the finisher settled it, its push to this browser is
-  // on screen with the set's tag and the page's notification is dropped;
-  // when this browser got no push, the page's is the only one.
+  // person's switches (announceIfHidden): always when this poll's own write
+  // settled it (res.settledHere), and when the finisher settled it only if
+  // this browser has no push subscription for the finisher's push to reach.
   useEffect(() => {
     if (!buildingIds) return;
     let cancelled = false;
@@ -216,6 +226,7 @@ export function SetsHome({
         if (res.state === "ready" ? notifyReady : notifyFailed) {
           announceIfHidden(
             pageSetNotice(id, res.state, { setReadyTitle, setReadyBodyUntitled, setFailedTitle, setFailedBody }),
+            res.settledHere === true,
           );
         }
       }

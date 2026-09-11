@@ -1508,6 +1508,8 @@ const es = {
     notifyRenderReadyHelp: "Tu vídeo o tu pila de capas está lista para abrir.",
     notifyRenderFailedLabel: "Un render falla",
     notifyRenderFailedHelp: "Algo salió mal — y si los créditos volvieron.",
+    notifyRenderReadyHelpSets: "Tu vídeo, tu pila de capas o tu set está listo para abrir.",
+    notifyRenderFailedHelpSets: "Algo salió mal con un render o un set — y si volvieron los créditos o la construcción.",
     notifyLowCreditsLabel: "Quedan pocos créditos",
     notifyLowCreditsHelp: "Un aviso al mes cuando te queden 5 créditos o menos.",
     notifySaveFailed: "No se pudo guardar. Inténtalo de nuevo.",
