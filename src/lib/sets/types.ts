@@ -5,15 +5,20 @@ import type { SetLayout, SetSpec } from "./set-spec";
 
 export type SetStatus = "building" | "ready" | "failed";
 
+/** Built from a written brief, or from a photo (docs 3.2, 2026-09-11). */
+export type SetKind = "text" | "photo";
+
 export type SetSummary = {
   id: string;
   title: string;
+  /** The brief — or, for a photo set, the photographer's notes ("" when none). */
   brief: string;
   status: SetStatus;
   createdAt: string;
   thumbUrl: string | null;
   /** The English wire sentence for a failed build (localized at display). */
   failure: string | null;
+  fromPhoto: boolean;
 };
 
 export type SetShot = {
@@ -39,12 +44,16 @@ export type SetDetail = {
   id: string;
   title: string;
   description: string;
+  /** The brief — or, for a photo set, the photographer's notes ("" when none). */
   brief: string;
   status: SetStatus;
   failure: string | null;
   spec: SetSpec | null;
   layout: SetLayout | null;
   hasThumb: boolean;
+  fromPhoto: boolean;
+  /** The photo a ready photo set was built from, signed for its owner; null otherwise. */
+  sourcePhotoUrl: string | null;
 };
 
 export type SetsHomeData =
@@ -55,6 +64,8 @@ export type SetsHomeData =
       usedThisMonth: number;
       /** -1 = unlimited (admin). */
       monthlyLimit: number;
+      /** Whether this person may build a set from a photo (admins, flag astra_photo_sets). */
+      photoSetsOn: boolean;
     };
 
 export type SetPageData =

@@ -11,6 +11,13 @@ import { SetsHome } from "@/components/sets/sets-home";
 // where the person shoots their characters from any angle. Admins only while
 // in testing, behind the astra_sets flag — and to anyone else this page does
 // not exist, rather than advertising a feature they cannot open.
+
+// A set from a photo runs the picture check inside its server action
+// (submitSetPhotoBuild: two readers, a third on the line, 10–100 s), and a
+// server action runs under THIS route's function budget — the same ceiling
+// the community and generate pages declare for the same check (2026-09-11).
+export const maxDuration = 300;
+
 export default async function SetsPage() {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -41,7 +48,12 @@ export default async function SetsPage() {
       ) : data.error !== null ? (
         <p className="text-sm text-atelier-muted">{localizeServerText(data.error, t)}</p>
       ) : (
-        <SetsHome initialSets={data.sets} usedThisMonth={data.usedThisMonth} monthlyLimit={data.monthlyLimit} />
+        <SetsHome
+          initialSets={data.sets}
+          usedThisMonth={data.usedThisMonth}
+          monthlyLimit={data.monthlyLimit}
+          photoSetsOn={data.photoSetsOn}
+        />
       )}
     </div>
   );

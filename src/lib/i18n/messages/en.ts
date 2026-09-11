@@ -1882,7 +1882,9 @@ const en = {
   // Sets (Astra Sets, 2026-09-10): a location GPT-6 Astra builds once, where
   // a person places their character's stand-in and a camera and shoots
   // stills. The model's name is stated plainly — it is who builds the place,
-  // and the only thing it ever sees is the description typed here.
+  // and what it sees is only what is given here to build it from: the
+  // description typed here, or a photo of the place and the notes beside it
+  // (Sets from a photo, 2026-09-11) — never the character.
   sets: {
     eyebrow: "Sets · built by GPT-6 Astra",
     title: "Sets",
@@ -1900,11 +1902,26 @@ const en = {
     buildMeta: "Built by GPT-6 Astra · about 1–2 minutes",
     monthlyUsage: "Set builds this billing month: {used} of {limit}",
     unlimitedUsage: "No build limit while Sets are in testing",
+    modeDescribe: "Describe it",
+    fromPhoto: "From a photo",
+    photoPick: "Choose a photo",
+    photoChange: "Choose another photo",
+    photoHint:
+      "A photo of a place, taken from where you'd put the camera. Astra rebuilds it with camera 1 where you stood. Anyone in it becomes a mark — Astra never models or describes people.",
+    photoNotesLabel: "Anything the photo doesn't show (optional)",
+    photoNotesPlaceholder: "It's night and the lamps are on. Behind me is a row of shuttered shops.",
+    photoBuildButton: "Build from photo",
+    photoMeta: "Built by GPT-6 Astra · about 4–6 minutes · keep this page open",
+    photoPreparing: "Reading the photo…",
+    photoChecking: "Checking the photo…",
+    photoPreviewAlt: "The photo you chose",
     emptyTitle: "No sets yet",
     emptyBody:
       "Describe a place above. Once it's built, open it, stand your character's stand-in on a mark, frame the shot and shoot.",
     statusBuilding: "Building…",
     statusBuildingHint: "About 1–2 minutes. You can leave — come back within ten minutes to collect it.",
+    statusBuildingPhotoHint:
+      "About 4–6 minutes. Keep this page open until it's ready — a build nobody collects is lost after about ten minutes and goes back to your allowance.",
     statusReady: "Ready",
     statusFailed: "Couldn't build",
     untitled: "Untitled set",
@@ -1959,6 +1976,10 @@ const en = {
     identityLow: "Below the identity bar ({bar})",
     unscored: "Not scored",
     openTake: "Open take",
+    compareTitle: "Your photo and camera 1",
+    comparePhoto: "Your photo",
+    compareNote:
+      "Camera 1 stands where the photo was taken. The sketch is lit brighter than the photo on purpose; the layout and framing are what should match.",
   },
   // Push notifications — resolved PER DEVICE from push_tokens.locale by
   // lib/push/send.ts, because a push arrives while no screen is open to
@@ -2097,6 +2118,21 @@ const en = {
     setShootTooFast: "You're shooting quickly — give it a moment.",
     setDeleteFailed: "Couldn't delete this set — try again.",
     setSaveFailed: "Couldn't save that — try again.",
+    // Sets from a photo (2026-09-11). setPhotoRefused is every refusal of a
+    // photo — our picture check's or OpenAI's — so it names no reader and no
+    // category, never says try again, and says nothing came off the
+    // allowance, which is true because a refused build never counts.
+    // setPhotoNeedsDatabase is read by admins only and keeps the file name.
+    setPhotoUnreadable: "That photo couldn't be read — try a JPEG, PNG or WebP.",
+    setPhotoTooLarge: "That photo is too large — try a smaller one.",
+    setPhotoTooSmall: "That photo is too small — use one at least 640 pixels on its shorter side.",
+    setPhotoBadShape: "That photo is too wide or too tall — use an ordinary photo, not a panorama.",
+    setPhotoRefused: "This photo can't be used to build a set. Nothing came off your allowance.",
+    setPhotoUnchecked: "We couldn't check this photo, so no set was started. Try again in a moment.",
+    setPhotoNeedsDatabase: "Photo sets need a database update first (astra-photo-sets.sql).",
+    setPhotoSaveFailed: "Couldn't save the photo — try again.",
+    setPhotoBuildFailed:
+      "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.",
   },
   apiKeys: {
     title: "API keys",

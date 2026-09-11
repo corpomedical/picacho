@@ -152,15 +152,40 @@ export const outputRefusalMessages = {
 const MAX_IMAGE_BYTES = 30 * 1024 * 1024;
 const READER_WIDTH = 1024;
 
+const INLINE_IMAGE = /^data:(image\/(?:jpeg|png|webp));base64,/;
+
+/**
+ * A picture judged before it is stored (a Set's photo, 2026-09-11): its
+ * bytes are already here, so they are read from the data URL rather than
+ * fetched. Null for anything else — an http(s) or /api/media URL takes the
+ * fetch below exactly as before. Pure; exported for the tests.
+ */
+export function inlineImageBytes(url: string): { bytes: Buffer; type: string } | null {
+  const m = INLINE_IMAGE.exec(url);
+  if (!m) return null;
+  return { bytes: Buffer.from(url.slice(m[0].length), "base64"), type: m[1] };
+}
+
 async function loadImage(url: string): Promise<string | null> {
   try {
-    const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
-    const res = await fetchWithTimeout(url, { method: "GET" }, 20_000);
-    if (!res.ok) {
-      console.warn(`[output-policy] image fetch ${res.status} for ${url.slice(0, 120)}`);
-      return null;
+    // Bytes already in hand are never sent through fetch: Next's patched
+    // fetch copies the whole URL into its tracing span.
+    const inline = inlineImageBytes(url);
+    let raw: Buffer;
+    let fetchedType: string | null = null;
+    if (inline) {
+      raw = inline.bytes;
+      fetchedType = inline.type;
+    } else {
+      const { fetchWithTimeout } = await import("@/lib/generations/providers/fetch-with-timeout");
+      const res = await fetchWithTimeout(url, { method: "GET" }, 20_000);
+      if (!res.ok) {
+        console.warn(`[output-policy] image fetch ${res.status} for ${url.slice(0, 120)}`);
+        return null;
+      }
+      raw = Buffer.from(await res.arrayBuffer());
+      fetchedType = res.headers.get("content-type")?.split(";")[0] || null;
     }
-    const raw = Buffer.from(await res.arrayBuffer());
     if (raw.length === 0 || raw.length > MAX_IMAGE_BYTES) {
       console.warn(`[output-policy] image is ${raw.length} bytes; not judged`);
       return null;
@@ -177,7 +202,7 @@ async function loadImage(url: string): Promise<string | null> {
     } catch {
       // sharp is a native module and may be absent; the original bytes are
       // a slower but equally valid picture.
-      const type = res.headers.get("content-type")?.split(";")[0] || "image/png";
+      const type = fetchedType || "image/png";
       return `data:${type};base64,${raw.toString("base64")}`;
     }
   } catch (err) {

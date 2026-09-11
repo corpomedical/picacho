@@ -7,9 +7,17 @@ import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { isStaleDeployError } from "@/lib/stale-deploy";
-import { deleteSet, pollSetBuild, submitSetBuild } from "@/lib/sets/actions";
-import { SET_BRIEF_MAX_CHARS } from "@/lib/sets/set-config";
-import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_SUSPENDED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
+import { deleteSet, pollSetBuild, submitSetBuild, submitSetPhotoBuild } from "@/lib/sets/actions";
+import { preparePhoto } from "@/lib/sets/photo-client";
+import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
+import {
+  SETS_NOT_OPEN,
+  SETS_SESSION_EXPIRED,
+  SETS_SUSPENDED,
+  SETS_UNAVAILABLE,
+  SET_NOT_FOUND,
+  SET_PHOTO_UNREADABLE,
+} from "@/lib/sets/messages";
 import type { SetSummary } from "@/lib/sets/types";
 import { LocalDate } from "@/components/local-date";
 
@@ -18,6 +26,12 @@ import { LocalDate } from "@/components/local-date";
 // a minute and a half; this page polls each one that is still building, and
 // the server does the collecting (pollSetBuild) — so leaving and coming back
 // within the ten minutes background mode keeps an answer loses nothing.
+//
+// FROM A PHOTO (2026-09-11; admins, behind astra_photo_sets): the photo is
+// prepared here (photo-client.ts) and checked on the server before anything
+// else — which takes up to a minute or two, hence "Checking the photo…" on
+// the button. A photo build takes 4–6 minutes, long enough that an answer
+// nobody collects can be lost, so its copy says to keep the page open.
 
 const POLL_MS = 5000;
 const POLL_MAX_MS = 30_000;
@@ -25,14 +39,19 @@ const POLL_MAX_MS = 30_000;
 // more: polling stops and the sentence is shown.
 const ACCESS_ERRORS = new Set([SETS_UNAVAILABLE, SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_SUSPENDED]);
 
+type PreparedPhoto = { dataUri: string; width: number; height: number };
+
 export function SetsHome({
   initialSets,
   usedThisMonth,
   monthlyLimit,
+  photoSetsOn,
 }: {
   initialSets: SetSummary[];
   usedThisMonth: number;
   monthlyLimit: number;
+  /** Sets from a photo are on for this person: the form offers both ways in. */
+  photoSetsOn: boolean;
 }) {
   const { t } = useLocale();
   const s = t.sets;
@@ -45,7 +64,13 @@ export function SetsHome({
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState<string | null>(null);
   const [pollingStopped, setPollingStopped] = useState(false);
+  const [mode, setMode] = useState<"describe" | "photo">("describe");
+  const [photo, setPhoto] = useState<PreparedPhoto | null>(null);
+  const [preparing, setPreparing] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [photoStarting, setPhotoStarting] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
 
   // A refresh brings the server's truth (titles, thumbnails) for sets that
   // finished; it replaces the local list. Adjusted during render, not in an
@@ -121,7 +146,7 @@ export function SetsHome({
   }, [buildingIds, router]);
 
   async function build() {
-    if (starting) return;
+    if (starting || photoStarting) return;
     setError("");
     setStarting(true);
     let res: Awaited<ReturnType<typeof submitSetBuild>>;
@@ -148,10 +173,67 @@ export function SetsHome({
         createdAt: new Date().toISOString(),
         thumbUrl: null,
         failure: null,
+        fromPhoto: false,
       },
       ...prev,
     ]);
     setBrief("");
+    router.refresh();
+  }
+
+  // The photo, prepared in the browser (upright, at most 2048 px, a JPEG
+  // with no metadata) before anything is sent. A refusal here is one of the
+  // server's own sentences, localized the same way.
+  async function pickPhoto(file: File | undefined) {
+    if (!file) return;
+    setError("");
+    setPhoto(null);
+    setPreparing(true);
+    try {
+      const res = await preparePhoto(file);
+      if (res.ok) setPhoto({ dataUri: res.dataUri, width: res.width, height: res.height });
+      else setError(res.error);
+    } catch {
+      setError(SET_PHOTO_UNREADABLE);
+    } finally {
+      setPreparing(false);
+    }
+  }
+
+  async function buildFromPhoto() {
+    if (photoStarting || starting || !photo) return;
+    setError("");
+    setPhotoStarting(true);
+    let res: Awaited<ReturnType<typeof submitSetPhotoBuild>>;
+    try {
+      res = await submitSetPhotoBuild({ photoDataUri: photo.dataUri, notes });
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+      return;
+    } finally {
+      setPhotoStarting(false);
+    }
+    if (res.error !== null) {
+      setError(res.error);
+      return;
+    }
+    setSets((prev) => [
+      {
+        id: res.id,
+        title: "",
+        brief: notes.trim(),
+        status: "building",
+        createdAt: new Date().toISOString(),
+        thumbUrl: null,
+        failure: null,
+        fromPhoto: true,
+      },
+      ...prev,
+    ]);
+    setPhoto(null);
+    setNotes("");
     router.refresh();
   }
 
@@ -179,45 +261,135 @@ export function SetsHome({
 
   const used = usedThisMonth;
   const atCap = monthlyLimit >= 0 && used >= monthlyLimit;
+  const usageLine = monthlyLimit < 0 ? s.unlimitedUsage : formatMsg(s.monthlyUsage, { used, limit: monthlyLimit });
+  const fromPhoto = photoSetsOn && mode === "photo";
+  const chip = (active: boolean) =>
+    `cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
+      active
+        ? "border-atelier-accent bg-atelier-accent/10 text-atelier-ink"
+        : "border-atelier-rule text-atelier-muted hover:text-atelier-ink"
+    }`;
 
   return (
     <div className="space-y-8">
       {/* New set */}
       <section className="space-y-3 rounded-media border border-atelier-rule bg-atelier-surface p-5">
         <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.newTitle}</h2>
-        <label className="block">
-          <span className="sr-only">{s.briefLabel}</span>
-          <textarea
-            value={brief}
-            onChange={(e) => setBrief(e.target.value.slice(0, SET_BRIEF_MAX_CHARS))}
-            rows={3}
-            placeholder={s.briefPlaceholder}
-            aria-label={s.briefLabel}
-            className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent"
-          />
-        </label>
-        <p className="text-xs text-atelier-muted">{s.briefHint}</p>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="space-y-0.5 text-xs text-atelier-muted">
-            <p>{s.buildMeta}</p>
-            <p className="tabular-nums">
-              {monthlyLimit < 0 ? s.unlimitedUsage : formatMsg(s.monthlyUsage, { used, limit: monthlyLimit })}
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <span className="text-xs tabular-nums text-atelier-muted">
-              {brief.length}/{SET_BRIEF_MAX_CHARS}
-            </span>
-            <button
-              type="button"
-              onClick={() => void build()}
-              disabled={starting || atCap || brief.trim().length === 0}
-              className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              {starting ? s.starting : s.buildButton}
+        {photoSetsOn && (
+          <div className="flex flex-wrap gap-2">
+            <button type="button" aria-pressed={mode === "describe"} onClick={() => setMode("describe")} className={chip(mode === "describe")}>
+              {s.modeDescribe}
+            </button>
+            <button type="button" aria-pressed={mode === "photo"} onClick={() => setMode("photo")} className={chip(mode === "photo")}>
+              {s.fromPhoto}
             </button>
           </div>
-        </div>
+        )}
+        {fromPhoto ? (
+          <>
+            <div className="flex flex-wrap items-start gap-4">
+              <div className="flex h-40 w-full max-w-xs items-center justify-center overflow-hidden rounded-control border border-atelier-rule bg-atelier-stage">
+                {preparing ? (
+                  <span className="px-3 text-center text-xs text-onmedia/70">{s.photoPreparing}</span>
+                ) : photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={photo.dataUri} alt={s.photoPreviewAlt} className="h-full w-full object-contain" />
+                ) : (
+                  <div
+                    aria-hidden
+                    className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
+                  />
+                )}
+              </div>
+              <div className="min-w-0 flex-1 space-y-2">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    // Cleared, so choosing the same file again still counts as a choice.
+                    e.target.value = "";
+                    void pickPhoto(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={preparing || photoStarting}
+                  className="cursor-pointer rounded-control border border-atelier-rule px-4 py-2 text-sm font-medium text-atelier-ink transition-colors hover:border-atelier-accent disabled:opacity-40"
+                >
+                  {photo ? s.photoChange : s.photoPick}
+                </button>
+                <p className="text-xs text-atelier-muted">{s.photoHint}</p>
+              </div>
+            </div>
+            <label className="block">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.photoNotesLabel}</span>
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value.slice(0, SET_PHOTO_NOTES_MAX_CHARS))}
+                rows={2}
+                placeholder={s.photoNotesPlaceholder}
+                className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent"
+              />
+            </label>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5 text-xs text-atelier-muted">
+                <p>{s.photoMeta}</p>
+                <p className="tabular-nums">{usageLine}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs tabular-nums text-atelier-muted">
+                  {notes.length}/{SET_PHOTO_NOTES_MAX_CHARS}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void buildFromPhoto()}
+                  disabled={preparing || photoStarting || starting || atCap || !photo}
+                  className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {photoStarting ? s.photoChecking : s.photoBuildButton}
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <label className="block">
+              <span className="sr-only">{s.briefLabel}</span>
+              <textarea
+                value={brief}
+                onChange={(e) => setBrief(e.target.value.slice(0, SET_BRIEF_MAX_CHARS))}
+                rows={3}
+                placeholder={s.briefPlaceholder}
+                aria-label={s.briefLabel}
+                className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent"
+              />
+            </label>
+            <p className="text-xs text-atelier-muted">{s.briefHint}</p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="space-y-0.5 text-xs text-atelier-muted">
+                <p>{s.buildMeta}</p>
+                <p className="tabular-nums">{usageLine}</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-xs tabular-nums text-atelier-muted">
+                  {brief.length}/{SET_BRIEF_MAX_CHARS}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void build()}
+                  disabled={starting || photoStarting || atCap || brief.trim().length === 0}
+                  className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {starting ? s.starting : s.buildButton}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
         {error && <p className="text-sm text-red-600">{localizeServerText(error, t)}</p>}
       </section>
 
@@ -230,7 +402,10 @@ export function SetsHome({
       ) : (
         <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sets.map((x) => {
-            const name = x.title || (x.status === "ready" ? s.untitled : x.brief);
+            // A photo set has no brief: until Astra titles it, it goes by
+            // the photographer's notes, or by where it came from.
+            const name =
+              x.title || (x.status === "ready" ? s.untitled : x.fromPhoto ? x.brief || s.fromPhoto : x.brief);
             return (
               <li key={x.id} className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-surface">
                 <div className="relative aspect-square bg-atelier-stage">
@@ -265,7 +440,16 @@ export function SetsHome({
                       <LocalDate date={x.createdAt} />
                     </span>
                   </div>
-                  {x.status === "building" && <p className="text-xs text-atelier-muted">{s.statusBuildingHint}</p>}
+                  {x.fromPhoto && (
+                    <span className="inline-block rounded-full border border-atelier-rule px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                      {s.fromPhoto}
+                    </span>
+                  )}
+                  {x.status === "building" && (
+                    <p className="text-xs text-atelier-muted">
+                      {x.fromPhoto ? s.statusBuildingPhotoHint : s.statusBuildingHint}
+                    </p>
+                  )}
                   {x.status === "failed" && x.failure && (
                     <p className="text-xs text-atelier-muted">{localizeServerText(x.failure, t)}</p>
                   )}

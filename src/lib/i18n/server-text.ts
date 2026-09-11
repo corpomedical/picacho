@@ -147,6 +147,18 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "You're shooting quickly — give it a moment.": "setShootTooFast",
   "Couldn't delete this set — try again.": "setDeleteFailed",
   "Couldn't save that — try again.": "setSaveFailed",
+  // Sets from a photo (lib/sets/messages.ts, 2026-09-11). The first four are
+  // also said by the browser, which reads the photo before it is sent.
+  "That photo couldn't be read — try a JPEG, PNG or WebP.": "setPhotoUnreadable",
+  "That photo is too large — try a smaller one.": "setPhotoTooLarge",
+  "That photo is too small — use one at least 640 pixels on its shorter side.": "setPhotoTooSmall",
+  "That photo is too wide or too tall — use an ordinary photo, not a panorama.": "setPhotoBadShape",
+  "This photo can't be used to build a set. Nothing came off your allowance.": "setPhotoRefused",
+  "We couldn't check this photo, so no set was started. Try again in a moment.": "setPhotoUnchecked",
+  "Photo sets need a database update first (astra-photo-sets.sql).": "setPhotoNeedsDatabase",
+  "Couldn't save the photo — try again.": "setPhotoSaveFailed",
+  "This set couldn't be built from that photo, and the build is back in your allowance. A photo that shows more of the place may work better.":
+    "setPhotoBuildFailed",
 };
 
 // The prompt gate's answers (content-policy.ts refusalMessages). The composer

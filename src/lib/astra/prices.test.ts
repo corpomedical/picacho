@@ -6,6 +6,9 @@ import {
   SET_BUILD_MAX_OUTPUT_TOKENS,
   SET_CLOSE_RETRY_INPUT_TOKENS,
   SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS,
+  SET_PHOTO_BUILD_INPUT_TOKENS,
+  SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
+  SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
 } from "../sets/set-config";
 
 // Every figure here is a usage block the API really returned on Picacho's
@@ -82,5 +85,44 @@ describe("the set-build ceiling", () => {
     // 0.52 answer tokens per character sent back (a real set: 10,736 → 5,546),
     // plus ~1,500 for added objects and reasoning.
     expect(Math.ceil(SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS * 0.52) + 1_500).toBeLessThanOrEqual(SET_BUILD_MAX_OUTPUT_TOKENS);
+  });
+});
+
+describe("the photo-build ceiling (Sets from a photo, 2026-09-11)", () => {
+  it("matches the arithmetic in set-config.ts: $0.86 first, $0.95625 for a closing retry, $1.81625 a build", () => {
+    // 4,800 × $12.50/1M + 16,000 × $50/1M = $0.06 + $0.80
+    const first = worstCaseAstraUsd(SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
+    // 12,500 × $12.50/1M + 16,000 × $50/1M = $0.15625 + $0.80
+    const closing = worstCaseAstraUsd(SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
+    expect(first).toBeCloseTo(0.86, 6);
+    expect(closing).toBeCloseTo(0.95625, 6);
+    expect(first + closing).toBeCloseTo(1.81625, 6);
+    // Two failure retries resend the photo without a set: less than the closing path.
+    expect(2 * first).toBeCloseTo(1.72, 6);
+    expect(2 * first).toBeLessThan(first + closing);
+  });
+
+  it("does not cut off the one measured photo build", () => {
+    expect(SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS).toBeGreaterThan(12_834);
+    expect(SET_BUILD_MAX_OUTPUT_TOKENS).toBeLessThan(12_834);
+  });
+
+  it("bounds the closing retry's input: the photo again, the set sent back and the feedback", () => {
+    const previousTokens = Math.ceil(SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS / 2.24);
+    expect(previousTokens).toBe(7_143);
+    expect(SET_PHOTO_BUILD_INPUT_TOKENS + previousTokens + 200).toBeLessThanOrEqual(SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS);
+  });
+
+  it("leaves a mend room under the photo cap, with the measured reasoning on top", () => {
+    // 8,320 re-emitted + 1,500 added walls + 4,007 reasoning (the one measured run) = 13,827.
+    expect(Math.ceil(SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS * 0.52) + 1_500 + 4_007).toBeLessThanOrEqual(
+      SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
+    );
+  });
+
+  it("leaves the text-build numbers where they were", () => {
+    expect(SET_BUILD_INPUT_TOKENS).toBe(2_400);
+    expect(SET_BUILD_MAX_OUTPUT_TOKENS).toBe(10_000);
+    expect(SET_CLOSE_RETRY_INPUT_TOKENS).toBe(10_000);
   });
 });

@@ -3,24 +3,28 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { mediaUrl } from "@/lib/media/url";
-import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
-import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { assertPromptAllowed, ContentPolicyRefusal, type Scores } from "@/lib/generations/content-policy";
+import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/output-policy";
+import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { runGeneration } from "@/lib/generations/actions";
-import { cancelAstraJob, pollAstraJob, submitAstraJob } from "@/lib/generations/providers/astra";
+import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraInput } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { countSetBuildsThisMonth } from "@/lib/sets/data";
+import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import {
   MAX_SET_FRAME_BYTES,
   MAX_SET_THUMB_BYTES,
   SET_BRIEF_MAX_CHARS,
   SET_BRIEF_MIN_CHARS,
-  SET_BUILD_EFFORT,
   SET_BUILD_MAX_ATTEMPTS,
-  SET_BUILD_MAX_OUTPUT_TOKENS,
   SET_BUILD_STALE_MS,
   SET_DIRECTION_MAX_CHARS,
+  SET_PHOTO_BUILD_INPUT_TOKENS,
+  SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
+  SET_PHOTO_NOTES_MAX_CHARS,
   setFramePath,
+  setPhotoPath,
   setThumbPath,
 } from "@/lib/sets/set-config";
 import {
@@ -31,17 +35,33 @@ import {
   specTextForGate,
   type SetSpec,
 } from "@/lib/sets/set-spec";
-import {
-  SET_BUILDER_INSTRUCTIONS,
-  SET_SPEC_JSON_SCHEMA,
-  SET_SPEC_SCHEMA_NAME,
-  setBuildInput,
-} from "@/lib/sets/set-builder-prompt";
+import { photoBuildInput, setBuildInput } from "@/lib/sets/set-builder-prompt";
+import { setAstraRequest } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
 import { hasSavedOutfit, lookStoragePath } from "@/lib/sets/look";
-import { closeRetryInput, decideAfterValidAnswer, RETRY_SMALLER } from "@/lib/sets/build-retry";
 import {
+  closeRetryFeedback,
+  closeRetryInput,
+  decideAfterValidAnswer,
+  RETRY_SMALLER,
+  RETRY_SMALLER_PHOTO,
+} from "@/lib/sets/build-retry";
+import {
+  CLEAR_PHOTO_SOURCE,
+  isMissingColumn,
+  normaliseSetPhoto,
+  parseSetPhotoDataUri,
+  photoDataUrl,
+  photoSourceColumns,
+  readPhotoSources,
+  readStoredPhoto,
+  removeSetPhoto,
+} from "@/lib/sets/photo";
+import type { SetKind } from "@/lib/sets/types";
+import {
+  SETS_NOT_OPEN,
   SETS_SESSION_EXPIRED,
+  SETS_UNAVAILABLE,
   SET_BRIEF_TOO_LONG,
   SET_BRIEF_TOO_SHORT,
   SET_BUILD_COULDNT_START,
@@ -53,6 +73,10 @@ import {
   SET_FRAME_UNREADABLE,
   SET_NOT_FOUND,
   SET_NOT_READY,
+  SET_PHOTO_NEEDS_DATABASE,
+  SET_PHOTO_REFUSED,
+  SET_PHOTO_SAVE_FAILED,
+  SET_PHOTO_UNCHECKED,
   SET_PICK_CHARACTER,
   SET_SAVE_FAILED,
   SET_SHOOT_TOO_FAST,
@@ -83,37 +107,90 @@ import {
 // runGeneration, in the strict lane, like any take with an attachment.
 //
 // THE CHARACTER never reaches Astra: no photo, no name, no appearance.
+//
+// SETS FROM A PHOTO (docs 3.2, 2026-09-11; admins only, behind a second
+// switch). The photo is the brief. It is re-encoded on the server (no EXIF,
+// no GPS), judged by the picture check's readers BEFORE it is stored or
+// sent to Astra — a refused photo is never written and never reaches Astra —
+// then stored in the person's own folder and sent inline (store: false as
+// ever). Astra is told never to model, identify or describe anyone in it;
+// its title, description and labels pass the same strict-lane gate as a
+// text build's. The photo is removed with the set, or when its build fails.
+// Every column that marks a photo build is named only in photo.ts, and read
+// in its own query: until supabase/pending/astra-photo-sets.sql runs, text
+// sets work exactly as before and a photo build stops at its first write.
 
 const JPEG_DATA_URI = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;
 // What a reserved row holds until its brief has passed the gate: a refused
-// brief is never written, not even for the seconds the gate takes.
+// brief is never written, not even for the seconds the gate takes. A photo
+// build keeps it when the photographer adds no notes (the column's CHECK
+// wants 1–500 characters).
 const RESERVED = "-";
 
-function astraRequest(input: string, userId: string) {
-  return {
-    instructions: SET_BUILDER_INSTRUCTIONS,
-    input,
-    schemaName: SET_SPEC_SCHEMA_NAME,
-    schema: SET_SPEC_JSON_SCHEMA as unknown as Record<string, unknown>,
-    maxOutputTokens: SET_BUILD_MAX_OUTPUT_TOKENS,
-    effort: SET_BUILD_EFFORT,
-    safetyIdentifier: openAiSafetyId(userId),
-  };
-}
-
-/** OpenAI refused the person's own brief: logged like any refusal of their words. */
-async function logBriefRefusedByAstra(userId: string, brief: string) {
-  await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief });
+/**
+ * OpenAI refused the person's own input — their brief, or their photo and
+ * notes: logged like any refusal of their words, and counted as session
+ * context. A photo build without notes logs no text at all.
+ */
+async function logBriefRefusedByAstra(userId: string, prompt: string | null) {
+  await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: prompt || null });
 }
 
 /**
- * OpenAI refused a CLOSING retry — the brief it had already accepted, plus
+ * OpenAI refused a CLOSING retry — the input it had already accepted, plus
  * Astra's own set and our instruction. Mostly text the model wrote, so it
  * is logged under the provider and never counts as the person's session
  * context (policy-log.ts recentRefusalCount).
  */
-async function logClosingRetryRefused(userId: string, brief: string) {
-  await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief, provider: "astra" });
+async function logClosingRetryRefused(userId: string, prompt: string | null) {
+  await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: prompt || null, provider: "astra" });
+}
+
+type Reserved =
+  | { ok: false; error: string; missingColumn: boolean }
+  | { ok: true; setId: string; release: () => Promise<void> };
+
+/**
+ * RESERVE, then count. The row exists before the cap is checked, and the
+ * count runs up to and including it — so of any number of submits racing
+ * each other, only as many as the cap allows see themselves inside it. A
+ * text build passes no `extra`, so its row is written exactly as before
+ * photos existed; a photo build passes its id and photo columns, so a
+ * database without those columns refuses it here, before anything is spent.
+ */
+async function reserveBuildRow(
+  access: { userId: string; periodStart: string | null; monthlyLimit: number },
+  admin: ReturnType<typeof createAdminClient>,
+  extra: Record<string, unknown>,
+  label: string,
+): Promise<Reserved> {
+  const { data: row, error: insertError } = await admin
+    .from("location_sets")
+    .insert({ ...extra, user_id: access.userId, brief: RESERVED, status: "building", attempts: 0 })
+    .select("id, created_at")
+    .single();
+  if (insertError || !row) {
+    console.error(`${label} reserve failed:`, insertError?.message);
+    return { ok: false, error: SET_BUILD_COULDNT_START, missingColumn: isMissingColumn(insertError) };
+  }
+  const setId = row.id as string;
+  const release = async () => {
+    await admin.from("location_sets").delete().eq("id", setId);
+  };
+
+  if (access.monthlyLimit >= 0) {
+    const upToMine = await countSetBuildsThisMonth(access.userId, access.periodStart, row.created_at as string);
+    // A count that cannot be read is not "none used": the cap fails closed.
+    if (upToMine === null) {
+      await release();
+      return { ok: false, error: SET_BUILD_COULDNT_START, missingColumn: false };
+    }
+    if (upToMine > access.monthlyLimit) {
+      await release();
+      return { ok: false, error: setMonthlyCapMessage(upToMine - 1), missingColumn: false };
+    }
+  }
+  return { ok: true, setId, release };
 }
 
 // ---------------------------------------------------------------------------
@@ -136,34 +213,10 @@ export async function submitSetBuild(briefInput: string): Promise<{ error: strin
     return { error: SET_BUILD_TOO_FAST };
   }
 
-  // RESERVE, then count. The row exists before the cap is checked, and the
-  // count runs up to and including it — so of any number of submits racing
-  // each other, only as many as the cap allows see themselves inside it.
   const admin = createAdminClient();
-  const { data: row, error: insertError } = await admin
-    .from("location_sets")
-    .insert({ user_id: userId, brief: RESERVED, status: "building", attempts: 0 })
-    .select("id, created_at")
-    .single();
-  if (insertError || !row) {
-    console.error("submitSetBuild reserve failed:", insertError?.message);
-    return { error: SET_BUILD_COULDNT_START };
-  }
-  const setId = row.id as string;
-  const release = () => admin.from("location_sets").delete().eq("id", setId);
-
-  if (access.monthlyLimit >= 0) {
-    const upToMine = await countSetBuildsThisMonth(userId, access.periodStart, row.created_at as string);
-    // A count that cannot be read is not "none used": the cap fails closed.
-    if (upToMine === null) {
-      await release();
-      return { error: SET_BUILD_COULDNT_START };
-    }
-    if (upToMine > access.monthlyLimit) {
-      await release();
-      return { error: setMonthlyCapMessage(upToMine - 1) };
-    }
-  }
+  const reserved = await reserveBuildRow(access, admin, {}, "submitSetBuild");
+  if (!reserved.ok) return { error: reserved.error };
+  const { setId, release } = reserved;
 
   // The person's own words, judged before anything leaves Picacho. A
   // refusal costs nothing, releases the reservation, and counts as session
@@ -188,7 +241,7 @@ export async function submitSetBuild(briefInput: string): Promise<{ error: strin
     return { error: SET_BUILD_COULDNT_START };
   }
 
-  const submitted = await submitAstraJob(astraRequest(setBuildInput(brief), userId));
+  const submitted = await submitAstraJob(setAstraRequest(setBuildInput(brief), openAiSafetyId(userId), "text"));
   if (!submitted.ok) {
     console.error("submitSetBuild astra submit failed:", submitted.kind, submitted.detail);
     await admin
@@ -215,6 +268,166 @@ export async function submitSetBuild(briefInput: string): Promise<{ error: strin
       .from("location_sets")
       .update({ status: "failed", failure: "start", updated_at: new Date().toISOString() })
       .eq("id", setId);
+    return { error: SET_BUILD_COULDNT_START };
+  }
+  return { error: null, id: setId };
+}
+
+/**
+ * A Set from a photo (docs 3.2): the photo is the brief, and camera 1 stands
+ * where the photographer stood. Admins only, behind astra_photo_sets. See
+ * the header for what happens to the photo; the order below is the point:
+ *
+ *   read the photo → burst brake → re-encode (no EXIF) → reserve the slot
+ *   (a database without the photo columns stops here, before anything is
+ *   spent) → gate the notes → gate the PICTURE (a refusal: nothing stored,
+ *   nothing sent to Astra, the slot released) → store it → send it.
+ *
+ * The picture check reads for 10–100 s; the page this runs under declares
+ * the 300 s budget (app/app/sets/page.tsx).
+ */
+export async function submitSetPhotoBuild(input: {
+  photoDataUri: string;
+  notes: string;
+}): Promise<{ error: string } | { error: null; id: string }> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const { userId } = access;
+  // Checked here on its own, not through setsEligible: opening text sets to
+  // plans must never open photo sets with them.
+  if (!access.isAdmin) return { error: SETS_NOT_OPEN };
+  if (!(await isPhotoSetsEnabled(access.supabase))) return { error: SETS_UNAVAILABLE };
+
+  // What the photo cannot show, in the photographer's words: cut silently at
+  // the limit, like a shot's direction. The placeholder is never a note.
+  let notes = cleanText(typeof input?.notes === "string" ? input.notes : "", SET_PHOTO_NOTES_MAX_CHARS);
+  if (notes === RESERVED) notes = "";
+
+  const parsed = parseSetPhotoDataUri(input?.photoDataUri);
+  if (!parsed.ok) return { error: parsed.error };
+
+  // The same burst brake and the same monthly slot as a text build.
+  if (await rateLimited(userId, "set-build", 60 * 60, access.isAdmin ? 12 : 4)) {
+    return { error: SET_BUILD_TOO_FAST };
+  }
+
+  // Never the browser's bytes: re-encoded here, whatever arrived.
+  const photo = await normaliseSetPhoto(parsed.bytes);
+  if (!photo.ok) return { error: photo.error };
+
+  const admin = createAdminClient();
+  const setId = crypto.randomUUID();
+  const reserved = await reserveBuildRow(
+    access,
+    admin,
+    { id: setId, ...photoSourceColumns(userId, setId, photo.sha256) },
+    "submitSetPhotoBuild",
+  );
+  if (!reserved.ok) return { error: reserved.missingColumn ? SET_PHOTO_NEEDS_DATABASE : reserved.error };
+  const { release } = reserved;
+
+  // The notes sit beside a real photograph, so they are judged in the lane
+  // the set's description will be: a real person's photo in view.
+  let scores: Scores | undefined;
+  let priorHits = 0;
+  if (notes) {
+    try {
+      ({ scores, priorHits } = await gatePrompt({ prompt: notes, userId, hasRealPersonReference: true }));
+    } catch (err) {
+      await release();
+      if (err instanceof ContentPolicyRefusal) return { error: err.userMessage };
+      throw err;
+    }
+  } else {
+    priorHits = await recentRefusalCount(userId);
+  }
+
+  // The picture itself, judged from its bytes before it is stored or sent
+  // to Astra: the strict lane, because a real place can hold real people.
+  // A refusal is logged as a picture refusal — it never makes the person's
+  // next hour stricter (policy-log.ts counts only the prompt gate).
+  const dataUrl = photoDataUrl(photo.jpeg);
+  try {
+    await assertOutputAllowed({
+      imageUrl: dataUrl,
+      strictLane: true,
+      promptScores: scores ?? null,
+      sessionPriorHits: priorHits,
+    });
+  } catch (err) {
+    await release();
+    if (err instanceof OutputPolicyRefusal) {
+      await recordPolicyRefusal({
+        userId,
+        gate: "output",
+        reason: err.reason,
+        strictLane: true,
+        bands: err.readings,
+        provider: "set-photo",
+      });
+      return { error: err.reason === "unavailable" ? SET_PHOTO_UNCHECKED : SET_PHOTO_REFUSED };
+    }
+    throw err;
+  }
+
+  // Still there after the check's up to ~100 s (a delete in the meantime
+  // wins), and the notes written — checked, because a retry reads them back.
+  // This also restarts the stale clock the check has been running down.
+  const { data: live, error: liveError } = await admin
+    .from("location_sets")
+    .update({ brief: notes || RESERVED, updated_at: new Date().toISOString() })
+    .eq("id", setId)
+    .is("deleted_at", null)
+    .select("id");
+  if (liveError || !live?.length) {
+    await release();
+    return { error: SET_BUILD_COULDNT_START };
+  }
+
+  // Stored once, never rewritten: the bytes at a media path are cached as
+  // immutable. A retry resends these bytes only if they still hash the same.
+  const { error: uploadError } = await admin.storage
+    .from("generated-images")
+    .upload(setPhotoPath(userId, setId), photo.jpeg, { contentType: "image/jpeg", upsert: false });
+  if (uploadError) {
+    console.error("submitSetPhotoBuild photo upload failed:", uploadError.message);
+    await removeSetPhoto(admin, userId, setId);
+    await release();
+    return { error: SET_PHOTO_SAVE_FAILED };
+  }
+
+  // The bytes in hand, not a re-read: the same ones the check passed.
+  const submitted = await submitAstraJob(setAstraRequest(photoBuildInput(dataUrl, notes), openAiSafetyId(userId), "photo"));
+  if (!submitted.ok) {
+    console.error("submitSetPhotoBuild astra submit failed:", submitted.kind, submitted.detail);
+    await admin
+      .from("location_sets")
+      .update({ status: "failed", failure: submitted.kind === "refused" ? "refused" : "start", updated_at: new Date().toISOString() })
+      .eq("id", setId);
+    await removeSetPhoto(admin, userId, setId);
+    if (submitted.kind === "refused") {
+      // The input was the person's photo and words plus our fixed rules:
+      // counted like a refused brief.
+      await logBriefRefusedByAstra(userId, notes || null);
+      return { error: SET_PHOTO_REFUSED };
+    }
+    return { error: SET_BUILD_COULDNT_START };
+  }
+  // Checked, as for a text build — and it closes the race with a delete
+  // during the upload or the submit: the job is stopped and the photo goes.
+  const { data: recorded, error: recordError } = await admin
+    .from("location_sets")
+    .update({ response_id: submitted.responseId, attempts: 1, updated_at: new Date().toISOString() })
+    .eq("id", setId)
+    .is("deleted_at", null)
+    .select("id");
+  if (recordError || !recorded?.length) {
+    await cancelAstraJob(submitted.responseId);
+    await admin
+      .from("location_sets")
+      .update({ status: "failed", failure: "start", updated_at: new Date().toISOString() })
+      .eq("id", setId);
+    await removeSetPhoto(admin, userId, setId);
     return { error: SET_BUILD_COULDNT_START };
   }
   return { error: null, id: setId };
@@ -269,23 +482,53 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
     .maybeSingle();
   if (!row) return { error: SET_NOT_FOUND };
   if (row.status === "ready") return { error: null, state: "ready" };
-  if (row.status === "failed") return { error: null, state: "failed", message: setFailureMessage(row.failure) };
+  // Which kind of build this is, read on its own (photo.ts): any error —
+  // the photo columns not there yet — reads as a text build, which every
+  // build is until they are.
+  const src = (await readPhotoSources(admin, [setId], userId)).get(setId) ?? null;
+  const kind: SetKind = src ? "photo" : "text";
+  if (row.status === "failed") return { error: null, state: "failed", message: setFailureMessage(row.failure, kind) };
 
   const stale = Date.now() - Date.parse(row.updated_at as string) > SET_BUILD_STALE_MS;
   const responseId = row.response_id as string | null;
   const priorCost = Number(row.cost_usd ?? 0);
   const attempts = Number(row.attempts ?? 1);
   const brief = row.brief as string;
+  // A photo build's brief column holds the photographer's notes, or the
+  // placeholder when there are none.
+  const notes = kind === "photo" && brief !== RESERVED ? brief : "";
+  // What a refusal of the person's own input is logged with: their words.
+  const ownWords = kind === "photo" ? notes || null : brief;
+  const safetyId = openAiSafetyId(userId);
   const kept = row.spec ? normaliseSetSpec(row.spec) : null;
   const draft = kept?.ok ? kept.spec : null;
 
+  // What a retry may send. A text build resends its brief — never the
+  // placeholder. A photo build resends its photo only while the photo switch
+  // is on (turning it off stops photos going back to OpenAI; answers already
+  // paid for are still collected) and only if the stored bytes still hash
+  // to what passed the picture check. Null: no retry; the set in hand, or
+  // the failure, stands. Read once, and only when a retry is wanted.
+  let storedPhoto: string | null | undefined;
+  const retryInput = async (tail: (photo: string) => AstraInput, text: () => string): Promise<AstraInput | null> => {
+    if (kind === "text") return brief !== RESERVED ? text() : null;
+    if (storedPhoto === undefined) {
+      storedPhoto = src && (await isPhotoSetsEnabled(access.supabase)) ? await readStoredPhoto(admin, src) : null;
+    }
+    return storedPhoto ? tail(storedPhoto) : null;
+  };
+
   const closeFailed = async (failure: string, costUsd: number) => {
-    await admin
+    const { data: closed } = await admin
       .from("location_sets")
       .update({ status: "failed", failure, response_id: null, cost_usd: costUsd, updated_at: new Date().toISOString() })
       .eq("id", setId)
-      .eq("status", "building");
-    return { error: null, state: "failed" as const, message: setFailureMessage(failure) };
+      .eq("status", "building")
+      .select("id");
+    // A failed card cannot be retried, so its photo has no use left; the
+    // row keeps the record that it was a photo build.
+    if (closed?.length && kind === "photo") await removeSetPhoto(admin, userId, setId);
+    return { error: null, state: "failed" as const, message: setFailureMessage(failure, kind) };
   };
   // The set was deleted while this tick held the claim: keep the record of
   // what it cost, and say so the way a missing set is said.
@@ -348,9 +591,23 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
   const cost = Math.round((priorCost + polled.costUsd) * 10_000) / 10_000;
   let failure: string;
 
+  // How many tokens a photo costs Astra is not measured yet: every photo
+  // attempt's usage is logged, and one past its budget (set-config.ts) is
+  // flagged, so the first live builds re-derive the bound.
+  if (kind === "photo") {
+    console.info("[sets] photo usage", { setId, attempt: attempts, usage: polled.usage });
+    const bound = attempts <= 1 ? SET_PHOTO_BUILD_INPUT_TOKENS : SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS;
+    const inputTokens = polled.usage?.input_tokens ?? 0;
+    if (typeof inputTokens === "number" && inputTokens > bound) {
+      console.warn("[sets] photo input past its budget", { setId, attempt: attempts, inputTokens, bound });
+    }
+  }
+
   if (polled.state === "done") {
     const parsed = parseSetSpecText(polled.text);
-    if (parsed.ok) {
+    // A photo set without Astra's own first camera has nothing to lay
+    // beside the photo: the normaliser's stand-in camera makes it invalid.
+    if (parsed.ok && !(kind === "photo" && parsed.notes.includes("default_camera"))) {
       const spec = parsed.spec;
       const words = specTextForGate(spec);
       // Astra's words, judged before anyone reads them — in the strict lane,
@@ -393,7 +650,13 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
         draftOpen,
       });
       if (next.kind === "retry-close") {
-        const retry = await submitAstraJob(astraRequest(closeRetryInput(brief, closure.sides, spec), userId));
+        const input = await retryInput(
+          (photo) => photoBuildInput(photo, notes, closeRetryFeedback(closure.sides, spec)),
+          () => closeRetryInput(brief, closure.sides, spec),
+        );
+        // Nothing may be resent: the set in hand is still a good set.
+        if (!input) return finishReady(spec, cost, true);
+        const retry = await submitAstraJob(setAstraRequest(input, safetyId, kind));
         if (retry.ok) {
           const { data: resumed, error: resumeError } = await admin
             .from("location_sets")
@@ -422,7 +685,7 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
         }
         // The closing retry could not start. The set in hand is still a
         // good set; deliver it.
-        if (retry.kind === "refused") await logClosingRetryRefused(userId, brief);
+        if (retry.kind === "refused") await logClosingRetryRefused(userId, ownWords);
         return finishReady(spec, cost, true);
       }
       return finishReady(next.use === "draft" && draft ? draft : spec, cost, true);
@@ -433,18 +696,26 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
     if (polled.kind === "refused") {
       // With a draft in hand this answer was a closing retry: its input was
       // mostly the model's own set, not the person's words.
-      if (draft) await logClosingRetryRefused(userId, brief);
-      else await logBriefRefusedByAstra(userId, brief);
+      if (draft) await logClosingRetryRefused(userId, ownWords);
+      else await logBriefRefusedByAstra(userId, ownWords);
     }
   }
 
   // A closing retry that came back unusable leaves the draft, which is not.
   if (draft) return finishReady(draft, cost, true);
 
-  // One automatic retry at our cost, never after a safety stop.
-  if (failure !== "refused" && failure !== "cancelled" && attempts < SET_BUILD_MAX_ATTEMPTS && !stale) {
-    const input = setBuildInput(brief) + (failure === "incomplete" ? RETRY_SMALLER : "");
-    const retry = await submitAstraJob(astraRequest(input, userId));
+  // One automatic retry at our cost, never after a safety stop — and never
+  // without something to send (retryInput).
+  const tooLong = failure === "incomplete";
+  const input =
+    failure !== "refused" && failure !== "cancelled" && attempts < SET_BUILD_MAX_ATTEMPTS && !stale
+      ? await retryInput(
+          (photo) => photoBuildInput(photo, notes, tooLong ? RETRY_SMALLER_PHOTO : ""),
+          () => setBuildInput(brief) + (tooLong ? RETRY_SMALLER : ""),
+        )
+      : null;
+  if (input) {
+    const retry = await submitAstraJob(setAstraRequest(input, safetyId, kind));
     if (retry.ok) {
       const { data: resumed, error: resumeError } = await admin
         .from("location_sets")
@@ -465,7 +736,7 @@ export async function pollSetBuild(setId: string): Promise<PollResult> {
     }
     if (retry.kind === "refused") {
       failure = "refused";
-      await logBriefRefusedByAstra(userId, brief);
+      await logBriefRefusedByAstra(userId, ownWords);
     }
   }
   return closeFailed(failure, cost);
@@ -774,6 +1045,14 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
     if (row.thumb_path) {
       await admin.storage.from("generated-images").remove([row.thumb_path as string]);
     }
+    // A photo set's photo lives at a fixed path, so it is removed without
+    // reading anything — harmless for a set built from words. Then its
+    // record, in a write of its own whose failure is ignored: the photo's
+    // hash is the person's data like the brief cleared above, and naming
+    // those columns in the delete itself would fail every delete until
+    // astra-photo-sets.sql has run.
+    await removeSetPhoto(admin, userId, setId);
+    await admin.from("location_sets").update(CLEAR_PHOTO_SOURCE).eq("id", setId);
     return { error: null };
   }
   return { error: SET_DELETE_FAILED };

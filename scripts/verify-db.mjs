@@ -100,9 +100,13 @@ const COLUMNS = {
   // Astra Sets (applied/2026-09-10/astra-sets.sql). Every column the actions write is
   // listed: the service role writes them, so a missing one fails a build
   // mid-flight rather than at the page.
+  // The last two are Sets from a photo (pending/astra-photo-sets.sql): until
+  // they exist a photo build is refused before anything is spent, and text
+  // sets are untouched — but the switch must not be flipped without them.
   location_sets: [
     "user_id", "status", "brief", "title", "description", "spec", "layout",
     "response_id", "attempts", "failure", "cost_usd", "thumb_path", "updated_at", "deleted_at",
+    "source_photo_path", "source_photo_sha256",
   ],
   location_set_shots: ["set_id", "generation_id", "user_id", "created_at"],
 };

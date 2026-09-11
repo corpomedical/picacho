@@ -5,7 +5,7 @@
 // reviewer's real renders and sixty ordinary ones.
 
 import { describe, expect, it } from "vitest";
-import { decideOutput, isVisionEdge, parseModeration, parseVision, moderationBand, voteVision, withMinorsMajorityVision, type OutputReadings, type VisionReading } from "./output-policy";
+import { decideOutput, inlineImageBytes, isVisionEdge, parseModeration, parseVision, moderationBand, voteVision, withMinorsMajorityVision, type OutputReadings, type VisionReading } from "./output-policy";
 
 const vis = (over: Partial<VisionReading> = {}): VisionReading => ({
   sexual_nudity: "NEGLIGIBLE",
@@ -261,6 +261,25 @@ describe("a minors finding on the picture needs two readers", () => {
     expect(decideOutput({ moderation: { flagged: false, sexual: 0 }, vision: one })).toBeNull();
     const two = withMinorsMajorityVision(vis({ minor_sexualized: "LOW" }), [vis({ minor_sexualized: "LOW" }), vis({ minor_sexualized: "HIGH" }), vis()]);
     expect(decideOutput({ moderation: { flagged: false, sexual: 0 }, vision: two })).toBe("minors");
+  });
+});
+
+describe("a picture judged before it is stored (a Set's photo, 2026-09-11)", () => {
+  it("reads the bytes straight out of a JPEG, PNG or WebP data URL", () => {
+    const bytes = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    for (const type of ["image/jpeg", "image/png", "image/webp"]) {
+      const got = inlineImageBytes(`data:${type};base64,${bytes.toString("base64")}`);
+      expect(got?.type, type).toBe(type);
+      expect(got?.bytes.equals(bytes), type).toBe(true);
+    }
+  });
+
+  it("leaves every other URL to the fetch, exactly as before", () => {
+    expect(inlineImageBytes("https://picacho.io/api/media/generated-images/a.png?v=x")).toBeNull();
+    expect(inlineImageBytes("/api/media/generated-images/a.png?v=x")).toBeNull();
+    expect(inlineImageBytes("http://example.com/a.jpg")).toBeNull();
+    expect(inlineImageBytes("data:text/plain;base64,aGVsbG8=")).toBeNull();
+    expect(inlineImageBytes("data:image/svg+xml;base64,PHN2Zz4=")).toBeNull();
   });
 });
 

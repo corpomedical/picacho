@@ -9,7 +9,8 @@ import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet } from "@/lib/sets/actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
-import { SET_DIRECTION_MAX_CHARS, SET_FRAME_PX, SET_THUMB_PX } from "@/lib/sets/set-config";
+import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
+import { SET_COMPARE_PX, SET_DIRECTION_MAX_CHARS, SET_FRAME_PX, SET_THUMB_PX } from "@/lib/sets/set-config";
 import type { SetLayout, SetSpec, Vec3 } from "@/lib/sets/set-spec";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 
@@ -34,7 +35,12 @@ type StageApi = {
   setFov(fovDeg: number): void;
   placeMark(mark: Mark): void;
   pose(): Pose;
-  snapshot(px: number, opts?: { hideFigure?: boolean; from?: Pose }): string | null;
+  /**
+   * A JPEG of the view. Square by default (the still's frame); with `from`
+   * and `aspect`, the view from that pose at the given width/height ratio,
+   * long side `px` — camera 1 beside a photo set's photo (compare.ts).
+   */
+  snapshot(px: number, opts?: { hideFigure?: boolean; from?: Pose; aspect?: number }): string | null;
   /** The camera in front of the figure, the whole figure in the lens. */
   frameFigure(): void;
   /** Pan and tilt: turn the camera where it stands, in degrees (left, up). */
@@ -64,6 +70,7 @@ export function SetView({
   spec,
   initialLayout,
   hasThumb,
+  sourcePhotoUrl,
   description,
   characters,
   initialShots,
@@ -73,6 +80,8 @@ export function SetView({
   spec: SetSpec;
   initialLayout: SetLayout | null;
   hasThumb: boolean;
+  /** A photo set's photo (signed for its owner); null for a set built from words. */
+  sourcePhotoUrl: string | null;
   description: string;
   characters: SetCharacter[];
   initialShots: SetShot[];
@@ -116,6 +125,11 @@ export function SetView({
   // read the person's latest choice, not the one from the render it began in
   // (review, 2026-09-11 — turning the look off mid-render was undone).
   const lookPinnedRef = useRef(false);
+  // A photo set: the photo's shape (from the picture once it loads), and
+  // camera 1's view drawn at that shape to lay beside it. Nothing is saved.
+  const [photoAspect, setPhotoAspect] = useState<number | null>(null);
+  const [cameraOneShot, setCameraOneShot] = useState<string | null>(null);
+  const compareTakenRef = useRef(false);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
@@ -312,6 +326,18 @@ export function SetView({
           ctx.drawImage(src, (src.width - side) / 2, (src.height - side) / 2, side, side, 0, 0, px, px);
           return out.toDataURL("image/jpeg", 0.9);
         };
+        // A crop at a photo's shape (compare.ts), long side px.
+        const cropRect = (crop: CompareCrop, px: number): string | null => {
+          const src = renderer.domElement;
+          const size = compareOutputSize(crop.sw, crop.sh, px);
+          const out = document.createElement("canvas");
+          out.width = size.width;
+          out.height = size.height;
+          const ctx = out.getContext("2d");
+          if (!ctx) return null;
+          ctx.drawImage(src, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, size.width, size.height);
+          return out.toDataURL("image/jpeg", 0.9);
+        };
 
         apiRef.current = {
           lifted: lift.fill > 1 || lift.exposure > BASE_EXPOSURE,
@@ -343,17 +369,22 @@ export function SetView({
             standIn.helpers.visible = false;
             if (opts?.hideFigure) standIn.figure.visible = false;
             let url: string | null = null;
+            // At a photo's shape: the largest centred rectangle of that
+            // shape, with the camera widened where the rectangle is shorter
+            // than the canvas, so the crop spans exactly the pose's fovDeg.
+            const crop =
+              opts?.from && opts.aspect ? compareCrop(renderer.domElement.width, renderer.domElement.height, opts.aspect) : null;
             if (opts?.from) {
               const cam = camera.clone();
               cam.position.set(...opts.from.position);
-              cam.fov = opts.from.fovDeg;
+              cam.fov = crop ? widenFovDeg(opts.from.fovDeg, crop.fovScale) : opts.from.fovDeg;
               cam.lookAt(new THREE.Vector3(...opts.from.target));
               cam.updateProjectionMatrix();
               renderer.render(scene, cam);
             } else {
               renderer.render(scene, camera);
             }
-            url = cropSquare(px);
+            url = crop ? cropRect(crop, px) : cropSquare(px);
             standIn.helpers.visible = true;
             standIn.figure.visible = true;
             // Put the person's own view back before the browser shows a frame.
@@ -486,6 +517,34 @@ export function SetView({
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
+  }, []);
+
+  // ---- a photo set: camera 1 beside the photo ----
+  // Once the stage is ready (its lift measured) and the photo's shape is
+  // known: camera 1 stands where the photographer stood, so its view — no
+  // figure, at the photo's shape — is what the photo should line up with.
+  // In the next frame, like the card picture. Shown only; nothing is saved.
+  useEffect(() => {
+    if (!ready || !sourcePhotoUrl || !photoAspect || compareTakenRef.current) return;
+    const first = spec.cameras[0];
+    const raf = requestAnimationFrame(() => {
+      compareTakenRef.current = true;
+      const shot = apiRef.current?.snapshot(SET_COMPARE_PX, {
+        hideFigure: true,
+        from: { position: first.position, target: first.target, fovDeg: first.fovDeg },
+        aspect: photoAspect,
+      });
+      if (shot) setCameraOneShot(shot);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [ready, sourcePhotoUrl, photoAspect, spec]);
+
+  // The photo's shape, from the picture itself: on load, or at once when the
+  // browser already had it (a cached picture can finish before hydration).
+  const readPhotoShape = useCallback((img: HTMLImageElement | null) => {
+    if (img && img.complete && img.naturalWidth > 0 && img.naturalHeight > 0) {
+      setPhotoAspect(img.naturalWidth / img.naturalHeight);
+    }
   }, []);
 
   function pickCamera(id: string) {
@@ -662,6 +721,49 @@ export function SetView({
         </div>
         <p className="text-xs text-atelier-muted">{s.frameHint}</p>
       </div>
+
+      {/* A photo set: the photo beside camera 1, where the photographer stood */}
+      {sourcePhotoUrl && (
+        <div className="space-y-2.5">
+          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.compareTitle}</h2>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <figure className="space-y-1.5">
+              <div
+                className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
+                style={{ aspectRatio: photoAspect ?? 4 / 3 }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  ref={readPhotoShape}
+                  src={sourcePhotoUrl}
+                  alt={s.comparePhoto}
+                  onLoad={(e) => readPhotoShape(e.currentTarget)}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <figcaption className="text-xs text-atelier-muted">{s.comparePhoto}</figcaption>
+            </figure>
+            <figure className="space-y-1.5">
+              <div
+                className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
+                style={{ aspectRatio: photoAspect ?? 4 / 3 }}
+              >
+                {cameraOneShot ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={cameraOneShot} alt={formatMsg(s.cameraN, { n: 1 })} className="h-full w-full object-cover" />
+                ) : (
+                  <div
+                    aria-hidden
+                    className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
+                  />
+                )}
+              </div>
+              <figcaption className="text-xs text-atelier-muted">{formatMsg(s.cameraN, { n: 1 })}</figcaption>
+            </figure>
+          </div>
+          <p className="text-xs text-atelier-muted">{s.compareNote}</p>
+        </div>
+      )}
 
       {/* Camera, lens, and the stand-in */}
       <div className="grid gap-4 md:grid-cols-[1fr_auto]">

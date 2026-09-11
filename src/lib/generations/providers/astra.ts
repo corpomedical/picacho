@@ -7,8 +7,11 @@
 //   background: true   A set build takes ~90 s (measured 2026-09-10) — far
 //                      past what one server action should hold open. Submit
 //                      returns at once; the page polls pollAstraJob.
-//   store: false       The brief is not kept at OpenAI beyond the ~10
-//                      minutes background mode needs to hand the answer back.
+//   store: false       The brief (or a Set's photo) is not kept at OpenAI
+//                      beyond the ~10 minutes background mode needs to hand
+//                      the answer back.
+//   inline images only An image part is its bytes as a data URL, at detail
+//                      high; a URL of any kind is refused before sending.
 //   tools: []          Astra's hosted tools include an image generator, a
 //                      code sandbox and web search. None of them may make
 //                      pixels, run code or spend money outside our lanes, so
@@ -38,9 +41,20 @@ const RESPONSE_ID_RE = /^resp_[A-Za-z0-9]{8,200}$/;
 
 export type AstraEffort = "low" | "medium";
 
+/**
+ * One part of a user message. An image is its BYTES as a data URL, never a
+ * link: a storage or media URL would hand OpenAI a capability URL to the
+ * person's file, and a fetch we do not control (a Set from a photo,
+ * 2026-09-11). Always sent at detail "high" — the camera is read from it.
+ */
+export type AstraInputPart =
+  | { type: "input_text"; text: string }
+  | { type: "input_image"; image_url: string; detail: "high" };
+export type AstraInput = string | { role: "user"; content: AstraInputPart[] }[];
+
 export type AstraJobRequest = {
   instructions: string;
-  input: string;
+  input: AstraInput;
   schemaName: string;
   schema: Record<string, unknown>;
   maxOutputTokens: number;
@@ -48,6 +62,34 @@ export type AstraJobRequest = {
   safetyIdentifier: string | undefined;
 };
 
+const IMAGE_DATA_URL = /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/;
+
+/**
+ * The input, copied part by part. Text passes through; an image must be a
+ * data URL of a JPEG, PNG or WebP and goes out at detail "high" whatever the
+ * caller wrote. Anything else throws — so no URL ever leaves in a request.
+ */
+function astraInputBody(input: AstraInput): unknown {
+  if (typeof input === "string") return input;
+  if (!Array.isArray(input)) throw new Error("astra: input must be a string or a list of user messages");
+  return input.map((message) => {
+    if (!message || message.role !== "user" || !Array.isArray(message.content)) {
+      throw new Error("astra: every input message must be a user message with content parts");
+    }
+    return {
+      role: "user",
+      content: message.content.map((part) => {
+        if (part?.type === "input_text" && typeof part.text === "string") return { type: "input_text", text: part.text };
+        if (part?.type === "input_image" && typeof part.image_url === "string" && IMAGE_DATA_URL.test(part.image_url)) {
+          return { type: "input_image", image_url: part.image_url, detail: "high" };
+        }
+        throw new Error("astra: an input part is neither text nor an inline JPEG, PNG or WebP image");
+      }),
+    };
+  });
+}
+
+/** Throws on an input part it will not send (see astraInputBody). */
 export function buildAstraRequestBody(req: AstraJobRequest): Record<string, unknown> {
   const effort: AstraEffort = req.effort === "medium" ? "medium" : "low";
   return {
@@ -55,7 +97,7 @@ export function buildAstraRequestBody(req: AstraJobRequest): Record<string, unkn
     background: true,
     store: false,
     instructions: req.instructions,
-    input: req.input,
+    input: astraInputBody(req.input),
     text: { format: { type: "json_schema", name: req.schemaName, schema: req.schema, strict: true } },
     reasoning: { effort },
     max_output_tokens: Math.max(256, Math.min(32_000, Math.floor(req.maxOutputTokens))),
@@ -72,6 +114,14 @@ export type AstraSubmitResult =
 export async function submitAstraJob(req: AstraJobRequest): Promise<AstraSubmitResult> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) return { ok: false, kind: "config", detail: "OPENAI_API_KEY is missing" };
+  // Built before anything is sent: a part this client will not send is our
+  // mistake, reported like any other request OpenAI would have rejected.
+  let payload: string;
+  try {
+    payload = JSON.stringify(buildAstraRequestBody(req));
+  } catch (err) {
+    return { ok: false, kind: "bad_request", detail: err instanceof Error ? err.message : String(err) };
+  }
   let res: Response;
   try {
     res = await fetchWithTimeout(
@@ -79,7 +129,7 @@ export async function submitAstraJob(req: AstraJobRequest): Promise<AstraSubmitR
       {
         method: "POST",
         headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-        body: JSON.stringify(buildAstraRequestBody(req)),
+        body: payload,
       },
       30_000,
     );

@@ -24,6 +24,7 @@
 //     build ($50 per million), and a row of twelve lamps is one object.
 
 import { SET_LIGHT_KINDS, SET_LIMITS, SET_SHAPES, SET_SKY_KINDS } from "./set-spec";
+import type { AstraInput } from "../generations/providers/astra";
 
 export const SET_BUILDER_INSTRUCTIONS = `You build film sets for a pre-visualisation tool. From the brief, build ONE location as simple 3D primitives, as JSON matching the schema.
 
@@ -195,4 +196,58 @@ export const SET_SPEC_SCHEMA_NAME = "picacho_set";
 /** The only per-request text: the person's brief, already gated. */
 export function setBuildInput(brief: string): string {
   return `Brief: ${brief}`;
+}
+
+// SETS FROM A PHOTO (docs 3.2, 2026-09-11). A photo build sends the SAME
+// instructions and schema as a text build, so the two share the cached
+// prefix; these rules open the input instead, and are fixed bytes too, so
+// every photo build — first attempt and retry — shares them after the prefix.
+// The instructions above say "From the brief" and "cameras frame the first
+// mark"; the rules below say what replaces each for a photo.
+//
+// Why each rule is here:
+//   - cameras[0] is the photographer: the set page lays the photo beside
+//     camera 1's view, and that comparison is the point of the feature. The
+//     field of view is VERTICAL because three.js reads it that way. The
+//     normaliser clamps cameras to the bounds + 10 m and the field of view
+//     to 20–90°, so Astra is asked to size the bounds to contain the camera
+//     rather than the normaliser being loosened (which would move text sets).
+//   - Never model a person, never identify or describe one. People in a
+//     location photo are strangers; the set's description reaches every
+//     shot prompt, so a described stranger would be drawn into the person's
+//     stills. Where they stood becomes a mark. Instructions only, until eval
+//     part D measures it.
+//   - Close what the photo does not show: the same no-fourth-wall rule, and
+//     a photo shows one side at most.
+//   - Signs are blank, the real place is never named: a photo of a real
+//     venue carries its brands and its address on its face.
+//   - The photo outranks the notes: the notes are the person's words about
+//     what the frame cannot show, gated like a brief.
+export const SET_PHOTO_RULES = `There is no written brief. The attached photograph is the brief: rebuild the place it shows, as it is — its layout, proportions, materials, colours and light — at real-world scale in metres.
+
+- cameras[0] is the photographer. Place it where the photo was taken from: the same height above the ground and the same line of sight, with its target on the point the photo is centred on, and fovDeg set to the photo's VERTICAL field of view (20–90). Seen from cameras[0], the set must line up with the photo. Choose bounds that contain this position. The other cameras follow the usual rules.
+- Never model a person. Where someone stands in the photo, or where someone could stand, put a mark facing the way they face. Never identify, name or describe anyone, in the title, the description or any label: a label names the spot ("By the counter"), never who was there.
+- Build what the photo shows first. Close every side it does not show with a plausible continuation of the same place, so no camera sees where the set ends.
+- Signs, posters and screens are blank shapes. Do not copy any text, logo or brand, and do not name the real place, business, street or address, even if you recognise it.
+- Notes from the photographer, when there are any, describe what the photo cannot show. Where they disagree with the photo, follow the photo.`;
+
+/**
+ * A photo build's input: the fixed rules, the photo (its bytes, as a data
+ * URL), then the photographer's notes when there are any, then `tail` — a
+ * retry's feedback. The first two parts are the same on every attempt, so a
+ * retry shares the first attempt's prefix. The notes have passed the prompt
+ * gate before this is called.
+ */
+export function photoBuildInput(photoDataUrl: string, notes: string, tail = ""): AstraInput {
+  return [
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text: SET_PHOTO_RULES },
+        { type: "input_image", image_url: photoDataUrl, detail: "high" },
+        ...(notes ? [{ type: "input_text" as const, text: `Notes from the photographer: ${notes}` }] : []),
+        ...(tail ? [{ type: "input_text" as const, text: tail }] : []),
+      ],
+    },
+  ];
 }

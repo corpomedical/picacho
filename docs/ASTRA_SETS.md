@@ -1,6 +1,6 @@
 # Astra Sets
 
-Date: 2026-09-10. Status: Phase 0 and Phase 1 are built and switched off (flag `astra_sets`, admins only once on). Phases 2 and 3 are not built. Evidence comes from four places:
+Date: 2026-09-10. Status: Phase 0 and Phase 1 are built and switched off (flag `astra_sets`, admins only once on). Of Phase 2, Sets from a photo is built and switched off (flag `astra_photo_sets`, 2026-09-11); the rest of Phase 2, and Phase 3, are not built. Evidence comes from four places:
 - 13 live responses from `gpt-6-astra` on Picacho's own key, recorded 2026-09-10. Total spend was $1.297.
 - OpenAI's documentation.
 - Competitors' own pages.
@@ -35,6 +35,8 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 ## Status and what was measured while building (2026-09-10)
 
 **Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/applied/2026-09-10/astra-sets.sql` (run in production 2026-09-11; flags confirmed off, tables present, anonymous key refused).
+
+**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/pending/astra-photo-sets.sql`). Worst case $1.81625 a build (`set-config.ts`). Match this shot, the webhook finisher and credits are not built. Image tokens and photos with people are unmeasured (eval D, E).
 
 **Deliberately not built in Phase 1.**
 - The shared `stage-canvas.tsx`: the Angle Stage is a live Studio/Elite lane that cannot be exercised without a paid account and a proxy. Sets has its own viewer; the Stage is untouched.
@@ -352,7 +354,7 @@ ends in a failed build: the first set is kept and delivered).
 ### 3.2 Feature 2: Sets from a photo, and Match this shot
 
 **User flow, photo set**
-1. **Upload.** "New set from a photo" takes a location photo. Before it leaves Picacho, the photo is judged by the output gate's readers as an input check (`assertOutputAllowed`, `output-policy.ts:692`). A refused photo never reaches OpenAI.
+1. **Upload.** "New set from a photo" takes a location photo. Before it leaves Picacho, the photo is judged by the output gate's readers as an input check (`assertOutputAllowed`, `output-policy.ts:692`). A refused photo never reaches **Astra** and is never stored. The gate's own readers (OpenAI moderation and vision, and Anthropic) do see it, as they see every render, and the Data-safety form must say so.
 2. **Build.** Astra (image input, `detail: high`) returns a SetSpec whose first camera is the photographer's viewpoint. People in the photo become marks; Astra is told never to identify or describe them.
 3. **Compare.** The photo and the first-camera snapshot appear side by side, so the user can see whether they match before spending on a shot.
 4. **Shoot.** Same as Feature 1.

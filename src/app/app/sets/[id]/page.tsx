@@ -42,7 +42,12 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
         <h1 className="font-display text-3xl font-semibold tracking-tight text-atelier-ink">
           {set?.title || s.untitled}
         </h1>
-        {set && <p className="mt-1 max-w-2xl text-sm text-atelier-muted">{set.brief}</p>}
+        {set && (
+          <p className="mt-1 max-w-2xl text-sm text-atelier-muted">
+            {/* A photo set has no brief: it says where it came from, and the photographer's notes if any. */}
+            {set.fromPhoto ? (set.brief ? `${s.fromPhoto} · ${set.brief}` : s.fromPhoto) : set.brief}
+          </p>
+        )}
       </div>
 
       {native ? (
@@ -51,7 +56,7 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
         <p className="text-sm text-atelier-muted">{localizeServerText(data.error, t)}</p>
       ) : data.set.status === "building" ? (
         <p className="text-sm text-atelier-muted">
-          {s.statusBuilding} {s.statusBuildingHint}{" "}
+          {s.statusBuilding} {data.set.fromPhoto ? s.statusBuildingPhotoHint : s.statusBuildingHint}{" "}
           <Link href="/app/sets" className="font-medium text-atelier-accent underline underline-offset-2">
             {s.back}
           </Link>
@@ -66,6 +71,7 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
           spec={data.set.spec}
           initialLayout={data.set.layout}
           hasThumb={data.set.hasThumb}
+          sourcePhotoUrl={data.set.sourcePhotoUrl}
           description={data.set.description}
           characters={data.characters}
           initialShots={data.shots}

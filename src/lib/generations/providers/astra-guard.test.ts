@@ -83,6 +83,71 @@ describe("every Astra request", () => {
   });
 });
 
+describe("an Astra request with a picture in it (Sets from a photo, 2026-09-11)", () => {
+  const jpeg = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2w==";
+  const withImage = (image_url: string, detail = "high"): AstraJobRequest["input"] => [
+    {
+      role: "user",
+      content: [
+        { type: "input_text", text: "rules" },
+        { type: "input_image", image_url, detail: detail as "high" },
+      ],
+    },
+  ];
+
+  it("sends the picture inline, with every fixed part still in place", () => {
+    const body = buildAstraRequestBody(req({ input: withImage(jpeg) }));
+    expect(body.input).toEqual([
+      {
+        role: "user",
+        content: [
+          { type: "input_text", text: "rules" },
+          { type: "input_image", image_url: jpeg, detail: "high" },
+        ],
+      },
+    ]);
+    expect(body.tools).toEqual([]);
+    expect(body.store).toBe(false);
+    expect(body.background).toBe(true);
+    expect(body.text).toEqual({ format: { type: "json_schema", name: "s", schema: { type: "object" }, strict: true } });
+  });
+
+  it("reads the picture at detail high whatever the caller wrote", () => {
+    const body = buildAstraRequestBody(req({ input: withImage(jpeg, "low") }));
+    const parts = (body.input as { content: { detail?: string }[] }[])[0].content;
+    expect(parts[1].detail).toBe("high");
+  });
+
+  it("accepts PNG and WebP bytes too", () => {
+    expect(() => buildAstraRequestBody(req({ input: withImage("data:image/png;base64,iVBORw0KGgo=") }))).not.toThrow();
+    expect(() => buildAstraRequestBody(req({ input: withImage("data:image/webp;base64,UklGRg==") }))).not.toThrow();
+  });
+
+  it("refuses a link of any kind: no capability URL to a person's file ever leaves", () => {
+    for (const url of [
+      "https://picacho.io/api/media/generated-images/u/sets/s.photo.jpg?v=abc",
+      "/api/media/generated-images/u/sets/s.photo.jpg?v=abc",
+      "https://example.supabase.co/storage/v1/object/sign/generated-images/x.jpg",
+      "data:text/html;base64,PGgxPg==",
+      "data:image/svg+xml;base64,PHN2Zz4=",
+      "data:image/jpeg;base64,not base64!",
+    ]) {
+      expect(() => buildAstraRequestBody(req({ input: withImage(url) })), url).toThrow();
+    }
+  });
+
+  it("refuses a part that is neither text nor a picture, and a message that is not the person's", () => {
+    const odd = [{ role: "user", content: [{ type: "input_file", file_url: "https://x" }] }] as unknown as AstraJobRequest["input"];
+    expect(() => buildAstraRequestBody(req({ input: odd }))).toThrow();
+    const system = [{ role: "system", content: [{ type: "input_text", text: "x" }] }] as unknown as AstraJobRequest["input"];
+    expect(() => buildAstraRequestBody(req({ input: system }))).toThrow();
+  });
+
+  it("leaves a plain text input exactly as it was", () => {
+    expect(buildAstraRequestBody(req({ input: "Brief: a harbour" })).input).toBe("Brief: a harbour");
+  });
+});
+
 describe("openAiSafetyId", () => {
   it("is stable, opaque and per person", () => {
     const prev = process.env.OPENAI_SAFETY_ID_SECRET;

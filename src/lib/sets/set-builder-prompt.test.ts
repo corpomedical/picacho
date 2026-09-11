@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA, setBuildInput } from "./set-builder-prompt";
+import { createHash } from "node:crypto";
+import {
+  SET_BUILDER_INSTRUCTIONS,
+  SET_PHOTO_RULES,
+  SET_SPEC_JSON_SCHEMA,
+  photoBuildInput,
+  setBuildInput,
+} from "./set-builder-prompt";
 import { normaliseSetSpec } from "./set-spec";
 import rainyMarket from "./fixtures-rainy-market.json";
 
@@ -67,5 +74,88 @@ describe("the builder's rules", () => {
 
   it("appends only the person's brief after the stable prefix", () => {
     expect(setBuildInput("a quiet harbour at dawn")).toBe("Brief: a quiet harbour at dawn");
+  });
+});
+
+describe("the cached prefix both kinds of build share", () => {
+  // The instructions plus the schema are the request's cacheable prefix, and
+  // a photo build sends them unchanged so it reads the cache a text build
+  // wrote. Recorded 2026-09-11 BEFORE Sets from a photo touched this file:
+  // any byte that moves here is a fresh cache write on every build of both
+  // kinds, and must be a decision, not an accident.
+  it("is byte for byte what it was before photo builds existed", () => {
+    const prefix = SET_BUILDER_INSTRUCTIONS + JSON.stringify(SET_SPEC_JSON_SCHEMA);
+    expect(prefix.length).toBe(8132);
+    expect(createHash("sha256").update(prefix).digest("hex")).toBe(
+      "6556a49f578d641e0e96f4e4cb8db9a07c18d3d466177fce838f4305367309c9",
+    );
+  });
+});
+
+describe("the photo rules", () => {
+  it("put camera 1 where the photographer stood, with the photo's vertical field of view", () => {
+    expect(SET_PHOTO_RULES).toContain("cameras[0] is the photographer");
+    expect(SET_PHOTO_RULES).toContain("VERTICAL field of view");
+    // The normaliser clamps cameras to the bounds + 10 m: the bounds must reach the camera.
+    expect(SET_PHOTO_RULES).toContain("Choose bounds that contain this position.");
+  });
+
+  it("never let a person in the photo be modelled, identified or described", () => {
+    expect(SET_PHOTO_RULES).toContain("Never model a person.");
+    expect(SET_PHOTO_RULES).toContain("Never identify, name or describe anyone");
+  });
+
+  it("keep brands, text and the real place's name out", () => {
+    expect(SET_PHOTO_RULES).toContain("Signs, posters and screens are blank shapes");
+    expect(SET_PHOTO_RULES).toContain("do not name the real place, business, street or address");
+  });
+
+  it("close what the photo does not show, and let the photo outrank the notes", () => {
+    expect(SET_PHOTO_RULES).toContain("Close every side it does not show");
+    expect(SET_PHOTO_RULES).toContain("follow the photo");
+  });
+
+  it("stay inside the input-token budget set-config.ts prices", () => {
+    // ≤ 2,000 characters ≈ ≤ 500 tokens, the figure in SET_PHOTO_BUILD_INPUT_TOKENS.
+    expect(SET_PHOTO_RULES.length).toBeLessThanOrEqual(2_000);
+  });
+});
+
+describe("photoBuildInput", () => {
+  const photo = "data:image/jpeg;base64,/9j/AAAA";
+  type Part = { type: string; text?: string; image_url?: string; detail?: string };
+  const parts = (input: unknown): Part[] => {
+    const messages = input as { role: string; content: Part[] }[];
+    expect(messages).toHaveLength(1);
+    expect(messages[0].role).toBe("user");
+    return messages[0].content;
+  };
+
+  it("is one user message: the rules, then the photo at detail high", () => {
+    const p = parts(photoBuildInput(photo, ""));
+    expect(p).toHaveLength(2);
+    expect(p[0]).toEqual({ type: "input_text", text: SET_PHOTO_RULES });
+    expect(p[1]).toEqual({ type: "input_image", image_url: photo, detail: "high" });
+  });
+
+  it("adds the photographer's notes only when there are any, and the tail last", () => {
+    const withNotes = parts(photoBuildInput(photo, "It is night.", "TAIL"));
+    expect(withNotes).toHaveLength(4);
+    expect(withNotes[2]).toEqual({ type: "input_text", text: "Notes from the photographer: It is night." });
+    expect(withNotes[3]).toEqual({ type: "input_text", text: "TAIL" });
+    const noNotes = parts(photoBuildInput(photo, "", "TAIL"));
+    expect(noNotes).toHaveLength(3);
+    expect(noNotes[2]).toEqual({ type: "input_text", text: "TAIL" });
+    expect(noNotes.some((p) => p.text?.startsWith("Notes from the photographer:"))).toBe(false);
+  });
+
+  it("gives a retry the same first two parts as the first attempt, so they share a prefix", () => {
+    const first = parts(photoBuildInput(photo, "n"));
+    const retry = parts(photoBuildInput(photo, "n", "Your previous set was open"));
+    expect(retry.slice(0, 2)).toEqual(first.slice(0, 2));
+  });
+
+  it("never sends the placeholder brief a photo build's row holds", () => {
+    expect(JSON.stringify(photoBuildInput(photo, ""))).not.toContain("Brief:");
   });
 });

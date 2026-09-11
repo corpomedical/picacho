@@ -27,3 +27,27 @@ export async function isSetsEnabled(supabase: SupabaseClient): Promise<boolean> 
     return false;
   }
 }
+
+// Sets from a photo (docs 3.2, 2026-09-11): a SECOND switch, on top of the
+// first — both flags must be on, and every level defaults to OFF exactly as
+// above. The flag row (astra_photo_sets) went in disabled with
+// supabase/applied/2026-09-10/astra-sets.sql. Turning it off also stops a
+// photo build that is already running from sending its photo to OpenAI again
+// (no retry); an answer already paid for is still collected. Who may use it
+// is decided in the action: admins only, checked on its own, so widening
+// text sets never widens photo sets.
+export async function isPhotoSetsEnabled(supabase: SupabaseClient): Promise<boolean> {
+  if (process.env.ASTRA_DISABLED === "1") return false;
+  if (!process.env.OPENAI_API_KEY) return false;
+  try {
+    const { data, error } = await supabase
+      .from("feature_flags")
+      .select("key, enabled")
+      .in("key", ["astra_sets", "astra_photo_sets"]);
+    if (error || !data) return false;
+    const on = new Set((data as { key: string; enabled: boolean }[]).filter((r) => r.enabled === true).map((r) => r.key));
+    return on.has("astra_sets") && on.has("astra_photo_sets");
+  } catch {
+    return false;
+  }
+}

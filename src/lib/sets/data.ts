@@ -3,11 +3,17 @@ import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
+import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
+import { readPhotoSources } from "@/lib/sets/photo";
 import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
 import { hasSavedOutfit } from "@/lib/sets/look";
 import { normaliseSetLayout, normaliseSetSpec } from "@/lib/sets/set-spec";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
+
+// A photo build's brief column holds the photographer's notes, or this
+// placeholder when there were none — never shown (actions.ts RESERVED).
+const RESERVED = "-";
 
 // The Sets pages' reads (2026-09-10). Server-only; every read runs as the
 // signed-in person, so row-level security is a second owner check behind
@@ -63,16 +69,26 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     // an outage, not an ordering problem.
     console.error("getSetsHome failed:", error.message);
   }
+  // Which of them were built from a photo: a read of its own, so the list
+  // above never names a column that may not exist yet (photo.ts).
+  const photos = await readPhotoSources(
+    access.supabase,
+    (rows ?? []).map((r) => r.id as string),
+    access.userId,
+  );
   const sets: SetSummary[] = (rows ?? []).map((r) => {
     const status = asStatus(r.status);
+    const fromPhoto = photos.has(r.id as string);
+    const brief = (r.brief as string) ?? "";
     return {
       id: r.id as string,
       title: (r.title as string) ?? "",
-      brief: (r.brief as string) ?? "",
+      brief: fromPhoto && brief === RESERVED ? "" : brief,
       status,
       createdAt: r.created_at as string,
       thumbUrl: r.thumb_path ? thumbUrl(mediaUrl("generated-images", r.thumb_path as string), 640) : null,
-      failure: status === "failed" ? setFailureMessage(r.failure as string | null) : null,
+      failure: status === "failed" ? setFailureMessage(r.failure as string | null, fromPhoto ? "photo" : "text") : null,
+      fromPhoto,
     };
   });
   return {
@@ -80,6 +96,7 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     sets,
     usedThisMonth: (await countSetBuildsThisMonth(access.userId, access.periodStart)) ?? 0,
     monthlyLimit: access.monthlyLimit,
+    photoSetsOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
   };
 }
 
@@ -102,6 +119,11 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   const normalised = status === "ready" && row.spec ? normaliseSetSpec(row.spec) : null;
   const spec = normalised?.ok ? normalised.spec : null;
   const layout = spec && row.layout ? normaliseSetLayout(row.layout, spec) : null;
+  // Built from a photo? Read on its own, as the person (their SELECT on the
+  // table covers every column), so the read above stays exactly as it was.
+  const photo = (await readPhotoSources(db, [setId], access.userId)).get(setId) ?? null;
+  const fromPhoto = photo !== null;
+  const brief = (row.brief as string) ?? "";
 
   const { data: shotRows } = await db
     .from("location_set_shots")
@@ -168,12 +190,15 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       id: row.id as string,
       title: (row.title as string) ?? "",
       description: (row.description as string) ?? "",
-      brief: (row.brief as string) ?? "",
+      brief: fromPhoto && brief === RESERVED ? "" : brief,
       status,
-      failure: status === "failed" ? setFailureMessage(row.failure as string | null) : null,
+      failure: status === "failed" ? setFailureMessage(row.failure as string | null, fromPhoto ? "photo" : "text") : null,
       spec,
       layout,
       hasThumb: isCurrentSetThumb(row.thumb_path, access.userId, row.id as string),
+      fromPhoto,
+      // Only a ready set shows it: a failed build's photo has been removed.
+      sourcePhotoUrl: photo && status === "ready" ? thumbUrl(mediaUrl("generated-images", photo.path), 1600) : null,
     },
     shots,
     characters,
