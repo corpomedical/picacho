@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "allowImportingTsExtensions": true,
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "types": ["node"],
+    "plugins": []
+  },
+  "include": ["./**/*.mts"],
+  "exclude": ["out", "corpus", "node_modules"]
+}

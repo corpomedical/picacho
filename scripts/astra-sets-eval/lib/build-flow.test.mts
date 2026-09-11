@@ -1,0 +1,163 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { setBuildInput } from "../../../src/lib/sets/set-builder-prompt.ts";
+import { RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
+import { advanceBuild, buildRecord, ConfigAbort, startBuild, type AttemptMeta, type FlowDeps, type TransportResult, type WordsVerdict } from "./build-flow.mts";
+import { closureOf } from "./context.mts";
+import { REPO_ROOT } from "./util.mts";
+
+// Parity with sets/actions.ts pollSetBuild, on the product's own recorded
+// Astra sets and the real three.js closure measure.
+
+const fixture = (name: string) => readFileSync(join(REPO_ROOT, `src/lib/sets/fixtures-${name}.json`), "utf8");
+const CLOSED = fixture("showroom-closed");
+const OPEN = fixture("showroom-open");
+// A lone box on a big floor: open on every bearing, far more open than OPEN.
+const WIDE_OPEN = JSON.stringify({ bounds: { x: 20, z: 20, height: 5 }, objects: [{ shape: "box", position: [0, 0.5, 5], size: [1, 1, 1] }], marks: [{ label: "", x: 0, z: 0, facingDeg: 0 }] });
+
+const usage = { input_tokens: 1800, output_tokens: 5000 };
+const done = (text: string): TransportResult => ({ state: "done", text, usage });
+const failed = (kind: "refused" | "incomplete" | "failed" | "expired" | "cancelled"): TransportResult => ({ state: "failed", kind, detail: kind, usage });
+const meta: AttemptMeta = { transport: "simulated", billedUsd: 0.1, standardUsd: 0.2 };
+
+function deps(words: WordsVerdict[] = []): FlowDeps & { calls: number } {
+  const d = {
+    calls: 0,
+    closureOf,
+    async judgeWords(): Promise<WordsVerdict> {
+      d.calls += 1;
+      return words.shift() ?? "allowed";
+    },
+  };
+  return d;
+}
+
+async function run(answers: TransportResult[], words: WordsVerdict[] = []) {
+  const s = startBuild("b1", "a quiet showroom with one red car");
+  const d = deps(words);
+  const inputs: string[] = [];
+  for (const a of answers) {
+    if (!s.next) break;
+    inputs.push(s.next.input);
+    await advanceBuild(s, a, meta, d);
+  }
+  return { s, inputs, d };
+}
+
+describe("advanceBuild, as pollSetBuild", () => {
+  it("a closed set is delivered after one attempt", async () => {
+    const { s } = await run([done(CLOSED)]);
+    expect(s.final).toMatchObject({ status: "delivered", use: "answer", openAtDelivery: 0, fromAttempt: 1 });
+    expect(s.attempts).toBe(1);
+    expect(s.next).toBeNull();
+  });
+
+  it("an open set is sent back as a mend that starts with the brief and carries the set", async () => {
+    const s = startBuild("b1", "a quiet showroom with one red car");
+    await advanceBuild(s, done(OPEN), meta, deps());
+    expect(s.next?.kind).toBe("retry-close-mend");
+    expect(s.next?.input.startsWith(setBuildInput("a quiet showroom with one red car"))).toBe(true);
+    expect(s.next?.input).toContain("Previous set:");
+    expect(s.draft).not.toBeNull();
+    expect(s.draftOpen).toBeGreaterThan(0);
+  });
+
+  it("the mend closes it: the mend is delivered", async () => {
+    const { s } = await run([done(OPEN), done(CLOSED)]);
+    expect(s.final).toMatchObject({ status: "delivered", use: "answer", openAtDelivery: 0, fromAttempt: 2 });
+  });
+
+  it("a mend that comes back more open loses to the draft; a tie goes to the mend", async () => {
+    const worse = await run([done(OPEN), done(WIDE_OPEN)]);
+    expect(worse.s.final).toMatchObject({ status: "delivered", use: "draft", fromAttempt: 1 });
+    const tie = await run([done(OPEN), done(OPEN)]);
+    expect(tie.s.final).toMatchObject({ status: "delivered", use: "answer", fromAttempt: 2 });
+  });
+
+  it("a mend that is invalid, refused, incomplete or cancelled leaves the draft", async () => {
+    for (const second of [done("not json"), failed("refused"), failed("incomplete"), failed("cancelled")]) {
+      const { s } = await run([done(OPEN), second]);
+      expect(s.final).toMatchObject({ status: "delivered", use: "draft" });
+    }
+  });
+
+  it("an invalid answer is retried with the plain input; an incomplete one asks for smaller", async () => {
+    const invalid = await run([done("{ nope"), done(CLOSED)]);
+    expect(invalid.inputs[1]).toBe(setBuildInput("a quiet showroom with one red car"));
+    expect(invalid.s.log.map((a) => a.kind)).toEqual(["first", "retry-plain"]);
+    expect(invalid.s.log[0].outcome).toBe("not_json");
+    expect(invalid.s.final).toMatchObject({ status: "delivered", use: "answer" });
+    const incomplete = await run([failed("incomplete"), done(CLOSED)]);
+    expect(incomplete.inputs[1]).toBe(setBuildInput("a quiet showroom with one red car") + RETRY_SMALLER);
+    expect(incomplete.s.log[1].kind).toBe("retry-smaller");
+  });
+
+  it("failed and expired answers retry plain; two failures end the build", async () => {
+    const { s } = await run([failed("failed"), failed("expired")]);
+    expect(s.log.map((a) => a.kind)).toEqual(["first", "retry-plain"]);
+    expect(s.final).toEqual({ status: "failed", failure: "expired" });
+  });
+
+  it("a refusal or a cancellation is never retried", async () => {
+    expect((await run([failed("refused"), done(CLOSED)])).s.final).toEqual({ status: "failed", failure: "refused" });
+    expect((await run([failed("cancelled"), done(CLOSED)])).s.final).toEqual({ status: "failed", failure: "cancelled" });
+  });
+
+  it("the words gate refusing the first answer ends the build, with no retry", async () => {
+    const { s, d } = await run([done(OPEN), done(CLOSED)], [{ refused: "sexual" }]);
+    expect(s.final).toMatchObject({ status: "failed", failure: "refused" });
+    expect(s.attempts).toBe(1);
+    expect(d.calls).toBe(1);
+  });
+
+  it("the words gate refusing the mend's words delivers the draft", async () => {
+    const { s } = await run([done(OPEN), done(CLOSED)], ["allowed", { refused: "minors" }]);
+    expect(s.final).toMatchObject({ status: "delivered", use: "draft" });
+  });
+
+  it("words gate unavailable carries on, flagged", async () => {
+    const { s } = await run([done(CLOSED)], ["unavailable"]);
+    expect(s.final).toMatchObject({ status: "delivered" });
+    expect(s.log[0].words).toBe("unavailable");
+  });
+
+  it("a plain retry whose submit is refused ends refused; one that could not start keeps the first failure", async () => {
+    const refused = await run([done("x"), { state: "submit-failed", kind: "refused", detail: "403 misalignment" }]);
+    expect(refused.s.final).toMatchObject({ status: "failed", failure: "refused" });
+    const down = await run([failed("incomplete"), { state: "submit-failed", kind: "unavailable", detail: "503" }]);
+    expect(down.s.final).toMatchObject({ status: "failed", failure: "incomplete" });
+  });
+
+  it("a closing retry that cannot start delivers the set in hand", async () => {
+    const { s } = await run([done(OPEN), { state: "submit-failed", kind: "rate_limited", detail: "429" }]);
+    expect(s.final).toMatchObject({ status: "delivered", use: "draft", fromAttempt: 1 });
+  });
+
+  it("a first submit lost on the wire is not run; a config error stops everything", async () => {
+    const lost = await run([{ state: "submit-failed", kind: "rate_limited", detail: "429" }]);
+    expect(lost.s.final).toMatchObject({ status: "failed", failure: "not_run:transport" });
+    const rec = buildRecord(lost.s, { part: "a", builder: "astra-low", provider: "openai", run: 1, briefId: "x", category: "interior", simulated: false, specFile: null });
+    expect(rec.notRun).toBe("transport");
+    const s = startBuild("b2", "a place");
+    await expect(advanceBuild(s, { state: "submit-failed", kind: "config", detail: "401" }, meta, deps())).rejects.toBeInstanceOf(ConfigAbort);
+  });
+
+  it("an attempt the runner abandoned as stale ends like production's stale branch", async () => {
+    const lost = await run([{ state: "failed", kind: "expired", detail: "15 min", usage: null, stale: true }]);
+    expect(lost.s.final).toMatchObject({ status: "failed", failure: "lost" });
+    const withDraft = await run([done(OPEN), { state: "failed", kind: "expired", detail: "15 min", usage: null, stale: true }]);
+    expect(withDraft.s.final).toMatchObject({ status: "delivered", use: "draft" });
+  });
+
+  it("the record sums both attempts' cost and tokens", async () => {
+    const { s } = await run([done(OPEN), done(CLOSED)]);
+    const rec = buildRecord(s, { part: "a", builder: "astra-low", provider: "openai", run: 1, briefId: "x", category: "interior", simulated: true, specFile: "specs/b1.json" });
+    expect(rec.billedUsd).toBeCloseTo(0.2, 12);
+    expect(rec.standardUsd).toBeCloseTo(0.4, 12);
+    expect(rec.outputTokens).toBe(10_000);
+    expect(rec.firstValid).toBe(true);
+    expect(rec.validWithinRetry).toBe(true);
+    expect(rec.openAtDelivery).toBe(0);
+  });
+});

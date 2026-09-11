@@ -1,0 +1,12 @@
+[
+  {
+    "_template": true,
+    "id": "can-01",
+    "brief": "<<FORMAT ONLY — NOT A BRIEF: a fixed canary brief; once chosen, never edited (its hash keys the history)>>"
+  },
+  {
+    "_template": true,
+    "id": "can-02",
+    "brief": "<<FORMAT ONLY — NOT A BRIEF: the real file holds exactly ten>>"
+  }
+]

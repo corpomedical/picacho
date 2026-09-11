@@ -1,0 +1,10 @@
+[
+  {
+    "_template": true,
+    "id": "ph-01",
+    "file": "photos/ph-01.jpg",
+    "licence": "<<FORMAT ONLY — where the photo comes from and the licence that allows this use>>",
+    "containsPeople": false,
+    "exif": { "focal35mm": 26, "focalMm": 5.7, "orientation": 1 }
+  }
+]

@@ -1,0 +1,100 @@
+import { describe, expect, it } from "vitest";
+import { combineRatings, importRatings, planSheet, QUESTIONS, renderSheetHtml, type SheetItemIn } from "./blind-sheet.mts";
+
+const BUILDERS = ["builder-alpha-secret", "builder-beta-secret", "builder-gamma-secret"];
+const items: SheetItemIn[] = Array.from({ length: 12 }, (_, i) => ({
+  source: { buildId: `build-${i}-hidden`, builder: BUILDERS[i % 3], run: 1 + (i % 2), briefId: `brief-${Math.floor(i / 3)}` },
+  groupKey: `brief-${Math.floor(i / 3)}`,
+  text: `Brief text ${Math.floor(i / 3)}`,
+  images: [{ role: "snapshot", path: `/runs/frames/build-${i}-hidden-c1.jpg` }],
+}));
+
+describe("planSheet", () => {
+  it("is deterministic for a seed, and a permutation of every item", () => {
+    const a = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 7, items });
+    const b = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 7, items });
+    expect(a).toEqual(b);
+    expect(a.order).toHaveLength(12);
+    const sources = a.key.items.map((k) => k.source.buildId).sort();
+    expect(sources).toEqual(items.map((i) => i.source.buildId).sort());
+    expect(new Set(a.order.map((o) => o.itemId)).size).toBe(12);
+  });
+
+  it("gives each rater their own order and ids", () => {
+    const r1 = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 7, items });
+    const r2 = planSheet({ kind: "b-fidelity", raterId: "r2", seed: 7, items });
+    expect(r1.sheetId).not.toBe(r2.sheetId);
+    expect(r1.order.map((o) => o.itemId)).not.toEqual(r2.order.map((o) => o.itemId));
+    expect(r1.key.items.map((k) => k.source.buildId)).not.toEqual(r2.key.items.map((k) => k.source.buildId));
+  });
+
+  it("never puts two items of one brief side by side when it can be avoided", () => {
+    const p = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 99, items });
+    const groups = p.key.items.map((k) => k.groupKey);
+    for (let i = 1; i < groups.length; i++) expect(groups[i]).not.toBe(groups[i - 1]);
+  });
+
+  it("the page carries none of the key's hidden values, and the files are opaque", () => {
+    const p = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 3, items });
+    const html = renderSheetHtml(p, QUESTIONS["b-fidelity"]);
+    for (const k of p.key.items) {
+      expect(html).not.toContain(String(k.source.buildId));
+      expect(html).not.toContain(String(k.source.builder));
+      for (const im of k.images) {
+        expect(html).not.toContain(im.path);
+        expect(im.file).toMatch(/^img\/[0-9a-f]{10}-1\.jpg$/);
+      }
+    }
+    expect(html).toContain("Brief text 0");
+    expect(html).toContain(p.sheetId);
+  });
+});
+
+describe("importRatings", () => {
+  const p = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 5, items: items.slice(0, 3) });
+  const ids = p.key.items.map((k) => k.itemId);
+  const file = (ratings: unknown[], over: Record<string, unknown> = {}) => ({ sheetId: p.sheetId, raterId: "r1", ratedAt: "2026-09-12T00:00:00Z", ratings, ...over });
+
+  it("accepts a complete, valid file", () => {
+    const r = importRatings(p.key, [file(ids.map((itemId, i) => ({ itemId, score: i + 3 })))]);
+    expect(r.problems).toEqual([]);
+    expect(r.rows.map((x) => x.score)).toEqual([3, 4, 5]);
+    expect(r.rows[0].source.buildId).toBe(p.key.items[0].source.buildId);
+  });
+
+  it("rejects a wrong sheet, duplicates, unknown items and out-of-range scores", () => {
+    expect(importRatings(p.key, [file([], { sheetId: "someone-else" })]).problems.join(" ")).toMatch(/no ratings file/);
+    expect(importRatings(p.key, [file([...ids.map((itemId) => ({ itemId, score: 4 })), { itemId: ids[0], score: 5 }])]).problems.join(" ")).toMatch(/rated twice/);
+    expect(importRatings(p.key, [file([...ids.map((itemId) => ({ itemId, score: 4 })), { itemId: "ffffffffff", score: 5 }])]).problems.join(" ")).toMatch(/unknown item/);
+    expect(importRatings(p.key, [file(ids.map((itemId) => ({ itemId, score: 6 })))]).problems.join(" ")).toMatch(/whole number 1–5/);
+    expect(importRatings(p.key, [file(ids.map((itemId) => ({ itemId, score: 3.5 })))]).problems.join(" ")).toMatch(/whole number/);
+    expect(importRatings(p.key, [file(ids.map((itemId) => ({ itemId, score: 4 })), { raterId: "r9" })]).problems.join(" ")).toMatch(/does not match/);
+  });
+
+  it("errors on missing items unless allowed", () => {
+    const partial = [file([{ itemId: ids[0], score: 4 }])];
+    expect(importRatings(p.key, partial).problems.join(" ")).toMatch(/2 of 3 items unrated/);
+    const allowed = importRatings(p.key, partial, { allowIncomplete: true });
+    expect(allowed.problems).toEqual([]);
+    expect(allowed.warnings.join(" ")).toMatch(/unrated/);
+  });
+
+  it("combines two raters per source item", () => {
+    const p2 = planSheet({ kind: "b-fidelity", raterId: "r2", seed: 5, items: items.slice(0, 3) });
+    const a = importRatings(p.key, [file(p.key.items.map((k) => ({ itemId: k.itemId, score: 4 })))]).rows;
+    const b = importRatings(p2.key, [{ sheetId: p2.sheetId, raterId: "r2", ratings: p2.key.items.map((k) => ({ itemId: k.itemId, score: 5 })) }]).rows;
+    const c = combineRatings([...a, ...b]);
+    expect(c.size).toBe(3);
+    for (const v of c.values()) {
+      expect(v.raters).toBe(2);
+      expect(v.ratings.map((x) => x.score).sort()).toEqual([4, 5]);
+    }
+  });
+
+  it("choice sheets take yes, no or unsure", () => {
+    const q = planSheet({ kind: "d-persons", raterId: "r1", seed: 1, items: [{ source: { buildId: "x" }, groupKey: "g", text: "t", images: [] }] });
+    const id = q.key.items[0].itemId;
+    expect(importRatings(q.key, [{ sheetId: q.sheetId, raterId: "r1", ratings: [{ itemId: id, choice: "maybe" }] }]).problems.join(" ")).toMatch(/yes \| no \| unsure/);
+    expect(importRatings(q.key, [{ sheetId: q.sheetId, raterId: "r1", ratings: [{ itemId: id, choice: "unsure" }] }]).rows[0].choice).toBe("unsure");
+  });
+});

@@ -1,0 +1,14 @@
+[
+  {
+    "_template": true,
+    "id": "int-01",
+    "category": "interior",
+    "brief": "<<FORMAT ONLY — NOT A BRIEF: one indoor place, in the writer's own words, 8–500 characters>>"
+  },
+  {
+    "_template": true,
+    "id": "ext-01",
+    "category": "exterior",
+    "brief": "<<FORMAT ONLY — NOT A BRIEF: one outdoor place, in the writer's own words, 8–500 characters>>"
+  }
+]

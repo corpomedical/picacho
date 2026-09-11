@@ -1,0 +1,21 @@
+{
+  "_readme": "Prices the repo does not hold. Every value is null until the operator reads the named page and writes the figure with the date it was read. A filled model entry: { \"inputPerMTok\": n, \"cachedInputPerMTok\": n or null, \"cacheWritePerMTok\": n or null, \"outputPerMTok\": n, \"source\": \"<the page's URL>\", \"readOn\": \"YYYY-MM-DD\" } (USD per 1M tokens; a null cached rate bills cached tokens at the full input rate). A filled image entry: { \"usdPerImage\": n, \"source\": \"<URL>\", \"readOn\": \"YYYY-MM-DD\" }. A judgement ceiling: { \"usd\": n, \"derivation\": \"<the arithmetic, from the prices above>\" }.",
+  "models": {
+    "_where": "claude-sonnet-5: https://claude.com/pricing ; gpt-5.4-mini and gpt-5.4: https://developers.openai.com/api/docs/pricing",
+    "claude-sonnet-5": null,
+    "gpt-5.4-mini": null,
+    "gpt-5.4": null
+  },
+  "images": {
+    "_where": "fal's model pages: https://fal.ai/models/fal-ai/flux-2-pro/edit and https://fal.ai/models/fal-ai/bytedance/seedream/v4/edit . Seedream conflicts in the repo (docs/ASTRA_SETS.md says $0.03; angle-stage-config.ts says fal publishes no price): re-read the page before the run.",
+    "flux-2-pro-edit": null,
+    "seedream-v4-edit": null
+  },
+  "judgementCeilings": {
+    "_where": "Optional. The most one judgement can cost, derived from the model prices above (e.g. the prompt gate: up to 2 reads, 5 at an edge). Without one, gate spend is metered, not reserved.",
+    "prompt-gate": null,
+    "output-gate": null,
+    "identity-scorer": null,
+    "drafter": null
+  }
+}

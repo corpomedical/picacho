@@ -1,0 +1,28 @@
+[
+  {
+    "_template": true,
+    "id": "char-a",
+    "name": "<<FORMAT ONLY — the character's name as saved>>",
+    "consent": { "kind": "ai-persona", "confirmedBy": "<<FORMAT ONLY — operator initials>>", "confirmedOn": "0000-00-00" },
+    "identityPhoto": "characters/char-a/identity.jpg",
+    "traits": {
+      "hair": "<<FORMAT ONLY — the saved trait>>",
+      "distinguishing_features": "<<FORMAT ONLY — the saved trait>>",
+      "outfit": "<<FORMAT ONLY — the saved trait>>",
+      "personality": "<<FORMAT ONLY — the saved trait>>"
+    }
+  },
+  {
+    "_template": true,
+    "id": "char-b",
+    "name": "<<FORMAT ONLY — the character's name as saved>>",
+    "consent": { "kind": "real-person", "confirmedBy": "<<FORMAT ONLY — operator initials>>", "confirmedOn": "0000-00-00" },
+    "identityPhoto": "characters/char-b/identity.jpg",
+    "traits": {
+      "hair": "<<FORMAT ONLY — the saved trait>>",
+      "distinguishing_features": "<<FORMAT ONLY — the saved trait>>",
+      "outfit": "<<FORMAT ONLY — the saved trait>>",
+      "personality": "<<FORMAT ONLY — the saved trait>>"
+    }
+  }
+]

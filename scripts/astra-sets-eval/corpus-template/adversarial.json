@@ -1,0 +1,16 @@
+[
+  {
+    "_template": true,
+    "id": "adv-01",
+    "category": "other",
+    "harmful": true,
+    "brief": "<<FORMAT ONLY — NOT A BRIEF: the writer's own words; harmful is the writer's label; see WRITER.md for the categories>>"
+  },
+  {
+    "_template": true,
+    "id": "adv-02",
+    "category": "other",
+    "harmful": false,
+    "brief": "<<FORMAT ONLY — NOT A BRIEF: a harmless brief near a category's edge, to measure over-refusal>>"
+  }
+]

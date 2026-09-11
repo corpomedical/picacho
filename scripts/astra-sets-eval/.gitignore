@@ -1,0 +1,5 @@
+# Run output (manifests, ledgers, answers, frames, rater sheets and keys) and
+# a corpus dropped here by mistake: never committed. The corpus belongs
+# outside the repo (README.md).
+/out/
+/corpus/

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Astra Sets eval snapshot page</title>
+<!--
+  Served from memory by render/stage.mts on 127.0.0.1 only. It draws a set
+  the way src/components/sets/set-view.tsx does (render/viewer-parity.mts
+  checks those lines at run start) with the product's own set-spec.ts,
+  build-scene.ts and exposure.ts, type-stripped, and three.js from
+  node_modules. Known gaps against a phone or laptop browser: swiftshader
+  instead of a GPU (the lift is recorded per set), pixel ratio 1 (the
+  product uses up to 2 for its crop), and a square canvas (which is what the
+  product crops to). OrbitControls' polar and distance limits are not
+  applied to a pose; a pose they would have moved is flagged.
+-->
+<script type="importmap">{ "imports": { "three": "./three.module.js" } }</script>
+</head>
+<body style="margin:0;background:#111">
+<script type="module">
+import * as THREE from "three";
+import { normaliseSetSpec } from "./set-spec.js";
+import { buildSetScene, buildStandIn, placeStandIn } from "./build-scene.js";
+import { BASE_EXPOSURE, NO_LIFT, liftSet } from "./exposure.js";
+
+// set-view.tsx: const ACCENT = "#c8923a";
+const ACCENT = "#c8923a";
+const PX = 1024;
+// set-view.tsx: controls.maxPolarAngle = Math.PI * 0.62; minDistance 0.3; maxDistance by bounds.
+const MAX_POLAR = Math.PI * 0.62;
+
+function cropSquare(renderer, px) {
+  const src = renderer.domElement;
+  const side = Math.min(src.width, src.height);
+  const out = document.createElement("canvas");
+  out.width = px;
+  out.height = px;
+  const ctx = out.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(src, (src.width - side) / 2, (src.height - side) / 2, side, side, 0, 0, px, px);
+  return out.toDataURL("image/jpeg", 0.9);
+}
+
+function wouldControlsMove(spec, pose) {
+  const d = new THREE.Vector3(pose.position[0] - pose.target[0], pose.position[1] - pose.target[1], pose.position[2] - pose.target[2]);
+  const dist = d.length();
+  const maxDistance = Math.max(spec.bounds.x, spec.bounds.z) * 1.2 + 10;
+  const polar = dist > 0 ? Math.acos(Math.max(-1, Math.min(1, d.y / dist))) : 0;
+  return dist < 0.3 || dist > maxDistance || polar > MAX_POLAR;
+}
+
+// renderSet(key, mark, poses): one set, one lift, one frame per pose.
+//   mark   where the stand-in stands ({x, z, facingDeg}); null = the first mark
+//   poses  [{ poseId, position, target, fovDeg, figure }]
+window.renderSet = async (key, mark, poses) => {
+  const t0 = performance.now();
+  const errors = [];
+  const res = await fetch(`/spec/${encodeURIComponent(key)}.json`);
+  if (!res.ok) return { error: `spec ${key}: ${res.status}` };
+  const n = normaliseSetSpec(await res.json());
+  if (!n.ok) return { error: `normalise: ${n.reason}` };
+  const spec = n.spec;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+  renderer.setPixelRatio(1);
+  renderer.setSize(PX, PX, false);
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = BASE_EXPOSURE;
+  // A desktop pointer: set-view.tsx turns shadows on unless the pointer is coarse.
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  document.body.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  const built = buildSetScene(THREE, spec, { shadows: true });
+  scene.add(built.root);
+  if (built.background) scene.background = built.background;
+  if (built.fog) scene.fog = built.fog;
+
+  const standIn = buildStandIn(THREE, ACCENT);
+  const m0 = spec.marks[0];
+  placeStandIn(standIn, mark ?? { x: m0.x, z: m0.z, facingDeg: m0.facingDeg });
+  scene.add(standIn.group);
+
+  const camera = new THREE.PerspectiveCamera(poses[0]?.fovDeg ?? spec.cameras[0].fovDeg, 1, 0.05, built.farPlane);
+
+  // The lift, measured without the grey figure (set-view.tsx, 2026-09-11).
+  let lift = NO_LIFT;
+  standIn.group.visible = false;
+  try {
+    lift = liftSet(THREE, renderer, scene, spec, built.farPlane);
+  } catch (err) {
+    errors.push(`lift: ${err && err.message ? err.message : err}`);
+  } finally {
+    standIn.group.visible = true;
+  }
+
+  const frames = [];
+  for (const pose of poses) {
+    // The ring and arrow are for arranging; the image model never sees them.
+    standIn.helpers.visible = false;
+    if (!pose.figure) standIn.figure.visible = false;
+    const cam = camera.clone();
+    cam.position.set(...pose.position);
+    cam.fov = pose.fovDeg;
+    cam.lookAt(new THREE.Vector3(...pose.target));
+    cam.updateProjectionMatrix();
+    renderer.render(scene, cam);
+    frames.push({ poseId: pose.poseId, jpeg: cropSquare(renderer, PX), controlsWouldMove: wouldControlsMove(spec, pose) });
+    standIn.helpers.visible = true;
+    standIn.figure.visible = true;
+  }
+
+  const lifted = lift.fill > 1 || lift.exposure > BASE_EXPOSURE;
+  built.dispose();
+  standIn.dispose();
+  renderer.dispose();
+  renderer.domElement.remove();
+  return { lift, lifted, frames, errors, ms: Math.round(performance.now() - t0), meshCount: built.meshCount };
+};
+
+window.pageReady = true;
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "_template": true,
+  "corpusVersion": 1,
+  "writtenBy": "<<FORMAT ONLY — a pseudonym for the writer>>",
+  "writtenOn": "0000-00-00",
+  "blindAttestation": "<<FORMAT ONLY — the writer's own sentence: that they have not read the builder instructions, the set schema, docs/ASTRA_SETS.md, or any Picacho prompt or rulebook>>",
+  "files": {
+    "briefs": "briefs.json",
+    "adversarial": "adversarial.json",
+    "directions": "directions.json",
+    "characters": "characters.json",
+    "canary": "canary.json",
+    "match": "match.json",
+    "baselines": "baselines.json"
+  }
+}
