@@ -924,6 +924,50 @@ describe("placeMatchedCamera — the set as built", () => {
     expect(placed.moved).toBe("none");
     expect(placed.position).toEqual([0, 0.2, -190]);
   });
+
+  // The final review's case (2026-09-11): a camera read at the floor, pulled
+  // in by a wall along the line from the figure's eye, came out 0.8 m high
+  // under a note that it stood as low as the stage allows.
+  it("with matchSummary: a camera moved for something built is never said to stand at a limit it has left", () => {
+    const person: CameraPose = { position: [0, 1.6, 5], target: [0, 1.2, 0], fovDeg: 40 };
+    const openSide: CameraPose = { position: [0, 1.6, -5], target: [0, 1.2, 0], fovDeg: 40 };
+    const say = (set: THREE.Object3D, over: Partial<ShotMatch>, current = person) => {
+      const m = match({ subjectDistanceM: 5, subjectX: 0.6, pitchDeg: -8, ...over });
+      const solved = solveMatchPose(m, { mark: ORIGIN, current, referenceAspect: 16 / 9, bounds: SET_BOUNDS, canvasAspect: WIDE });
+      const placed = placeMatchedCamera(THREE, set, solved.pose, stage());
+      const taken: CameraPose = { position: placed.position, target: placed.target, fovDeg: solved.pose.fovDeg };
+      return { notes: solved.notes, moved: placed.moved, ...matchSummary(m, solved, taken) };
+    };
+
+    // Read 0.05 m up: held to 0.2 m, then pulled in by the wall 2.9 m out.
+    const low = say(walled.root, { cameraHeightM: 0.05 });
+    expect(low.notes).toEqual({ heightClampedLow: true });
+    expect(low.moved).toBe("in");
+    expect(low).toMatchObject({ heightM: 0.8, tiltDeg: -8, clamps: [] });
+    // The same read from the wall's open side: it stands at 0.2 m, and says so.
+    expect(say(walled.root, { cameraHeightM: 0.05 }, openSide)).toMatchObject({ moved: "none", heightM: 0.2, clamps: ["low"] });
+
+    // A subject read 200 m out: held to the set's reach, 20 m, then pulled in to 2.6 m.
+    const far = say(walled.root, { subjectDistanceM: 200 });
+    expect(far.notes).toEqual({ distanceClampedFar: true });
+    expect(far).toMatchObject({ moved: "in", clamps: [] });
+    expect(say(walled.root, { subjectDistanceM: 200 }, openSide)).toMatchObject({ moved: "none", clamps: ["far"] });
+
+    // Read 30 m up: held to twice the set's height, 12 m, then pulled in under a ceiling.
+    const roofed = built([{ shape: "box", position: [0, 3.1, 0], size: [20, 0.2, 20] }]);
+    const high = say(roofed.root, { cameraHeightM: 30 });
+    expect(high.notes).toEqual({ heightClampedHigh: true });
+    expect(high.moved).toBe("in");
+    expect(high.heightM).toBeLessThan(3);
+    expect(high.clamps).toEqual([]);
+    roofed.dispose();
+
+    // Gone round a partition with no pull-in: another side at the same 0.2 m,
+    // so the height limit is still where it stands.
+    const partitioned = built([{ shape: "box", position: [0, 1.5, 0.45], size: [6, 3, 0.1] }]);
+    expect(say(partitioned.root, { cameraHeightM: 0.05 })).toMatchObject({ moved: "around", heightM: 0.2, clamps: ["low"] });
+    partitioned.dispose();
+  });
 });
 
 describe("matchSummary", () => {
@@ -932,30 +976,68 @@ describe("matchSummary", () => {
     target: [0, height + 5 * Math.tan(tiltDeg * DEG), 0],
     fovDeg,
   });
+  /** The summary of a camera that stands where it was solved: nothing built moved it. */
+  const summary = (m: ShotMatch, p: CameraPose, notes: MatchNotes) => matchSummary(m, { pose: p, notes }, p);
 
   it("names the lens to the millimetre, the height to 0.1 m and the tilt in whole degrees", () => {
-    expect(matchSummary(match(), pose(fovForLens(35), 1.23, -8.4), {})).toEqual({ lensMm: 35, heightM: 1.2, tiltDeg: -8, clamps: [] });
+    expect(summary(match(), pose(fovForLens(35), 1.23, -8.4), {})).toEqual({ lensMm: 35, heightM: 1.2, tiltDeg: -8, clamps: [] });
     // The stage's two ends, which no lens chip sits on: 20° ≈ 68 mm, 90° = 12 mm.
-    expect(matchSummary(match(), pose(20, 0.46, 12.6), {})).toMatchObject({ lensMm: 68, heightM: 0.5, tiltDeg: 13 });
-    expect(matchSummary(match(), pose(90, 2, -30), {}).lensMm).toBe(12);
-    expect(matchSummary(match(), pose(90, 3, 0.3), {}).tiltDeg).toBe(0);
-    expect(Object.is(matchSummary(match(), pose(90, 3, -0.3), {}).tiltDeg, -0)).toBe(false);
+    expect(summary(match(), pose(20, 0.46, 12.6), {})).toMatchObject({ lensMm: 68, heightM: 0.5, tiltDeg: 13 });
+    expect(summary(match(), pose(90, 2, -30), {}).lensMm).toBe(12);
+    expect(summary(match(), pose(90, 3, 0.3), {}).tiltDeg).toBe(0);
+    expect(Object.is(summary(match(), pose(90, 3, -0.3), {}).tiltDeg, -0)).toBe(false);
+  });
+
+  it("says the camera as it was taken, not as it was solved", () => {
+    const solved = pose(40, 0.2, -8);
+    const taken: CameraPose = { position: [0, 0.83, 2.6], target: [0, 0.83 + 2.6 * Math.tan(-8 * DEG), 0], fovDeg: 40 };
+    expect(matchSummary(match(), { pose: solved, notes: {} }, taken)).toMatchObject({ heightM: 0.8, tiltDeg: -8 });
   });
 
   it("lists which of the stage's limits applied, the tilt's by the way it was read", () => {
     const all = { fovClampedWide: true, pitchClamped: true, subjectPulledIn: true };
-    expect(matchSummary(match({ pitchDeg: 40 }), pose(90, 1, 20), all).clamps).toEqual(["wide", "tiltUp", "subject"]);
-    expect(matchSummary(match({ pitchDeg: -85 }), pose(20, 1, -80), { fovClampedNarrow: true, distanceScaled: 0.5, pitchClamped: true }).clamps).toEqual([
+    expect(summary(match({ pitchDeg: 40 }), pose(90, 1, 20), all).clamps).toEqual(["wide", "tiltUp", "subject"]);
+    expect(summary(match({ pitchDeg: -85 }), pose(20, 1, -80), { fovClampedNarrow: true, distanceScaled: 0.5, pitchClamped: true }).clamps).toEqual([
       "narrow",
       "tiltDown",
     ]);
-    expect(matchSummary(match(), pose(40, 1, 0), { distanceClampedFar: true, heightClampedHigh: true }).clamps).toEqual(["far", "high"]);
-    expect(matchSummary(match(), pose(40, 1, 0), { distanceClampedNear: true, heightClampedLow: true }).clamps).toEqual(["near", "low"]);
+    expect(summary(match(), pose(40, 1, 0), { distanceClampedFar: true, heightClampedHigh: true }).clamps).toEqual(["far", "high"]);
+    expect(summary(match(), pose(40, 1, 0), { distanceClampedNear: true, heightClampedLow: true }).clamps).toEqual(["near", "low"]);
+  });
+
+  it("says a limit on where the camera stands only while it still stands there", () => {
+    // Solved 5 m out at the stage's lowest, every limit noted; then moved by
+    // the page (placeMatchedCamera), which keeps the lens, tilt and turn.
+    const solved = pose(20, 0.2, 20);
+    const notes: MatchNotes = {
+      fovClampedNarrow: true,
+      distanceScaled: 0.5,
+      distanceClampedNear: true,
+      distanceClampedFar: true,
+      heightClampedLow: true,
+      heightClampedHigh: true,
+      pitchClamped: true,
+      subjectPulledIn: true,
+    };
+    const along = (position: [number, number, number]): CameraPose => ({ position, target: [0, position[1] + 5 * Math.tan(20 * DEG), 0], fovDeg: 20 });
+    const always: MatchClamp[] = ["narrow", "tiltUp", "subject"];
+    const said = (taken: CameraPose) => matchSummary(match({ pitchDeg: 40 }), { pose: solved, notes }, taken).clamps;
+    // Where it was solved, give or take the millimetres pose() rounds to.
+    expect(said(along([0.001, 0.2, 5.001]))).toEqual(["narrow", "near", "far", "low", "high", "tiltUp", "subject"]);
+    // Pulled in along the figure's line of sight: nearer, and higher.
+    expect(said(along([0, 0.8, 2.6]))).toEqual(always);
+    // Gone round, no pull-in: another place, the same height.
+    expect(said(along([5, 0.2, 0]))).toEqual(["narrow", "low", "high", "tiltUp", "subject"]);
+    // Pulled in by less than the line shows: still at the limits.
+    expect(said(along([0, 0.24, 4.97]))).toEqual(["narrow", "near", "far", "low", "high", "tiltUp", "subject"]);
+    // Past the 0.1 m the line gives, it is not.
+    expect(said(along([0, 0.27, 4.9]))).toEqual(always);
   });
 
   it("names every limit solveMatchPose can apply: each note has its clamp", () => {
     // Held to the page's promise: every limit that moved the camera off the
-    // read is said. A note matchSummary drops would be a limit said nowhere.
+    // read is said while the camera stands at it. A note matchSummary drops
+    // for a camera nothing moved would be a limit said nowhere.
     const everyNote: Required<MatchNotes> = {
       fovClampedWide: true,
       fovClampedNarrow: true,
@@ -967,8 +1049,8 @@ describe("matchSummary", () => {
       pitchClamped: true,
       subjectPulledIn: true,
     };
-    const said = new Set<MatchClamp>(matchSummary(match({ pitchDeg: 40 }), pose(40, 1, 0), everyNote).clamps);
-    for (const c of matchSummary(match({ pitchDeg: -40 }), pose(40, 1, 0), everyNote).clamps) said.add(c);
+    const said = new Set<MatchClamp>(summary(match({ pitchDeg: 40 }), pose(40, 1, 0), everyNote).clamps);
+    for (const c of summary(match({ pitchDeg: -40 }), pose(40, 1, 0), everyNote).clamps) said.add(c);
     const ALL: Record<MatchClamp, true> = { wide: true, narrow: true, near: true, far: true, low: true, high: true, tiltUp: true, tiltDown: true, subject: true };
     expect([...said].sort()).toEqual(Object.keys(ALL).sort());
     // distanceScaled is the narrow lens's factor, said with "narrow".

@@ -573,35 +573,54 @@ export function placeMatchedCamera(
 
 export type MatchClamp = "wide" | "narrow" | "near" | "far" | "low" | "high" | "tiltUp" | "tiltDown" | "subject";
 
+/** How close the camera must still be to where it was solved to stand at the same limit: half the 0.1 m the line gives. */
+const SAME_PLACE_M = 0.05;
+
 /**
  * What the page's line says about a match: the camera's lens to the nearest
  * millimetre (lensForFov: a 24 mm frame height, the "35 mm" photographers
  * mean — the lens chips round it further, and do not reach 12 or 68 mm,
  * where the stage's 90° and 20° fall), its height to 0.1 m and its tilt in
- * whole degrees (+ up, − down), all from the pose the camera actually took,
- * and which limits of the stage applied.
+ * whole degrees (+ up, − down), all from the pose the camera actually took
+ * (`taken`), and which limits of the stage applied (`solved`, what
+ * solveMatchPose answered).
+ *
+ * A limit on where the camera stands — as near, far, low or high as the
+ * stage allows — is said only while the camera still stands there. The page
+ * moves a camera that something built would hide (placeMatchedCamera): pulled
+ * in along the line from the figure's eye, which brings it nearer and toward
+ * eye height, or turned to another side. The move is then said instead;
+ * "as low as the stage allows" under a line that gives 0.8 m would be false.
+ * A turn without a pull-in keeps the height, so a height limit is still said
+ * then; a distance limit only where the camera was solved, since a far one
+ * is the set's reach on that side alone. The lens, the tilt and where the
+ * figure sits survive every move (aimFrom), so their limits are always said.
  */
 export function matchSummary(
   match: ShotMatch,
-  pose: CameraPose,
-  notes: MatchNotes,
+  solved: { pose: CameraPose; notes: MatchNotes },
+  taken: CameraPose,
 ): { lensMm: number; heightM: number; tiltDeg: number; clamps: MatchClamp[] } {
-  const dx = pose.target[0] - pose.position[0];
-  const dy = pose.target[1] - pose.position[1];
-  const dz = pose.target[2] - pose.position[2];
+  const { notes } = solved;
+  const dx = taken.target[0] - taken.position[0];
+  const dy = taken.target[1] - taken.position[1];
+  const dz = taken.target[2] - taken.position[2];
   const tilt = Math.atan2(dy, Math.hypot(dx, dz)) / DEG;
+  const was = solved.pose.position;
+  const sameHeight = Math.abs(taken.position[1] - was[1]) <= SAME_PLACE_M;
+  const samePlace = Math.hypot(taken.position[0] - was[0], taken.position[2] - was[2]) <= SAME_PLACE_M;
   const clamps: MatchClamp[] = [];
   if (notes.fovClampedWide) clamps.push("wide");
   if (notes.fovClampedNarrow) clamps.push("narrow");
-  if (notes.distanceClampedNear) clamps.push("near");
-  if (notes.distanceClampedFar) clamps.push("far");
-  if (notes.heightClampedLow) clamps.push("low");
-  if (notes.heightClampedHigh) clamps.push("high");
+  if (notes.distanceClampedNear && samePlace) clamps.push("near");
+  if (notes.distanceClampedFar && samePlace) clamps.push("far");
+  if (notes.heightClampedLow && sameHeight) clamps.push("low");
+  if (notes.heightClampedHigh && sameHeight) clamps.push("high");
   if (notes.pitchClamped) clamps.push(match.pitchDeg > 0 ? "tiltUp" : "tiltDown");
   if (notes.subjectPulledIn) clamps.push("subject");
   return {
-    lensMm: Math.round(lensForFov(pose.fovDeg)),
-    heightM: Math.round(pose.position[1] * 10) / 10,
+    lensMm: Math.round(lensForFov(taken.fovDeg)),
+    heightM: Math.round(taken.position[1] * 10) / 10,
     tiltDeg: Math.round(tilt) || 0,
     clamps,
   };

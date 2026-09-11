@@ -695,8 +695,9 @@ export function SetView({
       setFovDeg(solved.pose.fovDeg);
       setCameraId(null);
       scheduleSave();
-      // Said from where the camera actually stands, after any move around something built.
-      setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, api.pose(), solved.notes), moved });
+      // Said from where the camera actually stands, after any move around
+      // something built: a limit it was moved off is not said (matchSummary).
+      setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, solved, api.pose()), moved });
     } finally {
       setMatching(false);
     }
