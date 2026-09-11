@@ -29,7 +29,7 @@ import { renderSets, cardPose, comparePose, type RenderJob } from "../render/ren
 import { HarnessError, sha256 } from "../lib/util.mts";
 import { preparePhotos, writeRaterSheets, type PartModule } from "./common.mts";
 import { FIXTURES, fixtureJson } from "./simulate.mts";
-import type { SheetItemIn } from "../lib/blind-sheet.mts";
+import type { SheetItemIn, SheetKind } from "../lib/blind-sheet.mts";
 
 export type RunFiles = { manifest: Record<string, unknown>; rows: Record<string, unknown>[] };
 
@@ -75,6 +75,51 @@ function aRunOf(ctx: RunContext, fromRun: string): RunFiles {
 }
 
 type Meta = { builder: string; run: number; briefId: string; text?: string; photo?: string };
+export type Draws = { jobs: RenderJob[]; meta: Map<string, Meta> };
+
+/**
+ * What B draws from an A run: every delivered set. From a words run, its
+ * first camera (the card picture) with its brief. From a photo run, camera 1
+ * at the photo's shape — width / height, as set-view.tsx reads the photo's
+ * naturalWidth / naturalHeight — beside the photo the A run sent, and only
+ * while those bytes still hash to what the run recorded.
+ */
+export function drawsFromRun(fromRun: string, a: RunFiles, o: { photos: boolean; briefs: ReadonlyMap<string, string> }): Draws {
+  const jobs: RenderJob[] = [];
+  const meta = new Map<string, Meta>();
+  const files = (a.manifest.photoFiles ?? {}) as Record<string, PhotoFile>;
+  for (const r of a.rows as unknown as BuildRecord[]) {
+    if (r.type !== "build" || r.status !== "delivered" || !r.specFile) continue;
+    const spec = specOf(JSON.parse(readFileSync(join(fromRun, r.specFile), "utf8")));
+    if (!o.photos) {
+      jobs.push({ key: r.buildId, spec, mark: null, poses: [cardPose(spec)] });
+      meta.set(r.buildId, { builder: r.builder, run: r.run, briefId: r.briefId, text: o.briefs.get(r.briefId) ?? "" });
+      continue;
+    }
+    // The photo the A run sent, and nothing else.
+    const pf = files[r.briefId];
+    if (!pf?.file) throw new HarnessError(`${fromRun} kept no photo for ${r.briefId}`);
+    const path = join(fromRun, pf.file);
+    if (!existsSync(path) || sha256(readFileSync(path)) !== pf.sha256) throw new HarnessError(`${path} is not the photo the A run sent`);
+    jobs.push({ key: r.buildId, spec, mark: null, poses: [comparePose(spec, pf.width / pf.height)] });
+    meta.set(r.buildId, { builder: r.builder, run: r.run, briefId: r.briefId, photo: path });
+  }
+  return { jobs, meta };
+}
+
+/** A drawn set's sheet item: its snapshot — beside its photo, the photo first (the product's own order) — and, for words, its brief. */
+export function bSheetItem(key: string, m: Meta, snapshotPath: string): SheetItemIn {
+  const snapshot = { role: "snapshot" as const, path: snapshotPath };
+  return {
+    source: { buildId: key, builder: m.builder, run: m.run, briefId: m.briefId },
+    groupKey: m.briefId,
+    ...(m.text !== undefined ? { text: m.text } : {}),
+    images: m.photo ? [{ role: "photo", path: m.photo }, snapshot] : [snapshot],
+  };
+}
+
+/** The photo arm's sheet, which report reads as the photo arm's, or the words'. */
+export const bSheetKind = (photos: boolean): SheetKind => (photos ? "b-photo" : "b-fidelity");
 
 export const partB: PartModule = {
   needs: (ctx) => (ctx.flags.photos ? { locationPhotos: true } : { briefs: Boolean(ctx.flags.fromRun) }),
@@ -95,29 +140,12 @@ export const partB: PartModule = {
 
   async run(ctx) {
     const photos = ctx.flags.photos;
-    const jobs: RenderJob[] = [];
-    const meta = new Map<string, Meta>();
+    let jobs: RenderJob[] = [];
+    let meta = new Map<string, Meta>();
     if (ctx.flags.fromRun) {
       const fromRun = ctx.flags.fromRun;
-      const a = aRunOf(ctx, fromRun);
       const briefs = new Map(ctx.corpus.data.briefs.map((b) => [b.id, b.brief]));
-      const files = (a.manifest.photoFiles ?? {}) as Record<string, PhotoFile>;
-      for (const r of a.rows as unknown as BuildRecord[]) {
-        if (r.type !== "build" || r.status !== "delivered" || !r.specFile) continue;
-        const spec = specOf(JSON.parse(readFileSync(join(fromRun, r.specFile), "utf8")));
-        if (!photos) {
-          jobs.push({ key: r.buildId, spec, mark: null, poses: [cardPose(spec)] });
-          meta.set(r.buildId, { builder: r.builder, run: r.run, briefId: r.briefId, text: briefs.get(r.briefId) ?? "" });
-          continue;
-        }
-        // The photo the A run sent, and nothing else.
-        const pf = files[r.briefId];
-        if (!pf?.file) throw new HarnessError(`${fromRun} kept no photo for ${r.briefId}`);
-        const path = join(fromRun, pf.file);
-        if (!existsSync(path) || sha256(readFileSync(path)) !== pf.sha256) throw new HarnessError(`${path} is not the photo the A run sent`);
-        jobs.push({ key: r.buildId, spec, mark: null, poses: [comparePose(spec, pf.width / pf.height)] });
-        meta.set(r.buildId, { builder: r.builder, run: r.run, briefId: r.briefId, photo: path });
-      }
+      ({ jobs, meta } = drawsFromRun(fromRun, aRunOf(ctx, fromRun), { photos, briefs }));
     } else if (photos) {
       // Dry run: each fixture beside one of the corpus's location photos, prepared as the product prepares it.
       const rows = ctx.corpus.data.locationPhotos;
@@ -166,16 +194,9 @@ export const partB: PartModule = {
         controlsWouldMove: frame.controlsWouldMove,
         simulated: ctx.dry,
       });
-      const snapshot = { role: "snapshot" as const, path: join(ctx.runDir, "frames", r.files[frame.poseId]) };
-      items.push({
-        source: { buildId: r.key, builder: m.builder, run: m.run, briefId: m.briefId },
-        groupKey: m.briefId,
-        ...(m.text !== undefined ? { text: m.text } : {}),
-        // The photo first, then camera 1 beside it: the product's own order.
-        images: m.photo ? [{ role: "photo", path: m.photo }, snapshot] : [snapshot],
-      });
+      items.push(bSheetItem(r.key, m, join(ctx.runDir, "frames", r.files[frame.poseId])));
     }
-    const pages = writeRaterSheets(ctx, photos ? "b-photo" : "b-fidelity", items);
+    const pages = writeRaterSheets(ctx, bSheetKind(photos), items);
     const lifted = rendered.filter((r) => r.ok && r.result.lifted).length;
     const out = [
       `B ${ctx.runId}${photos ? " (photo arm)" : ""}${ctx.dry ? `  (DRY RUN: product fixtures or a simulated A run)` : ""}`,

@@ -21,9 +21,11 @@
 //                       apart: its own bars — A photo validity and cost
 //                       (--photo-credits, default ceil(worst first photo
 //                       attempt / $0.28) = 4 → $1.12), B photo fidelity, and
-//                       the persons bar over the photo runs' sheets — decided
-//                       by SET_PHOTO_BUILD_EFFORT's arm, and its own line
-//                       under the release line. SETS_OPEN_TO_PLANS never opens
+//                       the persons bar over the photo runs' sheets, which
+//                       never passes while a photo with people is
+//                       undetermined or none reached a sheet — decided by
+//                       SET_PHOTO_BUILD_EFFORT's arm, and its own line under
+//                       the release line. SETS_OPEN_TO_PLANS never opens
 //                       Sets from a photo, so the photo arm never decides it.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -43,6 +45,7 @@ import {
   barD,
   barPersons,
   capAtUndetermined,
+  capPhotoPersons,
   defaultCredits,
   PRIOR_HITS_SOURCES,
   photoArm,
@@ -326,18 +329,20 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     if (ag) reported.push(ag);
   }
   // D's photo leg: section 4's bar for the photos with people is the persons
-  // bar, over every photo run's persons sheet (the A photos' included).
+  // bar, over every photo run's persons sheet (the A photos' included). It
+  // passes only when D's photos were measured (capPhotoPersons): none left
+  // undetermined, and at least one Astra answer from them on a sheet.
   const pdRuns = photoRuns.filter((r) => r.part === "d");
   if (pdRuns.length) {
     const from = photoRuns.filter((r) => r.part === "d" || r.keys.some((k) => k.kind === "d-persons"));
-    const persons = capIf([photoArm(barPersons(personsOf(photoRuns)))], from)[0];
+    const rows = pdRuns.flatMap((r) => r.rows.filter((x) => x.type === "d-photo-outcome") as unknown as DPhotoOutcome[]).map(dPhotoRow);
+    const persons = capPhotoPersons(capIf([photoArm(barPersons(personsOf(photoRuns)))], from)[0], { rows, dItems: personsOf(pdRuns).length });
     priorHitsBar ??= barD([], [], construction()).find((b) => b.id === "D-prior-hits") ?? null;
     bars.push(persons);
     if (priorHitsBar && !bars.includes(priorHitsBar)) bars.push(priorHitsBar);
     photoRelease.D = verdictOf([persons, ...(priorHitsBar ? [priorHitsBar] : [])]);
     if (persons.verdict === "FAIL") photoNotes.push("an Astra output from a photo named, identified or described a person: section 3.2 says photos containing people are then refused at input");
-    const outcomes = pdRuns.flatMap((r) => r.rows.filter((x) => x.type === "d-photo-outcome") as unknown as DPhotoOutcome[]);
-    reported.push(reportDPhotos(outcomes.map(dPhotoRow)));
+    reported.push(reportDPhotos(rows));
   } else if (photoRuns.length) photoNotes.push("D photos: no real D photo run in hand (the photos with people)");
 
   // Canary: the latest real canary run's own verdict.

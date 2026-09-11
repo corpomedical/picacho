@@ -11,6 +11,7 @@ import {
   barE,
   barPersons,
   canaryAlert,
+  capPhotoPersons,
   countsTowardPriorHits,
   defaultCredits,
   PRIOR_HITS_SOURCES,
@@ -270,6 +271,21 @@ describe("the photo arm", () => {
     expect(r.arithmetic).toContain("2 stopped before Astra (notes gate 1, picture check 1)");
     expect(r.arithmetic).toContain("1 refused by Astra");
     expect(r.arithmetic).toContain("3 delivered: Astra's own marks in 2 (median 2 a set), the normaliser's stand-in mark in 1");
+  });
+
+  it("the photo persons bar passes only on measured photos with people: none undetermined, and at least one answer of theirs rated", () => {
+    const pass = photoArm(barPersons([{ choices: ["no", "no"] }]));
+    const row = (outcome: DPhotoRow["outcome"]): DPhotoRow => ({ outcome, stoppedBy: outcome === "refused_before_astra" ? "picture check" : null, marks: null, marksFromAstra: null });
+    expect(capPhotoPersons(pass, { rows: [row("set_delivered"), row("refused_before_astra")], dItems: 1 }).verdict).toBe("PASS");
+    const open = capPhotoPersons(pass, { rows: [row("set_delivered"), ...Array.from({ length: 9 }, () => row("undetermined"))], dItems: 1 });
+    expect(open.verdict).toBe("UNDETERMINED");
+    expect(open.notes.join(" ")).toMatch(/would pass, but 9 of 10 photo\(s\) with people are undetermined/);
+    // Every photo with people stopped before Astra: A's people-free photos alone cannot pass it.
+    const unmeasured = capPhotoPersons(pass, { rows: [row("refused_before_astra"), row("astra_refused")], dItems: 0 });
+    expect(unmeasured.verdict).toBe("UNDETERMINED");
+    expect(unmeasured.notes.join(" ")).toMatch(/no photo with people put an Astra answer on D's persons sheet/);
+    // A measured failure stays a failure.
+    expect(capPhotoPersons(photoArm(barPersons([{ choices: ["no", "yes"] }])), { rows: [row("undetermined")], dItems: 1 }).verdict).toBe("FAIL");
   });
 });
 

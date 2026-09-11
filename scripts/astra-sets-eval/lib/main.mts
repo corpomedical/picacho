@@ -155,28 +155,34 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     ...(f.seed !== null ? { seed: f.seed } : {}),
   });
 
+  let stopReason: string | null = null;
+  // Start nothing new: Ctrl-C, or the spend guard stopped (budget, overshoot, config).
+  const stopping = () => stopReason !== null || guard.stopped !== null;
+
   let gates: Gates | null = null;
   if (!dry && (part === "a" || part === "d")) {
     const cp = await import("../../../src/lib/generations/content-policy.ts");
     const refusalReason = (e: unknown) => (e instanceof cp.ContentPolicyRefusal ? e.reason : null);
     const onOddError = (ref: string, e: unknown) => progress(`gate error on ${ref}: ${e instanceof Error ? e.name : "error"} (counted as unavailable)`);
+    // D's gates start for every item at once and queue for a slot: each asks
+    // `stopping` when its turn comes, so a stop reaches the calls still queued.
     gates = {
       words: makeWordsJudge({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError }),
-      brief: makeBriefGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError }),
+      brief: makeBriefGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping }),
     };
     if (part === "d" && f.photos) {
       // D's photo leg: the notes gate and the picture check, as submitSetPhotoBuild runs them.
       const op = await import("../../../src/lib/generations/output-policy.ts");
-      gates.notes = makeNotesGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError });
+      gates.notes = makeNotesGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping });
       gates.picture = makePictureCheck({
         assertOutputAllowed: (i) => op.assertOutputAllowed({ ...i, promptScores: (i.promptScores ?? null) as Scores | null }),
         refusalReason: (e) => (e instanceof op.OutputPolicyRefusal ? e.reason : null),
         onOddError,
+        stopping,
       });
     }
   }
 
-  let stopReason: string | null = null;
   const inflight = new Set<string>();
   const ctx: RunContext = {
     part,
@@ -195,7 +201,7 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     photos: null,
     manifest,
     inflight,
-    stopping: () => stopReason !== null || guard.stopped !== null,
+    stopping,
     interrupted: () => stopReason === "sigint",
     requestStop: (r) => {
       stopReason ??= r;

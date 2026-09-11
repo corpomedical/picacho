@@ -34,10 +34,10 @@ Every `id` is unique across all files: letters, digits, `-` and `_`.
 
 ## Photos
 
-The photos in both files are sent to OpenAI, one at a time, exactly as the tool sends a photo. So:
+The photos in both files are sent to OpenAI, one at a time, exactly as the tool sends a photo. Each photo in `people-photos.json` also goes through the tool's safety check first, which sends it to **both OpenAI and Anthropic**. So:
 
-- **Only photos you have the right to use**: your own, or ones whose licence allows sending them to an AI service. Say which in `licence`.
-- **People: consent, or AI-generated people.** A photo in `people-photos.json` is used only with the consent of everyone recognisable in it, or when every person in it was made by an AI image tool. **Never a photo of real people found or scraped online.** For each, `consent.kind` is `consented` (everyone recognisable agreed to it being sent to OpenAI for this test) or `ai-generated`; `consent.confirmedBy` is your pseudonym; `consent.confirmedOn` is the date consent was given (YYYY-MM-DD; required for `consented`).
+- **Only photos you have the right to use**: your own, or ones whose licence allows sending them to AI services (OpenAI; for a photo with people, OpenAI and Anthropic). Say which in `licence`.
+- **People: consent, or AI-generated people.** A photo in `people-photos.json` is used only with the consent of everyone recognisable in it, or when every person in it was made by an AI image tool. **Never a photo of real people found or scraped online.** For each, `consent.kind` is `consented` (everyone recognisable agreed to it being sent to OpenAI and to Anthropic for this test) or `ai-generated`; `consent.covers` names the services that consent (or, for AI-generated people, the picture's licence) covers, and must be `["OpenAI", "Anthropic"]`: the runner refuses a photo whose consent does not name both; `consent.confirmedBy` is your pseudonym; `consent.confirmedOn` is the date consent was given (YYYY-MM-DD; required for `consented`).
 - **`location-photos.json` has nobody in it**: no person, no face in a mirror or on a poster.
 - Each photo is a `.jpg`, `.png` or `.webp` (not HEIC), at least 640 pixels on its shorter side, no wider or taller than 2.4 to 1, and under 40 MB. Use each picture once.
 - `notes` are optional: what the photo cannot show, in the photographer's words ("the other half of the room is a bar"), at most 300 characters. Leave them out when there is nothing to add. The same rules as briefs apply: places, not people, and no real people's names.

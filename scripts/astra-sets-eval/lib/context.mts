@@ -21,16 +21,17 @@ import type { NetGuard } from "./net-guard.mts";
 import type { PhotoStore } from "./photos.mts";
 import type { PriceBook } from "./prices.mts";
 import type { SpendGuard } from "./spend-guard.mts";
-import type { GateReading, GateVerdict } from "./words-gate.mts";
+import type { GateReading, GateVerdict, NotReached } from "./words-gate.mts";
 import type { WordsVerdict } from "./build-flow.mts";
 import type { BarResult } from "./pass-bars.mts";
 
+/** The gates a real run calls. D's answer NOT_REACHED once the run is stopping: a call still queued is never sent. */
 export type Gates = {
   words: (spec: SetSpec, ref: string) => Promise<WordsVerdict>;
-  brief: (brief: string, priorHits: number, ref: string) => Promise<GateVerdict>;
+  brief: (brief: string, priorHits: number, ref: string) => Promise<GateVerdict | NotReached>;
   /** D's photo leg: the photographer's notes, and the picture itself (set only for a D photo run). */
-  notes?: (notes: string, priorHits: number, ref: string) => Promise<GateReading>;
-  picture?: (dataUrl: string, o: { promptScores: unknown; priorHits: number }, ref: string) => Promise<GateVerdict>;
+  notes?: (notes: string, priorHits: number, ref: string) => Promise<GateReading | NotReached>;
+  picture?: (dataUrl: string, o: { promptScores: unknown; priorHits: number }, ref: string) => Promise<GateVerdict | NotReached>;
 };
 
 export type RunContext = {

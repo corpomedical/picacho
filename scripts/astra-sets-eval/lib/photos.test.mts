@@ -46,6 +46,13 @@ describe.skipIf(!sharp)("preparePhoto (sharp)", () => {
     expect(data[0]).toBeGreaterThan(245);
   });
 
+  it("takes a camera frame of any pixel count, as the browser does: only the file size is bounded", async () => {
+    // 9000 × 6000 = 54 MP, a flat picture well under the 40 MB file limit.
+    const r = await preparePhoto("big", await make(9000, 6000).jpeg().toBuffer());
+    if (!r.ok) throw new Error(r.error);
+    expect([r.photo.width, r.photo.height]).toEqual([SET_PHOTO_MAX_SIDE_PX, Math.round((SET_PHOTO_MAX_SIDE_PX * 6000) / 9000)]);
+  });
+
   it("refuses what the product refuses at the form: too small, too wide, unreadable", async () => {
     expect(await preparePhoto("s", await make(600, 900).jpeg().toBuffer())).toEqual({ ok: false, error: SET_PHOTO_TOO_SMALL });
     expect(await preparePhoto("w", await make(3000, 1000).jpeg().toBuffer())).toEqual({ ok: false, error: SET_PHOTO_BAD_SHAPE });

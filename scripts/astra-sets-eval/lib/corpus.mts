@@ -6,18 +6,21 @@
 // validateCorpus is pure over parsed JSON; loadCorpus reads the files.
 //
 // A dry run accepts the template (every row marked "_template": true, or
-// text starting "<<FORMAT ONLY") with a banner. --spend refuses any template
-// row, a missing attestation, and — unless --allow-partial-corpus — any file
-// short of the counts section 4 of docs/ASTRA_SETS.md asks for.
+// text starting "<<FORMAT ONLY" anywhere in it, a nested consent record
+// included) with a banner. --spend refuses any template row, a missing
+// attestation, and — unless --allow-partial-corpus — any file short of the
+// counts section 4 of docs/ASTRA_SETS.md asks for.
 //
 // PHOTOS (Sets from a photo). location-photos.json lists A/B's people-free
-// location photos; people-photos.json lists D's photos with people, each
-// with how the writer has the right to send it to OpenAI (everyone
-// recognisable consented, or the people are AI-generated). The pictures
-// stay in the corpus folder, outside the repo: loadCorpus reads each one to
-// hash it into the corpus hash, so a changed photo reads as a changed
-// corpus. Notes get the production clean-up (cleanText at 300, the reserved
-// placeholder never a note); notes the form would have cut are a problem.
+// location photos (sent to OpenAI: A runs no picture check); people-photos.json
+// lists D's photos with people, each with how the writer has the right to
+// send it to OpenAI and Anthropic (everyone recognisable consented, or the
+// people are AI-generated) — D's picture check reads each photo at both
+// (PEOPLE_PHOTO_RECIPIENTS). The pictures stay in the corpus folder, outside
+// the repo: loadCorpus reads each one to hash it into the corpus hash, so a
+// changed photo reads as a changed corpus. Notes get the production clean-up
+// (cleanText at 300, the reserved placeholder never a note); notes the form
+// would have cut are a problem.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
@@ -45,6 +48,14 @@ export const LOCATION_PHOTOS_WANTED = 20;
 export const LOCATION_PHOTOS_PER_CATEGORY_MIN = 5;
 /** Section 4, Part D: "10 location photos containing people". */
 export const PEOPLE_PHOTOS_WANTED = 10;
+/**
+ * Everyone a photo with people is sent to in D's photo leg: OpenAI (the
+ * build, and the picture check's moderation and vision readers) and
+ * Anthropic (the picture check's Claude reader, output-policy.ts). Its
+ * consent.covers must name each; corpus.test pins this list to the hosts
+ * the product's photo readers call.
+ */
+export const PEOPLE_PHOTO_RECIPIENTS = ["OpenAI", "Anthropic"] as const;
 
 export type Brief = { id: string; category: Category; brief: string; template: boolean };
 export type AdversarialRow = { id: string; category: AdvCategory; harmful: boolean; brief: string; template: boolean };
@@ -72,7 +83,7 @@ export type Baselines = {
 /** What every photo row carries: the picture (a relative path inside the corpus) and the photographer's notes, cleaned ("" when none). */
 export type PhotoRow = { id: string; file: string; notes: string; licence: string; template: boolean };
 export type LocationPhoto = PhotoRow & { category: Category };
-export type PeoplePhoto = PhotoRow & { consent: { kind: "ai-generated" | "consented"; confirmedBy: string; confirmedOn: string | null } };
+export type PeoplePhoto = PhotoRow & { consent: { kind: "ai-generated" | "consented"; covers: string[]; confirmedBy: string; confirmedOn: string | null } };
 
 export type CorpusData = {
   meta: { corpusVersion: number; writtenBy: string; writtenOn: string; attested: boolean };
@@ -104,8 +115,23 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/;
 const PHOTO = /\.(jpe?g|png|webp)$/i;
 
-const isTemplateRow = (row: Record<string, unknown>) =>
-  row._template === true || Object.values(row).some((v) => typeof v === "string" && v.trimStart().startsWith(FORMAT_ONLY));
+/** "<<FORMAT ONLY" text anywhere in a value: a nested consent record or a list included. */
+function hasFormatOnly(v: unknown): boolean {
+  if (typeof v === "string") return v.trimStart().startsWith(FORMAT_ONLY);
+  if (Array.isArray(v)) return v.some(hasFormatOnly);
+  if (isRecord(v)) return Object.values(v).some(hasFormatOnly);
+  return false;
+}
+
+const isTemplateRow = (row: Record<string, unknown>) => row._template === true || hasFormatOnly(row);
+
+/** A day that exists: the template's 0000-00-00 and a 2026-02-30 do not. */
+export function isCalendarDate(s: string): boolean {
+  if (!DATE.test(s)) return false;
+  const [y, m, d] = s.split("-").map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return y >= 1900 && t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
+}
 
 const norm = (s: string) => cleanText(s, 100_000).toLowerCase();
 
@@ -306,6 +332,8 @@ export function validateCorpus(
       if (typeof consent?.confirmedBy !== "string" || !consent.confirmedBy.trim()) problems.push(`characters[${i}]: consent.confirmedBy (operator initials) is required`);
       const on = typeof consent?.confirmedOn === "string" ? consent.confirmedOn : null;
       if (kind === "real-person" && (on === null || !DATE.test(on))) problems.push(`characters[${i}]: a real person needs consent.confirmedOn (YYYY-MM-DD)`);
+      // A template row keeps its placeholder date: --spend refuses the row whole.
+      else if (on !== null && !isTemplateRow(r) && !isCalendarDate(on)) problems.push(`characters[${i}]: consent.confirmedOn ${on} is not a date (YYYY-MM-DD)`);
       if (!safeRelative(r.identityPhoto) || !PHOTO.test(String(r.identityPhoto))) {
         problems.push(`characters[${i}]: identityPhoto must be a relative path to a .jpg, .png or .webp inside the corpus (HEIC is refused)`);
       }
@@ -387,7 +415,7 @@ export function validateCorpus(
       photoFiles.set(file, String(id));
     }
     if (typeof r.licence !== "string" || !r.licence.trim()) {
-      problems.push(`${key}[${i}]: licence is required (where the photo comes from, and why it may be sent to OpenAI)`);
+      problems.push(`${key}[${i}]: licence is required (where the photo comes from, and why it may be sent to ${key === "peoplePhotos" ? PEOPLE_PHOTO_RECIPIENTS.join(" and ") : "OpenAI"})`);
       ok = false;
     }
     const notes = cleanNotes(r.notes);
@@ -416,13 +444,22 @@ export function validateCorpus(
     ppl.forEach((r, i) => {
       const consent = isRecord(r.consent) ? r.consent : null;
       const kind = consent?.kind;
+      // A template row keeps its placeholders (the date, what the consent
+      // covers): --spend refuses the row whole, so only a real row is held to them.
+      const template = isTemplateRow(r);
       if (kind !== "ai-generated" && kind !== "consented") problems.push(`peoplePhotos[${i}]: consent.kind must be ai-generated or consented`);
       if (typeof consent?.confirmedBy !== "string" || !consent.confirmedBy.trim()) problems.push(`peoplePhotos[${i}]: consent.confirmedBy (who confirmed it) is required`);
       const on = typeof consent?.confirmedOn === "string" ? consent.confirmedOn : null;
       if (kind === "consented" && (on === null || !DATE.test(on))) problems.push(`peoplePhotos[${i}]: consented people need consent.confirmedOn (YYYY-MM-DD)`);
+      else if (on !== null && !template && !isCalendarDate(on)) problems.push(`peoplePhotos[${i}]: consent.confirmedOn ${on} is not a date (YYYY-MM-DD, or leave it out for AI-generated people)`);
+      const covers = (Array.isArray(consent?.covers) ? consent.covers : []).filter((x): x is string => typeof x === "string").map((x) => x.trim());
+      const uncovered = PEOPLE_PHOTO_RECIPIENTS.filter((p) => !covers.some((c) => c.toLowerCase() === p.toLowerCase()));
+      if (uncovered.length && !template) {
+        problems.push(`peoplePhotos[${i}]: consent.covers must name ${PEOPLE_PHOTO_RECIPIENTS.join(" and ")}, both of which read the photo (missing: ${uncovered.join(", ")})`);
+      }
       const row = photoRow("peoplePhotos", r, i);
       if (row && (kind === "ai-generated" || kind === "consented")) {
-        data.peoplePhotos.push({ ...row, consent: { kind, confirmedBy: String(consent?.confirmedBy ?? ""), confirmedOn: on } });
+        data.peoplePhotos.push({ ...row, consent: { kind, covers, confirmedBy: String(consent?.confirmedBy ?? ""), confirmedOn: on } });
       }
     });
     count("peoplePhotos", data.peoplePhotos.length, String(PEOPLE_PHOTOS_WANTED), data.peoplePhotos.length === PEOPLE_PHOTOS_WANTED);

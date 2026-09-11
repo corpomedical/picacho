@@ -52,8 +52,12 @@ export async function browserPrepare(file: Buffer): Promise<{ ok: true; dataUri:
   let upright: { data: Buffer; info: { width: number; height: number; channels: number } };
   try {
     // Upright as the camera meant it (imageOrientation: "from-image"), as
-    // raw pixels, so the only lossy step is the JPEG below.
-    upright = await sharp(file, { limitInputPixels: 50_000_000, failOn: "error" }).rotate().raw().toBuffer({ resolveWithObject: true });
+    // raw pixels, so the only lossy step is the JPEG below. No pixel limit:
+    // createImageBitmap has none, so the file size above is the only bound,
+    // and a 100 MP camera frame the browser would scale down is never
+    // reported as a photo the product refuses. (The server's 25 MP limit
+    // reads the browser's output, at most 2048 px a side.)
+    upright = await sharp(file, { limitInputPixels: false, failOn: "error" }).rotate().raw().toBuffer({ resolveWithObject: true });
   } catch {
     return { ok: false, error: SET_PHOTO_UNREADABLE };
   }

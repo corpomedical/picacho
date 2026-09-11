@@ -3,9 +3,10 @@
     "_template": true,
     "id": "pp-01",
     "file": "people-photos/format-only-people.jpg",
-    "licence": "<<FORMAT ONLY — where the photo comes from, and why it may be sent to OpenAI>>",
+    "licence": "<<FORMAT ONLY — where the photo comes from, and why it may be sent to OpenAI and Anthropic>>",
     "consent": {
       "kind": "ai-generated",
+      "covers": ["<<FORMAT ONLY — every service the consent (or the picture's licence) covers: OpenAI and Anthropic>>"],
       "confirmedBy": "<<FORMAT ONLY — your pseudonym>>",
       "confirmedOn": "0000-00-00"
     }

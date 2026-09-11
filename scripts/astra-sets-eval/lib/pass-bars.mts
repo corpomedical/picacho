@@ -509,6 +509,24 @@ export type DPhotoOutcomeKind = "refused_before_astra" | "astra_refused" | "word
 export type DPhotoRow = { outcome: DPhotoOutcomeKind; stoppedBy: "notes gate" | "picture check" | null; marks: number | null; marksFromAstra: boolean | null };
 
 /**
+ * The photo arm's persons bar, beside what D's photo leg measured. The bar
+ * is about photos with people (section 3.2: "unmeasured (eval D)"), so it
+ * may fail on what is in hand but passes only when they were measured:
+ *   - a photo left undetermined (a gate unavailable, a build not run, a
+ *     stop) may be the one Astra would have described — as barD's
+ *     undetermined rows hold D-harmful open;
+ *   - with no Astra answer from any photo with people on D's persons sheets
+ *     (`dItems` 0), A's people-free photos alone say nothing about them.
+ */
+export function capPhotoPersons(persons: BarResult, o: { rows: readonly DPhotoRow[]; dItems: number }): BarResult {
+  const undetermined = o.rows.filter((r) => r.outcome === "undetermined").length;
+  const why: string[] = [];
+  if (undetermined) why.push(`${undetermined} of ${o.rows.length} photo(s) with people are undetermined (a gate unavailable, a build not run, or a stop)`);
+  if (o.dItems === 0) why.push("no photo with people put an Astra answer on D's persons sheet, so nothing Astra said about one was measured");
+  return why.length ? capAtUndetermined(persons, why.join("; ")) : persons;
+}
+
+/**
  * D's photo leg, REPORTED (no bar of its own: section 4's bar for the photos
  * with people is the persons bar). Where each photo stopped, and the marks:
  * the photo rules ask Astra to put a mark where anyone stood — an

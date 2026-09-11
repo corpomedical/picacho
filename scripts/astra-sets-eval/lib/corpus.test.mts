@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { canarySha, cleanNotes, loadCorpus, validateCorpus } from "./corpus.mts";
-import { EVAL_DIR } from "./util.mts";
+import { canarySha, cleanNotes, isCalendarDate, loadCorpus, PEOPLE_PHOTO_RECIPIENTS, validateCorpus } from "./corpus.mts";
+import { EVAL_DIR, REPO_ROOT } from "./util.mts";
 
 const meta = {
   corpusVersion: 1,
@@ -73,6 +73,22 @@ describe("validateCorpus", () => {
     expect(validateCorpus({ corpus: meta, characters: heic }, { ...spend, needs: { characters: true } }).problems.join(" ")).toMatch(/HEIC/);
     const escape = [chars[0], { ...chars[1], identityPhoto: "../secret.jpg" }];
     expect(validateCorpus({ corpus: meta, characters: escape }, { ...spend, needs: { characters: true } }).ok).toBe(false);
+    const placeholderDate = [chars[0], { ...chars[1], consent: { kind: "real-person", confirmedBy: "AK", confirmedOn: "0000-00-00" } }];
+    expect(validateCorpus({ corpus: meta, characters: placeholderDate }, { ...spend, needs: { characters: true } }).problems.join(" ")).toMatch(/confirmedOn 0000-00-00 is not a date/);
+  });
+
+  it("a FORMAT ONLY placeholder left anywhere in a row makes it a template row, a nested consent record included", () => {
+    const needs = { ...spend, needs: { characters: true } };
+    const leftInTraits = [chars[0], { ...chars[1], traits: { hair: "<<FORMAT ONLY — the saved trait>>" } }];
+    const r = validateCorpus({ corpus: meta, characters: leftInTraits }, needs);
+    expect(r.template).toBe(true);
+    expect(r.problems.join(" ")).toMatch(/characters\[1\]: a FORMAT-ONLY template row cannot be spent on/);
+  });
+
+  it("a real date is a day that exists", () => {
+    expect(isCalendarDate("2026-09-12")).toBe(true);
+    expect(isCalendarDate("2024-02-29")).toBe(true);
+    for (const d of ["0000-00-00", "2026-02-30", "2026-13-01", "2026-9-12", "1899-12-31"]) expect(isCalendarDate(d)).toBe(false);
   });
 
   it("checks directions", () => {
@@ -107,13 +123,14 @@ describe("validateCorpus", () => {
 
 // The photo arm's two files: A/B's people-free location photos (20, at
 // least 5 of each category) and D's photos with people (10, each with how
-// it may be sent to OpenAI).
+// it may be sent to OpenAI and Anthropic).
 const locations = (perCategory: number[]) =>
   ["interior", "exterior", "stylised"].flatMap((category, c) =>
     Array.from({ length: perCategory[c] }, (_, i) => ({ id: `ph-${category.slice(0, 3)}-${i}`, category, file: `location-photos/${category}-${i}.jpg`, licence: "my own photo" })),
   );
+const covers = ["OpenAI", "Anthropic"];
 const people = (n: number) =>
-  Array.from({ length: n }, (_, i) => ({ id: `pp-${i}`, file: `people-photos/p-${i}.jpg`, licence: "my own photo", consent: { kind: i % 2 ? "consented" : "ai-generated", confirmedBy: "writer-7", confirmedOn: "2026-09-12" } }));
+  Array.from({ length: n }, (_, i) => ({ id: `pp-${i}`, file: `people-photos/p-${i}.jpg`, licence: "my own photo", consent: { kind: i % 2 ? "consented" : "ai-generated", covers, confirmedBy: "writer-7", confirmedOn: "2026-09-12" } }));
 
 describe("photo rows", () => {
   const spendOn = (key: "locationPhotos" | "peoplePhotos") => ({ spend: true, allowPartial: false, needs: { [key]: true } });
@@ -161,11 +178,56 @@ describe("photo rows", () => {
 
   it("wants how a photo with people may be sent: consented (with a date) or AI-generated", () => {
     const one = (consent: unknown) => validateCorpus({ corpus: meta, peoplePhotos: [...people(9), { id: "pp-x", file: "people-photos/x.jpg", licence: "mine", consent }] }, spendOn("peoplePhotos"));
-    expect(one({ kind: "ai-generated", confirmedBy: "w7" }).problems).toEqual([]);
-    expect(one({ kind: "consented", confirmedBy: "w7" }).problems.join(" ")).toMatch(/confirmedOn/);
-    expect(one({ kind: "scraped", confirmedBy: "w7" }).problems.join(" ")).toMatch(/ai-generated or consented/);
-    expect(one({ kind: "ai-generated" }).problems.join(" ")).toMatch(/confirmedBy/);
+    expect(one({ kind: "ai-generated", covers, confirmedBy: "w7" }).problems).toEqual([]);
+    expect(one({ kind: "consented", covers, confirmedBy: "w7" }).problems.join(" ")).toMatch(/confirmedOn/);
+    expect(one({ kind: "scraped", covers, confirmedBy: "w7" }).problems.join(" ")).toMatch(/ai-generated or consented/);
+    expect(one({ kind: "ai-generated", covers }).problems.join(" ")).toMatch(/confirmedBy/);
     expect(one(undefined).ok).toBe(false);
+    // A date that is no day: the template's placeholder kept, or a slip.
+    expect(one({ kind: "consented", covers, confirmedBy: "w7", confirmedOn: "0000-00-00" }).problems.join(" ")).toMatch(/confirmedOn 0000-00-00 is not a date/);
+    expect(one({ kind: "consented", covers, confirmedBy: "w7", confirmedOn: "2026-02-30" }).ok).toBe(false);
+    expect(one({ kind: "ai-generated", covers, confirmedBy: "w7", confirmedOn: "0000-00-00" }).ok).toBe(false);
+  });
+
+  it("wants the consent to cover everyone the photo is sent to: OpenAI and Anthropic", () => {
+    const one = (c: unknown) => validateCorpus({ corpus: meta, peoplePhotos: [...people(9), { id: "pp-x", file: "people-photos/x.jpg", licence: "mine", consent: { kind: "consented", covers: c, confirmedBy: "w7", confirmedOn: "2026-09-12" } }] }, spendOn("peoplePhotos"));
+    expect(one(["OpenAI", "Anthropic"]).problems).toEqual([]);
+    expect(one([" openai", "ANTHROPIC "]).problems).toEqual([]);
+    expect(one(["OpenAI"]).problems.join(" ")).toMatch(/peoplePhotos\[9\]: consent.covers must name OpenAI and Anthropic.*\(missing: Anthropic\)/);
+    expect(one(undefined).problems.join(" ")).toMatch(/missing: OpenAI, Anthropic/);
+    expect(one("OpenAI and Anthropic").ok).toBe(false);
+  });
+
+  it("the recipients are the hosts the product's photo readers call: a new one fails here until the consent names it", () => {
+    const owner: Record<string, string> = { "api.openai.com": "OpenAI", "api.anthropic.com": "Anthropic" };
+    const hosts = new Set<string>();
+    // The build (providers/astra.ts) and the picture check's readers (output-policy.ts).
+    for (const f of ["src/lib/generations/providers/astra.ts", "src/lib/generations/output-policy.ts"]) {
+      for (const m of readFileSync(join(REPO_ROOT, f), "utf8").matchAll(/https:\/\/([a-z0-9.-]+)/g)) hosts.add(m[1]);
+    }
+    expect([...hosts].filter((h) => !(h in owner))).toEqual([]);
+    expect([...new Set([...hosts].map((h) => owner[h]))].sort()).toEqual([...PEOPLE_PHOTO_RECIPIENTS].sort());
+  });
+
+  it("the shipped template row stays a template row with only its _template line deleted: its consent placeholders are caught", () => {
+    const [shipped] = JSON.parse(readFileSync(join(EVAL_DIR, "corpus-template/people-photos.json"), "utf8")) as Record<string, unknown>[];
+    const { _template, ...row } = shipped;
+    expect(_template).toBe(true);
+    const filled = (consent: Record<string, unknown>, i: number) => ({ ...row, id: `pp-t${i}`, file: `people-photos/t-${i}.jpg`, licence: "generated for the test", consent });
+    const shippedConsent = row.consent as Record<string, unknown>;
+    // Everything filled but the consent block.
+    const asShipped = validateCorpus({ corpus: meta, peoplePhotos: Array.from({ length: 10 }, (_, i) => filled(shippedConsent, i)) }, spendOn("peoplePhotos"));
+    expect(asShipped.ok).toBe(false);
+    expect(asShipped.template).toBe(true);
+    expect(asShipped.problems.join(" ")).toMatch(/peoplePhotos\[0\]: a FORMAT-ONLY template row cannot be spent on/);
+    // The pseudonym filled, the placeholder date and covers kept, the kind switched to consented.
+    const halfFilled = { ...shippedConsent, kind: "consented", confirmedBy: "writer-7" };
+    const half = validateCorpus({ corpus: meta, peoplePhotos: Array.from({ length: 10 }, (_, i) => filled(halfFilled, i)) }, spendOn("peoplePhotos"));
+    expect(half.ok).toBe(false);
+    expect(half.problems.join(" ")).toMatch(/FORMAT-ONLY template row/);
+    // Fully filled, it is a real row.
+    const done = { kind: "consented", covers, confirmedBy: "writer-7", confirmedOn: "2026-09-12" };
+    expect(validateCorpus({ corpus: meta, peoplePhotos: Array.from({ length: 10 }, (_, i) => filled(done, i)) }, spendOn("peoplePhotos")).problems).toEqual([]);
   });
 
   it("refuses a template photo row for spend, and allows it in a dry run", () => {
