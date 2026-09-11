@@ -4,6 +4,7 @@ import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
+import { hasSavedOutfit } from "@/lib/sets/look";
 import { normaliseSetLayout, normaliseSetSpec } from "@/lib/sets/set-spec";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
@@ -114,7 +115,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   if (ids.length > 0) {
     const { data: gens } = await db
       .from("generations")
-      .select("id, status, result_url, match_score, created_at")
+      .select("id, status, result_url, match_score, created_at, character_profile_id")
       .in("id", ids)
       .eq("user_id", access.userId)
       .is("deleted_at", null);
@@ -128,6 +129,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
         resultUrl: thumbUrl(g.result_url as string | null, 640),
         score: typeof g.match_score === "number" ? g.match_score : null,
         createdAt: g.created_at as string,
+        characterId: typeof g.character_profile_id === "string" ? g.character_profile_id : null,
       }));
   }
 
@@ -135,7 +137,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   // identity the image lane scores against, and the set never supplies one.
   const { data: chars } = await db
     .from("character_profiles")
-    .select("id, name, reference_image_urls")
+    .select("id, name, reference_image_urls, outfit_image_urls")
     .eq("user_id", access.userId)
     .order("created_at", { ascending: false })
     .limit(50);
@@ -145,6 +147,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       id: c.id as string,
       name: (c.name as string) ?? "",
       thumbUrl: thumbUrl(mediaUrl("character-references", (c.reference_image_urls as string[])[0]), 320),
+      hasOutfit: hasSavedOutfit(c.outfit_image_urls, access.userId),
     }));
 
   // The bar the contact sheet flags a still against: the identity gate's

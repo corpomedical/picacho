@@ -49,6 +49,32 @@ describe("buildSetShotPrompt", () => {
   it("asks for a gaze that can be read", () => {
     expect(p).toContain("Wherever they are looking, make it unmistakable");
   });
+
+  it("with an earlier still as the look, keeps the set's objects the same and nothing else", () => {
+    const same = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: true } });
+    expect(same).toContain("an earlier still from this same set");
+    expect(same).toContain("keep each one's design, colour, materials and details exactly as they are there");
+    expect(same).toContain("not its camera, framing or light");
+    expect(same).toContain("dress them as they are dressed there");
+    expect(same).toContain("Their face, hair and features still come only from the character photos.");
+    const other = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: false } });
+    expect(other).toContain("The person in it is someone else: take nothing about them from it.");
+    expect(other).not.toContain("dress them as they are dressed there");
+    expect(p).not.toContain("earlier still");
+  });
+
+  it("never gives two clothing instructions: a saved outfit photo decides what they wear", () => {
+    const saved = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: true, savedOutfit: true } });
+    expect(saved).toContain("take what they wear from the outfit photo");
+    expect(saved).not.toContain("dress them as they are dressed there");
+    expect(saved).toContain("an earlier still from this same set");
+  });
+
+  it("stays under the prompt cap with every sentence in", () => {
+    const layout = { mark: { x: 0, z: 0, facingDeg: 135 }, camera: { position: [0, 1.6, 5] as [number, number, number], target: [0, 1, 0] as [number, number, number], fovDeg: 40 } };
+    const longest = buildSetShotPrompt({ description: "d".repeat(300), direction: "x".repeat(300), lifted: true, layout, look: { sameCharacter: true } });
+    expect(longest.length).toBeLessThan(3000);
+  });
 });
 
 describe("describeFacing", () => {

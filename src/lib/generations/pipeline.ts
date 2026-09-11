@@ -27,6 +27,7 @@ import {
   ProviderBudgetExhausted,
 } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
+import { referenceNotes } from "@/lib/generations/providers/reference-notes";
 import { ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
@@ -595,6 +596,12 @@ export type RealPipelineOptions = {
   // the caller only sets it for those models (a described fallback rides in
   // the prompt elsewhere).
   propImageUrl?: string | null;
+  // Look photo (2026-09-11, Astra Sets): an earlier still from the same set,
+  // riding as an extra image so the set's objects stay the same from shot to
+  // shot. Images only, single character, and only on the models that take an
+  // extra image (the caller decides); providers/reference-notes.ts says what
+  // it is so it is never mistaken for the person.
+  lookImageUrl?: string | null;
   // Does this send carry a user-attached reference photo? (2026-08-29, from
   // the first outside bug report: "I sent an image with the background that
   // I wanted it to use. But it didn't use it. It only used the prompt.")
@@ -1478,30 +1485,35 @@ export async function runRealPipeline(
           // background is the exact case that broke. Only the multi-character
           // array still blocks it (that array's order IS its meaning).
           const propActive = Boolean(options.propImageUrl && !usingMultiCharacterImages);
-          let imagePrompt = reviewedPrompt;
-          if (outfitActive) {
-            imagePrompt += `\n\nOne of the reference photos shows only an outfit laid out, with no person in it: dress the person in exactly that outfit, reproducing its design, colours, logos, and stitching.`;
-          }
-          if (propActive) {
-            // "match its contents faithfully" used to end this line — and on
-            // the GPT edit path that clause plus the image's own visual prior
-            // beat any transformative instruction in the prompt. Real
-            // incident, 2026-08-26 ("Another shot on this set" launch): the
-            // previous render was attached with "keep the same location — new
-            // camera angle: from the court", and both renders came back as
-            // near-copies of the source composition. The line now defers to
-            // the prompt entirely and forbids the one default failure mode
-            // (composition copying) unless the prompt asks for it — same
-            // pattern as the identity citation's "do not copy the pose or
-            // framing" in fal.ts.
-            imagePrompt += `\n\nOne of the reference photos is an image the user attached — the prompt says how to use it. Follow the prompt's instructions about it, and do not copy its framing or composition unless the prompt asks for that.`;
-          }
-          // Only true when an identity photo is actually in the array —
-          // with no character selected the attachment is the ONLY reference,
-          // and calling it "the person" would be a lie the model acts on.
-          if ((outfitActive || propActive) && options.referenceImageUrl) {
-            imagePrompt += `\n\nEvery other reference photo is the person — match their face, hair, and identity exactly.`;
-          }
+          // A set's earlier still (see lookImageUrl): like the outfit, only
+          // beside a single identity photo — it shows a person, and with no
+          // photo of the person to match it must never be the only face the
+          // model sees.
+          const lookActive = Boolean(options.lookImageUrl && !usingMultiCharacterImages && options.referenceImageUrl);
+          // What each extra photo is — reference-notes.ts, where the words
+          // live and are tested. On the attached-photo sentence: "match its
+          // contents faithfully" used to end it — and on the GPT edit path
+          // that clause plus the image's own visual prior beat any
+          // transformative instruction in the prompt. Real incident,
+          // 2026-08-26 ("Another shot on this set" launch): the previous
+          // render was attached with "keep the same location — new camera
+          // angle: from the court", and both renders came back as near-copies
+          // of the source composition. It now defers to the prompt entirely
+          // and forbids the one default failure mode (composition copying)
+          // unless the prompt asks for it — same pattern as the identity
+          // citation's "do not copy the pose or framing" in fal.ts. The
+          // person sentence is only added when an identity photo is actually
+          // in the array: with no character selected the attachment is the
+          // ONLY reference, and calling it "the person" would be a lie the
+          // model acts on.
+          const imagePrompt =
+            reviewedPrompt +
+            referenceNotes({
+              outfit: outfitActive,
+              attached: propActive,
+              look: lookActive,
+              identity: Boolean(options.referenceImageUrl),
+            });
           let fallbackNote: string | null = null;
           let actualModelName: string | null = null;
           resultUrl = await generateImage(
@@ -1516,6 +1528,7 @@ export async function runRealPipeline(
             imageBudget,
             outfitActive ? options.outfitImageUrl : null,
             propActive ? options.propImageUrl : null,
+            lookActive ? options.lookImageUrl : null,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Report the model that ACTUALLY produced the image. This used to

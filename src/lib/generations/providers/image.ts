@@ -73,6 +73,9 @@ export async function generateImage(
   // Prop-role photo (Send Receipt P5) — same extra-image contract as the
   // outfit photo, both providers.
   propImageUrl?: string | null,
+  // A set's earlier still (2026-09-11, Astra Sets) — same extra-image
+  // contract, last in the array; pipeline.ts says what it is.
+  lookImageUrl?: string | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -104,6 +107,7 @@ export async function generateImage(
     identity: referenceImageUrl,
     outfit: outfitImageUrl,
     prop: propImageUrl,
+    look: lookImageUrl,
   });
 
   if (model.provider === "fal") {

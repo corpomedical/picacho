@@ -54,6 +54,11 @@ const FRAME_EYE_Y = 1.45;
 const MAX_TILT_UP_DEG = 20;
 const MAX_TILT_DOWN_DEG = 80;
 
+/** The newest finished still, the look's default. */
+function newestStill(shots: SetShot[]): string | null {
+  return shots.find((shot) => shot.status === "succeeded" && shot.resultUrl)?.generationId ?? null;
+}
+
 export function SetView({
   setId,
   spec,
@@ -103,6 +108,14 @@ export function SetView({
   const [ready, setReady] = useState(false);
   const [shots, setShots] = useState<SetShot[]>(initialShots);
   const [lastMiss, setLastMiss] = useState<string | null>(null);
+  // The look (2026-09-11): the earlier still whose objects and finishes the
+  // next shot keeps, so the car is the same car. It follows the newest still
+  // until the person picks one or turns it off.
+  const [lookId, setLookId] = useState<string | null>(() => newestStill(initialShots));
+  // A ref, not state: a shot resolving tens of seconds after it started must
+  // read the person's latest choice, not the one from the render it began in
+  // (review, 2026-09-11 — turning the look off mid-render was undone).
+  const lookPinnedRef = useRef(false);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
@@ -139,7 +152,9 @@ export function SetView({
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = BASE_EXPOSURE;
         renderer.shadowMap.enabled = !coarse;
-        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        // PCFSoftShadowMap is deprecated in this three.js and already falls
+        // back to PCFShadowMap with a console warning on every set page.
+        renderer.shadowMap.type = THREE.PCFShadowMap;
         const canvas = renderer.domElement;
         canvas.style.width = "100%";
         canvas.style.height = "100%";
@@ -537,14 +552,16 @@ export function SetView({
     }
     setShooting(true);
     const pose = apiRef.current?.pose() ?? null;
+    const shotCharacterId = characterId;
     let result: Awaited<ReturnType<typeof shootInSet>>;
     try {
       result = await shootInSet(setId, {
         frameDataUri: frame,
-        characterId,
+        characterId: shotCharacterId,
         direction,
         layout: { ...layoutRef.current, camera: pose },
         lifted: apiRef.current?.lifted === true,
+        lookGenerationId: lookShot?.generationId ?? null,
       });
     } catch (err) {
       // The take may still be running on the server (a dropped connection
@@ -567,11 +584,25 @@ export function SetView({
         resultUrl: result.resultUrl,
         score: result.score,
         createdAt: new Date().toISOString(),
+        characterId: shotCharacterId,
       },
       ...prev,
     ]);
     if (!result.succeeded) setLastMiss(result.generationId);
+    else if (result.resultUrl && !lookPinnedRef.current) setLookId(result.generationId);
   }
+
+  const lookShot = shots.find((shot) => shot.generationId === lookId && shot.status === "succeeded" && shot.resultUrl) ?? null;
+  const latestStill = newestStill(shots);
+
+  function pickLook(generationId: string | null) {
+    setLookId(generationId);
+    lookPinnedRef.current = true;
+  }
+  // The outfit only carries over from a still of the same character, and
+  // never over their saved outfit photo, which rides every render.
+  const lookCarriesOutfit =
+    lookShot?.characterId === characterId && !characters.find((c) => c.id === characterId)?.hasOutfit;
 
   const chip = (active: boolean) =>
     `cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${
@@ -748,6 +779,29 @@ export function SetView({
                 className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent"
               />
             </label>
+            {/* The look: which earlier still this one keeps the objects of. */}
+            <div className="flex flex-wrap items-center gap-2 text-xs text-atelier-muted">
+              <span className="text-[11px] font-medium uppercase tracking-widest">{s.lookLabel}</span>
+              {lookShot?.resultUrl ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={lookShot.resultUrl} alt="" className="h-8 w-8 rounded-[4px] object-cover" />
+                  <span className="max-w-md">{lookCarriesOutfit ? s.lookOnSame : s.lookOn}</span>
+                  <button type="button" onClick={() => pickLook(null)} className={chip(false)}>
+                    {s.lookOff}
+                  </button>
+                </>
+              ) : latestStill ? (
+                <>
+                  <span>{s.lookOffNote}</span>
+                  <button type="button" onClick={() => pickLook(latestStill)} className={chip(false)}>
+                    {s.lookUseLatest}
+                  </button>
+                </>
+              ) : (
+                <span>{s.lookFirst}</span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center justify-end gap-3">
               {error && <p className="mr-auto text-sm text-red-600">{localizeServerText(error, t)}</p>}
               <button
@@ -784,9 +838,11 @@ export function SetView({
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {shots.map((shot) => {
               const low = shot.score !== null && shot.score < identityBar;
+              const canBeLook = shot.status === "succeeded" && Boolean(shot.resultUrl);
+              const isLook = canBeLook && shot.generationId === lookShot?.generationId;
               return (
+                <div key={shot.generationId} className="relative">
                 <Link
-                  key={shot.generationId}
                   href={`/app/history/${shot.generationId}`}
                   className="group relative block aspect-square overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
                 >
@@ -811,6 +867,21 @@ export function SetView({
                     {shot.score === null ? s.unscored : formatMsg(s.identityScore, { score: shot.score })}
                   </span>
                 </Link>
+                {/* Beside the link, not in it: a button inside a link is not a button. */}
+                {isLook ? (
+                  <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-atelier-accent px-2 py-0.5 text-[10px] font-semibold text-black">
+                    {s.lookBadge}
+                  </span>
+                ) : canBeLook ? (
+                  <button
+                    type="button"
+                    onClick={() => pickLook(shot.generationId)}
+                    className="absolute bottom-2 right-2 cursor-pointer rounded-full border border-onmedia/10 bg-black/60 px-2 py-0.5 text-[10px] font-medium text-onmedia/90 transition-colors hover:text-onmedia"
+                  >
+                    {s.lookUse}
+                  </button>
+                ) : null}
+                </div>
               );
             })}
           </div>

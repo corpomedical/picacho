@@ -38,6 +38,7 @@ import {
   setBuildInput,
 } from "@/lib/sets/set-builder-prompt";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
+import { hasSavedOutfit, lookStoragePath } from "@/lib/sets/look";
 import { closeRetryInput, decideAfterValidAnswer, RETRY_SMALLER } from "@/lib/sets/build-retry";
 import {
   SETS_SESSION_EXPIRED,
@@ -562,7 +563,15 @@ type ShootResult =
  */
 export async function shootInSet(
   setId: string,
-  input: { frameDataUri: string; characterId: string; direction: string; layout: unknown; lifted?: boolean },
+  input: {
+    frameDataUri: string;
+    characterId: string;
+    direction: string;
+    layout: unknown;
+    lifted?: boolean;
+    /** An earlier still from this set whose objects this one keeps (look.ts). */
+    lookGenerationId?: string | null;
+  },
 ): Promise<ShootResult> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
@@ -581,12 +590,50 @@ export async function shootInSet(
   if (!UUID_RE.test(characterId)) return { error: SET_PICK_CHARACTER };
   const { data: character } = await access.supabase
     .from("character_profiles")
-    .select("id, reference_image_urls")
+    .select("id, reference_image_urls, outfit_image_urls")
     .eq("id", characterId)
     .eq("user_id", userId)
     .maybeSingle();
   if (!character || !Array.isArray(character.reference_image_urls) || character.reference_image_urls.length === 0) {
     return { error: SET_PICK_CHARACTER };
+  }
+
+  // The look: an earlier still the browser names by id. It must be a shot of
+  // THIS set, the person's own, finished and not deleted; its picture is
+  // re-signed here, never passed on as sent. Anything else and the still is
+  // shot without a look, as before — a stale id (a take deleted in another
+  // tab) is no reason to refuse the shot.
+  let look: { url: string; sameCharacter: boolean; savedOutfit: boolean } | null = null;
+  const lookId = typeof input.lookGenerationId === "string" ? input.lookGenerationId : "";
+  if (UUID_RE.test(lookId)) {
+    const { data: lookShot } = await access.supabase
+      .from("location_set_shots")
+      .select("generation_id")
+      .eq("set_id", setId)
+      .eq("generation_id", lookId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (lookShot) {
+      const { data: lookTake } = await access.supabase
+        .from("generations")
+        .select("status, result_url, character_profile_id, deleted_at")
+        .eq("id", lookId)
+        .eq("user_id", userId)
+        .maybeSingle();
+      const lookPath =
+        lookTake && lookTake.status === "succeeded" && !lookTake.deleted_at
+          ? lookStoragePath(lookTake.result_url, userId)
+          : null;
+      if (lookPath) {
+        look = {
+          url: mediaUrl("generated-images", lookPath),
+          sameCharacter: lookTake?.character_profile_id === characterId,
+          // The saved outfit rides this shot too (runGeneration's rule), and
+          // then it — not the earlier still — decides the clothes.
+          savedOutfit: hasSavedOutfit(character.outfit_image_urls, userId),
+        };
+      }
+    }
   }
 
   if (await rateLimited(userId, "set-shot", 60 * 10, 12)) return { error: SET_SHOOT_TOO_FAST };
@@ -610,14 +657,28 @@ export async function shootInSet(
   const fd = new FormData();
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
-  fd.set("prompt", buildSetShotPrompt({ description: owned.spec.description, direction, lifted: input.lifted === true, layout }));
+  fd.set(
+    "prompt",
+    buildSetShotPrompt({ description: owned.spec.description, direction, lifted: input.lifted === true, layout, look }),
+  );
   fd.set("content_type", "image");
   fd.set("character_id", characterId);
   // The prompt is already the one the image model should read: the drafter
   // would rewrite the composition instructions it exists to carry. Still
   // gated, in the strict lane, inside runGeneration.
   fd.set("prompt_is_final", "1");
-  fd.set("attachment_roles", JSON.stringify([{ url: mediaUrl("chat-attachments", framePath), role: "reference" }]));
+  // The sketch rides as the one neutral reference; the look, when there is
+  // one, as a "look" photo (pipeline.ts says what it is, so it is never
+  // taken for the person). The look is the person's existing picture in
+  // generated-images: it is not a chat attachment, so deleting this take
+  // never deletes it.
+  fd.set(
+    "attachment_roles",
+    JSON.stringify([
+      { url: mediaUrl("chat-attachments", framePath), role: "reference" },
+      ...(look ? [{ url: look.url, role: "look" }] : []),
+    ]),
+  );
 
   const result = await runGeneration(fd);
   if (result.error !== null) {

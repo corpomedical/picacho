@@ -17,14 +17,17 @@ export type ImageReferenceInput = {
   outfit?: string | null;
   /** A user-attached reference photo (background, product, anything). */
   prop?: string | null;
+  /** An earlier still from the same set, for its objects' design (Astra Sets). */
+  look?: string | null;
 };
 
 export function buildImageReferences({
   identity,
   outfit,
   prop,
+  look,
 }: ImageReferenceInput): string | string[] | null | undefined {
-  const extras = [...(outfit ? [outfit] : []), ...(prop ? [prop] : [])];
+  const extras = [...(outfit ? [outfit] : []), ...(prop ? [prop] : []), ...(look ? [look] : [])];
   if (extras.length === 0) return identity;
   // A multi-character array's ORDER is its meaning (one photo per person) —
   // extras are never merged into it.

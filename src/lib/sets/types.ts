@@ -23,9 +23,17 @@ export type SetShot = {
   /** 0–100 identity score against the character's photo; null when unscored. */
   score: number | null;
   createdAt: string;
+  /** Whose still it is: the look note only promises the outfit for the same character. */
+  characterId: string | null;
 };
 
-export type SetCharacter = { id: string; name: string; thumbUrl: string | null };
+export type SetCharacter = {
+  id: string;
+  name: string;
+  thumbUrl: string | null;
+  /** Their saved outfit photo rides every render (look.ts hasSavedOutfit), so a look never promises other clothes. */
+  hasOutfit: boolean;
+};
 
 export type SetDetail = {
   id: string;

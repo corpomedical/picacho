@@ -481,7 +481,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // the permanent-adapter rule) send no roles: their attachment keeps the
   // original identity contract unchanged. Same URL guard as the legacy
   // field — anything not our own media URL is discarded.
-  type AttachmentRoleEntry = { url: string; role: "reference" | "identity" | "outfit" | "scene" | "prop" | "unused" };
+  // "look" is not a composer role: only a Set's shot sends it (2026-09-11) —
+  // an earlier still from the same set, so its objects stay the same.
+  type AttachmentRoleEntry = { url: string; role: "reference" | "identity" | "outfit" | "scene" | "prop" | "look" | "unused" };
   const attachmentRoles: AttachmentRoleEntry[] | null = (() => {
     const raw = formData.get("attachment_roles");
     if (!raw) return null;
@@ -494,7 +496,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           typeof (x as AttachmentRoleEntry).url === "string" &&
           (x as AttachmentRoleEntry).url.startsWith("/api/media/") &&
           !(x as AttachmentRoleEntry).url.includes("..") &&
-          ["reference", "identity", "outfit", "scene", "prop", "unused"].includes((x as AttachmentRoleEntry).role),
+          ["reference", "identity", "outfit", "scene", "prop", "look", "unused"].includes((x as AttachmentRoleEntry).role),
       );
     } catch {
       return null;
@@ -528,6 +530,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // rides to the model where an extra image is possible, and the USER'S
   // PROMPT says what it's for; identity never comes from it.
   const referenceAttachmentUrl = attachmentRoles?.find((a) => a.role === "reference")?.url ?? "";
+  // A Set's earlier still (see AttachmentRoleEntry). Never the identity.
+  const lookAttachmentUrl = attachmentRoles?.find((a) => a.role === "look")?.url ?? "";
 
   // Every chat-attachment storage path riding this send, whatever its role —
   // recorded on the row so deletion can clean them up. /api/media/<bucket>/
@@ -1728,6 +1732,24 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         }
       }
 
+      // A Set's earlier still rides as one more extra image — only where an
+      // extra image can ride (a still, one character, GPT Image or FLUX).
+      // Elsewhere it is simply not sent: a set's prompt already describes
+      // the place, and a vision-written summary of a finished picture would
+      // carry the person in it into the text.
+      // And only beside a photo of the person, as pipeline.ts requires: the
+      // identity retry below passes this straight to the renderer, so it must
+      // already be null wherever the first render would have dropped it.
+      const lookImageUrl =
+        lookAttachmentUrl &&
+        referenceImageUrl &&
+        contentType === "image" &&
+        !wantsMultiCharacter &&
+        !storyboardShots &&
+        (imageModelId === "gpt-image" || imageModelId === "flux")
+          ? absolutizeMediaUrl(lookAttachmentUrl, await getOrigin())
+          : null;
+
       // Seedance's reference list is capped at 4 images total. When the
       // outfit or the attachment rides beside baseline multi-reference,
       // trim the identity refs to make room — dropping the LAST refs, never
@@ -1787,8 +1809,12 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
               }
             : null,
           companionsCount: companionCharacters.length,
+          // The plan describes what the composer offers; a Set's look photo
+          // is not a composer attachment and has no slot there.
           attachments: attachmentRoles
-            ? attachmentRoles.map((a, i) => ({ id: String(i), isImage: true, role: a.role }))
+            ? attachmentRoles
+                .filter((a): a is AttachmentRoleEntry & { role: Exclude<AttachmentRoleEntry["role"], "look"> } => a.role !== "look")
+                .map((a, i) => ({ id: String(i), isImage: true, role: a.role }))
             : attachmentReferenceUrl
               ? [{ id: "attachment", isImage: true }]
               : [],
@@ -1842,6 +1868,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           videoContinueFromUrl,
           outfitImageUrl,
           propImageUrl,
+          lookImageUrl,
           // ONLY when the photo ITSELF rides to the model (propImageUrl).
           // Deliberately not set for the described-attachment lanes (models
           // that can't take an extra image, and the scene role): there the
@@ -2012,6 +2039,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 referenceImageUrl: referenceImageUrls ?? referenceImageUrl,
                 outfitImageUrl,
                 propImageUrl,
+                lookImageUrl,
                 // ONE paid call, not another full allowance. runRealPipeline
                 // mints its own budget of MAX_PAID_IMAGE_CALLS internally, so
                 // re-entering the pipeline would have doubled the ceiling the

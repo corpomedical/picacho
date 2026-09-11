@@ -37,5 +37,15 @@ describe("buildImageReferences", () => {
     const cast = ["a.png", "b.png"];
     expect(buildImageReferences({ identity: cast, prop: "bg.png" })).toBe(cast);
     expect(buildImageReferences({ identity: cast })).toBe(cast);
+    expect(buildImageReferences({ identity: cast, prop: "sketch.jpg", look: "earlier.png" })).toBe(cast);
+  });
+
+  it("a set shot: the person, then the sketch, then the earlier still for the look", () => {
+    expect(buildImageReferences({ identity: "id.png", prop: "sketch.jpg", look: "earlier.png" })).toEqual([
+      "id.png",
+      "sketch.jpg",
+      "earlier.png",
+    ]);
+    expect(buildImageReferences({ identity: "id.png", prop: "sketch.jpg", look: null })).toEqual(["id.png", "sketch.jpg"]);
   });
 });

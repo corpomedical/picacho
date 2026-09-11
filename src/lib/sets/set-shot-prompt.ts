@@ -67,11 +67,37 @@ export function describeFacing(layout: Pick<SetLayout, "mark" | "camera"> | null
   return `is turned three-quarters away from the camera, facing frame ${side}`;
 }
 
+/**
+ * The look (2026-09-11, operator's choice): an earlier still from this set
+ * rides beside the sketch, so the car, the furniture and the finishes are the
+ * same objects from shot to shot — nothing in a set says which car it is, and
+ * without it every still designed its own. Tested: the second angle kept the
+ * first still's car, and also its person's dress — so the outfit carrying
+ * over is said out loud, and only for the same character; for another
+ * character the person in it is fenced off entirely. Described by what it
+ * shows, not by position: the reference photos arrive character first.
+ */
+function lookSentences(look: { sameCharacter: boolean; savedOutfit?: boolean } | null | undefined): string[] {
+  if (!look) return [];
+  return [
+    "One reference photo is an earlier still from this same set, a finished photograph of the place: everything in it is the same object here, so keep each one's design, colour, materials and details exactly as they are there. Take nothing else from it: not its camera, framing or light.",
+    !look.sameCharacter
+      ? "The person in it is someone else: take nothing about them from it."
+      : look.savedOutfit
+        ? // The character's saved outfit photo rides too and decides the
+          // clothes (hasSavedOutfit): a second clothing instruction here would
+          // leave the model to pick one.
+          "The person in it is the same person, but take what they wear from the outfit photo, and their face, hair and features only from the character photos."
+        : "The person in it is the same person: unless 'In this frame' says what they wear, dress them as they are dressed there. Their face, hair and features still come only from the character photos.",
+  ];
+}
+
 export function buildSetShotPrompt(input: {
   description: string;
   direction: string;
   lifted?: boolean;
   layout?: Pick<SetLayout, "mark" | "camera"> | null;
+  look?: { sameCharacter: boolean; savedOutfit?: boolean } | null;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
@@ -86,6 +112,7 @@ export function buildSetShotPrompt(input: {
       ? "The sketch is lit brighter than the real scene so its layout can be read: take the time of day, how dark it is and the colour of the light from the description, not from the sketch."
       : "",
     description ? `Render the location photorealistically, as it really looks: ${description}` : "Render the location photorealistically, as it really looks.",
+    ...lookSentences(input.look),
     facing
       ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`
       : "The person stands where the grey figure stands, at its scale, facing the same way.",
