@@ -16,20 +16,32 @@
 // (the production table) are not used, and "zero model-text refusals
 // counted" is checked by construction (pass-bars priorHitsConstruction) and
 // by the unit test of countsTowardPriorHits.
+//
+// RUNS. Section 4's heading says "3 runs each", and D takes 3 by default: a
+// brief on the gate's edge gets three chances to slip through. The spend
+// block's "≤ 40 × $0.54" prices one run; --runs 1 reproduces it.
+//
+// D does not resume. A run that stops (Ctrl-C, budget) records every brief
+// it did not finish — or, with --escalate, did not reach — as undetermined,
+// and is not complete (manifest.complete): report never passes a bar on it.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SET_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
 import { startBuild, type BuildRecord, type FlowDeps } from "../lib/build-flow.mts";
 import { barLine, closureOf, spendLines, writeManifest, writeResult, writeSummary, type RunContext } from "../lib/context.mts";
 import { cleanBrief, type AdversarialRow } from "../lib/corpus.mts";
-import { closeUnfinished, driveBatch, driveEach, personsItems, recordBuilds, saveState, type BuildJob } from "../lib/drive.mts";
-import { barD, countsTowardPriorHits, priorHitsConstruction, type DOutcomeKind, type DRow } from "../lib/pass-bars.mts";
+import { closeUnfinished, driveBatch, driveEach, personsItems, recordBuilds, runComplete, saveState, type BuildJob } from "../lib/drive.mts";
+import { barD, capAtUndetermined, countsTowardPriorHits, priorHitsConstruction, type DOutcomeKind, type DRow } from "../lib/pass-bars.mts";
 import { planD } from "../lib/plan.mts";
 import type { GateVerdict } from "../lib/words-gate.mts";
 import { HarnessError } from "../lib/util.mts";
+import { latestBuildRows } from "./b.mts";
 import { selectRows, writeRaterSheets, type PartModule } from "./common.mts";
 import { fakeBriefGate, fakeWords } from "./simulate.mts";
+
+/** Section 4's heading: "3 runs each". */
+export const D_DEFAULT_RUNS = 3;
 
 export type DOutcome = {
   type: "d-outcome";
@@ -38,7 +50,7 @@ export type DOutcome = {
   category: string;
   harmful: boolean;
   simulated: boolean;
-  briefGate: "allowed" | `refused:${string}` | "unavailable" | "form-rejected";
+  briefGate: "allowed" | `refused:${string}` | "unavailable" | "form-rejected" | "not-reached";
   priorHitsUsed: number;
   buildId: string | null;
   outcome: DOutcomeKind;
@@ -49,7 +61,7 @@ export type DOutcome = {
 /** What a finished build means for Part D. */
 export function dOutcomeOf(r: BuildRecord | null, stillsBuilt: boolean): { outcome: DOutcomeKind; note: string | null; counts: boolean } {
   if (!r) return { outcome: "undetermined", note: "no build", counts: false };
-  const first = r.attempts[0];
+  const first = r.attempts.find((a) => !a.voided);
   const astraFirstRefused = Boolean(first && first.kind === "first" && (first.outcome === "refused" || first.outcome === "submit-failed:refused"));
   const plainRetryRefused = r.attempts.some((a) => (a.kind === "retry-plain" || a.kind === "retry-smaller") && (a.outcome === "refused" || a.outcome === "submit-failed:refused"));
   const counts = (astraFirstRefused && countsTowardPriorHits("astra-first")) || (plainRetryRefused && countsTowardPriorHits("astra-plain-retry"));
@@ -72,12 +84,14 @@ export const partD: PartModule = {
   plan(ctx) {
     const f = ctx.flags;
     const rows = selectRows(ctx.corpus.data.adversarial, f.only);
+    const runs = f.runs ?? D_DEFAULT_RUNS;
     return {
-      title: `D: ${rows.length} adversarial briefs × ${f.runs ?? 1} run(s), Astra ${f.effort ?? SET_BUILD_EFFORT} on ${f.transport ?? "background"}`,
-      lines: planD({ briefs: rows.length, runs: f.runs ?? 1, dCameras: f.dCameras, transport: f.transport ?? "background", stills: false, book: ctx.book }),
+      title: `D: ${rows.length} adversarial briefs × ${runs} run(s), Astra ${f.effort ?? SET_BUILD_EFFORT} on ${f.transport ?? "background"}`,
+      lines: planD({ briefs: rows.length, runs, dCameras: f.dCameras, transport: f.transport ?? "background", stills: false, book: ctx.book }),
       notes: [
-        "Stills are not in this plan: D's stills leg is not built (design §9, second sitting). With it, D reserves 2 GPT Image renders per still (40 × $0.34 = $13.60 at the full corpus).",
-        "The doc's spend block (≤ 40 × $0.54) has no retry and no stills; the ceiling above includes the closing retry.",
+        `Runs: section 4's heading says "3 runs each", its spend block (≤ 40 × $0.54) prices one. D takes ${D_DEFAULT_RUNS} by default (a brief on the gate's edge gets three chances); --runs 1 is the spend block's figure.`,
+        "Stills are not in this plan: D's stills leg is not built (design §9, second sitting). With it, D reserves 2 GPT Image renders per still.",
+        "The doc's spend block has no retry and no stills; the ceiling above includes the closing retry.",
         "The 10 location photos with people wait for Phase 2 (image input in providers/astra.ts).",
       ],
     };
@@ -90,7 +104,7 @@ export const partD: PartModule = {
     const effort = f.effort ?? SET_BUILD_EFFORT;
     ctx.manifest.transport = { astra: transport, effort, escalate: f.escalate };
     const rows = selectRows(ctx.corpus.data.adversarial, f.only);
-    const runs = f.runs ?? 1;
+    const runs = f.runs ?? D_DEFAULT_RUNS;
     let items: { row: AdversarialRow; run: number }[] = [];
     for (let run = 1; run <= runs; run++) for (const row of rows) items.push({ row, run });
     if (ctx.dry) items = items.slice(0, 3);
@@ -141,12 +155,20 @@ export const partD: PartModule = {
       return job;
     };
 
+    let end: "done" | "stopped" = "done";
+    let reached = items.length;
+    let cutShort = false;
     if (f.escalate) {
+      reached = 0;
       for (const [i, it] of items.entries()) {
         if (ctx.stopping()) break;
+        reached = i + 1;
         const job = await judge(it, i);
         if (!job) continue;
         await driveEach(ctx, [job], deps, { sonnetMode: "format" });
+        // A build a stop left pending is closed now, as not run (undetermined).
+        cutShort ||= job.state.final === null;
+        closeUnfinished(ctx, [job]);
         const [rec] = recordBuilds(ctx, [job]);
         const o = dOutcomeOf(rec, false);
         if (o.counts) priorHits += 1;
@@ -154,14 +176,35 @@ export const partD: PartModule = {
         if (p) outcomes.push({ ...p, outcome: o.outcome, note: o.note, countsTowardPriorHits: o.counts });
         pendingOutcome.delete(job.state.buildId);
       }
+      // Briefs the stop kept the loop from: undetermined, never silently absent.
+      const why = ctx.stopReason() ?? ctx.guard.stopped?.reason ?? "stopped";
+      for (const it of items.slice(reached)) {
+        outcomes.push({
+          type: "d-outcome",
+          briefId: it.row.id,
+          run: it.run,
+          category: it.row.category,
+          harmful: it.row.harmful,
+          simulated: ctx.dry,
+          briefGate: "not-reached",
+          priorHitsUsed: priorHits,
+          buildId: null,
+          outcome: "undetermined",
+          note: `not reached: the run stopped (${why})`,
+          countsTowardPriorHits: false,
+        });
+      }
     } else {
       await Promise.all(items.map((it, i) => judge(it, i)));
       saveState(ctx, jobs);
-      const end = !ctx.dry && transport === "batch" ? await driveBatch(ctx, jobs, jobs, deps, { resume: false }) : (await driveEach(ctx, jobs, deps, { sonnetMode: "format" }), "done" as const);
+      end = !ctx.dry && transport === "batch" ? await driveBatch(ctx, jobs, jobs, deps, { resume: false }) : (await driveEach(ctx, jobs, deps, { sonnetMode: "format" }), "done" as const);
       if (end === "stopped") ctx.out(`INTERRUPTED with a batch still running at OpenAI (D does not resume; its reservations stay counted in ${ctx.runDir}/ledger.jsonl)`);
     }
+    const complete = runComplete(ctx, jobs, end) && reached === items.length && !cutShort;
+    ctx.manifest.complete = complete;
+    ctx.manifest.stop = ctx.stopReason() ?? ctx.guard.stopped?.reason ?? null;
     closeUnfinished(ctx, jobs);
-    const records = f.escalate ? readRecords(ctx) : recordBuilds(ctx, jobs);
+    const records = f.escalate ? readRecords(ctx) : recordBuilds(ctx, jobs, { fresh: true });
     for (const rec of records) {
       const p = pendingOutcome.get(rec.buildId);
       if (!p) continue;
@@ -176,9 +219,15 @@ export const partD: PartModule = {
       actions: readFileSync(join(ctx.repoRoot, "src/lib/sets/actions.ts"), "utf8"),
       policyLog: readFileSync(join(ctx.repoRoot, "src/lib/generations/policy-log.ts"), "utf8"),
     });
-    const bars = ctx.dry ? [] : barD(rowsForBar, [], construction).filter((b) => b.id !== "D-persons");
+    const bars = ctx.dry
+      ? []
+      : barD(rowsForBar, [], construction)
+          .filter((b) => b.id !== "D-persons")
+          .map((b) => (complete || b.id !== "D-harmful" ? b : capAtUndetermined(b, "the run did not finish")));
 
-    const out = [`D ${ctx.runId}${ctx.dry ? "  (DRY RUN: simulated gates and answers)" : ""}`, "--- outcomes ---"];
+    const out = [`D ${ctx.runId}${ctx.dry ? "  (DRY RUN: simulated gates and answers)" : ""}`];
+    if (!complete && !ctx.dry) out.push(`DID NOT FINISH (${String(ctx.manifest.stop ?? "unfinished")}): what it did not finish is undetermined; D does not resume, so rerun it`);
+    out.push("--- outcomes ---");
     const tally = new Map<string, number>();
     for (const o of outcomes) tally.set(`${o.harmful ? "harmful" : "benign"} ${o.outcome}`, (tally.get(`${o.harmful ? "harmful" : "benign"} ${o.outcome}`) ?? 0) + 1);
     for (const [k, v] of [...tally.entries()].sort()) out.push(`  ${k}: ${v}`);
@@ -188,21 +237,23 @@ export const partD: PartModule = {
     if (pages.length) out.push("--- persons sheets ---", ...pages.map((p) => `  ${p}`));
     out.push(...spendLines(ctx));
     for (const l of out) ctx.out(l);
-    writeSummary(ctx, out.join("\n"), { part: "d", simulated: ctx.dry, outcomes: outcomes.length, bars });
+    writeSummary(ctx, out.join("\n"), { part: "d", simulated: ctx.dry, complete, outcomes: outcomes.length, bars });
     writeManifest(ctx);
     if (ctx.stopReason() === "sigint") return 130;
-    if (!ctx.dry && ctx.guard.stopped) return 2;
+    if (!ctx.dry && (ctx.guard.stopped || !complete)) return 2;
     if (bars.some((b) => b.verdict === "FAIL")) return 1;
     if (bars.some((b) => b.verdict === "UNDETERMINED")) return 2;
     return 0;
   },
 };
 
+/** The build rows written so far, one per build (the last written wins). */
 function readRecords(ctx: RunContext): BuildRecord[] {
-  const text = readFileSync(join(ctx.runDir, "results.jsonl"), "utf8");
-  return text
+  const p = join(ctx.runDir, "results.jsonl");
+  if (!existsSync(p)) return [];
+  const rows = readFileSync(p, "utf8")
     .split("\n")
     .filter((l) => l.trim())
-    .map((l) => JSON.parse(l) as { type?: string })
-    .filter((r): r is BuildRecord => r.type === "build");
+    .map((l) => JSON.parse(l) as Record<string, unknown>);
+  return latestBuildRows(rows).filter((r) => r.type === "build") as unknown as BuildRecord[];
 }

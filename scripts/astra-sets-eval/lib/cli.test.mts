@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCli } from "./cli.mts";
+import { behaviourOf, parseCli, resumeFlags } from "./cli.mts";
 
 const ok = (argv: string[]) => {
   const r = parseCli(argv);
@@ -79,5 +79,32 @@ describe("parseCli", () => {
 
   it("answers --help", () => {
     expect(ok(["a", "--help"]).cmd).toBe("help");
+  });
+});
+
+describe("--resume keeps the run's behaviour", () => {
+  const flagsOf = (argv: string[]) => {
+    const c = ok(argv);
+    if (c.cmd !== "part") throw new Error("part");
+    return c.flags;
+  };
+  const original = behaviourOf(flagsOf(["a", "c", "--sonnet-mode", "prompt", "--no-words-gate", "--raters", "ann,bo", "--seed", "7"]));
+  const resume = ["a", "c", "--resume", "run", "--spend", "--max-usd", "110"];
+
+  it("takes every flag not given again from the original run", () => {
+    const r = resumeFlags(flagsOf(resume), original);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.flags).toMatchObject({ sonnetMode: "prompt", wordsGate: false, raters: ["ann", "bo"], seed: 7, maxUsd: 110 });
+  });
+
+  it("accepts a flag given again with the same value, refuses one with another", () => {
+    expect(resumeFlags(flagsOf([...resume, "--sonnet-mode", "prompt"]), original).ok).toBe(true);
+    const r = resumeFlags(flagsOf([...resume, "--sonnet-mode", "format", "--seed", "8"]), original);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toMatch(/--sonnet-mode \("prompt"\), --seed \(7\)/);
+  });
+
+  it("refuses a run with no behaviour record", () => {
+    expect(resumeFlags(flagsOf(resume), undefined).ok).toBe(false);
   });
 });

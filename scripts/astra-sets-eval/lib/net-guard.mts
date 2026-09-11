@@ -75,9 +75,15 @@ export type NetContext = {
   settled?: boolean;
   tag?: string;
   ref?: string;
-  /** Filled with the status of the last live call made in this context (-1: no answer). */
-  observe?: { status: number | null };
+  /**
+   * Filled by the last live call made in this context: its HTTP status, or
+   * -1 when the request went out and no answer came back (a timeout, a
+   * dropped connection). Still null afterwards means nothing was sent.
+   */
+  observe?: Observe;
 };
+
+export type Observe = { status: number | null; retryAfter?: string | null };
 export const netContext = new AsyncLocalStorage<NetContext>();
 
 /** Runs fn with ctx merged over the current context. */
@@ -188,10 +194,16 @@ export class NetGuard {
     try {
       res = await this.realFetch(input, init);
     } catch (err) {
-      if (ctx.observe) ctx.observe.status = -1;
+      if (ctx.observe) {
+        ctx.observe.status = -1;
+        ctx.observe.retryAfter = null;
+      }
       throw err;
     }
-    if (ctx.observe) ctx.observe.status = res.status;
+    if (ctx.observe) {
+      ctx.observe.status = res.status;
+      ctx.observe.retryAfter = res.headers.get("retry-after");
+    }
     this.onLiveResponse?.({ host: v.host, path, method, status: res.status, ctx });
     if ((v.host === "api.openai.com" || v.host === "api.anthropic.com") && !ctx.settled && this.onMeter) {
       const type = res.headers.get("content-type") ?? "";

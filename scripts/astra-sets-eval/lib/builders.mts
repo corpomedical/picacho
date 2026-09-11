@@ -7,7 +7,11 @@
 // itself asynchronous — and nothing else changed: store:false, tools:[],
 // the strict schema, the effort clamp, max_output_tokens, safety_identifier
 // and prompt_cache_options all stay. If Batch rejects one of them, `a --probe`
-// says which and the runner stops; it never quietly drops a product field.
+// says which. In a full run, a batch that fails validation stops the run
+// (exit 2, every attempt still pending for --resume), and a line rejected
+// with a 400 is not_run:rejected — outside the validity denominator, so the
+// A bars can only pass if they hold whatever it would have done. The runner
+// never quietly drops a product field.
 //
 // THE SAFETY IDENTIFIER is evalSafetyId(part): sha256 of a fixed label and
 // the part — the production shape (64 hex), no secret, no real account. It

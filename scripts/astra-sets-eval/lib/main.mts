@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cancelAstraJob } from "../../../src/lib/generations/providers/astra.ts";
-import type { Cli, Part } from "./cli.mts";
+import { behaviourOf, resumeFlags, type Cli, type Flags, type Part } from "./cli.mts";
 import { loadCorpus, corpusSummary } from "./corpus.mts";
 import { makeRunDir, writeManifest, type Gates, type RunContext } from "./context.mts";
 import type { Presence } from "./env.mts";
@@ -47,7 +47,7 @@ const NEEDS_KEYS: Record<Part, ("OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "FAL_KE
 
 export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuard; presence: Presence; envFile: string | null }): Promise<number> {
   const { cli, net } = o;
-  const f = cli.flags;
+  let f: Flags = { ...cli.flags };
   const outRoot = resolve(f.out ?? join(EVAL_DIR, "out"));
 
   const ext = validateExternalPrices(JSON.parse(readFileSync(join(EVAL_DIR, "external-prices.json"), "utf8")));
@@ -68,6 +68,13 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
   const part = cli.part;
   const mod = PARTS[part];
   const corpusDir = resolve(cli.corpusDir);
+  // --resume: the run's own behaviour (and so its own plan), before anything reads the flags.
+  const resumed = f.resume ? readRun(resolve(f.resume)).manifest : null;
+  if (resumed) {
+    const r = resumeFlags(f, resumed.behaviour as Record<string, unknown> | undefined);
+    if (!r.ok) throw new HarnessError(r.error);
+    f = r.flags;
+  }
   const needs = mod.needs({ flags: f });
   const corpus = loadCorpus(corpusDir, { spend: f.spend, allowPartial: f.allowPartialCorpus, needs, photos: needs.photos });
   out(corpusSummary(corpus));
@@ -88,22 +95,28 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
   let runId: string;
   let runDir: string;
   let manifest: Record<string, unknown>;
-  if (f.resume) {
+  if (f.resume && resumed) {
     runDir = resolve(f.resume);
-    const old = readRun(runDir).manifest;
+    const old = resumed;
     if (old.part !== part) throw new HarnessError(`--resume ${f.resume} is a ${String(old.part)} run, not ${part}`);
     if (old.mode !== "spend") throw new HarnessError("--resume continues a real run; this one was a dry run");
     if ((old.corpus as { hash?: string } | undefined)?.hash !== corpus.corpusHash) throw new HarnessError("--resume: the corpus changed since this run started");
     runId = String(old.runId);
-    manifest = { ...old, resumedAt: [...((old.resumedAt as string[]) ?? []), new Date().toISOString()] };
+    manifest = {
+      ...old,
+      resumedAt: [...((old.resumedAt as string[]) ?? []), new Date().toISOString()],
+      resumeArgv: [...((old.resumeArgv as string[][]) ?? []), process.argv.slice(2)],
+    };
   } else {
     runId = newRunId(part, dry);
     runDir = makeRunDir(outRoot, runId);
-    manifest = {};
+    manifest = { argv: process.argv.slice(2), behaviour: behaviourOf(f) };
   }
   const replay = f.resume ? Ledger.read(join(runDir, "ledger.jsonl")) : [];
   const ledger = new Ledger(join(runDir, "ledger.jsonl"));
-  const guard = new SpendGuard({ maxUsd: dry ? 1e9 : (f.maxUsd as number), sink: (e) => ledger.append(e), replay });
+  // Only --spend carries a --max-usd. Everything else calls no API (a dry
+  // run's guard is offline; B renders locally): the fence is a formality.
+  const guard = new SpendGuard({ maxUsd: f.spend ? (f.maxUsd as number) : 1e9, sink: (e) => ledger.append(e), replay });
 
   net.onMeter = (m) =>
     guard.meter({
@@ -118,9 +131,10 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
   Object.assign(manifest, {
     runId,
     part,
-    argv: process.argv.slice(2),
-    mode: dry ? "dry" : "spend",
+    mode: f.spend ? "spend" : dry ? "dry" : "local",
     simulated: dry,
+    // Set true by the part on a clean finish; report never passes a bar on a run without it.
+    complete: false,
     createdAt: manifest.createdAt ?? new Date().toISOString(),
     git: gitState(REPO_ROOT),
     srcHashes: srcHashes(REPO_ROOT),
@@ -175,7 +189,9 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     progress,
   };
 
-  out(`run ${runId}  ${dry ? "DRY RUN: the network guard is offline; nothing is called" : `REAL RUN: at most ${usd(f.maxUsd, 2)}`}`);
+  out(
+    `run ${runId}  ${f.spend ? `REAL RUN: at most ${usd(f.maxUsd, 2)}` : dry ? "DRY RUN: the network guard is offline; nothing is called" : "REAL RUN, no API calls: local rendering only (the network guard is offline)"}`,
+  );
   out(`  directory ${runDir}`);
   const plan = mod.plan(ctx);
   manifest.plan = plan;
@@ -183,7 +199,7 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
   else out(formatPlan(plan.title, plan.lines));
   for (const n of plan.notes) out(`  note: ${n}`);
 
-  if (!dry && "lines" in plan) {
+  if (f.spend && "lines" in plan) {
     const check = checkPlan(plan.lines, f.maxUsd as number, f.allowUnpriced);
     manifest.planCheck = check;
     if (!f.resume) ledger.append({ ev: "plan", ceilingUsd: check.ceilingUsd, maxUsd: f.maxUsd as number, unpriced: check.unpriced });

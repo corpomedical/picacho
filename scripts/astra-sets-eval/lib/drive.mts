@@ -6,23 +6,40 @@
 //               (both Astra efforts share a file: same model); answers are
 //               judged locally (words gate, closure), then every retry goes
 //               into a second round. The whole round is reserved before
-//               upload; lines that do not fit are not run (budget).
+//               upload; lines that do not fit stay pending (budget). Lines
+//               OpenAI never ran (expired, missing, a per-line 429 or 5xx)
+//               are released and go into the next round as the same attempt.
 //   background  Astra, six in flight.
 //   sync        the baselines, four in flight.
 //   simulated   the dry run's fakes, reserved and settled like the real thing.
 //
 // state.json holds every job after each round, so --resume can re-attach a
-// recorded batch and finish what was left.
+// recorded batch and finish what was left: an attempt that never started
+// (budget, Ctrl-C) is still pending there, and is sent by --resume.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AstraEffort } from "../../../src/lib/generations/providers/astra.ts";
 import { parseSetSpecText, specTextForGate } from "../../../src/lib/sets/set-spec.ts";
-import { advanceBuild, buildRecord, type AttemptMeta, type BuildRecord, type BuildState, type FlowDeps } from "./build-flow.mts";
+import { SET_BUILD_MAX_ATTEMPTS } from "../../../src/lib/sets/set-config.ts";
+import { advanceBuild, buildRecord, leftPending, type AttemptMeta, type BuildRecord, type BuildState, type FlowDeps } from "./build-flow.mts";
 import type { SheetItemIn } from "./blind-sheet.mts";
 import { astraJobRequest, batchLineBody, customIdFor, MINI_MODEL, SONNET_MODEL } from "./builders.mts";
 import { writeResult, type RunContext } from "./context.mts";
-import { awaitRound, collectRound, lineToTransport, readBatches, submitRound, writeBatches, type BatchRound, type PendingLine } from "./openai-batch.mts";
+import {
+  awaitRound,
+  BatchCreateUnknown,
+  BatchNotCreated,
+  collectRound,
+  lineToTransport,
+  readBatches,
+  reconcileRound,
+  submitRound,
+  writeBatches,
+  type BatchRound,
+  type PendingLine,
+} from "./openai-batch.mts";
+import { HarnessError } from "./util.mts";
 import type { Provider } from "./prices.mts";
 import { astraBackgroundAttempt, miniAttempt, settleAstra, sonnetAttempt, type Attempt, type TransportEnv } from "./transports.mts";
 import { mapLimit, Semaphore } from "./util.mts";
@@ -137,6 +154,8 @@ export async function driveEach(ctx: RunContext, jobs: readonly BuildJob[], deps
         while (job.state.next && !job.state.final) {
           const a = await attemptFor(ctx, job, o.sonnetMode);
           await advanceBuild(job.state, a.r, a.meta, deps);
+          // Not sent, or voided at Ctrl-C: the attempt stays pending for --resume.
+          if (leftPending(a.r)) break;
           if (job.firstOnly) stopAfterFirst(job.state);
         }
       });
@@ -147,20 +166,53 @@ export async function driveEach(ctx: RunContext, jobs: readonly BuildJob[], deps
   );
 }
 
-async function processRound(ctx: RunContext, rec: BatchRound, jobs: readonly BuildJob[], deps: FlowDeps, save: () => void): Promise<void> {
-  const byBuild = new Map(jobs.map((j) => [j.state.buildId, j]));
-  const results = await collectRound(rec);
+/** Releases the tickets of `lines` that are still open in the guard. */
+function releaseOpen(ctx: RunContext, lines: readonly PendingLine[], why: string): void {
   const open = new Set(ctx.guard.openTickets().map((t) => t.ticket));
+  for (const l of lines) if (open.has(l.ticket)) ctx.guard.release(l.ticket, why);
+}
+
+export type BatchApi = {
+  submitRound: typeof submitRound;
+  awaitRound: typeof awaitRound;
+  collectRound: typeof collectRound;
+  reconcileRound: typeof reconcileRound;
+};
+const REAL_BATCH_API: BatchApi = { submitRound, awaitRound, collectRound, reconcileRound };
+
+async function processRound(ctx: RunContext, rec: BatchRound, jobs: readonly BuildJob[], deps: FlowDeps, save: () => void, api: BatchApi): Promise<void> {
+  if (rec.status === "failed") {
+    // The whole batch failed validation: nothing ran, nothing was billed,
+    // and it says nothing about the model. Every attempt stays pending.
+    releaseOpen(ctx, rec.lines, "batch failed validation: nothing ran");
+    rec.collected = true;
+    save();
+    throw new HarnessError(
+      `batch round ${rec.round} failed validation at OpenAI (${rec.errors.join("; ").slice(0, 400) || "no detail"}): nothing ran and nothing was billed. ` +
+        `Its ${rec.lines.length} attempts stay pending in state.json: fix the cause, then --resume (A, the canary), or rerun with --transport background`,
+    );
+  }
+  const byBuild = new Map(jobs.map((j) => [j.state.buildId, j]));
+  const results = await api.collectRound(rec);
+  const open = new Set(ctx.guard.openTickets().map((t) => t.ticket));
+  let notRun = 0;
   for (const line of rec.lines) {
     const job = byBuild.get(line.buildId);
     if (!job || job.state.final || job.state.attempts + 1 !== line.attempt) continue;
-    const r = await lineToTransport(results.get(line.customId), ctx.net, rec.status, rec.errors);
+    const r = await lineToTransport(results.get(line.customId), ctx.net, rec.status);
     // A ticket already closed in the ledger (a crash after settling, before
     // state.json was saved) is not settled twice: the cost is read, not booked.
     const booked = !open.has(line.ticket);
+    if (r.state === "not-run") {
+      // Billed nothing and not an attempt: s.next is kept, so the same
+      // attempt goes into the next round.
+      if (!booked) ctx.guard.release(line.ticket, `batch line never ran: ${r.detail}`);
+      notRun += 1;
+      continue;
+    }
     let meta: AttemptMeta;
     if (r.state === "submit-failed") {
-      if (!booked) ctx.guard.release(line.ticket, `batch line not run: ${r.kind}`);
+      if (!booked) ctx.guard.release(line.ticket, `batch line refused: ${r.kind}`);
       meta = zero("batch");
     } else {
       if (booked) {
@@ -177,42 +229,68 @@ async function processRound(ctx: RunContext, rec: BatchRound, jobs: readonly Bui
     if (job.firstOnly) stopAfterFirst(job.state);
   }
   rec.collected = true;
+  rec.notRun = notRun;
   save();
+  if (notRun) ctx.progress(`batch round ${rec.round} (${rec.status}): ${notRun} lines never ran; released, and sent again in the next round`);
+  if (rec.status === "cancelled" && notRun) {
+    // This runner never cancels a batch: someone did, at OpenAI. Do not
+    // send the lines again on its own.
+    throw new HarnessError(`batch round ${rec.round} was cancelled at OpenAI (this runner never cancels a batch): ${notRun} attempts never ran and stay pending in state.json (A, the canary: --resume sends them)`);
+  }
 }
+
+/** A build takes at most SET_BUILD_MAX_ATTEMPTS attempts; the spare rounds re-send lines OpenAI never ran. */
+const MAX_ROUNDS = SET_BUILD_MAX_ATTEMPTS + 4;
 
 /**
  * Batch jobs: rounds until nothing waits on an attempt. Returns "stopped"
  * when Ctrl-C arrived while a batch was running (it keeps running at
- * OpenAI; --resume re-attaches it).
+ * OpenAI; --resume re-attaches it). Whatever the spend guard would not
+ * reserve stays pending.
  */
-export async function driveBatch(ctx: RunContext, jobs: readonly BuildJob[], allJobs: readonly BuildJob[], deps: FlowDeps, o: { resume: boolean }): Promise<"done" | "stopped"> {
+export async function driveBatch(
+  ctx: RunContext,
+  jobs: readonly BuildJob[],
+  allJobs: readonly BuildJob[],
+  deps: FlowDeps,
+  o: { resume: boolean; api?: BatchApi; pollMs?: number },
+): Promise<"done" | "stopped"> {
+  const api = o.api ?? REAL_BATCH_API;
   const batches = readBatches(ctx.runDir);
   const save = () => {
     writeBatches(ctx.runDir, batches);
     saveState(ctx, allJobs);
   };
-  const pollMs = 60_000;
+  const pollMs = o.pollMs ?? 60_000;
   if (o.resume) {
     const last = batches.rounds[batches.rounds.length - 1];
     if (last && !last.collected) {
       if (!last.batchId) {
-        for (const l of last.lines) if (ctx.guard.openTickets().some((t) => t.ticket === l.ticket)) ctx.guard.release(l.ticket, "batch never created");
-        last.status = "abandoned";
-        last.collected = true;
-        save();
-      } else {
+        // The run stopped between the upload and a create's answer. Settle
+        // whether the create made a batch before letting its money go.
+        const r = await api.reconcileRound({ runDir: ctx.runDir, rec: last, batches });
+        if (r === "unknown") throw new BatchCreateUnknown(`round ${last.round}: ${last.createNote ?? "whether a batch exists could not be settled"}; its reservations stay counted. Try --resume again later`);
+        if (r === "absent") {
+          releaseOpen(ctx, last.lines, `no batch was created (${last.createNote ?? "?"})`);
+          last.status = "abandoned";
+          last.collected = true;
+          save();
+        }
+      }
+      if (last.batchId && !last.collected) {
         ctx.progress(`re-attaching batch round ${last.round}`);
-        if (!(await awaitRound({ runDir: ctx.runDir, rec: last, batches, pollMs, stopping: ctx.interrupted, progress: ctx.progress }))) return "stopped";
-        await processRound(ctx, last, jobs, deps, save);
+        if (!(await api.awaitRound({ runDir: ctx.runDir, rec: last, batches, pollMs, stopping: ctx.interrupted, progress: ctx.progress }))) return "stopped";
+        await processRound(ctx, last, jobs, deps, save, api);
       }
     }
   }
-  for (let rounds = 0; rounds < 4; rounds++) {
+  for (let rounds = 0; rounds < MAX_ROUNDS; rounds++) {
     const pending = jobs.filter((j) => j.state.next && !j.state.final);
     if (pending.length === 0) return "done";
-    // Ctrl-C between rounds: leave every waiting attempt as it is in
-    // state.json, for --resume to send.
+    // Ctrl-C (or a stop the part asked for) between rounds: leave every
+    // waiting attempt as it is in state.json, for --resume to send.
     if (ctx.interrupted()) return "stopped";
+    if (ctx.stopReason() !== null) return "done";
     const lines: PendingLine[] = [];
     const bodies = new Map<string, Record<string, unknown>>();
     for (const j of pending) {
@@ -221,44 +299,53 @@ export async function driveBatch(ctx: RunContext, jobs: readonly BuildJob[], all
       const attempt = s.attempts + 1;
       const customId = customIdFor(s.buildId, attempt);
       const worst = (s.next.kind === "first" ? ctx.book.astraFirstWorstUsd : ctx.book.astraRetryWorstUsd) * ctx.book.batchMultiplier;
-      // A run the spend guard stopped reserves nothing new: the attempt is
-      // closed as not started, and the flow decides what that means (a draft
-      // in hand is delivered; a first attempt is not run).
+      // A run the spend guard stopped reserves nothing new: the attempt
+      // stays pending (state.json), for --resume with more room.
       const res = ctx.guard.reserve("astra", worst, customId);
-      if (!res.ok) {
-        await advanceBuild(s, { state: "submit-failed", kind: "budget", detail: res.reason }, zero("batch"), deps);
-        if (j.firstOnly) stopAfterFirst(s);
-        continue;
-      }
+      if (!res.ok) continue;
       lines.push({ customId, buildId: s.buildId, attempt, kind: s.next.kind, ticket: res.ticket, worstUsd: worst });
       bodies.set(customId, batchLineBody(astraJobRequest(s.next.input, j.effort ?? "low", ctx.part)));
     }
     save();
-    if (lines.length === 0) continue;
+    // Nothing could be reserved: what is left stays pending.
+    if (lines.length === 0) return "done";
+    const round = batches.rounds.length + 1;
     let rec: BatchRound;
     try {
-      rec = await submitRound({ runDir: ctx.runDir, round: batches.rounds.length + 1, lines, bodies, metadata: { run: ctx.runId, part: ctx.part }, batches });
+      rec = await api.submitRound({ runDir: ctx.runDir, round, lines, bodies, metadata: { run: ctx.runId, part: ctx.part }, batches });
     } catch (e) {
-      const open = batches.rounds[batches.rounds.length - 1];
-      if (open && !open.batchId) {
-        for (const l of open.lines) ctx.guard.release(l.ticket, "batch upload or create failed");
-        open.status = "abandoned";
-        open.collected = true;
-        save();
+      const mine = batches.rounds.find((r) => r.round === round);
+      if (!mine) {
+        // Failed before anything was uploaded.
+        releaseOpen(ctx, lines, "batch round never submitted");
+      } else if (!mine.batchId && !(e instanceof BatchCreateUnknown)) {
+        // Proven: no batch exists for this round (the upload failed, the
+        // create was refused, or the lookup found none).
+        releaseOpen(ctx, mine.lines, e instanceof BatchNotCreated ? `no batch was created: ${e.message}` : "batch upload failed");
+        mine.status = "abandoned";
+        mine.collected = true;
       }
+      // A create with no answer that could not be settled keeps its money
+      // counted: --resume looks for the batch again.
+      save();
       throw e;
     }
     ctx.progress(`batch round ${rec.round}: ${lines.length} lines submitted (${rec.batchId})`);
     save();
     // Only Ctrl-C stops waiting: a budget stop lets a batch already paid for come back.
-    if (!(await awaitRound({ runDir: ctx.runDir, rec, batches, pollMs, stopping: ctx.interrupted, progress: ctx.progress }))) return "stopped";
-    await processRound(ctx, rec, jobs, deps, save);
+    if (!(await api.awaitRound({ runDir: ctx.runDir, rec, batches, pollMs, stopping: ctx.interrupted, progress: ctx.progress }))) return "stopped";
+    await processRound(ctx, rec, jobs, deps, save, api);
   }
   return "done";
 }
 
-/** Every finished job as a results row, and each delivered set under specs/. */
-export function recordBuilds(ctx: RunContext, jobs: readonly BuildJob[]): BuildRecord[] {
+/**
+ * Every job's results row (each delivered set under specs/). `fresh`
+ * rewrites results.jsonl from these jobs, so a resumed run never carries a
+ * build twice.
+ */
+export function recordBuilds(ctx: RunContext, jobs: readonly BuildJob[], o: { fresh?: boolean } = {}): BuildRecord[] {
+  if (o.fresh) writeFileSync(join(ctx.runDir, "results.jsonl"), "");
   return jobs.map((j) => {
     let specFile: string | null = null;
     if (j.state.final?.status === "delivered") {
@@ -301,14 +388,27 @@ export function personsItems(ctx: RunContext, records: readonly BuildRecord[], b
   return items;
 }
 
-/** Whatever never finished (interrupt, budget) is closed as not run, with the reason. */
+/**
+ * Whatever never finished (interrupt, budget) is closed as not run, with the
+ * reason — a retry that never ran included: its build's validity is unknown,
+ * not the first attempt's failure. A draft in hand is delivered, as
+ * production delivers the set in hand. Call it after saveState: state.json
+ * keeps these attempts pending, for --resume.
+ */
 export function closeUnfinished(ctx: RunContext, jobs: readonly BuildJob[]): void {
-  const why = ctx.guard.stopped?.reason === "budget" ? "not_run:budget" : ctx.stopReason() === "sigint" ? "not_run:interrupted" : "not_run:unfinished";
+  const stop = ctx.guard.stopped?.reason;
+  const why = ctx.stopReason() === "sigint" || stop === "sigint" ? "not_run:interrupted" : stop === "budget" || stop === "overshoot" ? "not_run:budget" : "not_run:unfinished";
   for (const j of jobs) {
     if (j.state.final) continue;
-    j.state.final = j.state.draft
-      ? { status: "delivered", use: "draft", spec: j.state.draft, fromAttempt: j.state.draftAttempt ?? 1, openAtDelivery: j.state.draftOpen ?? 0, note: `${why}: the draft is delivered` }
-      : { status: "failed", failure: j.state.attempts === 0 ? why : (j.state.pendingFailure ?? why), note: why };
-    j.state.next = null;
+    const s = j.state;
+    s.final = s.draft
+      ? { status: "delivered", use: "draft", spec: s.draft, fromAttempt: s.draftAttempt ?? 1, openAtDelivery: s.draftOpen ?? 0, note: `${why}: the draft is delivered` }
+      : { status: "failed", failure: why, note: s.attempts === 0 ? why : `${why}: attempt ${s.attempts} came back ${s.pendingFailure ?? "?"} and its retry never ran` };
+    s.next = null;
   }
+}
+
+/** Nothing stopped the run, no batch is still out, and every job reached its end: the only kind of run a bar may pass on. */
+export function runComplete(ctx: RunContext, jobs: readonly BuildJob[], batchEnd: "done" | "stopped"): boolean {
+  return batchEnd === "done" && ctx.stopReason() === null && jobs.every((j) => j.state.final !== null);
 }

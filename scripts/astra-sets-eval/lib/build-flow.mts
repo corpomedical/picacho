@@ -22,9 +22,20 @@
 //     stale branch does: the draft, or failed "lost".
 //   - words gate "unavailable" (after the gate module's own retries) carries
 //     on, flagged: never a refusal, and UNJUDGED in Part D.
-//   - a first-attempt submit that failed on the wire (429, 5xx) is
-//     not_run:transport — outside the validity denominator, counted apart.
-//     "config" aborts the whole run.
+//   - the harness never spends a model attempt on its own trouble:
+//       never sent (budget, Ctrl-C)  → the attempt stays pending (s.next is
+//                                      kept): --resume sends it; a run that
+//                                      ends first closes it as not_run:<why>
+//       cancelled at Ctrl-C          → voided: logged with its cost, not
+//                                      counted, and still pending
+//       lost on the wire (429, 5xx,  → not_run:transport, first attempt or
+//         no answer)                   retry alike
+//       rejected (a 400: the request → not_run:rejected
+//         shape, not the model)
+//     A not_run build is outside the validity denominator; the A bars bound
+//     what it could have been (pass-bars.mts). "config" aborts the whole run.
+//     A closing retry that does not start still delivers the set in hand, as
+//     in production.
 
 import { parseSetSpecText, specInstanceCount, type SetSpec } from "../../../src/lib/sets/set-spec.ts";
 import { closeRetryInput, decideAfterValidAnswer, RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
@@ -43,6 +54,8 @@ export type TransportResult =
       usage: Usage | null;
       /** The runner gave up on it (background staleness): production's stale branch. */
       stale?: boolean;
+      /** The runner cancelled it at Ctrl-C: voided, not a model outcome. */
+      interrupted?: boolean;
     }
   | {
       state: "submit-failed";
@@ -81,6 +94,8 @@ export type AttemptRecord = {
   words?: WordsVerdict;
   answerFile?: string;
   costFlag?: string;
+  /** Sent, then cancelled by the runner at Ctrl-C: billed, but not an attempt of the build. */
+  voided?: boolean;
 };
 
 export type BuildFinal =
@@ -135,6 +150,15 @@ function deliverDraft(s: BuildState, note: string): BuildFinal {
   return { status: "delivered", use: "draft", spec: s.draft, fromAttempt: s.draftAttempt ?? 1, openAtDelivery: s.draftOpen ?? 0, note };
 }
 
+/**
+ * The attempt never counted: it was not sent (budget, Ctrl-C), or the runner
+ * cancelled it at Ctrl-C. s.next is kept, so the caller stops driving the
+ * build and --resume (or closeUnfinished) takes it from there.
+ */
+export function leftPending(r: TransportResult): boolean {
+  return (r.state === "submit-failed" && (r.kind === "budget" || r.kind === "stopped")) || (r.state === "failed" && r.interrupted === true);
+}
+
 /** One answer (or failure) for the attempt in s.next. Mutates and returns s. */
 export async function advanceBuild(s: BuildState, r: TransportResult, meta: AttemptMeta, deps: FlowDeps): Promise<BuildState> {
   if (s.final || !s.next) throw new Error(`build ${s.buildId} has nothing in flight`);
@@ -142,30 +166,49 @@ export async function advanceBuild(s: BuildState, r: TransportResult, meta: Atte
 
   if (r.state === "submit-failed") {
     if (r.kind === "config") throw new ConfigAbort(`${s.buildId}: ${r.detail}`);
-    s.log.push({ attempt: s.attempts + 1, kind, transport: meta.transport, outcome: `submit-failed:${r.kind}`, detail: r.detail, usage: null, billedUsd: 0, standardUsd: 0 });
+    // Never sent: nothing to log, and the attempt is still the next one.
+    if (r.kind === "budget" || r.kind === "stopped") return s;
+    s.log.push({
+      attempt: s.attempts + 1,
+      kind,
+      transport: meta.transport,
+      outcome: `submit-failed:${r.kind}`,
+      detail: r.detail,
+      usage: null,
+      // Zero unless the request went out and no answer came back: then the
+      // transport booked the worst case, and says so in costFlag.
+      billedUsd: meta.billedUsd ?? 0,
+      standardUsd: meta.standardUsd ?? 0,
+      ...(meta.costFlag ? { costFlag: meta.costFlag } : {}),
+    });
     s.next = null;
-    if (kind === "first") {
-      s.final =
-        r.kind === "refused"
-          ? { status: "failed", failure: "refused", note: "Astra refused the brief at submit" }
-          : r.kind === "bad_request"
-            ? { status: "failed", failure: "start", note: r.detail }
-            : r.kind === "budget"
-              ? { status: "failed", failure: "not_run:budget" }
-              : r.kind === "stopped"
-                ? { status: "failed", failure: "not_run:interrupted" }
-                : { status: "failed", failure: "not_run:transport", note: `${r.kind}: ${r.detail}` };
-      return s;
-    }
     if (isClose(kind)) {
       s.final = deliverDraft(s, `closing retry did not start (${r.kind}); the set in hand is delivered`);
       return s;
     }
-    s.final = {
-      status: "failed",
-      failure: r.kind === "refused" ? "refused" : (s.pendingFailure ?? "failed"),
-      note: `retry did not start (${r.kind})`,
-    };
+    const retryNote = kind === "first" ? "" : `; attempt ${s.attempts} came back ${s.pendingFailure ?? "?"} and its retry never ran`;
+    s.final =
+      r.kind === "refused"
+        ? { status: "failed", failure: "refused", note: kind === "first" ? "Astra refused the brief at submit" : "the retry was refused at submit" }
+        : r.kind === "bad_request"
+          ? { status: "failed", failure: "not_run:rejected", note: `the API rejected the request (${r.detail})${retryNote}` }
+          : { status: "failed", failure: "not_run:transport", note: `${r.kind}: ${r.detail}${retryNote}` };
+    return s;
+  }
+
+  if (r.state === "failed" && r.interrupted) {
+    s.log.push({
+      attempt: s.attempts + 1,
+      kind,
+      transport: meta.transport,
+      outcome: `void:${r.kind}`,
+      detail: r.detail,
+      usage: r.usage,
+      billedUsd: meta.billedUsd,
+      standardUsd: meta.standardUsd,
+      voided: true,
+      ...(meta.costFlag ? { costFlag: meta.costFlag } : {}),
+    });
     return s;
   }
 
@@ -297,10 +340,13 @@ export function buildRecord(
 ): BuildRecord {
   const f: BuildFinal = s.final ?? { status: "failed", failure: "not_run:unfinished" };
   const delivered = f.status === "delivered" ? f : null;
-  const counts = s.log.map((a) => tokenCounts(a.usage, m.provider));
+  // What production would have seen: voided attempts (cancelled by the
+  // runner at Ctrl-C) are billed, but never an attempt of the build.
+  const counted = s.log.filter((a) => !a.voided);
+  const counts = counted.map((a) => tokenCounts(a.usage, m.provider));
   const add = (k: "freshInput" | "cachedInput" | "cacheWrite" | "output" | "reasoning") => counts.reduce((acc, c) => acc + (c ? c[k] : 0), 0);
-  const ran = s.log.filter((a) => !a.outcome.startsWith("submit-failed"));
-  const deliveredAttempt = delivered ? s.log.find((a) => a.attempt === delivered.fromAttempt) : undefined;
+  const ran = counted.filter((a) => !a.outcome.startsWith("submit-failed"));
+  const deliveredAttempt = delivered ? ran.find((a) => a.attempt === delivered.fromAttempt) : undefined;
   const latencies = ran.map((a) => a.latencyMs).filter((x): x is number => typeof x === "number");
   return {
     type: "build",
@@ -317,15 +363,17 @@ export function buildRecord(
     notRun: f.status === "failed" && f.failure.startsWith("not_run:") ? f.failure.slice(8) : null,
     use: delivered ? delivered.use : null,
     note: f.note ?? null,
-    firstValid: s.log[0]?.outcome === "valid",
-    validWithinRetry: s.log.some((a) => a.outcome === "valid"),
+    firstValid: ran.find((a) => a.attempt === 1)?.outcome === "valid",
+    validWithinRetry: ran.some((a) => a.outcome === "valid"),
     attempts: s.log,
     openAtDelivery: delivered ? delivered.openAtDelivery : null,
     instances: delivered ? specInstanceCount(delivered.spec) : null,
     notes: deliveredAttempt?.notes ?? [],
     words: deliveredAttempt?.words ?? null,
+    // Billed: everything paid, voided attempts included. Standard (the
+    // production-equivalent the cost bar reads): the build's own attempts.
     billedUsd: sumOrNull(s.log.map((a) => a.billedUsd)),
-    standardUsd: sumOrNull(s.log.map((a) => a.standardUsd)),
+    standardUsd: sumOrNull(counted.map((a) => a.standardUsd)),
     inputTokens: add("freshInput") + add("cachedInput") + add("cacheWrite"),
     cachedTokens: add("cachedInput"),
     cacheWriteTokens: add("cacheWrite"),

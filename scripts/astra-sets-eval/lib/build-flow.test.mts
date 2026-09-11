@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { setBuildInput } from "../../../src/lib/sets/set-builder-prompt.ts";
 import { RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
-import { advanceBuild, buildRecord, ConfigAbort, startBuild, type AttemptMeta, type FlowDeps, type TransportResult, type WordsVerdict } from "./build-flow.mts";
+import { advanceBuild, buildRecord, ConfigAbort, leftPending, startBuild, type AttemptMeta, type FlowDeps, type TransportResult, type WordsVerdict } from "./build-flow.mts";
 import { closureOf } from "./context.mts";
 import { REPO_ROOT } from "./util.mts";
 
@@ -122,11 +122,53 @@ describe("advanceBuild, as pollSetBuild", () => {
     expect(s.log[0].words).toBe("unavailable");
   });
 
-  it("a plain retry whose submit is refused ends refused; one that could not start keeps the first failure", async () => {
+  it("a plain retry whose submit is refused ends refused; one lost on the wire or rejected is not run, not the first failure", async () => {
     const refused = await run([done("x"), { state: "submit-failed", kind: "refused", detail: "403 misalignment" }]);
     expect(refused.s.final).toMatchObject({ status: "failed", failure: "refused" });
     const down = await run([failed("incomplete"), { state: "submit-failed", kind: "unavailable", detail: "503" }]);
-    expect(down.s.final).toMatchObject({ status: "failed", failure: "incomplete" });
+    expect(down.s.final).toMatchObject({ status: "failed", failure: "not_run:transport" });
+    expect((down.s.final as { note?: string }).note).toMatch(/came back incomplete and its retry never ran/);
+    const rejected = await run([done("x"), { state: "submit-failed", kind: "bad_request", detail: "400" }]);
+    expect(rejected.s.final).toMatchObject({ status: "failed", failure: "not_run:rejected" });
+  });
+
+  it("a first attempt the API rejects (a 400) is not run, never an invalid build", async () => {
+    const { s } = await run([{ state: "submit-failed", kind: "bad_request", detail: "400 unsupported_parameter" }]);
+    expect(s.final).toMatchObject({ status: "failed", failure: "not_run:rejected" });
+    const rec = buildRecord(s, { part: "a", builder: "astra-low", provider: "openai", run: 1, briefId: "x", category: "interior", simulated: false, specFile: null });
+    expect(rec.notRun).toBe("rejected");
+  });
+
+  it("an attempt that was never sent (budget, Ctrl-C) stays pending, first attempt or retry", async () => {
+    for (const kind of ["budget", "stopped"] as const) {
+      const first = await run([{ state: "submit-failed", kind, detail: "stop" }]);
+      expect(first.s.final).toBeNull();
+      expect(first.s.next?.kind).toBe("first");
+      expect(first.s.log).toHaveLength(0);
+      const retry = await run([done("{ nope"), { state: "submit-failed", kind, detail: "stop" }]);
+      expect(retry.s.final).toBeNull();
+      expect(retry.s.next?.kind).toBe("retry-plain");
+      expect(retry.s.attempts).toBe(1);
+    }
+    expect(leftPending({ state: "submit-failed", kind: "budget", detail: "" })).toBe(true);
+    expect(leftPending({ state: "submit-failed", kind: "unavailable", detail: "" })).toBe(false);
+  });
+
+  it("an attempt the runner cancelled at Ctrl-C is voided: billed, not counted, still pending", async () => {
+    const interrupted: TransportResult = { state: "failed", kind: "cancelled", detail: "cancelled by the runner", usage, interrupted: true };
+    const s = startBuild("b3", "a quiet showroom with one red car");
+    await advanceBuild(s, interrupted, meta, deps());
+    expect(s.final).toBeNull();
+    expect(s.next?.kind).toBe("first");
+    expect(s.attempts).toBe(0);
+    expect(leftPending(interrupted)).toBe(true);
+    // --resume sends it again: the real first attempt counts, the void does not.
+    await advanceBuild(s, done(CLOSED), meta, deps());
+    const rec = buildRecord(s, { part: "a", builder: "astra-low", provider: "openai", run: 1, briefId: "x", category: "interior", simulated: false, specFile: null });
+    expect(rec.firstValid).toBe(true);
+    expect(rec.billedUsd).toBeCloseTo(0.2, 12);
+    expect(rec.standardUsd).toBeCloseTo(0.2, 12);
+    expect(rec.outputTokens).toBe(5000);
   });
 
   it("a closing retry that cannot start delivers the set in hand", async () => {

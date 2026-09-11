@@ -47,6 +47,8 @@ export type Flags = {
   rebaseline: boolean;
   allowPartialCorpus: boolean;
   allowIncomplete: boolean;
+  /** The flags written on the command line (the rest are defaults): --resume compares these with the original run. */
+  given: string[];
 };
 
 export type Cli =
@@ -98,7 +100,7 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
   npx tsx scripts/astra-sets-eval/run.mts report <runDir> [<runDir>...] [flags]
 
   --spend --max-usd <n>     real calls, never past n US dollars (both required, n > 0)
-  --runs N                  a d e      runs per brief (defaults a=3, d=1, e=3)
+  --runs N                  a d e      runs per brief (default 3: section 4's "3 runs each")
   --only id,...             a c d e canary  a subset of corpus ids
   --builders ...            a          astra-low,astra-medium,sonnet-5,mini-5.4
   --transport batch|background   a d canary
@@ -115,7 +117,9 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
   --seed N                  a b c d    shuffle seed (random by default, recorded in the key)
   --allow-unpriced kinds    spend      acknowledge metered or unpriced kinds (${UNPRICED_KINDS.join(", ")})
   --probe                   a c        the minimal real calls that settle the unknowns
-  --resume <runDir>         a canary   replay the ledger and re-attach recorded batches
+  --resume <runDir>         a canary   replay the ledger and re-attach recorded batches (the run keeps its
+                                       original --sonnet-mode, --no-words-gate, --raters, --seed, --builders,
+                                       --runs, --only and --transport; a different value is refused)
   --out <dir>               all        default scripts/astra-sets-eval/out
   --env-file <path>         all        default <repo>/.env.local
   --chrome <path>           b c d      Chrome binary
@@ -156,6 +160,7 @@ function defaults(): Flags {
     rebaseline: false,
     allowPartialCorpus: false,
     allowIncomplete: false,
+    given: [],
   };
 }
 
@@ -164,6 +169,43 @@ const list = (v: string) =>
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
+
+/**
+ * The flags that shape what a run does. --resume keeps the original run's
+ * values: one not given again is taken from the run; one given with a
+ * different value is refused (the mix would be recorded nowhere).
+ */
+export const BEHAVIOUR: readonly { flag: string; key: keyof Flags }[] = [
+  { flag: "--sonnet-mode", key: "sonnetMode" },
+  { flag: "--no-words-gate", key: "wordsGate" },
+  { flag: "--raters", key: "raters" },
+  { flag: "--seed", key: "seed" },
+  { flag: "--builders", key: "builders" },
+  { flag: "--runs", key: "runs" },
+  { flag: "--only", key: "only" },
+  { flag: "--transport", key: "transport" },
+  { flag: "--rebaseline", key: "rebaseline" },
+];
+
+/** What the manifest records at the start of a run. */
+export function behaviourOf(f: Flags): Record<string, unknown> {
+  return Object.fromEntries(BEHAVIOUR.map((b) => [b.key, f[b.key]]));
+}
+
+/** The flags a --resume runs with: the original run's behaviour over the new command line. Pure. */
+export function resumeFlags(f: Flags, original: Record<string, unknown> | undefined): { ok: true; flags: Flags } | { ok: false; error: string } {
+  if (!original) return { ok: false, error: "--resume: this run's manifest has no behaviour record (it predates it); start a new run" };
+  const clash = BEHAVIOUR.filter((b) => f.given.includes(b.flag) && JSON.stringify(f[b.key]) !== JSON.stringify(original[b.key]));
+  if (clash.length) {
+    return {
+      ok: false,
+      error: `--resume keeps the run's original ${clash.map((b) => `${b.flag} (${JSON.stringify(original[b.key])})`).join(", ")}; drop ${clash.length > 1 ? "those flags" : "the flag"} or start a new run`,
+    };
+  }
+  const flags: Flags = { ...f };
+  for (const b of BEHAVIOUR) if (b.key in original) (flags as Record<string, unknown>)[b.key] = original[b.key];
+  return { ok: true, flags };
+}
 
 export function parseCli(argv: readonly string[]): { ok: true; cli: Cli } | { ok: false; error: string } {
   if (argv.length === 0) return { ok: false, error: "no part given" };
@@ -294,6 +336,7 @@ export function parseCli(argv: readonly string[]): { ok: true; cli: Cli } | { ok
   flags.rebaseline = raw["--rebaseline"] === true;
   flags.allowPartialCorpus = raw["--allow-partial-corpus"] === true;
   flags.allowIncomplete = raw["--allow-incomplete"] === true;
+  flags.given = [...seen];
 
   if (scope === "report") {
     if (positionals.length === 0) return { ok: false, error: "report needs at least one run directory" };

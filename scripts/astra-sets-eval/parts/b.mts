@@ -21,6 +21,15 @@ import type { SheetItemIn } from "../lib/blind-sheet.mts";
 
 export type RunFiles = { manifest: Record<string, unknown>; rows: Record<string, unknown>[] };
 
+/** One row per build: the last one written wins (a run written before results were rewritten on --resume can carry a build twice). */
+export function latestBuildRows(rows: readonly Record<string, unknown>[]): Record<string, unknown>[] {
+  const last = new Map<string, number>();
+  rows.forEach((r, i) => {
+    if (r.type === "build" && typeof r.buildId === "string") last.set(r.buildId, i);
+  });
+  return rows.filter((r, i) => !(r.type === "build" && typeof r.buildId === "string") || last.get(r.buildId) === i);
+}
+
 export function readRun(runDir: string): RunFiles {
   const m = join(runDir, "manifest.json");
   if (!existsSync(m)) throw new HarnessError(`${runDir} has no manifest.json`);
@@ -32,7 +41,7 @@ export function readRun(runDir: string): RunFiles {
         .filter((l) => l.trim())
         .map((l) => JSON.parse(l) as Record<string, unknown>)
     : [];
-  return { manifest, rows };
+  return { manifest, rows: latestBuildRows(rows) };
 }
 
 export function specOf(raw: unknown): SetSpec {
@@ -54,6 +63,9 @@ export const partB: PartModule = {
     if (ctx.flags.fromRun) {
       const a = readRun(ctx.flags.fromRun);
       if (a.manifest.part !== "a") throw new HarnessError(`--from-run ${ctx.flags.fromRun} is not an A run`);
+      if (a.manifest.simulated !== true && a.manifest.complete !== true) {
+        throw new HarnessError(`--from-run ${ctx.flags.fromRun} did not finish (interrupted or stopped): --resume it first, so B draws every set`);
+      }
       const corpus = (a.manifest.corpus ?? {}) as { hash?: string };
       if (corpus.hash !== ctx.corpus.corpusHash) throw new HarnessError("the corpus is not the one the A run used (corpus hash differs)");
       const briefs = new Map(ctx.corpus.data.briefs.map((b) => [b.id, b.brief]));
@@ -116,6 +128,7 @@ export const partB: PartModule = {
     ];
     for (const l of out) ctx.out(l);
     writeSummary(ctx, out.join("\n"), { part: "b", simulated: ctx.dry, drawn: rendered.length - failed, failed, sheets: pages.length });
+    ctx.manifest.complete = true;
     writeManifest(ctx);
     return failed > 0 && rendered.length === failed ? 2 : 0;
   },

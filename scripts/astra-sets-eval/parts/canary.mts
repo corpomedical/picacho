@@ -4,7 +4,8 @@
 // tokens moving more than 30% from the baseline (with n = 10, p95 is the
 // maximum). History lives in out/canary/history.jsonl; a new prompt
 // fingerprint or canary file starts a new baseline, and so does
-// --rebaseline. Dry runs never write the history.
+// --rebaseline. Dry runs never write the history, nor does a run that did
+// not finish; a row with no answers is never taken as a baseline.
 
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -12,7 +13,7 @@ import { SET_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
 import { startBuild, type FlowDeps } from "../lib/build-flow.mts";
 import { closureOf, spendLines, writeManifest, writeSummary } from "../lib/context.mts";
 import { canarySha } from "../lib/corpus.mts";
-import { closeUnfinished, driveBatch, driveEach, loadState, recordBuilds, saveState, type BuildJob } from "../lib/drive.mts";
+import { closeUnfinished, driveBatch, driveEach, loadState, recordBuilds, runComplete, saveState, type BuildJob } from "../lib/drive.mts";
 import { promptFingerprint } from "../lib/fingerprint.mts";
 import { canaryAlert, type CanaryRow } from "../lib/pass-bars.mts";
 import { planCanary } from "../lib/plan.mts";
@@ -76,11 +77,15 @@ export const partCanary: PartModule = {
       writeManifest(ctx);
       return 130;
     }
-    closeUnfinished(ctx, jobs);
+    const complete = runComplete(ctx, jobs, end);
+    ctx.manifest.complete = complete;
+    ctx.manifest.stop = ctx.stopReason() ?? ctx.guard.stopped?.reason ?? null;
+    // state.json first: attempts that never started stay pending for --resume.
     saveState(ctx, jobs);
-    const records = recordBuilds(ctx, jobs);
+    closeUnfinished(ctx, jobs);
+    const records = recordBuilds(ctx, jobs, { fresh: true });
     const ran = records.filter((r) => !r.notRun);
-    const firstOut = ran.map((r) => r.attempts[0]).filter((a) => a && !a.outcome.startsWith("submit-failed"));
+    const firstOut = ran.map((r) => r.attempts.find((a) => !a.voided)).filter((a) => a && !a.outcome.startsWith("submit-failed"));
     const outTokens = ran.map((r) => r.outputTokens);
     const inTokens = ran.map((r) => r.inputTokens);
     const std = ran.map((r) => r.standardUsd).filter((x): x is number => x !== null);
@@ -100,18 +105,18 @@ export const partCanary: PartModule = {
     const history = readHistory(hPath);
     const alert = canaryAlert(row, history);
     const out = [`Canary ${ctx.runId}${ctx.dry ? "  (DRY RUN: simulated answers; the history is not written)" : ""}`, ...alert.lines.map((l) => `  ${l}`)];
-    if (!ctx.dry) {
+    if (!ctx.dry && complete) {
       mkdirSync(dirname(hPath), { recursive: true });
       appendFileSync(hPath, JSON.stringify(row) + "\n");
-      out.push(`  history: ${hPath}`);
+      out.push(`  history: ${hPath}${row.n === 0 || !row.p95Output ? " (a row with no answers: never a baseline)" : ""}`);
       if (alert.alert) out.push(`  ALERT: ${alert.reasons.join("; ")}`);
-    }
+    } else if (!ctx.dry) out.push(`  DID NOT FINISH (${String(ctx.manifest.stop ?? "unfinished")}): the history is not written; --resume ${ctx.runDir}`);
     out.push(...spendLines(ctx));
     for (const l of out) ctx.out(l);
-    writeSummary(ctx, out.join("\n"), { part: "canary", simulated: ctx.dry, row, alert });
+    writeSummary(ctx, out.join("\n"), { part: "canary", simulated: ctx.dry, complete, row, alert });
     writeManifest(ctx);
     if (ctx.stopReason() === "sigint") return 130;
-    if (!ctx.dry && ctx.guard.stopped) return 2;
+    if (!ctx.dry && (ctx.guard.stopped || !complete)) return 2;
     return !ctx.dry && alert.alert ? 1 : 0;
   },
 };
