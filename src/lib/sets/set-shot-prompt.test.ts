@@ -16,6 +16,12 @@ describe("buildSetShotPrompt", () => {
     expect(p).toMatch(/take the person's face, hair and features only from the character photos/);
   });
 
+  it("says the sketch's brightness is not the scene's — only when the sketch was lifted", () => {
+    const lifted = buildSetShotPrompt({ description: "d", direction: "", lifted: true });
+    expect(lifted).toContain("take the time of day, how dark it is and the colour of the light from the description, not from the sketch");
+    expect(p).not.toContain("lit brighter");
+  });
+
   it("carries the set's description and the person's direction", () => {
     expect(p).toContain("Rain-dark cobbles under amber lamps.");
     expect(p).toContain("In this frame: She looks back over her shoulder.");

@@ -524,16 +524,30 @@ export async function saveSetThumbnail(setId: string, dataUri: string): Promise<
   if (await rateLimited(access.userId, "set-thumb", 600, 20)) return { error: SET_SAVE_FAILED };
   const admin = createAdminClient();
   const path = setThumbPath(access.userId, setId);
+  const { data: before } = await admin
+    .from("location_sets")
+    .select("thumb_path")
+    .eq("id", setId)
+    .eq("user_id", access.userId)
+    .is("deleted_at", null)
+    .maybeSingle();
   const { error: uploadError } = await admin.storage
     .from("generated-images")
     .upload(path, bytes, { contentType: "image/jpeg", upsert: true });
   if (uploadError) return { error: SET_SAVE_FAILED };
-  await admin
+  const { data: moved } = await admin
     .from("location_sets")
     .update({ thumb_path: path })
     .eq("id", setId)
     .eq("user_id", access.userId)
-    .is("deleted_at", null);
+    .is("deleted_at", null)
+    .select("id");
+  // A card from before the current thumbnail version (set-config.ts) lived
+  // at another path; once the row points at the new one, the old file goes.
+  const old = typeof before?.thumb_path === "string" ? before.thumb_path : null;
+  if (moved?.length && old && old !== path && old.startsWith(`${access.userId}/sets/`)) {
+    await admin.storage.from("generated-images").remove([old]);
+  }
   return { error: null };
 }
 
@@ -548,7 +562,7 @@ type ShootResult =
  */
 export async function shootInSet(
   setId: string,
-  input: { frameDataUri: string; characterId: string; direction: string; layout: unknown },
+  input: { frameDataUri: string; characterId: string; direction: string; layout: unknown; lifted?: boolean },
 ): Promise<ShootResult> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
@@ -589,7 +603,9 @@ export async function shootInSet(
 
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
   const fd = new FormData();
-  fd.set("prompt", buildSetShotPrompt({ description: owned.spec.description, direction }));
+  // `lifted` only chooses whether the prompt explains a brightened sketch;
+  // a false value from a crafted request changes one sentence, still gated.
+  fd.set("prompt", buildSetShotPrompt({ description: owned.spec.description, direction, lifted: input.lifted === true }));
   fd.set("content_type", "image");
   fd.set("character_id", characterId);
   // The prompt is already the one the image model should read: the drafter

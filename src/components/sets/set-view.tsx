@@ -28,6 +28,8 @@ type Pose = { position: Vec3; target: Vec3; fovDeg: number };
 type Mark = { x: number; z: number; facingDeg: number };
 
 type StageApi = {
+  /** Whether exposure.ts lifted this set above the base exposure. */
+  lifted: boolean;
   goTo(pose: Pose): void;
   setFov(fovDeg: number): void;
   placeMark(mark: Mark): void;
@@ -113,6 +115,7 @@ export function SetView({
         const THREE = await import("three");
         const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
         const { buildSetScene, buildStandIn, placeStandIn } = await import("@/lib/sets/build-scene");
+        const { BASE_EXPOSURE, chooseExposure, measurePanoramaLuminance } = await import("@/lib/sets/exposure");
         if (disposed || !hostRef.current) return;
 
         const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -120,7 +123,7 @@ export function SetView({
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.3;
+        renderer.toneMappingExposure = BASE_EXPOSURE;
         renderer.shadowMap.enabled = !coarse;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         const canvas = renderer.domElement;
@@ -240,6 +243,19 @@ export function SetView({
           if (camera.position.y < 0.1) camera.position.y = 0.1;
           renderer.render(scene, camera);
         };
+        // One exposure for the whole set, measured before the first frame is
+        // shown (exposure.ts): a dark set is lifted until its layout reads,
+        // and the view, every snapshot and the thumbnail share it. A
+        // measurement that cannot run leaves the base exposure.
+        fit();
+        try {
+          renderer.toneMappingExposure = chooseExposure((e) =>
+            measurePanoramaLuminance(THREE, renderer, scene, spec, built.farPlane, e),
+          );
+        } catch (err) {
+          console.warn("SetView exposure measurement failed:", err);
+          renderer.toneMappingExposure = BASE_EXPOSURE;
+        }
         raf = requestAnimationFrame(loop);
 
         const cropSquare = (px: number): string | null => {
@@ -255,6 +271,7 @@ export function SetView({
         };
 
         apiRef.current = {
+          lifted: renderer.toneMappingExposure > BASE_EXPOSURE,
           goTo(pose) {
             camera.position.set(...pose.position);
             controls.target.set(...pose.target);
@@ -435,6 +452,7 @@ export function SetView({
         characterId,
         direction,
         layout: { ...layoutRef.current, camera: pose },
+        lifted: apiRef.current?.lifted === true,
       });
     } catch (err) {
       // The take may still be running on the server (a dropped connection

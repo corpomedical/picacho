@@ -20,12 +20,17 @@
 import { cleanText } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 
-export function buildSetShotPrompt(input: { description: string; direction: string }): string {
+export function buildSetShotPrompt(input: { description: string; direction: string; lifted?: boolean }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
   return [
     "The attached layout sketch is a grey 3D mock-up of the location — a guide to composition, not a style reference.",
     "Match its camera position, lens, framing, horizon and the direction of its light exactly.",
+    // Only when exposure.ts lifted this set's sketch so its layout reads: the
+    // scene itself is not brighter for it. For a daylit set it would be false.
+    input.lifted
+      ? "The sketch is lit brighter than the real scene so its layout can be read: take the time of day, how dark it is and the colour of the light from the description, not from the sketch."
+      : "",
     description ? `Render the location photorealistically, as it really looks: ${description}` : "Render the location photorealistically, as it really looks.",
     "The person stands where the grey figure stands, at its scale, facing the same way.",
     direction ? `In this frame: ${direction}` : "",

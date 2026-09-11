@@ -104,8 +104,17 @@ export const SET_SHOTS_LIMIT = 48;
 // account deletion (profile/storage-buckets.ts), so neither needs a line
 // there. The frame rides a take as an ordinary chat attachment — recorded
 // on the generation, cleaned up when that take is deleted.
+//
+// The thumbnail's name carries a version: v2 cards are taken at the set's own
+// exposure (exposure.ts, 2026-09-11). A card at any other path was taken
+// before that — black, for a night set — and is taken again, once, the next
+// time the set is opened (isCurrentSetThumb; saveSetThumbnail removes the old
+// file).
 export function setThumbPath(userId: string, setId: string): string {
-  return `${userId}/sets/${setId}.jpg`;
+  return `${userId}/sets/${setId}.v2.jpg`;
+}
+export function isCurrentSetThumb(thumbPath: unknown, userId: string, setId: string): boolean {
+  return thumbPath === setThumbPath(userId, setId);
 }
 export function setFramePath(userId: string, frameId: string): string {
   return `${userId}/${frameId}-set-frame.jpg`;

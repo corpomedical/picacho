@@ -3,7 +3,7 @@ import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
-import { SETS_LIST_LIMIT, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
+import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
 import { normaliseSetLayout, normaliseSetSpec } from "@/lib/sets/set-spec";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
@@ -170,7 +170,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       failure: status === "failed" ? setFailureMessage(row.failure as string | null) : null,
       spec,
       layout,
-      hasThumb: Boolean(row.thumb_path),
+      hasThumb: isCurrentSetThumb(row.thumb_path, access.userId, row.id as string),
     },
     shots,
     characters,
