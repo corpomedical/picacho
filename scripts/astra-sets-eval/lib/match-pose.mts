@@ -77,6 +77,24 @@ export function matchFramePose(poseId: string, p: StagePose): Pose {
   return { poseId, position: p.position, target: p.target, fovDeg: p.fovDeg, figure: true };
 }
 
+/**
+ * The part of a reference photo a still matched to it shows: the photo's
+ * centre square, its shorter side each way. solveMatchPose gives the still,
+ * which is always square, the photo's lens across that side only (a
+ * landscape photo's height, an upright photo's width) and maps the subject
+ * into this square, so a read that has the photo's camera draws what the
+ * square holds, never the whole photo: less to either side of a wide photo,
+ * less above and below a tall one. Where the subject sat near the square's
+ * left or right edge, or outside it, the still turns toward it until the
+ * figure is 15% inside, and so shows a square that far to that side. The
+ * rater sheet outlines this square on its copy of the photo (photos.mts
+ * outlineSquare), so a rater compares the still with what it is matched to.
+ */
+export function photoSquare(width: number, height: number): { left: number; top: number; size: number } {
+  const size = Math.min(width, height);
+  return { left: Math.floor((width - size) / 2), top: Math.floor((height - size) / 2), size };
+}
+
 /** The set a photo is matched in: pinned by the seed and the photo's id, from the pool in key order. */
 export function pinnedSet<T extends { key: string }>(pool: readonly T[], photoId: string, seed: number): T {
   if (pool.length === 0) throw new Error("no set to match in");

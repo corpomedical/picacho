@@ -32,8 +32,11 @@
 //   6. the stage view: the product's solveMatchPose and placeMatchedCamera
 //      in a set (lib/match-pose.mts), drawn as the still would be framed —
 //      the centre square, the set's own lift, the grey figure on the mark —
-//      in the local Chrome B and C draw in, then laid beside the photo on a
-//      blind sheet (e-match). Builder labels live only in keys/
+//      in the local Chrome B and C draw in, then laid on a blind sheet
+//      (e-match) beside a copy of the photo with the square a still matched
+//      to it shows outlined (match-pose.mts photoSquare): a still is square
+//      and holds the photo's lens across its shorter side only, so a correct
+//      read never looks like the whole photo. Builder labels live only in keys/
 //
 // The bars are held by the builder Match runs on (pass-bars barE: the
 // route). Both builders' FOV shares print here, and the FOV bar settles
@@ -48,7 +51,7 @@
 // what it did not read missing, is not complete, and report never passes a
 // bar on it — rerun it. A photo's bytes never enter the ledger or the
 // manifest (its hash and size do); the run keeps the bytes it sent in its
-// photos/, for the sheet.
+// photos/, and beside them the sheet's copy of each.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -64,10 +67,10 @@ import { MATCH_PHOTOS_WANTED, type MatchRow } from "../lib/corpus.mts";
 import { transportEnv } from "../lib/drive.mts";
 import { aspectHeld } from "../lib/exif-fov.mts";
 import { matchPromptFingerprint } from "../lib/fingerprint.mts";
-import { buildForMatching, matchedStagePose, matchFramePose, pinnedSet, type StagePose } from "../lib/match-pose.mts";
+import { buildForMatching, matchedStagePose, matchFramePose, photoSquare, pinnedSet, type StagePose } from "../lib/match-pose.mts";
 import { photoTruth, type PhotoTruth } from "../lib/match-truth.mts";
 import { barE, capAtUndetermined, fovWithin, type BarResult, type EItem, type EOutcome } from "../lib/pass-bars.mts";
-import type { PreparedPhoto } from "../lib/photos.mts";
+import { outlineSquare, type PreparedPhoto } from "../lib/photos.mts";
 import { planE } from "../lib/plan.mts";
 import { median } from "../lib/stats.mts";
 import { astraMatchAttempt, miniMatchAttempt, REAL_CLOCK, settleAstra, type MatchAttempt, type MatchClock } from "../lib/transports.mts";
@@ -189,7 +192,11 @@ export function setPool(fromRun: string | null): ESet[] {
   return delivered.map((r) => ({ key: r.buildId, spec: specOf(JSON.parse(readFileSync(join(fromRun, r.specFile as string), "utf8"))), from: fromRun }));
 }
 
-/** A read's sheet item: the photo it was read from, and on its right the stage view it solved to. Only the key knows the builder. */
+/**
+ * A read's sheet item: the sheet's copy of the photo it was read from (the
+ * still's square outlined, the same copy for every read of it), and on its
+ * right the stage view it solved to. Only the key knows the builder.
+ */
 export function eSheetItem(runId: string, read: Pick<EReadRow, "readId" | "builder" | "photoId" | "run">, photoPath: string, framePath: string): SheetItemIn {
   return {
     source: { part: "e", runId, readId: read.readId, builder: read.builder, photoId: read.photoId, run: read.run },
@@ -430,9 +437,22 @@ export async function runE(ctx: RunContext, deps: EDeps): Promise<number> {
   });
   for (const p of photoRows) writeResult(ctx, p);
   for (const r of readRows) writeResult(ctx, r);
-  const photoFiles = ctx.manifest.photoFiles as Record<string, { file?: string }>;
-  const items = readRows.filter((r) => r.frame).map((r) => eSheetItem(ctx.runId, r, join(ctx.runDir, photoFiles[r.photoId]?.file as string), join(ctx.runDir, r.frame as string)));
-  const pages = complete || ctx.dry ? writeRaterSheets(ctx, "e-match", items) : [];
+  let items: SheetItemIn[] = [];
+  let pages: string[] = [];
+  if (complete || ctx.dry) {
+    // Each photo on the sheet is its copy with the still's square outlined,
+    // drawn once from the bytes sent: every read of it sits beside the same one.
+    const rated = readRows.filter((r) => r.frame);
+    const onSheet = new Map<string, string>();
+    for (const id of new Set(rated.map((r) => r.photoId))) {
+      const p = photoOf(id);
+      const file = join(ctx.runDir, "photos", `${id}.square.jpg`);
+      writeFileSync(file, await outlineSquare(p, photoSquare(p.width, p.height)));
+      onSheet.set(id, file);
+    }
+    items = rated.map((r) => eSheetItem(ctx.runId, r, onSheet.get(r.photoId) as string, join(ctx.runDir, r.frame as string)));
+    pages = writeRaterSheets(ctx, "e-match", items);
+  }
 
   const bars: BarResult[] = ctx.dry ? [] : barE(eItems(readRows)).filter((b) => b.id === "E-fov" || b.id === "E-fov-mini").map((b) => (complete ? b : capAtUndetermined(b, "the run did not finish")));
 

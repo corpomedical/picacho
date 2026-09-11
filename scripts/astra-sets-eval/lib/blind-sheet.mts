@@ -96,22 +96,30 @@ export const QUESTIONS: Record<SheetKind, QuestionSpec> = {
   // Match this shot: a reference photo, and on its right the still the
   // product would frame from the camera a read solved to (another set, the
   // grey figure standing where the photo's subject is). The camera is
-  // judged, never the place. The still always has the figure, as the
-  // product's does: for a photo with no subject (WRITER.md asks for a few),
-  // solveMatchPose keeps the camera's own distance and centres the figure,
-  // so its size says nothing about the read, and raters are told to ignore it.
+  // judged, never the place. The still is always square and holds the
+  // photo's lens across the photo's shorter side only, so even a perfect
+  // read draws the photo's centre square, not the whole photo: the sheet's
+  // copy of the photo outlines that square (match-pose.mts photoSquare), and
+  // raters judge the lens and the subject's size against it, never against
+  // the whole photo. A subject near the square's side edge or beyond it
+  // turns the still toward it (the figure is kept 15% inside), so the square
+  // is judged by its size, not its place. The still always has the figure,
+  // as the product's does: for a photo with no subject (WRITER.md asks for
+  // a few), solveMatchPose keeps the camera's own distance and centres the
+  // figure, so its size says nothing about the read, and raters are told to
+  // ignore it.
   "e-match": {
     kind: "score",
     title: "How closely does the right image's camera match the photo's camera?",
-    prompt: "Look at the photo, then at the grey sketch on its right. Score how closely the sketch's camera matches the photo's camera: its height, its tilt, its lens and, when the photo has a clear subject, how large that subject is in frame.",
+    prompt: "Look at the photo, then at the grey sketch on its right. The sketch is always square, and it is matched to the square outlined on the photo, not to the whole photo: a wide photo shows more at its sides than the sketch does, a tall one more above and below. Score how closely the sketch's camera matches the photo's camera, against that square: its height, its tilt, its lens and, when the photo has a clear subject, how large that subject is in the square.",
     min: 1,
     max: 5,
     anchors: {
-      1: "a different camera: another height, tilt or lens (and a clear subject far larger or smaller)",
+      1: "a different camera: another height, tilt or lens (and a clear subject far larger or smaller in the square)",
       3: "roughly the same camera, with one clear difference",
-      5: "the same camera: height, tilt and lens match, and so does a clear subject's size in frame",
+      5: "the same camera: the sketch takes in as much as the outlined square, from the same height and tilt, and a clear subject fills as much of the square",
     },
-    note: "Judge the camera, not the place: the sketch is a different place on purpose, and its grey figure stands where the photo's subject is. When the photo has no clear subject (an empty street, a landscape), the figure only stands where the camera looks: ignore its size and judge the height, tilt and lens alone. Ignore flatness, plain colours and missing detail.",
+    note: "Judge the camera, not the place: the sketch is a different place on purpose, and its grey figure stands where the photo's subject is. When the subject sits near the square's left or right edge, or outside it, the sketch turns toward it to keep the figure inside, so its view sits to that side of the square: judge its lens and the subject's size against the square all the same. When the photo has no clear subject (an empty street, a landscape), the figure only stands where the camera looks: ignore its size and judge the height, tilt and lens alone. Ignore flatness, plain colours and missing detail.",
   },
 };
 

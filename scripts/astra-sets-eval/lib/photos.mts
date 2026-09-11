@@ -17,6 +17,7 @@
 // PhotoStore hands a build its photo only when the bytes still hash to what
 // was first sent: photo.ts photoForRetry's rule, so a retry resends the same
 // photo or nothing, and here the run stops rather than send another.
+// outlineSquare draws part E's rater sheet copy of a photo, never sent.
 
 import { MAX_SET_PHOTO_BYTES, SET_PHOTO_MAX_FILE_BYTES, photoFit } from "../../../src/lib/sets/set-config.ts";
 import { normaliseSetPhoto, parseSetPhotoDataUri, photoDataUrl } from "../../../src/lib/sets/photo.ts";
@@ -85,6 +86,42 @@ export async function preparePhoto(photoId: string, file: Buffer): Promise<{ ok:
   const n = await normaliseSetPhoto(parsed.bytes);
   if (!n.ok) return n;
   return { ok: true, photo: { photoId, jpeg: n.jpeg, dataUrl: photoDataUrl(n.jpeg), width: n.width, height: n.height, sha256: n.sha256 } };
+}
+
+/** How dark the sheet's copy of a reference photo is outside the still's square: the rest stays visible, plainly outside the frame. */
+export const OUTSIDE_SHADE = 0.55;
+
+/**
+ * Part E's rater sheet copy of a reference photo: the photo as sent, the
+ * square a still matched to it shows (match-pose.mts photoSquare) outlined
+ * in white, and the rest dimmed but visible, so a subject beside the square
+ * can still be judged. The same copy for every read of the photo: nothing on
+ * it depends on what a builder answered. It goes nowhere but the sheet.
+ */
+export async function outlineSquare(photo: Pick<PreparedPhoto, "jpeg" | "width" | "height">, square: { left: number; top: number; size: number }): Promise<Buffer> {
+  const sharp = await loadSharp();
+  const { width, height } = photo;
+  const { left, top, size } = square;
+  const block = (w: number, h: number, x: number, y: number, background: { r: number; g: number; b: number; alpha: number }) =>
+    w > 0 && h > 0 ? [{ input: { create: { width: w, height: h, channels: 4 as const, background } }, left: x, top: y }] : [];
+  const shade = { r: 0, g: 0, b: 0, alpha: OUTSIDE_SHADE };
+  const white = { r: 255, g: 255, b: 255, alpha: 1 };
+  // A line a 400th of the square's side, at least 2 px: plain at the sheet's width, whatever the photo's size.
+  const line = Math.min(size, Math.max(2, Math.round(size / 400)));
+  return sharp(photo.jpeg)
+    .composite([
+      ...block(width, top, 0, 0, shade),
+      ...block(width, height - top - size, 0, top + size, shade),
+      ...block(left, size, 0, top, shade),
+      ...block(width - left - size, size, left + size, top, shade),
+      ...block(size, line, left, top, white),
+      ...block(size, line, left, top + size - line, white),
+      ...block(line, size, left, top, white),
+      ...block(line, size, left + size - line, top, white),
+    ])
+    .removeAlpha()
+    .jpeg({ quality: 90 })
+    .toBuffer();
 }
 
 /** The run's photos, by id: the re-encoded bytes, never re-read mid-build. */

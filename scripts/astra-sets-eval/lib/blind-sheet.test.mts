@@ -119,6 +119,16 @@ describe("the Match-this-shot sheet (e-match)", () => {
     for (const word of ["astra", "Astra", "mini", "gpt", "e-read", "photos/", "frames/"]) expect(html).not.toContain(word);
     expect(html).toContain("How closely does the right image&#39;s camera match the photo&#39;s camera?");
     expect(html).toContain("Judge the camera, not the place");
+    // The still is square and holds the photo's lens across its shorter side only (match-pose.mts photoSquare):
+    // raters judge it against the square outlined on the photo, never the whole photo, or a correct read scores low.
+    expect(html).toContain(
+      "The sketch is always square, and it is matched to the square outlined on the photo, not to the whole photo: a wide photo shows more at its sides than the sketch does, a tall one more above and below. Score how closely the sketch&#39;s camera matches the photo&#39;s camera, against that square: its height, its tilt, its lens and, when the photo has a clear subject, how large that subject is in the square.",
+    );
+    expect(html).toContain("<b>1</b> a different camera: another height, tilt or lens (and a clear subject far larger or smaller in the square)");
+    expect(html).toContain("<b>5</b> the same camera: the sketch takes in as much as the outlined square, from the same height and tilt, and a clear subject fills as much of the square");
+    // A subject near the square's side edge turns the still toward it: the square is judged by its size, not its place.
+    expect(html).toContain("When the subject sits near the square&#39;s left or right edge, or outside it, the sketch turns toward it to keep the figure inside, so its view sits to that side of the square: judge its lens and the subject&#39;s size against the square all the same.");
+    expect(html).not.toMatch(/in frame/);
     // A photo with no subject still gets the figure (the product's still has it): raters judge height, tilt and lens alone.
     expect(html).toContain("When the photo has no clear subject (an empty street, a landscape), the figure only stands where the camera looks: ignore its size and judge the height, tilt and lens alone.");
     // Every read of a photo is its own item, and one photo's items never sit side by side when that can be avoided.

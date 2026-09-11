@@ -4,9 +4,9 @@ import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 import { buildSetScene } from "../../../src/lib/sets/build-scene.ts";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type ShotMatch } from "../../../src/lib/sets/match-shot.ts";
-import { normaliseSetSpec, type SetSpec } from "../../../src/lib/sets/set-spec.ts";
+import { normaliseSetSpec, type SetSpec, type Vec3 } from "../../../src/lib/sets/set-spec.ts";
 import { MIRRORED_MATCH_LINES } from "../render/viewer-parity.mts";
-import { buildForMatching, FRAME_EYE_Y, matchedStagePose, matchFramePose, orbitReach, pinnedSet, SNAP_CANVAS_ASPECT } from "./match-pose.mts";
+import { buildForMatching, FRAME_EYE_Y, matchedStagePose, matchFramePose, orbitReach, photoSquare, pinnedSet, SNAP_CANVAS_ASPECT } from "./match-pose.mts";
 import { REPO_ROOT } from "./util.mts";
 
 // Where a read puts the stage camera: the product's own solve and placement,
@@ -78,6 +78,51 @@ describe("matchedStagePose", () => {
     expect(orbitReach({ x: 20, z: 30, height: 4 })).toBe(30 * 1.2 + 10);
     expect(SNAP_CANVAS_ASPECT).toBe(1);
   });
+});
+
+describe("photoSquare: the part of a reference photo its still shows", () => {
+  it("is the photo's centre square, its shorter side each way", () => {
+    expect(photoSquare(1536, 1024)).toEqual({ left: 256, top: 0, size: 1024 });
+    expect(photoSquare(900, 1200)).toEqual({ left: 0, top: 150, size: 900 });
+    expect(photoSquare(1537, 1024)).toEqual({ left: 256, top: 0, size: 1024 });
+    expect(photoSquare(800, 800)).toEqual({ left: 0, top: 0, size: 800 });
+  });
+
+  it("is what the product's still holds for a read with the photo's own camera: the photo's lens across the square, the subject where it sits in the square", () => {
+    // Level, so the mark's vertical line crosses the screen's centre line at the camera's height.
+    const bounds = { x: 20, z: 20, height: 4 };
+    const current = { position: [0, 1.6, 6] as Vec3, target: [0, 1.2, 0] as Vec3, fovDeg: 45 };
+    for (const [w, h] of [[1536, 1024], [900, 1200], [2048, 853], [1200, 1200]]) {
+      const vfov = 38;
+      const sq = photoSquare(w, h);
+      // Whole pixels, within half a pixel of the photo's exact centre.
+      expect(Math.abs(sq.left - (w - sq.size) / 2)).toBeLessThanOrEqual(0.5);
+      expect(Math.abs(sq.top - (h - sq.size) / 2)).toBeLessThanOrEqual(0.5);
+      // The photo's focal length in pixels, from its vertical field of view, and the lens across its square.
+      const f = h / 2 / Math.tan((vfov * Math.PI) / 360);
+      const squareFov = (2 * Math.atan(sq.size / 2 / f) * 180) / Math.PI;
+      for (const subjectX of [0.4, 0.5, 0.62]) {
+        const solved = solveMatchPose(match({ verticalFovDeg: vfov, pitchDeg: 0, subjectX, cameraHeightM: 1.5, subjectDistanceM: 4 }), {
+          mark: { x: 0, z: 0, facingDeg: 0 },
+          current,
+          referenceAspect: w / h,
+          bounds,
+          canvasAspect: SNAP_CANVAS_ASPECT,
+        });
+        expect(solved.notes).toEqual({});
+        expect(solved.pose.fovDeg).toBeCloseTo(squareFov, 9);
+        const cam = new THREE.PerspectiveCamera(solved.pose.fovDeg, SNAP_CANVAS_ASPECT, 0.01, 100);
+        cam.position.set(...solved.pose.position);
+        cam.lookAt(new THREE.Vector3(...solved.pose.target));
+        cam.updateMatrixWorld();
+        const onScreen = new THREE.Vector3(0, solved.pose.position[1], 0).project(cam);
+        // Where the subject sits in the photo's centre square, 0 at its left edge, 1 at its right.
+        expect((onScreen.x + 1) / 2).toBeCloseTo((subjectX * w - (w - sq.size) / 2) / sq.size, 9);
+        expect(onScreen.y).toBeCloseTo(0, 9);
+      }
+    }
+  });
+
 });
 
 describe("pinnedSet", () => {

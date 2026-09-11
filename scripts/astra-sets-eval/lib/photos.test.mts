@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { normaliseSetPhoto, parseSetPhotoDataUri, photoDataUrl } from "../../../src/lib/sets/photo.ts";
 import { SET_PHOTO_BAD_SHAPE, SET_PHOTO_TOO_SMALL, SET_PHOTO_UNREADABLE } from "../../../src/lib/sets/messages.ts";
 import { SET_PHOTO_MAX_SIDE_PX } from "../../../src/lib/sets/set-config.ts";
-import { browserPrepare, PhotoStore, preparePhoto } from "./photos.mts";
+import { browserPrepare, outlineSquare, OUTSIDE_SHADE, PhotoStore, preparePhoto } from "./photos.mts";
 
 // A corpus photo goes through the browser's step (sharp standing in for the
 // canvas) and then the server's own, unchanged: the bytes Astra would get.
@@ -51,6 +51,36 @@ describe.skipIf(!sharp)("preparePhoto (sharp)", () => {
     const r = await preparePhoto("big", await make(9000, 6000).jpeg().toBuffer());
     if (!r.ok) throw new Error(r.error);
     expect([r.photo.width, r.photo.height]).toEqual([SET_PHOTO_MAX_SIDE_PX, Math.round((SET_PHOTO_MAX_SIDE_PX * 6000) / 9000)]);
+  });
+
+  it("outlineSquare: E's sheet copy of a photo keeps its size, keeps the square as sent, outlines it and dims the rest", async () => {
+    const pixels = async (jpeg: Buffer) => {
+      const { data, info } = await (sharp as SharpFn)(jpeg).raw().toBuffer({ resolveWithObject: true });
+      return { info, at: (x: number, y: number) => Array.from(data.subarray((y * info.width + x) * info.channels, (y * info.width + x) * info.channels + 3)) };
+    };
+    const near = (a: number[], b: number[], d: number) => a.every((v, i) => Math.abs(v - b[i]) <= d);
+    for (const [w, h, square] of [
+      [1200, 800, { left: 200, top: 0, size: 800 }],
+      [800, 1200, { left: 0, top: 200, size: 800 }],
+    ] as const) {
+      const jpeg = await make(w, h).jpeg().toBuffer();
+      const copy = await pixels(await outlineSquare({ jpeg, width: w, height: h }, square));
+      const sent = await pixels(jpeg);
+      expect([copy.info.width, copy.info.height, copy.info.channels]).toEqual([w, h, 3]);
+      const mid = [square.left + square.size / 2, square.top + square.size / 2];
+      expect(near(copy.at(mid[0], mid[1]), sent.at(mid[0], mid[1]), 3)).toBe(true);
+      // Outside the square, on both sides: the photo, darker by the shade.
+      const outside = w > h ? [[square.left / 2, h / 2], [w - square.left / 2, h / 2]] : [[w / 2, square.top / 2], [w / 2, h - square.top / 2]];
+      for (const [x, y] of outside) {
+        const was = sent.at(x, y);
+        expect(near(copy.at(x, y), was.map((v) => v * (1 - OUTSIDE_SHADE)), 4)).toBe(true);
+      }
+      // The square's edge: a white line, just inside it.
+      expect(copy.at(square.left + 1, mid[1]).every((v) => v > 240)).toBe(true);
+      expect(copy.at(square.left + square.size - 2, mid[1]).every((v) => v > 240)).toBe(true);
+      expect(copy.at(mid[0], square.top + 1).every((v) => v > 240)).toBe(true);
+      expect(copy.at(mid[0], square.top + square.size - 2).every((v) => v > 240)).toBe(true);
+    }
   });
 
   it("refuses what the product refuses at the form: too small, too wide, unreadable", async () => {

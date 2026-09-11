@@ -12,6 +12,7 @@ import { makeRunDir, type Gates, type RunContext } from "./context.mts";
 import { loadCorpus } from "./corpus.mts";
 import { verticalFovDegFrom35mm } from "./exif-fov.mts";
 import type { LedgerInput } from "./ledger.mts";
+import { photoSquare } from "./match-pose.mts";
 import { NetGuard } from "./net-guard.mts";
 import { preparePhoto } from "./photos.mts";
 import { makePriceBook, type ExternalPrices } from "./prices.mts";
@@ -228,6 +229,21 @@ describe.skipIf(!sharp)("E, run", () => {
     for (const s of readdirSync(join(runDir, "sheets"))) {
       const html = readFileSync(join(runDir, "sheets", s, "index.html"), "utf8");
       for (const w of ["astra", "mini", "mt-1", "e-read"]) expect(html).not.toContain(w);
+    }
+    // Beside each view, the photo's sheet copy: the still's square outlined, one copy a photo whoever read it,
+    // at the size sent, dimmed outside the square (all three photos here are wider or taller than square).
+    for (const p of photos) {
+      const shown = new Set(keys[0].items.filter((it) => it.source.photoId === p.photoId).map((it) => it.images[0].path));
+      expect([...shown]).toEqual([join(runDir, "photos", `${p.photoId}.square.jpg`)]);
+      const copy = await (sharp as SharpFn)(readFileSync([...shown][0])).raw().toBuffer({ resolveWithObject: true });
+      expect([copy.info.width, copy.info.height]).toEqual([p.sent.width, p.sent.height]);
+      const sent = await (sharp as SharpFn)(readFileSync(join(runDir, "photos", `${p.photoId}.jpg`))).raw().toBuffer({ resolveWithObject: true });
+      const sq = photoSquare(p.sent.width, p.sent.height);
+      const at = (d: Buffer, x: number, y: number) => d[(y * p.sent.width + x) * 3];
+      const [ox, oy] = sq.left > 0 ? [Math.floor(sq.left / 2), Math.floor(p.sent.height / 2)] : [Math.floor(p.sent.width / 2), Math.floor(sq.top / 2)];
+      expect(at(copy.data, ox, oy)).toBeLessThan(at(sent.data, ox, oy) * 0.6);
+      const [cx, cy] = [sq.left + Math.floor(sq.size / 2), sq.top + Math.floor(sq.size / 2)];
+      expect(Math.abs(at(copy.data, cx, cy) - at(sent.data, cx, cy))).toBeLessThanOrEqual(3);
     }
     // mt-2 shows people, and every sheet holds every read: no sheet leaves this machine.
     expect(out.join("\n")).toMatch(/--- rater sheets \(photos of people on every sheet: mt-2\. They stay on this machine: each rater rates here, opening only their own sheet, and no folder is sent/);

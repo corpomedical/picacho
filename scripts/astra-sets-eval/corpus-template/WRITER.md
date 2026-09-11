@@ -45,7 +45,7 @@ The photos in both files are sent to OpenAI, one at a time, exactly as the tool 
 
 ## Reference pictures (`match.json`)
 
-These test how well the tool reads a picture's CAMERA: how high it stood, how it was tilted, its lens, and how large the main subject is in frame. Every one is sent to OpenAI (twice over: to the tool and to a second model it is compared with) and first through the same safety check, which sends it to **both OpenAI and Anthropic**. Every one is also **shown to the test's two raters**, beside a grey sketch of the camera read from it, on the operator's machine, where a re-encoded copy stays with the test's results.
+These test how well the tool reads a picture's CAMERA: how high it stood, how it was tilted, its lens, and how large the main subject is in frame. Every one is sent to OpenAI (twice over: to the tool and to a second model it is compared with) and first through the same safety check, which sends it to **both OpenAI and Anthropic**. Every one is also **shown to the test's two raters**, beside a grey sketch of the camera read from it, on the operator's machine, where re-encoded copies stay with the test's results.
 
 - **Only pictures you have the right to send to OpenAI and Anthropic, and to show to the two raters**: your own, or ones whose licence allows it. Say which in `licence`.
 - **Variety of cameras, not of places**: low and high, level and tilted, wide and long lenses, a subject near and far; some with a clear main subject (a person or an object), a few without (an empty street, a landscape). Film frames are fine if their licence allows this use.
