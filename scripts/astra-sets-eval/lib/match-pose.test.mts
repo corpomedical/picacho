@@ -54,10 +54,11 @@ describe("matchedStagePose", () => {
   it("says its line from the pose as the stage reports it, rounded as api.pose() rounds", () => {
     const spec = fixture("rainy-market");
     const built = buildForMatching(THREE, spec);
-    const got = matchedStagePose(THREE, spec, built, match({ verticalFovDeg: 12 }), 16 / 9);
+    // 8°: longer than the stage keeps (SET_LIMITS.minLayoutFovDeg, 10°, the 135 mm chip).
+    const got = matchedStagePose(THREE, spec, built, match({ verticalFovDeg: 8 }), 16 / 9);
     const r = (n: number) => Math.round(n * 1000) / 1000;
     const reported = { position: got.position.map(r) as [number, number, number], target: got.target.map(r) as [number, number, number], fovDeg: Math.round(got.fovDeg * 100) / 100 };
-    expect(got.summary).toEqual(matchSummary(match({ verticalFovDeg: 12 }), got.solved, reported));
+    expect(got.summary).toEqual(matchSummary(match({ verticalFovDeg: 8 }), got.solved, reported));
     // A lens longer than the stage keeps: the page's longest-lens note.
     expect(got.summary.clamps).toContain("narrow");
     built.dispose();
