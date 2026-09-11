@@ -7,8 +7,9 @@ import { advanceBuild, buildRecord, ConfigAbort, leftPending, startBuild, type A
 import { closureOf } from "./context.mts";
 import { REPO_ROOT } from "./util.mts";
 
-// Parity with sets/actions.ts pollSetBuild, on the product's own recorded
-// Astra sets and the real three.js closure measure.
+// Parity with the build tick (sets/build-tick.ts, which pollSetBuild runs),
+// on the product's own recorded Astra sets and the real three.js closure
+// measure.
 
 const fixture = (name: string) => readFileSync(join(REPO_ROOT, `src/lib/sets/fixtures-${name}.json`), "utf8");
 const CLOSED = fixture("showroom-closed");

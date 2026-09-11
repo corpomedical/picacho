@@ -182,10 +182,13 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "photoNotesPlaceholder",
     "photoBuildButton",
     "photoMeta",
+    "photoMetaFinishes",
     "photoPreparing",
     "photoChecking",
     "photoPreviewAlt",
+    "statusBuildingHintFinishes",
     "statusBuildingPhotoHint",
+    "statusBuildingPhotoHintFinishes",
     "compareTitle",
     "comparePhoto",
     "compareNote",
@@ -217,9 +220,36 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     }
   });
 
-  it("the photo copy says to keep the page open, in English as in the design", () => {
+  // Two versions of each build-time line (2026-09-11): with the finisher
+  // running a build completes with the page closed, and without it only an
+  // open Sets page collects one.
+  const FINISHES = ["photoMetaFinishes", "statusBuildingHintFinishes", "statusBuildingPhotoHintFinishes"] as const;
+
+  it("says to keep the page open only where no finisher runs", () => {
     expect(en.sets.photoMeta).toContain("keep this page open");
     expect(en.sets.statusBuildingPhotoHint).toContain("Keep this page open");
+    expect(en.sets.statusBuildingHint).toContain("come back within ten minutes");
+    for (const k of FINISHES) {
+      expect(en.sets[k], k).toMatch(/you can leave/i);
+      expect(en.sets[k], k).not.toMatch(/keep this page open|ten minutes|lost/i);
+    }
+    for (const k of ["statusBuildingHintFinishes", "statusBuildingPhotoHintFinishes"] as const) {
+      expect(en.sets[k], k).toContain("finishes on its own");
+      // Web push is opt-in per browser: never promised unconditionally.
+      expect(en.sets[k], k).toContain("if notifications are on");
+    }
+  });
+
+  it("gives a photo build the measured 2–5 minutes in both versions and every language", () => {
+    // The three test builds took 123–183 s (docs 3.2), and a closing retry
+    // adds an attempt.
+    for (const t of [en, es, pt, it_]) {
+      for (const k of ["photoMeta", "photoMetaFinishes", "statusBuildingPhotoHint", "statusBuildingPhotoHintFinishes"] as const) {
+        expect(t.sets[k], k).toContain("2–5");
+        expect(t.sets[k], k).not.toContain("4–6");
+      }
+      for (const k of ["statusBuildingHint", "statusBuildingHintFinishes"] as const) expect(t.sets[k], k).toContain("1–2");
+    }
   });
 
   it("says what Astra is TOLD about people, never promises what it does, in every language", () => {

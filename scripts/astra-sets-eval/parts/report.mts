@@ -34,6 +34,7 @@ import {
   barD,
   capAtUndetermined,
   defaultCredits,
+  PRIOR_HITS_SOURCES,
   priorHitsConstruction,
   type BarResult,
   type BItem,
@@ -243,7 +244,7 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
       choices: (combined.get(k)?.ratings ?? []).map((x) => x.choice).filter((x): x is "yes" | "no" | "unsure" => typeof x === "string"),
     }));
     const construction = priorHitsConstruction({
-      actions: readFileSync(join(o.repoRoot, "src/lib/sets/actions.ts"), "utf8"),
+      sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(o.repoRoot, f), "utf8")).join("\n"),
       policyLog: readFileSync(join(o.repoRoot, "src/lib/generations/policy-log.ts"), "utf8"),
     });
     const personsFrom = real.filter((r) => r.keys.some((k) => k.kind === "d-persons"));

@@ -1,7 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
-import { getMessages } from "@/lib/i18n/messages";
-import { formatMsg } from "@/lib/i18n/format";
-import { DEFAULT_LOCALE, isLocale } from "@/lib/i18n/locales";
+import { pushChannels, type NotifyOptions } from "@/lib/push/channels";
+import { resolvePushText } from "@/lib/push/text";
 
 // Sending a push notification when a generation finishes.
 //
@@ -23,9 +22,13 @@ const FCM_ENDPOINT = "https://fcm.googleapis.com/v1/projects";
 // per device, from the locale the device registered with (push_tokens.locale
 // — re-written on every app launch, so it follows a language switch). A
 // device from before the locale column, or one whose value is unreadable,
-// gets English, exactly what it got before.
+// gets English, exactly what it got before. The words themselves are
+// text.ts's resolvePushText.
+//
+// setReady and setFailed (2026-09-11) come only from the Sets finisher
+// (lib/sets/finisher.ts), sent web-only: see channels.ts.
 export type PushMessage = {
-  key: "videoReady" | "videoFailed" | "videoFailedRefunded" | "layersReady" | "lowCredits";
+  key: "videoReady" | "videoFailed" | "videoFailedRefunded" | "layersReady" | "lowCredits" | "setReady" | "setFailed";
   params?: Record<string, string | number>;
 };
 
@@ -35,29 +38,6 @@ type Notification = {
   // dumping the person on the home screen to find it themselves.
   path: string;
 };
-
-function resolvePushText(
-  message: PushMessage,
-  locale: string | null | undefined,
-): { title: string; body: string } {
-  const t = getMessages(isLocale(locale) ? locale : DEFAULT_LOCALE).push;
-  const params = message.params ?? {};
-  switch (message.key) {
-    case "videoReady":
-      return { title: t.videoReadyTitle, body: t.videoReadyBody };
-    case "videoFailed":
-      return { title: t.videoFailedTitle, body: t.videoFailedBody };
-    case "videoFailedRefunded":
-      return { title: t.videoFailedTitle, body: t.videoFailedRefundedBody };
-    case "layersReady":
-      return { title: t.layersReadyTitle, body: formatMsg(t.layersReadyBody, params) };
-    case "lowCredits":
-      return {
-        title: t.lowCreditsTitle,
-        body: Number(params.n) === 1 ? t.lowCreditsBodyOne : formatMsg(t.lowCreditsBody, params),
-      };
-  }
-}
 
 // Google requires a short-lived OAuth token minted from the service account,
 // not a static key — the old legacy server key was retired. Cached in module
@@ -168,13 +148,21 @@ async function notifyWebDevices(
   }
 }
 
-export async function notifyUser(userId: string, notification: Notification): Promise<void> {
+export async function notifyUser(
+  userId: string,
+  notification: Notification,
+  options: NotifyOptions = {},
+): Promise<void> {
   const admin = createAdminClient();
   if (!(await allowedByPrefs(admin, userId, notification.message.key))) return;
+  const channels = pushChannels(options);
 
   // Browser devices go first and do not depend on FCM being configured —
   // web push runs on the VAPID keys the admin channel already uses.
-  await notifyWebDevices(admin, userId, notification);
+  if (channels.web) await notifyWebDevices(admin, userId, notification);
+
+  // A web-only message never reaches the phone app (channels.ts).
+  if (!channels.fcm) return;
 
   const projectId = process.env.FCM_PROJECT_ID;
   const token = await accessToken();

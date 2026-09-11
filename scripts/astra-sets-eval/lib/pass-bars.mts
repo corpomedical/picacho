@@ -367,26 +367,34 @@ export type RefusalEvent = "brief-gate" | "astra-first" | "astra-plain-retry" | 
 
 /**
  * Whether a refusal raises the person's sessionPriorHits, mirroring the
- * product: sets/actions.ts logs the brief gate and OpenAI refusing the
- * person's own brief with NO provider (they count), and Astra's own words
- * and a closing retry with provider "astra"; policy-log.ts
- * recentRefusalCount keeps only prompt-gate rows with no provider; the
- * output gate's rows are not prompt-gate rows.
+ * product: the brief gate and OpenAI refusing the person's own brief log
+ * with NO provider (they count), and Astra's own words and a closing retry
+ * with provider "astra"; policy-log.ts recentRefusalCount keeps only
+ * prompt-gate rows with no provider; the output gate's rows are not
+ * prompt-gate rows.
  */
 export function countsTowardPriorHits(event: RefusalEvent): boolean {
   return event === "brief-gate" || event === "astra-first" || event === "astra-plain-retry";
 }
 
+/**
+ * Where the product writes those refusal logs, read together at run time:
+ * the submit actions (sets/actions.ts), and the build tick that pollSetBuild
+ * and the finisher both run (sets/build-tick.ts), which holds the logging
+ * helpers since 2026-09-11.
+ */
+export const PRIOR_HITS_SOURCES = ["src/lib/sets/actions.ts", "src/lib/sets/build-tick.ts"] as const;
+
 /** The source still says what countsTowardPriorHits assumes. */
-export function priorHitsConstruction(src: { actions: string; policyLog: string }): { ok: boolean; missing: string[] } {
+export function priorHitsConstruction(src: { sets: string; policyLog: string }): { ok: boolean; missing: string[] } {
   const missing: string[] = [];
-  if ((src.actions.match(/provider: "astra"/g) ?? []).length < 2) missing.push('sets/actions.ts: words-gate and closing-retry refusals logged with provider: "astra"');
+  if ((src.sets.match(/provider: "astra"/g) ?? []).length < 2) missing.push('sets/build-tick.ts: words-gate and closing-retry refusals logged with provider: "astra"');
   // Any astra_refused log call with no provider: the person's own input (a
   // brief, or a photo's notes since 2026-09-11's logBriefRefusedByAstra).
-  const personLogs = (src.actions.match(/recordPolicyRefusal\(\{[^}]*reason: "astra_refused"[^}]*\}\)/g) ?? []).filter(
+  const personLogs = (src.sets.match(/recordPolicyRefusal\(\{[^}]*reason: "astra_refused"[^}]*\}\)/g) ?? []).filter(
     (call) => !call.includes("provider:"),
   );
-  if (personLogs.length === 0) missing.push("sets/actions.ts: OpenAI refusing the brief logged without a provider");
+  if (personLogs.length === 0) missing.push("sets/build-tick.ts: OpenAI refusing the brief logged without a provider");
   if (!src.policyLog.includes('.is("provider", null)')) missing.push('policy-log.ts: recentRefusalCount filters .is("provider", null)');
   return { ok: missing.length === 0, missing };
 }

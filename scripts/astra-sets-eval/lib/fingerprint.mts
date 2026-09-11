@@ -30,6 +30,7 @@ export const SRC_FILES = [
   "src/lib/sets/set-shot-prompt.ts",
   "src/lib/sets/astra-request.ts",
   "src/lib/sets/actions.ts",
+  "src/lib/sets/build-tick.ts",
   "src/components/sets/set-view.tsx",
   "src/lib/generations/providers/astra.ts",
   "src/lib/generations/providers/fetch-with-timeout.ts",

@@ -24,14 +24,24 @@ import { LocalDate } from "@/components/local-date";
 // The Sets page (Astra Sets, 2026-09-10): describe a place, and the list of
 // places already built. A build runs at OpenAI in the background for about
 // a minute and a half; this page polls each one that is still building, and
-// the server does the collecting (pollSetBuild) — so leaving and coming back
-// within the ten minutes background mode keeps an answer loses nothing.
+// the server does the collecting (pollSetBuild), so the card changes the
+// moment the build does.
+//
+// LEAVING (2026-09-11). The finisher, a per-minute cron on the server, runs
+// the same collecting step for every build whether or not a page is open,
+// and tells the owner's browser when one finishes (lib/sets/finisher.ts).
+// It can run only while CRON_SECRET is set; the page is told which
+// (finisherOn) and says either "you can leave — it finishes on its own", or
+// what is true without it: background mode keeps an answer for about ten
+// minutes, so a build nobody collects by then is lost.
 //
 // FROM A PHOTO (2026-09-11; admins, behind astra_photo_sets): the photo is
 // prepared here (photo-client.ts) and checked on the server before anything
 // else — which takes up to a minute or two, hence "Checking the photo…" on
-// the button. A photo build takes 4–6 minutes, long enough that an answer
-// nobody collects can be lost, so its copy says to keep the page open.
+// the button. A photo build takes 2–5 minutes (the three test builds took
+// 123–183 s, and a closing retry adds an attempt): without the finisher,
+// long enough that an answer nobody collects can be lost, so its copy then
+// says to keep the page open.
 
 const POLL_MS = 5000;
 const POLL_MAX_MS = 30_000;
@@ -46,12 +56,15 @@ export function SetsHome({
   usedThisMonth,
   monthlyLimit,
   photoSetsOn,
+  finisherOn,
 }: {
   initialSets: SetSummary[];
   usedThisMonth: number;
   monthlyLimit: number;
   /** Sets from a photo are on for this person: the form offers both ways in. */
   photoSetsOn: boolean;
+  /** The finisher can run (finisher.ts finisherCanRun): a build completes with the page closed. */
+  finisherOn: boolean;
 }) {
   const { t } = useLocale();
   const s = t.sets;
@@ -355,7 +368,7 @@ export function SetsHome({
             </label>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="space-y-0.5 text-xs text-atelier-muted">
-                <p>{s.photoMeta}</p>
+                <p>{finisherOn ? s.photoMetaFinishes : s.photoMeta}</p>
                 <p className="tabular-nums">{usageLine}</p>
               </div>
               <div className="flex items-center gap-3">
@@ -466,7 +479,13 @@ export function SetsHome({
                   )}
                   {x.status === "building" && (
                     <p className="text-xs text-atelier-muted">
-                      {x.fromPhoto ? s.statusBuildingPhotoHint : s.statusBuildingHint}
+                      {x.fromPhoto
+                        ? finisherOn
+                          ? s.statusBuildingPhotoHintFinishes
+                          : s.statusBuildingPhotoHint
+                        : finisherOn
+                          ? s.statusBuildingHintFinishes
+                          : s.statusBuildingHint}
                     </p>
                   )}
                   {x.status === "failed" && x.failure && (

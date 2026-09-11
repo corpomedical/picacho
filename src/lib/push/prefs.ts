@@ -17,4 +17,9 @@ export const PREF_FOR_KEY: Record<PushMessage["key"], NotificationPref> = {
   videoFailed: "notify_render_failed",
   videoFailedRefunded: "notify_render_failed",
   lowCredits: "notify_low_credits",
+  // A set finishing or failing (the Sets finisher, 2026-09-11) is the same
+  // outcome as a render doing so: "tell me when it's done", "tell me when
+  // something went wrong".
+  setReady: "notify_render_ready",
+  setFailed: "notify_render_failed",
 };

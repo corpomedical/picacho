@@ -7,8 +7,8 @@
 // this module stays importable by the tests.
 //
 //   words gate   assertPromptAllowed({ prompt: specTextForGate(spec),
-//                hasRealPersonReference: true }) — exactly pollSetBuild's
-//                call, which passes no sessionPriorHits.
+//                hasRealPersonReference: true }) — exactly the build tick's
+//                call (sets/build-tick.ts), which passes no sessionPriorHits.
 //   brief gate   assertPromptAllowed({ prompt: brief, hasRealPersonReference:
 //                false, sessionPriorHits }) — submitSetBuild's judgement.
 //

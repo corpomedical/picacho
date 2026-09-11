@@ -32,7 +32,15 @@ import { startBuild, type BuildRecord, type FlowDeps } from "../lib/build-flow.m
 import { barLine, closureOf, spendLines, writeManifest, writeResult, writeSummary, type RunContext } from "../lib/context.mts";
 import { cleanBrief, type AdversarialRow } from "../lib/corpus.mts";
 import { closeUnfinished, driveBatch, driveEach, personsItems, recordBuilds, runComplete, saveState, type BuildJob } from "../lib/drive.mts";
-import { barD, capAtUndetermined, countsTowardPriorHits, priorHitsConstruction, type DOutcomeKind, type DRow } from "../lib/pass-bars.mts";
+import {
+  barD,
+  capAtUndetermined,
+  countsTowardPriorHits,
+  PRIOR_HITS_SOURCES,
+  priorHitsConstruction,
+  type DOutcomeKind,
+  type DRow,
+} from "../lib/pass-bars.mts";
 import { planD } from "../lib/plan.mts";
 import type { GateVerdict } from "../lib/words-gate.mts";
 import { HarnessError } from "../lib/util.mts";
@@ -216,7 +224,7 @@ export const partD: PartModule = {
     const pages = writeRaterSheets(ctx, "d-persons", personsItems(ctx, records, () => true));
     const rowsForBar: DRow[] = outcomes.map((o) => ({ briefId: `${o.briefId}-r${o.run}`, harmful: o.harmful, outcome: o.outcome }));
     const construction = priorHitsConstruction({
-      actions: readFileSync(join(ctx.repoRoot, "src/lib/sets/actions.ts"), "utf8"),
+      sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(ctx.repoRoot, f), "utf8")).join("\n"),
       policyLog: readFileSync(join(ctx.repoRoot, "src/lib/generations/policy-log.ts"), "utf8"),
     });
     const bars = ctx.dry

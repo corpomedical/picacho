@@ -75,7 +75,7 @@ export function writeSummary(ctx: Pick<RunContext, "runDir">, text: string, json
   writeFileSync(join(ctx.runDir, "summary.json"), JSON.stringify(json, null, 2));
 }
 
-/** sets/actions.ts closureOf: a measurement that throws reads as closed. */
+/** sets/build-tick.ts closureOf: a measurement that throws reads as closed. */
 export function closureOf(spec: SetSpec): { open: number; sides: string[] } {
   try {
     const report = measureClosure(THREE, spec);

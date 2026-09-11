@@ -1,6 +1,6 @@
 # Astra Sets
 
-Date: 2026-09-10. Status: Phase 0 and Phase 1 are built and switched off (flag `astra_sets`, admins only once on). Of Phase 2, Sets from a photo is built and switched off (flag `astra_photo_sets`, 2026-09-11); the rest of Phase 2, and Phase 3, are not built. Evidence comes from four places:
+Date: 2026-09-10. Status: Phase 0 and Phase 1 are built and switched off (flag `astra_sets`, admins only once on). Of Phase 2, Sets from a photo is built and switched off (flag `astra_photo_sets`, 2026-09-11), and the set finisher is built (a one-minute cron, 2026-09-11); the rest of Phase 2, and Phase 3, are not built. Evidence comes from four places:
 - 13 live responses from `gpt-6-astra` on Picacho's own key, recorded 2026-09-10. Total spend was $1.297.
 - OpenAI's documentation.
 - Competitors' own pages.
@@ -36,7 +36,7 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 
 **Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/applied/2026-09-10/astra-sets.sql` (run in production 2026-09-11; flags confirmed off, tables present, anonymous key refused).
 
-**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/applied/2026-09-11/astra-photo-sets.sql`, run in production 2026-09-11: both photo columns present, the switch off). Worst case $1.81625 a build (`set-config.ts`). Match this shot, the webhook finisher and credits are not built. Photos with people are unmeasured (eval D).
+**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/applied/2026-09-11/astra-photo-sets.sql`, run in production 2026-09-11: both photo columns present, the switch off). Worst case $1.81625 a build (`set-config.ts`). Match this shot and credits are not built; the finisher is (a one-minute cron instead of the planned webhook, 2026-09-11 — see Phase 2). Photos with people are unmeasured (eval D).
 
 **Three live photo builds before shipping (2026-09-11)**, through the repo's own code (photo.ts re-encode, astra-request.ts, providers/astra.ts, the normaliser, closure.ts), with no database: one people-free bakery photo made by GPT Image, 1536×1024, sent inline at detail high.
 
@@ -261,7 +261,7 @@ Our key's rate limits for Astra are 500 requests/min and 500K tokens/min (from t
 **User flow**
 1. **Describe.** Sets → New set, e.g. "a rainy market street at night, one stall, a lamp post". The button states price and time before anything is spent: "Build set · 2 credits · about 1–2 min" (in Phase 1: "1 of 10 set builds this month").
 2. **Gate the words.** Picacho gates the text with `gatePrompt` before anything is sent to OpenAI. It is the user's own text, logged against them as usual (`policy-log.ts:129`).
-3. **Build in the background.** Astra runs on the Responses API with `background: true`, `store: false`, `tools: []`, a strict `json_schema`, `max_output_tokens` 10,000, effort `low` or `medium` (the eval decides) and a `safety_identifier`. The page polls, the same way the Hunyuan proxy is polled today (`angle-stage.ts:69-88`).
+3. **Build in the background.** Astra runs on the Responses API with `background: true`, `store: false`, `tools: []`, a strict `json_schema`, `max_output_tokens` 10,000, effort `low` or `medium` (the eval decides) and a `safety_identifier`. The page polls, the same way the Hunyuan proxy is polled today (`angle-stage.ts:69-88`); as built, a one-minute finisher on the server runs the same step whether or not the page is open (Phase 2).
 4. **Normalise.** `normaliseSetSpec` clamps counts, sizes, numbers and colours. It is the only path from model output to the screen. Astra's one-line description of the place is gated as model-written text.
 5. **Arrange.** The set opens in the existing three.js viewer (`angle-stage-view.tsx:85-168`), built by Picacho's own fixed interpreter from primitives, flat materials, lights and fog. A neutral grey figure stands on a mark at the character's height. The user orbits, drags the mark, picks one of Astra's suggested cameras or places their own, and sets the lens.
 6. **Shoot here.** The viewer takes a 1024 × 1024 square snapshot of exactly the square its frame guide shows (image takes render square; `openai-images.ts` pins 1024×1024). The server stores it as a chat attachment and it rides the take in the "reference" role (`actions.ts:530`). Then `runGeneration` runs an ordinary image take with the saved character plus the snapshot, using a prompt built on the server. The result lands in History with its identity score.
@@ -360,7 +360,7 @@ ends in a failed build: the first set is kept and delivered).
 - **Identity dilution.** The extra reference image may lower identity. The identity gate absorbs misses, but at our cost, so the miss rate must be measured.
 - **Palette habits.** Testers report "AI design smell" (forest-green palettes, flat design) (https://www.mindstudio.ai/blog/gpt6-astra-practical-use-cases, unverified). Mitigation: palette instructions, and the user can recolour by picking.
 - **Brands in real venues.** Sets of real venues can bake brands into stills; the Lakers court and the Tomb Raider poster already turned up in our own renders. Mitigation: instruct "no brand names or logos"; the description is gated.
-- **Lost builds.** The wait is about 84 s. If the user leaves and nothing polls within about 10 minutes, the `store: false` result is gone. We refund the slot; Phase 2 adds a webhook finisher.
+- **Lost builds.** The wait is about 84 s. If the user leaves and nothing polls within about 10 minutes, the `store: false` result is gone. The slot comes back (a failed build is not counted). Since 2026-09-11 the finisher polls every minute whether or not a page is open (Phase 2), so a build is lost this way only while the finisher cannot run (no `CRON_SECRET`), and the pages then say to come back or keep the page open.
 - **Mobile GPUs.** At most 400 objects, and repeats instead of copies.
 
 ### 3.2 Feature 2: Sets from a photo, and Match this shot
@@ -394,7 +394,7 @@ Worst case (3,300 cache-write tokens + 2,500 output cap):
 ```
 
 **What could go wrong**
-- **Latency.** A photo build takes about 264 s (4.4 min) and the background result survives only about 10 minutes, so the webhook finisher is required before general release.
+- **Latency.** A photo build took about 264 s (4.4 min) in the research probe and 123–183 s through the product's code (the three builds in Status), and the background result survives only about 10 minutes, so a finisher that collects it with the page closed was required before general release. It is built (2026-09-11, Phase 2): a one-minute cron, not the webhook first planned. The page quotes "about 2–5 minutes", because a closing retry adds an attempt.
 - **Camera variance.** Two Astra reads of the same photo differed by 0.5 m in height and about 3° in pitch. Eval Part E.
 - **Photos with people.** Untested. OpenAI's usage policies ban non-consensual photorealistic likeness (https://openai.com/policies/usage-policies/), and the Astra system card has no likeness or deepfake section (https://deploymentsafety.openai.com/gpt-6-astra). The bar is zero: if Astra identifies a person in any eval case, photos containing people are refused at input.
 - **Cost.** This is the one expensive call. Reasoning tokens were 30% of its cost. Whether effort `low` cuts that without losing fidelity is unmeasured.
@@ -496,11 +496,17 @@ Flag: `astra_photo_sets`.
 
 - **Image input and camera block.** Image input in `providers/astra.ts`, a camera block in `set-spec.ts`, and `src/lib/sets/match-shot.ts` with tests.
 - **Input-image gate** on uploads, via `output-policy.ts:717`.
-- **Webhook finisher.** New `src/app/api/webhooks/openai/route.ts`, verified with Standard Webhooks signatures and `OPENAI_WEBHOOK_SECRET`. On `response.completed` it fetches the result within the roughly 10-minute window and saves it. The operator subscribes the endpoint in the OpenAI dashboard (an account setting).
+- **The finisher: built 2026-09-11, as a one-minute cron instead of the planned webhook.** The plan was `src/app/api/webhooks/openai/route.ts`, verified with Standard Webhooks signatures and `OPENAI_WEBHOOK_SECRET`, fetching the result on `response.completed` within the roughly 10-minute window, with the endpoint subscribed in the OpenAI dashboard. What was built instead is `src/app/api/cron/sets/route.ts` on a `* * * * *` Vercel Cron (`vercel.json`), which runs the same tick the page runs (`advanceSetBuild`, `src/lib/sets/build-tick.ts`) for every set still building. Why:
+  - no OpenAI dashboard subscription and no new secret for the operator;
+  - it does not depend on webhook delivery for `store: false` background responses, which was never probed (Unverified, item 4);
+  - it follows the reconcile cron's "the visit that always comes", guarded by `CRON_SECRET` like every `/api/cron/*` route (Vercel sends `Authorization: Bearer <CRON_SECRET>` with each cron call once it is set);
+  - the project is on Vercel Pro, which allows a per-minute schedule.
+
+  How a run goes (`src/lib/sets/finisher.ts`, tested with fakes in `finisher.test.ts`): `ASTRA_DISABLED=1` or no `OPENAI_API_KEY` stops it before any database read, exactly as they stop the page. It then reads ids and owners only: sets still `building`, not deleted, touched in the last 2 hours (older rows exist only if the finisher was not running, and the page still closes them), oldest first, 25 a run. The `astra_sets` flag off stops it. Each owner's profile is read once, under the one rule `setsAccess` applies (`src/lib/sets/access-rule.ts`): suspended or not eligible, and their builds are skipped and logged by id. Up to 3 ticks run at a time, none starts after 180 s (a tick can take ~100 s when the words gate reads slowly, so a run ends inside its 300 s), and a tick that throws is logged without stopping the others. The page's poll is unchanged: `pollSetBuild` checks the session and runs the same tick. The tick's claim protocol already makes exactly one tick act on an answer when the page and the finisher, or two overlapping finisher runs, tick one set together, and a row leaves `building` only through a write conditioned on it still building, so exactly one tick settles a build. The spend per build is unchanged: the finisher can spend the one retry a page would have, and the worst case in `set-config.ts` already assumes it. Idle, a run is one read of `location_sets`, which has no index on `status` (a scan; fine at admin scale, and worth an index before Sets widen).
 - **Credit ledger for charges that are not renders.** This is the one real schema change:
   - `supabase/pending/<date>/credit-charges.sql`: a `credit_charges` table, a guarded reserve RPC, and `monthly_credits_used` summing both tables.
   - Code: `core.ts` allowance, `quote.ts` (`quoteSetBuild`), `refund-rules.ts` (a failed build returns its credits), model-aware `src/lib/admin/economics.ts:26-28`, an LLM-spend card under Admin > AI providers, and the `verify-db` manifest.
-- **Push notification** "Your set is ready", through the existing push code in `src/lib/push/*`.
+- **Push notification: built 2026-09-11.** When the finisher's own tick settles a build, the owner is told through `src/lib/push/send.ts`: "Your set is ready" with the set's title (Astra's, already passed by the strict-lane words gate), opening `/app/sets/<id>`, or "Your set couldn't be built … The build is back in your allowance", opening `/app/sets`. Both answer to the render switches in Settings → Notifications (`notify_render_ready`, `notify_render_failed`). They go to browsers only (web push, `notifyUser`'s `webOnly` option), never the phone app, because Sets stay web-only while the Play appeal is pending (section 5). When the page's own tick settles a build the person is watching, so nothing is sent. With the finisher able to run, the Sets pages say "you can leave"; without `CRON_SECRET` they keep saying to come back within ten minutes, or, for a photo build, to keep the page open.
 
 ### Phase 3: Previz board (about 2 weeks, only if the A/B passes)
 
@@ -562,7 +568,7 @@ Part C needs characters used with consent. Eva, Adam and Blondie are real people
 - **Modes to avoid:** prompts over 272K input tokens (2x) and Fast mode (2x).
 - **Visibility:** record `cost_usd` on every call, and suggest an OpenAI project budget alert (an operator dashboard setting).
 
-**Latency.** Measured once each: 84 s for a set from words, 264 s from a photo, 42 s for a camera match, 15 s for a director call. The mitigation is background mode plus polling and the webhook, a UI that never blocks, and a push notification when the set is ready. Fast mode is off: it costs 2x, has no latency guarantee, and is unavailable with EU data residency.
+**Latency.** Measured once each: 84 s for a set from words, 264 s from a photo, 42 s for a camera match, 15 s for a director call. The mitigation is background mode plus polling (the page's, and since 2026-09-11 the one-minute finisher's), a UI that never blocks, and a browser notification when the set is ready. Fast mode is off: it costs 2x, has no latency guarantee, and is unavailable with EU data residency.
 
 **Reliability**
 - One alias with no dated snapshot means behaviour can change silently; the weekly canary catches that.

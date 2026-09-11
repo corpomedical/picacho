@@ -1911,7 +1911,11 @@ const en = {
     photoNotesLabel: "Anything the photo doesn't show (optional)",
     photoNotesPlaceholder: "It's night and the lamps are on. Behind me is a row of shuttered shops.",
     photoBuildButton: "Build from photo",
-    photoMeta: "Built by GPT-6 Astra · about 4–6 minutes · keep this page open",
+    // Two versions of each build-time line: while the finisher can run
+    // (lib/sets/finisher.ts finisherCanRun) a build completes with the
+    // page closed; without it only an open Sets page collects one.
+    photoMeta: "Built by GPT-6 Astra · about 2–5 minutes · keep this page open",
+    photoMetaFinishes: "Built by GPT-6 Astra · about 2–5 minutes · you can leave",
     photoPreparing: "Reading the photo…",
     photoChecking: "Checking the photo…",
     photoPreviewAlt: "The photo you chose",
@@ -1920,8 +1924,12 @@ const en = {
       "Describe a place above. Once it's built, open it, stand your character's stand-in on a mark, frame the shot and shoot.",
     statusBuilding: "Building…",
     statusBuildingHint: "About 1–2 minutes. You can leave — come back within ten minutes to collect it.",
+    statusBuildingHintFinishes:
+      "About 1–2 minutes. You can leave — it finishes on its own, and this browser tells you when it's ready if notifications are on.",
     statusBuildingPhotoHint:
-      "About 4–6 minutes. Keep this page open until it's ready — a build nobody collects is lost after about ten minutes and goes back to your allowance.",
+      "About 2–5 minutes. Keep this page open until it's ready — a build nobody collects is lost after about ten minutes and goes back to your allowance.",
+    statusBuildingPhotoHintFinishes:
+      "About 2–5 minutes. You can leave — it finishes on its own, and this browser tells you when it's ready if notifications are on.",
     statusReady: "Ready",
     statusFailed: "Couldn't build",
     untitled: "Untitled set",
@@ -1996,6 +2004,13 @@ const en = {
     lowCreditsTitle: "You're almost out of credits",
     lowCreditsBody: "{n} credits left.",
     lowCreditsBodyOne: "1 credit left.",
+    // Sets (2026-09-11): sent only by the Sets finisher, to browsers only.
+    // {title} is the set's own, which Astra wrote and the words gate passed.
+    setReadyTitle: "Your set is ready",
+    setReadyBody: "{title} — tap to open it.",
+    setReadyBodyUntitled: "Tap to open it.",
+    setFailedTitle: "Your set couldn't be built",
+    setFailedBody: "Tap to see what happened. The build is back in your allowance.",
   },
   serverText: {
     stageVideo: "Rendering your video",

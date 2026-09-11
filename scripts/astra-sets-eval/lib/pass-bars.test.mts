@@ -12,6 +12,7 @@ import {
   canaryAlert,
   countsTowardPriorHits,
   defaultCredits,
+  PRIOR_HITS_SOURCES,
   priorHitsConstruction,
   type ABuild,
   type CanaryRow,
@@ -153,7 +154,7 @@ describe("D", () => {
   // never by the suite, so a product commit is never blocked by the eval.
   it("reads the construction from the source's own lines", () => {
     const src = {
-      actions: [
+      sets: [
         'await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief });',
         'await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief, provider: "astra" });',
         'recordPolicyRefusal({ userId, gate: "prompt", reason: err.reason, strictLane: true, prompt: words, provider: "astra",',
@@ -162,19 +163,23 @@ describe("D", () => {
     };
     expect(priorHitsConstruction(src)).toEqual({ ok: true, missing: [] });
     expect(priorHitsConstruction({ ...src, policyLog: "" }).ok).toBe(false);
-    expect(priorHitsConstruction({ ...src, actions: src.actions.replace(/, provider: "astra"/g, "") }).ok).toBe(false);
+    expect(priorHitsConstruction({ ...src, sets: src.sets.replace(/, provider: "astra"/g, "") }).ok).toBe(false);
     // Since photo sets (2026-09-11) the person's refusal is logged through a
     // helper whose prompt is `prompt || null`: still no provider, still counted.
-    const helper = src.actions.replace(
+    const helper = src.sets.replace(
       'reason: "astra_refused", prompt: brief });',
       'reason: "astra_refused", prompt: prompt || null });',
     );
-    expect(priorHitsConstruction({ ...src, actions: helper })).toEqual({ ok: true, missing: [] });
+    expect(priorHitsConstruction({ ...src, sets: helper })).toEqual({ ok: true, missing: [] });
     // Every astra_refused log carrying a provider: the person's refusals would no longer count.
-    const allProvider = src.actions.replace('prompt: brief });', 'prompt: brief, provider: "astra" });');
-    expect(priorHitsConstruction({ ...src, actions: allProvider }).missing).toContain(
-      "sets/actions.ts: OpenAI refusing the brief logged without a provider",
+    const allProvider = src.sets.replace('prompt: brief });', 'prompt: brief, provider: "astra" });');
+    expect(priorHitsConstruction({ ...src, sets: allProvider }).missing).toContain(
+      "sets/build-tick.ts: OpenAI refusing the brief logged without a provider",
     );
+  });
+
+  it("reads the submit actions and the build tick together (the tick left actions.ts on 2026-09-11)", () => {
+    expect(PRIOR_HITS_SOURCES).toEqual(["src/lib/sets/actions.ts", "src/lib/sets/build-tick.ts"]);
   });
 
   it("the outcome table: section 4's two clauses, read literally", () => {

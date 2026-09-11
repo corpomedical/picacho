@@ -244,7 +244,7 @@ describe("the photo action's order (actions.ts, read as source: a \"use server\"
   });
 });
 
-describe("the build poll and the delete keep the photo's promises (actions.ts, read as source)", () => {
+describe("the build tick and the delete keep the photo's promises (build-tick.ts and actions.ts, read as source)", () => {
   const source = readFileSync(join(__dirname, "actions.ts"), "utf8");
   const fn = (name: string) => {
     const start = source.indexOf(`export async function ${name}(`);
@@ -252,7 +252,14 @@ describe("the build poll and the delete keep the photo's promises (actions.ts, r
     const end = source.indexOf("\nexport async function", start + 10);
     return source.slice(start, end < 0 ? undefined : end);
   };
-  const poll = fn("pollSetBuild");
+  // The tick the page and the finisher both run (2026-09-11: moved out of
+  // pollSetBuild, which now only checks the session and calls it).
+  const tickSource = readFileSync(join(__dirname, "build-tick.ts"), "utf8");
+  const poll = tickSource.slice(tickSource.indexOf("async function tick("));
+
+  it("finds the tick", () => {
+    expect(tickSource.indexOf("async function tick(")).toBeGreaterThan(0);
+  });
 
   it("acts on nothing when it cannot tell what kind of build it is, before anything is claimed", () => {
     const wait = poll.indexOf('if (!sources.known) return { error: null, state: "building" };');
@@ -265,7 +272,10 @@ describe("the build poll and the delete keep the photo's promises (actions.ts, r
     const loader = poll.slice(poll.indexOf("const retryRequest"), poll.indexOf("const closeFailed"));
     expect(loader).toContain("retryBuildRequest({ kind, brief }, retry, safetyId)");
     expect(loader).toContain("retryBuildRequest({ kind, notes, photo: storedPhoto }, retry, safetyId)");
-    expect(loader).toContain("photoForRetry(admin, src, () => isPhotoSetsEnabled(access.supabase))");
+    expect(loader).toContain("photoForRetry(admin, src, photoSwitchOn)");
+    // What the switch is: the page passes the one it always used; the
+    // finisher passes the same check, asked with its own client.
+    expect(fn("pollSetBuild")).toContain("photoSwitchOn: () => isPhotoSetsEnabled(access.supabase)");
     // Both retries — the closing one and the one after a failed answer —
     // submit what retryRequest built, and nothing in the poll builds an
     // input of its own.

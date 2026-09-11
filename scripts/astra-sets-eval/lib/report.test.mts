@@ -8,8 +8,8 @@ import { parseCli } from "./cli.mts";
 import { makePriceBook, type ExternalPrices } from "./prices.mts";
 
 // report over synthetic run directories. The repo root is synthetic too
-// (two source lines for the prior-hits check), so the suite never reads
-// product source.
+// (a few source lines for the prior-hits check, in the two files it reads),
+// so the suite never reads product source.
 
 const EMPTY: ExternalPrices = { models: { "claude-sonnet-5": null, "gpt-5.4-mini": null }, images: { "flux-2-pro-edit": null, "seedream-v4-edit": null }, judgementCeilings: {} };
 const book = makePriceBook({ external: EMPTY, gptImageUsd: 0.17 });
@@ -21,8 +21,9 @@ beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "astra-report-"));
   mkdirSync(join(root, "repo/src/lib/sets"), { recursive: true });
   mkdirSync(join(root, "repo/src/lib/generations"), { recursive: true });
+  writeFileSync(join(root, "repo/src/lib/sets/actions.ts"), "await logBriefRefusedByAstra(userId, brief);\n");
   writeFileSync(
-    join(root, "repo/src/lib/sets/actions.ts"),
+    join(root, "repo/src/lib/sets/build-tick.ts"),
     'recordPolicyRefusal({ reason: "astra_refused", prompt: brief });\nrecordPolicyRefusal({ provider: "astra" });\nrecordPolicyRefusal({ provider: "astra" });\n',
   );
   writeFileSync(join(root, "repo/src/lib/generations/policy-log.ts"), '.is("provider", null)\n');

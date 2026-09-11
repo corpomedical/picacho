@@ -4,6 +4,7 @@ import { getServerMessages } from "@/lib/i18n/server";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
 import { getSetsHome } from "@/lib/sets/data";
+import { finisherCanRun } from "@/lib/sets/finisher";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE } from "@/lib/sets/messages";
 import { SetsHome } from "@/components/sets/sets-home";
 
@@ -11,6 +12,10 @@ import { SetsHome } from "@/components/sets/sets-home";
 // where the person shoots their characters from any angle. Admins only while
 // in testing, behind the astra_sets flag — and to anyone else this page does
 // not exist, rather than advertising a feature they cannot open.
+//
+// Whether a build can be left to finish is read here, on the server
+// (finisherCanRun: the finisher cron runs only with CRON_SECRET set), and
+// handed down as a yes or no — never the secret.
 
 // A set from a photo runs the picture check inside its server action
 // (submitSetPhotoBuild: two readers, a third on the line, 10–100 s), and a
@@ -53,6 +58,7 @@ export default async function SetsPage() {
           usedThisMonth={data.usedThisMonth}
           monthlyLimit={data.monthlyLimit}
           photoSetsOn={data.photoSetsOn}
+          finisherOn={finisherCanRun()}
         />
       )}
     </div>

@@ -1,5 +1,7 @@
-// pollSetBuild without the database (src/lib/sets/actions.ts, as of
-// 0f91c0c). The decisions are the product's own functions — parseSetSpecText,
+// pollSetBuild's tick without the database (as of 0f91c0c; the tick itself
+// moved, unchanged, from src/lib/sets/actions.ts to build-tick.ts's
+// advanceSetBuild on 2026-09-11, when the finisher began running it too).
+// The decisions are the product's own functions — parseSetSpecText,
 // specTextForGate, decideAfterValidAnswer, closeRetryInput, setBuildInput,
 // RETRY_SMALLER, SET_BUILD_MAX_ATTEMPTS — and this file only strings them
 // together the way pollSetBuild does, one answer at a time:

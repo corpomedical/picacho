@@ -9,6 +9,10 @@ describe("every push key answers to exactly one toggle", () => {
     expect(PREF_FOR_KEY.videoFailedRefunded).toBe("notify_render_failed");
     expect(PREF_FOR_KEY.lowCredits).toBe("notify_low_credits");
   });
+  it("answers a set finishing or failing to the same switches as a render (2026-09-11)", () => {
+    expect(PREF_FOR_KEY.setReady).toBe("notify_render_ready");
+    expect(PREF_FOR_KEY.setFailed).toBe("notify_render_failed");
+  });
   it("stays total when a key is added — a silent unmapped key would be un-toggleable", () => {
     for (const [key, pref] of Object.entries(PREF_FOR_KEY)) {
       expect(NOTIFICATION_PREFS as readonly string[], key).toContain(pref);

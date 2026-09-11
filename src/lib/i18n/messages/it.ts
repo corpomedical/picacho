@@ -1800,7 +1800,8 @@ const it = {
     photoNotesLabel: "Ciò che la foto non mostra (facoltativo)",
     photoNotesPlaceholder: "È notte e i lampioni sono accesi. Alle mie spalle c'è una fila di negozi con le serrande abbassate.",
     photoBuildButton: "Costruisci dalla foto",
-    photoMeta: "Costruito da GPT-6 Astra · 4–6 minuti · tieni aperta questa pagina",
+    photoMeta: "Costruito da GPT-6 Astra · 2–5 minuti · tieni aperta questa pagina",
+    photoMetaFinishes: "Costruito da GPT-6 Astra · 2–5 minuti · puoi uscire",
     photoPreparing: "Lettura della foto…",
     photoChecking: "Controllo della foto…",
     photoPreviewAlt: "La foto che hai scelto",
@@ -1809,8 +1810,12 @@ const it = {
       "Descrivi un luogo qui sopra. Quando è pronto, aprilo, metti la sagoma del tuo personaggio su un segno, inquadra e scatta.",
     statusBuilding: "In costruzione…",
     statusBuildingHint: "1–2 minuti. Puoi uscire — torna entro dieci minuti per ritirarlo.",
+    statusBuildingHintFinishes:
+      "1–2 minuti. Puoi uscire — si completa da solo, e questo browser ti avvisa quando è pronto se le notifiche sono attive.",
     statusBuildingPhotoHint:
-      "4–6 minuti. Tieni aperta questa pagina finché non è pronto — una costruzione che nessuno ritira va persa dopo una decina di minuti e torna nella tua quota.",
+      "2–5 minuti. Tieni aperta questa pagina finché non è pronto — una costruzione che nessuno ritira va persa dopo una decina di minuti e torna nella tua quota.",
+    statusBuildingPhotoHintFinishes:
+      "2–5 minuti. Puoi uscire — si completa da solo, e questo browser ti avvisa quando è pronto se le notifiche sono attive.",
     statusReady: "Pronto",
     statusFailed: "Costruzione non riuscita",
     untitled: "Set senza titolo",
@@ -1881,6 +1886,11 @@ const it = {
     lowCreditsTitle: "I tuoi crediti stanno per finire",
     lowCreditsBody: "Ti restano {n} crediti.",
     lowCreditsBodyOne: "Ti resta 1 credito.",
+    setReadyTitle: "Il tuo set è pronto",
+    setReadyBody: "{title} — tocca per aprirlo.",
+    setReadyBodyUntitled: "Tocca per aprirlo.",
+    setFailedTitle: "Non è stato possibile costruire il tuo set",
+    setFailedBody: "Tocca per vedere cos'è successo. La costruzione torna nella tua quota.",
   },
   serverText: {
     stageVideo: "Rendering del tuo video",
