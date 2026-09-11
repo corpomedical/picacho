@@ -6,11 +6,13 @@
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { cancelAstraJob } from "../../../src/lib/generations/providers/astra.ts";
+// Types only: erased, so content-policy.ts still loads only behind the guard.
+import type { Scores } from "../../../src/lib/generations/content-policy.ts";
 import { behaviourOf, resumeFlags, type Cli, type Flags, type Part } from "./cli.mts";
 import { loadCorpus, corpusSummary } from "./corpus.mts";
 import { makeRunDir, writeManifest, type Gates, type RunContext } from "./context.mts";
 import type { Presence } from "./env.mts";
-import { docLineOf, gitState, promptFingerprint, srcHashes } from "./fingerprint.mts";
+import { docLineOf, gitState, photoPromptFingerprint, promptFingerprint, srcHashes } from "./fingerprint.mts";
 import { Ledger } from "./ledger.mts";
 import { withNetContext, type NetGuard } from "./net-guard.mts";
 import { formatPlan } from "./plan.mts";
@@ -18,7 +20,7 @@ import { BATCH_DOC_SENTENCE, makePriceBook, validateExternalPrices } from "./pri
 import { checkPlan, SpendGuard } from "./spend-guard.mts";
 import { EVAL_DIR, HarnessError, newRunId, REPO_ROOT, usd } from "./util.mts";
 import { evalSafetyId } from "./builders.mts";
-import { makeBriefGate, makeWordsJudge } from "./words-gate.mts";
+import { makeBriefGate, makeNotesGate, makePictureCheck, makeWordsJudge } from "./words-gate.mts";
 import { ConfigAbort } from "./build-flow.mts";
 import { checkViewerParity } from "../render/viewer-parity.mts";
 import type { PartModule } from "../parts/common.mts";
@@ -74,7 +76,7 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     const r = resumeFlags(f, resumed.behaviour as Record<string, unknown> | undefined);
     if (!r.ok) throw new HarnessError(r.error);
     f = r.flags;
-  }
+  } else if (mod.resolveFlags) f = mod.resolveFlags(f);
   const needs = mod.needs({ flags: f });
   const corpus = loadCorpus(corpusDir, { spend: f.spend, allowPartial: f.allowPartialCorpus, needs, photos: needs.photos });
   out(corpusSummary(corpus));
@@ -139,6 +141,9 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     git: gitState(REPO_ROOT),
     srcHashes: srcHashes(REPO_ROOT),
     promptFingerprint: promptFingerprint(),
+    // The arm: report reads a photo run's builds, sheets and outcomes apart from the words'.
+    photos: f.photos,
+    ...(f.photos ? { photoPromptFingerprint: photoPromptFingerprint() } : {}),
     corpus: { dir: corpusDir, hash: corpus.corpusHash, hashes: corpus.hashes, attested: corpus.data.meta.attested, template: corpus.template },
     prices: book.snapshot(),
     batchDocSentenceLine: docLineOf(REPO_ROOT, BATCH_DOC_SENTENCE),
@@ -159,6 +164,16 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
       words: makeWordsJudge({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError }),
       brief: makeBriefGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError }),
     };
+    if (part === "d" && f.photos) {
+      // D's photo leg: the notes gate and the picture check, as submitSetPhotoBuild runs them.
+      const op = await import("../../../src/lib/generations/output-policy.ts");
+      gates.notes = makeNotesGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError });
+      gates.picture = makePictureCheck({
+        assertOutputAllowed: (i) => op.assertOutputAllowed({ ...i, promptScores: (i.promptScores ?? null) as Scores | null }),
+        refusalReason: (e) => (e instanceof op.OutputPolicyRefusal ? e.reason : null),
+        onOddError,
+      });
+    }
   }
 
   let stopReason: string | null = null;
@@ -177,6 +192,7 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     ledger,
     corpus,
     gates,
+    photos: null,
     manifest,
     inflight,
     stopping: () => stopReason !== null || guard.stopped !== null,
@@ -214,7 +230,7 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
   }
 
   if (part === "b" || part === "c") {
-    const parity = checkViewerParity(REPO_ROOT);
+    const parity = checkViewerParity(REPO_ROOT, { photo: f.photos });
     manifest.viewerParity = { ...parity, acceptedDrift: !parity.ok && f.acceptDrift };
     if (!parity.ok) {
       out(`set-view.tsx no longer has ${parity.missing.length} line(s) the snapshot page mirrors:`);

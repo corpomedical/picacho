@@ -2,7 +2,7 @@
 // cost — printed by every dry run and checked against --max-usd before a
 // real run makes its first call. Pure over a price book.
 
-import { SET_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
+import { SET_BUILD_EFFORT, SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
 import type { Builder, Engine } from "./cli.mts";
 import { BASELINE_MODELS, BATCH_SOURCE, type PriceBook } from "./prices.mts";
 import { GENERATE_RETRIES } from "./pipeline-strings.mts";
@@ -21,6 +21,18 @@ function astraLine(book: PriceBook, label: string, builds: number, batch: boolea
     count: builds,
     unitUsd: unit,
     source: batch ? `${ASTRA_SOURCE}; ${BATCH_SOURCE}` : ASTRA_SOURCE,
+    metered: false,
+  };
+}
+
+/** A photo build: the photo caps, background at standard price — a photo never goes into a Batch input file. */
+function astraPhotoLine(book: PriceBook, label: string, builds: number): PlannedCall {
+  return {
+    kind: "astra",
+    label: `${label}: ${builds} × (first ${usd(book.astraPhotoFirstWorstUsd, 3)} + retry ${usd(book.astraPhotoRetryWorstUsd, 5)}) standard (background; photos never go on Batch)`,
+    count: builds,
+    unitUsd: book.astraPhotoBuildWorstUsd,
+    source: `${ASTRA_SOURCE} (the photo caps)`,
     metered: false,
   };
 }
@@ -78,6 +90,30 @@ export function planA(o: {
   }
   if (o.wordsGate) lines.push(judgementLine(o.book, "words gate on every valid answer", "prompt-gate", builds * o.builders.length * 2));
   return lines;
+}
+
+/** A's photo arm: Astra only (section 4 bars photo builds on Astra's cost; the baselines are words-only). */
+export function planAPhotos(o: { photos: number; runs: number; builders: readonly Builder[]; wordsGate: boolean; book: PriceBook }): PlannedCall[] {
+  const builds = o.photos * o.runs;
+  const arms = o.builders.filter((b) => b === "astra-low" || b === "astra-medium");
+  const lines = arms.map((b) => astraPhotoLine(o.book, `Astra ${b.slice(6)}, photos`, builds));
+  if (o.wordsGate) lines.push(judgementLine(o.book, "words gate on every valid answer", "prompt-gate", builds * arms.length * 2));
+  return lines;
+}
+
+/**
+ * D's photo leg, per photo and run, as submitSetPhotoBuild orders it: the
+ * notes gate (photos with notes only), the picture check, then the build
+ * (every photo is assumed to pass, the ceiling) and its words gate.
+ */
+export function planDPhotos(o: { photos: number; withNotes: number; runs: number; effort?: string; book: PriceBook }): PlannedCall[] {
+  const n = o.photos * o.runs;
+  return [
+    judgementLine(o.book, "notes gate", "prompt-gate", o.withNotes * o.runs),
+    judgementLine(o.book, "picture check on each photo", "output-gate", n),
+    astraPhotoLine(o.book, `Astra ${o.effort ?? SET_PHOTO_BUILD_EFFORT}, D photos`, n),
+    judgementLine(o.book, "words gate", "prompt-gate", n * 2),
+  ];
 }
 
 export function planCanary(o: { briefs: number; transport: "batch" | "background"; book: PriceBook }): PlannedCall[] {

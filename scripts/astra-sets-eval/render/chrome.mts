@@ -36,7 +36,8 @@ const LOCKDOWN = [
   "--disable-features=Translate,OptimizationHints,MediaRouter,AutofillServerCommunication,CertificateTransparencyComponentUpdater",
 ];
 
-export type Pose = { poseId: string; position: [number, number, number]; target: [number, number, number]; fovDeg: number; figure: boolean };
+/** aspect: draw at a photo's shape (width / height), long side px, as set-view.tsx lays camera 1 beside its photo. */
+export type Pose = { poseId: string; position: [number, number, number]; target: [number, number, number]; fovDeg: number; figure: boolean; aspect?: number; px?: number };
 export type Frame = { poseId: string; jpeg: string | null; controlsWouldMove: boolean };
 export type RenderResult = {
   lift: { fill: number; exposure: number };

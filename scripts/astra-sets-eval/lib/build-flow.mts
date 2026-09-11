@@ -17,6 +17,21 @@
 //   retry submit refused              → failed "refused"
 //   close-retry submit failed         → deliver the spec in hand
 //
+// A PHOTO BUILD (Sets from a photo, startPhotoBuild) takes the same path
+// with pollSetBuild's photo branch:
+//   an answer the normaliser had to    → invalid ("no_first_camera"): a
+//     give its stand-in first camera     photo set without Astra's own
+//     (notes "default_camera")           camera 1 has nothing to lay beside
+//                                        the photo
+//   every retry                        → the photo again, its notes, then
+//                                        the feedback: s.next.retry, which
+//                                        the transport hands to the
+//                                        product's retryBuildRequest
+//                                        (builders.mts photoJobRequest)
+// Its requests are built from the photo, never from s.next.input (""), and
+// the photo's bytes never enter this state (state.json): only its id, its
+// notes and the sha256 of what was sent.
+//
 // Deviations, all recorded on the build:
 //   - stale is always false: a Batch round can take hours, and production's
 //     15-minute staleness exists for LOST builds. A background attempt the
@@ -40,7 +55,8 @@
 //     in production.
 
 import { parseSetSpecText, specInstanceCount, type SetSpec } from "../../../src/lib/sets/set-spec.ts";
-import { closeRetryInput, decideAfterValidAnswer, RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
+import { closeRetryFeedback, closeRetryInput, decideAfterValidAnswer, RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
+import type { SetRetry } from "../../../src/lib/sets/astra-request.ts";
 import { setBuildInput } from "../../../src/lib/sets/set-builder-prompt.ts";
 import { SET_BUILD_MAX_ATTEMPTS } from "../../../src/lib/sets/set-config.ts";
 import { tokenCounts, type Provider } from "./prices.mts";
@@ -104,8 +120,12 @@ export type BuildFinal =
   | { status: "delivered"; use: "answer" | "draft"; spec: SetSpec; fromAttempt: number; openAtDelivery: number; note?: string }
   | { status: "failed"; failure: string; note?: string };
 
+/** A photo build's source: which corpus photo, the photographer's notes ("" when none), and the sha256 of the bytes sent. */
+export type PhotoSource = { photoId: string; notes: string; sha256: string };
+
 export type BuildState = {
   buildId: string;
+  /** A text build's brief; a photo build's notes (as production's brief column holds them). */
   brief: string;
   attempts: number;
   draft: SetSpec | null;
@@ -113,8 +133,11 @@ export type BuildState = {
   draftAttempt: number | null;
   pendingFailure: string | null;
   log: AttemptRecord[];
-  next: { input: string; kind: AttemptKind } | null;
+  /** input: a text build's whole input. retry: why a photo build's retry is sent (astra-request.ts SetRetry). */
+  next: { input: string; kind: AttemptKind; retry?: SetRetry } | null;
   final: BuildFinal | null;
+  /** Set only for a photo build. */
+  photo?: PhotoSource;
 };
 
 export type FlowDeps = {
@@ -143,6 +166,11 @@ export function startBuild(buildId: string, brief: string): BuildState {
     next: { input: setBuildInput(brief), kind: "first" },
     final: null,
   };
+}
+
+/** A photo build: its first request is the product's photoBuildRequest (builders.mts photoJobRequest). */
+export function startPhotoBuild(buildId: string, photo: PhotoSource): BuildState {
+  return { ...startBuild(buildId, photo.notes), next: { input: "", kind: "first" }, photo };
 }
 
 const isClose = (k: AttemptKind) => k === "retry-close-mend" || k === "retry-close-fresh";
@@ -234,7 +262,10 @@ export async function advanceBuild(s: BuildState, r: TransportResult, meta: Atte
   let failure: string;
   if (r.state === "done") {
     const parsed = parseSetSpecText(r.text);
-    if (parsed.ok) {
+    // A photo set without Astra's own first camera has nothing to lay
+    // beside the photo: the normaliser's stand-in camera makes it invalid.
+    const noFirstCamera = Boolean(s.photo) && parsed.ok && parsed.notes.includes("default_camera");
+    if (parsed.ok && !noFirstCamera) {
       const spec = parsed.spec;
       rec.outcome = "valid";
       rec.notes = parsed.notes;
@@ -256,10 +287,16 @@ export async function advanceBuild(s: BuildState, r: TransportResult, meta: Atte
         draftOpen: s.draft ? s.draftOpen : null,
       });
       if (next.kind === "retry-close") {
-        const input = closeRetryInput(s.brief, closure.sides, spec);
         s.draft = spec;
         s.draftOpen = closure.open;
         s.draftAttempt = attempt;
+        if (s.photo) {
+          // The photo again, its notes, then the same feedback a text build gets.
+          const mend = closeRetryFeedback(closure.sides, spec).includes("\n\nPrevious set: ");
+          s.next = { input: "", kind: mend ? "retry-close-mend" : "retry-close-fresh", retry: { why: "close", openSides: closure.sides, previous: spec } };
+          return s;
+        }
+        const input = closeRetryInput(s.brief, closure.sides, spec);
         s.next = { input, kind: input.includes("\n\nPrevious set: ") ? "retry-close-mend" : "retry-close-fresh" };
         return s;
       }
@@ -269,7 +306,10 @@ export async function advanceBuild(s: BuildState, r: TransportResult, meta: Atte
           : { status: "delivered", use: "answer", spec, fromAttempt: attempt, openAtDelivery: closure.open };
       return s;
     }
-    rec.outcome = parsed.reason;
+    if (parsed.ok) {
+      rec.outcome = "no_first_camera";
+      rec.notes = parsed.notes;
+    } else rec.outcome = parsed.reason;
     failure = "invalid";
   } else {
     rec.outcome = r.kind;
@@ -287,10 +327,10 @@ export async function advanceBuild(s: BuildState, r: TransportResult, meta: Atte
   }
   if (failure !== "refused" && failure !== "cancelled" && attempt < SET_BUILD_MAX_ATTEMPTS) {
     s.pendingFailure = failure;
-    s.next = {
-      input: setBuildInput(s.brief) + (failure === "incomplete" ? RETRY_SMALLER : ""),
-      kind: failure === "incomplete" ? "retry-smaller" : "retry-plain",
-    };
+    const kind = failure === "incomplete" ? "retry-smaller" : "retry-plain";
+    s.next = s.photo
+      ? { input: "", kind, retry: { why: "again", tooLong: failure === "incomplete" } }
+      : { input: setBuildInput(s.brief) + (failure === "incomplete" ? RETRY_SMALLER : ""), kind };
     return s;
   }
   s.final = { status: "failed", failure };

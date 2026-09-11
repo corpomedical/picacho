@@ -5,6 +5,14 @@
 // --max-usd <n>: one without the other is a usage error, and n must be a
 // finite number above zero. B makes no API calls at all, so it takes
 // neither; report reads files only.
+//
+// --photos is the photo arm (Sets from a photo): A and B on the location
+// photos, D on the photos with people. Astra only, and background only —
+// a photo in a Batch input file would be uploaded to OpenAI's Files
+// storage, which the product never does — so --transport batch, the
+// baselines, --probe and --escalate are refused beside it. This file loads
+// before the network guard, so it cannot read SET_PHOTO_BUILD_EFFORT: the
+// part settles the photo arm's default builder (common.mts resolveFlags).
 
 export const PARTS = ["a", "b", "c", "d", "e", "canary"] as const;
 export type Part = (typeof PARTS)[number];
@@ -47,6 +55,9 @@ export type Flags = {
   rebaseline: boolean;
   allowPartialCorpus: boolean;
   allowIncomplete: boolean;
+  /** The photo arm: A and B on location-photos.json, D on people-photos.json. */
+  photos: boolean;
+  photoCredits: number | null;
   /** The flags written on the command line (the rest are defaults): --resume compares these with the original run. */
   given: string[];
 };
@@ -91,11 +102,14 @@ const SPECS: Record<string, Spec> = {
   "--rebaseline": { kind: "bool", scopes: ["canary"] },
   "--allow-partial-corpus": { kind: "bool", scopes: SPENDING },
   "--allow-incomplete": { kind: "bool", scopes: ["report"] },
+  "--photos": { kind: "bool", scopes: ["a", "b", "d"] },
+  "--photo-credits": { kind: "int", scopes: ["report"] },
 };
 
 export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry run unless --spend --max-usd <n>.
 
   npx tsx scripts/astra-sets-eval/run.mts <a|c|d|e|canary> <corpusDir> [flags]
+  npx tsx scripts/astra-sets-eval/run.mts <a|d> <corpusDir> --photos [flags]
   npx tsx scripts/astra-sets-eval/run.mts b <corpusDir> --from-run <A runDir> [flags]
   npx tsx scripts/astra-sets-eval/run.mts report <runDir> [<runDir>...] [flags]
 
@@ -119,7 +133,7 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
   --probe                   a c        the minimal real calls that settle the unknowns
   --resume <runDir>         a canary   replay the ledger and re-attach recorded batches (the run keeps its
                                        original --sonnet-mode, --no-words-gate, --raters, --seed, --builders,
-                                       --runs, --only and --transport; a different value is refused)
+                                       --runs, --only, --transport and --photos; a different value is refused)
   --out <dir>               all        default scripts/astra-sets-eval/out
   --env-file <path>         all        default <repo>/.env.local
   --chrome <path>           b c d      Chrome binary
@@ -127,6 +141,10 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
   --rebaseline              canary     start a new canary baseline on purpose
   --allow-partial-corpus    spend      run with fewer rows than the eval asks for
   --allow-incomplete        report     import rating files with missing items
+  --photos                  a b d      the photo arm: A and B on the location photos, D on the photos with
+                                       people. Astra only (default: SET_PHOTO_BUILD_EFFORT's arm), background
+                                       only: a photo never goes into a Batch input file
+  --photo-credits N         report     priced credits for A's photo cost bar
 
 Exit codes: 0 clean or every evaluated bar passed; 1 a bar failed or a canary alert;
 2 usage, harness, budget abort or a bar that could not be determined; 130 interrupted.`;
@@ -160,6 +178,8 @@ function defaults(): Flags {
     rebaseline: false,
     allowPartialCorpus: false,
     allowIncomplete: false,
+    photos: false,
+    photoCredits: null,
     given: [],
   };
 }
@@ -185,6 +205,7 @@ export const BEHAVIOUR: readonly { flag: string; key: keyof Flags }[] = [
   { flag: "--only", key: "only" },
   { flag: "--transport", key: "transport" },
   { flag: "--rebaseline", key: "rebaseline" },
+  { flag: "--photos", key: "photos" },
 ];
 
 /** What the manifest records at the start of a run. */
@@ -265,6 +286,7 @@ export function parseCli(argv: readonly string[]): { ok: true; cli: Cli } | { ok
   for (const [k, min, max, set] of [
     ["--runs", 1, 10, (n: number) => (flags.runs = n)],
     ["--credits", 1, 50, (n: number) => (flags.credits = n)],
+    ["--photo-credits", 1, 50, (n: number) => (flags.photoCredits = n)],
     ["--d-cameras", 1, 6, (n: number) => (flags.dCameras = n)],
     ["--seed", 0, 2 ** 31 - 1, (n: number) => (flags.seed = n)],
   ] as const) {
@@ -336,6 +358,18 @@ export function parseCli(argv: readonly string[]): { ok: true; cli: Cli } | { ok
   flags.rebaseline = raw["--rebaseline"] === true;
   flags.allowPartialCorpus = raw["--allow-partial-corpus"] === true;
   flags.allowIncomplete = raw["--allow-incomplete"] === true;
+  flags.photos = raw["--photos"] === true;
+  if (flags.photos) {
+    if (flags.transport === "batch") {
+      return { ok: false, error: "--photos runs in background only: a photo in a Batch input file would be uploaded to OpenAI's Files storage, which the product never does" };
+    }
+    const baselines = seen.has("--builders") ? flags.builders.filter((b) => b === "sonnet-5" || b === "mini-5.4") : [];
+    if (baselines.length) {
+      return { ok: false, error: `--photos builds on Astra only (section 4 bars photo builds on Astra's cost; the baselines are words-only): drop ${baselines.join(", ")}` };
+    }
+    if (flags.probe) return { ok: false, error: "--photos and --probe cannot be combined: the probe asks about Batch and the baselines, and a photo build uses neither" };
+    if (flags.escalate) return { ok: false, error: "--photos and --escalate cannot be combined: the photo leg judges each photo on its own" };
+  }
   flags.given = [...seen];
 
   if (scope === "report") {

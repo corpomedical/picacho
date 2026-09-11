@@ -14,6 +14,14 @@
 // A bars can only pass if they hold whatever it would have done. The runner
 // never quietly drops a product field.
 //
+// A PHOTO BUILD is the product's own photoBuildRequest (the first attempt)
+// or retryBuildRequest (the one retry: the photo again, its notes, then the
+// feedback), with only the arm's effort changed: the photo caps, the photo
+// inline at detail high. It never goes on Batch: a Batch line is a line of
+// an uploaded input file, and a photo in it would sit in OpenAI's Files
+// storage, which the product never does. batchLineBody refuses any input
+// that is not plain text.
+//
 // THE SAFETY IDENTIFIER is evalSafetyId(part): sha256 of a fixed label and
 // the part — the production shape (64 hex), no secret, no real account. It
 // is never rotated: if OpenAI acts on Part D's identifier, that isolation
@@ -30,9 +38,9 @@
 
 import { buildAstraRequestBody, type AstraEffort, type AstraJobRequest } from "../../../src/lib/generations/providers/astra.ts";
 import { SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "../../../src/lib/sets/set-builder-prompt.ts";
-import { setAstraRequest } from "../../../src/lib/sets/astra-request.ts";
+import { photoBuildRequest, retryBuildRequest, setAstraRequest } from "../../../src/lib/sets/astra-request.ts";
 import { SET_BUILD_MAX_OUTPUT_TOKENS } from "../../../src/lib/sets/set-config.ts";
-import type { TransportResult } from "./build-flow.mts";
+import type { BuildState, TransportResult } from "./build-flow.mts";
 import { BASELINE_MODELS } from "./prices.mts";
 import { isRecord, sha256 } from "./util.mts";
 
@@ -47,8 +55,28 @@ export function astraJobRequest(input: string, effort: AstraEffort, part: string
   return { ...setAstraRequest(input, evalSafetyId(part), "text"), effort };
 }
 
-/** The product body minus `background`, for a Batch line. */
+/**
+ * The request for a photo build's attempt in s.next: the product's
+ * photoBuildRequest or retryBuildRequest over the photo's bytes (as a data
+ * URL, the ones first sent: PhotoStore.dataUrlFor), with the arm's effort.
+ */
+export function photoJobRequest(s: BuildState, photoDataUrl: string, effort: AstraEffort, part: string): AstraJobRequest {
+  if (!s.photo || !s.next) throw new Error(`${s.buildId}: not a photo build with an attempt to send`);
+  const sid = evalSafetyId(part);
+  if (s.next.kind === "first") return { ...photoBuildRequest(photoDataUrl, s.photo.notes, sid), effort };
+  if (!s.next.retry) throw new Error(`${s.buildId}: a photo retry without its reason`);
+  const req = retryBuildRequest({ kind: "photo", notes: s.photo.notes, photo: photoDataUrl }, s.next.retry, sid);
+  // Null only when there is no photo to resend, and the photo is in hand.
+  if (!req) throw new Error(`${s.buildId}: the product would not resend this photo`);
+  return { ...req, effort };
+}
+
+/**
+ * The product body minus `background`, for a Batch line. Plain text only: a
+ * photo in a Batch input file would be uploaded to OpenAI's Files storage.
+ */
 export function batchLineBody(req: AstraJobRequest): Record<string, unknown> {
+  if (typeof req.input !== "string") throw new Error("a Batch line carries plain text only: a photo would be uploaded to OpenAI's Files storage, which the product never does");
   const body = { ...buildAstraRequestBody(req) };
   delete body.background;
   return body;

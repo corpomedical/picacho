@@ -82,6 +82,35 @@ describe("parseCli", () => {
   });
 });
 
+describe("--photos", () => {
+  it("is the photo arm of a, b and d, and nothing else", () => {
+    for (const part of ["a", "b", "d"]) {
+      const c = ok([part, "corp", "--photos"]);
+      expect(c.cmd === "part" && c.flags.photos).toBe(true);
+    }
+    expect(ok(["a", "corp"]).cmd === "part" && (ok(["a", "corp"]) as { flags: { photos: boolean } }).flags.photos).toBe(false);
+    for (const part of ["c", "e", "canary"]) expect(err([part, "corp", "--photos"])).toMatch(/does not apply/);
+  });
+
+  it("never goes on Batch, never to a baseline, never with --probe or --escalate", () => {
+    expect(err(["a", "corp", "--photos", "--transport", "batch"])).toMatch(/background only.*Files storage/);
+    expect(ok(["a", "corp", "--photos", "--transport", "background"]).cmd).toBe("part");
+    expect(err(["a", "corp", "--photos", "--builders", "astra-low,sonnet-5,mini-5.4"])).toMatch(/Astra only.*drop sonnet-5, mini-5.4/);
+    const both = ok(["a", "corp", "--photos", "--builders", "astra-low,astra-medium"]);
+    expect(both.cmd === "part" && both.flags.builders).toEqual(["astra-low", "astra-medium"]);
+    expect(err(["a", "corp", "--photos", "--probe"])).toMatch(/cannot be combined/);
+    expect(err(["d", "corp", "--photos", "--escalate"])).toMatch(/cannot be combined/);
+    expect(err(["d", "corp", "--photos", "--transport", "batch"])).toMatch(/background only/);
+  });
+
+  it("report takes --photo-credits for A's photo cost bar", () => {
+    const r = ok(["report", "d1", "--photo-credits", "5"]);
+    expect(r.cmd === "report" && r.flags.photoCredits).toBe(5);
+    expect(err(["report", "d1", "--photo-credits", "0"])).toMatch(/--photo-credits/);
+    expect(err(["a", "corp", "--photo-credits", "4"])).toMatch(/does not apply to a/);
+  });
+});
+
 describe("--resume keeps the run's behaviour", () => {
   const flagsOf = (argv: string[]) => {
     const c = ok(argv);
@@ -106,5 +135,15 @@ describe("--resume keeps the run's behaviour", () => {
 
   it("refuses a run with no behaviour record", () => {
     expect(resumeFlags(flagsOf(resume), undefined).ok).toBe(false);
+  });
+
+  it("keeps a photo run a photo run, with the builders it settled", () => {
+    // The part settles a photo run's builders before the manifest records them (common.mts resolveFlags).
+    const photoRun = behaviourOf({ ...flagsOf(["a", "c", "--photos"]), builders: ["astra-low"] });
+    const r = resumeFlags(flagsOf(resume), photoRun);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.flags).toMatchObject({ photos: true, builders: ["astra-low"] });
+    expect(resumeFlags(flagsOf([...resume, "--photos"]), photoRun).ok).toBe(true);
+    expect(resumeFlags(flagsOf([...resume, "--photos"]), original).ok).toBe(false);
   });
 });

@@ -1,7 +1,26 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildAstraRequestBody } from "../../../src/lib/generations/providers/astra.ts";
-import { SET_SPEC_JSON_SCHEMA } from "../../../src/lib/sets/set-builder-prompt.ts";
-import { astraJobRequest, batchLine, batchLineBody, customIdFor, evalSafetyId, interpretSonnet, mapHttpError, miniRequestBody, parseCustomId, sonnetRequestBody } from "./builders.mts";
+import { photoBuildRequest, retryBuildRequest } from "../../../src/lib/sets/astra-request.ts";
+import { SET_PHOTO_RULES, SET_SPEC_JSON_SCHEMA } from "../../../src/lib/sets/set-builder-prompt.ts";
+import { SET_PHOTO_BUILD_EFFORT, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS } from "../../../src/lib/sets/set-config.ts";
+import { normaliseSetSpec } from "../../../src/lib/sets/set-spec.ts";
+import { startPhotoBuild, type BuildState } from "./build-flow.mts";
+import {
+  astraJobRequest,
+  batchLine,
+  batchLineBody,
+  customIdFor,
+  evalSafetyId,
+  interpretSonnet,
+  mapHttpError,
+  miniRequestBody,
+  parseCustomId,
+  photoJobRequest,
+  sonnetRequestBody,
+} from "./builders.mts";
+import { REPO_ROOT } from "./util.mts";
 
 describe("the Batch line", () => {
   const req = astraJobRequest("Brief: a quiet harbour", "low", "a");
@@ -47,6 +66,64 @@ describe("the Batch line", () => {
     expect(mapHttpError(429, undefined)).toBe("rate_limited");
     expect(mapHttpError(503, undefined)).toBe("unavailable");
     expect(mapHttpError(400, "invalid_request_error")).toBe("bad_request");
+  });
+});
+
+describe("a photo build's request", () => {
+  // A tiny JPEG-shaped data URL: the product's body builder checks the
+  // shape of an image part, not its pixels.
+  const photo = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString("base64")}`;
+  const notes = "the other half of the room is a bar";
+  const build = (n = notes) => startPhotoBuild("al-ph-01-r1", { photoId: "ph-01", notes: n, sha256: "a".repeat(64) });
+  const bytes = (req: Parameters<typeof buildAstraRequestBody>[0]) => JSON.stringify(buildAstraRequestBody(req));
+  const spec = (() => {
+    const n = normaliseSetSpec(JSON.parse(readFileSync(join(REPO_ROOT, "src/lib/sets/fixtures-showroom-open.json"), "utf8")));
+    if (!n.ok) throw new Error("fixture");
+    return n.spec;
+  })();
+
+  it("is byte for byte the product's photoBuildRequest for the same photo and notes", () => {
+    for (const n of [notes, ""]) {
+      const s = build(n);
+      expect(bytes(photoJobRequest(s, photo, SET_PHOTO_BUILD_EFFORT, "a"))).toBe(bytes(photoBuildRequest(photo, n, evalSafetyId("a"))));
+    }
+  });
+
+  it("carries the photo inline at detail high, the photo caps, store:false and background", () => {
+    const body = buildAstraRequestBody(photoJobRequest(build(), photo, "low", "d"));
+    expect(body.background).toBe(true);
+    expect(body.store).toBe(false);
+    expect(body.tools).toEqual([]);
+    expect(body.max_output_tokens).toBe(SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
+    expect(body.safety_identifier).toBe(evalSafetyId("d"));
+    const content = (body.input as { content: Record<string, unknown>[] }[])[0].content;
+    expect(content[0]).toEqual({ type: "input_text", text: SET_PHOTO_RULES });
+    expect(content[1]).toEqual({ type: "input_image", image_url: photo, detail: "high" });
+    expect(content[2]).toEqual({ type: "input_text", text: `Notes from the photographer: ${notes}` });
+    // Only the arm's effort differs.
+    const medium = buildAstraRequestBody(photoJobRequest(build(), photo, "medium", "d"));
+    expect({ ...medium, reasoning: body.reasoning }).toEqual(body);
+    expect(medium.reasoning).toEqual({ effort: "medium" });
+  });
+
+  it("every retry is the product's retryBuildRequest: the photo again, its notes, then the feedback", () => {
+    const retries = [
+      { kind: "retry-plain" as const, retry: { why: "again" as const, tooLong: false } },
+      { kind: "retry-smaller" as const, retry: { why: "again" as const, tooLong: true } },
+      { kind: "retry-close-mend" as const, retry: { why: "close" as const, openSides: ["+Z (north)"], previous: spec } },
+    ];
+    for (const { kind, retry } of retries) {
+      const s: BuildState = { ...build(), attempts: 1, next: { input: "", kind, retry } };
+      const product = retryBuildRequest({ kind: "photo", notes, photo }, retry, evalSafetyId("a"));
+      if (!product) throw new Error("the product would resend a photo in hand");
+      expect(bytes(photoJobRequest(s, photo, SET_PHOTO_BUILD_EFFORT, "a"))).toBe(bytes(product));
+    }
+    expect(() => photoJobRequest({ ...build(), attempts: 1, next: { input: "", kind: "retry-plain" } }, photo, "low", "a")).toThrow(/without its reason/);
+  });
+
+  it("never goes on Batch: a Batch line carries plain text only", () => {
+    expect(() => batchLineBody(photoJobRequest(build(), photo, "low", "a"))).toThrow(/Files storage/);
+    expect(() => batchLineBody(astraJobRequest("Brief: a harbour", "low", "a"))).not.toThrow();
   });
 });
 

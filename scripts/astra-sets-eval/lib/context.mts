@@ -5,7 +5,9 @@
 // Progress goes to stderr as ids only, never brief text. Everything a run
 // writes lands in its own directory under out/ (ignored by git): the
 // manifest, the ledger, results, answers, specs, frames, sheets, keys,
-// ratings and the summary.
+// ratings and the summary — and an A photo run's photos/, the re-encoded
+// bytes each location photo was sent as (B lays them beside camera 1). A D
+// photo run keeps no copy of its photos with people.
 
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,15 +18,19 @@ import type { Flags, Part } from "./cli.mts";
 import type { CorpusCheck } from "./corpus.mts";
 import type { Ledger } from "./ledger.mts";
 import type { NetGuard } from "./net-guard.mts";
+import type { PhotoStore } from "./photos.mts";
 import type { PriceBook } from "./prices.mts";
 import type { SpendGuard } from "./spend-guard.mts";
-import type { GateVerdict } from "./words-gate.mts";
+import type { GateReading, GateVerdict } from "./words-gate.mts";
 import type { WordsVerdict } from "./build-flow.mts";
 import type { BarResult } from "./pass-bars.mts";
 
 export type Gates = {
   words: (spec: SetSpec, ref: string) => Promise<WordsVerdict>;
   brief: (brief: string, priorHits: number, ref: string) => Promise<GateVerdict>;
+  /** D's photo leg: the photographer's notes, and the picture itself (set only for a D photo run). */
+  notes?: (notes: string, priorHits: number, ref: string) => Promise<GateReading>;
+  picture?: (dataUrl: string, o: { promptScores: unknown; priorHits: number }, ref: string) => Promise<GateVerdict>;
 };
 
 export type RunContext = {
@@ -42,6 +48,8 @@ export type RunContext = {
   corpus: CorpusCheck;
   /** Real gates in a --spend run; null in a dry run (the part uses fakes). */
   gates: Gates | null;
+  /** A photo arm's photos, prepared by the part before it drives anything; null otherwise. */
+  photos: PhotoStore | null;
   manifest: Record<string, unknown>;
   inflight: Set<string>;
   /** Start nothing new: Ctrl-C, or the spend guard stopped (budget, overshoot, config). */
@@ -54,7 +62,7 @@ export type RunContext = {
   progress: (msg: string) => void;
 };
 
-export const RUN_SUBDIRS = ["answers", "specs", "frames", "stills", "sheets", "keys", "ratings"] as const;
+export const RUN_SUBDIRS = ["answers", "specs", "frames", "stills", "sheets", "keys", "ratings", "photos"] as const;
 
 export function makeRunDir(outRoot: string, runId: string): string {
   const dir = join(outRoot, runId);

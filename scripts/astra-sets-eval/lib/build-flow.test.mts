@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { setBuildInput } from "../../../src/lib/sets/set-builder-prompt.ts";
 import { RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
-import { advanceBuild, buildRecord, ConfigAbort, leftPending, startBuild, type AttemptMeta, type FlowDeps, type TransportResult, type WordsVerdict } from "./build-flow.mts";
+import { advanceBuild, buildRecord, ConfigAbort, leftPending, startBuild, startPhotoBuild, type AttemptMeta, type FlowDeps, type TransportResult, type WordsVerdict } from "./build-flow.mts";
 import { closureOf } from "./context.mts";
 import { REPO_ROOT } from "./util.mts";
 
@@ -16,6 +16,8 @@ const CLOSED = fixture("showroom-closed");
 const OPEN = fixture("showroom-open");
 // A lone box on a big floor: open on every bearing, far more open than OPEN.
 const WIDE_OPEN = JSON.stringify({ bounds: { x: 20, z: 20, height: 5 }, objects: [{ shape: "box", position: [0, 0.5, 5], size: [1, 1, 1] }], marks: [{ label: "", x: 0, z: 0, facingDeg: 0 }] });
+// A closed set whose cameras were taken out: the normaliser gives it a stand-in camera 1.
+const NO_CAMERAS = JSON.stringify({ ...(JSON.parse(CLOSED) as Record<string, unknown>), cameras: [] });
 
 const usage = { input_tokens: 1800, output_tokens: 5000 };
 const done = (text: string): TransportResult => ({ state: "done", text, usage });
@@ -193,6 +195,11 @@ describe("advanceBuild, as pollSetBuild", () => {
     expect(withDraft.s.final).toMatchObject({ status: "delivered", use: "draft" });
   });
 
+  it("a text build keeps the normaliser's stand-in camera: only a photo build needs its own", async () => {
+    const { s } = await run([done(NO_CAMERAS)]);
+    expect(s.final).toMatchObject({ status: "delivered", fromAttempt: 1 });
+  });
+
   it("the record sums both attempts' cost and tokens", async () => {
     const { s } = await run([done(OPEN), done(CLOSED)]);
     const rec = buildRecord(s, { part: "a", builder: "astra-low", provider: "openai", run: 1, briefId: "x", category: "interior", simulated: true, specFile: "specs/b1.json" });
@@ -202,5 +209,66 @@ describe("advanceBuild, as pollSetBuild", () => {
     expect(rec.firstValid).toBe(true);
     expect(rec.validWithinRetry).toBe(true);
     expect(rec.openAtDelivery).toBe(0);
+  });
+});
+
+describe("advanceBuild for a photo build, as pollSetBuild's photo branch", () => {
+  const source = { photoId: "ph-01", notes: "the other half is a bar", sha256: "a".repeat(64) };
+  async function runPhoto(answers: TransportResult[], words: WordsVerdict[] = []) {
+    const s = startPhotoBuild("al-ph-01-r1", source);
+    const d = deps(words);
+    const nexts: NonNullable<typeof s.next>[] = [];
+    for (const a of answers) {
+      if (!s.next) break;
+      nexts.push(s.next);
+      await advanceBuild(s, a, meta, d);
+    }
+    return { s, nexts };
+  }
+
+  it("starts as the product's first photo attempt: no text input, the photo's source only", () => {
+    const s = startPhotoBuild("al-ph-01-r1", source);
+    expect(s.next).toEqual({ input: "", kind: "first" });
+    expect(s.photo).toEqual(source);
+    expect(s.brief).toBe(source.notes);
+  });
+
+  it("an answer without Astra's own first camera is invalid, and retried plain with the photo", async () => {
+    const { s, nexts } = await runPhoto([done(NO_CAMERAS), done(CLOSED)]);
+    expect(s.log[0].outcome).toBe("no_first_camera");
+    expect(s.log[0].notes).toContain("default_camera");
+    // No words are judged on a set that is not valid for a photo.
+    expect(s.log[0].words).toBeUndefined();
+    expect(nexts[1]).toEqual({ input: "", kind: "retry-plain", retry: { why: "again", tooLong: false } });
+    expect(s.final).toMatchObject({ status: "delivered", use: "answer", fromAttempt: 2 });
+    const rec = buildRecord(s, { part: "a", builder: "astra-low", provider: "openai", run: 1, briefId: "ph-01", category: "interior", simulated: false, specFile: null });
+    expect(rec.firstValid).toBe(false);
+    expect(rec.validWithinRetry).toBe(true);
+  });
+
+  it("two answers without a first camera end the build invalid", async () => {
+    const { s } = await runPhoto([done(NO_CAMERAS), done(NO_CAMERAS)]);
+    expect(s.final).toEqual({ status: "failed", failure: "invalid" });
+  });
+
+  it("an open set is sent back with the photo: the mend's reason carries the open sides and the set", async () => {
+    const { s, nexts } = await runPhoto([done(OPEN), done(CLOSED)]);
+    const close = nexts[1];
+    expect(close.kind).toBe("retry-close-mend");
+    expect(close.input).toBe("");
+    expect(close.retry).toMatchObject({ why: "close", openSides: expect.any(Array) });
+    expect(close.retry?.why === "close" && close.retry.previous.title).toBe(s.draft?.title);
+    expect(s.final).toMatchObject({ status: "delivered", use: "answer", fromAttempt: 2 });
+  });
+
+  it("an incomplete answer asks for smaller; a refusal is never retried", async () => {
+    const incomplete = await runPhoto([failed("incomplete"), done(CLOSED)]);
+    expect(incomplete.nexts[1]).toEqual({ input: "", kind: "retry-smaller", retry: { why: "again", tooLong: true } });
+    expect((await runPhoto([failed("refused"), done(CLOSED)])).s.final).toEqual({ status: "failed", failure: "refused" });
+  });
+
+  it("keeps the photo's bytes out of the state that goes to state.json", async () => {
+    const { s } = await runPhoto([done(OPEN)]);
+    expect(JSON.stringify(s)).not.toMatch(/data:image/);
   });
 });

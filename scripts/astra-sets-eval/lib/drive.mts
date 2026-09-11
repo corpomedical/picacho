@@ -9,9 +9,14 @@
 //               upload; lines that do not fit stay pending (budget). Lines
 //               OpenAI never ran (expired, missing, a per-line 429 or 5xx)
 //               are released and go into the next round as the same attempt.
-//   background  Astra, six in flight.
+//   background  Astra, six in flight. A photo build's only transport.
 //   sync        the baselines, four in flight.
-//   simulated   the dry run's fakes, reserved and settled like the real thing.
+//   simulated   the dry run's fakes, reserved and settled like the real thing
+//               (a photo build's request is still built, then discarded).
+//
+// driveBatch refuses a photo build before it reserves anything: a Batch
+// line is a line of an uploaded file, and photos never go to OpenAI's Files
+// storage.
 //
 // state.json holds every job after each round, so --resume can re-attach a
 // recorded batch and finish what was left: an attempt that never started
@@ -19,7 +24,7 @@
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AstraEffort } from "../../../src/lib/generations/providers/astra.ts";
+import { buildAstraRequestBody, type AstraEffort } from "../../../src/lib/generations/providers/astra.ts";
 import { parseSetSpecText, specTextForGate } from "../../../src/lib/sets/set-spec.ts";
 import { SET_BUILD_MAX_ATTEMPTS } from "../../../src/lib/sets/set-config.ts";
 import { advanceBuild, buildRecord, leftPending, type AttemptMeta, type BuildRecord, type BuildState, type FlowDeps } from "./build-flow.mts";
@@ -41,9 +46,9 @@ import {
 } from "./openai-batch.mts";
 import { HarnessError } from "./util.mts";
 import type { Provider } from "./prices.mts";
-import { astraBackgroundAttempt, miniAttempt, settleAstra, sonnetAttempt, type Attempt, type TransportEnv } from "./transports.mts";
+import { astraBackgroundAttempt, astraRequestFor, attemptWorstUsd, miniAttempt, settleAstra, sonnetAttempt, type Attempt, type TransportEnv } from "./transports.mts";
 import { mapLimit, Semaphore } from "./util.mts";
-import { capUsage, fakeAnswer } from "../parts/simulate.mts";
+import { capUsage, fakeAnswer, fakePhotoAnswer } from "../parts/simulate.mts";
 
 export type BuildJob = {
   state: BuildState;
@@ -72,6 +77,7 @@ export function transportEnv(ctx: RunContext): TransportEnv {
     stopping: ctx.stopping,
     interrupted: ctx.interrupted,
     inflight: ctx.inflight,
+    photos: ctx.photos,
   };
 }
 
@@ -100,13 +106,18 @@ function simulatedAttempt(ctx: RunContext, job: BuildJob): Attempt {
   const attemptNo = s.attempts + 1;
   const customId = customIdFor(s.buildId, attemptNo);
   const baseline = job.builder === "sonnet-5" || job.builder === "mini-5.4";
-  const usage = capUsage(job.provider, s.next.kind, baseline);
-  const r = fakeAnswer(job.index, attemptNo, usage);
+  const photo = Boolean(s.photo);
+  // A photo build's request is built as a real run builds it — the product's
+  // photo request over the stored bytes, through the product's body builder,
+  // which throws on any part it would not send — and then discarded.
+  if (photo) buildAstraRequestBody(astraRequestFor(transportEnv(ctx), s, job.effort ?? "low"));
+  const usage = capUsage(job.provider, s.next.kind, baseline, photo);
+  const r = photo ? fakePhotoAnswer(job.index, attemptNo, usage) : fakeAnswer(job.index, attemptNo, usage);
   let billed: number | null;
   let standard: number | null;
   if (!baseline) {
-    const t = job.transport === "batch" ? "batch" : "background";
-    const std = s.next.kind === "first" ? ctx.book.astraFirstWorstUsd : ctx.book.astraRetryWorstUsd;
+    const t = job.transport === "batch" && !photo ? "batch" : "background";
+    const std = attemptWorstUsd(ctx.book, s);
     const worst = t === "batch" ? std * ctx.book.batchMultiplier : std;
     const res = ctx.guard.reserve("astra", worst, customId);
     if (!res.ok) return { r: { state: "submit-failed", kind: "budget", detail: res.reason }, meta: zero("simulated") };
@@ -255,6 +266,10 @@ export async function driveBatch(
   deps: FlowDeps,
   o: { resume: boolean; api?: BatchApi; pollMs?: number },
 ): Promise<"done" | "stopped"> {
+  const photo = jobs.find((j) => j.state.photo);
+  if (photo) {
+    throw new HarnessError(`${photo.state.buildId} is a photo build: photos never go into a Batch input file (it would upload them to OpenAI's Files storage, which the product never does); nothing was reserved or sent`);
+  }
   const api = o.api ?? REAL_BATCH_API;
   const batches = readBatches(ctx.runDir);
   const save = () => {
@@ -370,14 +385,16 @@ export function recordBuilds(ctx: RunContext, jobs: readonly BuildJob[], o: { fr
 /**
  * Every valid answer a builder gave (drafts and refused ones included), as
  * persons-sheet items: specTextForGate is all the text a spec carries —
- * objects have no labels — so this is everything Astra wrote.
+ * objects have no labels — so this is everything Astra wrote. A photo
+ * answer the product discards for want of its own camera 1 is still Astra's
+ * words about the photo, so it is on the sheet too.
  */
 export function personsItems(ctx: RunContext, records: readonly BuildRecord[], builders: (b: string) => boolean): SheetItemIn[] {
   const items: SheetItemIn[] = [];
   for (const r of records) {
     if (!builders(r.builder)) continue;
     for (const a of r.attempts) {
-      if (a.outcome !== "valid" || !a.answerFile) continue;
+      if ((a.outcome !== "valid" && a.outcome !== "no_first_camera") || !a.answerFile) continue;
       const parsed = parseSetSpecText(readFileSync(join(ctx.runDir, a.answerFile), "utf8"));
       if (!parsed.ok) continue;
       const text = specTextForGate(parsed.spec);

@@ -7,8 +7,11 @@
   Served from memory by render/stage.mts on 127.0.0.1 only. It draws a set
   the way src/components/sets/set-view.tsx does (render/viewer-parity.mts
   checks those lines at run start) with the product's own set-spec.ts,
-  build-scene.ts and exposure.ts, type-stripped, and three.js from
-  node_modules. Known gaps against a phone or laptop browser: swiftshader
+  build-scene.ts, exposure.ts and compare.ts, type-stripped, and three.js
+  from node_modules. A pose with an `aspect` is a photo set's camera 1 laid
+  beside its photo: the largest centred rectangle of the photo's shape, the
+  lens widened where that rectangle is shorter than the canvas, as
+  set-view.tsx draws it. Known gaps against a phone or laptop browser: swiftshader
   instead of a GPU (the lift is recorded per set), pixel ratio 1 (the
   product uses up to 2 for its crop), and a square canvas (which is what the
   product crops to). OrbitControls' polar and distance limits are not
@@ -22,6 +25,7 @@ import * as THREE from "three";
 import { normaliseSetSpec } from "./set-spec.js";
 import { buildSetScene, buildStandIn, placeStandIn } from "./build-scene.js";
 import { BASE_EXPOSURE, NO_LIFT, liftSet } from "./exposure.js";
+import { compareCrop, compareOutputSize, widenFovDeg } from "./compare.js";
 
 // set-view.tsx: const ACCENT = "#c8923a";
 const ACCENT = "#c8923a";
@@ -41,6 +45,19 @@ function cropSquare(renderer, px) {
   return out.toDataURL("image/jpeg", 0.9);
 }
 
+// set-view.tsx cropRect: a crop at a photo's shape (compare.ts), long side px.
+function cropRect(renderer, crop, px) {
+  const src = renderer.domElement;
+  const size = compareOutputSize(crop.sw, crop.sh, px);
+  const out = document.createElement("canvas");
+  out.width = size.width;
+  out.height = size.height;
+  const ctx = out.getContext("2d");
+  if (!ctx) return null;
+  ctx.drawImage(src, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, size.width, size.height);
+  return out.toDataURL("image/jpeg", 0.9);
+}
+
 function wouldControlsMove(spec, pose) {
   const d = new THREE.Vector3(pose.position[0] - pose.target[0], pose.position[1] - pose.target[1], pose.position[2] - pose.target[2]);
   const dist = d.length();
@@ -51,7 +68,7 @@ function wouldControlsMove(spec, pose) {
 
 // renderSet(key, mark, poses): one set, one lift, one frame per pose.
 //   mark   where the stand-in stands ({x, z, facingDeg}); null = the first mark
-//   poses  [{ poseId, position, target, fovDeg, figure }]
+//   poses  [{ poseId, position, target, fovDeg, figure, aspect?, px? }]
 window.renderSet = async (key, mark, poses) => {
   const t0 = performance.now();
   const errors = [];
@@ -101,13 +118,18 @@ window.renderSet = async (key, mark, poses) => {
     // The ring and arrow are for arranging; the image model never sees them.
     standIn.helpers.visible = false;
     if (!pose.figure) standIn.figure.visible = false;
+    // At a photo's shape: the largest centred rectangle of that shape, with
+    // the camera widened where the rectangle is shorter than the canvas, so
+    // the crop spans exactly the pose's fovDeg (set-view.tsx snapshot).
+    const crop = pose.aspect ? compareCrop(renderer.domElement.width, renderer.domElement.height, pose.aspect) : null;
     const cam = camera.clone();
     cam.position.set(...pose.position);
-    cam.fov = pose.fovDeg;
+    cam.fov = crop ? widenFovDeg(pose.fovDeg, crop.fovScale) : pose.fovDeg;
     cam.lookAt(new THREE.Vector3(...pose.target));
     cam.updateProjectionMatrix();
     renderer.render(scene, cam);
-    frames.push({ poseId: pose.poseId, jpeg: cropSquare(renderer, PX), controlsWouldMove: wouldControlsMove(spec, pose) });
+    const jpeg = crop ? cropRect(renderer, crop, pose.px ?? PX) : cropSquare(renderer, PX);
+    frames.push({ poseId: pose.poseId, jpeg, controlsWouldMove: wouldControlsMove(spec, pose) });
     standIn.helpers.visible = true;
     standIn.figure.visible = true;
   }

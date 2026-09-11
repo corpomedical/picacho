@@ -12,14 +12,25 @@
 //   2  not JSON, then a valid retry          → delivered after 2 (retry-plain)
 //   3  incomplete, then a smaller retry      → delivered after 2 (retry-smaller)
 //   4  refused                               → failed, no retry
-// Fake usage sits at the cap bounds, so a simulated build costs exactly its
-// worst case: the simulated spend equals the ceiling.
+// A photo build (fakePhotoAnswer) walks the same five, except that item 2's
+// first answer is a recorded set with its cameras taken out: the normaliser
+// gives it a stand-in camera, which a photo build counts as invalid.
+// Fake usage sits at the cap bounds (a photo build's at the photo caps), so
+// a simulated build costs exactly its worst case: the simulated spend
+// equals the ceiling.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SET_BUILD_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS, SET_CLOSE_RETRY_INPUT_TOKENS } from "../../../src/lib/sets/set-config.ts";
+import {
+  SET_BUILD_INPUT_TOKENS,
+  SET_BUILD_MAX_OUTPUT_TOKENS,
+  SET_CLOSE_RETRY_INPUT_TOKENS,
+  SET_PHOTO_BUILD_INPUT_TOKENS,
+  SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
+  SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
+} from "../../../src/lib/sets/set-config.ts";
 import type { AttemptKind, TransportResult, Usage, WordsVerdict } from "../lib/build-flow.mts";
-import type { GateVerdict } from "../lib/words-gate.mts";
+import type { GateReading, GateVerdict } from "../lib/words-gate.mts";
 import { baselineInputBoundChars } from "../lib/prices.mts";
 import { REPO_ROOT } from "../lib/util.mts";
 
@@ -40,16 +51,26 @@ export function fixtureJson(name: FixtureName): unknown {
   return JSON.parse(fixtureText(name));
 }
 
-/** Usage at the cap bounds for an Astra-shaped (Responses) or Anthropic-shaped answer. */
-export function capUsage(provider: "openai" | "anthropic", attempt: AttemptKind, baseline: boolean): Usage {
-  const input = baseline ? baselineInputBoundChars(attempt === "first" ? "first" : "retry") : attempt === "first" ? SET_BUILD_INPUT_TOKENS : SET_CLOSE_RETRY_INPUT_TOKENS;
+/** Usage at the cap bounds for an Astra-shaped (Responses) or Anthropic-shaped answer; a photo build's at the photo caps. */
+export function capUsage(provider: "openai" | "anthropic", attempt: AttemptKind, baseline: boolean, photo = false): Usage {
+  const first = attempt === "first";
+  const input = baseline
+    ? baselineInputBoundChars(first ? "first" : "retry")
+    : photo
+      ? first
+        ? SET_PHOTO_BUILD_INPUT_TOKENS
+        : SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS
+      : first
+        ? SET_BUILD_INPUT_TOKENS
+        : SET_CLOSE_RETRY_INPUT_TOKENS;
+  const output = photo ? SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS : SET_BUILD_MAX_OUTPUT_TOKENS;
   if (provider === "anthropic") {
-    return { input_tokens: input, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: SET_BUILD_MAX_OUTPUT_TOKENS };
+    return { input_tokens: input, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: output };
   }
   return {
     input_tokens: input,
     input_tokens_details: { cached_tokens: 0, cache_write_tokens: baseline ? 0 : input },
-    output_tokens: SET_BUILD_MAX_OUTPUT_TOKENS,
+    output_tokens: output,
     output_tokens_details: { reasoning_tokens: 0 },
   };
 }
@@ -69,6 +90,27 @@ export function fakeAnswer(index: number, attempt: number, usage: Usage): Transp
     default:
       return { state: "failed", kind: "refused", detail: "model refusal (simulated)", usage };
   }
+}
+
+/** A recorded set with no cameras: the normaliser adds its stand-in camera 1 ("default_camera"). */
+export function camerasRemoved(name: FixtureName): string {
+  return JSON.stringify({ ...(fixtureJson(name) as Record<string, unknown>), cameras: [] });
+}
+
+/** The scripted answer for photo build `index`: fakeAnswer's, except item 2 first comes back without a camera of its own. */
+export function fakePhotoAnswer(index: number, attempt: number, usage: Usage): TransportResult {
+  if (index % 5 === 2 && attempt === 1) return { state: "done", text: camerasRemoved("showroom-closed"), usage };
+  return fakeAnswer(index, attempt, usage);
+}
+
+/** Fake notes gate for D's photo leg: allows every note, with no scores. */
+export function fakeNotesGate(): GateReading {
+  return { verdict: "allowed", scores: undefined };
+}
+
+/** Fake picture check for D's photo leg: refuses item 1 of every 4 (like the fake brief gate), allows the rest. */
+export function fakePictureCheck(index: number): GateVerdict {
+  return index % 4 === 1 ? { refused: "simulated" } : "allowed";
 }
 
 /** Fake words gate: allows, except every seventh reading, which it refuses. */

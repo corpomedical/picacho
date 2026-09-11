@@ -1,23 +1,76 @@
-// Helpers the parts share: selecting rows, writing rater sheets, and the
-// build summary A, D and the canary print.
+// Helpers the parts share: selecting rows, writing rater sheets, preparing
+// a photo arm's photos, and the build summary A, D and the canary print.
 
 import { randomInt } from "node:crypto";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { photoDataUrl } from "../../../src/lib/sets/photo.ts";
 import type { BuildRecord } from "../lib/build-flow.mts";
 import { planSheet, QUESTIONS, writeSheet, type SheetItemIn, type SheetKind } from "../lib/blind-sheet.mts";
-import type { RunContext } from "../lib/context.mts";
+import type { Flags } from "../lib/cli.mts";
+import { writeManifest, type RunContext } from "../lib/context.mts";
+import { preparePhoto, PhotoStore, type PhotoFile } from "../lib/photos.mts";
 import type { PlannedCall } from "../lib/spend-guard.mts";
 import { max, median, p95 } from "../lib/stats.mts";
-import { HarnessError, pct, usd } from "../lib/util.mts";
-import type { CorpusNeeds } from "../lib/corpus.mts";
+import { HarnessError, pct, sha256, usd } from "../lib/util.mts";
+import type { CorpusNeeds, PhotoRow } from "../lib/corpus.mts";
 
 export type PlanOut = { title: string; lines: PlannedCall[]; notes: string[] } | { blocked: string; notes: string[] };
 
 export type PartModule = {
   needs(ctx: Pick<RunContext, "flags">): CorpusNeeds & { photos?: boolean };
+  /**
+   * Flags the part settles from the product or a run it reads, before the
+   * manifest records them (the photo arm's default builder is
+   * SET_PHOTO_BUILD_EFFORT's, which cli.mts cannot import). A fresh run
+   * only: --resume keeps the run's own.
+   */
+  resolveFlags?(f: Flags): Flags;
   plan(ctx: RunContext): PlanOut;
   run(ctx: RunContext): Promise<number>;
 };
+
+/**
+ * The photos a photo arm sends, each through the product's own preparation
+ * (lib/photos.mts), before anything is called. A photo the product would
+ * refuse at the form (too small, the wrong shape, unreadable) stops the run:
+ * it is the corpus's mistake, not a case. With `keep` (A's location photos),
+ * the bytes sent are written to the run's photos/ for B to lay beside
+ * camera 1, and a --resume reads them back from there, refusing any that no
+ * longer hash to what the run first sent. D keeps no copy of its photos
+ * with people. The manifest records each photo's hash and size.
+ */
+export async function preparePhotos(ctx: RunContext, rows: readonly PhotoRow[], o: { keep: boolean }): Promise<PhotoStore> {
+  const store = new PhotoStore();
+  const recorded = (ctx.manifest.photoFiles ?? {}) as Record<string, PhotoFile>;
+  const refused: string[] = [];
+  for (const row of rows) {
+    const was = recorded[row.id];
+    if (ctx.flags.resume && was?.file) {
+      const path = join(ctx.runDir, was.file);
+      const bytes = existsSync(path) ? readFileSync(path) : null;
+      if (!bytes || sha256(bytes) !== was.sha256) throw new HarnessError(`--resume: ${was.file} is missing or no longer hashes to the photo this run sent; nothing is resent`);
+      store.add({ photoId: row.id, jpeg: bytes, dataUrl: photoDataUrl(bytes), width: was.width, height: was.height, sha256: was.sha256 });
+      continue;
+    }
+    const r = await preparePhoto(row.id, readFileSync(join(ctx.corpusDir, row.file)));
+    if (!r.ok) refused.push(`${row.id} (${r.error})`);
+    else store.add(r.photo);
+  }
+  if (refused.length) throw new HarnessError(`the product would refuse ${refused.length} photo(s) at the form: ${refused.join("; ")}. Replace them in the corpus; nothing was called`);
+  const files: Record<string, PhotoFile> = {};
+  for (const row of rows) {
+    const p = store.get(row.id);
+    if (!p) continue;
+    const file = o.keep ? `photos/${row.id}.jpg` : undefined;
+    if (file && !recorded[row.id]?.file) writeFileSync(join(ctx.runDir, file), p.jpeg);
+    files[row.id] = { sha256: p.sha256, width: p.width, height: p.height, ...(file ? { file } : {}) };
+  }
+  ctx.manifest.photoFiles = { ...recorded, ...files };
+  // On disk before anything is sent: a run killed mid-build still tells --resume which bytes it sent.
+  writeManifest(ctx);
+  return store;
+}
 
 export function selectRows<T extends { id: string }>(rows: readonly T[], only: string[] | null): T[] {
   if (!only) return [...rows];
@@ -50,8 +103,8 @@ export function writeRaterSheets(ctx: RunContext, kind: SheetKind, items: readon
 
 const count = <T,>(xs: readonly T[], f: (x: T) => boolean) => xs.filter(f).length;
 
-/** Per builder: validity, delivery, closure, cost and tokens, by run and by brief. */
-export function buildSummary(records: readonly BuildRecord[]): string[] {
+/** Per builder: validity, delivery, closure, cost and tokens, by run and by brief (or photo). */
+export function buildSummary(records: readonly BuildRecord[], items: "briefs" | "photos" = "briefs"): string[] {
   const lines: string[] = [];
   const builders = [...new Set(records.map((r) => r.builder))];
   for (const b of builders) {
@@ -94,7 +147,7 @@ export function buildSummary(records: readonly BuildRecord[]): string[] {
     const briefs = [...new Set(ran.map((r) => r.briefId))];
     if (runs.length > 1) {
       const stable = briefs.filter((id) => ran.filter((r) => r.briefId === id).every((r) => r.validWithinRetry)).length;
-      lines.push(`  briefs valid on every run: ${stable}/${briefs.length}`);
+      lines.push(`  ${items} valid on every run: ${stable}/${briefs.length}`);
     }
   }
   return lines;

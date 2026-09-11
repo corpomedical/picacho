@@ -5,8 +5,8 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "../../../src/lib/sets/set-builder-prompt.ts";
-import { RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
+import { SET_BUILDER_INSTRUCTIONS, SET_PHOTO_RULES, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "../../../src/lib/sets/set-builder-prompt.ts";
+import { RETRY_SMALLER, RETRY_SMALLER_PHOTO } from "../../../src/lib/sets/build-retry.ts";
 import {
   SET_BUILD_EFFORT,
   SET_BUILD_INPUT_TOKENS,
@@ -15,6 +15,11 @@ import {
   SET_CLOSE_RETRY_INPUT_TOKENS,
   SET_CLOSE_RETRY_INSTANCE_ROOM,
   SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS,
+  SET_PHOTO_BUILD_EFFORT,
+  SET_PHOTO_BUILD_INPUT_TOKENS,
+  SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
+  SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
+  SET_PHOTO_MAX_SIDE_PX,
 } from "../../../src/lib/sets/set-config.ts";
 import { canonicalJson, sha256 } from "./util.mts";
 
@@ -31,10 +36,14 @@ export const SRC_FILES = [
   "src/lib/sets/astra-request.ts",
   "src/lib/sets/actions.ts",
   "src/lib/sets/build-tick.ts",
+  "src/lib/sets/photo.ts",
+  "src/lib/sets/photo-client.ts",
+  "src/lib/sets/compare.ts",
   "src/components/sets/set-view.tsx",
   "src/lib/generations/providers/astra.ts",
   "src/lib/generations/providers/fetch-with-timeout.ts",
   "src/lib/generations/content-policy.ts",
+  "src/lib/generations/output-policy.ts",
   "src/lib/generations/pipeline.ts",
   "src/lib/generations/providers/reference-notes.ts",
   "src/lib/generations/identity-gate.ts",
@@ -75,6 +84,22 @@ export function promptFingerprint(): string {
         SET_CLOSE_RETRY_INSTANCE_ROOM,
         SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS,
       },
+    }),
+  );
+}
+
+/**
+ * A photo build's own: the words' fingerprint, plus the photo rules, the
+ * photo retry's wording, the photo caps and effort. Kept apart, so a photo
+ * change never starts a new canary baseline.
+ */
+export function photoPromptFingerprint(): string {
+  return sha256(
+    canonicalJson({
+      base: promptFingerprint(),
+      rules: SET_PHOTO_RULES,
+      retrySmaller: RETRY_SMALLER_PHOTO,
+      caps: { SET_PHOTO_BUILD_EFFORT, SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS, SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_MAX_SIDE_PX },
     }),
   );
 }

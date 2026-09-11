@@ -11,7 +11,9 @@
 //                   never ran (below)
 //
 // Flow per round: write the input JSONL → POST /v1/files (purpose "batch":
-// the one upload the runner makes, blind eval briefs only) → POST /v1/batches
+// the one upload the runner makes, blind eval briefs only — a round whose
+// file would carry an image is refused before anything is written or
+// uploaded: photos never go to OpenAI's Files storage) → POST /v1/batches
 // → the batch id is written to batches.json BEFORE any polling, so --resume
 // can re-attach → GET /v1/batches/<id> every 60 s → download the output and
 // error files. Ctrl-C leaves a batch running, to be resumed.
@@ -307,6 +309,10 @@ export async function submitRound(o: {
   lookup?: typeof findBatchByInputFile;
 }): Promise<BatchRound> {
   const jsonl = o.lines.map((l) => JSON.stringify({ custom_id: l.customId, method: "POST", url: "/v1/responses", body: o.bodies.get(l.customId) })).join("\n") + "\n";
+  // Before the round is recorded, so the caller releases its money as never submitted.
+  if (/"type":"input_image"|data:image\/[a-z]+;base64,/.test(jsonl)) {
+    throw new HarnessError(`batch round ${o.round} would upload an image to OpenAI's Files storage, which the product never does: nothing was uploaded`);
+  }
   const name = `round${o.round}.jsonl`;
   writeFileSync(join(o.runDir, `batch-${name}`), jsonl);
   const rec: BatchRound = {

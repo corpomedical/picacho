@@ -11,6 +11,8 @@
     "characters": "characters.json",
     "canary": "canary.json",
     "match": "match.json",
-    "baselines": "baselines.json"
+    "baselines": "baselines.json",
+    "locationPhotos": "location-photos.json",
+    "peoplePhotos": "people-photos.json"
   }
 }

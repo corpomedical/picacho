@@ -1,13 +1,19 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { startBuild } from "./build-flow.mts";
+import { buildAstraRequestBody } from "../../../src/lib/generations/providers/astra.ts";
+import { photoBuildRequest } from "../../../src/lib/sets/astra-request.ts";
+import { SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
+import { startBuild, startPhotoBuild } from "./build-flow.mts";
+import { evalSafetyId } from "./builders.mts";
 import type { LedgerInput } from "./ledger.mts";
 import { NetGuard } from "./net-guard.mts";
+import { PhotoStore } from "./photos.mts";
 import { makePriceBook, type ExternalPrices } from "./prices.mts";
 import { SpendGuard } from "./spend-guard.mts";
-import { astraBackgroundAttempt, miniAttempt, UNKNOWN_FLAG, unanswered, waitFor, type TransportEnv } from "./transports.mts";
+import { astraBackgroundAttempt, miniAttempt, sonnetAttempt, UNKNOWN_FLAG, unanswered, waitFor, type TransportEnv } from "./transports.mts";
 
 // A request that went out and got no answer may be running, and billing:
 // it is booked, never released, and never sent again. A definite refusal
@@ -33,13 +39,13 @@ afterEach(() => {
   globalThis.fetch = prevFetch;
 });
 
-function env(provider: (url: string) => Promise<Response>) {
+function env(provider: (url: string, init?: RequestInit) => Promise<Response>) {
   const calls: string[] = [];
   const net = new NetGuard({
     mode: "live",
-    realFetch: (async (u: RequestInfo | URL) => {
+    realFetch: (async (u: RequestInfo | URL, init?: RequestInit) => {
       calls.push(String(u));
-      return provider(String(u));
+      return provider(String(u), init);
     }) as typeof fetch,
   });
   globalThis.fetch = net.fetch;
@@ -92,5 +98,50 @@ describe("a request with no answer", () => {
     expect(waitFor("120", 5000)).toBe(30_000);
     expect(waitFor(null, 5000)).toBe(5000);
     expect(waitFor("soon", 15_000)).toBe(15_000);
+  });
+});
+
+// A photo build goes to Astra only, in background only, as the product
+// sends it: the photo inline, the photo caps' worst case reserved first.
+describe("a photo build in background", () => {
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 7, 7, 7]);
+  const sha256 = createHash("sha256").update(jpeg).digest("hex");
+  const dataUrl = `data:image/jpeg;base64,${jpeg.toString("base64")}`;
+  const withPhoto = (e: TransportEnv) => {
+    const store = new PhotoStore();
+    store.add({ photoId: "pp-01", jpeg, dataUrl, width: 1024, height: 768, sha256 });
+    e.photos = store;
+  };
+
+  it("sends the product's photo request, reserved and booked at the photo caps' worst case", async () => {
+    const bodies: string[] = [];
+    const { e, guard, events, calls } = env(async (_u, init) => {
+      bodies.push(String(init?.body));
+      throw new TypeError("socket hang up");
+    });
+    withPhoto(e);
+    const a = await astraBackgroundAttempt(e, startPhotoBuild("dp-pp-01-r1", { photoId: "pp-01", notes: "", sha256 }), SET_PHOTO_BUILD_EFFORT);
+    expect(calls).toEqual(["https://api.openai.com/v1/responses"]);
+    expect(bodies[0]).toBe(JSON.stringify(buildAstraRequestBody(photoBuildRequest(dataUrl, "", evalSafetyId("d")))));
+    expect(events.find((x) => x.ev === "reserve")).toMatchObject({ kind: "astra", worstUsd: book.astraPhotoFirstWorstUsd });
+    expect(a.meta).toMatchObject({ transport: "background", billedUsd: book.astraPhotoFirstWorstUsd, standardUsd: book.astraPhotoFirstWorstUsd, costFlag: UNKNOWN_FLAG });
+    expect(guard.settledUsd).toBeCloseTo(book.astraPhotoFirstWorstUsd, 12);
+  });
+
+  it("sends and reserves nothing when the photo no longer hashes to what the build sent", async () => {
+    const { e, events, calls } = env(async () => new Response("{}"));
+    withPhoto(e);
+    await expect(astraBackgroundAttempt(e, startPhotoBuild("dp-pp-01-r1", { photoId: "pp-01", notes: "", sha256: "0".repeat(64) }), "low")).rejects.toThrow(/nothing is resent/);
+    expect(calls).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  it("a baseline never gets a photo build", async () => {
+    const { e, calls } = env(async () => new Response("{}"));
+    withPhoto(e);
+    const s = startPhotoBuild("mn-pp-01-r1", { photoId: "pp-01", notes: "", sha256 });
+    await expect(miniAttempt(e, s)).rejects.toThrow(/Astra only/);
+    await expect(sonnetAttempt(e, s, "format")).rejects.toThrow(/Astra only/);
+    expect(calls).toEqual([]);
   });
 });

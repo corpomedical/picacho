@@ -1,9 +1,10 @@
 // The snapshot page's files, served from MEMORY on 127.0.0.1 only: the
-// product's src/lib/sets/{set-spec,build-scene,exposure}.ts with their types
-// stripped (Node's own stripTypeScriptTypes; all three have zero runtime
-// imports once stripped), three.js from node_modules, snap-page.html, and
-// one /spec/<key>.json per set. Nothing is written to disk, so no generated
-// .js ever lands where tsc, ESLint or vitest would sweep it up.
+// product's src/lib/sets/{set-spec,build-scene,exposure,compare}.ts with
+// their types stripped (Node's own stripTypeScriptTypes; all four have zero
+// runtime imports once stripped), three.js from node_modules,
+// snap-page.html, and one /spec/<key>.json per set. Nothing is written to
+// disk, so no generated .js ever lands where tsc, ESLint or vitest would
+// sweep it up.
 
 import { createServer, type Server } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
@@ -39,7 +40,7 @@ function strip(src: string): string {
 
 export function stageFiles(repoRoot: string): Map<string, File> {
   const files = new Map<string, File>();
-  for (const name of ["set-spec", "build-scene", "exposure"]) {
+  for (const name of ["set-spec", "build-scene", "exposure", "compare"]) {
     const src = readFileSync(join(repoRoot, `src/lib/sets/${name}.ts`), "utf8");
     const js = strip(src).replace(/from\s+"\.\/([\w-]+)"/g, 'from "./$1.js"');
     files.set(`/${name}.js`, { body: js, type: "text/javascript" });

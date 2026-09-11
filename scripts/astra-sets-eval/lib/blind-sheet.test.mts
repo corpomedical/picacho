@@ -50,6 +50,50 @@ describe("planSheet", () => {
   });
 });
 
+describe("the photo sheet (b-photo)", () => {
+  // Each item: the photo the A run sent, then camera 1 at its shape. The
+  // same photo recurs across runs and arms; nothing on the page says which
+  // arm drew which sketch, or which photo file it was.
+  const photoItems: SheetItemIn[] = Array.from({ length: 8 }, (_, i) => ({
+    source: { buildId: `pal-secret-${i}`, builder: BUILDERS[i % 2], run: 1 + (i % 2), briefId: `ph-hidden-${i % 4}` },
+    groupKey: `ph-hidden-${i % 4}`,
+    images: [
+      { role: "photo", path: `/runs/a-photo/photos/ph-hidden-${i % 4}.jpg` },
+      { role: "snapshot", path: `/runs/b-photo/frames/pal-secret-${i}-c1.jpg` },
+    ],
+  }));
+
+  it("shows the photo beside the sketch, under opaque names, with nothing of the key", () => {
+    const p = planSheet({ kind: "b-photo", raterId: "r1", seed: 11, items: photoItems });
+    const html = renderSheetHtml(p, QUESTIONS["b-photo"]);
+    for (const k of p.key.items) {
+      for (const v of [k.source.buildId, k.source.builder, k.source.briefId]) expect(html).not.toContain(String(v));
+      expect(k.images.map((im) => im.role)).toEqual(["photo", "snapshot"]);
+      for (const im of k.images) {
+        expect(html).not.toContain(im.path);
+        expect(im.file).toMatch(/^img\/[0-9a-f]{10}-[12]\.jpg$/);
+      }
+    }
+    expect(html).not.toMatch(/photos\/|frames\//);
+    expect(html).toContain('alt="Photo"');
+    expect(html).toContain('alt="Sketch"');
+    expect(html).toContain("How well does the sketch reproduce the photographed place?");
+    // One photo's items never sit side by side when that can be avoided.
+    const groups = p.key.items.map((k) => k.groupKey);
+    for (let i = 1; i < groups.length; i++) expect(groups[i]).not.toBe(groups[i - 1]);
+  });
+
+  it("each rater gets their own order and ids, and scores 1–5", () => {
+    const r1 = planSheet({ kind: "b-photo", raterId: "r1", seed: 11, items: photoItems });
+    const r2 = planSheet({ kind: "b-photo", raterId: "r2", seed: 11, items: photoItems });
+    expect(r1.order.map((o) => o.itemId)).not.toEqual(r2.order.map((o) => o.itemId));
+    const ids = r1.key.items.map((k) => k.itemId);
+    const ok = importRatings(r1.key, [{ sheetId: r1.sheetId, raterId: "r1", ratings: ids.map((itemId) => ({ itemId, score: 4 })) }]);
+    expect(ok.problems).toEqual([]);
+    expect(importRatings(r1.key, [{ sheetId: r1.sheetId, raterId: "r1", ratings: ids.map((itemId) => ({ itemId, choice: "no" })) }]).problems.join(" ")).toMatch(/whole number 1–5/);
+  });
+});
+
 describe("importRatings", () => {
   const p = planSheet({ kind: "b-fidelity", raterId: "r1", seed: 5, items: items.slice(0, 3) });
   const ids = p.key.items.map((k) => k.itemId);

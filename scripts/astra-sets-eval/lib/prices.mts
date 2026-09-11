@@ -2,7 +2,12 @@
 //
 //   Astra per token     src/lib/astra/prices.ts (costOfAstraUsageUsd,
 //                       worstCaseAstraUsd; read 2026-09-10)
-//   Astra caps          src/lib/sets/set-config.ts
+//   Astra caps          src/lib/sets/set-config.ts, the text caps and the
+//                       photo caps (a photo build: 4,800 input tokens and
+//                       16,000 output, its closing retry 12,500 input:
+//                       $0.86 + $0.95625 = $1.81625, set-config.ts shows the
+//                       arithmetic). Photos are never on Batch, so a photo
+//                       build is always priced at standard.
 //   Batch 0.5           docs/ASTRA_SETS.md §1.2 "Price modifiers" (checked
 //                       at run start: batchSentenceLine)
 //   GPT Image 2 still   IMAGE_COST_USD, src/lib/admin/economics.ts — injected
@@ -24,6 +29,9 @@ import {
   SET_CLOSE_RETRY_INPUT_TOKENS,
   SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS,
   SET_BRIEF_MAX_CHARS,
+  SET_PHOTO_BUILD_INPUT_TOKENS,
+  SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
+  SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
 } from "../../../src/lib/sets/set-config.ts";
 import { COST_BASIS_USD_PER_CREDIT } from "../../../src/lib/generations/providers/video-models.ts";
 import { SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA } from "../../../src/lib/sets/set-builder-prompt.ts";
@@ -200,6 +208,10 @@ export type PriceBook = {
   astraFirstWorstUsd: number;
   astraRetryWorstUsd: number;
   astraBuildWorstUsd: number;
+  /** A photo build's, at the photo caps: standard price always (photos never go on Batch). */
+  astraPhotoFirstWorstUsd: number;
+  astraPhotoRetryWorstUsd: number;
+  astraPhotoBuildWorstUsd: number;
   batchMultiplier: number;
   gptImageUsd: number;
   costBasisUsdPerCredit: number;
@@ -216,6 +228,11 @@ export type PriceBook = {
 export function makePriceBook(o: { external: ExternalPrices; gptImageUsd: number }): PriceBook {
   const first = worstCaseAstraUsd(SET_BUILD_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS);
   const retry = worstCaseAstraUsd(SET_CLOSE_RETRY_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS);
+  // 4,800 × $12.50/1M + 16,000 × $50/1M = $0.06 + $0.80 = $0.86; the closing
+  // retry 12,500 × $12.50/1M + $0.80 = $0.95625 (set-config.ts). Every retry
+  // is reserved at the closing retry's, the dearer of the two.
+  const photoFirst = worstCaseAstraUsd(SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
+  const photoRetry = worstCaseAstraUsd(SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
   // A response names a dated snapshot ("gpt-5.4-mini-2026-…"): the longest
   // priced name it starts with prices it.
   const model = (name: string): ModelPrice | null => {
@@ -229,6 +246,9 @@ export function makePriceBook(o: { external: ExternalPrices; gptImageUsd: number
     astraFirstWorstUsd: first,
     astraRetryWorstUsd: retry,
     astraBuildWorstUsd: first + retry,
+    astraPhotoFirstWorstUsd: photoFirst,
+    astraPhotoRetryWorstUsd: photoRetry,
+    astraPhotoBuildWorstUsd: photoFirst + photoRetry,
     batchMultiplier: BATCH_MULTIPLIER,
     gptImageUsd: o.gptImageUsd,
     costBasisUsdPerCredit: COST_BASIS_USD_PER_CREDIT,
@@ -266,6 +286,12 @@ export function makePriceBook(o: { external: ExternalPrices; gptImageUsd: number
           firstWorstUsd: first,
           retryWorstUsd: retry,
           caps: { SET_BUILD_INPUT_TOKENS, SET_CLOSE_RETRY_INPUT_TOKENS, SET_BUILD_MAX_OUTPUT_TOKENS },
+        },
+        astraPhoto: {
+          source: `src/lib/astra/prices.ts (read ${ASTRA_PRICES_READ_ON}); standard price, never Batch`,
+          firstWorstUsd: photoFirst,
+          retryWorstUsd: photoRetry,
+          caps: { SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS },
         },
         batch: { multiplier: BATCH_MULTIPLIER, source: BATCH_SOURCE },
         gptImageUsd: { value: o.gptImageUsd, source: "IMAGE_COST_USD, src/lib/admin/economics.ts" },

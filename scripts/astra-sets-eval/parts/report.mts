@@ -16,10 +16,19 @@
 //                       the other Astra arm is REPORTED beside it
 //   persons (D)         every item on every real persons sheet counts: an
 //                       item nobody rated leaves the bar UNDETERMINED
+//   the photo arm       (runs whose manifest says photos: A and B on the
+//                       location photos, D on the photos with people) is read
+//                       apart: its own bars — A photo validity and cost
+//                       (--photo-credits, default ceil(worst first photo
+//                       attempt / $0.28) = 4 → $1.12), B photo fidelity, and
+//                       the persons bar over the photo runs' sheets — decided
+//                       by SET_PHOTO_BUILD_EFFORT's arm, and its own line
+//                       under the release line. SETS_OPEN_TO_PLANS never opens
+//                       Sets from a photo, so the photo arm never decides it.
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { SET_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
+import { SET_BUILD_EFFORT, SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
 import type { BuildRecord } from "../lib/build-flow.mts";
 import { combineRatings, importRatings, type RatingRow, type SheetKey } from "../lib/blind-sheet.mts";
 import type { Flags } from "../lib/cli.mts";
@@ -32,10 +41,13 @@ import {
   barAValidity,
   barB,
   barD,
+  barPersons,
   capAtUndetermined,
   defaultCredits,
   PRIOR_HITS_SOURCES,
+  photoArm,
   priorHitsConstruction,
+  reportDPhotos,
   type BarResult,
   type BItem,
   type DRow,
@@ -44,7 +56,7 @@ import {
 import { tokenCounts, type PriceBook } from "../lib/prices.mts";
 import { canonicalJson, newRunId, pct, usd } from "../lib/util.mts";
 import { readRun } from "./b.mts";
-import type { DOutcome } from "./d.mts";
+import { dPhotoRow, type DOutcome, type DPhotoOutcome } from "./d.mts";
 
 type LoadedRun = {
   dir: string;
@@ -55,6 +67,8 @@ type LoadedRun = {
   simulated: boolean;
   complete: boolean;
   part: string;
+  /** A photo-arm run (a/b/d --photos). */
+  photos: boolean;
 };
 
 function loadRun(dir: string): LoadedRun {
@@ -74,10 +88,11 @@ function loadRun(dir: string): LoadedRun {
     simulated: manifest.simulated === true,
     complete: manifest.complete === true,
     part: String(manifest.part ?? "?"),
+    photos: manifest.photos === true,
   };
 }
 
-const runName = (r: LoadedRun) => String(r.manifest.runId ?? r.dir);
+const runName = (r: LoadedRun) => `${String(r.manifest.runId ?? r.dir)}${r.photos ? " [photos]" : ""}`;
 
 function spendPicture(runs: readonly LoadedRun[]): string[] {
   const lines = ["--- spend (from each run's ledger) ---"];
@@ -173,9 +188,49 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     return open.length ? bs.map((b) => capAtUndetermined(b, `${open.map(runName).join(", ")} did not finish`)) : bs;
   };
 
+  const buildsOf = (rs: readonly LoadedRun[]) => rs.flatMap((r) => r.rows.filter((x) => x.type === "build") as unknown as BuildRecord[]);
+  const costPerDeliveredOf = (builds: readonly BuildRecord[], builders: readonly string[]) => {
+    const out: Record<string, number | null> = {};
+    for (const b of builders) {
+      const mine = builds.filter((x) => x.builder === b && !x.notRun);
+      const delivered = mine.filter((x) => x.status === "delivered").length;
+      out[b] = mine.some((x) => x.standardUsd === null) || delivered === 0 ? null : mine.reduce((s, x) => s + (x.standardUsd as number), 0) / delivered;
+    }
+    return out;
+  };
+  const scoresOf = (kind: string): BItem[] => ofKind(kind).map((c) => ({ builder: String(c.source.builder), scores: c.ratings.map((x) => x.score).filter((x): x is number => typeof x === "number") }));
+  const agreementBar = (id: string, label: string, items: readonly BItem[]): BarResult | null => {
+    const ag = agreement(items);
+    if (!ag.n) return null;
+    return {
+      id,
+      label,
+      verdict: "REPORTED",
+      value: pct(ag.exact / ag.n),
+      threshold: "reported",
+      n: ag.n,
+      arithmetic: `exact ${ag.exact}/${ag.n} = ${pct(ag.exact / ag.n)}; within 1 point ${ag.within1}/${ag.n} = ${pct(ag.within1 / ag.n)}`,
+      notes: [],
+    };
+  };
+  /** Every item on every persons sheet of these runs: one nobody rated counts as lacking two ratings. */
+  const personsOf = (rs: readonly LoadedRun[]): PersonsItem[] => {
+    const universe = new Set<string>();
+    for (const r of rs) for (const key of r.keys) if (key.kind === "d-persons") for (const it of key.items) universe.add(canonicalJson({ ...it.source, kind: key.kind }));
+    return [...universe].map((k) => ({
+      choices: (combined.get(k)?.ratings ?? []).map((x) => x.choice).filter((x): x is "yes" | "no" | "unsure" => typeof x === "string"),
+    }));
+  };
+  const construction = () =>
+    priorHitsConstruction({
+      sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(o.repoRoot, f), "utf8")).join("\n"),
+      policyLog: readFileSync(join(o.repoRoot, "src/lib/generations/policy-log.ts"), "utf8"),
+    });
+  const words = real.filter((r) => !r.photos);
+
   // A
-  const aRuns = real.filter((r) => r.part === "a" && r.manifest.probe !== true);
-  const aBuilds = aRuns.flatMap((r) => r.rows.filter((x) => x.type === "build") as unknown as BuildRecord[]);
+  const aRuns = words.filter((r) => r.part === "a" && r.manifest.probe !== true);
+  const aBuilds = buildsOf(aRuns);
   const builders = [...new Set(aBuilds.map((b) => b.builder))];
   const astraArms = builders.filter((b) => b.startsWith("astra-"));
   const planned = (b: string) => aRuns.reduce((s, r) => s + plannedOf(r, b), 0);
@@ -198,14 +253,9 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   if (aBars.length) release.A = verdictOf(aBars);
 
   // B
-  const costPerDelivered: Record<string, number | null> = {};
-  for (const b of builders) {
-    const mine = aBuilds.filter((x) => x.builder === b && !x.notRun);
-    const delivered = mine.filter((x) => x.status === "delivered").length;
-    costPerDelivered[b] = mine.some((x) => x.standardUsd === null) || delivered === 0 ? null : mine.reduce((s, x) => s + (x.standardUsd as number), 0) / delivered;
-  }
-  const bItems: BItem[] = ofKind("b-fidelity").map((c) => ({ builder: String(c.source.builder), scores: c.ratings.map((x) => x.score).filter((x): x is number => typeof x === "number") }));
-  if (real.some((r) => r.part === "b")) {
+  const costPerDelivered = costPerDeliveredOf(aBuilds, builders);
+  const bItems = scoresOf("b-fidelity");
+  if (words.some((r) => r.part === "b")) {
     const bAll = capIf(barB(bItems, costPerDelivered, astraArms.length ? astraArms : [shipped]), aRuns);
     const mineB = bAll.filter((b) => b.id.endsWith(`-${shipped}`));
     const otherB = bAll.filter((b) => !b.id.endsWith(`-${shipped}`)).map((b) => asReported(b, notShipped));
@@ -213,45 +263,82 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     reported.push(...otherB);
     release.B = verdictOf(mineB.filter((b) => b.id.startsWith("B-median")));
     for (const arm of astraArms.filter((a) => a !== shipped)) otherArms.push(`${arm} B ${measured(otherB.filter((b) => b.id === `B-median-${arm}`))}`);
-    const ag = agreement(bItems);
-    if (ag.n) {
-      reported.push({
-        id: "B-agreement",
-        label: "B inter-rater agreement (no bar)",
-        verdict: "REPORTED",
-        value: pct(ag.exact / ag.n),
-        threshold: "reported",
-        n: ag.n,
-        arithmetic: `exact ${ag.exact}/${ag.n} = ${pct(ag.exact / ag.n)}; within 1 point ${ag.within1}/${ag.n} = ${pct(ag.within1 / ag.n)}`,
-        notes: [],
-      });
-    }
+    const ag = agreementBar("B-agreement", "B inter-rater agreement (no bar)", bItems);
+    if (ag) reported.push(ag);
   }
 
   // C: the engine leg is not built yet, so no real C run exists to settle it.
   const cNote = real.some((r) => r.part === "c") ? "C: a real C run is in hand but the engine leg is not built; nothing to settle" : "C: not run (the engine leg is design §9's second sitting)";
 
   // D
-  const dRuns = real.filter((r) => r.part === "d");
+  const dRuns = words.filter((r) => r.part === "d");
   const dOutcomes = dRuns.flatMap((r) => r.rows.filter((x) => x.type === "d-outcome") as unknown as DOutcome[]);
+  let priorHitsBar: BarResult | null = null;
   if (dOutcomes.length) {
     const rows: DRow[] = dOutcomes.map((x) => ({ briefId: `${x.briefId}-r${x.run}`, harmful: x.harmful, outcome: x.outcome }));
-    // Every item on every real persons sheet (A's and D's): one nobody rated
-    // counts as lacking two ratings.
-    const universe = new Set<string>();
-    for (const r of real) for (const key of r.keys) if (key.kind === "d-persons") for (const it of key.items) universe.add(canonicalJson({ ...it.source, kind: key.kind }));
-    const persons: PersonsItem[] = [...universe].map((k) => ({
-      choices: (combined.get(k)?.ratings ?? []).map((x) => x.choice).filter((x): x is "yes" | "no" | "unsure" => typeof x === "string"),
-    }));
-    const construction = priorHitsConstruction({
-      sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(o.repoRoot, f), "utf8")).join("\n"),
-      policyLog: readFileSync(join(o.repoRoot, "src/lib/generations/policy-log.ts"), "utf8"),
-    });
-    const personsFrom = real.filter((r) => r.keys.some((k) => k.kind === "d-persons"));
-    const dBars = barD(rows, persons, construction).map((b) => (b.id === "D-persons" ? capIf([b], personsFrom)[0] : b.id === "D-harmful" ? capIf([b], dRuns)[0] : b));
+    // Every item on every real words persons sheet (A's and D's).
+    const persons = personsOf(words);
+    const personsFrom = words.filter((r) => r.keys.some((k) => k.kind === "d-persons"));
+    const dBars = barD(rows, persons, construction()).map((b) => (b.id === "D-persons" ? capIf([b], personsFrom)[0] : b.id === "D-harmful" ? capIf([b], dRuns)[0] : b));
     bars.push(...dBars);
+    priorHitsBar = dBars.find((b) => b.id === "D-prior-hits") ?? null;
     release.D = verdictOf(dBars.filter((b) => b.id !== "D-over-refusal"));
   }
+
+  // THE PHOTO ARM (Sets from a photo): the same bars over the photo runs,
+  // decided by SET_PHOTO_BUILD_EFFORT's arm, on a line of their own.
+  const photoRuns = real.filter((r) => r.photos);
+  const photoShipped = `astra-${SET_PHOTO_BUILD_EFFORT}`;
+  const photoNotShipped = `not the shipped photo effort (SET_PHOTO_BUILD_EFFORT = ${SET_PHOTO_BUILD_EFFORT})`;
+  const photoRelease: Record<"A" | "B" | "D", "✓" | "✗" | "?"> = { A: "?", B: "?", D: "?" };
+  const photoOtherArms: string[] = [];
+  const photoNotes: string[] = [];
+  const photoCredits = o.flags.photoCredits ?? defaultCredits(o.book.astraPhotoFirstWorstUsd, o.book.costBasisUsdPerCredit);
+  const paRuns = photoRuns.filter((r) => r.part === "a");
+  const paBuilds = buildsOf(paRuns);
+  const photoArms = [...new Set(paBuilds.map((b) => b.builder))].filter((b) => b.startsWith("astra-"));
+  if (paBuilds.length) {
+    const aP: BarResult[] = [];
+    for (const arm of photoArms) {
+      const plan = { planned: paRuns.reduce((s, r) => s + plannedOf(r, arm), 0), worstBuildUsd: o.book.astraPhotoBuildWorstUsd };
+      const bs = capIf([barAValidity(arm, paBuilds, plan), barACost(arm, paBuilds, photoCredits, o.book.costBasisUsdPerCredit, plan)], paRuns).map(photoArm);
+      if (arm === photoShipped) aP.push(...bs);
+      else {
+        const rep = bs.map((b) => asReported(b, photoNotShipped));
+        reported.push(...rep);
+        photoOtherArms.push(`${arm} A ${measured(rep)}`);
+      }
+    }
+    bars.push(...aP);
+    if (aP.length) photoRelease.A = verdictOf(aP);
+    else photoNotes.push(`A photos: no ${photoShipped} builds in hand (SET_PHOTO_BUILD_EFFORT = ${SET_PHOTO_BUILD_EFFORT} is the arm that decides)`);
+  } else if (photoRuns.length) photoNotes.push("A photos: no real A photo run in hand");
+  if (photoRuns.some((r) => r.part === "b")) {
+    const items = scoresOf("b-photo");
+    const all = capIf(barB(items, costPerDeliveredOf(paBuilds, photoArms), photoArms.length ? photoArms : [photoShipped]), paRuns).map(photoArm);
+    const mine = all.filter((b) => b.id.endsWith(`-${photoShipped}`));
+    const other = all.filter((b) => !b.id.endsWith(`-${photoShipped}`)).map((b) => asReported(b, photoNotShipped));
+    bars.push(...mine);
+    reported.push(...other);
+    photoRelease.B = verdictOf(mine.filter((b) => b.id.startsWith("B-photo-median")));
+    for (const arm of photoArms.filter((a) => a !== photoShipped)) photoOtherArms.push(`${arm} B ${measured(other.filter((b) => b.id === `B-photo-median-${arm}`))}`);
+    const ag = agreementBar("B-photo-agreement", "B photos: inter-rater agreement (no bar)", items);
+    if (ag) reported.push(ag);
+  }
+  // D's photo leg: section 4's bar for the photos with people is the persons
+  // bar, over every photo run's persons sheet (the A photos' included).
+  const pdRuns = photoRuns.filter((r) => r.part === "d");
+  if (pdRuns.length) {
+    const from = photoRuns.filter((r) => r.part === "d" || r.keys.some((k) => k.kind === "d-persons"));
+    const persons = capIf([photoArm(barPersons(personsOf(photoRuns)))], from)[0];
+    priorHitsBar ??= barD([], [], construction()).find((b) => b.id === "D-prior-hits") ?? null;
+    bars.push(persons);
+    if (priorHitsBar && !bars.includes(priorHitsBar)) bars.push(priorHitsBar);
+    photoRelease.D = verdictOf([persons, ...(priorHitsBar ? [priorHitsBar] : [])]);
+    if (persons.verdict === "FAIL") photoNotes.push("an Astra output from a photo named, identified or described a person: section 3.2 says photos containing people are then refused at input");
+    const outcomes = pdRuns.flatMap((r) => r.rows.filter((x) => x.type === "d-photo-outcome") as unknown as DPhotoOutcome[]);
+    reported.push(reportDPhotos(outcomes.map(dPhotoRow)));
+  } else if (photoRuns.length) photoNotes.push("D photos: no real D photo run in hand (the photos with people)");
 
   // Canary: the latest real canary run's own verdict.
   const canaries = real.filter((r) => r.part === "canary");
@@ -281,6 +368,12 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   if (!aBuilds.length) lines.push("  A: no real A run in hand");
   else if (!astraArms.includes(shipped)) lines.push(`  A: no ${shipped} builds in hand (SET_BUILD_EFFORT = ${SET_BUILD_EFFORT} is the arm that ships)`);
   lines.push(`  A cost bar priced at ${credits} credits${o.flags.credits ? " (--credits)" : ` (ceil(${usd(o.book.astraFirstWorstUsd, 3)} / ${usd(o.book.costBasisUsdPerCredit, 2)}))`}; the worst case with the closing retry, ${usd(o.book.astraBuildWorstUsd, 3)}, would be ${defaultCredits(o.book.astraBuildWorstUsd, o.book.costBasisUsdPerCredit)} credits: the operator's call`);
+  if (photoRuns.length) {
+    for (const n of photoNotes) lines.push(`  ${n}`);
+    lines.push(
+      `  A photo cost bar priced at ${photoCredits} credits${o.flags.photoCredits ? " (--photo-credits)" : ` (ceil(${usd(o.book.astraPhotoFirstWorstUsd, 3)} / ${usd(o.book.costBasisUsdPerCredit, 2)}))`}; the worst case with the closing retry, ${usd(o.book.astraPhotoBuildWorstUsd, 3)}, would be ${defaultCredits(o.book.astraPhotoBuildWorstUsd, o.book.costBasisUsdPerCredit)} credits: the operator's call`,
+    );
+  } else lines.push("  photo arm: no real photo run in hand");
   lines.push("  statistics: median averages the two middle values; p95 is nearest rank, sorted[ceil(0.95 n) − 1]");
   if (canaryLines.length) lines.push("--- canary ---", ...canaryLines);
   if (warnings.length) lines.push("--- warnings ---", ...warnings.map((w) => `  ${w}`));
@@ -289,13 +382,34 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   lines.push(
     `SETS_OPEN_TO_PLANS needs A–D PASS at SET_BUILD_EFFORT = ${SET_BUILD_EFFORT}: A ${release.A} B ${release.B} C ${release.C} D ${release.D}${otherArms.length ? `   [reported only, not shipped: ${otherArms.join("; ")}]` : ""}`,
   );
+  if (photoRuns.length) {
+    lines.push(
+      `Photo arm (Sets from a photo, astra_photo_sets; SETS_OPEN_TO_PLANS never opens it) at SET_PHOTO_BUILD_EFFORT = ${SET_PHOTO_BUILD_EFFORT}: A ${photoRelease.A} B ${photoRelease.B} D ${photoRelease.D}${photoOtherArms.length ? `   [reported only, not shipped: ${photoOtherArms.join("; ")}]` : ""}`,
+    );
+  }
 
   const dir = join(o.outRoot, newRunId("report", real.length === 0));
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "summary.txt"), lines.join("\n") + "\n");
   writeFileSync(
     join(dir, "summary.json"),
-    JSON.stringify({ runs: runs.map((r) => ({ dir: r.dir, part: r.part, simulated: r.simulated, complete: r.complete })), shippedArm: shipped, bars, reported, release, problems, warnings, credits }, null, 2),
+    JSON.stringify(
+      {
+        runs: runs.map((r) => ({ dir: r.dir, part: r.part, photos: r.photos, simulated: r.simulated, complete: r.complete })),
+        shippedArm: shipped,
+        shippedPhotoArm: photoShipped,
+        bars,
+        reported,
+        release,
+        photoRelease: photoRuns.length ? photoRelease : null,
+        problems,
+        warnings,
+        credits,
+        photoCredits,
+      },
+      null,
+      2,
+    ),
   );
   for (const l of lines) o.out(l);
   o.out(`summary: ${join(dir, "summary.txt")}`);

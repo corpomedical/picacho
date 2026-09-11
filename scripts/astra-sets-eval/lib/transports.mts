@@ -7,7 +7,10 @@
 //
 //   background  the product's submitAstraJob / pollAstraJob / cancelAstraJob,
 //               unchanged. First poll at 1.5 s, then every 5 s; given up at
-//               SET_BUILD_STALE_MS and cancelled, as production would.
+//               SET_BUILD_STALE_MS and cancelled, as production would. The
+//               only transport a photo build takes: its request is the
+//               product's photo request over the bytes first sent
+//               (PhotoStore), reserved at the photo caps' worst case.
 //   sync        gpt-5.4-mini (Responses) and claude-sonnet-5 (Messages),
 //               one POST each.
 //   simulated   the dry run's fakes (parts/simulate.mts).
@@ -31,12 +34,13 @@ import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraEffort, type As
 import { fetchWithTimeout } from "../../../src/lib/generations/providers/fetch-with-timeout.ts";
 import { SET_BUILD_STALE_MS } from "../../../src/lib/sets/set-config.ts";
 import type { AttemptMeta, BuildState, TransportResult } from "./build-flow.mts";
-import { astraJobRequest, customIdFor, interpretSonnet, mapHttpError, MINI_MODEL, miniRequestBody, SONNET_MODEL, sonnetRequestBody } from "./builders.mts";
+import { astraJobRequest, customIdFor, interpretSonnet, mapHttpError, MINI_MODEL, miniRequestBody, photoJobRequest, SONNET_MODEL, sonnetRequestBody } from "./builders.mts";
 import type { CallKind } from "./ledger.mts";
 import { withNetContext, type NetGuard, type Observe } from "./net-guard.mts";
+import type { PhotoStore } from "./photos.mts";
 import type { PriceBook, Provider } from "./prices.mts";
 import type { SpendGuard } from "./spend-guard.mts";
-import { isRecord, sleep } from "./util.mts";
+import { HarnessError, isRecord, sleep } from "./util.mts";
 
 export type Attempt = { r: TransportResult; meta: AttemptMeta };
 
@@ -53,7 +57,24 @@ export type TransportEnv = {
   interrupted: () => boolean;
   /** Background response ids in flight, for Ctrl-C. */
   inflight: Set<string>;
+  /** The run's photos (a photo arm's), by id; null for a words run. */
+  photos?: PhotoStore | null;
 };
+
+/** The most the attempt in s.next can cost at standard price: the photo caps for a photo build, the text caps otherwise. */
+export function attemptWorstUsd(book: PriceBook, s: BuildState): number {
+  const first = s.next?.kind === "first";
+  if (s.photo) return first ? book.astraPhotoFirstWorstUsd : book.astraPhotoRetryWorstUsd;
+  return first ? book.astraFirstWorstUsd : book.astraRetryWorstUsd;
+}
+
+/** The Astra request for the attempt in s.next: a photo build's over its photo's first-sent bytes, a text build's over its input. */
+export function astraRequestFor(env: Pick<TransportEnv, "part" | "photos">, s: BuildState, effort: AstraEffort) {
+  if (!s.next) throw new Error(`${s.buildId}: nothing to send`);
+  if (!s.photo) return astraJobRequest(s.next.input, effort, env.part);
+  if (!env.photos) throw new HarnessError(`${s.buildId} is a photo build and this run has no photos loaded`);
+  return photoJobRequest(s, env.photos.dataUrlFor(s.photo), effort, env.part);
+}
 
 const zero = (transport: AttemptMeta["transport"]): AttemptMeta => ({ transport, billedUsd: 0, standardUsd: 0 });
 
@@ -103,9 +124,9 @@ export async function astraBackgroundAttempt(env: TransportEnv, s: BuildState, e
   if (!s.next) throw new Error(`${s.buildId}: nothing to send`);
   const attemptNo = s.attempts + 1;
   const customId = customIdFor(s.buildId, attemptNo);
-  const worst = s.next.kind === "first" ? env.book.astraFirstWorstUsd : env.book.astraRetryWorstUsd;
+  const worst = attemptWorstUsd(env.book, s);
   const t0 = Date.now();
-  const req = astraJobRequest(s.next.input, effort, env.part);
+  const req = astraRequestFor(env, s, effort);
   const settled = { settled: true, tag: "astra", ref: customId };
   let ticket = "";
   let responseId = "";
@@ -230,6 +251,8 @@ async function baselineAttempt(
   o: { kind: CallKind; model: string; provider: Provider; url: string; send: () => Promise<Posted>; read: (json: unknown) => Promise<TransportResult> },
 ): Promise<Attempt> {
   if (!s.next) throw new Error(`${s.buildId}: nothing to send`);
+  // Section 4 bars photo builds on Astra alone: a baseline never gets a photo.
+  if (s.photo) throw new HarnessError(`${s.buildId}: a photo build goes to Astra only, never to ${o.model}`);
   const customId = customIdFor(s.buildId, s.attempts + 1);
   const worst = env.book.baselineAttemptWorstUsd(o.model, s.next.kind === "first" ? "first" : "retry");
   const t0 = Date.now();

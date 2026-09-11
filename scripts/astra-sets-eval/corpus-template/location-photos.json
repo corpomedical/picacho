@@ -1,0 +1,17 @@
+[
+  {
+    "_template": true,
+    "id": "ph-int-01",
+    "category": "interior",
+    "file": "location-photos/format-only-interior.jpg",
+    "notes": "<<FORMAT ONLY — optional: what the photo cannot show, in the photographer's words, at most 300 characters; leave notes out when there are none>>",
+    "licence": "<<FORMAT ONLY — where the photo comes from, and why it may be sent to OpenAI (your own photo, or its licence)>>"
+  },
+  {
+    "_template": true,
+    "id": "ph-ext-01",
+    "category": "exterior",
+    "file": "location-photos/format-only-exterior.jpg",
+    "licence": "<<FORMAT ONLY — a row without notes; the real file holds 20 photos, at least 5 of each category>>"
+  }
+]

@@ -1,0 +1,13 @@
+[
+  {
+    "_template": true,
+    "id": "pp-01",
+    "file": "people-photos/format-only-people.jpg",
+    "licence": "<<FORMAT ONLY — where the photo comes from, and why it may be sent to OpenAI>>",
+    "consent": {
+      "kind": "ai-generated",
+      "confirmedBy": "<<FORMAT ONLY — your pseudonym>>",
+      "confirmedOn": "0000-00-00"
+    }
+  }
+]

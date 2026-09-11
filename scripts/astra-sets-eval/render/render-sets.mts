@@ -5,6 +5,7 @@
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { SET_COMPARE_PX } from "../../../src/lib/sets/set-config.ts";
 import type { SetSpec } from "../../../src/lib/sets/set-spec.ts";
 import type { NetGuard } from "../lib/net-guard.mts";
 import { DEFAULT_CHROME, startChrome, type Pose, type RenderResult } from "./chrome.mts";
@@ -17,6 +18,16 @@ export type Rendered = { key: string; ok: true; result: RenderResult; files: Rec
 export function cardPose(spec: SetSpec): Pose {
   const c = spec.cameras[0];
   return { poseId: c.id, position: c.position, target: c.target, fovDeg: c.fovDeg, figure: false };
+}
+
+/**
+ * A photo set's camera 1 beside its photo (set-view.tsx): the first camera,
+ * figure hidden, at the photo's shape — the page crops it with compare.ts
+ * and widens the lens where the crop is shorter than the canvas — with its
+ * long side at SET_COMPARE_PX.
+ */
+export function comparePose(spec: SetSpec, photoAspect: number): Pose {
+  return { ...cardPose(spec), aspect: photoAspect, px: SET_COMPARE_PX };
 }
 
 /** A shot's frame from one of the set's cameras, the figure on the first mark. */

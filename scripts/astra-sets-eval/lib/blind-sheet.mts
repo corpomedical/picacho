@@ -16,7 +16,7 @@ import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { canonicalJson, isRecord, sha256 } from "./util.mts";
 
-export type SheetKind = "b-fidelity" | "c-composition" | "d-persons" | "d-stills" | "e-match";
+export type SheetKind = "b-fidelity" | "b-photo" | "c-composition" | "d-persons" | "d-stills" | "e-match";
 export type ImageRole = "snapshot" | "sketch" | "still" | "reference" | "photo";
 export type Choice = "yes" | "no" | "unsure";
 
@@ -56,6 +56,17 @@ export const QUESTIONS: Record<SheetKind, QuestionSpec> = {
     max: 5,
     anchors: { 1: "a different place, or most of the brief missing", 3: "the right kind of place, with real gaps or wrong parts", 5: "everything the brief asks for is there and where it should be" },
     note: "This is a block model: ignore flatness, plain colours and missing detail. Judge what is there, not how polished it is.",
+  },
+  // A photo set's camera 1 stands where the photographer stood, drawn at the
+  // photo's shape: the product's own side-by-side (set-view.tsx, compare.ts).
+  "b-photo": {
+    kind: "score",
+    title: "How well does the sketch reproduce the photographed place?",
+    prompt: "Look at the photo, then at the sketch beside it, drawn from where the photo was taken. Score how well the sketch reproduces the PLACE in the photo: its layout, proportions, materials and light.",
+    min: 1,
+    max: 5,
+    anchors: { 1: "a different place, or most of the photo missing", 3: "the right kind of place, with real gaps, wrong parts or a different view", 5: "the place in the photo, laid out as it is and seen from the same spot" },
+    note: "This is a block model: ignore flatness, plain colours and missing small detail. Judge what is there, not how polished it is.",
   },
   "c-composition": {
     kind: "score",

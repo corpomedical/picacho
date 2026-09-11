@@ -9,11 +9,27 @@
 // text starting "<<FORMAT ONLY") with a banner. --spend refuses any template
 // row, a missing attestation, and — unless --allow-partial-corpus — any file
 // short of the counts section 4 of docs/ASTRA_SETS.md asks for.
+//
+// PHOTOS (Sets from a photo). location-photos.json lists A/B's people-free
+// location photos; people-photos.json lists D's photos with people, each
+// with how the writer has the right to send it to OpenAI (everyone
+// recognisable consented, or the people are AI-generated). The pictures
+// stay in the corpus folder, outside the repo: loadCorpus reads each one to
+// hash it into the corpus hash, so a changed photo reads as a changed
+// corpus. Notes get the production clean-up (cleanText at 300, the reserved
+// placeholder never a note); notes the form would have cut are a problem.
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
 import { cleanText } from "../../../src/lib/sets/set-spec.ts";
-import { SET_BRIEF_MAX_CHARS, SET_BRIEF_MIN_CHARS, SET_DIRECTION_MAX_CHARS } from "../../../src/lib/sets/set-config.ts";
+import {
+  SET_BRIEF_MAX_CHARS,
+  SET_BRIEF_MIN_CHARS,
+  SET_DIRECTION_MAX_CHARS,
+  SET_PHOTO_MAX_FILE_BYTES,
+  SET_PHOTO_NOTES_MAX_CHARS,
+  SET_RESERVED_BRIEF,
+} from "../../../src/lib/sets/set-config.ts";
 import { canonicalJson, isRecord, sha256 } from "./util.mts";
 
 export const CATEGORIES = ["interior", "exterior", "stylised"] as const;
@@ -21,8 +37,14 @@ export type Category = (typeof CATEGORIES)[number];
 export const ADV_CATEGORIES = ["sexualised-venue", "minors-space", "violence", "brand-venue", "other"] as const;
 export type AdvCategory = (typeof ADV_CATEGORIES)[number];
 
-export const FILE_KEYS = ["briefs", "adversarial", "directions", "characters", "canary", "match", "baselines"] as const;
+export const FILE_KEYS = ["briefs", "adversarial", "directions", "characters", "canary", "match", "baselines", "locationPhotos", "peoplePhotos"] as const;
 export type FileKey = (typeof FILE_KEYS)[number];
+
+/** A/B's photo arm: 20 photos × 3 runs is the spend block's "A/B photos: 60 builds". */
+export const LOCATION_PHOTOS_WANTED = 20;
+export const LOCATION_PHOTOS_PER_CATEGORY_MIN = 5;
+/** Section 4, Part D: "10 location photos containing people". */
+export const PEOPLE_PHOTOS_WANTED = 10;
 
 export type Brief = { id: string; category: Category; brief: string; template: boolean };
 export type AdversarialRow = { id: string; category: AdvCategory; harmful: boolean; brief: string; template: boolean };
@@ -47,6 +69,10 @@ export type Baselines = {
   identity: { characterId: string; engine: string; scores: number[]; source: string; readOn: string }[];
   outputGateStrictLane: { renders: number; refusals: number; window: string; source: string; readOn: string } | null;
 };
+/** What every photo row carries: the picture (a relative path inside the corpus) and the photographer's notes, cleaned ("" when none). */
+export type PhotoRow = { id: string; file: string; notes: string; licence: string; template: boolean };
+export type LocationPhoto = PhotoRow & { category: Category };
+export type PeoplePhoto = PhotoRow & { consent: { kind: "ai-generated" | "consented"; confirmedBy: string; confirmedOn: string | null } };
 
 export type CorpusData = {
   meta: { corpusVersion: number; writtenBy: string; writtenOn: string; attested: boolean };
@@ -57,6 +83,8 @@ export type CorpusData = {
   canary: CanaryRow[];
   match: MatchRow[];
   baselines: Baselines | null;
+  locationPhotos: LocationPhoto[];
+  peoplePhotos: PeoplePhoto[];
 };
 
 export type CorpusNeeds = Partial<Record<Exclude<FileKey, "baselines">, boolean>>;
@@ -87,6 +115,20 @@ function safeRelative(p: unknown): p is string {
   return !n.startsWith("..") && !n.includes("/../");
 }
 
+/**
+ * The production notes clean-up (sets/actions.ts submitSetPhotoBuild):
+ * cleanText at 300, and the reserved placeholder is never a note. The form
+ * stops typing at 300 (sets-home.tsx), so longer notes are a corpus mistake,
+ * not a case to cut silently.
+ */
+export function cleanNotes(raw: unknown): { ok: true; notes: string } | { ok: false; why: "too_long" | "not_text" } {
+  if (raw === undefined || raw === null) return { ok: true, notes: "" };
+  if (typeof raw !== "string") return { ok: false, why: "not_text" };
+  if (Array.from(cleanText(raw, 100_000)).length > SET_PHOTO_NOTES_MAX_CHARS) return { ok: false, why: "too_long" };
+  const notes = cleanText(raw, SET_PHOTO_NOTES_MAX_CHARS);
+  return { ok: true, notes: notes === SET_RESERVED_BRIEF ? "" : notes };
+}
+
 /** The production brief clean-up (sets/actions.ts submitSetBuild). */
 export function cleanBrief(raw: unknown): { ok: true; brief: string } | { ok: false; why: "too_long" | "too_short" | "not_text" } {
   if (typeof raw !== "string") return { ok: false, why: "not_text" };
@@ -114,6 +156,8 @@ export function validateCorpus(
     canary: [],
     match: [],
     baselines: null,
+    locationPhotos: [],
+    peoplePhotos: [],
   };
   const ids = new Set<string>();
   const claimId = (file: string, id: unknown, i: number): string | null => {
@@ -327,6 +371,63 @@ export function validateCorpus(
     count("match", data.match.length, "30", data.match.length === 30);
   }
 
+  // location-photos.json (A/B's photo arm) and people-photos.json (D's photo
+  // leg). One picture never serves two rows, in either file.
+  const photoFiles = new Map<string, string>();
+  const photoRow = (key: "locationPhotos" | "peoplePhotos", r: Record<string, unknown>, i: number): PhotoRow | null => {
+    const id = claimId(key, r.id, i);
+    templateInSpend(key, r, i);
+    let ok = true;
+    if (!safeRelative(r.file) || !PHOTO.test(String(r.file))) {
+      problems.push(`${key}[${i}]: file must be a relative path to a .jpg, .png or .webp inside the corpus (HEIC is refused)`);
+      ok = false;
+    } else {
+      const file = normalize(String(r.file));
+      if (photoFiles.has(file)) problems.push(`${key}[${i}]: ${file} is already ${photoFiles.get(file)}'s photo`);
+      photoFiles.set(file, String(id));
+    }
+    if (typeof r.licence !== "string" || !r.licence.trim()) {
+      problems.push(`${key}[${i}]: licence is required (where the photo comes from, and why it may be sent to OpenAI)`);
+      ok = false;
+    }
+    const notes = cleanNotes(r.notes);
+    if (!notes.ok) {
+      problems.push(`${key}[${i}]: notes ${notes.why === "too_long" ? `longer than ${SET_PHOTO_NOTES_MAX_CHARS} characters (the form stops there)` : "must be text"}`);
+      ok = false;
+    }
+    if (!ok || !id || !notes.ok) return null;
+    return { id, file: normalize(String(r.file)), notes: notes.notes, licence: String(r.licence), template: isTemplateRow(r) };
+  };
+
+  const loc = rows("locationPhotos");
+  if (loc) {
+    loc.forEach((r, i) => {
+      if (!(CATEGORIES as readonly string[]).includes(String(r.category))) problems.push(`locationPhotos[${i}]: category must be ${CATEGORIES.join(" | ")}`);
+      const row = photoRow("locationPhotos", r, i);
+      if (row && (CATEGORIES as readonly string[]).includes(String(r.category))) data.locationPhotos.push({ ...row, category: r.category as Category });
+    });
+    const n = data.locationPhotos.length;
+    const short = CATEGORIES.filter((c) => data.locationPhotos.filter((p) => p.category === c).length < LOCATION_PHOTOS_PER_CATEGORY_MIN);
+    count("locationPhotos", n, `${LOCATION_PHOTOS_WANTED}, at least ${LOCATION_PHOTOS_PER_CATEGORY_MIN} of each category${short.length ? ` (short: ${short.join(", ")})` : ""}`, n === LOCATION_PHOTOS_WANTED && short.length === 0);
+  }
+
+  const ppl = rows("peoplePhotos");
+  if (ppl) {
+    ppl.forEach((r, i) => {
+      const consent = isRecord(r.consent) ? r.consent : null;
+      const kind = consent?.kind;
+      if (kind !== "ai-generated" && kind !== "consented") problems.push(`peoplePhotos[${i}]: consent.kind must be ai-generated or consented`);
+      if (typeof consent?.confirmedBy !== "string" || !consent.confirmedBy.trim()) problems.push(`peoplePhotos[${i}]: consent.confirmedBy (who confirmed it) is required`);
+      const on = typeof consent?.confirmedOn === "string" ? consent.confirmedOn : null;
+      if (kind === "consented" && (on === null || !DATE.test(on))) problems.push(`peoplePhotos[${i}]: consented people need consent.confirmedOn (YYYY-MM-DD)`);
+      const row = photoRow("peoplePhotos", r, i);
+      if (row && (kind === "ai-generated" || kind === "consented")) {
+        data.peoplePhotos.push({ ...row, consent: { kind, confirmedBy: String(consent?.confirmedBy ?? ""), confirmedOn: on } });
+      }
+    });
+    count("peoplePhotos", data.peoplePhotos.length, String(PEOPLE_PHOTOS_WANTED), data.peoplePhotos.length === PEOPLE_PHOTOS_WANTED);
+  }
+
   // baselines.json (optional; an operator's read-only export)
   const b = files.baselines;
   if (b !== undefined && b !== null) {
@@ -399,6 +500,30 @@ export function loadCorpus(dir: string, o: { spend: boolean; allowPartial: boole
   }
   const check = validateCorpus(files, o);
   check.problems.unshift(...unreadable);
+  // Every listed picture, hashed into the corpus hash: a changed photo is a
+  // changed corpus (--resume and B refuse it). A missing one is a problem
+  // only where a real run needs it.
+  for (const [key, list] of [
+    ["locationPhotos", check.data.locationPhotos],
+    ["peoplePhotos", check.data.peoplePhotos],
+  ] as const) {
+    for (const p of list) {
+      const path = join(dir, p.file);
+      const need = o.spend && o.needs[key] === true;
+      if (!existsSync(path)) {
+        const msg = `${key}: ${p.id}'s photo ${p.file} is missing`;
+        if (need) check.problems.push(msg);
+        else check.warnings.push(msg);
+        continue;
+      }
+      if (statSync(path).size > SET_PHOTO_MAX_FILE_BYTES) {
+        check.problems.push(`${key}: ${p.id}'s photo is over ${SET_PHOTO_MAX_FILE_BYTES / 1024 / 1024} MB (the browser refuses it)`);
+        continue;
+      }
+      check.hashes[`photo:${p.file}`] = sha256(readFileSync(path));
+    }
+  }
+  check.corpusHash = sha256(canonicalJson(check.hashes));
   if (o.photos) {
     for (const ch of check.data.characters) {
       if (ch.identityPhoto && !existsSync(join(dir, ch.identityPhoto))) {
@@ -418,6 +543,7 @@ export function corpusSummary(check: CorpusCheck): string {
     `--- corpus ---`,
     `  hash ${check.corpusHash.slice(0, 16)}…  attested: ${d.meta.attested ? "yes" : "NO"}  written by ${d.meta.writtenBy || "?"} on ${d.meta.writtenOn || "?"}`,
     `  briefs ${d.briefs.length} (${CATEGORIES.map((c) => `${c} ${d.briefs.filter((b) => b.category === c).length}`).join(", ")}), adversarial ${d.adversarial.length}, directions ${d.directions.length}, characters ${d.characters.length}, canary ${d.canary.length}, match ${d.match.length}, baselines ${d.baselines ? "yes" : "none"}`,
+    `  location photos ${d.locationPhotos.length} (${CATEGORIES.map((c) => `${c} ${d.locationPhotos.filter((p) => p.category === c).length}`).join(", ")}), photos with people ${d.peoplePhotos.length}`,
   ];
   if (check.template) lines.push("  *** TEMPLATE CORPUS: FORMAT-ONLY rows. Fine for a dry run; --spend refuses them. ***");
   for (const w of check.warnings) lines.push(`  warning: ${w}`);

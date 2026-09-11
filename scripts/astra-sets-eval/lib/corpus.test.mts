@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { canarySha, validateCorpus } from "./corpus.mts";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { canarySha, cleanNotes, loadCorpus, validateCorpus } from "./corpus.mts";
+import { EVAL_DIR } from "./util.mts";
 
 const meta = {
   corpusVersion: 1,
@@ -98,5 +102,115 @@ describe("validateCorpus", () => {
     const r = validateCorpus({ corpus: meta, adversarial: adv }, { spend: false, allowPartial: false, needs: { adversarial: true } });
     expect(r.problems).toEqual([]);
     expect(r.data.adversarial[0].brief).toHaveLength(600);
+  });
+});
+
+// The photo arm's two files: A/B's people-free location photos (20, at
+// least 5 of each category) and D's photos with people (10, each with how
+// it may be sent to OpenAI).
+const locations = (perCategory: number[]) =>
+  ["interior", "exterior", "stylised"].flatMap((category, c) =>
+    Array.from({ length: perCategory[c] }, (_, i) => ({ id: `ph-${category.slice(0, 3)}-${i}`, category, file: `location-photos/${category}-${i}.jpg`, licence: "my own photo" })),
+  );
+const people = (n: number) =>
+  Array.from({ length: n }, (_, i) => ({ id: `pp-${i}`, file: `people-photos/p-${i}.jpg`, licence: "my own photo", consent: { kind: i % 2 ? "consented" : "ai-generated", confirmedBy: "writer-7", confirmedOn: "2026-09-12" } }));
+
+describe("photo rows", () => {
+  const spendOn = (key: "locationPhotos" | "peoplePhotos") => ({ spend: true, allowPartial: false, needs: { [key]: true } });
+
+  it("accepts 20 location photos, at least 5 of each category, and 10 photos with people", () => {
+    const a = validateCorpus({ corpus: meta, locationPhotos: locations([7, 7, 6]) }, spendOn("locationPhotos"));
+    expect(a.problems).toEqual([]);
+    expect(a.data.locationPhotos).toHaveLength(20);
+    expect(a.data.locationPhotos[0]).toMatchObject({ category: "interior", notes: "", template: false });
+    const d = validateCorpus({ corpus: meta, peoplePhotos: people(10) }, spendOn("peoplePhotos"));
+    expect(d.problems).toEqual([]);
+    expect(d.data.peoplePhotos.map((p) => p.consent.kind)).toContain("consented");
+  });
+
+  it("wants the counts for spend: 20 with 5 of each category, and 10", () => {
+    expect(validateCorpus({ corpus: meta, locationPhotos: locations([8, 8, 4]) }, spendOn("locationPhotos")).problems.join(" ")).toMatch(/at least 5 of each category \(short: stylised\)/);
+    expect(validateCorpus({ corpus: meta, locationPhotos: locations([7, 7, 5]) }, spendOn("locationPhotos")).ok).toBe(false);
+    expect(validateCorpus({ corpus: meta, peoplePhotos: people(9) }, spendOn("peoplePhotos")).ok).toBe(false);
+    expect(validateCorpus({ corpus: meta, peoplePhotos: people(9) }, { ...spendOn("peoplePhotos"), allowPartial: true }).ok).toBe(true);
+  });
+
+  it("checks the file, the category, the licence and a picture used twice", () => {
+    const bad = (over: Record<string, unknown>) => validateCorpus({ corpus: meta, locationPhotos: [...locations([7, 7, 5]), { id: "ph-x", category: "interior", file: "location-photos/x.jpg", licence: "mine", ...over }] }, spendOn("locationPhotos"));
+    expect(bad({ file: "location-photos/x.heic" }).problems.join(" ")).toMatch(/HEIC is refused/);
+    expect(bad({ file: "../outside.jpg" }).problems.join(" ")).toMatch(/relative path/);
+    expect(bad({ category: "aerial" }).problems.join(" ")).toMatch(/category must be/);
+    expect(bad({ licence: " " }).problems.join(" ")).toMatch(/licence is required/);
+    expect(bad({ file: "location-photos/interior-0.jpg" }).problems.join(" ")).toMatch(/already ph-int-0's photo/);
+    const across = validateCorpus({ corpus: meta, locationPhotos: locations([7, 7, 6]), peoplePhotos: [{ ...people(1)[0], file: "location-photos/interior-0.jpg" }] }, spendOn("peoplePhotos"));
+    expect(across.problems.join(" ")).toMatch(/already ph-int-0's photo/);
+  });
+
+  it("cleans notes as the product does, and refuses notes the form would have cut", () => {
+    expect(cleanNotes(undefined)).toEqual({ ok: true, notes: "" });
+    // A zero-width space and runs of spaces flatten, as cleanText flattens them.
+    expect(cleanNotes("  the other half​ of the room   is a bar ")).toEqual({ ok: true, notes: "the other half of the room is a bar" });
+    // The reserved placeholder is never a note.
+    expect(cleanNotes(" - ")).toEqual({ ok: true, notes: "" });
+    expect(cleanNotes("x".repeat(300))).toMatchObject({ ok: true });
+    expect(cleanNotes("x".repeat(301))).toEqual({ ok: false, why: "too_long" });
+    expect(cleanNotes(42)).toEqual({ ok: false, why: "not_text" });
+    const long = validateCorpus({ corpus: meta, locationPhotos: [{ ...locations([1, 0, 0])[0], notes: "y".repeat(301) }] }, { spend: false, allowPartial: false, needs: {} });
+    expect(long.problems.join(" ")).toMatch(/notes longer than 300 characters/);
+  });
+
+  it("wants how a photo with people may be sent: consented (with a date) or AI-generated", () => {
+    const one = (consent: unknown) => validateCorpus({ corpus: meta, peoplePhotos: [...people(9), { id: "pp-x", file: "people-photos/x.jpg", licence: "mine", consent }] }, spendOn("peoplePhotos"));
+    expect(one({ kind: "ai-generated", confirmedBy: "w7" }).problems).toEqual([]);
+    expect(one({ kind: "consented", confirmedBy: "w7" }).problems.join(" ")).toMatch(/confirmedOn/);
+    expect(one({ kind: "scraped", confirmedBy: "w7" }).problems.join(" ")).toMatch(/ai-generated or consented/);
+    expect(one({ kind: "ai-generated" }).problems.join(" ")).toMatch(/confirmedBy/);
+    expect(one(undefined).ok).toBe(false);
+  });
+
+  it("refuses a template photo row for spend, and allows it in a dry run", () => {
+    const rows = [...locations([7, 7, 5]), { _template: true, id: "ph-t", category: "stylised", file: "location-photos/t.jpg", licence: "<<FORMAT ONLY — x>>" }];
+    expect(validateCorpus({ corpus: meta, locationPhotos: rows }, spendOn("locationPhotos")).problems.join(" ")).toMatch(/FORMAT-ONLY template row/);
+    expect(validateCorpus({ corpus: meta, locationPhotos: rows }, { spend: false, allowPartial: false, needs: { locationPhotos: true } }).ok).toBe(true);
+  });
+});
+
+describe("loadCorpus with photos", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "astra-corpus-"));
+    mkdirSync(join(dir, "location-photos"));
+    writeFileSync(join(dir, "corpus.json"), JSON.stringify({ ...meta, files: { locationPhotos: "location-photos.json" } }));
+    writeFileSync(join(dir, "location-photos.json"), JSON.stringify(locations([7, 7, 6])));
+    for (const p of locations([7, 7, 6])) writeFileSync(join(dir, p.file), `bytes of ${p.id}`);
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+  const o = { spend: true, allowPartial: false, needs: { locationPhotos: true } };
+
+  it("hashes every picture into the corpus hash: a changed photo is a changed corpus", () => {
+    const before = loadCorpus(dir, o);
+    expect(before.problems).toEqual([]);
+    expect(Object.keys(before.hashes).filter((k) => k.startsWith("photo:"))).toHaveLength(20);
+    writeFileSync(join(dir, "location-photos/interior-0.jpg"), "other bytes");
+    expect(loadCorpus(dir, o).corpusHash).not.toBe(before.corpusHash);
+  });
+
+  it("a missing picture is a problem for a real run that needs it, a warning otherwise", () => {
+    rmSync(join(dir, "location-photos/stylised-5.jpg"));
+    expect(loadCorpus(dir, o).problems.join(" ")).toMatch(/ph-sty-5's photo location-photos\/stylised-5.jpg is missing/);
+    const dry = loadCorpus(dir, { ...o, spend: false });
+    expect(dry.ok).toBe(true);
+    expect(dry.warnings.join(" ")).toMatch(/is missing/);
+  });
+
+  it("the template's photo files load for a dry run, and --spend refuses them", () => {
+    const tpl = join(EVAL_DIR, "corpus-template");
+    const dryRun = loadCorpus(tpl, { spend: false, allowPartial: false, needs: { locationPhotos: true, peoplePhotos: true } });
+    expect(dryRun.ok).toBe(true);
+    expect(dryRun.template).toBe(true);
+    expect(dryRun.data.locationPhotos.length).toBeGreaterThan(0);
+    expect(dryRun.data.peoplePhotos.length).toBeGreaterThan(0);
+    expect(dryRun.warnings.join(" ")).not.toMatch(/is missing/);
+    expect(loadCorpus(tpl, { spend: true, allowPartial: true, needs: { locationPhotos: true } }).problems.join(" ")).toMatch(/FORMAT-ONLY/);
   });
 });

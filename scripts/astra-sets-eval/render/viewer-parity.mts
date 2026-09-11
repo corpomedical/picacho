@@ -48,15 +48,27 @@ export const MIRRORED_LINES = [
   "const frame = apiRef.current?.snapshot(SET_FRAME_PX);",
 ] as const;
 
+/** What B's photo arm also mirrors: camera 1 drawn at the photo's shape, beside the photo. */
+export const MIRRORED_PHOTO_LINES = [
+  "opts?.from && opts.aspect ? compareCrop(renderer.domElement.width, renderer.domElement.height, opts.aspect) : null;",
+  "cam.fov = crop ? widenFovDeg(opts.from.fovDeg, crop.fovScale) : opts.from.fovDeg;",
+  "url = crop ? cropRect(crop, px) : cropSquare(px);",
+  "const size = compareOutputSize(crop.sw, crop.sh, px);",
+  "ctx.drawImage(src, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, size.width, size.height);",
+  "const shot = apiRef.current?.snapshot(SET_COMPARE_PX, {",
+  "aspect: photoAspect,",
+  "setPhotoAspect(img.naturalWidth / img.naturalHeight);",
+] as const;
+
 export type ViewerParity = { ok: boolean; missing: string[]; file: string };
 
-export function checkViewerParity(repoRoot: string): ViewerParity {
+export function checkViewerParity(repoRoot: string, o: { photo?: boolean } = {}): ViewerParity {
   const file = "src/components/sets/set-view.tsx";
   const lines = new Set(
     readFileSync(join(repoRoot, file), "utf8")
       .split("\n")
       .map((l) => l.trim()),
   );
-  const missing = MIRRORED_LINES.filter((l) => !lines.has(l));
+  const missing = [...MIRRORED_LINES, ...(o.photo ? MIRRORED_PHOTO_LINES : [])].filter((l) => !lines.has(l));
   return { ok: missing.length === 0, missing, file };
 }
