@@ -3,7 +3,7 @@
 // the test suite loads this file as it is.
 //
 // THE ONLY MODULE IN src/ THAT NAMES THE PHOTO COLUMNS (photo.test.ts scans
-// for it). They arrive with supabase/pending/astra-photo-sets.sql, and until
+// for it). They arrive with supabase/applied/2026-09-11/astra-photo-sets.sql, and until
 // the operator runs it they do not exist — and PostgREST fails a whole
 // statement that names a missing column (42703 on a read, PGRST204 on a
 // write). So no existing query names them: a build's kind is read here, in

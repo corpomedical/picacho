@@ -112,7 +112,7 @@ import {
 // its title, description and labels pass the same strict-lane gate as a
 // text build's. The photo is removed with the set, or when its build fails.
 // Every column that marks a photo build is named only in photo.ts, and read
-// in its own query: until supabase/pending/astra-photo-sets.sql runs, text
+// in its own query: until supabase/applied/2026-09-11/astra-photo-sets.sql runs, text
 // sets work exactly as before and a photo build stops at its first write.
 
 const JPEG_DATA_URI = /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/;

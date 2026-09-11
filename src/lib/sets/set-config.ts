@@ -204,7 +204,7 @@ export function setFramePath(userId: string, frameId: string): string {
 // A photo set's source photo (2026-09-11): the person's own data, beside the
 // card in their own folder of a bucket account deletion sweeps. Fixed per
 // set, so deleting a set removes it without reading anything; the database
-// pins a stored path to exactly this (supabase/pending/astra-photo-sets.sql).
+// pins a stored path to exactly this (supabase/applied/2026-09-11/astra-photo-sets.sql).
 // Written once and never rewritten: media URLs are cached as immutable.
 export function setPhotoPath(userId: string, setId: string): string {
   return `${userId}/sets/${setId}.photo.jpg`;

@@ -97,7 +97,7 @@ export async function referencedKeys(rest) {
   for (const c of await allRows(rest, "community_posts", "id,media_url")) add(c.media_url);
   for (const l of await allRows(rest, "generation_layers", "id,storage_path")) add(l.storage_path);
   // A Set's card and, for a set built from a photo, the photo (2026-09-11).
-  // Read with * so this works before supabase/pending/astra-photo-sets.sql
+  // Read with * so this works before supabase/applied/2026-09-11/astra-photo-sets.sql
   // adds the photo column (naming it would fail the whole read until then).
   // Both are bare keys in generated-images. The photo counts only while its
   // set is building or ready: a failed or deleted set's photo was removed

@@ -36,7 +36,7 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 
 **Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/applied/2026-09-10/astra-sets.sql` (run in production 2026-09-11; flags confirmed off, tables present, anonymous key refused).
 
-**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/pending/astra-photo-sets.sql`). Worst case $1.81625 a build (`set-config.ts`). Match this shot, the webhook finisher and credits are not built. Photos with people are unmeasured (eval D).
+**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/applied/2026-09-11/astra-photo-sets.sql`, run in production 2026-09-11: both photo columns present, the switch off). Worst case $1.81625 a build (`set-config.ts`). Match this shot, the webhook finisher and credits are not built. Photos with people are unmeasured (eval D).
 
 **Three live photo builds before shipping (2026-09-11)**, through the repo's own code (photo.ts re-encode, astra-request.ts, providers/astra.ts, the normaliser, closure.ts), with no database: one people-free bakery photo made by GPT Image, 1536×1024, sent inline at detail high.
 
