@@ -4,6 +4,7 @@ import {
   SET_BUILD_FAILED_RETRY,
   SET_BUILD_LOST,
   SET_BUILD_REFUSED,
+  SET_MATCH_COULDNT_READ,
   SET_MATCH_FAILED,
   SET_MATCH_REFUSED,
   SET_MATCH_TIMED_OUT,
@@ -18,6 +19,7 @@ import {
   SET_PHOTO_TOO_SMALL,
   SET_PHOTO_UNCHECKED,
   SET_PHOTO_UNREADABLE,
+  matchFailureMessage,
   setFailureMessage,
   setMonthlyCapMessage,
 } from "./messages";
@@ -178,7 +180,53 @@ describe("a refused photo, in every language", () => {
 
 // Match this shot (2026-09-11).
 
-const MATCH_SENTENCES = [SET_MATCH_REFUSED, SET_MATCH_UNCHECKED, SET_MATCH_FAILED, SET_MATCH_TOO_FAST, SET_MATCH_TIMED_OUT];
+const MATCH_SENTENCES = [
+  SET_MATCH_REFUSED,
+  SET_MATCH_UNCHECKED,
+  SET_MATCH_FAILED,
+  SET_MATCH_COULDNT_READ,
+  SET_MATCH_TOO_FAST,
+  SET_MATCH_TIMED_OUT,
+];
+
+// A match's failure answers to setFailureMessage's rule: only an answer that
+// came back unusable asks for another picture. Every other kind the provider
+// reports (providers/astra.ts submitAstraJob and pollAstraJob) is our side or
+// OpenAI's, and says try again with the same one — a person told to swap
+// pictures during an outage spends a turn of the hourly brake, and another
+// picture check, on each swap.
+describe("matchFailureMessage", () => {
+  it("asks for another picture only when the answer itself was unusable", () => {
+    expect(matchFailureMessage("invalid")).toBe(SET_MATCH_FAILED);
+    expect(matchFailureMessage("incomplete")).toBe(SET_MATCH_FAILED);
+  });
+
+  it("says try again, with the same picture, for every failure that was ours or OpenAI's", () => {
+    // submitAstraJob's kinds, then pollAstraJob's, then anything new.
+    for (const ours of ["config", "rate_limited", "unavailable", "bad_request", "failed", "expired", "cancelled", "anything"]) {
+      expect(matchFailureMessage(ours), ours).toBe(SET_MATCH_COULDNT_READ);
+    }
+    expect(SET_MATCH_COULDNT_READ).toMatch(/try again/i);
+    expect(SET_MATCH_COULDNT_READ).not.toMatch(/another|different|picture|photo/i);
+  });
+
+  it("keeps a refusal its own sentence, which never asks for a retry or a swap", () => {
+    expect(matchFailureMessage("refused")).toBe(SET_MATCH_REFUSED);
+  });
+
+  it("says try again in every language, and never asks for another picture there either", () => {
+    const ANOTHER = { es: /\botra\b/i, pt: /\boutra\b/i, it: /\bun'altra\b|\baltra\b/i } as const;
+    for (const [name, t] of [
+      ["es", es],
+      ["pt", pt],
+      ["it", it_],
+    ] as const) {
+      const local = localizeServerText(SET_MATCH_COULDNT_READ, t);
+      expect(REFUSAL_GUARDS[name].again.test(local), `${name}: ${local}`).toBe(true);
+      expect(local, name).not.toMatch(ANOTHER[name]);
+    }
+  });
+});
 
 describe("every Match this shot sentence reaches every language", () => {
   it("English readers get the wire sentence itself", () => {
@@ -334,13 +382,26 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
       "matchedLevel",
       "matchNoteWide",
       "matchNoteNarrow",
+      "matchNoteNear",
+      "matchNoteFar",
+      "matchNoteLow",
+      "matchNoteHigh",
       "matchNoteTiltUp",
       "matchNoteTiltDown",
       "matchNoteSubject",
       "matchNotePulledIn",
+      "matchNoteMovedAround",
+      "matchNoteBlocked",
       "matchReferenceAlt",
     ] as const;
-    const MATCH_SERVER_KEYS = ["setMatchRefused", "setMatchUnchecked", "setMatchFailed", "setMatchTooFast", "setMatchTimedOut"] as const;
+    const MATCH_SERVER_KEYS = [
+      "setMatchRefused",
+      "setMatchUnchecked",
+      "setMatchFailed",
+      "setMatchCouldntRead",
+      "setMatchTooFast",
+      "setMatchTimedOut",
+    ] as const;
     for (const t of [en, es, pt, it_]) {
       for (const k of MATCH_KEYS) expect(typeof t.sets[k] === "string" && t.sets[k].trim().length > 0, `sets.${k}`).toBe(true);
       for (const k of MATCH_SERVER_KEYS) {

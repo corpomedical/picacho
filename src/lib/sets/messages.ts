@@ -67,9 +67,26 @@ export const SET_PHOTO_BUILD_FAILED =
 // the picture check's, or OpenAI's refusing the read — as for a photo.
 export const SET_MATCH_REFUSED = "This picture can't be used to match a shot.";
 export const SET_MATCH_UNCHECKED = "We couldn't check this picture, so no shot was matched. Try again in a moment.";
+/** The answer came back unusable: another picture may read better. */
 export const SET_MATCH_FAILED = "Astra couldn't read a camera from that picture — try another.";
+/** Our side or OpenAI's failed, not the picture: the same one, again. */
+export const SET_MATCH_COULDNT_READ = "The shot's camera couldn't be read this time — try again in a moment.";
 export const SET_MATCH_TOO_FAST = "You're matching shots quickly — try again in a little while.";
 export const SET_MATCH_TIMED_OUT = "Reading that shot's camera took too long — try again in a moment.";
+
+/**
+ * A read that did not come back → the sentence shown, by the provider's
+ * failure kind (providers/astra.ts), or "invalid" for an answer that came
+ * back but is not a camera. The rule setFailureMessage keeps: only an answer
+ * that came back unusable (invalid, or too long to finish) asks for another
+ * picture; a start or poll failure — no key, a rate limit, an outage, a job
+ * that expired or failed — is ours or OpenAI's, and says try again.
+ */
+export function matchFailureMessage(failure: string): string {
+  if (failure === "refused") return SET_MATCH_REFUSED;
+  if (failure === "invalid" || failure === "incomplete") return SET_MATCH_FAILED;
+  return SET_MATCH_COULDNT_READ;
+}
 
 /**
  * A failed build's stored reason → the sentence shown for it. Only an

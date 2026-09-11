@@ -164,6 +164,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "This picture can't be used to match a shot.": "setMatchRefused",
   "We couldn't check this picture, so no shot was matched. Try again in a moment.": "setMatchUnchecked",
   "Astra couldn't read a camera from that picture — try another.": "setMatchFailed",
+  "The shot's camera couldn't be read this time — try again in a moment.": "setMatchCouldntRead",
   "You're matching shots quickly — try again in a little while.": "setMatchTooFast",
   "Reading that shot's camera took too long — try again in a moment.": "setMatchTimedOut",
 };

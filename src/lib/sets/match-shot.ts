@@ -236,6 +236,14 @@ export type MatchNotes = {
   fovClampedNarrow?: boolean;
   /** The factor the distance was multiplied by to keep the subject's size in frame. */
   distanceScaled?: number;
+  /** The subject was nearer than a camera may stand (0.6 m): the figure comes out smaller in frame. */
+  distanceClampedNear?: boolean;
+  /** The subject was farther than a saved layout keeps a camera: the figure comes out larger in frame. */
+  distanceClampedFar?: boolean;
+  /** Lower than a saved camera may stand (0.2 m). */
+  heightClampedLow?: boolean;
+  /** Higher than a saved camera may stand (twice the set's height). */
+  heightClampedHigh?: boolean;
   /** Tilted past what the stage camera can (SET_MAX_TILT_UP_DEG / SET_MAX_TILT_DOWN_DEG). */
   pitchClamped?: boolean;
   /** The subject sat too near the square's edge; the figure is kept inside the still. */
@@ -246,9 +254,12 @@ const DEG = Math.PI / 180;
 /** Under this, the camera stands on the mark and says nothing about which side to shoot from. */
 const SAME_SPOT_M = 0.2;
 const MIN_DISTANCE_M = 0.6;
+const MIN_HEIGHT_M = 0.2;
 const MIN_TARGET_M = 0.5;
 /** How far short of something built a pulled-in camera stops (frameFigure's room, set-view.tsx). */
 const WALL_ROOM_M = 0.3;
+/** Room enough on a side to stay on it, when the matched camera stands farther out (frameFigure's rule). */
+const GOOD_ROOM_M = 1.2;
 /** How near the still's edge the figure may be placed, as a share of its width. */
 const EDGE_ROOM = 0.15;
 /** normaliseSetLayout's reach past the footprint for a camera. */
@@ -288,8 +299,9 @@ const finite = (v: unknown, fallback: number) => (typeof v === "number" && Numbe
  *   the reference's distance to its subject (without one, where the camera is
  *   now), at least 0.6 m, and never past where normaliseSetLayout keeps a
  *   camera. Height as read, within normaliseSetLayout's 0.2 m to twice the
- *   set's height. The page then pulls the camera in if something built
- *   stands between it and the figure.
+ *   set's height. A read distance or height held to those limits is noted,
+ *   like every other limit. The page then moves the camera if something
+ *   built stands between it and the figure (placeMatchedCamera).
  *
  *   Aim. The tilt as read, held to the stage's −80°…+20°. The mark goes where
  *   the subject sat: its x in the reference maps into the square (a
@@ -298,8 +310,10 @@ const finite = (v: unknown, fallback: number) => (typeof v === "number" && Numbe
  *   turns away from the mark until the mark's vertical line, at the height
  *   where the axis passes it — the screen's horizontal centre line — lands
  *   there. With a tilt, that turn is wider than at level: tan θ = (2x − 1) ·
- *   tan(fov/2) / cos(tilt). Without a subject, the axis passes through the
- *   mark.
+ *   s · tan(fov/2) / cos(tilt), where s is the still's half-width against
+ *   the lens's: 1 on a landscape canvas, the canvas's width ÷ height on a
+ *   portrait one (a phone held upright), whose centre square spans only the
+ *   canvas's width. Without a subject, the axis passes through the mark.
  *
  *   Target. Where the axis passes the mark's vertical line, or meets the
  *   ground first, at least 0.5 m out — and inside the coordinates a saved
@@ -313,6 +327,12 @@ export function solveMatchPose(
     /** Width ÷ height of the picture that was matched, as prepared. */
     referenceAspect: number;
     bounds: SetSpec["bounds"];
+    /**
+     * Width ÷ height of the stage canvas the still is cut from (its centre
+     * square). A portrait canvas's still is narrower than the lens, so the
+     * figure is placed for the still this canvas takes.
+     */
+    canvasAspect: number;
   },
 ): { pose: CameraPose; notes: MatchNotes } {
   const notes: MatchNotes = {};
@@ -325,6 +345,11 @@ export function solveMatchPose(
   };
   const rawAspect = finite(input.referenceAspect, 1);
   const aspect = rawAspect > 0 ? Math.min(5, Math.max(0.2, rawAspect)) : 1;
+  // The still's half-width against the lens's (set-view.tsx fit, cropSquare):
+  // the centre square spans the vertical field of view on a landscape canvas,
+  // and only the canvas's width on a portrait one.
+  const rawCanvas = finite(input.canvasAspect, 1);
+  const stillShare = rawCanvas > 0 ? Math.min(1, Math.max(0.2, rawCanvas)) : 1;
 
   // --- lens ---
   const vfov = Math.min(MATCH_BOUNDS.verticalFovDeg[1], Math.max(MATCH_BOUNDS.verticalFovDeg[0], finite(match.verticalFovDeg, 40)));
@@ -358,8 +383,16 @@ export function solveMatchPose(
   const fromReference = match.subjectFound && match.subjectDistanceM !== null ? finite(match.subjectDistanceM, currentDistance) : null;
   const wanted = (fromReference ?? currentDistance) * distanceScale;
   const reach = reachAlong([mark.x, mark.z], [ux, uz], [halfX + CAMERA_REACH_M, halfZ + CAMERA_REACH_M]);
-  const distance = Math.min(Math.max(wanted, MIN_DISTANCE_M), Math.max(MIN_DISTANCE_M, reach));
-  const height = Math.min(setHeight * 2, Math.max(0.2, finite(match.cameraHeightM, 1.6)));
+  const farthest = Math.max(MIN_DISTANCE_M, reach);
+  const distance = Math.min(Math.max(wanted, MIN_DISTANCE_M), farthest);
+  // Only a distance the picture gave is worth a word: without a subject the
+  // camera keeps its own, and nobody asked for another.
+  if (fromReference !== null && wanted < MIN_DISTANCE_M) notes.distanceClampedNear = true;
+  if (fromReference !== null && wanted > farthest) notes.distanceClampedFar = true;
+  const readHeight = finite(match.cameraHeightM, 1.6);
+  const height = Math.min(setHeight * 2, Math.max(MIN_HEIGHT_M, readHeight));
+  if (readHeight < MIN_HEIGHT_M) notes.heightClampedLow = true;
+  if (readHeight > setHeight * 2) notes.heightClampedHigh = true;
   const position: Vec3 = [mark.x + ux * distance, height, mark.z + uz * distance];
 
   // --- aim ---
@@ -374,7 +407,7 @@ export function solveMatchPose(
     if (mapped < EDGE_ROOM || mapped > 1 - EDGE_ROOM) notes.subjectPulledIn = true;
   }
   const pitch = pitchDeg * DEG;
-  const turn = Math.atan(((2 * xInSquare - 1) * Math.tan((fovDeg * DEG) / 2)) / Math.cos(pitch));
+  const turn = Math.atan(((2 * xInSquare - 1) * stillShare * Math.tan((fovDeg * DEG) / 2)) / Math.cos(pitch));
   // From the camera toward the mark, then turned: a positive turn puts the
   // mark to the right of centre (in three.js, a camera on heading h, looking
   // along (sin h, ·, cos h), has its right-hand side along (−cos h, 0, sin h)).
@@ -401,16 +434,18 @@ function targetAlong(position: Vec3, axis: Vec3, mark: { x: number; z: number },
 }
 
 /**
- * Where the camera looks once the page has placed it — pulled toward the
- * figure when something built stood in the way. Along the SOLVED direction,
- * with the target taken again from where the camera now stands. The pull
- * keeps the camera on the line through the mark, so the bearing is the same,
- * and the turn that puts the mark where the subject sat does not depend on
- * distance: the same direction keeps the framing exactly. Aiming at the
- * solved target point instead would lose the figure: that point sits beside
- * the mark at the far camera's depth, and from a camera pulled from 12 m to
- * 2 m it can be 38° off the mark, outside a 20° lens. Within `maxDistance`,
- * the orbit's reach, so the controls never move the camera to fit.
+ * Where the camera looks once the page has placed it — moved toward the
+ * figure, or to another side of it, when something built stood in the way.
+ * Along the direction of `pose` (the solved one, or the solved one turned
+ * with the camera), with the target taken again from where the camera now
+ * stands. Every place the page puts the camera is on the vertical plane
+ * through the mark at that pose's bearing, and the turn that puts the mark
+ * where the subject sat depends on neither distance nor height: the same
+ * direction keeps the framing exactly. Aiming at the solved target point
+ * instead would lose the figure: that point sits beside the mark at the far
+ * camera's depth, and from a camera pulled from 12 m to 2 m it can be 38°
+ * off the mark, outside a 20° lens. Within `maxDistance`, the orbit's reach,
+ * so the controls never move the camera to fit.
  */
 export function aimFrom(position: Vec3, pose: CameraPose, mark: { x: number; z: number }, maxDistance: number): Vec3 {
   const d: Vec3 = [pose.target[0] - pose.position[0], pose.target[1] - pose.position[1], pose.target[2] - pose.position[2]];
@@ -420,42 +455,123 @@ export function aimFrom(position: Vec3, pose: CameraPose, mark: { x: number; z: 
 }
 
 /**
- * Where the stage camera stands for a solved pose, in the set as built. On
- * the line from the figure's eye (the mark, at eye height) to the solved
- * camera, 0.3 m short of the first thing built in between (and at least
- * 0.6 m out) — a wall, a ceiling, the car the camera would stand inside — so
- * the figure is never hidden behind the set; then aimed by aimFrom. The
- * interpreter's own floor and sky dome never count as built. three.js is
- * passed in, as build-scene.ts does, so the test runs this on three's core.
+ * How the page had to move a solved camera for the figure to be seen in the
+ * set as built: not at all; toward the figure, on the same side; to another
+ * side of it; or nowhere, because something built stands close around the
+ * figure on every side (the camera then stays as solved, and the page says
+ * the figure may be hidden).
+ */
+export type CameraMove = "none" | "in" | "around" | "blocked";
+
+/** The pose turned about the mark's vertical line by `turn` radians (a bearing of 0 is +Z, 90° is +X). */
+function turnAbout(pose: CameraPose, mark: { x: number; z: number }, turn: number): CameraPose {
+  const c = Math.cos(turn);
+  const s = Math.sin(turn);
+  const spin = (p: Vec3): Vec3 => {
+    const dx = p[0] - mark.x;
+    const dz = p[2] - mark.z;
+    return [mark.x + dx * c + dz * s, p[1], mark.z + dz * c - dx * s];
+  };
+  return { position: spin(pose.position), target: spin(pose.target), fovDeg: pose.fovDeg };
+}
+
+/**
+ * Where the stage camera stands for a solved pose, in the set as built, so
+ * that nothing built hides the figure. A side is judged along the line from
+ * the figure's eye (the mark, at eye height) to the camera: the camera stands
+ * 0.3 m short of the first thing built on that line — a wall, a ceiling, the
+ * car it would stand inside — and a side where that leaves less than 0.6 m is
+ * not used at all: the camera is never put beyond what is in the way.
+ *
+ * The person's own side, the solved one, is kept when the camera can stand at
+ * least 1.2 m out there (or as far out as it was matched, if that is
+ * nearer). Otherwise, frameFigure's order (set-view.tsx): the way the figure
+ * faces, then the eight compass points, the first with that much room; and
+ * failing every one, whichever usable side has the most room. Another side
+ * is the solved camera turned about the mark, held within where a saved
+ * layout keeps a camera: its height, tilt and lens, and the turn that puts
+ * the mark where the subject sat, do not depend on the bearing, so the
+ * framing holds. With no usable side the camera stays as solved.
+ *
+ * Aimed by aimFrom. The interpreter's own floor and sky dome never count as
+ * built. three.js is passed in, as build-scene.ts does, so the test runs this
+ * on three's core.
  */
 export function placeMatchedCamera(
   THREE: typeof ThreeNS,
   set: ThreeNS.Object3D,
-  eye: Vec3,
   pose: CameraPose,
-  maxDistance: number,
-): { position: Vec3; target: Vec3; pulledIn: boolean } {
-  const from = new THREE.Vector3(...eye);
-  const dir = new THREE.Vector3(...pose.position).sub(from);
-  const reach = dir.length();
-  let position: Vec3 = [pose.position[0], pose.position[1], pose.position[2]];
-  let pulledIn = false;
-  if (reach > 1e-6) {
-    dir.divideScalar(reach);
-    set.updateMatrixWorld(true);
-    const hit = new THREE.Raycaster(from, dir, 0, reach)
-      .intersectObject(set, true)
-      .find((h) => h.object.name !== "sky" && h.object.name !== "ground");
-    const room = hit ? Math.max(MIN_DISTANCE_M, hit.distance - WALL_ROOM_M) : reach;
-    if (room < reach) {
-      position = [from.x + dir.x * room, from.y + dir.y * room, from.z + dir.z * room];
-      pulledIn = true;
+  stage: {
+    mark: { x: number; z: number; facingDeg: number };
+    /** The figure's eye height: every line of sight starts there. */
+    eyeY: number;
+    bounds: SetSpec["bounds"];
+    /** The orbit's reach, which no target may pass. */
+    maxDistance: number;
+  },
+): { position: Vec3; target: Vec3; moved: CameraMove } {
+  const mark = { x: stage.mark.x, z: stage.mark.z };
+  const eye = new THREE.Vector3(mark.x, stage.eyeY, mark.z);
+  const limit = [stage.bounds.x / 2 + CAMERA_REACH_M, stage.bounds.z / 2 + CAMERA_REACH_M];
+  const raycaster = new THREE.Raycaster();
+  set.updateMatrixWorld(true);
+
+  // One side: the solved pose turned about the mark (not at all for the
+  // person's own), and how far out along the eye's line the camera can stand.
+  const side = (turn: number) => {
+    const turned = turn === 0 ? pose : turnAbout(pose, mark, turn);
+    let at: Vec3 = [turned.position[0], turned.position[1], turned.position[2]];
+    const flat = Math.hypot(at[0] - mark.x, at[2] - mark.z);
+    if (turn !== 0 && flat > 1e-9) {
+      const ux = (at[0] - mark.x) / flat;
+      const uz = (at[2] - mark.z) / flat;
+      const most = Math.max(MIN_DISTANCE_M, reachAlong([mark.x, mark.z], [ux, uz], limit));
+      if (flat > most) at = [mark.x + ux * most, at[1], mark.z + uz * most];
     }
+    const dir = new THREE.Vector3(...at).sub(eye);
+    const full = dir.length();
+    if (full < 1e-6) return { turned, at, dir, full, out: full, usable: true };
+    dir.divideScalar(full);
+    raycaster.set(eye, dir);
+    raycaster.far = full;
+    const hit = raycaster.intersectObject(set, true).find((h) => h.object.name !== "sky" && h.object.name !== "ground");
+    const out = hit ? Math.min(full, hit.distance - WALL_ROOM_M) : full;
+    return { turned, at, dir, full, out, usable: !hit || out >= MIN_DISTANCE_M };
+  };
+  type Side = ReturnType<typeof side>;
+  const roomy = (s: Side) => s.usable && s.out >= Math.min(s.full, GOOD_ROOM_M) - 1e-9;
+
+  const own = side(0);
+  let chosen: Side | null = roomy(own) ? own : null;
+  if (!chosen) {
+    let best: Side | null = own.usable ? own : null;
+    const solvedBearing = Math.atan2(pose.position[0] - mark.x, pose.position[2] - mark.z);
+    const facing = finite(stage.mark.facingDeg, 0) * DEG;
+    for (const bearing of [facing, ...Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4)]) {
+      const turn = Math.atan2(Math.sin(bearing - solvedBearing), Math.cos(bearing - solvedBearing));
+      if (Math.abs(turn) < 1e-6) continue;
+      const s = side(turn);
+      if (roomy(s)) {
+        chosen = s;
+        break;
+      }
+      if (s.usable && (!best || s.out > best.out)) best = s;
+    }
+    chosen = chosen ?? best;
   }
-  return { position, target: aimFrom(position, pose, { x: eye[0], z: eye[2] }, maxDistance), pulledIn };
+  if (!chosen) {
+    const position: Vec3 = [pose.position[0], pose.position[1], pose.position[2]];
+    return { position, target: aimFrom(position, pose, mark, stage.maxDistance), moved: "blocked" };
+  }
+  const pulled = chosen.out < chosen.full;
+  const position: Vec3 = pulled
+    ? [eye.x + chosen.dir.x * chosen.out, eye.y + chosen.dir.y * chosen.out, eye.z + chosen.dir.z * chosen.out]
+    : chosen.at;
+  const moved: CameraMove = chosen !== own ? "around" : pulled ? "in" : "none";
+  return { position, target: aimFrom(position, chosen.turned, mark, stage.maxDistance), moved };
 }
 
-export type MatchClamp = "wide" | "narrow" | "tiltUp" | "tiltDown" | "subject";
+export type MatchClamp = "wide" | "narrow" | "near" | "far" | "low" | "high" | "tiltUp" | "tiltDown" | "subject";
 
 /**
  * What the page's line says about a match: the camera's lens to the nearest
@@ -477,6 +593,10 @@ export function matchSummary(
   const clamps: MatchClamp[] = [];
   if (notes.fovClampedWide) clamps.push("wide");
   if (notes.fovClampedNarrow) clamps.push("narrow");
+  if (notes.distanceClampedNear) clamps.push("near");
+  if (notes.distanceClampedFar) clamps.push("far");
+  if (notes.heightClampedLow) clamps.push("low");
+  if (notes.heightClampedHigh) clamps.push("high");
   if (notes.pitchClamped) clamps.push(match.pitchDeg > 0 ? "tiltUp" : "tiltDown");
   if (notes.subjectPulledIn) clamps.push("subject");
   return {

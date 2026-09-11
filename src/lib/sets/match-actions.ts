@@ -21,13 +21,15 @@ import { normaliseSetSpec } from "@/lib/sets/set-spec";
 import {
   SETS_NOT_OPEN,
   SETS_UNAVAILABLE,
-  SET_MATCH_FAILED,
+  SET_BUILD_COULDNT_START,
+  SET_MATCH_COULDNT_READ,
   SET_MATCH_REFUSED,
   SET_MATCH_TIMED_OUT,
   SET_MATCH_TOO_FAST,
   SET_MATCH_UNCHECKED,
   SET_NOT_FOUND,
   SET_NOT_READY,
+  matchFailureMessage,
 } from "@/lib/sets/messages";
 
 // Match this shot (docs 3.2, 2026-09-11; admins only, behind astra_photo_sets).
@@ -52,6 +54,11 @@ import {
 // (app/app/sets/[id]/page.tsx): the clock starts with the action, so a slow
 // picture check leaves less time for Astra, and a read still running at the
 // deadline is cancelled (set-config.ts has the timing and the money).
+//
+// What a failure SAYS depends on whose it was (matchFailureMessage): only an
+// answer that came back unusable asks for another picture; a start or poll
+// failure — ours or OpenAI's — says try again, so nobody spends their next
+// turns swapping pictures an outage had nothing to do with.
 
 /** The same checks readyOwnedSpec makes in actions.ts: the person's own set, not deleted, ready, drawable. */
 async function readyOwnedSet(setId: string, userId: string): Promise<string | null> {
@@ -108,7 +115,10 @@ export async function matchSetShot(
   const parsed = parseSetPhotoDataUri(input?.photoDataUri);
   if (!parsed.ok) return { error: parsed.error };
   const photo = await normaliseSetPhoto(parsed.bytes);
-  if (!photo.ok) return { error: photo.error };
+  // The picture's own problems are the photo sentences; the one failure that
+  // is ours (no image library on the server) speaks of a set being started,
+  // which a match is not.
+  if (!photo.ok) return { error: photo.error === SET_BUILD_COULDNT_START ? SET_MATCH_COULDNT_READ : photo.error };
 
   // Fails closed like every limiter. A picture that could not be used above
   // never reached anything that costs money, so it takes no turn.
@@ -145,11 +155,8 @@ export async function matchSetShot(
   const submitted = await submitAstraJob(matchShotRequest(dataUrl, openAiSafetyId(userId)));
   if (!submitted.ok) {
     console.error("matchSetShot astra submit failed:", submitted.kind, submitted.detail);
-    if (submitted.kind === "refused") {
-      await logReadRefused(userId);
-      return { error: SET_MATCH_REFUSED };
-    }
-    return { error: SET_MATCH_FAILED };
+    if (submitted.kind === "refused") await logReadRefused(userId);
+    return { error: matchFailureMessage(submitted.kind) };
   }
 
   const polled = await pollUntilDeadline(
@@ -171,14 +178,11 @@ export async function matchSetShot(
   logUsage(setId, polled);
   if (polled.state === "failed") {
     console.error("matchSetShot astra read failed:", polled.kind, polled.detail);
-    if (polled.kind === "refused") {
-      await logReadRefused(userId);
-      return { error: SET_MATCH_REFUSED };
-    }
-    return { error: SET_MATCH_FAILED };
+    if (polled.kind === "refused") await logReadRefused(userId);
+    return { error: matchFailureMessage(polled.kind) };
   }
 
   const read = parseMatchShotText(polled.text);
-  if (!read.ok) return { error: SET_MATCH_FAILED };
+  if (!read.ok) return { error: matchFailureMessage("invalid") };
   return { error: null, match: read.match };
 }

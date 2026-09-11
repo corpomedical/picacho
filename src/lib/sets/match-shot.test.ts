@@ -16,6 +16,8 @@ import {
   pollUntilDeadline,
   solveMatchPose,
   type CameraPose,
+  type MatchClamp,
+  type MatchNotes,
   type ShotMatch,
 } from "./match-shot";
 import { SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS } from "./set-config";
@@ -262,6 +264,10 @@ const BOUNDS = { x: 30, z: 30, height: 12 };
 const MARK = { x: 1, z: -2, facingDeg: 0 };
 /** The camera the person has now: 5 m off the mark toward +Z. */
 const CURRENT: CameraPose = { position: [1, 1.6, 3], target: [1, 1.2, -2], fovDeg: 40 };
+/** A desktop's stage canvas: landscape, so the still spans the lens's vertical field of view. */
+const WIDE = 16 / 9;
+/** Phone stage canvases, portrait (w-full × 58vh): a Pixel 7 (380×531) and an iPhone SE (343×387). */
+const PHONES = [380 / 531, 343 / 387];
 
 const match = (over: Partial<ShotMatch> = {}): ShotMatch => ({
   subjectFound: true,
@@ -275,8 +281,8 @@ const match = (over: Partial<ShotMatch> = {}): ShotMatch => ({
   ...over,
 });
 
-function cameraAt(pose: CameraPose) {
-  const cam = new THREE.PerspectiveCamera(pose.fovDeg, 1, 0.05, 1000);
+function cameraAt(pose: CameraPose, canvasAspect = 1) {
+  const cam = new THREE.PerspectiveCamera(pose.fovDeg, canvasAspect, 0.05, 1000);
   cam.position.set(...pose.position);
   cam.lookAt(new THREE.Vector3(...pose.target));
   cam.updateMatrixWorld();
@@ -286,10 +292,13 @@ function cameraAt(pose: CameraPose) {
 /**
  * Where the mark's vertical line crosses the still's horizontal centre line —
  * the line's point at the height of the optical axis — in the square still,
- * 0 left to 1 right; and the camera's tilt in degrees.
+ * 0 left to 1 right; and the camera's tilt in degrees. The still is the
+ * canvas's centre square (set-view.tsx cropSquare), seen through the stage
+ * camera at the canvas's own shape: on a landscape canvas it spans the
+ * canvas's height, on a portrait one its width.
  */
-function measure(pose: CameraPose, mark: { x: number; z: number }) {
-  const cam = cameraAt(pose);
+function measure(pose: CameraPose, mark: { x: number; z: number }, canvasAspect = 1) {
+  const cam = cameraAt(pose, canvasAspect);
   const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
   const c = cam.position;
   const y = c.y - ((mark.x - c.x) * up.x + (mark.z - c.z) * up.z) / up.y;
@@ -297,7 +306,10 @@ function measure(pose: CameraPose, mark: { x: number; z: number }) {
   const ahead = point.clone().sub(c).dot(cam.getWorldDirection(new THREE.Vector3()));
   const ndc = point.clone().project(cam);
   const dir = cam.getWorldDirection(new THREE.Vector3());
-  return { x: (ndc.x + 1) / 2, ndcY: ndc.y, ahead, pitchDeg: Math.asin(dir.y) / DEG };
+  // The square's half-width in the canvas's own -1…1: the whole width on a
+  // portrait canvas, height ÷ width of it on a landscape one.
+  const squareHalf = Math.min(1, 1 / canvasAspect);
+  return { x: 0.5 + ndc.x / (2 * squareHalf), ndcY: ndc.y, ahead, pitchDeg: Math.asin(dir.y) / DEG };
 }
 
 /** Where the rule puts the subject in the square still. */
@@ -307,26 +319,59 @@ const finiteDeep = (v: unknown): boolean =>
   Array.isArray(v) ? v.every(finiteDeep) : typeof v === "object" && v !== null ? Object.values(v).every(finiteDeep) : typeof v !== "number" || Number.isFinite(v);
 
 describe("solveMatchPose — the mark lands where the subject sat, at the tilt read", () => {
-  const cases: { pitch: number; x: number; aspect: number; fov: number }[] = [];
+  const cases: { pitch: number; x: number; aspect: number; fov: number; canvas: number }[] = [];
   for (const pitch of [-80, -45, -12, 0, 8, 20])
     for (const x of [0.15, 0.3, 0.5, 0.62, 0.85])
       for (const aspect of [0.75, 4 / 3, 16 / 9, 2.39])
-        for (const fov of [25, 50, 88]) cases.push({ pitch, x, aspect, fov });
+        for (const fov of [25, 50, 88])
+          for (const canvas of [WIDE, 1, PHONES[0]]) cases.push({ pitch, x, aspect, fov, canvas });
 
-  it(`holds on ${cases.length} combinations of tilt, subject position, picture shape and lens`, () => {
-    for (const { pitch, x, aspect, fov } of cases) {
-      const label = `pitch ${pitch}, x ${x}, aspect ${aspect.toFixed(2)}, fov ${fov}`;
+  it(`holds on ${cases.length} combinations of tilt, subject position, picture shape, lens and stage canvas`, () => {
+    for (const { pitch, x, aspect, fov, canvas } of cases) {
+      const label = `pitch ${pitch}, x ${x}, aspect ${aspect.toFixed(2)}, fov ${fov}, canvas ${canvas.toFixed(3)}`;
       const { pose } = solveMatchPose(match({ pitchDeg: pitch, subjectX: x, verticalFovDeg: fov }), {
         mark: MARK,
         current: CURRENT,
         referenceAspect: aspect,
         bounds: BOUNDS,
+        canvasAspect: canvas,
       });
-      const m = measure(pose, MARK);
+      const m = measure(pose, MARK, canvas);
       expect(m.ahead, label).toBeGreaterThan(0);
       expect(Math.abs(m.ndcY), label).toBeLessThan(1e-6);
       expect(Math.abs(m.x - expectedX(x, aspect)), label).toBeLessThanOrEqual(0.01);
       expect(Math.abs(m.pitchDeg - pitch), label).toBeLessThanOrEqual(0.1);
+    }
+  });
+
+  it("places the figure for the still a phone's portrait canvas takes, and keeps it inside that still", () => {
+    // A portrait canvas's still spans only its width, so the same turn would
+    // land the mark farther out: 0.99 of a Pixel 7's still for a subject at
+    // the edge of a 16:9 picture, which the page calls "kept inside".
+    for (const canvas of PHONES) {
+      for (const [x, aspect, atEdge] of [
+        [0.95, 16 / 9, true],
+        [0.62, 16 / 9, false],
+        [0.8, 0.75, false],
+        [0.02, 2.39, true],
+      ] as const) {
+        const label = `canvas ${canvas.toFixed(3)}, x ${x}, aspect ${aspect.toFixed(2)}`;
+        const { pose, notes } = solveMatchPose(match({ subjectX: x, pitchDeg: -8 }), {
+          mark: MARK,
+          current: CURRENT,
+          referenceAspect: aspect,
+          bounds: BOUNDS,
+          canvasAspect: canvas,
+        });
+        const m = measure(pose, MARK, canvas);
+        expect(Math.abs(m.x - expectedX(x, aspect)), label).toBeLessThanOrEqual(0.01);
+        expect(m.x, label).toBeGreaterThanOrEqual(0.15 - 0.01);
+        expect(m.x, label).toBeLessThanOrEqual(0.85 + 0.01);
+        // The same pose on a desktop sits nearer the centre, still inside.
+        const wide = measure(pose, MARK, WIDE);
+        expect(Math.abs(wide.x - 0.5), label).toBeLessThanOrEqual(Math.abs(m.x - 0.5) + 1e-9);
+        expect(notes.subjectPulledIn ?? false, label).toBe(atEdge);
+      }
     }
   });
 
@@ -349,8 +394,9 @@ describe("solveMatchPose — the mark lands where the subject sat, at the tilt r
         subjectDistanceM: 0.2 + rand() * 200,
         subjectX: rand(),
       });
+      const canvas = 0.45 + rand() * 2;
       const label = `case ${i}`;
-      const { pose } = solveMatchPose(m, { mark, current, referenceAspect: aspect, bounds });
+      const { pose, notes } = solveMatchPose(m, { mark, current, referenceAspect: aspect, bounds, canvasAspect: canvas });
       expect(finiteDeep(pose), label).toBe(true);
       const [px, py, pz] = pose.position;
       expect(Math.abs(px), label).toBeLessThanOrEqual(bounds.x / 2 + 10 + 1e-9);
@@ -360,20 +406,29 @@ describe("solveMatchPose — the mark lands where the subject sat, at the tilt r
       expect(Math.hypot(px - mark.x, pz - mark.z), label).toBeGreaterThanOrEqual(0.6 - 1e-9);
       for (const v of pose.target) expect(Math.abs(v), label).toBeLessThanOrEqual(200 + 1e-9);
       expect(Math.hypot(pose.target[0] - px, pose.target[1] - py, pose.target[2] - pz), label).toBeGreaterThanOrEqual(0.5 - 1e-9);
-      const got = measure(pose, mark);
+      const got = measure(pose, mark, canvas);
       expect(Math.abs(got.x - expectedX(m.subjectX ?? 0.5, aspect)), label).toBeLessThanOrEqual(0.01);
       expect(Math.abs(got.pitchDeg - Math.min(20, Math.max(-80, m.pitchDeg))), label).toBeLessThanOrEqual(0.1);
+      // Every limit that moved the camera off the read is noted: unless one
+      // is, it stands at the read height and distance (the long lens's move
+      // in included).
+      const distance = Math.hypot(px - mark.x, pz - mark.z);
+      const wanted = m.subjectDistanceM! * (notes.distanceScaled ?? 1);
+      if (!notes.distanceClampedNear && !notes.distanceClampedFar) expect(distance, label).toBeCloseTo(wanted, 9);
+      if (notes.distanceClampedNear) expect(distance, label).toBeGreaterThan(wanted);
+      if (notes.distanceClampedFar) expect(distance, label).toBeLessThan(wanted);
+      if (!notes.heightClampedLow && !notes.heightClampedHigh) expect(py, label).toBeCloseTo(m.cameraHeightM, 9);
     }
   });
 
   it("holds the tilt to what the stage camera can do: 20° up, 80° down", () => {
-    const up = solveMatchPose(match({ pitchDeg: 45 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
-    const down = solveMatchPose(match({ pitchDeg: -85 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
+    const up = solveMatchPose(match({ pitchDeg: 45 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
+    const down = solveMatchPose(match({ pitchDeg: -85 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     expect(measure(up.pose, MARK).pitchDeg).toBeCloseTo(20, 1);
     expect(measure(down.pose, MARK).pitchDeg).toBeCloseTo(-80, 1);
     expect(up.notes.pitchClamped).toBe(true);
     expect(down.notes.pitchClamped).toBe(true);
-    const within = solveMatchPose(match({ pitchDeg: -30 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
+    const within = solveMatchPose(match({ pitchDeg: -30 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     expect(within.notes.pitchClamped).toBeUndefined();
   });
 
@@ -384,12 +439,12 @@ describe("solveMatchPose — the mark lands where the subject sat, at the tilt r
       [0, 0.15],
       [1, 0.85],
     ] as const) {
-      const { pose, notes } = solveMatchPose(match({ subjectX: x }), { mark: MARK, current: CURRENT, referenceAspect: 16 / 9, bounds: BOUNDS });
+      const { pose, notes } = solveMatchPose(match({ subjectX: x }), { mark: MARK, current: CURRENT, referenceAspect: 16 / 9, bounds: BOUNDS, canvasAspect: WIDE });
       expect(measure(pose, MARK).x).toBeCloseTo(want, 2);
       expect(notes.subjectPulledIn).toBe(true);
     }
     // A portrait picture is no wider than the square: its x carries straight over.
-    const portrait = solveMatchPose(match({ subjectX: 0.2 }), { mark: MARK, current: CURRENT, referenceAspect: 0.75, bounds: BOUNDS });
+    const portrait = solveMatchPose(match({ subjectX: 0.2 }), { mark: MARK, current: CURRENT, referenceAspect: 0.75, bounds: BOUNDS, canvasAspect: WIDE });
     expect(measure(portrait.pose, MARK).x).toBeCloseTo(0.2, 2);
     expect(portrait.notes.subjectPulledIn).toBeUndefined();
   });
@@ -400,6 +455,7 @@ describe("solveMatchPose — the mark lands where the subject sat, at the tilt r
       current: CURRENT,
       referenceAspect: 2.39,
       bounds: BOUNDS,
+      canvasAspect: WIDE,
     });
     expect(measure(pose, MARK).x).toBeCloseTo(0.5, 3);
   });
@@ -412,6 +468,7 @@ describe("solveMatchPose — the lens", () => {
       current: CURRENT,
       referenceAspect: aspect,
       bounds: BOUNDS,
+      canvasAspect: WIDE,
     });
 
   // The square still spans the reference's SHORTER side: projected through
@@ -472,7 +529,7 @@ describe("solveMatchPose — where the camera stands", () => {
 
   it("keeps the side the person is shooting from", () => {
     const current: CameraPose = { position: [MARK.x + 3, 2, MARK.z + 4], target: [MARK.x, 1, MARK.z], fovDeg: 40 };
-    const { pose } = solveMatchPose(match({ subjectDistanceM: 7 }), { mark: MARK, current, referenceAspect: 1.5, bounds: BOUNDS });
+    const { pose } = solveMatchPose(match({ subjectDistanceM: 7 }), { mark: MARK, current, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     const [dx, dz] = horizontal(pose);
     expect(Math.hypot(dx, dz)).toBeCloseTo(7, 9);
     expect(dx / 7).toBeCloseTo(0.6, 9);
@@ -493,6 +550,7 @@ describe("solveMatchPose — where the camera stands", () => {
         current,
         referenceAspect: 1.5,
         bounds: BOUNDS,
+        canvasAspect: WIDE,
       });
       const [dx, dz] = horizontal(pose);
       expect(dx).toBeCloseTo(3 * ux, 9);
@@ -506,40 +564,70 @@ describe("solveMatchPose — where the camera stands", () => {
       current: CURRENT,
       referenceAspect: 1.5,
       bounds: BOUNDS,
+      canvasAspect: WIDE,
     });
     expect(Math.hypot(...horizontal(pose))).toBeCloseTo(5, 9);
   });
 
-  it("stands at least 0.6 m off the mark", () => {
-    const { pose } = solveMatchPose(match({ subjectDistanceM: 0.2 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
+  it("stands at least 0.6 m off the mark, and says so", () => {
+    const { pose, notes } = solveMatchPose(match({ subjectDistanceM: 0.2 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     expect(Math.hypot(...horizontal(pose))).toBeCloseTo(0.6, 9);
+    expect(notes).toEqual({ distanceClampedNear: true });
   });
 
-  it("never stands past where a saved layout keeps a camera: the set's footprint + 10 m", () => {
+  it("never stands past where a saved layout keeps a camera: the set's footprint + 10 m, and says so", () => {
     const current: CameraPose = { position: [MARK.x + 3, 1.6, MARK.z + 4], target: [MARK.x, 1, MARK.z], fovDeg: 40 };
-    const { pose } = solveMatchPose(match({ subjectDistanceM: 200 }), { mark: MARK, current, referenceAspect: 1.5, bounds: BOUNDS });
+    const { pose, notes } = solveMatchPose(match({ subjectDistanceM: 200 }), { mark: MARK, current, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     expect(Math.abs(pose.position[0])).toBeLessThanOrEqual(25 + 1e-9);
     expect(Math.abs(pose.position[2])).toBeLessThanOrEqual(25 + 1e-9);
     // On the bearing, at the edge of the reach.
     const [dx, dz] = horizontal(pose);
     expect(dx / Math.hypot(dx, dz)).toBeCloseTo(0.6, 9);
     expect(Math.max(Math.abs(pose.position[0]), Math.abs(pose.position[2]))).toBeCloseTo(25, 9);
+    expect(notes).toEqual({ distanceClampedFar: true });
+    // The review's case: a 20 × 20 m set, the mark at its centre, a subject read 60 m out.
+    const small = solveMatchPose(match({ subjectDistanceM: 60 }), {
+      mark: { x: 0, z: 0, facingDeg: 0 },
+      current: { position: [0, 1.6, 5], target: [0, 1.2, 0], fovDeg: 40 },
+      referenceAspect: 1.5,
+      bounds: { x: 20, z: 20, height: 6 },
+      canvasAspect: WIDE,
+    });
+    expect(small.pose.position[2]).toBeCloseTo(20, 9);
+    expect(small.notes.distanceClampedFar).toBe(true);
   });
 
-  it("holds the height between 0.2 m and twice the set's height", () => {
-    const low = solveMatchPose(match({ cameraHeightM: 0.05 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
-    const high = solveMatchPose(match({ cameraHeightM: 30 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
+  it("says nothing about a distance the picture did not give", () => {
+    // No subject, the camera on the mark: it stands 0.6 m out, as any camera must.
+    const { pose, notes } = solveMatchPose(match({ subjectFound: false, subjectDistanceM: null, subjectX: null }), {
+      mark: MARK,
+      current: { position: [MARK.x, 1.6, MARK.z], target: [MARK.x, 1, MARK.z - 3], fovDeg: 40 },
+      referenceAspect: 1.5,
+      bounds: BOUNDS,
+      canvasAspect: WIDE,
+    });
+    expect(Math.hypot(...horizontal(pose))).toBeCloseTo(0.6, 9);
+    expect(notes).toEqual({});
+  });
+
+  it("holds the height between 0.2 m and twice the set's height, and says so", () => {
+    const low = solveMatchPose(match({ cameraHeightM: 0.05 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
+    const high = solveMatchPose(match({ cameraHeightM: 30 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     expect(low.pose.position[1]).toBe(0.2);
     expect(high.pose.position[1]).toBe(24);
+    expect(low.notes).toEqual({ heightClampedLow: true });
+    expect(high.notes).toEqual({ heightClampedHigh: true });
+    const within = solveMatchPose(match({ cameraHeightM: 24 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
+    expect(within.notes).toEqual({});
   });
 
   it("puts the target where the axis passes the mark, or on the ground if it gets there first", () => {
-    const level = solveMatchPose(match({ pitchDeg: 0 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
+    const level = solveMatchPose(match({ pitchDeg: 0 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     expect(level.pose.target[0]).toBeCloseTo(MARK.x, 9);
     expect(level.pose.target[2]).toBeCloseTo(MARK.z, 9);
     expect(level.pose.target[1]).toBeCloseTo(1.6, 9);
     // 1.6 m up, 60° down: the ground is 1.85 m along the axis, the mark 8 m.
-    const steep = solveMatchPose(match({ pitchDeg: -60 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
+    const steep = solveMatchPose(match({ pitchDeg: -60 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     expect(steep.pose.target[1]).toBeCloseTo(0, 9);
     const t = steep.pose.target;
     const p = steep.pose.position;
@@ -547,7 +635,7 @@ describe("solveMatchPose — where the camera stands", () => {
   });
 
   it("keeps the target at least 0.5 m out, and inside the coordinates a saved layout keeps", () => {
-    const floor = solveMatchPose(match({ cameraHeightM: 0.2, pitchDeg: -80 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS });
+    const floor = solveMatchPose(match({ cameraHeightM: 0.2, pitchDeg: -80 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE });
     const t = floor.pose.target;
     const p = floor.pose.position;
     expect(Math.hypot(t[0] - p[0], t[1] - p[1], t[2] - p[2])).toBeCloseTo(0.5, 9);
@@ -557,6 +645,7 @@ describe("solveMatchPose — where the camera stands", () => {
       current: { position: [-99, 1.6, -99], target: [-100, 1, -100], fovDeg: 40 },
       referenceAspect: 1.5,
       bounds: huge,
+      canvasAspect: WIDE,
     });
     for (const v of far.pose.target) expect(Math.abs(v)).toBeLessThanOrEqual(200 + 1e-9);
     expect(Math.abs(measure(far.pose, { x: -100, z: -100 }).pitchDeg - 20)).toBeLessThanOrEqual(0.1);
@@ -564,16 +653,16 @@ describe("solveMatchPose — where the camera stands", () => {
 
   it("never returns NaN, whatever it is handed", () => {
     const degenerate: [string, ShotMatch, Parameters<typeof solveMatchPose>[1]][] = [
-      ["the camera on the mark", match(), { mark: MARK, current: { position: [MARK.x, 1.6, MARK.z], target: [0, 0, 0], fovDeg: 40 }, referenceAspect: 1.5, bounds: BOUNDS }],
-      ["pitch −89", match({ pitchDeg: -89 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS }],
-      ["subject_x 0 in a 2.39:1 frame", match({ subjectX: 0 }), { mark: MARK, current: CURRENT, referenceAspect: 2.39, bounds: BOUNDS }],
-      ["all three at once", match({ pitchDeg: -89, subjectX: 0 }), { mark: MARK, current: { position: [MARK.x, 1.6, MARK.z], target: [0, 0, 0], fovDeg: 40 }, referenceAspect: 2.39, bounds: BOUNDS }],
-      ["no picture shape", match(), { mark: MARK, current: CURRENT, referenceAspect: Number.NaN, bounds: BOUNDS }],
-      ["a zero-width picture", match(), { mark: MARK, current: CURRENT, referenceAspect: 0, bounds: BOUNDS }],
-      ["an endless picture", match(), { mark: MARK, current: CURRENT, referenceAspect: Infinity, bounds: BOUNDS }],
-      ["a broken camera", match(), { mark: MARK, current: { position: [Number.NaN, Number.NaN, Number.NaN], target: [0, 0, 0], fovDeg: 40 }, referenceAspect: 1.5, bounds: BOUNDS }],
-      ["a broken mark", match(), { mark: { x: Number.NaN, z: Infinity, facingDeg: Number.NaN }, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS }],
-      ["the narrowest lens, straight down, at the edge", match({ verticalFovDeg: 3, pitchDeg: -89, subjectX: 1, cameraHeightM: 0.05, subjectDistanceM: 0.2 }), { mark: MARK, current: CURRENT, referenceAspect: 0.2, bounds: BOUNDS }],
+      ["the camera on the mark", match(), { mark: MARK, current: { position: [MARK.x, 1.6, MARK.z], target: [0, 0, 0], fovDeg: 40 }, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["pitch −89", match({ pitchDeg: -89 }), { mark: MARK, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["subject_x 0 in a 2.39:1 frame", match({ subjectX: 0 }), { mark: MARK, current: CURRENT, referenceAspect: 2.39, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["all three at once", match({ pitchDeg: -89, subjectX: 0 }), { mark: MARK, current: { position: [MARK.x, 1.6, MARK.z], target: [0, 0, 0], fovDeg: 40 }, referenceAspect: 2.39, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["no picture shape", match(), { mark: MARK, current: CURRENT, referenceAspect: Number.NaN, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["a zero-width picture", match(), { mark: MARK, current: CURRENT, referenceAspect: 0, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["an endless picture", match(), { mark: MARK, current: CURRENT, referenceAspect: Infinity, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["a broken camera", match(), { mark: MARK, current: { position: [Number.NaN, Number.NaN, Number.NaN], target: [0, 0, 0], fovDeg: 40 }, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["a broken mark", match(), { mark: { x: Number.NaN, z: Infinity, facingDeg: Number.NaN }, current: CURRENT, referenceAspect: 1.5, bounds: BOUNDS, canvasAspect: WIDE }],
+      ["the narrowest lens, straight down, at the edge", match({ verticalFovDeg: 3, pitchDeg: -89, subjectX: 1, cameraHeightM: 0.05, subjectDistanceM: 0.2 }), { mark: MARK, current: CURRENT, referenceAspect: 0.2, bounds: BOUNDS, canvasAspect: WIDE }],
     ];
     for (const [label, m, input] of degenerate) {
       const solved = solveMatchPose(m, input);
@@ -588,7 +677,7 @@ describe("solveMatchPose — where the camera stands", () => {
 
 describe("aimFrom — where the camera looks once the page has placed it", () => {
   const solve = (over: Partial<ShotMatch>) =>
-    solveMatchPose(match(over), { mark: MARK, current: CURRENT, referenceAspect: 16 / 9, bounds: BOUNDS }).pose;
+    solveMatchPose(match(over), { mark: MARK, current: CURRENT, referenceAspect: 16 / 9, bounds: BOUNDS, canvasAspect: WIDE }).pose;
   /** A point on the line from the figure's eye to the solved camera, `share` of the way out. */
   const pulledTo = (pose: CameraPose, share: number): [number, number, number] => [
     MARK.x + (pose.position[0] - MARK.x) * share,
@@ -636,32 +725,55 @@ describe("aimFrom — where the camera looks once the page has placed it", () =>
 });
 
 describe("placeMatchedCamera — the set as built", () => {
-  // A 6 m wall, 3 m high and 0.2 m thick, centred 3 m in front of a mark
-  // at the origin: its near face is at z = 2.9.
-  const walled = (() => {
-    const r = normaliseSetSpec({
-      bounds: { x: 20, z: 20, height: 6 },
-      objects: [{ shape: "box", position: [0, 1.5, 3], size: [6, 3, 0.2] }],
-      marks: [{ x: 0, z: 0, facingDeg: 0 }],
-      cameras: [{ position: [0, 1.6, -6], target: [0, 1.2, 0], fovDeg: 40 }],
-    });
+  const SET_BOUNDS = { x: 20, z: 20, height: 6 };
+  const built = (objects: unknown[]) => {
+    const r = normaliseSetSpec({ bounds: SET_BOUNDS, objects, marks: [{ x: 0, z: 0, facingDeg: 0 }] });
     if (!r.ok) throw new Error("fixture");
     return buildSetScene(THREE, r.spec);
-  })();
+  };
+  // A 6 m wall, 3 m high and 0.2 m thick, centred 3 m in front of a mark
+  // at the origin: its near face is at z = 2.9.
+  const walled = built([{ shape: "box", position: [0, 1.5, 3], size: [6, 3, 0.2] }]);
+  const ORIGIN = { x: 0, z: 0, facingDeg: 0 };
+  const stage = (over: Partial<Parameters<typeof placeMatchedCamera>[3]> = {}) => ({
+    mark: ORIGIN,
+    eyeY: 1.45,
+    bounds: SET_BOUNDS,
+    maxDistance: 100,
+    ...over,
+  });
   const EYE: [number, number, number] = [0, 1.45, 0];
   const pose = (position: [number, number, number]): CameraPose => ({ position, target: [0, 1.2, 0], fovDeg: 40 });
+  /** Whatever built stands on the line from the camera to a point on the figure (the floor and sky aside). */
+  const between = (root: THREE.Object3D, from: readonly number[], to: readonly number[]) => {
+    const a = new THREE.Vector3(...from);
+    const d = new THREE.Vector3(...to).sub(a);
+    const length = d.length();
+    return new THREE.Raycaster(a, d.normalize(), 0, length)
+      .intersectObject(root, true)
+      .filter((h) => h.object.name !== "sky" && h.object.name !== "ground");
+  };
+  const FIGURE_POINTS = [0.4, 1.2, 1.45, 1.6].map((y) => [0, y, 0]);
+  const solveAt = (current: CameraPose, over: Partial<ShotMatch> = {}) =>
+    solveMatchPose(match({ subjectDistanceM: 4, subjectX: 0.7, pitchDeg: -8, ...over }), {
+      mark: ORIGIN,
+      current,
+      referenceAspect: 16 / 9,
+      bounds: SET_BOUNDS,
+      canvasAspect: WIDE,
+    }).pose;
 
   it("leaves the camera where it was solved when nothing built stands between", () => {
     const solved = pose([0, 1.6, -6]);
-    const placed = placeMatchedCamera(THREE, walled.root, EYE, solved, 100);
-    expect(placed.pulledIn).toBe(false);
+    const placed = placeMatchedCamera(THREE, walled.root, solved, stage());
+    expect(placed.moved).toBe("none");
     expect(placed.position).toEqual(solved.position);
     expect(placed.target).toEqual(aimFrom(solved.position, solved, { x: 0, z: 0 }, 100));
   });
 
   it("pulls the camera toward the figure, 0.3 m short of a wall in the way, on the same line", () => {
-    const placed = placeMatchedCamera(THREE, walled.root, EYE, pose([0, 1.6, 6]), 100);
-    expect(placed.pulledIn).toBe(true);
+    const placed = placeMatchedCamera(THREE, walled.root, pose([0, 1.6, 6]), stage());
+    expect(placed.moved).toBe("in");
     const [x, y, z] = placed.position;
     expect(x).toBeCloseTo(0, 9);
     // On the line from the eye (1.45 m) to the solved camera (1.6 m, 6 m out).
@@ -672,41 +784,144 @@ describe("placeMatchedCamera — the set as built", () => {
   });
 
   it("keeps the figure where the subject sat when a wall pulls a solved camera in", () => {
-    const mark = { x: 0, z: 0, facingDeg: 0 };
     const current: CameraPose = { position: [0, 1.6, 5], target: [0, 1.2, 0], fovDeg: 40 };
-    const { pose: solved } = solveMatchPose(match({ subjectDistanceM: 8, subjectX: 0.75, pitchDeg: 6, cameraHeightM: 0.9 }), {
-      mark,
-      current,
-      referenceAspect: 16 / 9,
-      bounds: { x: 20, z: 20, height: 6 },
-    });
-    const placed = placeMatchedCamera(THREE, walled.root, EYE, solved, 100);
-    expect(placed.pulledIn).toBe(true);
-    const got = measure({ position: placed.position, target: placed.target, fovDeg: solved.fovDeg }, mark);
+    const solved = solveAt(current, { subjectDistanceM: 8, subjectX: 0.75, pitchDeg: 6, cameraHeightM: 0.9 });
+    const placed = placeMatchedCamera(THREE, walled.root, solved, stage());
+    expect(placed.moved).toBe("in");
+    const got = measure({ position: placed.position, target: placed.target, fovDeg: solved.fovDeg }, ORIGIN);
     expect(got.x).toBeCloseTo(expectedX(0.75, 16 / 9), 2);
     expect(got.pitchDeg).toBeCloseTo(6, 6);
   });
 
-  it("stops at least 0.6 m from the figure, however close the wall", () => {
-    const tight = (() => {
-      const r = normaliseSetSpec({
-        bounds: { x: 20, z: 20, height: 6 },
-        objects: [{ shape: "box", position: [0, 1.5, 0.5], size: [6, 3, 0.2] }],
-        marks: [{ x: 0, z: 0, facingDeg: 0 }],
+  // The review's case (2026-09-11): a thin partition nearer the figure than
+  // a camera may stand. Stopping 0.6 m out put the camera 0.1 m beyond it,
+  // hiding the figure, under a note that said it had moved closer.
+  describe("a thin partition nearer the figure than a camera may stand", () => {
+    for (const [label, partition] of [
+      ["0.1 m thick, 0.4 m out", { shape: "box", position: [0, 1.5, 0.45], size: [6, 3, 0.1] }],
+      ["0.12 m thick, 0.35 m out", { shape: "box", position: [0, 1.5, 0.41], size: [6, 3, 0.12] }],
+      ["0.2 m thick, 0.4 m out", { shape: "box", position: [0, 1.5, 0.5], size: [6, 3, 0.2] }],
+      // A plane lies flat until turned: 90° about X stands it up, facing ±Z.
+      ["a plane 0.4 m out", { shape: "plane", position: [0, 1.5, 0.4], size: [6, 1, 3], rotation: [90, 0, 0] }],
+    ] as const) {
+      it(`${label}: the camera goes round to another side, where it sees the figure, and the framing holds`, () => {
+        const set = built([partition]);
+        // The person's camera is beyond the partition, 5 m out.
+        const solved = solveAt({ position: [0, 1.6, 5], target: [0, 1.2, 0], fovDeg: 40 });
+        const placed = placeMatchedCamera(THREE, set.root, solved, stage());
+        expect(placed.moved).toBe("around");
+        for (const point of FIGURE_POINTS) expect(between(set.root, placed.position, point), `${label} to y ${point[1]}`).toEqual([]);
+        // The figure faces the partition (+Z), so the first open side is a compass point off it.
+        expect(Math.abs(placed.position[2])).toBeLessThan(Math.hypot(placed.position[0], placed.position[2]));
+        const got = measure({ position: placed.position, target: placed.target, fovDeg: solved.fovDeg }, ORIGIN);
+        expect(got.x).toBeCloseTo(expectedX(0.7, 16 / 9), 2);
+        expect(got.pitchDeg).toBeCloseTo(-8, 6);
+        // As far out as it was matched: the other side is open.
+        expect(Math.hypot(placed.position[0], placed.position[2])).toBeCloseTo(4, 6);
+        set.dispose();
       });
-      if (!r.ok) throw new Error("fixture");
-      return buildSetScene(THREE, r.spec);
-    })();
-    const placed = placeMatchedCamera(THREE, tight.root, EYE, pose([0, 1.45, 5]), 100);
-    expect(placed.pulledIn).toBe(true);
-    expect(placed.position[2]).toBeCloseTo(0.6, 9);
-    tight.dispose();
+    }
+
+    it("the same when the camera stood on the mark and the figure faces the partition", () => {
+      const set = built([{ shape: "box", position: [0, 1.5, 0.45], size: [6, 3, 0.1] }]);
+      const solved = solveAt({ position: [0.05, 1.6, 0.05], target: [0, 1.2, 3], fovDeg: 40 });
+      const placed = placeMatchedCamera(THREE, set.root, solved, stage());
+      expect(placed.moved).toBe("around");
+      for (const point of FIGURE_POINTS) expect(between(set.root, placed.position, point)).toEqual([]);
+      set.dispose();
+    });
+  });
+
+  it("goes round to a side with room rather than standing close under a wall on the person's side", () => {
+    // The wall's near face 1 m out: on this side the camera could stand only
+    // 0.7 m off, a close-up the match never asked for; the figure's other
+    // sides are open (frameFigure's rule: 1.2 m, or as far as it was matched).
+    const set = built([{ shape: "box", position: [0, 1.5, 1.1], size: [6, 3, 0.2] }]);
+    const solved = solveAt({ position: [0, 1.6, 5], target: [0, 1.2, 0], fovDeg: 40 });
+    const placed = placeMatchedCamera(THREE, set.root, solved, stage());
+    expect(placed.moved).toBe("around");
+    expect(Math.hypot(placed.position[0], placed.position[2])).toBeCloseTo(4, 6);
+    set.dispose();
+  });
+
+  it("stays on the person's side, pulled in, when that still leaves 1.2 m — even with more room elsewhere", () => {
+    // A 1.4 m-wide corridor along X, closed 1.9 m out on +X, open on −X.
+    const set = built([
+      { shape: "box", position: [0, 1.5, 0.8], size: [20, 3, 0.2] },
+      { shape: "box", position: [0, 1.5, -0.8], size: [20, 3, 0.2] },
+      { shape: "box", position: [2, 1.5, 0], size: [0.2, 3, 1.4] },
+    ]);
+    // Down the open end: nothing in the way.
+    const open = placeMatchedCamera(THREE, set.root, solveAt({ position: [-5, 1.6, 0], target: [0, 1.2, 0], fovDeg: 40 }, { subjectX: 0.5 }), stage());
+    expect(open.moved).toBe("none");
+    expect(open.position[0]).toBeCloseTo(-4, 6);
+    // From the closed end: 1.6 m of room there, so in to 1.6 m rather than round to the open end's 4 m.
+    const closed = placeMatchedCamera(THREE, set.root, solveAt({ position: [5, 1.6, 0], target: [0, 1.2, 0], fovDeg: 40 }, { subjectX: 0.5 }), stage());
+    expect(closed.moved).toBe("in");
+    expect(closed.position[0]).toBeGreaterThan(0);
+    expect(Math.hypot(closed.position[0], closed.position[1] - 1.45, closed.position[2])).toBeCloseTo(1.6, 2);
+    set.dispose();
+  });
+
+  it("takes whichever usable side has the most room when none has 1.2 m", () => {
+    // A closet 1 m deep on three sides of the figure (walls 0.5 m out) and
+    // 1.7 m on the fourth (−X, its wall 1.2 m out): only −X leaves 0.6 m.
+    const set = built([
+      { shape: "box", position: [-0.35, 1.5, 0.55], size: [1.9, 3, 0.1] },
+      { shape: "box", position: [-0.35, 1.5, -0.55], size: [1.9, 3, 0.1] },
+      { shape: "box", position: [0.55, 1.5, 0], size: [0.1, 3, 1.2] },
+      { shape: "box", position: [-1.25, 1.5, 0], size: [0.1, 3, 1.2] },
+    ]);
+    const solved = solveAt({ position: [0, 1.6, 5], target: [0, 1.2, 0], fovDeg: 40 });
+    const placed = placeMatchedCamera(THREE, set.root, solved, stage());
+    expect(placed.moved).toBe("around");
+    expect(placed.position[0]).toBeCloseTo(-0.9, 2);
+    expect(placed.position[2]).toBeCloseTo(0, 9);
+    for (const point of FIGURE_POINTS) expect(between(set.root, placed.position, point)).toEqual([]);
+    const got = measure({ position: placed.position, target: placed.target, fovDeg: solved.fovDeg }, ORIGIN);
+    expect(got.x).toBeCloseTo(expectedX(0.7, 16 / 9), 2);
+    set.dispose();
+  });
+
+  it("stays as solved, and says the figure may be hidden, when something built stands close on every side", () => {
+    // A closet: four walls 0.5 m from the mark.
+    const set = built([
+      { shape: "box", position: [0, 1.5, 0.55], size: [1.2, 3, 0.1] },
+      { shape: "box", position: [0, 1.5, -0.55], size: [1.2, 3, 0.1] },
+      { shape: "box", position: [0.55, 1.5, 0], size: [0.1, 3, 1.2] },
+      { shape: "box", position: [-0.55, 1.5, 0], size: [0.1, 3, 1.2] },
+    ]);
+    const solved = solveAt({ position: [0, 1.6, 5], target: [0, 1.2, 0], fovDeg: 40 });
+    const placed = placeMatchedCamera(THREE, set.root, solved, stage());
+    expect(placed.moved).toBe("blocked");
+    expect(placed.position).toEqual(solved.position);
+    set.dispose();
+  });
+
+  it("never stands past where a saved layout keeps a camera, on whichever side it goes to", () => {
+    // The mark at the set's +X edge, facing +X; a partition on the person's
+    // side. Facing +X, the layout reaches only 10 m, not the 16 m matched.
+    const set = built([{ shape: "box", position: [9.5, 1.5, 0.45], size: [3, 3, 0.1] }]);
+    const mark = { x: 9.5, z: 0, facingDeg: 90 };
+    const solved = solveMatchPose(match({ subjectDistanceM: 16, subjectX: 0.5, pitchDeg: 0 }), {
+      mark,
+      current: { position: [9.5, 1.6, 5], target: [9.5, 1.2, 0], fovDeg: 40 },
+      referenceAspect: 16 / 9,
+      bounds: SET_BOUNDS,
+      canvasAspect: WIDE,
+    }).pose;
+    const placed = placeMatchedCamera(THREE, set.root, solved, stage({ mark }));
+    expect(placed.moved).toBe("around");
+    expect(Math.abs(placed.position[0])).toBeLessThanOrEqual(20 + 1e-9);
+    expect(Math.abs(placed.position[2])).toBeLessThanOrEqual(20 + 1e-9);
+    expect(placed.position[0]).toBeCloseTo(20, 6);
+    set.dispose();
   });
 
   it("never counts the interpreter's own floor or sky as something built", () => {
     // Low and far: past the sky dome's 150 m radius, above the floor all the way.
-    const placed = placeMatchedCamera(THREE, walled.root, EYE, pose([0, 0.2, -190]), 250);
-    expect(placed.pulledIn).toBe(false);
+    const placed = placeMatchedCamera(THREE, walled.root, pose([0, 0.2, -190]), stage({ maxDistance: 250 }));
+    expect(placed.moved).toBe("none");
     expect(placed.position).toEqual([0, 0.2, -190]);
   });
 });
@@ -734,6 +949,30 @@ describe("matchSummary", () => {
       "narrow",
       "tiltDown",
     ]);
+    expect(matchSummary(match(), pose(40, 1, 0), { distanceClampedFar: true, heightClampedHigh: true }).clamps).toEqual(["far", "high"]);
+    expect(matchSummary(match(), pose(40, 1, 0), { distanceClampedNear: true, heightClampedLow: true }).clamps).toEqual(["near", "low"]);
+  });
+
+  it("names every limit solveMatchPose can apply: each note has its clamp", () => {
+    // Held to the page's promise: every limit that moved the camera off the
+    // read is said. A note matchSummary drops would be a limit said nowhere.
+    const everyNote: Required<MatchNotes> = {
+      fovClampedWide: true,
+      fovClampedNarrow: true,
+      distanceScaled: 0.5,
+      distanceClampedNear: true,
+      distanceClampedFar: true,
+      heightClampedLow: true,
+      heightClampedHigh: true,
+      pitchClamped: true,
+      subjectPulledIn: true,
+    };
+    const said = new Set<MatchClamp>(matchSummary(match({ pitchDeg: 40 }), pose(40, 1, 0), everyNote).clamps);
+    for (const c of matchSummary(match({ pitchDeg: -40 }), pose(40, 1, 0), everyNote).clamps) said.add(c);
+    const ALL: Record<MatchClamp, true> = { wide: true, narrow: true, near: true, far: true, low: true, high: true, tiltUp: true, tiltDown: true, subject: true };
+    expect([...said].sort()).toEqual(Object.keys(ALL).sort());
+    // distanceScaled is the narrow lens's factor, said with "narrow".
+    expect(Object.keys(everyNote).length).toBe(9);
   });
 });
 

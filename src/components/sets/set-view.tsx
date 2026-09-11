@@ -11,7 +11,7 @@ import { saveSetLayout, saveSetThumbnail, shootInSet } from "@/lib/sets/actions"
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
-import { matchSummary, placeMatchedCamera, solveMatchPose, type MatchClamp } from "@/lib/sets/match-shot";
+import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
 import { SET_PHOTO_UNREADABLE } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import {
@@ -57,11 +57,13 @@ type StageApi = {
   /** Pan and tilt: turn the camera where it stands, in degrees (left, up). */
   aim(leftDeg: number, upDeg: number): void;
   /**
-   * Match this shot: the camera to a solved pose (match-shot.ts), pulled
-   * toward the figure if something built stands between them. Returns
-   * whether it was pulled in.
+   * Match this shot: the camera to a solved pose (match-shot.ts), moved
+   * toward the figure or to another side of it if something built stands
+   * between them. Returns how it had to move.
    */
-  matchTo(pose: Pose): boolean;
+  matchTo(pose: Pose): CameraMove;
+  /** Width ÷ height of the canvas the still's centre square is cut from. */
+  canvasAspect(): number;
 };
 
 const ACCENT = "#c8923a";
@@ -157,7 +159,7 @@ export function SetView({
   const [matched, setMatched] = useState<{
     photo: string;
     summary: ReturnType<typeof matchSummary>;
-    pulledIn: boolean;
+    moved: CameraMove;
   } | null>(null);
   const matchFileRef = useRef<HTMLInputElement | null>(null);
 
@@ -475,17 +477,28 @@ export function SetView({
           matchTo(pose) {
             // frameFigure's room, cast the other way: from the figure's eye
             // toward the solved camera, stopping short of anything built in
-            // between (match-shot.ts placeMatchedCamera). Aimed along the
-            // solved direction, so a pulled-in camera keeps the framing, and
+            // between, or trying frameFigure's other sides when the solved
+            // one has no room (match-shot.ts placeMatchedCamera). Aimed along
+            // the solved direction, so a moved camera keeps the framing, and
             // within the orbit's reach, so the controls never move it to fit.
             const p = standIn.group.position;
-            const placed = placeMatchedCamera(THREE, built.root, [p.x, FRAME_EYE_Y, p.z], pose, controls.maxDistance);
+            const placed = placeMatchedCamera(THREE, built.root, pose, {
+              mark: { x: p.x, z: p.z, facingDeg: layoutRef.current.mark.facingDeg },
+              eyeY: FRAME_EYE_Y,
+              bounds: spec.bounds,
+              maxDistance: controls.maxDistance,
+            });
             camera.position.set(...placed.position);
             controls.target.set(...placed.target);
             camera.fov = pose.fovDeg;
             camera.updateProjectionMatrix();
             controls.update();
-            return placed.pulledIn;
+            return placed.moved;
+          },
+          canvasAspect() {
+            // What cropSquare cuts the still from.
+            const c = renderer.domElement;
+            return c.width / Math.max(1, c.height);
           },
         };
 
@@ -634,8 +647,8 @@ export function SetView({
   // Match this shot: the reference is prepared here (upright, at most 2048 px,
   // a JPEG with no metadata — photo-client.ts), its camera is read on the
   // server, and only numbers come back. The camera is placed from them
-  // against the figure's mark and the camera as they are when the answer
-  // lands, and saved like any camera move.
+  // against the figure's mark, the camera and the canvas as they are when
+  // the answer lands, and saved like any camera move.
   async function pickReference(file: File | undefined) {
     if (!file || matching || !ready) return;
     setMatchError("");
@@ -676,13 +689,14 @@ export function SetView({
         current: api.pose(),
         referenceAspect: prepared.width / prepared.height,
         bounds: spec.bounds,
+        canvasAspect: api.canvasAspect(),
       });
-      const pulledIn = api.matchTo(solved.pose);
+      const moved = api.matchTo(solved.pose);
       setFovDeg(solved.pose.fovDeg);
       setCameraId(null);
       scheduleSave();
-      // Said from where the camera actually stands, after any pull toward the figure.
-      setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, api.pose(), solved.notes), pulledIn });
+      // Said from where the camera actually stands, after any move around something built.
+      setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, api.pose(), solved.notes), moved });
     } finally {
       setMatching(false);
     }
@@ -691,9 +705,19 @@ export function SetView({
   const clampNotes: Record<MatchClamp, string> = {
     wide: s.matchNoteWide,
     narrow: s.matchNoteNarrow,
+    near: s.matchNoteNear,
+    far: s.matchNoteFar,
+    low: s.matchNoteLow,
+    high: s.matchNoteHigh,
     tiltUp: formatMsg(s.matchNoteTiltUp, { deg: SET_MAX_TILT_UP_DEG }),
     tiltDown: formatMsg(s.matchNoteTiltDown, { deg: SET_MAX_TILT_DOWN_DEG }),
     subject: s.matchNoteSubject,
+  };
+  const moveNotes: Record<CameraMove, string | null> = {
+    none: null,
+    in: s.matchNotePulledIn,
+    around: s.matchNoteMovedAround,
+    blocked: s.matchNoteBlocked,
   };
   const matchedLine = (() => {
     if (!matched) return null;
@@ -704,7 +728,8 @@ export function SetView({
       tilt: Math.abs(tiltDeg),
     };
     const line = formatMsg(tiltDeg < 0 ? s.matchedDown : tiltDeg > 0 ? s.matchedUp : s.matchedLevel, vars);
-    const notes = [...clamps.map((c) => clampNotes[c]), ...(matched.pulledIn ? [s.matchNotePulledIn] : [])];
+    const moveNote = moveNotes[matched.moved];
+    const notes = [...clamps.map((c) => clampNotes[c]), ...(moveNote ? [moveNote] : [])];
     return { line, notes: notes.join(" ") };
   })();
 

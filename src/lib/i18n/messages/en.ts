@@ -2001,10 +2001,16 @@ const en = {
     matchedLevel: "Matched: a lens near {mm} mm, camera {height} m high, level.",
     matchNoteWide: "The stage's widest lens — the picture's is wider.",
     matchNoteNarrow: "The longest lens the stage keeps — the picture's is longer, so the camera moved closer to keep the framing.",
+    matchNoteNear: "The camera stands as close as the stage allows — the figure is smaller in frame than the picture's subject.",
+    matchNoteFar: "The camera stands as far back as the set reaches — the figure is larger in frame than the picture's subject.",
+    matchNoteLow: "The camera stands as low as the stage allows.",
+    matchNoteHigh: "The camera stands as high as the stage allows.",
     matchNoteTiltUp: "Tilt limited to {deg}° up.",
     matchNoteTiltDown: "Tilt limited to {deg}° down.",
     matchNoteSubject: "The figure is kept inside the frame.",
     matchNotePulledIn: "The camera moved closer — something built was in the way.",
+    matchNoteMovedAround: "The camera moved to another side of the figure — something built was in the way.",
+    matchNoteBlocked: "Something built stands close to the figure on every side, so the camera may not see it — move the figure into open space.",
     matchReferenceAlt: "The shot you matched",
   },
   // Push notifications — resolved PER DEVICE from push_tokens.locale by
@@ -2171,10 +2177,13 @@ const en = {
     // Match this shot (2026-09-11). setMatchRefused is every refusal of a
     // reference picture — our picture check's or OpenAI's — so it names no
     // reader and no category and never says try again; a match moves no
-    // allowance, so none of these mentions one.
+    // allowance, so none of these mentions one. setMatchFailed asks for
+    // another picture only because the answer itself was unusable;
+    // setMatchCouldntRead is our side or OpenAI's failing, and says try again.
     setMatchRefused: "This picture can't be used to match a shot.",
     setMatchUnchecked: "We couldn't check this picture, so no shot was matched. Try again in a moment.",
     setMatchFailed: "Astra couldn't read a camera from that picture — try another.",
+    setMatchCouldntRead: "The shot's camera couldn't be read this time — try again in a moment.",
     setMatchTooFast: "You're matching shots quickly — try again in a little while.",
     setMatchTimedOut: "Reading that shot's camera took too long — try again in a moment.",
   },
