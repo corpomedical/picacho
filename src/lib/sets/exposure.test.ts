@@ -3,8 +3,13 @@ import * as THREE from "three";
 import {
   BASE_EXPOSURE,
   chooseExposure,
+  chooseLift,
+  fillBrightness,
+  liftSet,
   MAX_EXPOSURE_LIFT,
+  MAX_FILL_LIFT,
   measurePanoramaLuminance,
+  NO_LIFT,
   TARGET_MEAN_LUMINANCE,
 } from "./exposure";
 import { normaliseSetSpec, type SetSpec } from "./set-spec";
@@ -63,6 +68,61 @@ describe("chooseExposure", () => {
   });
 });
 
+// A set's brightness as fill and exposure change: what the fill lights add
+// scales with the fill, what the lamps and the sky add does not.
+const setCurve = (fillPart: number, rest: number) => (fill: number, e: number) =>
+  255 * (1 - Math.exp(-(fillPart * fill + rest) * e));
+
+describe("chooseLift", () => {
+  it("leaves a bright set as built", () => {
+    expect(chooseLift(setCurve(0.3, 0.3), { hasFill: true })).toEqual(NO_LIFT);
+  });
+
+  it("lifts an interior with fill light alone, leaving the exposure — and the lamps — as they were", () => {
+    const measure = setCurve(0.02, 0.02);
+    const lift = chooseLift(measure, { hasFill: true });
+    expect(lift.exposure).toBe(BASE_EXPOSURE);
+    expect(lift.fill).toBeGreaterThan(1);
+    expect(lift.fill).toBeLessThan(MAX_FILL_LIFT);
+    expect(Math.abs(measure(lift.fill, lift.exposure) - TARGET_MEAN_LUMINANCE)).toBeLessThanOrEqual(8);
+  });
+
+  it("makes up with exposure what the most fill cannot reach, as under a night sky", () => {
+    const measure = setCurve(0.002, 0.02);
+    const lift = chooseLift(measure, { hasFill: true });
+    expect(lift.fill).toBe(MAX_FILL_LIFT);
+    expect(lift.exposure).toBeGreaterThan(BASE_EXPOSURE);
+    expect(Math.abs(measure(lift.fill, lift.exposure) - TARGET_MEAN_LUMINANCE)).toBeLessThanOrEqual(8);
+  });
+
+  it("lifts a set with no fill light by exposure alone", () => {
+    const lift = chooseLift((_fill, e) => 255 * (1 - Math.exp(-0.03 * e)), { hasFill: false });
+    expect(lift.fill).toBe(1);
+    expect(lift.exposure).toBeGreaterThan(BASE_EXPOSURE);
+  });
+
+  it("leaves the set as built when a measurement fails at any step", () => {
+    for (const curve of [setCurve(0.02, 0.02), setCurve(0.002, 0.02)]) {
+      for (let failAt = 1; failAt <= 14; failAt++) {
+        let calls = 0;
+        const lift = chooseLift((f, e) => (++calls === failAt ? Number.NaN : curve(f, e)), { hasFill: true });
+        // A search that finished before that call never saw the failure.
+        if (calls >= failAt) expect(lift).toEqual(NO_LIFT);
+      }
+    }
+  });
+
+  it("measures a bounded number of times", () => {
+    let calls = 0;
+    const curve = setCurve(0.002, 0.02);
+    chooseLift((f, e) => {
+      calls += 1;
+      return curve(f, e);
+    }, { hasFill: true });
+    expect(calls).toBeLessThanOrEqual(16);
+  });
+});
+
 // The measurement itself needs a GPU; what it does with the pixels it reads
 // back does not. A renderer that fills every readback with one colour stands
 // in for it.
@@ -115,5 +175,53 @@ describe("measurePanoramaLuminance", () => {
     expect(r.toneMappingExposure).toBe(1.3);
     expect(r.shadowMap.autoUpdate).toBe(true);
     expect(r.viewport?.toArray()).toEqual([0, 0, 800, 600]);
+  });
+
+  // liftSet's wiring: which light it adds, and what it leaves set.
+  const litScene = () => {
+    const scene = new THREE.Scene();
+    scene.add(new THREE.AmbientLight(0x2040a0, 0.5));
+    scene.add(new THREE.PointLight(0xffaa55, 30));
+    return scene;
+  };
+  const liftFill = (scene: THREE.Scene) => scene.getObjectByName("lift-fill") as THREE.HemisphereLight;
+
+  it("leaves a bright set as built, its added fill at zero", () => {
+    const scene = litScene();
+    const r = renderer([200, 200, 200, 255]);
+    expect(liftSet(THREE, r, scene, spec, 500)).toEqual(NO_LIFT);
+    expect(liftFill(scene).intensity).toBe(0);
+    expect(r.toneMappingExposure).toBe(BASE_EXPOSURE);
+  });
+
+  it("adds neutral fill to a dark set without touching the set's own lights", () => {
+    const scene = litScene();
+    const own = fillBrightness(scene);
+    const r = renderer([5, 5, 5, 255]);
+    const lift = liftSet(THREE, r, scene, spec, 500);
+    // A readback this dark at every step runs both searches to their caps.
+    expect(lift).toEqual({ fill: MAX_FILL_LIFT, exposure: BASE_EXPOSURE * MAX_EXPOSURE_LIFT });
+    // Neutral light, and together with the set's own fill exactly 16 times as bright.
+    expect(liftFill(scene).color.getHexString()).toBe("ffffff");
+    expect(fillBrightness(scene)).toBeCloseTo(own * MAX_FILL_LIFT, 5);
+    expect((scene.children[0] as THREE.AmbientLight).intensity).toBe(0.5);
+    expect((scene.children[1] as THREE.PointLight).intensity).toBe(30);
+    expect(r.toneMappingExposure).toBe(BASE_EXPOSURE * MAX_EXPOSURE_LIFT);
+  });
+
+  it("leaves the set as built when the measurement cannot run", () => {
+    const scene = litScene();
+    const r = renderer([0, 0, 0, 0]);
+    expect(liftSet(THREE, r, scene, spec, 500)).toEqual(NO_LIFT);
+    expect(liftFill(scene).intensity).toBe(0);
+    expect(r.toneMappingExposure).toBe(BASE_EXPOSURE);
+  });
+
+  it("measures how bright a set's own fill is, hemisphere averaged over sky and ground", () => {
+    const scene = new THREE.Scene();
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x000000, 1));
+    scene.add(new THREE.PointLight(0xffffff, 40));
+    expect(fillBrightness(scene)).toBeCloseTo(1, 5);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isCurrentSetThumb, setThumbPath } from "./set-config";
 
-// A set's card is taken again when it predates the set's own exposure
+// A set's card is taken again when it predates the set's current lift
 // (exposure.ts): the path carries the version, and any other path is stale.
 
 describe("set thumbnails", () => {
@@ -12,8 +12,9 @@ describe("set thumbnails", () => {
     expect(isCurrentSetThumb(setThumbPath(user, set), user, set)).toBe(true);
   });
 
-  it("retakes a card from before the exposure fix, and a missing one", () => {
+  it("retakes a card from before the lift, one lifted by exposure alone, and a missing one", () => {
     expect(isCurrentSetThumb(`${user}/sets/${set}.jpg`, user, set)).toBe(false);
+    expect(isCurrentSetThumb(`${user}/sets/${set}.v2.jpg`, user, set)).toBe(false);
     expect(isCurrentSetThumb(null, user, set)).toBe(false);
     expect(isCurrentSetThumb(undefined, user, set)).toBe(false);
   });

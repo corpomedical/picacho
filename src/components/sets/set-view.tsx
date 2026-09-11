@@ -28,7 +28,7 @@ type Pose = { position: Vec3; target: Vec3; fovDeg: number };
 type Mark = { x: number; z: number; facingDeg: number };
 
 type StageApi = {
-  /** Whether exposure.ts lifted this set above the base exposure. */
+  /** Whether exposure.ts lifted this set's fill light or exposure. */
   lifted: boolean;
   goTo(pose: Pose): void;
   setFov(fovDeg: number): void;
@@ -115,7 +115,7 @@ export function SetView({
         const THREE = await import("three");
         const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
         const { buildSetScene, buildStandIn, placeStandIn } = await import("@/lib/sets/build-scene");
-        const { BASE_EXPOSURE, chooseExposure, measurePanoramaLuminance } = await import("@/lib/sets/exposure");
+        const { BASE_EXPOSURE, NO_LIFT, liftSet } = await import("@/lib/sets/exposure");
         if (disposed || !hostRef.current) return;
 
         const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -243,18 +243,17 @@ export function SetView({
           if (camera.position.y < 0.1) camera.position.y = 0.1;
           renderer.render(scene, camera);
         };
-        // One exposure for the whole set, measured before the first frame is
-        // shown (exposure.ts): a dark set is lifted until its layout reads,
-        // and the view, every snapshot and the thumbnail share it. A
-        // measurement that cannot run leaves the base exposure.
+        // One lift for the whole set, measured before the first frame is
+        // shown (exposure.ts): a dark set gets more fill light, then more
+        // exposure if fill is not enough, until its layout reads; the view,
+        // every snapshot and the thumbnail share it. A measurement that
+        // cannot run leaves the set as built.
         fit();
+        let lift = NO_LIFT;
         try {
-          renderer.toneMappingExposure = chooseExposure((e) =>
-            measurePanoramaLuminance(THREE, renderer, scene, spec, built.farPlane, e),
-          );
+          lift = liftSet(THREE, renderer, scene, spec, built.farPlane);
         } catch (err) {
-          console.warn("SetView exposure measurement failed:", err);
-          renderer.toneMappingExposure = BASE_EXPOSURE;
+          console.warn("SetView lighting measurement failed:", err);
         }
         raf = requestAnimationFrame(loop);
 
@@ -271,7 +270,7 @@ export function SetView({
         };
 
         apiRef.current = {
-          lifted: renderer.toneMappingExposure > BASE_EXPOSURE,
+          lifted: lift.fill > 1 || lift.exposure > BASE_EXPOSURE,
           goTo(pose) {
             camera.position.set(...pose.position);
             controls.target.set(...pose.target);

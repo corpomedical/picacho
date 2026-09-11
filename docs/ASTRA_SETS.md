@@ -98,19 +98,33 @@ Two blind judges per mended set agreed with the measure on the market, the showr
 
 **Dark sets, fixed (2026-09-11).** The cause was physics, not Astra's taste: since r155 three.js lights physically, so fill light reaches a surface divided by π, while Astra writes fill intensities on the old artist-friendly scale and tints them with the scene's own dark palette. Daylit sets hide it (the sun dominates); sets lit by fill and a few lamps collapse to black. Telling Astra to use more fill did not help (it did: 0.65–0.85; the sets stayed dark).
 
-The fix is exposure, chosen once per set like a camera's (`src/lib/sets/exposure.ts`): when a set opens, the viewer measures the mean brightness of the first mark's eye-height panorama through the real renderer and raises the exposure until it reaches 80/255 — only ever raising, at most 8× (1.3 → 10.4), by false position in log-exposure. One exposure per SET, so the view, every snapshot sent to the image model and the card on the Sets page share it. Cards taken before the fix were taken at the base exposure, so the thumbnail's path now carries a version (`<user>/sets/<setId>.v2.jpg`, `setThumbPath`): a card at any other path is taken again the next time its set is opened, and the old file is removed. When the exposure was lifted, the shot prompt says the sketch is lit brighter than the scene and that the time of day and darkness come from the description; the viewer sends `lifted` with the shot, and a daylit set's prompt is unchanged. A readback that returns nothing — a GPU reset mid-measurement, seen as zero alpha where everything a set draws is opaque — counts as no measurement at any step of the search, and the set keeps the base exposure rather than being lifted 8×.
+The fix lifts each set once, from what it actually looks like (`src/lib/sets/exposure.ts`). When a set opens, the viewer measures the mean brightness of the first mark's eye-height panorama through the real renderer and brightens it until the mean reaches 80/255, **fill light first**: a neutral hemisphere light (white above, `#c0c0c0` below) is added, up to 16 times as bright as the set's own fill, by false position. Only when that is not enough — a night sky filling half the view, or a set with no fill light — is the exposure raised as well, up to 8× (1.3 → 10.4). It only ever raises: a set bright enough already is left as built, at the cost of one measurement.
 
-Measured on all twenty sets built so far (panorama from the first mark; one consistent run):
+The first version (8c9fb44) raised the exposure alone, like a camera. Checked against the production sets once it deployed, it was right about the daylit street and wrong about the podcast studio. Exposure scales the lamps along with the shadows, so the lamp-lit table went white and the walnut pale peach while the far walls stayed dark. Fill lifts the shadows and barely touches what a lamp already lights — a gaffer's answer rather than a camera's. Turning up Astra's own fill was tried first and lost on colour: Astra tints its fill with the scene's palette, and sixteen times a deep-blue night fill turned stone lavender, paving navy and brick mauve. Hence neutral fill, added beside the set's own, which stays as Astra wrote it.
 
-| | Sets | Near-black share of the panorama |
-|---|---|---|
-| Daylit | 11 (street ×3, showroom ×2, diner, bedroom, beach ×2, pier, rebuilt street) | unchanged — exposure stays at 1.3 |
-| Interiors and night streets | podcast studio ×3, market ×3, showroom (mended) | 47–65% → 9–16% |
-| Capped | forest at dusk, rooftop at night | 89% → 18%, 77% → 22% (what remains is mostly night sky) |
+Three blind rounds on the eight darkest sets (forest, rooftop, market ×3, podcast studio ×3), twelve judges a round. Each judge saw the authored render as a reference and two candidates under neutral labels, and chose which shows the whole place better, which keeps the materials truer to the description, and which is the better sketch:
 
-Blown-out pixels stayed at or under 2.2% everywhere. In a real browser the measurement takes 79–91 ms (pixel ratio 2), before the first frame.
+| Round | Readable | Faithful | Overall |
+|---|---|---|---|
+| Turned-up fill vs exposure alone | 12–0 | 9–3 | 9–3 |
+| Added neutral fill vs turned-up fill | 5–3 (4 even) | 11–1 | 11–1 |
+| **Added neutral fill vs exposure alone (what was live)** | **12–0** | **12–0** | **12–0** |
 
-Does a lifted sketch still give a night still? Four GPT Image 2 stills from lifted night sketches (a generic invented person, no character photo): the market with the new prompt line and, as a control, without it; the forest at dusk; the rooftop at night. All four came back as night or dusk — rain-dark cobbles under lamplight, a campfire under a purple sky, a lit skyline — with the layout followed, including the market's mended end wall, which the dark sketch had hidden. The control shows the image model takes night from the description even without the line; the line stays as a cheap safeguard, sent only with lifted sketches. About $0.68 at the `plans.ts` GPT Image figure.
+The judges' standing complaint about the winner is that it looks flat, like an overcast afternoon rather than dusk. That is the trade the brief makes on purpose: the sketch carries the layout and the materials, the description carries the hour and the mood.
+
+Measured on all twenty sets built so far (panorama from the first mark):
+
+| | Sets | Lift | Near-black share of the panorama |
+|---|---|---|---|
+| Daylit | 10 | none | unchanged |
+| Interiors | podcast studio ×3, showroom ×2 | fill 1.2–16, exposure unchanged | podcast studios 47–65% → 1–6%; showrooms 18% → 16–18% (already near the target) |
+| Night exteriors | market ×3, forest, rooftop | fill 16, exposure 1.7–3.8 | markets 58–64% → 2–3%, forest 89% → 0%, rooftop 77% → 0.1% |
+
+Blown-out pixels: at most 0.7% of any panorama (1.2% of one card). In a real browser (Apple M1, pixel ratio 2), with the shaders already compiled — they compile for the first frame either way — the lift takes 38 ms on a daylit set and 61–128 ms on the dark ones: up to six measurements of eight small renders each (fourteen at most).
+
+Does a lifted sketch still give a night still? Four GPT Image 2 stills from sketches lifted this way (a generic invented person, no character photo): the market, the forest at dusk, the rooftop at night and the production podcast studio. All four came back at the hour the description gives — rain-dark cobbles under a lamp, a campfire under a violet sky, a lit skyline, a dim studio under amber shelf light — with the layout followed, and the podcast table came back as the description's oak, not the cream the sketch shows. The same test on exposure-lifted sketches, with a control that left out the prompt line, had also come back as night; the line stays, sent only with lifted sketches. About $0.68 for each four at the `plans.ts` GPT Image figure.
+
+One lift per SET, so the view, every snapshot sent to the image model and the card on the Sets page share it. The card's path carries a version (`<user>/sets/<setId>.v3.jpg`, `setThumbPath`): a card at any other path — from before any lift, or lifted by exposure alone (`.v2`) — is taken again the next time its set is opened, and the old file is removed. When the set was lifted, the shot prompt says the sketch is lit brighter than the scene and that the time of day and darkness come from the description; the viewer sends `lifted` with the shot, and a daylit set's prompt is unchanged. A readback that returns nothing — a GPU reset mid-measurement, seen as zero alpha where everything a set draws is opaque — counts as no measurement at any step, and the set is left as built.
 
 ---
 
@@ -429,7 +443,7 @@ Access: flag `astra_sets` plus an admin check; `ASTRA_DISABLED=1` is checked bef
 - `src/lib/generations/providers/astra.ts`: the only Astra client. Background submit and poll, `store: false`, `tools: []`, strict `json_schema`, `max_output_tokens`, effort, `safety_identifier`, `prompt_cache_options.ttl: "30m"`. It handles `incomplete`, refusal, 403 and 429 responses and returns usage.
 - `src/lib/astra/prices.ts` plus tests: dated prices, `costOfAstraUsageUsd`, and `worstCaseAstraUsd` (the `agent/prices.ts` pattern).
 - `src/lib/sets/set-spec.ts` plus `set-spec.test.ts`: the types, the schema sent to the API, and `normaliseSetSpec`.
-- `src/lib/sets/set-config.ts`: caps per plan, eligibility, and paths. As built, the set itself lives in the `location_sets` table (`spec` jsonb, soft-deleted so the cap counts deleted builds); storage holds only the card thumbnail (`<user>/sets/<setId>.v2.jpg`) and each shot's frame (a chat attachment).
+- `src/lib/sets/set-config.ts`: caps per plan, eligibility, and paths. As built, the set itself lives in the `location_sets` table (`spec` jsonb, soft-deleted so the cap counts deleted builds); storage holds only the card thumbnail (`<user>/sets/<setId>.v3.jpg`) and each shot's frame (a chat attachment).
 - `src/lib/sets/enabled.ts`.
 - `src/lib/sets/actions.ts`: `submitSetBuild` (reserves the slot, then gates, then submits), `pollSetBuild`, `saveSetLayout`, `saveSetThumbnail`, `shootInSet`, `deleteSet`; page reads are `getSetsHome` and `getSetPage` in `src/lib/sets/data.ts`. Burst brake `rateLimited(userId, "set-build", 3600, 4)`, 12 for admins.
 - `src/lib/sets/build-scene.ts` plus a node test using three.js core: the fixed interpreter.
