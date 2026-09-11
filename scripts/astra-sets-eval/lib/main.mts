@@ -43,7 +43,8 @@ const NEEDS_KEYS: Record<Part, ("OPENAI_API_KEY" | "ANTHROPIC_API_KEY" | "FAL_KE
   b: [],
   c: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FAL_KEY"],
   d: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
-  e: ["OPENAI_API_KEY"],
+  // The reads are OpenAI's; the picture check before them reads at Anthropic too.
+  e: ["OPENAI_API_KEY", "ANTHROPIC_API_KEY"],
   canary: ["OPENAI_API_KEY"],
 };
 
@@ -160,7 +161,7 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
   const stopping = () => stopReason !== null || guard.stopped !== null;
 
   let gates: Gates | null = null;
-  if (!dry && (part === "a" || part === "d")) {
+  if (!dry && (part === "a" || part === "d" || part === "e")) {
     const cp = await import("../../../src/lib/generations/content-policy.ts");
     const refusalReason = (e: unknown) => (e instanceof cp.ContentPolicyRefusal ? e.reason : null);
     const onOddError = (ref: string, e: unknown) => progress(`gate error on ${ref}: ${e instanceof Error ? e.name : "error"} (counted as unavailable)`);
@@ -170,10 +171,11 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
       words: makeWordsJudge({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError }),
       brief: makeBriefGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping }),
     };
-    if (part === "d" && f.photos) {
-      // D's photo leg: the notes gate and the picture check, as submitSetPhotoBuild runs them.
+    if ((part === "d" && f.photos) || part === "e") {
+      // D's photo leg: the notes gate and the picture check, as
+      // submitSetPhotoBuild runs them. E: the picture check matchSetShot runs.
       const op = await import("../../../src/lib/generations/output-policy.ts");
-      gates.notes = makeNotesGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping });
+      if (part === "d") gates.notes = makeNotesGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping });
       gates.picture = makePictureCheck({
         assertOutputAllowed: (i) => op.assertOutputAllowed({ ...i, promptScores: (i.promptScores ?? null) as Scores | null }),
         refusalReason: (e) => (e instanceof op.OutputPolicyRefusal ? e.reason : null),
@@ -235,8 +237,8 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
     }
   }
 
-  if (part === "b" || part === "c") {
-    const parity = checkViewerParity(REPO_ROOT, { photo: f.photos });
+  if (part === "b" || part === "c" || part === "e") {
+    const parity = checkViewerParity(REPO_ROOT, { photo: f.photos, match: part === "e" });
     manifest.viewerParity = { ...parity, acceptedDrift: !parity.ok && f.acceptDrift };
     if (!parity.ok) {
       out(`set-view.tsx no longer has ${parity.missing.length} line(s) the snapshot page mirrors:`);

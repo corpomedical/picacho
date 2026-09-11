@@ -8,7 +8,7 @@ import { SET_COMPARE_PX } from "../../../src/lib/sets/set-config.ts";
 import { REPO_ROOT } from "../lib/util.mts";
 import { comparePose } from "./render-sets.mts";
 import { stageFiles } from "./stage.mts";
-import { checkViewerParity, MIRRORED_LINES, MIRRORED_PHOTO_LINES } from "./viewer-parity.mts";
+import { checkViewerParity, MIRRORED_LINES, MIRRORED_MATCH_LINES, MIRRORED_PHOTO_LINES } from "./viewer-parity.mts";
 
 // B's photo arm draws camera 1 at a photo's shape with the product's own
 // compare.ts, served to the snapshot page type-stripped. Nothing here opens
@@ -58,5 +58,12 @@ describe("the mirror check", () => {
     expect(photo.ok).toBe(false);
     expect(photo.missing).toEqual([...MIRRORED_PHOTO_LINES]);
     expect(checkViewerParity(repo([...MIRRORED_LINES, ...MIRRORED_PHOTO_LINES]), { photo: true }).ok).toBe(true);
+  });
+
+  it("asks for the Match-this-shot lines only when E places its cameras", () => {
+    const base = repo(MIRRORED_LINES);
+    expect(checkViewerParity(base).ok).toBe(true);
+    expect(checkViewerParity(base, { match: true }).missing).toEqual([...MIRRORED_MATCH_LINES]);
+    expect(checkViewerParity(repo([...MIRRORED_LINES, ...MIRRORED_MATCH_LINES]), { match: true }).ok).toBe(true);
   });
 });

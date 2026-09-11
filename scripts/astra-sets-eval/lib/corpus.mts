@@ -21,6 +21,14 @@
 // changed photo reads as a changed corpus. Notes get the production clean-up
 // (cleanText at 300, the reserved placeholder never a note); notes the form
 // would have cut are a problem.
+//
+// MATCH PHOTOS (E, match.json): the reference pictures Match this shot
+// reads. Every one goes through the picture check (OpenAI and Anthropic)
+// and to both builders (OpenAI), so its licence must allow both, and one
+// with people needs everyone recognisable to have consented, or the people
+// to be AI-generated, with consent.covers naming both (MATCH_PHOTO_RECIPIENTS).
+// Their pictures are hashed into the corpus hash like the others, and no
+// picture serves two rows in any photo file.
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, normalize } from "node:path";
@@ -56,6 +64,15 @@ export const PEOPLE_PHOTOS_WANTED = 10;
  * the product's photo readers call.
  */
 export const PEOPLE_PHOTO_RECIPIENTS = ["OpenAI", "Anthropic"] as const;
+/** Section 4, Part E: "30 reference photos". */
+export const MATCH_PHOTOS_WANTED = 30;
+/**
+ * Everyone a match photo is sent to: the picture check's readers (OpenAI's
+ * moderation and vision, Anthropic's Claude, output-policy.ts) and both
+ * builders (Astra and gpt-5.4-mini, at OpenAI). The same two companies as
+ * D's photos with people.
+ */
+export const MATCH_PHOTO_RECIPIENTS = PEOPLE_PHOTO_RECIPIENTS;
 
 export type Brief = { id: string; category: Category; brief: string; template: boolean };
 export type AdversarialRow = { id: string; category: AdvCategory; harmful: boolean; brief: string; template: boolean };
@@ -68,12 +85,17 @@ export type Character = {
   template: boolean;
 };
 export type CanaryRow = { id: string; brief: string; template: boolean };
+/** How a photo with people may be sent (D's photos with people, E's match photos that show anyone). */
+export type PhotoConsent = { kind: "ai-generated" | "consented"; covers: string[]; confirmedBy: string; confirmedOn: string | null };
 export type MatchRow = {
   id: string;
   file: string;
   licence: string;
   containsPeople: boolean;
-  exif: { focal35mm: number | null; focalMm: number | null; orientation: number } | null;
+  /** What the writer knows of the lens; null fields (or no exif at all) are read from the file's own EXIF (match-truth.mts). */
+  exif: { focal35mm: number | null; focalMm: number | null; orientation: number | null } | null;
+  /** Required when containsPeople. */
+  consent: PhotoConsent | null;
   template: boolean;
 };
 export type Baselines = {
@@ -83,7 +105,7 @@ export type Baselines = {
 /** What every photo row carries: the picture (a relative path inside the corpus) and the photographer's notes, cleaned ("" when none). */
 export type PhotoRow = { id: string; file: string; notes: string; licence: string; template: boolean };
 export type LocationPhoto = PhotoRow & { category: Category };
-export type PeoplePhoto = PhotoRow & { consent: { kind: "ai-generated" | "consented"; covers: string[]; confirmedBy: string; confirmedOn: string | null } };
+export type PeoplePhoto = PhotoRow & { consent: PhotoConsent };
 
 export type CorpusData = {
   meta: { corpusVersion: number; writtenBy: string; writtenOn: string; attested: boolean };
@@ -374,14 +396,52 @@ export function validateCorpus(
     count("canary", data.canary.length, "10", data.canary.length === 10);
   }
 
-  // match.json (E, deferred)
+  // One picture never serves two rows, in any photo file: match.json,
+  // location-photos.json and people-photos.json.
+  const photoFiles = new Map<string, string>();
+  const claimFile = (key: FileKey, r: Record<string, unknown>, i: number, id: string | null): boolean => {
+    if (!safeRelative(r.file) || !PHOTO.test(String(r.file))) {
+      problems.push(`${key}[${i}]: file must be a relative path to a .jpg, .png or .webp inside the corpus (HEIC is refused)`);
+      return false;
+    }
+    const file = normalize(String(r.file));
+    if (photoFiles.has(file)) problems.push(`${key}[${i}]: ${file} is already ${photoFiles.get(file)}'s photo`);
+    photoFiles.set(file, String(id));
+    return true;
+  };
+  // How a photo with people may be sent, for D's photos with people and E's
+  // match photos that show anyone: everyone recognisable consented (with the
+  // date), or the people are AI-generated; either way consent.covers names
+  // every company that reads the photo. A template row keeps its
+  // placeholders (the date, what the consent covers): --spend refuses the
+  // row whole, so only a real row is held to them.
+  const consentOf = (key: "peoplePhotos" | "match", r: Record<string, unknown>, i: number): PhotoConsent | null => {
+    const consent = isRecord(r.consent) ? r.consent : null;
+    const kind = consent?.kind;
+    const template = isTemplateRow(r);
+    if (kind !== "ai-generated" && kind !== "consented") problems.push(`${key}[${i}]: consent.kind must be ai-generated or consented`);
+    if (typeof consent?.confirmedBy !== "string" || !consent.confirmedBy.trim()) problems.push(`${key}[${i}]: consent.confirmedBy (who confirmed it) is required`);
+    const on = typeof consent?.confirmedOn === "string" ? consent.confirmedOn : null;
+    if (kind === "consented" && (on === null || !DATE.test(on))) problems.push(`${key}[${i}]: consented people need consent.confirmedOn (YYYY-MM-DD)`);
+    else if (on !== null && !template && !isCalendarDate(on)) problems.push(`${key}[${i}]: consent.confirmedOn ${on} is not a date (YYYY-MM-DD, or leave it out for AI-generated people)`);
+    const covers = (Array.isArray(consent?.covers) ? consent.covers : []).filter((x): x is string => typeof x === "string").map((x) => x.trim());
+    const uncovered = PEOPLE_PHOTO_RECIPIENTS.filter((p) => !covers.some((c) => c.toLowerCase() === p.toLowerCase()));
+    if (uncovered.length && !template) {
+      problems.push(`${key}[${i}]: consent.covers must name ${PEOPLE_PHOTO_RECIPIENTS.join(" and ")}, both of which read the photo (missing: ${uncovered.join(", ")})`);
+    }
+    return kind === "ai-generated" || kind === "consented" ? { kind, covers, confirmedBy: String(consent?.confirmedBy ?? ""), confirmedOn: on } : null;
+  };
+
+  // match.json (E): the reference photos. A photo with people needs its
+  // consent; exif is optional (what the file's own EXIF does not say, or a
+  // check against it: match-truth.mts).
   const match = rows("match");
   if (match) {
     match.forEach((r, i) => {
       const id = claimId("match", r.id, i);
       templateInSpend("match", r, i);
-      if (!safeRelative(r.file) || !PHOTO.test(String(r.file))) problems.push(`match[${i}]: file must be a relative .jpg, .png or .webp inside the corpus`);
-      if (typeof r.licence !== "string" || !r.licence.trim()) problems.push(`match[${i}]: licence is required`);
+      const fileOk = claimFile("match", r, i, id);
+      if (typeof r.licence !== "string" || !r.licence.trim()) problems.push(`match[${i}]: licence is required (where the photo comes from, and why it may be sent to ${MATCH_PHOTO_RECIPIENTS.join(" and ")})`);
       if (typeof r.containsPeople !== "boolean") problems.push(`match[${i}]: containsPeople must be true or false`);
       let exif: MatchRow["exif"] = null;
       if (r.exif !== null && r.exif !== undefined) {
@@ -389,31 +449,33 @@ export function validateCorpus(
         const num = (v: unknown) => (v === null || v === undefined ? null : typeof v === "number" && v > 0 && Number.isFinite(v) ? v : NaN);
         const f35 = num(e.focal35mm);
         const fmm = num(e.focalMm);
-        const orientation = e.orientation === undefined ? 1 : Number(e.orientation);
-        if (Number.isNaN(f35) || Number.isNaN(fmm) || !Number.isInteger(orientation) || orientation < 1 || orientation > 8) {
+        // Left out, the orientation is the file's: only a stated one is held against it.
+        const orientation = e.orientation === undefined || e.orientation === null ? null : Number(e.orientation);
+        if (Number.isNaN(f35) || Number.isNaN(fmm) || (orientation !== null && (!Number.isInteger(orientation) || orientation < 1 || orientation > 8))) {
           problems.push(`match[${i}]: exif is null or {focal35mm, focalMm, orientation 1–8}`);
         } else exif = { focal35mm: f35, focalMm: fmm, orientation };
       }
-      if (id) data.match.push({ id, file: String(r.file ?? ""), licence: String(r.licence ?? ""), containsPeople: r.containsPeople === true, exif, template: isTemplateRow(r) });
+      const consent = r.containsPeople === true ? consentOf("match", r, i) : null;
+      if (id) {
+        data.match.push({
+          id,
+          file: fileOk ? normalize(String(r.file)) : String(r.file ?? ""),
+          licence: String(r.licence ?? ""),
+          containsPeople: r.containsPeople === true,
+          exif,
+          consent,
+          template: isTemplateRow(r),
+        });
+      }
     });
-    count("match", data.match.length, "30", data.match.length === 30);
+    count("match", data.match.length, String(MATCH_PHOTOS_WANTED), data.match.length === MATCH_PHOTOS_WANTED);
   }
 
-  // location-photos.json (A/B's photo arm) and people-photos.json (D's photo
-  // leg). One picture never serves two rows, in either file.
-  const photoFiles = new Map<string, string>();
+  // location-photos.json (A/B's photo arm) and people-photos.json (D's photo leg).
   const photoRow = (key: "locationPhotos" | "peoplePhotos", r: Record<string, unknown>, i: number): PhotoRow | null => {
     const id = claimId(key, r.id, i);
     templateInSpend(key, r, i);
-    let ok = true;
-    if (!safeRelative(r.file) || !PHOTO.test(String(r.file))) {
-      problems.push(`${key}[${i}]: file must be a relative path to a .jpg, .png or .webp inside the corpus (HEIC is refused)`);
-      ok = false;
-    } else {
-      const file = normalize(String(r.file));
-      if (photoFiles.has(file)) problems.push(`${key}[${i}]: ${file} is already ${photoFiles.get(file)}'s photo`);
-      photoFiles.set(file, String(id));
-    }
+    let ok = claimFile(key, r, i, id);
     if (typeof r.licence !== "string" || !r.licence.trim()) {
       problems.push(`${key}[${i}]: licence is required (where the photo comes from, and why it may be sent to ${key === "peoplePhotos" ? PEOPLE_PHOTO_RECIPIENTS.join(" and ") : "OpenAI"})`);
       ok = false;
@@ -442,25 +504,9 @@ export function validateCorpus(
   const ppl = rows("peoplePhotos");
   if (ppl) {
     ppl.forEach((r, i) => {
-      const consent = isRecord(r.consent) ? r.consent : null;
-      const kind = consent?.kind;
-      // A template row keeps its placeholders (the date, what the consent
-      // covers): --spend refuses the row whole, so only a real row is held to them.
-      const template = isTemplateRow(r);
-      if (kind !== "ai-generated" && kind !== "consented") problems.push(`peoplePhotos[${i}]: consent.kind must be ai-generated or consented`);
-      if (typeof consent?.confirmedBy !== "string" || !consent.confirmedBy.trim()) problems.push(`peoplePhotos[${i}]: consent.confirmedBy (who confirmed it) is required`);
-      const on = typeof consent?.confirmedOn === "string" ? consent.confirmedOn : null;
-      if (kind === "consented" && (on === null || !DATE.test(on))) problems.push(`peoplePhotos[${i}]: consented people need consent.confirmedOn (YYYY-MM-DD)`);
-      else if (on !== null && !template && !isCalendarDate(on)) problems.push(`peoplePhotos[${i}]: consent.confirmedOn ${on} is not a date (YYYY-MM-DD, or leave it out for AI-generated people)`);
-      const covers = (Array.isArray(consent?.covers) ? consent.covers : []).filter((x): x is string => typeof x === "string").map((x) => x.trim());
-      const uncovered = PEOPLE_PHOTO_RECIPIENTS.filter((p) => !covers.some((c) => c.toLowerCase() === p.toLowerCase()));
-      if (uncovered.length && !template) {
-        problems.push(`peoplePhotos[${i}]: consent.covers must name ${PEOPLE_PHOTO_RECIPIENTS.join(" and ")}, both of which read the photo (missing: ${uncovered.join(", ")})`);
-      }
+      const consent = consentOf("peoplePhotos", r, i);
       const row = photoRow("peoplePhotos", r, i);
-      if (row && (kind === "ai-generated" || kind === "consented")) {
-        data.peoplePhotos.push({ ...row, consent: { kind, covers, confirmedBy: String(consent?.confirmedBy ?? ""), confirmedOn: on } });
-      }
+      if (row && consent) data.peoplePhotos.push({ ...row, consent });
     });
     count("peoplePhotos", data.peoplePhotos.length, String(PEOPLE_PHOTOS_WANTED), data.peoplePhotos.length === PEOPLE_PHOTOS_WANTED);
   }
@@ -543,6 +589,7 @@ export function loadCorpus(dir: string, o: { spend: boolean; allowPartial: boole
   for (const [key, list] of [
     ["locationPhotos", check.data.locationPhotos],
     ["peoplePhotos", check.data.peoplePhotos],
+    ["match", check.data.match],
   ] as const) {
     for (const p of list) {
       const path = join(dir, p.file);
@@ -579,7 +626,7 @@ export function corpusSummary(check: CorpusCheck): string {
   const lines = [
     `--- corpus ---`,
     `  hash ${check.corpusHash.slice(0, 16)}…  attested: ${d.meta.attested ? "yes" : "NO"}  written by ${d.meta.writtenBy || "?"} on ${d.meta.writtenOn || "?"}`,
-    `  briefs ${d.briefs.length} (${CATEGORIES.map((c) => `${c} ${d.briefs.filter((b) => b.category === c).length}`).join(", ")}), adversarial ${d.adversarial.length}, directions ${d.directions.length}, characters ${d.characters.length}, canary ${d.canary.length}, match ${d.match.length}, baselines ${d.baselines ? "yes" : "none"}`,
+    `  briefs ${d.briefs.length} (${CATEGORIES.map((c) => `${c} ${d.briefs.filter((b) => b.category === c).length}`).join(", ")}), adversarial ${d.adversarial.length}, directions ${d.directions.length}, characters ${d.characters.length}, canary ${d.canary.length}, match ${d.match.length} (${d.match.filter((m) => m.containsPeople).length} with people), baselines ${d.baselines ? "yes" : "none"}`,
     `  location photos ${d.locationPhotos.length} (${CATEGORIES.map((c) => `${c} ${d.locationPhotos.filter((p) => p.category === c).length}`).join(", ")}), photos with people ${d.peoplePhotos.length}`,
   ];
   if (check.template) lines.push("  *** TEMPLATE CORPUS: FORMAT-ONLY rows. Fine for a dry run; --spend refuses them. ***");

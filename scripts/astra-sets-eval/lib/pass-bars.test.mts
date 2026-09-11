@@ -19,9 +19,11 @@ import {
   priorHitsConstruction,
   reportDPhotos,
   type ABuild,
+  type BarResult,
   type CanaryRow,
   type CShot,
   type DPhotoRow,
+  type EItem,
 } from "./pass-bars.mts";
 
 const builds = (valid: number, total: number, extra: Partial<ABuild> = {}): ABuild[] =>
@@ -289,15 +291,88 @@ describe("the photo arm", () => {
   });
 });
 
-describe("E", () => {
-  it("FOV on 80%, rating on 70%, and the route", () => {
-    const item = (builder: string, fov: number, rating: number) => ({ builder, fovDeg: fov, exifFovDeg: 40, ratings: [rating, rating] });
-    const astra = [...Array.from({ length: 8 }, () => item("astra", 41, 5)), ...Array.from({ length: 2 }, () => item("astra", 60, 3))];
-    const mini = Array.from({ length: 10 }, (_, i) => item("mini", i < 5 ? 41 : 70, i < 5 ? 4 : 2));
+describe("E: every read counts", () => {
+  // A read: a photo × run × builder. EXIF 40° unless given; rated by two raters.
+  const read = (builder: string, fov: number, rating: number, exif: number | null = 40): EItem => ({ builder, outcome: "read", fovDeg: fov, exifFovDeg: exif, ratings: [rating, rating] });
+  const miss = (builder: string, exif: number | null = 40): EItem => ({ builder, outcome: "miss", fovDeg: null, exifFovDeg: exif, ratings: [] });
+  const missing = (builder: string, exif: number | null = 40): EItem => ({ builder, outcome: "missing", fovDeg: null, exifFovDeg: exif, ratings: [] });
+  const times = <T,>(n: number, f: () => T) => Array.from({ length: n }, f);
+  const barOf = (items: EItem[], id: string) => barE(items).find((b) => b.id === id) as BarResult;
+  const mini = [...times(5, () => read("mini", 41, 4)), ...times(5, () => read("mini", 70, 2))];
+
+  it("FOV on 80% of the reads of photos with EXIF, rating on 70% of every read, and the route", () => {
+    const astra = [...times(8, () => read("astra", 41, 5)), ...times(2, () => read("astra", 60, 3))];
     const bars = barE([...astra, ...mini]);
-    expect(bars.find((b) => b.id === "E-fov")?.verdict).toBe("PASS");
+    expect(barOf([...astra, ...mini], "E-fov")).toMatchObject({ verdict: "PASS", value: "80.0%", n: 10 });
     expect(bars.find((b) => b.id === "E-rating")?.verdict).toBe("PASS");
-    expect(bars.find((b) => b.id === "E-route")?.value).toBe("route: astra");
+    expect(bars.find((b) => b.id === "E-route")).toMatchObject({ verdict: "REPORTED", value: "route: astra" });
+    // Mini's own shares are reported beside Astra's, never a bar of their own.
+    expect(bars.filter((b) => b.id.endsWith("-mini")).map((b) => b.verdict)).toEqual(["REPORTED", "REPORTED"]);
+  });
+
+  it("a photo's three reads are three trials: no median smooths the bad one away", () => {
+    // Ten photos, each read three times: two reads within, one 50% off. A median per photo would call all ten within.
+    const astra = times(10, () => [read("astra", 41, 5), read("astra", 42, 5), read("astra", 60, 5)]).flat();
+    const fov = barOf([...astra, ...mini], "E-fov");
+    expect(fov).toMatchObject({ verdict: "FAIL", n: 30 });
+    expect(fov.arithmetic).toMatch(/^20\/30 = 66\.7% < 80%/);
+  });
+
+  it("an answer that did not parse, a refusal or a timeout is a miss: inside both denominators, never within, never a 4", () => {
+    const astra = [...times(8, () => read("astra", 41, 5)), ...times(2, () => miss("astra"))];
+    expect(barOf([...astra, ...mini], "E-fov")).toMatchObject({ verdict: "PASS", n: 10 });
+    expect(barOf([...astra, ...mini], "E-fov").arithmetic).toMatch(/2 misses counted in/);
+    const worse = [...times(7, () => read("astra", 41, 5)), ...times(3, () => miss("astra"))];
+    expect(barOf([...worse, ...mini], "E-fov").verdict).toBe("FAIL");
+    expect(barOf([...worse, ...mini], "E-rating")).toMatchObject({ verdict: "PASS", n: 10 });
+    const worst = [...times(6, () => read("astra", 41, 5)), ...times(4, () => miss("astra"))];
+    expect(barOf([...worst, ...mini], "E-rating").verdict).toBe("FAIL");
+  });
+
+  it("a photo with no EXIF is outside the FOV bar and inside the rating bar", () => {
+    const astra = [...times(8, () => read("astra", 41, 5)), ...times(2, () => read("astra", 41, 2)), ...times(5, () => read("astra", 90, 5, null))];
+    expect(barOf([...astra, ...mini], "E-fov")).toMatchObject({ verdict: "PASS", n: 10 });
+    expect(barOf([...astra, ...mini], "E-rating")).toMatchObject({ n: 15, value: "86.7%" });
+    expect(barOf(times(3, () => read("astra", 41, 5, null)), "E-fov")).toMatchObject({ verdict: "UNDETERMINED", n: 0 });
+  });
+
+  it("missing reads are bounded: decided only if the bar holds whatever they would have done", () => {
+    const holds = [...times(9, () => read("astra", 41, 5)), missing("astra")];
+    expect(barOf([...holds, ...mini], "E-fov")).toMatchObject({ verdict: "PASS", value: "90.0%" });
+    const open = [...times(7, () => read("astra", 41, 5)), ...times(2, () => read("astra", 60, 5)), missing("astra")];
+    const bar = barOf([...open, ...mini], "E-fov");
+    expect(bar.verdict).toBe("UNDETERMINED");
+    expect(bar.arithmetic).toMatch(/7\/10 = 70\.0% with the 1 missing reads all failing, 8\/10 = 80\.0% all passing: they decide it/);
+    const lost = [...times(6, () => read("astra", 41, 5)), ...times(3, () => read("astra", 60, 5)), missing("astra")];
+    expect(barOf([...lost, ...mini], "E-fov").verdict).toBe("FAIL");
+  });
+
+  it("a read without two ratings is bounded on the rating bar like a missing one", () => {
+    const unrated = { ...read("astra", 41, 5), ratings: [5] };
+    // 6 of 10 good, the unrated one could make it 7: it decides.
+    const astra = [...times(6, () => read("astra", 41, 5)), ...times(3, () => read("astra", 41, 2)), unrated];
+    expect(barOf([...astra, ...mini], "E-rating")).toMatchObject({ verdict: "UNDETERMINED", value: "60.0%" });
+    // 9 of 10 good whatever it gets; 5 of 10 good at best.
+    expect(barOf([...times(9, () => read("astra", 41, 5)), unrated, ...mini], "E-rating").verdict).toBe("PASS");
+    expect(barOf([...times(5, () => read("astra", 41, 5)), ...times(4, () => read("astra", 41, 2)), unrated, ...mini], "E-rating").verdict).toBe("FAIL");
+  });
+
+  it("the route: Astra only above mini on both, whatever is missing; mini as soon as Astra cannot be above it on one", () => {
+    const astra = times(10, () => read("astra", 41, 5));
+    expect(barOf([...astra, ...mini], "E-route").value).toBe("route: astra");
+    // Level on FOV (a tie is not beating): mini.
+    const tie = times(10, () => read("mini", 41, 2));
+    expect(barOf([...astra, ...tie], "E-route")).toMatchObject({ verdict: "REPORTED", value: "route: mini" });
+    // Astra ahead on FOV, behind on rating: mini.
+    const ratedBetter = times(10, () => read("mini", 70, 5));
+    expect(barOf([...times(10, () => read("astra", 41, 3)), ...ratedBetter], "E-route").value).toBe("route: mini");
+    // Mini's missing reads could lift it level: undetermined.
+    const miniOpen = [...times(8, () => read("mini", 70, 2)), ...times(2, () => missing("mini"))];
+    const nineOfTen = [...times(9, () => read("astra", 41, 5)), read("astra", 70, 2)];
+    expect(barOf([...nineOfTen, ...times(8, () => read("mini", 41, 5)), ...times(2, () => missing("mini"))], "E-route")).toMatchObject({ verdict: "UNDETERMINED", value: "route: ?" });
+    expect(barOf([...astra, ...miniOpen], "E-route").value).toBe("route: astra");
+    // No mini reads at all: nothing to compare.
+    expect(barOf(astra, "E-route")).toMatchObject({ verdict: "UNDETERMINED", value: "route: ?" });
   });
 });
 

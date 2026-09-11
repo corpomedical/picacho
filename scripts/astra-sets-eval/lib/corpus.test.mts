@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { canarySha, cleanNotes, isCalendarDate, loadCorpus, PEOPLE_PHOTO_RECIPIENTS, validateCorpus } from "./corpus.mts";
+import { canarySha, cleanNotes, isCalendarDate, loadCorpus, MATCH_PHOTO_RECIPIENTS, PEOPLE_PHOTO_RECIPIENTS, validateCorpus } from "./corpus.mts";
 import { EVAL_DIR, REPO_ROOT } from "./util.mts";
 
 const meta = {
@@ -237,6 +237,52 @@ describe("photo rows", () => {
   });
 });
 
+// Part E's reference photos: every one goes through the picture check
+// (OpenAI and Anthropic) and to both builders (OpenAI).
+const matches = (n: number, over: (i: number) => Record<string, unknown> = () => ({})) =>
+  Array.from({ length: n }, (_, i) => ({ id: `mt-${i}`, file: `match-photos/m-${i}.jpg`, licence: "my own photo", containsPeople: false, ...over(i) }));
+
+describe("match rows", () => {
+  const spendOn = { spend: true, allowPartial: false, needs: { match: true } };
+
+  it("accepts 30 reference photos, with or without their EXIF, and wants 30 for spend", () => {
+    const r = validateCorpus({ corpus: meta, match: matches(30, (i) => (i % 2 ? { exif: { focal35mm: 26, focalMm: 5.7 } } : {})) }, spendOn);
+    expect(r.problems).toEqual([]);
+    // Left out, the orientation is the file's: only a stated one is held against it.
+    expect(r.data.match[1].exif).toEqual({ focal35mm: 26, focalMm: 5.7, orientation: null });
+    expect(r.data.match[0]).toMatchObject({ exif: null, consent: null, containsPeople: false });
+    expect(validateCorpus({ corpus: meta, match: matches(29) }, spendOn).problems.join(" ")).toMatch(/match: 29 rows; the eval asks for 30/);
+    expect(validateCorpus({ corpus: meta, match: matches(29) }, { ...spendOn, allowPartial: true }).ok).toBe(true);
+  });
+
+  it("checks the exif, the licence and containsPeople", () => {
+    const one = (over: Record<string, unknown>) => validateCorpus({ corpus: meta, match: [...matches(29), { id: "mt-x", file: "match-photos/x.jpg", licence: "mine", containsPeople: false, ...over }] }, spendOn);
+    expect(one({ exif: { focal35mm: 26, focalMm: null, orientation: 6 } }).problems).toEqual([]);
+    expect(one({ exif: { focal35mm: 26, orientation: 9 } }).problems.join(" ")).toMatch(/exif is null or/);
+    expect(one({ exif: { focal35mm: -1 } }).problems.join(" ")).toMatch(/exif is null or/);
+    expect(one({ licence: "" }).problems.join(" ")).toMatch(/licence is required .*OpenAI and Anthropic/);
+    expect(one({ containsPeople: "no" }).problems.join(" ")).toMatch(/containsPeople must be true or false/);
+    expect(one({ file: "match-photos/x.heic" }).problems.join(" ")).toMatch(/HEIC is refused/);
+  });
+
+  it("a photo with people needs everyone's consent, or AI-generated people, covering OpenAI and Anthropic", () => {
+    const one = (consent: unknown) => validateCorpus({ corpus: meta, match: [...matches(29), { id: "mt-x", file: "match-photos/x.jpg", licence: "mine", containsPeople: true, consent }] }, spendOn);
+    const r = one({ kind: "consented", covers, confirmedBy: "w7", confirmedOn: "2026-09-12" });
+    expect(r.problems).toEqual([]);
+    expect(r.data.match[29].consent).toEqual({ kind: "consented", covers, confirmedBy: "w7", confirmedOn: "2026-09-12" });
+    expect(one({ kind: "ai-generated", covers, confirmedBy: "w7" }).problems).toEqual([]);
+    expect(one(undefined).problems.join(" ")).toMatch(/match\[29\]: consent.kind must be ai-generated or consented/);
+    expect(one({ kind: "consented", covers, confirmedBy: "w7" }).problems.join(" ")).toMatch(/match\[29\]: consented people need consent.confirmedOn/);
+    expect(one({ kind: "ai-generated", covers: ["OpenAI"], confirmedBy: "w7" }).problems.join(" ")).toMatch(/match\[29\]: consent.covers must name OpenAI and Anthropic.*\(missing: Anthropic\)/);
+    expect(MATCH_PHOTO_RECIPIENTS).toEqual(PEOPLE_PHOTO_RECIPIENTS);
+  });
+
+  it("no picture serves two rows, across match.json and the other photo files", () => {
+    const r = validateCorpus({ corpus: meta, match: matches(30), locationPhotos: [{ id: "ph-a", category: "interior", file: "match-photos/m-3.jpg", licence: "mine" }] }, spendOn);
+    expect(r.problems.join(" ")).toMatch(/locationPhotos\[0\]: match-photos\/m-3.jpg is already mt-3's photo/);
+  });
+});
+
 describe("loadCorpus with photos", () => {
   let dir: string;
   beforeEach(() => {
@@ -267,12 +313,19 @@ describe("loadCorpus with photos", () => {
 
   it("the template's photo files load for a dry run, and --spend refuses them", () => {
     const tpl = join(EVAL_DIR, "corpus-template");
-    const dryRun = loadCorpus(tpl, { spend: false, allowPartial: false, needs: { locationPhotos: true, peoplePhotos: true } });
+    const dryRun = loadCorpus(tpl, { spend: false, allowPartial: false, needs: { locationPhotos: true, peoplePhotos: true, match: true } });
     expect(dryRun.ok).toBe(true);
     expect(dryRun.template).toBe(true);
     expect(dryRun.data.locationPhotos.length).toBeGreaterThan(0);
     expect(dryRun.data.peoplePhotos.length).toBeGreaterThan(0);
+    // E's reference photos: one with its lens in match.json, one with people and the lens in its own EXIF.
+    expect(dryRun.data.match.map((m) => [m.containsPeople, m.exif === null])).toEqual([
+      [false, false],
+      [true, true],
+    ]);
+    expect(Object.keys(dryRun.hashes).filter((k) => k.startsWith("photo:match-photos/"))).toHaveLength(2);
     expect(dryRun.warnings.join(" ")).not.toMatch(/is missing/);
     expect(loadCorpus(tpl, { spend: true, allowPartial: true, needs: { locationPhotos: true } }).problems.join(" ")).toMatch(/FORMAT-ONLY/);
+    expect(loadCorpus(tpl, { spend: true, allowPartial: true, needs: { match: true } }).problems.join(" ")).toMatch(/match\[0\]: a FORMAT-ONLY template row cannot be spent on/);
   });
 });

@@ -4,16 +4,19 @@ import {
   SET_BUILD_INPUT_TOKENS,
   SET_BUILD_MAX_OUTPUT_TOKENS,
   SET_CLOSE_RETRY_INPUT_TOKENS,
+  SET_MATCH_INPUT_TOKENS,
+  SET_MATCH_MAX_OUTPUT_TOKENS,
   SET_PHOTO_BUILD_INPUT_TOKENS,
   SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
 } from "../../../src/lib/sets/set-config.ts";
+import { MATCH_SHOT_INPUT_TEXT, MATCH_SHOT_INSTRUCTIONS, MATCH_SHOT_JSON_SCHEMA } from "../../../src/lib/sets/match-shot.ts";
 import { COST_BASIS_USD_PER_CREDIT } from "../../../src/lib/generations/providers/video-models.ts";
 import { defaultCredits } from "./pass-bars.mts";
-import { baselineInputBoundChars, costOfTokens, makePriceBook, tokenCounts, validateExternalPrices, type ExternalPrices } from "./prices.mts";
-import { ceilingOf, planA, planAPhotos, planC, planCanary, planD, planDPhotos, planProbeA } from "./plan.mts";
+import { baselineInputBoundChars, costOfTokens, makePriceBook, matchBaselineInputBound, tokenCounts, validateExternalPrices, type ExternalPrices } from "./prices.mts";
+import { ceilingOf, planA, planAPhotos, planC, planCanary, planD, planDPhotos, planE, planProbeA } from "./plan.mts";
 import { checkPlan } from "./spend-guard.mts";
-import { partE, E_BLOCKED } from "../parts/e.mts";
+import { partE } from "../parts/e.mts";
 import type { RunContext } from "./context.mts";
 import { REPO_ROOT } from "./util.mts";
 
@@ -161,9 +164,37 @@ describe("the plans", () => {
     expect(ceilingOf(planProbeA(book)).ceilingUsd).toBeCloseTo(0.265, 9);
   });
 
-  it("E is blocked until its calls are built: its plan has no calls", () => {
-    const plan = partE.plan({ repoRoot: REPO_ROOT } as RunContext);
-    expect(plan).toMatchObject({ blocked: E_BLOCKED });
-    expect("lines" in plan).toBe(false);
+  it("E: 30 photos × 3 runs on Astra at standard price (never Batch) = 90 × $0.16625 = $14.9625; mini and the picture check unpriced", () => {
+    // 3,300 × $12.50/1M + 2,500 × $50/1M (set-config.ts).
+    expect(book.astraMatchWorstUsd).toBe(worstCaseAstraUsd(SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS));
+    expect(book.astraMatchWorstUsd).toBeCloseTo(0.16625, 12);
+    const plan = planE({ photos: 30, runs: 3, book });
+    const { ceilingUsd, unpriced } = ceilingOf(plan);
+    expect(Math.abs(ceilingUsd - 14.9625)).toBeLessThan(1e-9);
+    expect(unpriced.sort()).toEqual(["gates", "mini-5.4"]);
+    const line = (kind: string) => plan.find((l) => l.kind === kind);
+    expect(line("astra")).toMatchObject({ count: 90, unitUsd: book.astraMatchWorstUsd, metered: false });
+    expect(line("astra")?.label).toMatch(/standard \(background; photos never go on Batch\)/);
+    expect(line("mini-5.4")).toMatchObject({ count: 90, unitUsd: null });
+    expect(line("gates")).toMatchObject({ count: 30, metered: true });
+    expect(book.snapshot().astraMatch).toMatchObject({ worstUsd: book.astraMatchWorstUsd });
+  });
+
+  it("E's mini, once priced, is reserved at 1 token/char of its text plus the product's whole match budget for the picture, and the match cap", () => {
+    const bound = matchBaselineInputBound();
+    expect(bound).toBe(MATCH_SHOT_INSTRUCTIONS.length + JSON.stringify(MATCH_SHOT_JSON_SCHEMA).length + MATCH_SHOT_INPUT_TEXT.length + SET_MATCH_INPUT_TOKENS);
+    const b = makePriceBook({ external: { ...EMPTY, models: { "gpt-5.4-mini": NEUTRAL } }, gptImageUsd: 0.17 });
+    expect(b.matchBaselineWorstUsd("gpt-5.4-mini")).toBeCloseTo((bound * 1 + SET_MATCH_MAX_OUTPUT_TOKENS * 10) / 1e6, 12);
+    expect(book.matchBaselineWorstUsd("gpt-5.4-mini")).toBeNull();
+    expect(ceilingOf(planE({ photos: 30, runs: 3, book: b })).unpriced).toEqual(["gates"]);
+  });
+
+  it("E's plan is the part's: every photo of match.json × the runs, with the doc's own figures quoted by line", () => {
+    const corpus = { data: { match: Array.from({ length: 30 }, (_, i) => ({ id: `mt-${i}` })) } };
+    const plan = partE.plan({ repoRoot: REPO_ROOT, book, flags: { only: null, runs: null, fromRun: null }, corpus } as unknown as RunContext);
+    if (!("lines" in plan)) throw new Error("E has calls to plan");
+    expect(ceilingOf(plan.lines).ceilingUsd).toBeCloseTo(90 * book.astraMatchWorstUsd, 9);
+    expect(plan.notes.join("\n")).toMatch(/docs\/ASTRA_SETS\.md:\d+ {2}E match:/);
+    expect(plan.notes.join("\n")).toMatch(/90 reads = \$14\.96/);
   });
 });

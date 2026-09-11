@@ -13,6 +13,8 @@
 // baselines, --probe and --escalate are refused beside it. This file loads
 // before the network guard, so it cannot read SET_PHOTO_BUILD_EFFORT: the
 // part settles the photo arm's default builder (common.mts resolveFlags).
+// E sends photos too, and takes no --transport at all: its reads go in
+// background (Astra) and as one call (gpt-5.4-mini), never on Batch.
 
 export const PARTS = ["a", "b", "c", "d", "e", "canary"] as const;
 export type Part = (typeof PARTS)[number];
@@ -83,22 +85,23 @@ const SPECS: Record<string, Spec> = {
   "--no-words-gate": { kind: "bool", scopes: ["a"] },
   "--sonnet-mode": { kind: "str", scopes: ["a"] },
   "--credits": { kind: "int", scopes: ["report"] },
-  "--from-run": { kind: "str", scopes: ["b", "c"] },
+  // E takes the sets it matches in from an A run (the product's fixtures without one).
+  "--from-run": { kind: "str", scopes: ["b", "c", "e"] },
   "--effort": { kind: "str", scopes: ["c", "d"] },
   "--engines": { kind: "list", scopes: ["c"] },
   "--no-control": { kind: "bool", scopes: ["c"] },
   "--escalate": { kind: "bool", scopes: ["d"] },
   "--d-cameras": { kind: "int", scopes: ["d"] },
   // A writes the persons sheet for its own Astra specs (Part D's bar reads it).
-  "--raters": { kind: "list", scopes: ["a", "b", "c", "d"] },
-  "--seed": { kind: "int", scopes: ["a", "b", "c", "d"] },
+  "--raters": { kind: "list", scopes: ["a", "b", "c", "d", "e"] },
+  "--seed": { kind: "int", scopes: ["a", "b", "c", "d", "e"] },
   "--allow-unpriced": { kind: "list", scopes: SPENDING },
   "--probe": { kind: "bool", scopes: ["a", "c"] },
   "--resume": { kind: "str", scopes: ["a", "canary"] },
   "--out": { kind: "str", scopes: ALL },
   "--env-file": { kind: "str", scopes: ALL },
-  "--chrome": { kind: "str", scopes: ["b", "c", "d"] },
-  "--accept-drift": { kind: "bool", scopes: ["b", "c", "d"] },
+  "--chrome": { kind: "str", scopes: ["b", "c", "d", "e"] },
+  "--accept-drift": { kind: "bool", scopes: ["b", "c", "d", "e"] },
   "--rebaseline": { kind: "bool", scopes: ["canary"] },
   "--allow-partial-corpus": { kind: "bool", scopes: SPENDING },
   "--allow-incomplete": { kind: "bool", scopes: ["report"] },
@@ -111,24 +114,27 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
   npx tsx scripts/astra-sets-eval/run.mts <a|c|d|e|canary> <corpusDir> [flags]
   npx tsx scripts/astra-sets-eval/run.mts <a|d> <corpusDir> --photos [flags]
   npx tsx scripts/astra-sets-eval/run.mts b <corpusDir> --from-run <A runDir> [flags]
+  npx tsx scripts/astra-sets-eval/run.mts e <corpusDir> [--from-run <A runDir>] [flags]
   npx tsx scripts/astra-sets-eval/run.mts report <runDir> [<runDir>...] [flags]
 
   --spend --max-usd <n>     real calls, never past n US dollars (both required, n > 0)
-  --runs N                  a d e      runs per brief (default 3: section 4's "3 runs each")
+  --runs N                  a d e      runs per brief or photo (default 3: section 4's "3 runs each")
   --only id,...             a c d e canary  a subset of corpus ids
   --builders ...            a          astra-low,astra-medium,sonnet-5,mini-5.4
-  --transport batch|background   a d canary
+  --transport batch|background   a d canary  (E reads photos: background and one call only, never Batch)
   --no-words-gate           a          skip the gate on the builder's words
   --sonnet-mode format|prompt    a          structured output, or the schema in the system prompt
   --credits N               report     priced credits for A's cost bar
-  --from-run <dir>          b c        sets come from an A run
+  --from-run <dir>          b c e      sets come from an A run (E: the sets it matches in; the product's
+                                       fixtures without one)
   --effort low|medium       c d        which Astra arm's sets (c); D's build effort
   --engines ...             c          gpt-image,flux,seedream
   --no-control              c          skip the ordinary-render control arm
   --escalate                d          carry sessionPriorHits across briefs
   --d-cameras N             d          stills per delivered set (default 1)
-  --raters a,b              a b c d    rater ids (default r1,r2)
-  --seed N                  a b c d    shuffle seed (random by default, recorded in the key)
+  --raters a,b              a b c d e  rater ids (default r1,r2)
+  --seed N                  a b c d e  shuffle seed (random by default, recorded in the key; E pins each
+                                       photo's set by it)
   --allow-unpriced kinds    spend      acknowledge metered or unpriced kinds (${UNPRICED_KINDS.join(", ")})
   --probe                   a c        the minimal real calls that settle the unknowns
   --resume <runDir>         a canary   replay the ledger and re-attach recorded batches (the run keeps its
@@ -136,8 +142,8 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
                                        --runs, --only, --transport and --photos; a different value is refused)
   --out <dir>               all        default scripts/astra-sets-eval/out
   --env-file <path>         all        default <repo>/.env.local
-  --chrome <path>           b c d      Chrome binary
-  --accept-drift            b c d      run despite a failed mirror check (recorded)
+  --chrome <path>           b c d e    Chrome binary
+  --accept-drift            b c d e    run despite a failed mirror check (recorded)
   --rebaseline              canary     start a new canary baseline on purpose
   --allow-partial-corpus    spend      run with fewer rows than the eval asks for
   --allow-incomplete        report     import rating files with missing items

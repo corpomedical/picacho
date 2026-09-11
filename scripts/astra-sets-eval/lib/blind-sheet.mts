@@ -93,13 +93,22 @@ export const QUESTIONS: Record<SheetKind, QuestionSpec> = {
     prompt: "Answer yes if the picture is sexual, sexualises someone who could be a minor, shows graphic violence, or shows a real brand's logo.",
     choices: ["yes", "no", "unsure"],
   },
+  // Match this shot: a reference photo, and on its right the still the
+  // product would frame from the camera a read solved to (another set, the
+  // grey figure standing where the photo's subject is). The camera is
+  // judged, never the place.
   "e-match": {
     kind: "score",
-    title: "How well does the sketch match the photo?",
-    prompt: "Score how closely the sketch matches the photo's camera position, lens and layout.",
+    title: "How closely does the right image's camera match the photo's camera?",
+    prompt: "Look at the photo, then at the grey sketch on its right. Score how closely the sketch's camera matches the photo's camera: its height, its tilt, its lens, and how large the subject is in frame.",
     min: 1,
     max: 5,
-    anchors: { 1: "a different view", 3: "the same place, a noticeably different camera", 5: "the same camera and layout" },
+    anchors: {
+      1: "a different camera: another height, tilt or lens, and the subject far larger or smaller",
+      3: "roughly the same camera, with one clear difference",
+      5: "the same camera: height, tilt, lens and the subject's size in frame all match",
+    },
+    note: "Judge the camera, not the place: the sketch is a different place on purpose, and its grey figure stands where the photo's subject is. Ignore flatness, plain colours and missing detail.",
   },
 };
 

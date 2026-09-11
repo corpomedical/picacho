@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { eSheetItem } from "../parts/e.mts";
 import { combineRatings, importRatings, planSheet, QUESTIONS, renderSheetHtml, type SheetItemIn } from "./blind-sheet.mts";
 
 const BUILDERS = ["builder-alpha-secret", "builder-beta-secret", "builder-gamma-secret"];
@@ -91,6 +92,46 @@ describe("the photo sheet (b-photo)", () => {
     const ok = importRatings(r1.key, [{ sheetId: r1.sheetId, raterId: "r1", ratings: ids.map((itemId) => ({ itemId, score: 4 })) }]);
     expect(ok.problems).toEqual([]);
     expect(importRatings(r1.key, [{ sheetId: r1.sheetId, raterId: "r1", ratings: ids.map((itemId) => ({ itemId, choice: "no" })) }]).problems.join(" ")).toMatch(/whole number 1–5/);
+  });
+});
+
+describe("the Match-this-shot sheet (e-match)", () => {
+  // Each read of each photo, by either builder, is its own item: the photo
+  // it was read from, then the stage view it solved to, on the right. Only
+  // the key knows which builder read it.
+  const reads: SheetItemIn[] = ["astra", "mini"].flatMap((builder) =>
+    [1, 2, 3].flatMap((run) =>
+      ["mt-hidden-a", "mt-hidden-b"].map((photoId) =>
+        eSheetItem("e-run-secret", { readId: `e-${builder}-${photoId}-r${run}`, builder: builder as "astra" | "mini", photoId, run }, `/runs/e/photos/${photoId}.jpg`, `/runs/e/frames/fx-set-e-${builder}-${photoId}-r${run}.jpg`),
+      ),
+    ),
+  );
+
+  it("shows the photo and, on its right, the stage view, with nothing of the key: no builder, photo, read or path", () => {
+    const p = planSheet({ kind: "e-match", raterId: "r1", seed: 4, items: reads });
+    const html = renderSheetHtml(p, QUESTIONS["e-match"]);
+    expect(p.order).toHaveLength(12);
+    for (const k of p.key.items) {
+      expect(k.images.map((im) => im.role)).toEqual(["photo", "snapshot"]);
+      for (const v of [k.source.readId, k.source.photoId, k.source.runId]) expect(html).not.toContain(String(v));
+      for (const im of k.images) expect(html).not.toContain(im.path);
+    }
+    for (const word of ["astra", "Astra", "mini", "gpt", "e-read", "photos/", "frames/"]) expect(html).not.toContain(word);
+    expect(html).toContain("How closely does the right image&#39;s camera match the photo&#39;s camera?");
+    expect(html).toContain("Judge the camera, not the place");
+    // Every read of a photo is its own item, and one photo's items never sit side by side when that can be avoided.
+    const groups = p.key.items.map((k) => k.groupKey);
+    expect(groups.filter((g) => g === "mt-hidden-a")).toHaveLength(6);
+    for (let i = 1; i < groups.length; i++) expect(groups[i]).not.toBe(groups[i - 1]);
+    expect(new Set(p.key.items.map((k) => k.source.builder))).toEqual(new Set(["astra", "mini"]));
+  });
+
+  it("each rater gets their own order, and a rating maps back to its read through the key", () => {
+    const r1 = planSheet({ kind: "e-match", raterId: "r1", seed: 4, items: reads });
+    const r2 = planSheet({ kind: "e-match", raterId: "r2", seed: 4, items: reads });
+    expect(r1.key.items.map((k) => k.source.readId)).not.toEqual(r2.key.items.map((k) => k.source.readId));
+    const rows = importRatings(r1.key, [{ sheetId: r1.sheetId, raterId: "r1", ratings: r1.key.items.map((k) => ({ itemId: k.itemId, score: k.source.builder === "astra" ? 5 : 2 })) }]).rows;
+    expect(rows.filter((x) => x.score === 5).every((x) => x.source.builder === "astra")).toBe(true);
   });
 });
 

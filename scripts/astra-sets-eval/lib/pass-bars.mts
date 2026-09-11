@@ -558,69 +558,125 @@ export function reportDPhotos(rows: readonly DPhotoRow[]): BarResult {
 }
 
 // ---------------------------------------------------------------------------
-// E. Match (the network leg is not built yet; the bar is ready)
+// E. Match this shot
 // ---------------------------------------------------------------------------
 
-export type EItem = { builder: string; fovDeg: number | null; exifFovDeg: number | null; ratings: number[] };
+/**
+ * One READ: a photo × run × builder. Section 4 reads each of 30 photos 3
+ * times per builder, and EVERY READ COUNTS ON ITS OWN — the reading that
+ * cannot flatter a builder: a person gets one read per match, so a photo's
+ * three reads are three trials, and no median smooths a bad one away.
+ *   read      a camera came back (parseMatchShotText): its vertical field of
+ *             view is held to the photo's EXIF, and its stage view is rated
+ *   miss      the builder answered with nothing usable — unparsable, refused,
+ *             cut off at the output cap, or still reading at the product's
+ *             deadline: inside both denominators, never within ±20%, never a
+ *             rating of 4
+ *   missing   nothing to judge the builder by: never sent, never answered, or
+ *             a failure on OpenAI's side (a budget or Ctrl-C stop, the wire,
+ *             a picture check that could not read the photo). Bounded, as A
+ *             bounds a build not run: a bar is decided only if it holds
+ *             whatever the missing reads would have done
+ * The FOV bar counts the reads of photos with an EXIF truth (exifFovDeg);
+ * the rating bar counts every read, and a read without two ratings is
+ * bounded like a missing one. A photo the picture check refused is never
+ * sent (as in the product) and is not an item.
+ */
+export type EOutcome = "read" | "miss" | "missing";
+export type EItem = { builder: string; outcome: EOutcome; fovDeg: number | null; exifFovDeg: number | null; ratings: number[] };
+
+export const E_FOV_BAR = 0.8;
+export const E_RATING_BAR = 0.7;
 
 export function fovWithin(fovDeg: number, exifFovDeg: number, tolerance = 0.2): boolean {
   return Math.abs(fovDeg - exifFovDeg) <= tolerance * exifFovDeg + 1e-12;
 }
 
-export function barE(items: readonly EItem[]): BarResult[] {
-  const scoreOf = (builder: string) => {
-    const mine = items.filter((i) => i.builder === builder);
-    const withExif = mine.filter((i) => i.exifFovDeg !== null && i.fovDeg !== null);
-    const fovOk = withExif.filter((i) => fovWithin(i.fovDeg as number, i.exifFovDeg as number)).length;
-    const rated = mine.filter((i) => i.ratings.length >= 2);
-    const good = rated.filter((i) => (mean(i.ratings) as number) >= 4).length;
-    return {
-      fovShare: withExif.length ? fovOk / withExif.length : null,
-      fovN: withExif.length,
-      fovOk,
-      ratingShare: rated.length ? good / rated.length : null,
-      ratingN: rated.length,
-      good,
-    };
-  };
-  const a = scoreOf("astra");
-  const m = scoreOf("mini");
-  const out: BarResult[] = [
-    bar({
-      id: "E-fov",
-      label: "E vertical FOV within ±20% of EXIF",
-      verdict: a.fovShare === null ? "UNDETERMINED" : a.fovShare >= 0.8 - 1e-12 ? "PASS" : "FAIL",
-      value: a.fovShare === null ? "no EXIF" : pct(a.fovShare),
-      threshold: "≥ 80% of photos with EXIF",
-      n: a.fovN,
-      arithmetic: a.fovShare === null ? "no photo with EXIF" : `${a.fovOk}/${a.fovN} = ${pct(a.fovShare)} ${a.fovShare >= 0.8 - 1e-12 ? "≥" : "<"} 80%`,
-    }),
-    bar({
-      id: "E-rating",
-      label: "E blind match rating ≥ 4",
-      verdict: a.ratingShare === null ? "UNDETERMINED" : a.ratingShare >= 0.7 - 1e-12 ? "PASS" : "FAIL",
-      value: a.ratingShare === null ? "no ratings" : pct(a.ratingShare),
-      threshold: "≥ 70%",
-      n: a.ratingN,
-      arithmetic: a.ratingShare === null ? "no photo with two ratings" : `${a.good}/${a.ratingN} = ${pct(a.ratingShare)} ${a.ratingShare >= 0.7 - 1e-12 ? "≥" : "<"} 70%`,
-    }),
-  ];
-  if (a.fovShare === null || m.fovShare === null || a.ratingShare === null || m.ratingShare === null) {
-    out.push(bar({ id: "E-route", label: "E Astra beats gpt-5.4-mini on both", verdict: "UNDETERMINED", value: "incomplete", threshold: "both", n: 0, arithmetic: "a builder lacks FOV or ratings" }));
-  } else {
-    const beats = a.fovShare > m.fovShare && a.ratingShare > m.ratingShare;
-    out.push(
-      bar({
-        id: "E-route",
-        label: "E Astra beats gpt-5.4-mini on both",
-        verdict: "REPORTED",
-        value: beats ? "route: astra" : "route: mini",
-        threshold: "both",
-        n: a.fovN,
-        arithmetic: `FOV ${pct(a.fovShare)} vs ${pct(m.fovShare)}; rating ${pct(a.ratingShare)} vs ${pct(m.ratingShare)}`,
-      }),
-    );
+/** A share with its bounds: `good` of `n` known good, `unknown` that could go either way. */
+export type EShare = { n: number; good: number; misses: number; unknown: number; low: number | null; high: number | null };
+
+function shareOf(items: readonly EItem[], judge: (i: EItem) => boolean | null): EShare {
+  let good = 0;
+  let unknown = 0;
+  let misses = 0;
+  for (const i of items) {
+    const v = judge(i);
+    if (v === null) unknown += 1;
+    else if (v) good += 1;
+    if (i.outcome === "miss") misses += 1;
   }
+  const n = items.length;
+  return { n, good, misses, unknown, low: n ? good / n : null, high: n ? (good + unknown) / n : null };
+}
+
+/** The FOV share over one builder's reads of photos with an EXIF truth. */
+export function eFovShare(items: readonly EItem[], builder: string): EShare {
+  return shareOf(
+    items.filter((i) => i.builder === builder && i.exifFovDeg !== null),
+    (i) => (i.outcome === "missing" ? null : i.outcome === "miss" || i.fovDeg === null ? false : fovWithin(i.fovDeg, i.exifFovDeg as number)),
+  );
+}
+
+/** The rating share over every read of one builder: a read is good at a mean of two ratings ≥ 4. */
+export function eRatingShare(items: readonly EItem[], builder: string): EShare {
+  return shareOf(
+    items.filter((i) => i.builder === builder),
+    (i) => (i.outcome === "missing" ? null : i.outcome === "miss" ? false : i.ratings.length >= 2 ? (mean(i.ratings) as number) >= 4 : null),
+  );
+}
+
+function eBar(id: string, label: string, s: EShare, threshold: number, what: string, unknownIs: string): BarResult {
+  const th = `≥ ${pct(threshold, 0)} of ${what}`;
+  if (s.n === 0 || s.low === null || s.high === null) return bar({ id, label, verdict: "UNDETERMINED", value: `no ${what}`, threshold: th, n: 0, arithmetic: `no ${what}` });
+  const verdict: Verdict = s.low >= threshold - 1e-12 ? "PASS" : s.high < threshold - 1e-12 ? "FAIL" : "UNDETERMINED";
+  const head = `${s.good}/${s.n} = ${pct(s.low)}`;
+  const misses = `${s.misses} miss${s.misses === 1 ? "" : "es"} counted in`;
+  const arithmetic = s.unknown
+    ? `${head} with the ${s.unknown} ${unknownIs} all failing, ${s.good + s.unknown}/${s.n} = ${pct(s.high)} all passing: ${verdict === "UNDETERMINED" ? "they decide it" : "holds either way"}; ${misses}`
+    : `${head} ${s.low >= threshold - 1e-12 ? "≥" : "<"} ${pct(threshold, 0)}; ${misses}`;
+  return bar({ id, label, verdict, value: pct(s.low), threshold: th, n: s.n, arithmetic });
+}
+
+/**
+ * Section 4, row E: "Vertical field of view within ±20% of the EXIF value on
+ * at least 80%. Blind match rating at least 4 on at least 70%. Astra must
+ * beat gpt-5.4-mini on both, or Match runs on mini." The two bars are
+ * Astra's; mini's shares are reported beside them; the route is Astra only
+ * if its share is above mini's on both, whatever the missing reads would
+ * have done, and mini as soon as Astra cannot be above it on one.
+ */
+export function barE(items: readonly EItem[]): BarResult[] {
+  const af = eFovShare(items, "astra");
+  const ar = eRatingShare(items, "astra");
+  const mf = eFovShare(items, "mini");
+  const mr = eRatingShare(items, "mini");
+  const out: BarResult[] = [
+    eBar("E-fov", "E Astra vertical FOV within ±20% of EXIF", af, E_FOV_BAR, "reads of photos with EXIF", "missing reads"),
+    eBar("E-rating", "E Astra blind match rating ≥ 4", ar, E_RATING_BAR, "reads", "missing or unrated reads"),
+    { ...eBar("E-fov-mini", "E gpt-5.4-mini vertical FOV within ±20% of EXIF (baseline, no bar)", mf, E_FOV_BAR, "reads of photos with EXIF", "missing reads"), verdict: "REPORTED" },
+    { ...eBar("E-rating-mini", "E gpt-5.4-mini blind match rating ≥ 4 (baseline, no bar)", mr, E_RATING_BAR, "reads", "missing or unrated reads"), verdict: "REPORTED" },
+  ];
+  const label = "E Astra beats gpt-5.4-mini on both";
+  const shares = [af, mf, ar, mr];
+  if (shares.some((s) => s.low === null || s.high === null)) {
+    out.push(bar({ id: "E-route", label, verdict: "UNDETERMINED", value: "route: ?", threshold: "both", n: 0, arithmetic: "a builder has no reads to compare" }));
+    return out;
+  }
+  const [aF, mF, aR, mR] = shares as { low: number; high: number }[];
+  const beats = aF.low > mF.high + 1e-12 && aR.low > mR.high + 1e-12;
+  const cannot = aF.high <= mF.low + 1e-12 || aR.high <= mR.low + 1e-12;
+  const range = (s: { low: number; high: number }) => (Math.abs(s.high - s.low) < 1e-12 ? pct(s.low) : `${pct(s.low)}–${pct(s.high)}`);
+  out.push(
+    bar({
+      id: "E-route",
+      label,
+      verdict: beats || cannot ? "REPORTED" : "UNDETERMINED",
+      value: beats ? "route: astra" : cannot ? "route: mini" : "route: ?",
+      threshold: "above mini on both",
+      n: af.n + ar.n,
+      arithmetic: `FOV ${range(aF)} vs ${range(mF)}; rating ${range(aR)} vs ${range(mR)}${beats || cannot ? "" : ": the missing or unrated reads decide it"}`,
+    }),
+  );
   return out;
 }
 

@@ -27,10 +27,15 @@
 //                       SET_PHOTO_BUILD_EFFORT's arm, and its own line under
 //                       the release line. SETS_OPEN_TO_PLANS never opens
 //                       Sets from a photo, so the photo arm never decides it.
+//   Match this shot     (E runs) every read in hand, each with the two
+//                       ratings of its stage view (the e-match sheets):
+//                       barE's two bars and the route, on a line of their
+//                       own — Match this shot sits behind astra_photo_sets,
+//                       never SETS_OPEN_TO_PLANS
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { SET_BUILD_EFFORT, SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
+import { SET_BUILD_EFFORT, SET_MATCH_EFFORT, SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
 import type { BuildRecord } from "../lib/build-flow.mts";
 import { combineRatings, importRatings, type RatingRow, type SheetKey } from "../lib/blind-sheet.mts";
 import type { Flags } from "../lib/cli.mts";
@@ -43,6 +48,7 @@ import {
   barAValidity,
   barB,
   barD,
+  barE,
   barPersons,
   capAtUndetermined,
   capPhotoPersons,
@@ -60,6 +66,7 @@ import { tokenCounts, type PriceBook } from "../lib/prices.mts";
 import { canonicalJson, newRunId, pct, usd } from "../lib/util.mts";
 import { readRun } from "./b.mts";
 import { dPhotoRow, type DOutcome, type DPhotoOutcome } from "./d.mts";
+import { eItems, type EPhotoRow, type EReadRow } from "./e.mts";
 
 type LoadedRun = {
   dir: string;
@@ -149,8 +156,9 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   const real = runs.filter((r) => !r.simulated);
   const problems: string[] = [];
   const warnings: string[] = [];
-  const incomplete = real.filter((r) => !r.complete && ["a", "d", "canary"].includes(r.part) && r.manifest.probe !== true);
-  for (const r of incomplete) warnings.push(`${runName(r)}: INCOMPLETE (interrupted, stopped or unfinished): it may fail a bar, never pass one. ${r.part === "d" ? "Rerun D" : "--resume it"}`);
+  const finishes = (r: LoadedRun) => ["a", "d", "e", "canary"].includes(r.part) && r.manifest.probe !== true;
+  const incomplete = real.filter((r) => !r.complete && finishes(r));
+  for (const r of incomplete) warnings.push(`${runName(r)}: INCOMPLETE (interrupted, stopped or unfinished): it may fail a bar, never pass one. ${r.part === "d" || r.part === "e" ? `Rerun ${r.part.toUpperCase()}` : "--resume it"}`);
 
   // Ratings, imported against their keys. A sheet whose import has a
   // problem is left out whole: none of its ratings reach a bar.
@@ -345,6 +353,32 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     reported.push(reportDPhotos(rows));
   } else if (photoRuns.length) photoNotes.push("D photos: no real D photo run in hand (the photos with people)");
 
+  // E: Match this shot. Each read's ratings are the two raters' scores of
+  // its stage view; barE counts every read (a miss inside, a missing or
+  // unrated read bounded), and an unfinished E run never passes.
+  const eRuns = real.filter((r) => r.part === "e");
+  let eRelease: { fov: "✓" | "✗" | "?"; rating: "✓" | "✗" | "?"; route: string } | null = null;
+  const eNotes: string[] = [];
+  if (eRuns.length) {
+    const scores = new Map<string, number[]>();
+    for (const c of ofKind("e-match")) scores.set(`${String(c.source.runId)}:${String(c.source.readId)}`, c.ratings.map((x) => x.score).filter((x): x is number => typeof x === "number"));
+    const items = eRuns.flatMap((r) =>
+      eItems(
+        r.rows.filter((x) => x.type === "e-read") as unknown as EReadRow[],
+        (readId) => scores.get(`${String(r.manifest.runId)}:${readId}`) ?? [],
+      ),
+    );
+    const eBars = capIf(barE(items), eRuns);
+    bars.push(...eBars.filter((b) => !b.id.endsWith("-mini")));
+    reported.push(...eBars.filter((b) => b.id.endsWith("-mini")));
+    const one = (id: string) => verdictOf(eBars.filter((b) => b.id === id));
+    eRelease = { fov: one("E-fov"), rating: one("E-rating"), route: eBars.find((b) => b.id === "E-route")?.value ?? "route: ?" };
+    const photos = eRuns.flatMap((r) => r.rows.filter((x) => x.type === "e-photo") as unknown as EPhotoRow[]);
+    const refused = photos.filter((p) => p.pictureCheck.startsWith("refused:"));
+    if (refused.length) eNotes.push(`E: the picture check refused ${refused.length} photo(s), never sent and outside the bars: ${refused.map((p) => p.photoId).join(", ")}`);
+    for (const p of photos.filter((x) => x.truth.disagreements.length)) warnings.push(`E ${p.photoId}: match.json and the file's EXIF disagree (match.json's figure is used): ${p.truth.disagreements.join("; ")}`);
+  }
+
   // Canary: the latest real canary run's own verdict.
   const canaries = real.filter((r) => r.part === "canary");
   const canaryLines: string[] = [];
@@ -363,7 +397,7 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
 
   const lines: string[] = [];
   lines.push(`Astra Sets eval report — ${new Date().toISOString()}`);
-  lines.push(`runs: ${runs.map((r) => `${runName(r)}${r.simulated ? " (SIMULATED: set aside)" : !r.complete && ["a", "d", "canary"].includes(r.part) && r.manifest.probe !== true ? " (INCOMPLETE)" : ""}`).join(", ")}`);
+  lines.push(`runs: ${runs.map((r) => `${runName(r)}${r.simulated ? " (SIMULATED: set aside)" : !r.complete && finishes(r) ? " (INCOMPLETE)" : ""}`).join(", ")}`);
   if (real.length === 0) lines.push("*** DRY RUN ONLY: every run here is simulated; no bar below is a result ***");
   lines.push("--- bars ---");
   for (const b of bars) lines.push(`  ${barLine(b)}`);
@@ -379,6 +413,8 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
       `  A photo cost bar priced at ${photoCredits} credits${o.flags.photoCredits ? " (--photo-credits)" : ` (ceil(${usd(o.book.astraPhotoFirstWorstUsd, 3)} / ${usd(o.book.costBasisUsdPerCredit, 2)}))`}; the worst case with the closing retry, ${usd(o.book.astraPhotoBuildWorstUsd, 3)}, would be ${defaultCredits(o.book.astraPhotoBuildWorstUsd, o.book.costBasisUsdPerCredit)} credits: the operator's call`,
     );
   } else lines.push("  photo arm: no real photo run in hand");
+  if (eRuns.length) for (const n of eNotes) lines.push(`  ${n}`);
+  else lines.push("  E: no real E run in hand");
   lines.push("  statistics: median averages the two middle values; p95 is nearest rank, sorted[ceil(0.95 n) − 1]");
   if (canaryLines.length) lines.push("--- canary ---", ...canaryLines);
   if (warnings.length) lines.push("--- warnings ---", ...warnings.map((w) => `  ${w}`));
@@ -391,6 +427,9 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
     lines.push(
       `Photo arm (Sets from a photo, astra_photo_sets; SETS_OPEN_TO_PLANS never opens it) at SET_PHOTO_BUILD_EFFORT = ${SET_PHOTO_BUILD_EFFORT}: A ${photoRelease.A} B ${photoRelease.B} D ${photoRelease.D}${photoOtherArms.length ? `   [reported only, not shipped: ${photoOtherArms.join("; ")}]` : ""}`,
     );
+  }
+  if (eRelease) {
+    lines.push(`Match this shot (astra_photo_sets; SETS_OPEN_TO_PLANS never opens it) at SET_MATCH_EFFORT = ${SET_MATCH_EFFORT}: E FOV ${eRelease.fov} rating ${eRelease.rating}; ${eRelease.route}`);
   }
 
   const dir = join(o.outRoot, newRunId("report", real.length === 0));
@@ -407,6 +446,7 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
         reported,
         release,
         photoRelease: photoRuns.length ? photoRelease : null,
+        matchRelease: eRelease,
         problems,
         warnings,
         credits,

@@ -111,6 +111,22 @@ describe("--photos", () => {
   });
 });
 
+describe("e", () => {
+  it("takes the sets it matches in, the seed, the raters and Chrome; spends like the others", () => {
+    const c = ok(["e", "corp", "--from-run", "out/a-1", "--seed", "3", "--raters", "ann,bo", "--chrome", "/c", "--accept-drift", "--runs", "1", "--only", "mt-01"]);
+    if (c.cmd !== "part") throw new Error("part");
+    expect(c.flags).toMatchObject({ fromRun: "out/a-1", seed: 3, raters: ["ann", "bo"], chrome: "/c", acceptDrift: true, runs: 1, only: ["mt-01"] });
+    expect(ok(["e", "corp", "--spend", "--max-usd", "16", "--allow-unpriced", "mini-5.4,gates"]).cmd).toBe("part");
+  });
+
+  it("never goes on Batch, and does not resume: no --transport, no --resume", () => {
+    expect(err(["e", "corp", "--transport", "batch"])).toMatch(/--transport does not apply to e/);
+    expect(err(["e", "corp", "--transport", "background"])).toMatch(/does not apply to e/);
+    expect(err(["e", "corp", "--resume", "run", "--spend", "--max-usd", "1"])).toMatch(/--resume does not apply to e/);
+    expect(err(["e", "corp", "--builders", "astra-low"])).toMatch(/does not apply to e/);
+  });
+});
+
 describe("--resume keeps the run's behaviour", () => {
   const flagsOf = (argv: string[]) => {
     const c = ok(argv);

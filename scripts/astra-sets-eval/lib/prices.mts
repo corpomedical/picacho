@@ -7,7 +7,9 @@
 //                       16,000 output, its closing retry 12,500 input:
 //                       $0.86 + $0.95625 = $1.81625, set-config.ts shows the
 //                       arithmetic). Photos are never on Batch, so a photo
-//                       build is always priced at standard.
+//                       build is always priced at standard. A Match-this-shot
+//                       read: 3,300 input tokens and 2,500 output, $0.16625
+//                       (set-config.ts), at standard price too.
 //   Batch 0.5           docs/ASTRA_SETS.md §1.2 "Price modifiers" (checked
 //                       at run start: batchSentenceLine)
 //   GPT Image 2 still   IMAGE_COST_USD, src/lib/admin/economics.ts — injected
@@ -32,7 +34,10 @@ import {
   SET_PHOTO_BUILD_INPUT_TOKENS,
   SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
+  SET_MATCH_INPUT_TOKENS,
+  SET_MATCH_MAX_OUTPUT_TOKENS,
 } from "../../../src/lib/sets/set-config.ts";
+import { MATCH_SHOT_INPUT_TEXT, MATCH_SHOT_INSTRUCTIONS, MATCH_SHOT_JSON_SCHEMA } from "../../../src/lib/sets/match-shot.ts";
 import { COST_BASIS_USD_PER_CREDIT } from "../../../src/lib/generations/providers/video-models.ts";
 import { SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA } from "../../../src/lib/sets/set-builder-prompt.ts";
 import { closeRetryInput, RETRY_SMALLER } from "../../../src/lib/sets/build-retry.ts";
@@ -202,6 +207,20 @@ export function baselineInputBoundChars(attempt: "first" | "retry"): number {
   return fixed + retry;
 }
 
+/**
+ * A baseline's Match-this-shot read (Part E: gpt-5.4-mini): the instructions,
+ * the schema and the line at 1 token per character, as for the text
+ * baselines, plus the picture at the product's WHOLE match budget,
+ * SET_MATCH_INPUT_TOKENS (3,300; set-config.ts puts the picture at about
+ * 2,150 of it). The one mini read of a photo on record took 1,821 input
+ * tokens in all (docs/ASTRA_SETS.md §1.1, "gpt-5.4-mini, same image"). A
+ * read that bills past its reservation is an overshoot: the spend guard
+ * records it and stops the run.
+ */
+export function matchBaselineInputBound(): number {
+  return MATCH_SHOT_INSTRUCTIONS.length + JSON.stringify(MATCH_SHOT_JSON_SCHEMA).length + MATCH_SHOT_INPUT_TEXT.length + SET_MATCH_INPUT_TOKENS;
+}
+
 export type Transport = "batch" | "background" | "sync";
 
 export type PriceBook = {
@@ -212,6 +231,8 @@ export type PriceBook = {
   astraPhotoFirstWorstUsd: number;
   astraPhotoRetryWorstUsd: number;
   astraPhotoBuildWorstUsd: number;
+  /** One Match-this-shot read at the match caps: standard price always (a photo never goes on Batch). */
+  astraMatchWorstUsd: number;
   batchMultiplier: number;
   gptImageUsd: number;
   costBasisUsdPerCredit: number;
@@ -222,6 +243,8 @@ export type PriceBook = {
   astraCost(usage: AstraUsage | null, transport: Transport): { billedUsd: number; standardUsd: number };
   modelCost(model: string, usage: unknown, provider: Provider): number | null;
   baselineAttemptWorstUsd(model: string, attempt: "first" | "retry"): number | null;
+  /** A baseline's match read at matchBaselineInputBound and the match output cap; null while the model is unpriced. */
+  matchBaselineWorstUsd(model: string): number | null;
   snapshot(): Record<string, unknown>;
 };
 
@@ -233,6 +256,10 @@ export function makePriceBook(o: { external: ExternalPrices; gptImageUsd: number
   // is reserved at the closing retry's, the dearer of the two.
   const photoFirst = worstCaseAstraUsd(SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
   const photoRetry = worstCaseAstraUsd(SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
+  // 3,300 × $12.50/1M + 2,500 × $50/1M = $0.04125 + $0.125 = $0.16625 (set-config.ts).
+  const match = worstCaseAstraUsd(SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS);
+  // Every input token at the dearest input rate a model has a price for, and the output to its cap.
+  const worstAt = (p: ModelPrice, input: number, output: number) => (input * Math.max(p.inputPerMTok, p.cacheWritePerMTok ?? 0) + output * p.outputPerMTok) / 1_000_000;
   // A response names a dated snapshot ("gpt-5.4-mini-2026-…"): the longest
   // priced name it starts with prices it.
   const model = (name: string): ModelPrice | null => {
@@ -249,6 +276,7 @@ export function makePriceBook(o: { external: ExternalPrices; gptImageUsd: number
     astraPhotoFirstWorstUsd: photoFirst,
     astraPhotoRetryWorstUsd: photoRetry,
     astraPhotoBuildWorstUsd: photoFirst + photoRetry,
+    astraMatchWorstUsd: match,
     batchMultiplier: BATCH_MULTIPLIER,
     gptImageUsd: o.gptImageUsd,
     costBasisUsdPerCredit: COST_BASIS_USD_PER_CREDIT,
@@ -273,11 +301,11 @@ export function makePriceBook(o: { external: ExternalPrices; gptImageUsd: number
     },
     baselineAttemptWorstUsd(name, attempt) {
       const p = model(name);
-      if (!p) return null;
-      const input = baselineInputBoundChars(attempt);
-      // Every input token at the dearest input rate this model has a price for.
-      const inRate = Math.max(p.inputPerMTok, p.cacheWritePerMTok ?? 0);
-      return (input * inRate + SET_BUILD_MAX_OUTPUT_TOKENS * p.outputPerMTok) / 1_000_000;
+      return p ? worstAt(p, baselineInputBoundChars(attempt), SET_BUILD_MAX_OUTPUT_TOKENS) : null;
+    },
+    matchBaselineWorstUsd(name) {
+      const p = model(name);
+      return p ? worstAt(p, matchBaselineInputBound(), SET_MATCH_MAX_OUTPUT_TOKENS) : null;
     },
     snapshot() {
       return {
@@ -293,6 +321,12 @@ export function makePriceBook(o: { external: ExternalPrices; gptImageUsd: number
           retryWorstUsd: photoRetry,
           caps: { SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS },
         },
+        astraMatch: {
+          source: `src/lib/astra/prices.ts (read ${ASTRA_PRICES_READ_ON}); standard price, never Batch`,
+          worstUsd: match,
+          caps: { SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS },
+        },
+        matchBaselineInputBound: matchBaselineInputBound(),
         batch: { multiplier: BATCH_MULTIPLIER, source: BATCH_SOURCE },
         gptImageUsd: { value: o.gptImageUsd, source: "IMAGE_COST_USD, src/lib/admin/economics.ts" },
         costBasisUsdPerCredit: { value: COST_BASIS_USD_PER_CREDIT, source: "src/lib/generations/providers/video-models.ts" },

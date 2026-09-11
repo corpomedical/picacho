@@ -60,15 +60,47 @@ export const MIRRORED_PHOTO_LINES = [
   "setPhotoAspect(img.naturalWidth / img.naturalHeight);",
 ] as const;
 
+/**
+ * What E mirrors (lib/match-pose.mts): a fresh set's stage — the first
+ * camera in hand, the figure on the first mark — solving a read into a pose
+ * and placing it against the set as built, the figure's eye height and the
+ * orbit's reach it places it with, and the pose the page's line is said from.
+ */
+export const MIRRORED_MATCH_LINES = [
+  "position: spec.cameras[0].position,",
+  "target: spec.cameras[0].target,",
+  "fovDeg: spec.cameras[0].fovDeg,",
+  "const startMarkId = initialLayout?.markId ?? spec.marks[0].id;",
+  "const FRAME_EYE_Y = 1.45;",
+  "controls.maxDistance = Math.max(spec.bounds.x, spec.bounds.z) * 1.2 + 10;",
+  "const solved = solveMatchPose(res.match, {",
+  "mark: layoutRef.current.mark,",
+  "current: api.pose(),",
+  "referenceAspect: prepared.width / prepared.height,",
+  "canvasAspect: api.canvasAspect(),",
+  "const moved = api.matchTo(solved.pose);",
+  "const placed = placeMatchedCamera(THREE, built.root, pose, {",
+  "mark: { x: p.x, z: p.z, facingDeg: layoutRef.current.mark.facingDeg },",
+  "eyeY: FRAME_EYE_Y,",
+  "maxDistance: controls.maxDistance,",
+  "camera.position.set(...placed.position);",
+  "controls.target.set(...placed.target);",
+  "camera.fov = pose.fovDeg;",
+  "const r = (n: number) => Math.round(n * 1000) / 1000;",
+  "position: [r(camera.position.x), r(camera.position.y), r(camera.position.z)],",
+  "fovDeg: Math.round(camera.fov * 100) / 100,",
+  "setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, solved, api.pose()), moved });",
+] as const;
+
 export type ViewerParity = { ok: boolean; missing: string[]; file: string };
 
-export function checkViewerParity(repoRoot: string, o: { photo?: boolean } = {}): ViewerParity {
+export function checkViewerParity(repoRoot: string, o: { photo?: boolean; match?: boolean } = {}): ViewerParity {
   const file = "src/components/sets/set-view.tsx";
   const lines = new Set(
     readFileSync(join(repoRoot, file), "utf8")
       .split("\n")
       .map((l) => l.trim()),
   );
-  const missing = [...MIRRORED_LINES, ...(o.photo ? MIRRORED_PHOTO_LINES : [])].filter((l) => !lines.has(l));
+  const missing = [...MIRRORED_LINES, ...(o.photo ? MIRRORED_PHOTO_LINES : []), ...(o.match ? MIRRORED_MATCH_LINES : [])].filter((l) => !lines.has(l));
   return { ok: missing.length === 0, missing, file };
 }

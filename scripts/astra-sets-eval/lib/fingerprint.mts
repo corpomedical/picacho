@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SET_BUILDER_INSTRUCTIONS, SET_PHOTO_RULES, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "../../../src/lib/sets/set-builder-prompt.ts";
 import { RETRY_SMALLER, RETRY_SMALLER_PHOTO } from "../../../src/lib/sets/build-retry.ts";
+import { MATCH_SHOT_INPUT_TEXT, MATCH_SHOT_INSTRUCTIONS, MATCH_SHOT_JSON_SCHEMA, MATCH_SHOT_SCHEMA_NAME } from "../../../src/lib/sets/match-shot.ts";
 import {
   SET_BUILD_EFFORT,
   SET_BUILD_INPUT_TOKENS,
@@ -20,6 +21,11 @@ import {
   SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
   SET_PHOTO_MAX_SIDE_PX,
+  SET_MATCH_DEADLINE_MS,
+  SET_MATCH_EFFORT,
+  SET_MATCH_INPUT_TOKENS,
+  SET_MATCH_MAX_OUTPUT_TOKENS,
+  SET_MATCH_POLL_MS,
 } from "../../../src/lib/sets/set-config.ts";
 import { canonicalJson, sha256 } from "./util.mts";
 
@@ -39,6 +45,8 @@ export const SRC_FILES = [
   "src/lib/sets/photo.ts",
   "src/lib/sets/photo-client.ts",
   "src/lib/sets/compare.ts",
+  "src/lib/sets/match-shot.ts",
+  "src/lib/sets/match-actions.ts",
   "src/components/sets/set-view.tsx",
   "src/lib/generations/providers/astra.ts",
   "src/lib/generations/providers/fetch-with-timeout.ts",
@@ -100,6 +108,23 @@ export function photoPromptFingerprint(): string {
       rules: SET_PHOTO_RULES,
       retrySmaller: RETRY_SMALLER_PHOTO,
       caps: { SET_PHOTO_BUILD_EFFORT, SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS, SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_MAX_SIDE_PX },
+    }),
+  );
+}
+
+/**
+ * A Match-this-shot read's own (Part E): its instructions, line, schema and
+ * name, the effort, the caps and the clock it is read on. Two E runs with the
+ * same fingerprint asked both builders the same thing.
+ */
+export function matchPromptFingerprint(): string {
+  return sha256(
+    canonicalJson({
+      instructions: MATCH_SHOT_INSTRUCTIONS,
+      line: MATCH_SHOT_INPUT_TEXT,
+      schema: MATCH_SHOT_JSON_SCHEMA,
+      schemaName: MATCH_SHOT_SCHEMA_NAME,
+      caps: { SET_MATCH_EFFORT, SET_MATCH_INPUT_TOKENS, SET_MATCH_MAX_OUTPUT_TOKENS, SET_MATCH_POLL_MS, SET_MATCH_DEADLINE_MS },
     }),
   );
 }

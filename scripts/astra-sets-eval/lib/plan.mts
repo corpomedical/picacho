@@ -2,7 +2,7 @@
 // cost — printed by every dry run and checked against --max-usd before a
 // real run makes its first call. Pure over a price book.
 
-import { SET_BUILD_EFFORT, SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
+import { SET_BUILD_EFFORT, SET_MATCH_EFFORT, SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
 import type { Builder, Engine } from "./cli.mts";
 import { BASELINE_MODELS, BATCH_SOURCE, type PriceBook } from "./prices.mts";
 import { GENERATE_RETRIES } from "./pipeline-strings.mts";
@@ -113,6 +113,37 @@ export function planDPhotos(o: { photos: number; withNotes: number; runs: number
     judgementLine(o.book, "picture check on each photo", "output-gate", n),
     astraPhotoLine(o.book, `Astra ${o.effort ?? SET_PHOTO_BUILD_EFFORT}, D photos`, n),
     judgementLine(o.book, "words gate", "prompt-gate", n * 2),
+  ];
+}
+
+/**
+ * E's calls, per photo and run on each builder, as match-actions.ts makes a
+ * read: the picture check once per photo (the same bytes every read sends),
+ * then Astra in background at the match caps' worst case — standard price, a
+ * photo never goes into a Batch input file — and gpt-5.4-mini as one call,
+ * unpriced until external-prices.json has it.
+ */
+export function planE(o: { photos: number; runs: number; book: PriceBook }): PlannedCall[] {
+  const reads = o.photos * o.runs;
+  const mini = BASELINE_MODELS["mini-5.4"];
+  return [
+    judgementLine(o.book, "picture check, once per photo", "output-gate", o.photos),
+    {
+      kind: "astra",
+      label: `Astra ${SET_MATCH_EFFORT}, match reads: ${reads} × ${usd(o.book.astraMatchWorstUsd, 5)} standard (background; photos never go on Batch)`,
+      count: reads,
+      unitUsd: o.book.astraMatchWorstUsd,
+      source: `${ASTRA_SOURCE} (the match caps)`,
+      metered: false,
+    },
+    {
+      kind: "mini-5.4",
+      label: `${mini}, match reads: ${reads} (input ≤ 1 token/char of the text + the product's whole match budget for the picture, output ≤ the match cap)`,
+      count: reads,
+      unitUsd: o.book.matchBaselineWorstUsd(mini),
+      source: `${EXTERNAL} models.${mini}`,
+      metered: false,
+    },
   ];
 }
 

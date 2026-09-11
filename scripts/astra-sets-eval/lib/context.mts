@@ -6,8 +6,10 @@
 // writes lands in its own directory under out/ (ignored by git): the
 // manifest, the ledger, results, answers, specs, frames, sheets, keys,
 // ratings and the summary — and an A photo run's photos/, the re-encoded
-// bytes each location photo was sent as (B lays them beside camera 1). A D
-// photo run keeps no copy of its photos with people.
+// bytes each location photo was sent as (B lays them beside camera 1), or an
+// E run's, the re-encoded bytes each reference photo was read from (its sheet
+// lays them beside the stage view). A D photo run keeps no copy of its
+// photos with people.
 
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,7 +31,7 @@ import type { BarResult } from "./pass-bars.mts";
 export type Gates = {
   words: (spec: SetSpec, ref: string) => Promise<WordsVerdict>;
   brief: (brief: string, priorHits: number, ref: string) => Promise<GateVerdict | NotReached>;
-  /** D's photo leg: the photographer's notes, and the picture itself (set only for a D photo run). */
+  /** D's photo leg: the photographer's notes, and the picture itself (the notes gate only for a D photo run; the picture check for it and E). */
   notes?: (notes: string, priorHits: number, ref: string) => Promise<GateReading | NotReached>;
   picture?: (dataUrl: string, o: { promptScores: unknown; priorHits: number }, ref: string) => Promise<GateVerdict | NotReached>;
 };

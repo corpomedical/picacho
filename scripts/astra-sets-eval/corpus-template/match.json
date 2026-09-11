@@ -1,10 +1,23 @@
 [
   {
     "_template": true,
-    "id": "ph-01",
-    "file": "photos/ph-01.jpg",
-    "licence": "<<FORMAT ONLY — where the photo comes from and the licence that allows this use>>",
+    "id": "mt-01",
+    "file": "match-photos/format-only-street.jpg",
+    "licence": "<<FORMAT ONLY — where the photo comes from, and why it may be sent to OpenAI and Anthropic (your own photo, or its licence)>>",
     "containsPeople": false,
     "exif": { "focal35mm": 26, "focalMm": 5.7, "orientation": 1 }
+  },
+  {
+    "_template": true,
+    "id": "mt-02",
+    "file": "match-photos/format-only-room.jpg",
+    "licence": "<<FORMAT ONLY — a row with someone in the picture, and no exif: the runner reads the lens from the file's own EXIF>>",
+    "containsPeople": true,
+    "consent": {
+      "kind": "ai-generated",
+      "covers": ["<<FORMAT ONLY — every service the consent (or the picture's licence) covers: OpenAI and Anthropic>>"],
+      "confirmedBy": "<<FORMAT ONLY — your pseudonym>>",
+      "confirmedOn": "0000-00-00"
+    }
   }
 ]

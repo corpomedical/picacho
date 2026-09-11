@@ -35,10 +35,23 @@
 // appended to the system prompt (`prompt`); no temperature (the model
 // rejects it, anthropic.ts). Both go through the same advanceBuild, retry
 // rules and words gate as Astra.
+//
+// MATCH THIS SHOT (Part E). Astra gets the product's own matchShotRequest
+// over the photo's prepared bytes: byte for byte what match-actions.ts sends
+// for the same bytes, with the eval's safety identifier where production
+// puts the account's. gpt-5.4-mini gets the SAME instructions, schema and
+// input — the line, then the photo inline at detail high, exactly as
+// providers/astra.ts writes them — as one Responses call: strict
+// json_schema, the same output cap, store:false, and no reasoning,
+// temperature or background, as its text builds go; it carries the eval's
+// safety identifier too, like every request here with a photo in it.
+// Neither is ever a Batch line (batchLineBody refuses an input that is not
+// text).
 
 import { buildAstraRequestBody, type AstraEffort, type AstraJobRequest } from "../../../src/lib/generations/providers/astra.ts";
 import { SET_BUILDER_INSTRUCTIONS, SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "../../../src/lib/sets/set-builder-prompt.ts";
 import { photoBuildRequest, retryBuildRequest, setAstraRequest } from "../../../src/lib/sets/astra-request.ts";
+import { matchShotRequest } from "../../../src/lib/sets/match-shot.ts";
 import { SET_BUILD_MAX_OUTPUT_TOKENS } from "../../../src/lib/sets/set-config.ts";
 import type { BuildState, TransportResult } from "./build-flow.mts";
 import { BASELINE_MODELS } from "./prices.mts";
@@ -115,6 +128,25 @@ export function miniRequestBody(input: string): Record<string, unknown> {
     text: { format: { type: "json_schema", name: SET_SPEC_SCHEMA_NAME, schema: SET_SPEC_JSON_SCHEMA, strict: true } },
     max_output_tokens: SET_BUILD_MAX_OUTPUT_TOKENS,
     store: false,
+  };
+}
+
+/** A Match-this-shot read on Astra: the product's request, unchanged but for the safety identifier. */
+export function matchAstraRequest(photoDataUrl: string, part: string): AstraJobRequest {
+  return matchShotRequest(photoDataUrl, evalSafetyId(part));
+}
+
+/** The same read on gpt-5.4-mini: every field it shares with Astra's body taken from that body, so nothing can drift apart. */
+export function miniMatchBody(photoDataUrl: string, part: string): Record<string, unknown> {
+  const astra = buildAstraRequestBody(matchAstraRequest(photoDataUrl, part));
+  return {
+    model: MINI_MODEL,
+    instructions: astra.instructions,
+    input: astra.input,
+    text: astra.text,
+    max_output_tokens: astra.max_output_tokens,
+    store: false,
+    safety_identifier: astra.safety_identifier,
   };
 }
 

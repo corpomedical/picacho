@@ -15,6 +15,12 @@
 //               one POST each.
 //   simulated   the dry run's fakes (parts/simulate.mts).
 //
+// A MATCH-THIS-SHOT READ (Part E) is one call, no build around it, over the
+// same rails: Astra in background (astraMatchAttempt: the product's own
+// pollUntilDeadline, every SET_MATCH_POLL_MS, and a read still working at
+// SET_MATCH_DEADLINE_MS is cancelled, as match-actions.ts does), reserved at
+// the match caps' worst case; gpt-5.4-mini as one POST (miniMatchAttempt).
+//
 // WHEN A REQUEST GOES WRONG (the background submit and the sync POST alike):
 //   a 429 or 5xx       the provider answered no: nothing runs, the ticket is
 //                      released, and the request is sent again twice
@@ -30,11 +36,12 @@
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraEffort, type AstraPollResult } from "../../../src/lib/generations/providers/astra.ts";
+import { cancelAstraJob, pollAstraJob, submitAstraJob, type AstraEffort, type AstraJobRequest, type AstraPollResult } from "../../../src/lib/generations/providers/astra.ts";
 import { fetchWithTimeout } from "../../../src/lib/generations/providers/fetch-with-timeout.ts";
-import { SET_BUILD_STALE_MS } from "../../../src/lib/sets/set-config.ts";
+import { pollUntilDeadline } from "../../../src/lib/sets/match-shot.ts";
+import { SET_BUILD_STALE_MS, SET_MATCH_DEADLINE_MS, SET_MATCH_POLL_MS } from "../../../src/lib/sets/set-config.ts";
 import type { AttemptMeta, BuildState, TransportResult } from "./build-flow.mts";
-import { astraJobRequest, customIdFor, interpretSonnet, mapHttpError, MINI_MODEL, miniRequestBody, photoJobRequest, SONNET_MODEL, sonnetRequestBody } from "./builders.mts";
+import { astraJobRequest, customIdFor, interpretSonnet, mapHttpError, MINI_MODEL, miniMatchBody, miniRequestBody, photoJobRequest, SONNET_MODEL, sonnetRequestBody } from "./builders.mts";
 import type { CallKind } from "./ledger.mts";
 import { withNetContext, type NetGuard, type Observe } from "./net-guard.mts";
 import type { PhotoStore } from "./photos.mts";
@@ -120,6 +127,43 @@ export const UNKNOWN_FLAG = "outcome unknown (sent, no answer): settled at the w
 // Astra, background
 // ---------------------------------------------------------------------------
 
+/**
+ * Reserve, then submit in background. A 429 or 5xx releases the money and
+ * sends again (twice), each time under a fresh reservation; a submit with
+ * no answer is booked at the worst case and never sent again. Either the job
+ * is running (its ticket open) or the attempt is over.
+ */
+async function submitReserved(
+  env: TransportEnv,
+  ref: string,
+  worst: number,
+  req: AstraJobRequest,
+): Promise<{ ok: true; ticket: string; responseId: string } | { ok: false; attempt: Attempt }> {
+  const settled = { settled: true, tag: "astra", ref };
+  for (let i = 0; ; i++) {
+    if (env.stopping()) return { ok: false, attempt: notStarted(env, "background") };
+    const res = env.guard.reserve("astra", worst, ref);
+    if (!res.ok) {
+      return { ok: false, attempt: env.interrupted() ? notStarted(env, "background") : { r: { state: "submit-failed", kind: "budget", detail: res.reason }, meta: zero("background") } };
+    }
+    const observe: Observe = { status: null };
+    const sub = await withNetContext({ ...settled, observe }, () => submitAstraJob(req));
+    if (sub.ok) return { ok: true, ticket: res.ticket, responseId: sub.responseId };
+    if (unanswered(observe)) {
+      // The job may exist, billed, with an id nobody knows (it can be
+      // neither polled nor cancelled): booked at the worst case, never resent.
+      const meta = settleAstra(env, res.ticket, worst, null, "background", false, UNKNOWN_FLAG);
+      return { ok: false, attempt: { r: { state: "submit-failed", kind: "unavailable", detail: `${sub.detail} (no answer to the submit: booked at the worst case)` }, meta } };
+    }
+    env.guard.release(res.ticket, `submit refused: ${sub.kind}${observe.status !== null ? ` (${observe.status})` : " (not sent)"}`);
+    if ((sub.kind === "rate_limited" || sub.kind === "unavailable") && observe.status !== null && i < RESEND_WAITS_MS.length) {
+      await sleep(waitFor(observe.retryAfter, RESEND_WAITS_MS[i]));
+      continue;
+    }
+    return { ok: false, attempt: { r: { state: "submit-failed", kind: sub.kind, detail: sub.detail }, meta: zero("background") } };
+  }
+}
+
 export async function astraBackgroundAttempt(env: TransportEnv, s: BuildState, effort: AstraEffort): Promise<Attempt> {
   if (!s.next) throw new Error(`${s.buildId}: nothing to send`);
   const attemptNo = s.attempts + 1;
@@ -128,32 +172,9 @@ export async function astraBackgroundAttempt(env: TransportEnv, s: BuildState, e
   const t0 = Date.now();
   const req = astraRequestFor(env, s, effort);
   const settled = { settled: true, tag: "astra", ref: customId };
-  let ticket = "";
-  let responseId = "";
-  for (let i = 0; ; i++) {
-    if (env.stopping()) return notStarted(env, "background");
-    const res = env.guard.reserve("astra", worst, customId);
-    if (!res.ok) return env.interrupted() ? notStarted(env, "background") : { r: { state: "submit-failed", kind: "budget", detail: res.reason }, meta: zero("background") };
-    const observe: Observe = { status: null };
-    const sub = await withNetContext({ ...settled, observe }, () => submitAstraJob(req));
-    if (sub.ok) {
-      ticket = res.ticket;
-      responseId = sub.responseId;
-      break;
-    }
-    if (unanswered(observe)) {
-      // The job may exist, billed, with an id nobody knows (it can be
-      // neither polled nor cancelled): booked at the worst case, never resent.
-      const meta = settleAstra(env, res.ticket, worst, null, "background", false, UNKNOWN_FLAG);
-      return { r: { state: "submit-failed", kind: "unavailable", detail: `${sub.detail} (no answer to the submit: booked at the worst case)` }, meta };
-    }
-    env.guard.release(res.ticket, `submit refused: ${sub.kind}${observe.status !== null ? ` (${observe.status})` : " (not sent)"}`);
-    if ((sub.kind === "rate_limited" || sub.kind === "unavailable") && observe.status !== null && i < RESEND_WAITS_MS.length) {
-      await sleep(waitFor(observe.retryAfter, RESEND_WAITS_MS[i]));
-      continue;
-    }
-    return { r: { state: "submit-failed", kind: sub.kind, detail: sub.detail }, meta: zero("background") };
-  }
+  const sub = await submitReserved(env, customId, worst, req);
+  if (!sub.ok) return sub.attempt;
+  const { ticket, responseId } = sub;
   env.inflight.add(responseId);
   let result: TransportResult | null = null;
   let stale = false;
@@ -222,6 +243,74 @@ export function settleAstra(
 }
 
 // ---------------------------------------------------------------------------
+// Match this shot (Part E): one read, no build around it
+// ---------------------------------------------------------------------------
+
+/** The read's clock: the real one, or a test's. */
+export type MatchClock = { now: () => number; pause: (ms: number) => Promise<void> };
+export const REAL_CLOCK: MatchClock = { now: () => Date.now(), pause: sleep };
+
+/** A read's attempt; timedOut: still reading at the product's deadline, and cancelled. */
+export type MatchAttempt = Attempt & { timedOut?: boolean };
+
+const STOPPED = { state: "stopped" } as const;
+
+/**
+ * One Match-this-shot read on Astra, as match-actions.ts makes it: submitted
+ * in background (reserved at the match caps' worst case; the resend and
+ * no-answer rules of every submit), then the product's own pollUntilDeadline
+ * every SET_MATCH_POLL_MS. A read still working at SET_MATCH_DEADLINE_MS is
+ * cancelled — production has told the person it timed out — and settled
+ * from what a last look says it used, or at the worst case. The product's
+ * clock also counts the picture check before the read; here the read has
+ * the whole 270 s from its own submit, and its latency is kept.
+ * Ctrl-C cancels it; an answer that landed first is still the model's.
+ */
+export async function astraMatchAttempt(env: TransportEnv, ref: string, req: AstraJobRequest, clock: MatchClock = REAL_CLOCK): Promise<MatchAttempt> {
+  const worst = env.book.astraMatchWorstUsd;
+  const t0 = clock.now();
+  const sub = await submitReserved(env, ref, worst, req);
+  if (!sub.ok) return sub.attempt;
+  const { ticket, responseId } = sub;
+  const settled = { settled: true, tag: "astra-match", ref };
+  const cancelAndLook = async () => {
+    await withNetContext(settled, () => cancelAstraJob(responseId));
+    return pollResultToTransport(await withNetContext(settled, () => pollAstraJob(responseId)));
+  };
+  env.inflight.add(responseId);
+  let result: TransportResult;
+  let timedOut = false;
+  try {
+    const polled = await pollUntilDeadline<AstraPollResult | typeof STOPPED>(
+      async () => (env.interrupted() ? STOPPED : withNetContext(settled, () => pollAstraJob(responseId))),
+      (answer) => answer.state === "working",
+      { now: clock.now, pause: clock.pause, deadlineAt: t0 + SET_MATCH_DEADLINE_MS, intervalMs: SET_MATCH_POLL_MS },
+    );
+    if (polled === null || polled.state === "working") {
+      // Nobody will collect it now: stopped before it bills any further.
+      timedOut = true;
+      const after = await cancelAndLook();
+      result = { state: "failed", kind: "cancelled", detail: `still reading after ${SET_MATCH_DEADLINE_MS / 1000} s; cancelled, as match-actions.ts does`, usage: after && after.state !== "submit-failed" ? after.usage : null };
+    } else if (polled.state === "stopped") {
+      const after = await cancelAndLook();
+      result =
+        after && !(after.state === "failed" && after.kind === "cancelled")
+          ? after
+          : { state: "failed", kind: "cancelled", detail: "cancelled by the runner at Ctrl-C", usage: after?.state === "failed" ? after.usage : null, interrupted: true };
+    } else {
+      result = pollResultToTransport(polled) as TransportResult;
+    }
+  } finally {
+    env.inflight.delete(responseId);
+  }
+  const usage = result.state === "submit-failed" ? null : result.usage;
+  const meta = settleAstra(env, ticket, worst, usage, "background", false, usage ? undefined : timedOut ? "timed out: usage unknown, settled at the worst case" : undefined);
+  if (result.state === "done") meta.answerFile = saveAnswer(env, ref, result.text);
+  meta.latencyMs = clock.now() - t0;
+  return { r: result, meta, ...(timedOut ? { timedOut } : {}) };
+}
+
+// ---------------------------------------------------------------------------
 // Baselines, sync
 // ---------------------------------------------------------------------------
 
@@ -245,16 +334,31 @@ async function postOnce(url: string, headers: Record<string, string>, body: unkn
   return { ok: false, status: res.status, code, detail: `${res.status} ${code ?? ""} ${message}`.trim() };
 }
 
-async function baselineAttempt(
-  env: TransportEnv,
-  s: BuildState,
-  o: { kind: CallKind; model: string; provider: Provider; url: string; send: () => Promise<Posted>; read: (json: unknown) => Promise<TransportResult> },
-): Promise<Attempt> {
+type PostCall = {
+  kind: CallKind;
+  model: string;
+  provider: Provider;
+  url: string;
+  send: () => Promise<Posted>;
+  read: (json: unknown) => Promise<TransportResult>;
+};
+
+async function baselineAttempt(env: TransportEnv, s: BuildState, o: PostCall): Promise<Attempt> {
   if (!s.next) throw new Error(`${s.buildId}: nothing to send`);
   // Section 4 bars photo builds on Astra alone: a baseline never gets a photo.
   if (s.photo) throw new HarnessError(`${s.buildId}: a photo build goes to Astra only, never to ${o.model}`);
   const customId = customIdFor(s.buildId, s.attempts + 1);
   const worst = env.book.baselineAttemptWorstUsd(o.model, s.next.kind === "first" ? "first" : "retry");
+  return postAttempt(env, customId, worst, `${o.kind}-build`, o);
+}
+
+/**
+ * One POST to a model, reserved at `worst` (or, unpriced, metered by the
+ * net guard's tap), resent twice after a 429 or 5xx under a fresh
+ * reservation, and booked (never resent) when it went out and no answer
+ * came back.
+ */
+async function postAttempt(env: TransportEnv, customId: string, worst: number | null, tag: string, o: PostCall): Promise<Attempt> {
   const t0 = Date.now();
   let posted: Posted | null = null;
   let ticket: string | null = null;
@@ -268,7 +372,7 @@ async function baselineAttempt(
     }
     const observe: Observe = { status: null };
     // Priced: settled here, so the meter skips it. Unpriced: metered by the tap.
-    posted = await withNetContext({ settled: ticket !== null, tag: `${o.kind}-build`, ref: customId, observe }, o.send);
+    posted = await withNetContext({ settled: ticket !== null, tag, ref: customId, observe }, o.send);
     if (posted.ok) break;
     if (observe.status === -1) {
       // Sent, and no answer: the provider may finish it and bill it. Booked
@@ -278,7 +382,7 @@ async function baselineAttempt(
         env.guard.settle(ticket, worst ?? 0, worst ?? 0, UNKNOWN_FLAG, null);
         meta = { transport: "sync", billedUsd: worst, standardUsd: worst, costFlag: UNKNOWN_FLAG };
       } else {
-        env.guard.meter({ host: new URL(o.url).hostname, model: o.model, usage: {}, usd: null, tag: `${o.kind}-build: sent, no answer (unpriced, usage unknown)`, ref: customId });
+        env.guard.meter({ host: new URL(o.url).hostname, model: o.model, usage: {}, usd: null, tag: `${tag}: sent, no answer (unpriced, usage unknown)`, ref: customId });
       }
       return { r: { state: "submit-failed", kind: "unavailable", detail: posted.detail }, meta };
     }
@@ -308,28 +412,51 @@ async function baselineAttempt(
   return { r, meta };
 }
 
+/**
+ * A Responses answer read through the product's own interpreter: it is
+ * served to pollAstraJob from memory (net-guard), never fetched again.
+ */
+async function readResponsesAnswer(env: TransportEnv, json: unknown): Promise<TransportResult> {
+  const id = isRecord(json) && typeof json.id === "string" ? json.id : "";
+  if (!id) return { state: "failed", kind: "failed", detail: "no response id", usage: isRecord(json) && isRecord(json.usage) ? json.usage : null };
+  env.net.setOpenAiResponse(id, json);
+  try {
+    const p = await pollAstraJob(id);
+    return pollResultToTransport(p) ?? { state: "failed", kind: "failed", detail: "answer still in progress", usage: null };
+  } finally {
+    env.net.deleteOpenAiResponse(id);
+  }
+}
+
+const RESPONSES_URL = "https://api.openai.com/v1/responses";
+
 export function miniAttempt(env: TransportEnv, s: BuildState): Promise<Attempt> {
   const key = process.env.OPENAI_API_KEY ?? "";
-  const url = "https://api.openai.com/v1/responses";
   return baselineAttempt(env, s, {
     kind: "mini-5.4",
     model: MINI_MODEL,
     provider: "openai",
-    url,
-    send: () => postOnce(url, { authorization: `Bearer ${key}` }, miniRequestBody(s.next?.input ?? ""), 240_000),
-    // Read through the product's own interpreter: the answer is served to
-    // pollAstraJob from memory (net-guard), never fetched again.
-    read: async (json) => {
-      const id = isRecord(json) && typeof json.id === "string" ? json.id : "";
-      if (!id) return { state: "failed", kind: "failed", detail: "no response id", usage: isRecord(json) && isRecord(json.usage) ? json.usage : null };
-      env.net.setOpenAiResponse(id, json);
-      try {
-        const p = await pollAstraJob(id);
-        return pollResultToTransport(p) ?? { state: "failed", kind: "failed", detail: "answer still in progress", usage: null };
-      } finally {
-        env.net.deleteOpenAiResponse(id);
-      }
-    },
+    url: RESPONSES_URL,
+    send: () => postOnce(RESPONSES_URL, { authorization: `Bearer ${key}` }, miniRequestBody(s.next?.input ?? ""), 240_000),
+    read: (json) => readResponsesAnswer(env, json),
+  });
+}
+
+/**
+ * One Match-this-shot read on gpt-5.4-mini (builders.mts miniMatchBody):
+ * reserved at matchBaselineWorstUsd once mini is priced, metered until then.
+ * It waits no longer than the product's deadline; one with no answer by
+ * then is booked, never resent.
+ */
+export function miniMatchAttempt(env: TransportEnv, ref: string, photoDataUrl: string): Promise<Attempt> {
+  const key = process.env.OPENAI_API_KEY ?? "";
+  return postAttempt(env, ref, env.book.matchBaselineWorstUsd(MINI_MODEL), "mini-5.4-match", {
+    kind: "mini-5.4",
+    model: MINI_MODEL,
+    provider: "openai",
+    url: RESPONSES_URL,
+    send: () => postOnce(RESPONSES_URL, { authorization: `Bearer ${key}` }, miniMatchBody(photoDataUrl, env.part), SET_MATCH_DEADLINE_MS),
+    read: (json) => readResponsesAnswer(env, json),
   });
 }
 

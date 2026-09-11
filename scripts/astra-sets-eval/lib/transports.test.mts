@@ -1,19 +1,21 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { costOfAstraUsageUsd } from "../../../src/lib/astra/prices.ts";
 import { buildAstraRequestBody } from "../../../src/lib/generations/providers/astra.ts";
 import { photoBuildRequest } from "../../../src/lib/sets/astra-request.ts";
-import { SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
+import { matchShotRequest } from "../../../src/lib/sets/match-shot.ts";
+import { SET_MATCH_DEADLINE_MS, SET_MATCH_POLL_MS, SET_PHOTO_BUILD_EFFORT } from "../../../src/lib/sets/set-config.ts";
 import { startBuild, startPhotoBuild } from "./build-flow.mts";
-import { evalSafetyId } from "./builders.mts";
+import { evalSafetyId, matchAstraRequest, miniMatchBody } from "./builders.mts";
 import type { LedgerInput } from "./ledger.mts";
-import { NetGuard } from "./net-guard.mts";
+import { NetGuard, type MeterRecord } from "./net-guard.mts";
 import { PhotoStore } from "./photos.mts";
-import { makePriceBook, type ExternalPrices } from "./prices.mts";
+import { makePriceBook, type ExternalPrices, type PriceBook } from "./prices.mts";
 import { SpendGuard } from "./spend-guard.mts";
-import { astraBackgroundAttempt, miniAttempt, sonnetAttempt, UNKNOWN_FLAG, unanswered, waitFor, type TransportEnv } from "./transports.mts";
+import { astraBackgroundAttempt, astraMatchAttempt, miniAttempt, miniMatchAttempt, sonnetAttempt, UNKNOWN_FLAG, unanswered, waitFor, type TransportEnv } from "./transports.mts";
 
 // A request that went out and got no answer may be running, and billing:
 // it is booked, never released, and never sent again. A definite refusal
@@ -39,7 +41,7 @@ afterEach(() => {
   globalThis.fetch = prevFetch;
 });
 
-function env(provider: (url: string, init?: RequestInit) => Promise<Response>) {
+function env(provider: (url: string, init?: RequestInit) => Promise<Response>, o: { part?: string; book?: PriceBook } = {}) {
   const calls: string[] = [];
   const net = new NetGuard({
     mode: "live",
@@ -51,9 +53,11 @@ function env(provider: (url: string, init?: RequestInit) => Promise<Response>) {
   globalThis.fetch = net.fetch;
   const events: LedgerInput[] = [];
   const guard = new SpendGuard({ maxUsd: 10, sink: (e) => events.push(e) });
-  const e: TransportEnv = { part: "d", book, guard, net, answersDir: dir, stopping: () => false, interrupted: () => false, inflight: new Set() };
-  return { e, guard, events, calls };
+  const e: TransportEnv = { part: o.part ?? "d", book: o.book ?? book, guard, net, answersDir: dir, stopping: () => false, interrupted: () => false, inflight: new Set() };
+  return { e, guard, events, calls, net };
 }
+
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 
 describe("a request with no answer", () => {
   it("an Astra submit that drops is booked at the worst case, flagged, and not resent", async () => {
@@ -143,5 +147,125 @@ describe("a photo build in background", () => {
     await expect(miniAttempt(e, s)).rejects.toThrow(/Astra only/);
     await expect(sonnetAttempt(e, s, "format")).rejects.toThrow(/Astra only/);
     expect(calls).toEqual([]);
+  });
+});
+
+// Part E: one read of a picture's camera, no build around it, on the same
+// rails. The clock's pauses pass at once, so the product's 2.5 s polls and
+// 270 s deadline run in no time.
+describe("a Match-this-shot read", () => {
+  const dataUrl = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 4, 5, 6]).toString("base64")}`;
+  const answer = JSON.stringify({ subject_found: true, camera_height_m: 1.5, pitch_deg: -4, vertical_fov_deg: 41, subject_distance_m: 3, subject_x: 0.5, framing: "full", confidence: "high" });
+  const usage = { input_tokens: 2000, input_tokens_details: { cached_tokens: 600, cache_write_tokens: 0 }, output_tokens: 900 };
+  const completed = (id: string) => ({ id, status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: answer }] }], usage });
+  const fakeClock = () => {
+    let t = 0;
+    return { now: () => t, pause: async (ms: number) => void (t += ms) };
+  };
+  const NEUTRAL = { inputPerMTok: 1, cachedInputPerMTok: null, cacheWritePerMTok: null, outputPerMTok: 10, source: "https://example.test/prices", readOn: "2026-01-01" };
+
+  it("on Astra: the product's request in background, reserved at the match caps' worst case, polled as the product polls, settled from usage", async () => {
+    const bodies: string[] = [];
+    let polls = 0;
+    const clock = fakeClock();
+    const { e, guard, events, calls } = env(
+      async (_u, init) => {
+        if (init?.method === "POST") {
+          bodies.push(String(init.body));
+          return json({ id: "resp_match0001" });
+        }
+        polls += 1;
+        return json(polls < 3 ? { id: "resp_match0001", status: "in_progress" } : completed("resp_match0001"));
+      },
+      { part: "e" },
+    );
+    const a = await astraMatchAttempt(e, "e-astra-mt-01-r1", matchAstraRequest(dataUrl, "e"), clock);
+    expect(bodies).toEqual([JSON.stringify(buildAstraRequestBody(matchShotRequest(dataUrl, evalSafetyId("e"))))]);
+    expect(events.find((x) => x.ev === "reserve")).toMatchObject({ kind: "astra", worstUsd: book.astraMatchWorstUsd });
+    expect(a.r).toMatchObject({ state: "done", text: answer });
+    expect(a.timedOut).toBeUndefined();
+    expect(a.meta.standardUsd).toBeCloseTo(costOfAstraUsageUsd(usage), 12);
+    expect(a.meta.latencyMs).toBe(3 * SET_MATCH_POLL_MS);
+    expect(guard.outstandingUsd).toBe(0);
+    expect(calls.some((c) => c.endsWith("/cancel"))).toBe(false);
+    expect(readFileSync(join(dir, "e-astra-mt-01-r1.txt"), "utf8")).toBe(answer);
+    expect(e.inflight.size).toBe(0);
+  });
+
+  it("on Astra: a read still working at the product's deadline is cancelled, flagged timed out, and settled from what it used", async () => {
+    let cancelled = false;
+    let polls = 0;
+    const { e, guard, calls } = env(
+      async (u, init) => {
+        if (init?.method === "POST" && u.endsWith("/cancel")) {
+          cancelled = true;
+          return json({});
+        }
+        if (init?.method === "POST") return json({ id: "resp_match0002" });
+        polls += 1;
+        return json(cancelled ? { id: "resp_match0002", status: "cancelled", usage } : { id: "resp_match0002", status: "in_progress" });
+      },
+      { part: "e" },
+    );
+    const a = await astraMatchAttempt(e, "e-astra-mt-01-r2", matchAstraRequest(dataUrl, "e"), fakeClock());
+    expect(a.timedOut).toBe(true);
+    expect(a.r).toMatchObject({ state: "failed", kind: "cancelled" });
+    expect(calls.filter((c) => c.endsWith("/cancel"))).toHaveLength(1);
+    // No poll starts once one more pause would pass the deadline (pollUntilDeadline); then one look after the cancel.
+    const inTime = Math.ceil(SET_MATCH_DEADLINE_MS / SET_MATCH_POLL_MS) - 1;
+    expect(polls).toBe(inTime + 1);
+    expect(guard.settledUsd).toBeCloseTo(costOfAstraUsageUsd(usage), 12);
+  });
+
+  it("on Astra: a 429 releases its money and is sent again under a fresh reservation; a submit with no answer is booked at the worst case, never resent", async () => {
+    let submits = 0;
+    const retried = env(
+      async (_u, init) => {
+        if (init?.method !== "POST") return json(completed("resp_match0003"));
+        submits += 1;
+        return submits === 1 ? json({ error: { code: "rate_limit_exceeded" } }, 429, { "retry-after": "0.01" }) : json({ id: "resp_match0003" });
+      },
+      { part: "e" },
+    );
+    const a = await astraMatchAttempt(retried.e, "e-astra-mt-01-r3", matchAstraRequest(dataUrl, "e"), fakeClock());
+    expect(a.r.state).toBe("done");
+    expect(submits).toBe(2);
+    expect(retried.events.map((x) => x.ev)).toEqual(["reserve", "release", "reserve", "settle"]);
+
+    const dropped = env(async () => {
+      throw new TypeError("socket hang up");
+    });
+    const b = await astraMatchAttempt(dropped.e, "e-astra-mt-02-r1", matchAstraRequest(dataUrl, "e"), fakeClock());
+    expect(b.r).toMatchObject({ state: "submit-failed", kind: "unavailable" });
+    expect(b.meta).toMatchObject({ billedUsd: book.astraMatchWorstUsd, costFlag: UNKNOWN_FLAG });
+    expect(dropped.calls).toHaveLength(1);
+  });
+
+  it("on gpt-5.4-mini: the same instructions, schema and input as one Responses call, metered while unpriced", async () => {
+    const bodies: string[] = [];
+    const metered: MeterRecord[] = [];
+    const { e, events, net } = env(
+      async (_u, init) => {
+        bodies.push(String(init?.body));
+        return json({ ...completed("resp_mini00001"), model: "gpt-5.4-mini" });
+      },
+      { part: "e" },
+    );
+    net.onMeter = (m) => metered.push(m);
+    const a = await miniMatchAttempt(e, "e-mini-mt-01-r1", dataUrl);
+    expect(bodies).toEqual([JSON.stringify(miniMatchBody(dataUrl, "e"))]);
+    expect(a.r).toMatchObject({ state: "done", text: answer });
+    expect(events.filter((x) => x.ev === "reserve")).toEqual([]);
+    expect(metered.map((m) => [m.model, m.ctx.tag])).toEqual([["gpt-5.4-mini", "mini-5.4-match"]]);
+  });
+
+  it("on gpt-5.4-mini, once priced: reserved at the match bound, settled from its own usage", async () => {
+    const priced = makePriceBook({ external: { ...EMPTY, models: { ...EMPTY.models, "gpt-5.4-mini": NEUTRAL } }, gptImageUsd: 0.17 });
+    const { e, events, guard } = env(async () => json({ ...completed("resp_mini00002"), model: "gpt-5.4-mini" }), { part: "e", book: priced });
+    const a = await miniMatchAttempt(e, "e-mini-mt-01-r2", dataUrl);
+    expect(events.find((x) => x.ev === "reserve")).toMatchObject({ kind: "mini-5.4", worstUsd: priced.matchBaselineWorstUsd("gpt-5.4-mini") });
+    // 1,400 fresh + 600 cached (no cached rate: the full input rate) at $1/1M, 900 out at $10/1M.
+    expect(a.meta.standardUsd).toBeCloseTo((2000 * 1 + 900 * 10) / 1e6, 12);
+    expect(guard.settledUsd).toBeCloseTo((2000 * 1 + 900 * 10) / 1e6, 12);
   });
 });

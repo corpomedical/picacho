@@ -3,8 +3,10 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { buildAstraRequestBody } from "../../../src/lib/generations/providers/astra.ts";
 import { photoBuildRequest, retryBuildRequest } from "../../../src/lib/sets/astra-request.ts";
+import { MATCH_SHOT_INPUT_TEXT, MATCH_SHOT_INSTRUCTIONS, MATCH_SHOT_JSON_SCHEMA, MATCH_SHOT_SCHEMA_NAME, matchShotRequest } from "../../../src/lib/sets/match-shot.ts";
+import { photoDataUrl } from "../../../src/lib/sets/photo.ts";
 import { SET_PHOTO_RULES, SET_SPEC_JSON_SCHEMA } from "../../../src/lib/sets/set-builder-prompt.ts";
-import { SET_PHOTO_BUILD_EFFORT, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS } from "../../../src/lib/sets/set-config.ts";
+import { SET_MATCH_EFFORT, SET_MATCH_MAX_OUTPUT_TOKENS, SET_PHOTO_BUILD_EFFORT, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS } from "../../../src/lib/sets/set-config.ts";
 import { normaliseSetSpec } from "../../../src/lib/sets/set-spec.ts";
 import { startPhotoBuild, type BuildState } from "./build-flow.mts";
 import {
@@ -15,11 +17,14 @@ import {
   evalSafetyId,
   interpretSonnet,
   mapHttpError,
+  matchAstraRequest,
+  miniMatchBody,
   miniRequestBody,
   parseCustomId,
   photoJobRequest,
   sonnetRequestBody,
 } from "./builders.mts";
+import { preparePhoto } from "./photos.mts";
 import { REPO_ROOT } from "./util.mts";
 
 describe("the Batch line", () => {
@@ -124,6 +129,56 @@ describe("a photo build's request", () => {
   it("never goes on Batch: a Batch line carries plain text only", () => {
     expect(() => batchLineBody(photoJobRequest(build(), photo, "low", "a"))).toThrow(/Files storage/);
     expect(() => batchLineBody(astraJobRequest("Brief: a harbour", "low", "a"))).not.toThrow();
+  });
+});
+
+// Part E: both builders read the same picture's camera. Astra gets the
+// product's request byte for byte; mini the same instructions, schema and
+// input; neither ever goes on Batch.
+describe("a Match-this-shot read", () => {
+  const photo = `data:image/jpeg;base64,${Buffer.from([0xff, 0xd8, 0xff, 0xe0, 9, 8, 7]).toString("base64")}`;
+  const bytes = (req: Parameters<typeof buildAstraRequestBody>[0]) => JSON.stringify(buildAstraRequestBody(req));
+
+  it("on Astra is byte for byte the product's matchShotRequest for the same bytes, with the eval's safety identifier", () => {
+    expect(bytes(matchAstraRequest(photo, "e"))).toBe(bytes(matchShotRequest(photo, evalSafetyId("e"))));
+    const body = buildAstraRequestBody(matchAstraRequest(photo, "e"));
+    expect(body).toMatchObject({ background: true, store: false, tools: [], instructions: MATCH_SHOT_INSTRUCTIONS, max_output_tokens: SET_MATCH_MAX_OUTPUT_TOKENS, reasoning: { effort: SET_MATCH_EFFORT }, safety_identifier: evalSafetyId("e") });
+    expect(body.text).toEqual({ format: { type: "json_schema", name: MATCH_SHOT_SCHEMA_NAME, schema: MATCH_SHOT_JSON_SCHEMA, strict: true } });
+    expect(body.input).toEqual([{ role: "user", content: [{ type: "input_text", text: MATCH_SHOT_INPUT_TEXT }, { type: "input_image", image_url: photo, detail: "high" }] }]);
+  });
+
+  it("on gpt-5.4-mini carries the same instructions, schema, input and cap as one Responses call, and nothing of Astra's own", () => {
+    const astra = buildAstraRequestBody(matchAstraRequest(photo, "e"));
+    const mini = miniMatchBody(photo, "e");
+    expect(mini.model).toBe("gpt-5.4-mini");
+    for (const k of ["instructions", "input", "text", "max_output_tokens", "safety_identifier"]) expect(mini[k]).toEqual(astra[k]);
+    expect((mini.text as { format: { strict: boolean } }).format.strict).toBe(true);
+    expect(mini.store).toBe(false);
+    for (const k of ["background", "reasoning", "tools", "prompt_cache_options", "temperature", "top_p", "seed"]) expect(mini).not.toHaveProperty(k);
+  });
+
+  it("never goes on Batch: the photo would sit in OpenAI's Files storage", () => {
+    expect(() => batchLineBody(matchAstraRequest(photo, "e"))).toThrow(/Files storage/);
+  });
+});
+
+type SharpFn = (typeof import("sharp"))["default"];
+let sharp: SharpFn | null = null;
+try {
+  sharp = (await import("sharp")).default;
+} catch {
+  sharp = null;
+}
+
+describe.skipIf(!sharp)("a Match-this-shot read of a real picture", () => {
+  const bytes = (req: Parameters<typeof buildAstraRequestBody>[0]) => JSON.stringify(buildAstraRequestBody(req));
+
+  it("sends exactly the bytes production would: the prepared JPEG, inline", async () => {
+    const file = await (sharp as SharpFn)({ create: { width: 3000, height: 2000, channels: 3, background: { r: 10, g: 80, b: 40 } } }).withExif({ IFD2: { FocalLengthIn35mmFilm: "26" } }).jpeg().toBuffer();
+    const r = await preparePhoto("mt-1", file);
+    if (!r.ok) throw new Error(r.error);
+    // match-actions.ts: submitAstraJob(matchShotRequest(photoDataUrl(photo.jpeg), …)).
+    expect(bytes(matchAstraRequest(r.photo.dataUrl, "e"))).toBe(bytes(matchShotRequest(photoDataUrl(r.photo.jpeg), evalSafetyId("e"))));
   });
 });
 

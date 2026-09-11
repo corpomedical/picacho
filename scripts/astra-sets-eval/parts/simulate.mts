@@ -18,6 +18,12 @@
 // Fake usage sits at the cap bounds (a photo build's at the photo caps), so
 // a simulated build costs exactly its worst case: the simulated spend
 // equals the ceiling.
+//
+// Part E's reads have no recorded answer to replay, so each is a plausible
+// fixed camera per photo (fakeMatchAnswer), numbers only like the real one:
+// Astra's lens within 5% of the photo's EXIF field of view, mini's 35% wide
+// of it, and mini's second run cut short — a miss — so a dry run walks
+// every path the bar reads. Usage sits at the match caps.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -28,10 +34,12 @@ import {
   SET_PHOTO_BUILD_INPUT_TOKENS,
   SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
+  SET_MATCH_INPUT_TOKENS,
+  SET_MATCH_MAX_OUTPUT_TOKENS,
 } from "../../../src/lib/sets/set-config.ts";
 import type { AttemptKind, TransportResult, Usage, WordsVerdict } from "../lib/build-flow.mts";
 import type { GateReading, GateVerdict } from "../lib/words-gate.mts";
-import { baselineInputBoundChars } from "../lib/prices.mts";
+import { baselineInputBoundChars, matchBaselineInputBound } from "../lib/prices.mts";
 import { REPO_ROOT } from "../lib/util.mts";
 
 export const FIXTURES = ["showroom-closed", "showroom-open", "rainy-market", "beach"] as const;
@@ -124,4 +132,38 @@ export function fakeWords(counter: { n: number }): () => Promise<WordsVerdict> {
 /** Fake brief gate for Part D: refuses item 1 of every 4, allows the rest. */
 export function fakeBriefGate(index: number): GateVerdict {
   return index % 4 === 1 ? { refused: "simulated" } : "allowed";
+}
+
+/** Usage of a match read at its caps: Astra's every input token a cache write (its worst case), mini's at its input bound. */
+export function matchCapUsage(builder: "astra" | "mini"): Usage {
+  const input = builder === "astra" ? SET_MATCH_INPUT_TOKENS : matchBaselineInputBound();
+  return {
+    input_tokens: input,
+    input_tokens_details: { cached_tokens: 0, cache_write_tokens: builder === "astra" ? input : 0 },
+    output_tokens: SET_MATCH_MAX_OUTPUT_TOKENS,
+    output_tokens_details: { reasoning_tokens: 0 },
+  };
+}
+
+/** The scripted read of photo `index` on `run` (1-based): a fixed, plausible camera per photo, or (mini's run 2) an answer cut short. */
+export function fakeMatchAnswer(builder: "astra" | "mini", index: number, run: number, exifFovDeg: number | null, usage: Usage): TransportResult {
+  if (builder === "mini" && run === 2) return { state: "done", text: '{"subject_found": true, "camera_height_m": 1.', usage };
+  const astra = builder === "astra";
+  const fov = (exifFovDeg ?? 40) * (astra ? 1.05 : 1.35);
+  const answer = {
+    subject_found: true,
+    camera_height_m: astra ? 1.6 : 1.2,
+    pitch_deg: astra ? -6 : 0,
+    vertical_fov_deg: Math.round(fov * 10) / 10,
+    subject_distance_m: 3 + (index % 3),
+    subject_x: astra ? 0.55 : 0.4,
+    framing: "full",
+    confidence: "medium",
+  };
+  return { state: "done", text: JSON.stringify(answer), usage };
+}
+
+/** Fake picture check for Part E: refuses photo 4 of every 5, allows the rest (the template's photos are all read). */
+export function fakeMatchPictureCheck(index: number): GateVerdict {
+  return index % 5 === 4 ? { refused: "simulated" } : "allowed";
 }
