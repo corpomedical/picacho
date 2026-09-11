@@ -602,10 +602,15 @@ export async function shootInSet(
   }
 
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
+  // The arrangement the frame was taken from, normalised against the set: it
+  // is saved below, and the prompt reads it to say which way the figure faces
+  // as the camera sees it. A crafted layout changes that one clause, still
+  // gated.
+  const layout = normaliseSetLayout(input.layout, owned.spec);
   const fd = new FormData();
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
-  fd.set("prompt", buildSetShotPrompt({ description: owned.spec.description, direction, lifted: input.lifted === true }));
+  fd.set("prompt", buildSetShotPrompt({ description: owned.spec.description, direction, lifted: input.lifted === true, layout }));
   fd.set("content_type", "image");
   fd.set("character_id", characterId);
   // The prompt is already the one the image model should read: the drafter
@@ -626,7 +631,6 @@ export async function shootInSet(
     .from("location_set_shots")
     .insert({ set_id: setId, generation_id: result.id, user_id: userId });
   if (shotError) console.error("shootInSet couldn't record the shot:", shotError.message);
-  const layout = normaliseSetLayout(input.layout, owned.spec);
   if (layout) {
     await admin
       .from("location_sets")

@@ -35,10 +35,24 @@ type StageApi = {
   placeMark(mark: Mark): void;
   pose(): Pose;
   snapshot(px: number, opts?: { hideFigure?: boolean; from?: Pose }): string | null;
+  /** The camera in front of the figure, the whole figure in the lens. */
+  frameFigure(): void;
+  /** Pan and tilt: turn the camera where it stands, in degrees (left, up). */
+  aim(leftDeg: number, upDeg: number): void;
 };
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
+/** One press of a pan or tilt arrow. */
+const AIM_STEP = 5;
+// Framing the figure: a full-length shot, a little headroom and floor.
+const FRAME_HEIGHT_M = 2.3;
+const FRAME_TARGET_Y = 0.95;
+const FRAME_EYE_Y = 1.45;
+// OrbitControls keeps the camera within 0.62π of straight down from what it
+// looks at, so a tilt past ~21° up would move the camera; stop just short.
+const MAX_TILT_UP_DEG = 20;
+const MAX_TILT_DOWN_DEG = 80;
 
 export function SetView({
   setId,
@@ -200,6 +214,14 @@ export function SetView({
         canvas.addEventListener("pointermove", onMove);
         canvas.addEventListener("pointerup", onUp);
         canvas.addEventListener("pointercancel", onUp);
+        // Double-click the figure to frame it (the "Frame the figure" button).
+        const onDoubleClick = (e: MouseEvent) => {
+          if (!overFigure(e as PointerEvent)) return;
+          apiRef.current?.frameFigure();
+          setCameraId(null);
+          settledRef.current?.();
+        };
+        canvas.addEventListener("dblclick", onDoubleClick);
 
         const controls = new OrbitControls(camera, canvas);
         controlsRef = controls;
@@ -323,6 +345,57 @@ export function SetView({
             renderer.render(scene, camera);
             return url;
           },
+          frameFigure() {
+            const p = standIn.group.position;
+            const eye = new THREE.Vector3(p.x, FRAME_EYE_Y, p.z);
+            const want = FRAME_HEIGHT_M / 2 / Math.tan((camera.fov * Math.PI) / 360);
+            // How far the camera can stand from the figure on a bearing
+            // before something built is in the way (0.3 m short of it).
+            const room = (dir: InstanceType<typeof THREE.Vector3>) => {
+              raycaster.set(eye, dir);
+              raycaster.far = want + 0.3;
+              const hit = raycaster.intersectObject(built.root, true)[0];
+              raycaster.far = Infinity;
+              return hit ? hit.distance - 0.3 : want;
+            };
+            const bearing = (rad: number) => new THREE.Vector3(Math.sin(rad), 0, Math.cos(rad));
+            // Where the figure faces, so the still sees the person's front;
+            // failing that, the side the person is looking from; failing
+            // that, whichever way has the most room.
+            const facing = (layoutRef.current.mark.facingDeg * Math.PI) / 180;
+            const fromCamera = Math.atan2(camera.position.x - p.x, camera.position.z - p.z);
+            const tries = [facing, fromCamera, ...Array.from({ length: 8 }, (_, i) => (i * Math.PI) / 4)];
+            let best = { dir: bearing(facing), room: -Infinity };
+            for (const rad of tries) {
+              const dir = bearing(rad);
+              const r = room(dir);
+              if (r >= Math.min(want, 1.2)) {
+                best = { dir, room: r };
+                break;
+              }
+              if (r > best.room) best = { dir, room: r };
+            }
+            const distance = Math.max(0.6, Math.min(want, best.room));
+            camera.position.set(p.x + best.dir.x * distance, FRAME_EYE_Y, p.z + best.dir.z * distance);
+            controls.target.set(p.x, FRAME_TARGET_Y, p.z);
+            controls.update();
+          },
+          aim(leftDeg, upDeg) {
+            const view = new THREE.Vector3().subVectors(controls.target, camera.position);
+            const reach = view.length();
+            if (reach < 1e-6) return;
+            const yaw = Math.atan2(view.x, view.z) + (leftDeg * Math.PI) / 180;
+            const pitch = Math.min(
+              (MAX_TILT_UP_DEG * Math.PI) / 180,
+              Math.max((-MAX_TILT_DOWN_DEG * Math.PI) / 180, Math.asin(view.y / reach) + (upDeg * Math.PI) / 180),
+            );
+            controls.target.set(
+              camera.position.x + reach * Math.cos(pitch) * Math.sin(yaw),
+              camera.position.y + reach * Math.sin(pitch),
+              camera.position.z + reach * Math.cos(pitch) * Math.cos(yaw),
+            );
+            controls.update();
+          },
         };
 
         setReady(true);
@@ -346,6 +419,7 @@ export function SetView({
           canvas.removeEventListener("pointermove", onMove);
           canvas.removeEventListener("pointerup", onUp);
           canvas.removeEventListener("pointercancel", onUp);
+          canvas.removeEventListener("dblclick", onDoubleClick);
           controls.dispose();
           built.dispose();
           standIn.dispose();
@@ -424,6 +498,18 @@ export function SetView({
 
   function turn(delta: number) {
     setMark((m) => ({ ...m, facingDeg: (((m.facingDeg + delta) % 360) + 360) % 360 }));
+  }
+
+  function frameFigure() {
+    apiRef.current?.frameFigure();
+    setCameraId(null);
+    scheduleSave();
+  }
+
+  function aimBy(leftDeg: number, upDeg: number) {
+    apiRef.current?.aim(leftDeg, upDeg);
+    setCameraId(null);
+    scheduleSave();
   }
 
   // THE price, from the function the server charges with: one image take.
@@ -509,6 +595,34 @@ export function SetView({
           <span className="pointer-events-none absolute bottom-3 left-3 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80">
             {s.dragHint}
           </span>
+          {/* Pan and tilt: turn the camera where it stands. */}
+          <div role="group" aria-label={s.aimLabel} className="absolute bottom-3 right-3 grid grid-cols-3 gap-1">
+            {(
+              [
+                [null, [0, AIM_STEP, s.aimUp, "↑"], null],
+                [[AIM_STEP, 0, s.aimLeft, "←"], null, [-AIM_STEP, 0, s.aimRight, "→"]],
+                [null, [0, -AIM_STEP, s.aimDown, "↓"], null],
+              ] as const
+            ).flatMap((row, r) =>
+              row.map((cell, c) =>
+                cell ? (
+                  <button
+                    key={`${r}${c}`}
+                    type="button"
+                    onClick={() => aimBy(cell[0], cell[1])}
+                    disabled={!ready}
+                    aria-label={cell[2]}
+                    title={cell[2]}
+                    className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-xs text-onmedia/80 transition-colors hover:text-onmedia disabled:cursor-default disabled:opacity-50"
+                  >
+                    {cell[3]}
+                  </button>
+                ) : (
+                  <span key={`${r}${c}`} aria-hidden />
+                ),
+              ),
+            )}
+          </div>
           {loadFailed && (
             <div className="absolute inset-0 flex items-center justify-center bg-atelier-stage/90 p-6 text-center text-sm text-onmedia/80">
               {s.loadFailed}
@@ -536,6 +650,9 @@ export function SetView({
               </button>
             ))}
             <span className={`${chip(cameraId === null)} cursor-default`}>{s.freeCamera}</span>
+            <button type="button" onClick={frameFigure} disabled={!ready} className={chip(false)}>
+              {s.frameFigure}
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.lensLabel}</span>

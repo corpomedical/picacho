@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSetShotPrompt } from "./set-shot-prompt";
+import { buildSetShotPrompt, describeFacing } from "./set-shot-prompt";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 
 // The server-built prompt for a still in a Set. What it must always say is
@@ -35,6 +35,54 @@ describe("buildSetShotPrompt", () => {
   });
 
   it("stays far under the composer's 8,000-character prompt cap", () => {
-    expect(buildSetShotPrompt({ description: "d".repeat(300), direction: "x".repeat(300) }).length).toBeLessThan(2000);
+    const layout = { mark: { x: 0, z: 0, facingDeg: 135 }, camera: { position: [0, 1.6, 5] as [number, number, number], target: [0, 1, 0] as [number, number, number], fovDeg: 40 } };
+    const longest = buildSetShotPrompt({ description: "d".repeat(300), direction: "x".repeat(300), lifted: true, layout });
+    expect(longest.length).toBeLessThan(2600);
+  });
+
+  it("says the sketch's objects are block stand-ins for real things, never toys", () => {
+    expect(p).toContain("rough stand-in built from simple blocks");
+    expect(p).toContain("draw the real thing it stands for");
+    expect(p).toContain("nothing may look like a toy, a model or a miniature");
+  });
+
+  it("asks for a gaze that can be read", () => {
+    expect(p).toContain("Wherever they are looking, make it unmistakable");
+  });
+});
+
+describe("describeFacing", () => {
+  // Camera 5 m down +Z, looking back at the origin along -Z: screen right is +X.
+  const cam = { position: [0, 1.6, 5] as [number, number, number], target: [0, 1, 0] as [number, number, number], fovDeg: 40 };
+  const at = (facingDeg: number) => describeFacing({ mark: { x: 0, z: 0, facingDeg }, camera: cam });
+
+  it("puts the figure's facing in the camera's terms", () => {
+    expect(at(0)).toBe("faces the camera");
+    expect(at(45)).toBe("is turned three-quarters toward the camera, facing frame right");
+    expect(at(315)).toBe("is turned three-quarters toward the camera, facing frame left");
+    expect(at(90)).toBe("is in profile, facing frame right");
+    expect(at(270)).toBe("is in profile, facing frame left");
+    expect(at(135)).toBe("is turned three-quarters away from the camera, facing frame right");
+    expect(at(180)).toBe("has their back to the camera");
+  });
+
+  it("reads the operator's second showroom take the way the frame shows it", () => {
+    // The layout saved with that take (2026-09-11): the figure turned to 60°,
+    // the camera behind and to the left of it.
+    const take2 = {
+      mark: { x: 1.8, z: 1.3, facingDeg: 60 },
+      camera: { position: [-4.084, 2.26, 4.486] as [number, number, number], target: [0, 0.95, 0.3] as [number, number, number], fovDeg: 49 },
+    };
+    expect(describeFacing(take2)).toBe("is turned three-quarters away from the camera, facing frame right");
+    expect(buildSetShotPrompt({ description: "d", direction: "", layout: take2 })).toContain(
+      "their body is turned three-quarters away from the camera, facing frame right.",
+    );
+  });
+
+  it("falls back to the figure's own facing with no camera pose, or a camera on the spot", () => {
+    expect(describeFacing(null)).toBeNull();
+    expect(describeFacing({ mark: { x: 0, z: 0, facingDeg: 0 }, camera: null })).toBeNull();
+    expect(describeFacing({ mark: { x: 0, z: 5, facingDeg: 0 }, camera: cam })).toBeNull();
+    expect(buildSetShotPrompt({ description: "d", direction: "", layout: null })).toContain("facing the same way");
   });
 });
