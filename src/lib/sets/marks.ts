@@ -181,11 +181,17 @@ export function blockerAt(point: Point, list: readonly Blocker[]): Blocker | nul
  * spot inside the set, looking first away from whatever it stood in; one
  * with no free spot within MARK_SEARCH_M stays where it was. Deterministic.
  * Anything with a place and a facing: Astra's marks, or the person's figure.
+ *
+ * `toward`, a point on the ground (the person's camera), is the side to come
+ * out on: the nearest free spot within a quarter turn of it first, and only
+ * then all the way round — so a figure dropped into a car steps out where
+ * the camera still sees it, not behind the car.
  */
 export function clearMarks<M extends Pick<SetMark, "x" | "z" | "facingDeg">>(
   marks: readonly M[],
   objects: readonly SetObject[],
   bounds: { x: number; z: number },
+  toward: readonly [number, number] | null = null,
 ): { marks: M[]; moved: number; stuck: number } {
   const list = blockers(objects);
   const halfX = bounds.x / 2 - PERSON_RADIUS_M;
@@ -197,17 +203,24 @@ export function clearMarks<M extends Pick<SetMark, "x" | "z" | "facingDeg">>(
     if (!blocker) return m;
     const dx = m.x - blocker.centre[0], dz = m.z - blocker.centre[1];
     const away = Math.hypot(dx, dz) > 1e-6 ? Math.atan2(dx, dz) : m.facingDeg * DEG;
-    for (let r = STEP_M; r <= MARK_SEARCH_M + 1e-9; r += STEP_M) {
-      for (let k = 0; k < BEARINGS; k++) {
-        // 0, +1, −1, +2, −2 … steps round from "away".
-        const step = k === 0 ? 0 : (k % 2 === 1 ? 1 : -1) * Math.ceil(k / 2);
-        const a = away + (step * 2 * Math.PI) / BEARINGS;
-        const x = Math.round((m.x + r * Math.sin(a)) * 100) / 100;
-        const z = Math.round((m.z + r * Math.cos(a)) * 100) / 100;
-        if (Math.abs(x) > halfX || Math.abs(z) > halfZ) continue;
-        if (blockerAt([x, z], list)) continue;
-        moved += 1;
-        return { ...m, x, z };
+    const tx = toward ? toward[0] - m.x : 0, tz = toward ? toward[1] - m.z : 0;
+    const facing = Math.hypot(tx, tz) > 1e-6;
+    const start = facing ? Math.atan2(tx, tz) : away;
+    // With a side to face, a quarter turn either way of it first (±4 of 16 bearings).
+    for (const reach of facing ? [BEARINGS / 4, BEARINGS / 2] : [BEARINGS / 2]) {
+      for (let r = STEP_M; r <= MARK_SEARCH_M + 1e-9; r += STEP_M) {
+        for (let k = 0; k < BEARINGS; k++) {
+          // 0, +1, −1, +2, −2 … steps round from the start.
+          const step = k === 0 ? 0 : (k % 2 === 1 ? 1 : -1) * Math.ceil(k / 2);
+          if (Math.abs(step) > reach) continue;
+          const a = start + (step * 2 * Math.PI) / BEARINGS;
+          const x = Math.round((m.x + r * Math.sin(a)) * 100) / 100;
+          const z = Math.round((m.z + r * Math.cos(a)) * 100) / 100;
+          if (Math.abs(x) > halfX || Math.abs(z) > halfZ) continue;
+          if (blockerAt([x, z], list)) continue;
+          moved += 1;
+          return { ...m, x, z };
+        }
       }
     }
     stuck += 1;

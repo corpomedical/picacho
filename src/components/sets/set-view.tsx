@@ -275,9 +275,15 @@ export function SetView({
           canvas.style.cursor = "";
           const p = standIn.group.position;
           // On open floor, as the server keeps it (normaliseSetLayout): a
-          // figure inside a car or a wall is hidden in the sketch.
+          // figure inside a car or a wall is hidden in the sketch. It steps
+          // out on the camera's side, where it stays in view.
           const dropped = { x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 };
-          const open = clearMarks([{ ...dropped, facingDeg: layoutRef.current.mark.facingDeg }], spec.objects, spec.bounds);
+          const open = clearMarks(
+            [{ ...dropped, facingDeg: layoutRef.current.mark.facingDeg }],
+            spec.objects,
+            spec.bounds,
+            [camera.position.x, camera.position.z],
+          );
           if (open.moved > 0) {
             setFigureMoved(true);
             if (figureMovedTimerRef.current) clearTimeout(figureMovedTimerRef.current);

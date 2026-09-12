@@ -120,6 +120,34 @@ describe("what blocks a person", () => {
 });
 
 describe("where a blocked mark goes", () => {
+  it("toward a point, it comes out on that side first, even when the far side is nearer", () => {
+    // The mark sits 0.5 m inside the car's +z end: that end is the nearest way out,
+    // straight out behind the car for a camera at −z.
+    const car = [obj({ size: [1.9, 0.5, 3.7], position: [0, 0.55, 0] })];
+    const far = clear(car, mark(0, 1.35)).marks[0];
+    expect(far.z).toBeGreaterThan(1.85);
+    const seen = clearMarks([mark(0, 1.35)], car, BOUNDS, [0, -12]).marks[0];
+    // Beside the car, no further back than where it was dropped: in the camera's view.
+    expect(seen.z).toBeLessThanOrEqual(1.35);
+    expect(Math.abs(seen.x)).toBeGreaterThan(0.95);
+    expect(blockerAt([seen.x, seen.z], blockers(car))).toBeNull();
+    // Whatever the camera, the way out is within a quarter turn of it, seen from the drop.
+    for (const cam of [[12, -1], [-12, 3], [0, -12], [5, 12]] as const) {
+      const out = clearMarks([mark(0, 1.35)], car, BOUNDS, cam).marks[0];
+      const dot = (out.x - 0) * (cam[0] - 0) + (out.z - 1.35) * (cam[1] - 1.35);
+      expect(dot, `camera ${cam}`).toBeGreaterThanOrEqual(-1e-6);
+      expect(blockerAt([out.x, out.z], blockers(car)), `camera ${cam}`).toBeNull();
+    }
+  });
+
+  it("toward a point with no open floor on that side, it comes out wherever there is", () => {
+    // A long wall along z = 0.6 to 3 with the set's edge just past it: nothing on the +z side.
+    const wall = [obj({ size: [30, 3, 2.4], position: [0, 1.5, 1.8] })];
+    const r = clearMarks([mark(0, 1.2)], wall, { x: 30, z: 6 }, [0, 12]);
+    expect(r.moved).toBe(1);
+    expect(r.marks[0].z).toBeLessThan(0.6);
+  });
+
   it("to the nearest open floor, first away from what it stood in, the same every time", () => {
     const box = obj({ size: [2, 2, 2], position: [0, 1, 0] });
     const a = clear([box], mark(0.5, 0));
@@ -200,6 +228,18 @@ describe("the person's own figure follows the same rule", () => {
     expect(Math.hypot(l!.mark.x - 4, l!.mark.z)).toBeLessThan(2);
   });
 
+  it("comes out on the side of the camera the page opens with, their own or camera 1", () => {
+    // Camera 1 stands at +x/+z; a saved camera at −z sees the car's other side.
+    const own = normaliseSetLayout(
+      { markId: "m1", mark: { x: 4, z: 0, facingDeg: 0 }, camera: { position: [4, 1.6, -9], target: [4, 1, 0], fovDeg: 40 } },
+      spec,
+    );
+    expect(own!.mark.z).toBeLessThan(0);
+    expect(blockerAt([own!.mark.x, own!.mark.z], blockers(spec.objects))).toBeNull();
+    const camera1 = normaliseSetLayout({ markId: "m1", mark: { x: 4, z: 0, facingDeg: 0 } }, spec);
+    expect(camera1!.mark.x + camera1!.mark.z).toBeGreaterThan(4);
+  });
+
   it("a saved figure already on open floor stays exactly where they put it", () => {
     expect(normaliseSetLayout({ markId: "m1", mark: { x: -3.25, z: 2.5, facingDeg: 30 } }, spec)?.mark).toEqual({
       x: -3.25,
@@ -208,9 +248,10 @@ describe("the person's own figure follows the same rule", () => {
     });
   });
 
-  it("the stage runs it where the figure is dropped (read as source)", () => {
+  it("the stage runs it where the figure is dropped, toward its camera (read as source)", () => {
     const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
     const onUp = view.slice(view.indexOf("const onUp = (e: PointerEvent) => {"));
-    expect(onUp.slice(0, onUp.indexOf("canvas.addEventListener"))).toContain("clearMarks([{ ...dropped,");
+    const body = onUp.slice(0, onUp.indexOf("canvas.addEventListener")).replace(/\s+/g, " ");
+    expect(body).toContain("clearMarks( [{ ...dropped, facingDeg: layoutRef.current.mark.facingDeg }], spec.objects, spec.bounds, [camera.position.x, camera.position.z], );");
   });
 });

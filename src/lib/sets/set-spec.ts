@@ -500,24 +500,29 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
   const m = obj(root.mark) ?? {};
   const halfX = spec.bounds.x / 2;
   const halfZ = spec.bounds.z / 2;
+  const c = obj(root.camera);
+  const reachX = halfX + 10;
+  const reachZ = halfZ + 10;
+  const p = c ? vec3(c.position, -reachX - reachZ, reachX + reachZ, [0, 1.6, 6]) : null;
+  const position: Vec3 | null = p
+    ? [
+        Math.min(reachX, Math.max(-reachX, p[0])),
+        Math.min(spec.bounds.height * 2, Math.max(0.2, p[1])),
+        Math.min(reachZ, Math.max(-reachZ, p[2])),
+      ]
+    : null;
   // Where they dropped the figure, on open floor as Astra's marks are: a
-  // figure saved inside a car or a wall moves out, as the stage moves it.
+  // figure saved inside a car or a wall moves out, as the stage moves it,
+  // on the side of the camera the page opens with (theirs, else camera 1).
+  const view = position ?? spec.cameras[0].position;
   const [mark] = clearMarks(
     [{ x: num(m.x, -halfX, halfX, base.x), z: num(m.z, -halfZ, halfZ, base.z), facingDeg: facing(m.facingDeg ?? base.facingDeg) }],
     spec.objects,
     spec.bounds,
+    [view[0], view[2]],
   ).marks;
-  const c = obj(root.camera);
   let camera: SetLayout["camera"] = null;
-  if (c) {
-    const reachX = halfX + 10;
-    const reachZ = halfZ + 10;
-    const p = vec3(c.position, -reachX - reachZ, reachX + reachZ, [0, 1.6, 6]);
-    const position: Vec3 = [
-      Math.min(reachX, Math.max(-reachX, p[0])),
-      Math.min(spec.bounds.height * 2, Math.max(0.2, p[1])),
-      Math.min(reachZ, Math.max(-reachZ, p[2])),
-    ];
+  if (c && position) {
     const target = vec3(c.target, -SET_LIMITS.maxCoordinate, SET_LIMITS.maxCoordinate, [mark.x, 1.4, mark.z]);
     if (Math.hypot(target[0] - position[0], target[1] - position[1], target[2] - position[2]) >= 0.1) {
       camera = { position, target, fovDeg: num(c.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxFovDeg, 40) };
