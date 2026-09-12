@@ -58,35 +58,62 @@ describe("the server-memory context", () => {
   });
 });
 
+// These pin, exactly, every line the eval reads to decide whether a refused
+// Set shot's prompt is attributed (scripts/astra-sets-eval, pass-bars.mts
+// shotPromptLogging): a product change to one fails here first, never only
+// in the eval.
 describe("where it is wired (read as source)", () => {
   const read = (p: string) => readFileSync(join(__dirname, p), "utf8");
+  /** One exported function's text, to the next top-level export. */
+  const fn = (src: string, decl: string) => {
+    const at = src.indexOf(decl);
+    expect(at, decl).toBeGreaterThanOrEqual(0);
+    const next = src.indexOf("\nexport ", at + 1);
+    return src.slice(at, next < 0 ? undefined : next);
+  };
 
-  it("runGeneration's entry gate (gatePrompt) and the pipeline's gate both ask it, and skip it for an outage", () => {
-    for (const [file, prompt] of [
-      ["policy-log.ts", "input.prompt"],
-      ["pipeline.ts", "reviewedPrompt"],
+  it("runGeneration's entry gate (gatePrompt) and the pipeline's gate both ask it, in their own lane, with their own history, and log what it answers", () => {
+    for (const [file, body, ask] of [
+      [
+        "policy-log.ts",
+        fn(read("policy-log.ts"), "export async function gatePrompt("),
+        "await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true, priorHits));",
+      ],
+      [
+        "pipeline.ts",
+        read("pipeline.ts"),
+        "await refusalProviderFor(reviewedPrompt, (text) => refusedOnItsOwn(text, options.strictContentLane === true, priorHits));",
+      ],
     ] as const) {
-      const src = read(file);
-      expect(src, file).toContain(`await refusalProviderFor(${prompt}, (text) => refusedOnItsOwn(text,`);
-      // …judged with the same session history as the refusal it explains.
-      expect(src, file).toMatch(/refusedOnItsOwn\(text, [^)]*, priorHits\)\);/);
-      expect(src, file).toContain("...(provider ? { provider } : {}),");
-      expect(src, file).toMatch(/reason === "unavailable"\s*\?\s*null/);
+      const at = body.indexOf(ask);
+      expect(at, file).toBeGreaterThanOrEqual(0);
+      // The log after the ask carries the provider it answered.
+      const log = body.slice(body.indexOf("recordPolicyRefusal(", at));
+      expect(log.slice(0, log.indexOf("});")), file).toContain("...(provider ? { provider } : {}),");
+      // An outage is never judged twice.
+      expect(body.slice(0, at), file).toMatch(/reason === "unavailable"\s*\?\s*null\s*:\s*$/);
     }
   });
 
   it("the second judgement is the same gate, the same lane, the same session history", () => {
-    const src = read("policy-log.ts");
-    const fn = src.slice(src.indexOf("export async function refusedOnItsOwn("));
-    expect(fn).toContain("assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits })");
-    expect(fn).toContain('return err.reason !== "unavailable";');
+    const alone = fn(read("policy-log.ts"), "export async function refusedOnItsOwn(");
+    expect(alone).toContain("assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits })");
+    expect(alone).toContain('return err.reason !== "unavailable";');
   });
 
   it("only a Set shot sets it, around its own runGeneration call, with the direction taken out", () => {
-    const sets = read("../sets/actions.ts");
-    expect(sets).toContain('const modelOnlyPrompt = buildSetShotPrompt({ ...shot, direction: "" });');
-    expect(sets).toContain('fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));');
-    expect(sets).toContain('withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd))');
+    const shoot = fn(read("../sets/actions.ts"), "export async function shootInSet(");
+    expect(shoot).toContain('const modelOnlyPrompt = buildSetShotPrompt({ ...shot, direction: "" });');
+    expect(shoot).toContain('fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));');
+    expect(shoot).toContain('withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd))');
+  });
+
+  it("the wrapper hands the decision to the core, over an async-local store", () => {
+    const src = read("refusal-attribution.ts");
+    expect(src).toContain('import { decideRefusalProvider, type ModelWrittenPrompt } from "./refusal-attribution-core";');
+    expect(src).toContain("const context = new AsyncLocalStorage<ModelWrittenPrompt>();");
+    expect(fn(src, "export async function refusalProviderFor(")).toContain("return decideRefusalProvider(context.getStore() ?? null, prompt, refusedAlone);");
+    expect(fn(src, "export function withModelWrittenPrompt<T>(")).toContain("return context.run(written, fn);");
   });
 
   it("no request can set it: runGeneration reads nothing of the kind from its form", () => {

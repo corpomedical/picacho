@@ -225,7 +225,12 @@ export function priorHitsCheck(repoRoot: string): { ok: boolean; missing: string
   const policyLog = read(SHOT_PROMPT_SOURCES.policyLog);
   return {
     ...priorHitsConstruction({ sets: PRIOR_HITS_SOURCES.map(read).join("\n"), policyLog }),
-    shotPromptLogging: shotPromptLogging({ policyLog, pipeline: read(SHOT_PROMPT_SOURCES.pipeline), sets: read(SHOT_PROMPT_SOURCES.sets) }),
+    shotPromptLogging: shotPromptLogging({
+      policyLog,
+      pipeline: read(SHOT_PROMPT_SOURCES.pipeline),
+      sets: read(SHOT_PROMPT_SOURCES.sets),
+      attribution: read(SHOT_PROMPT_SOURCES.attribution),
+    }),
   };
 }
 

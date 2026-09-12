@@ -245,11 +245,20 @@ describe("D", () => {
   // How the product logs a refused Set shot's prompt. Read against the real
   // source too, unlike the other checks here: it exists to tell the product
   // before 2026-09-12 from the one after, and a check that has never met the
-  // new source proves nothing. The product's refusal-attribution.test.ts pins
-  // the same lines, so a commit that moves them meets both.
+  // new source proves nothing. The product's refusal-attribution.test.ts
+  // pins every line this reads, exactly (the lanes, the wrap inside
+  // shootInSet, both declarations, the wrapper's bodies), so a product
+  // commit that changes one fails the product's own test first.
   it("reads today's product as attributing a refused Set shot's prompt", () => {
     const read = (f: string) => readFileSync(join(REPO_ROOT, f), "utf8");
-    expect(shotPromptLogging({ policyLog: read(SHOT_PROMPT_SOURCES.policyLog), pipeline: read(SHOT_PROMPT_SOURCES.pipeline), sets: read(SHOT_PROMPT_SOURCES.sets) })).toBe("attributed");
+    expect(
+      shotPromptLogging({
+        policyLog: read(SHOT_PROMPT_SOURCES.policyLog),
+        pipeline: read(SHOT_PROMPT_SOURCES.pipeline),
+        sets: read(SHOT_PROMPT_SOURCES.sets),
+        attribution: read(SHOT_PROMPT_SOURCES.attribution),
+      }),
+    ).toBe("attributed");
   });
 
   // Synthetic sources: the product's lines as they read on 2026-09-12,
@@ -304,16 +313,43 @@ describe("D", () => {
     "",
     "export async function deleteSet(setId: string) {}",
   ].join("\n");
-  const NEW = { policyLog: gatePrompt(ASKS) + ALONE, pipeline: PIPELINE, sets: SHOOT };
+  const WRAPPER = [
+    'import { AsyncLocalStorage } from "node:async_hooks";',
+    'import { decideRefusalProvider, type ModelWrittenPrompt } from "./refusal-attribution-core";',
+    "",
+    "const context = new AsyncLocalStorage<ModelWrittenPrompt>();",
+    "",
+    "export function withModelWrittenPrompt<T>(written: ModelWrittenPrompt, fn: () => Promise<T>): Promise<T> {",
+    "  return context.run(written, fn);",
+    "}",
+    "",
+    "export async function refusalProviderFor(",
+    "  prompt: string,",
+    "  refusedAlone: (text: string) => Promise<boolean>,",
+    "): Promise<string | null> {",
+    "  return decideRefusalProvider(context.getStore() ?? null, prompt, refusedAlone);",
+    "}",
+  ].join("\n");
+  const NEW = { policyLog: gatePrompt(ASKS) + ALONE, pipeline: PIPELINE, sets: SHOOT, attribution: WRAPPER };
 
   it("reads the source before 2026-09-12 as counting every refused still prompt, and one that shows neither as null", () => {
     expect(shotPromptLogging(NEW)).toBe("attributed");
     // gatePrompt logs its refusal with no provider at all: the old product, whatever the other files say.
     expect(shotPromptLogging({ ...NEW, policyLog: gatePrompt(OLD_LOG) + ALONE })).toBe("counts");
-    expect(shotPromptLogging({ policyLog: gatePrompt(OLD_LOG), pipeline: "", sets: "" })).toBe("counts");
+    expect(shotPromptLogging({ policyLog: gatePrompt(OLD_LOG), pipeline: "", sets: "", attribution: "" })).toBe("counts");
     // No gatePrompt to read.
     expect(shotPromptLogging({ ...NEW, policyLog: ALONE })).toBeNull();
-    expect(shotPromptLogging({ policyLog: "", pipeline: "", sets: "" })).toBeNull();
+    expect(shotPromptLogging({ policyLog: "", pipeline: "", sets: "", attribution: "" })).toBeNull();
+    // A gatePrompt that still asks but builds its log first is a change to re-verify, never the old product.
+    const rowFirst = [
+      "      const provider =",
+      '        err.reason === "unavailable"',
+      "          ? null",
+      "          : await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true, priorHits));",
+      "      const row = { userId: input.userId, prompt: input.prompt, ...(provider ? { provider } : {}) };",
+      "      await recordPolicyRefusal(row);",
+    ].join("\n");
+    expect(shotPromptLogging({ ...NEW, policyLog: gatePrompt(rowFirst) + ALONE })).toBeNull();
   });
 
   it("is attributed only when both gates log the provider, the second judgement is the same gate with the history its refusing gate read, and shootInSet holds the prompt without the direction", () => {
@@ -330,6 +366,12 @@ describe("D", () => {
       ["shootInSet does not hold the model's part", { ...NEW, sets: SHOOT.replace('withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd))', "runGeneration(fd)") }],
       ["shootInSet keeps the direction in the model's part", { ...NEW, sets: SHOOT.replace('buildSetShotPrompt({ ...shot, direction: "" })', "buildSetShotPrompt({ ...shot, direction })") }],
       ["shootInSet holds it under another tag", { ...NEW, sets: SHOOT.replace('provider: "astra"', 'provider: "picacho"') }],
+      ["the wrapper decides nothing", { ...NEW, attribution: WRAPPER.replace("return decideRefusalProvider(context.getStore() ?? null, prompt, refusedAlone);", "return null;") }],
+      ["the wrapper forgets the model's part", { ...NEW, attribution: WRAPPER.replace("context.getStore() ?? null", "null") }],
+      ["the wrapper runs the shot outside the store", { ...NEW, attribution: WRAPPER.replace("return context.run(written, fn);", "return fn();") }],
+      ["the wrapper decides with another module's rule", { ...NEW, attribution: WRAPPER.replace('from "./refusal-attribution-core"', 'from "./my-own-rule"') }],
+      ["the store is not async-local", { ...NEW, attribution: WRAPPER.replace("const context = new AsyncLocalStorage<ModelWrittenPrompt>();", "const context = { run: (w, fn) => fn(), getStore: () => null };") }],
+      ["no wrapper to read", { ...NEW, attribution: "" }],
       [
         "the wrap is in another action, not shootInSet",
         { ...NEW, sets: SHOOT.replace('  const result = await withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd));\n', "").replace("deleteSet(setId: string) {}", 'deleteSet(setId: string) {\n  await withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd));\n}') },
@@ -358,6 +400,7 @@ describe("D", () => {
         swap(swap(ALONE, "strictLane: boolean, sessionPriorHits: number)", "strictLane: boolean)"), "sessionPriorHits });", "sessionPriorHits: 0 });"),
       pipeline: swap(PIPELINE, "options.strictContentLane === true, priorHits)", "options.strictContentLane === true)"),
       sets: SHOOT,
+      attribution: WRAPPER,
     };
     expect(shotPromptLogging(noHistory)).toBeNull();
   });
@@ -453,17 +496,31 @@ describe("D", () => {
   // Synthetic sources: this check runs over the real files at run time (D
   // and report), never in the suite, so a product commit is never blocked by it.
   it("reads the construction from the source's own lines", () => {
+    // The build tick's three logs as they read on 2026-09-12: the person's brief, a closing retry, Astra's words.
     const src = {
       sets: [
         'await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief });',
-        'await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: brief, provider: "astra" });',
-        'recordPolicyRefusal({ userId, gate: "prompt", reason: err.reason, strictLane: true, prompt: words, provider: "astra",',
+        'await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: prompt || null, provider: "astra" });',
+        "await recordPolicyRefusal({",
+        "  userId,",
+        '  gate: "prompt",',
+        "  reason: err.reason,",
+        "  strictLane: true,",
+        "  prompt: words,",
+        '  provider: "astra",',
+        "});",
       ].join("\n"),
       policyLog: '.eq("gate", "prompt")\n.is("provider", null)',
     };
     expect(priorHitsConstruction(src)).toEqual({ ok: true, missing: [] });
     expect(priorHitsConstruction({ ...src, policyLog: "" }).ok).toBe(false);
-    expect(priorHitsConstruction({ ...src, sets: src.sets.replace(/, provider: "astra"/g, "") }).ok).toBe(false);
+    expect(priorHitsConstruction({ ...src, sets: src.sets.replace(/, provider: "astra"/g, "").replace('  provider: "astra",\n', "") }).ok).toBe(false);
+    // Either model-text log losing its provider fails it, whatever else says "astra": a Set shot's wrap (since 2026-09-12) is not a refusal log.
+    const wrap = 'const result = await withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd));';
+    const wordsLost = src.sets.replace('  provider: "astra",\n', "");
+    expect(priorHitsConstruction({ ...src, sets: `${wrap}\n${wordsLost}` }).missing).toEqual(['sets/build-tick.ts: Astra\'s words the words gate refused, logged with provider: "astra"']);
+    const retryLost = src.sets.replace('prompt: prompt || null, provider: "astra" });', "prompt: prompt || null });");
+    expect(priorHitsConstruction({ ...src, sets: `${wrap}\n${retryLost}` }).missing).toEqual(['sets/build-tick.ts: a closing retry OpenAI refused, logged with provider: "astra"']);
     // Since photo sets (2026-09-11) the person's refusal is logged through a
     // helper whose prompt is `prompt || null`: still no provider, still counted.
     const helper = src.sets.replace(

@@ -693,6 +693,7 @@ export const SHOT_PROMPT_SOURCES = {
   policyLog: "src/lib/generations/policy-log.ts",
   pipeline: "src/lib/generations/pipeline.ts",
   sets: "src/lib/sets/actions.ts",
+  attribution: "src/lib/generations/refusal-attribution.ts",
 } as const;
 
 export type ShotPromptLogging = "attributed" | "counts" | null;
@@ -700,9 +701,9 @@ export type ShotPromptLogging = "attributed" | "counts" | null;
 /** Source text with its whitespace, and any comma before a closing bracket, taken out: a reformat is not a change. */
 const compact = (s: string) => s.replace(/\s+/g, "").replace(/,(?=[)\]}])/g, "");
 
-/** The text of one exported function (to the next top-level export), compacted; null when the source has none. */
+/** The text of one exported function, async or not, generic or not (to the next top-level export), compacted; null when the source has none. */
 function exportedFunction(src: string, name: string): string | null {
-  const at = src.indexOf(`export async function ${name}(`);
+  const at = src.search(new RegExp(`export (?:async )?function ${name}[<(]`));
   if (at < 0) return null;
   const next = src.indexOf("\nexport ", at + 1);
   return compact(src.slice(at, next < 0 ? undefined : next));
@@ -732,10 +733,15 @@ function callAfter(src: string, callee: string, from = 0): string | null {
  *               makes, words-gate.mts makeAloneJudge, handed the refusing
  *               gate's count); and shootInSet runs runGeneration inside
  *               withModelWrittenPrompt, its model-only prompt the shot
- *               prompt with the direction taken out, under "astra"
- *   counts      gatePrompt logs its refusal with no provider at all (the
- *               source before 2026-09-12): every refused still prompt
- *               counts against the person
+ *               prompt with the direction taken out, under "astra"; and
+ *               the wrapper between them (refusal-attribution.ts) hands the
+ *               decision to the same decideRefusalProvider the eval
+ *               imports, over the async-local store withModelWrittenPrompt
+ *               fills — a wrapper that decided otherwise would log what the
+ *               eval's decision does not say
+ *   counts      gatePrompt never mentions a provider at all (the source
+ *               before 2026-09-12): every refused still prompt counts
+ *               against the person
  *   null        anything else: re-verify. That includes a source whose
  *               second judgement reads no session history (sessionPriorHits
  *               0, the first form of the attribution): the eval judges with
@@ -743,11 +749,13 @@ function callAfter(src: string, callee: string, from = 0): string | null {
  *               refusal it can call Astra's what that source puts on the
  *               person, and nothing holds by construction
  */
-export function shotPromptLogging(src: { policyLog: string; pipeline: string; sets: string }): ShotPromptLogging {
+export function shotPromptLogging(src: { policyLog: string; pipeline: string; sets: string; attribution: string }): ShotPromptLogging {
   const gate = exportedFunction(src.policyLog, "gatePrompt");
   const gateLog = gate ? callAfter(gate, "recordPolicyRefusal") : null;
   if (!gate || !gateLog) return null;
-  if (!gateLog.includes("provider")) return "counts";
+  // The old source, and only it: a gatePrompt that builds its log another
+  // way but still asks is a change to re-verify, never the old product.
+  if (!/provider/i.test(gate)) return "counts";
   const has = (text: string | null, line: string) => Boolean(text?.includes(compact(line)));
   const logsProvider = (call: string | null) => has(call, "...(provider ? { provider } : {})");
   const gateAsks = gate.indexOf(compact("await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true, priorHits))"));
@@ -755,7 +763,12 @@ export function shotPromptLogging(src: { policyLog: string; pipeline: string; se
   const pipelineAsks = pipeline.indexOf(compact("await refusalProviderFor(reviewedPrompt, (text) => refusedOnItsOwn(text, options.strictContentLane === true, priorHits))"));
   const alone = exportedFunction(src.policyLog, "refusedOnItsOwn");
   const shoot = exportedFunction(src.sets, "shootInSet");
+  const wrapper = compact(src.attribution);
   const attributed =
+    /import\{(?:[^}]*,)?decideRefusalProvider[,}][^;]*from"\.\/refusal-attribution-core"/.test(wrapper) &&
+    wrapper.includes(compact("const context = new AsyncLocalStorage<ModelWrittenPrompt>();")) &&
+    has(exportedFunction(src.attribution, "refusalProviderFor"), "return decideRefusalProvider(context.getStore() ?? null, prompt, refusedAlone);") &&
+    has(exportedFunction(src.attribution, "withModelWrittenPrompt"), "return context.run(written, fn);") &&
     gateAsks >= 0 &&
     logsProvider(callAfter(gate, "recordPolicyRefusal", gateAsks)) &&
     pipelineAsks >= 0 &&
@@ -801,10 +814,23 @@ export function dStillsOutcome(stills: readonly DStillOutcome[]): { outcome: DOu
  */
 export const PRIOR_HITS_SOURCES = ["src/lib/sets/actions.ts", "src/lib/sets/build-tick.ts"] as const;
 
-/** The source still says what countsTowardPriorHits assumes. */
+/**
+ * The source still says what countsTowardPriorHits assumes. The two logs of
+ * model-written text are pinned one by one, by their own calls: counting
+ * `provider: "astra"` let another line stand in for one that lost it (a
+ * Set shot's withModelWrittenPrompt carries the same words since
+ * 2026-09-12).
+ */
 export function priorHitsConstruction(src: { sets: string; policyLog: string }): { ok: boolean; missing: string[] } {
   const missing: string[] = [];
-  if ((src.sets.match(/provider: "astra"/g) ?? []).length < 2) missing.push('sets/build-tick.ts: words-gate and closing-retry refusals logged with provider: "astra"');
+  const sets = compact(src.sets);
+  const logs = (line: string) => sets.includes(compact(line));
+  if (!logs('await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: prompt || null, provider: "astra" })')) {
+    missing.push('sets/build-tick.ts: a closing retry OpenAI refused, logged with provider: "astra"');
+  }
+  if (!logs('await recordPolicyRefusal({ userId, gate: "prompt", reason: err.reason, strictLane: true, prompt: words, provider: "astra" })')) {
+    missing.push('sets/build-tick.ts: Astra\'s words the words gate refused, logged with provider: "astra"');
+  }
   // Any astra_refused log call with no provider: the person's own input (a
   // brief, or a photo's notes since 2026-09-11's logBriefRefusedByAstra).
   const personLogs = (src.sets.match(/recordPolicyRefusal\(\{[^}]*reason: "astra_refused"[^}]*\}\)/g) ?? []).filter(

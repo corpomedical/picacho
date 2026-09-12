@@ -22,9 +22,30 @@ beforeEach(() => {
   mkdirSync(join(root, "repo/src/lib/sets"), { recursive: true });
   mkdirSync(join(root, "repo/src/lib/generations"), { recursive: true });
   writeFileSync(join(root, "repo/src/lib/sets/actions.ts"), "await logBriefRefusedByAstra(userId, brief);\n");
+  // The build tick's three logs as they read on 2026-09-12: the person's brief, a closing retry, Astra's words.
   writeFileSync(
     join(root, "repo/src/lib/sets/build-tick.ts"),
-    'recordPolicyRefusal({ reason: "astra_refused", prompt: brief });\nrecordPolicyRefusal({ provider: "astra" });\nrecordPolicyRefusal({ provider: "astra" });\n',
+    [
+      'await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: prompt || null });',
+      'await recordPolicyRefusal({ userId, gate: "prompt", reason: "astra_refused", prompt: prompt || null, provider: "astra" });',
+      'await recordPolicyRefusal({ userId, gate: "prompt", reason: err.reason, strictLane: true, prompt: words, provider: "astra" });',
+      "",
+    ].join("\n"),
+  );
+  // The wrapper between shootInSet and the gates, as it reads on 2026-09-12.
+  writeFileSync(
+    join(root, "repo/src/lib/generations/refusal-attribution.ts"),
+    [
+      'import { decideRefusalProvider, type ModelWrittenPrompt } from "./refusal-attribution-core";',
+      "const context = new AsyncLocalStorage<ModelWrittenPrompt>();",
+      "export function withModelWrittenPrompt<T>(written: ModelWrittenPrompt, fn: () => Promise<T>): Promise<T> {",
+      "  return context.run(written, fn);",
+      "}",
+      "export async function refusalProviderFor(prompt: string, refusedAlone: (text: string) => Promise<boolean>): Promise<string | null> {",
+      "  return decideRefusalProvider(context.getStore() ?? null, prompt, refusedAlone);",
+      "}",
+      "",
+    ].join("\n"),
   );
   writeFileSync(join(root, "repo/src/lib/generations/policy-log.ts"), '.is("provider", null)\n');
 });
