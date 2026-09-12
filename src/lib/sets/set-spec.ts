@@ -17,6 +17,8 @@
 //
 // Relative imports only: vitest has no "@/" alias.
 
+import { clearMarks } from "./marks";
+
 export const SET_SPEC_VERSION = 1 as const;
 
 export const SET_SHAPES = ["box", "cylinder", "cone", "sphere", "torus", "capsule", "plane"] as const;
@@ -387,6 +389,12 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
     notes.push("default_mark");
     marks.push({ id: "m1", label: "", x: 0, z: 0, facingDeg: 0 });
   }
+  // A mark inside something built — a car, a desk, a wall — hides the person
+  // the page stands there, so it moves to the nearest open floor (marks.ts;
+  // the operator's race track opened with the figure inside the car).
+  const cleared = clearMarks(marks, objects, bounds);
+  if (cleared.moved > 0) notes.push("marks_moved");
+  marks.splice(0, marks.length, ...cleared.marks);
 
   // Cameras may stand a little outside the footprint (a wide from the
   // doorway) but not miles away, never under the ground, and never looking

@@ -7,6 +7,7 @@ import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-pol
 import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { runGeneration } from "@/lib/generations/actions";
+import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { cancelAstraJob, submitAstraJob } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
@@ -607,10 +608,13 @@ export async function shootInSet(
   const fd = new FormData();
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
-  fd.set(
-    "prompt",
-    buildSetShotPrompt({ description: owned.spec.description, direction, lifted: input.lifted === true, layout, look }),
-  );
+  const shot = { description: owned.spec.description, lifted: input.lifted === true, layout, look };
+  fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
+  // The same prompt without the person's direction: all of it Astra's
+  // description and Picacho's sentences. If the gate refuses the shot, this
+  // part is judged again alone, and a refusal it earns by itself is logged
+  // under Astra, never against the person (refusal-attribution.ts).
+  const modelOnlyPrompt = buildSetShotPrompt({ ...shot, direction: "" });
   fd.set("content_type", "image");
   fd.set("character_id", characterId);
   // The prompt is already the one the image model should read: the drafter
@@ -630,7 +634,7 @@ export async function shootInSet(
     ]),
   );
 
-  const result = await runGeneration(fd);
+  const result = await withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd));
   if (result.error !== null) {
     // Refused or never started: no take holds the frame, so nothing else
     // would ever clean it up.

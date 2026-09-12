@@ -83,11 +83,16 @@ describe("the cached prefix both kinds of build share", () => {
   // wrote. Recorded 2026-09-11 BEFORE Sets from a photo touched this file:
   // any byte that moves here is a fresh cache write on every build of both
   // kinds, and must be a decision, not an accident.
-  it("is byte for byte what it was before photo builds existed", () => {
+  //
+  // Moved once, on purpose, 2026-09-12: the marks rule now says marks stand
+  // on open floor, never inside a car, a desk or a wall (the operator's race
+  // track opened with the figure inside the car; marks.ts also moves such a
+  // mark). 8,132 → 8,239 characters; one fresh cache write per kind of build.
+  it("is byte for byte what it was decided to be", () => {
     const prefix = SET_BUILDER_INSTRUCTIONS + JSON.stringify(SET_SPEC_JSON_SCHEMA);
-    expect(prefix.length).toBe(8132);
+    expect(prefix.length).toBe(8239);
     expect(createHash("sha256").update(prefix).digest("hex")).toBe(
-      "6556a49f578d641e0e96f4e4cb8db9a07c18d3d466177fce838f4305367309c9",
+      "b660e3630fea6dea1d122db824d01e819828678a66b0b823f82a35ee05cc33be",
     );
   });
 });

@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.28.0",
+    build: 41,
+    date: "2026-09-12",
+    title: "What the first real set taught: people stand on open floor, and Astra's words are Astra's",
+    items: [
+      "A mark is never inside something built. The operator's first race-track set came back with its first mark, \"Starting grid\", at the car's own centre, so the grey figure opened inside the car, and its second inside a 20-metre wall that Astra had repeated one step too close, through the middle of the track. Every set is now checked each time it is read: a mark inside a car, a desk, a wall or a pillar moves to the nearest open floor, first away from what it stood in, and stays where it was only when there is no open floor within eight metres. What a person stands or sits on does not count as inside: a kerb, a rug, a chair's seat, a low stage, the low edge of a sand dune. Of every set on record, only that race track's two marks move; the podcast hosts stay on their chairs. Astra's instructions now say marks go on open floor too, which changes its cached instructions once (about two cents on the next build).",
+      "A refused Set shot counts against you only if your own words made the difference. A shot's prompt is mostly not yours: Astra wrote the set's description and Picacho the framing sentences, and often you type nothing at all. Until now, when our content check refused such a prompt, the refusal counted against you like any refusal of your words, and for the next hour your requests were judged more strictly. Now the part that is not yours is judged again on its own: refused by itself, the refusal is logged as Astra's and does not count against you; passing by itself, your direction made the difference, and it counts as before. The shot is refused either way; only whose record it goes on changes. Nothing a request carries can claim this — the model's part is held in the server's memory for that one shot, so nobody can mark their own words as Astra's.",
+    ],
+  },
+  {
     version: "1.27.0",
     build: 40,
     date: "2026-09-11",

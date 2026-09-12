@@ -34,6 +34,7 @@ import {
   ContentPolicyRefusal,
   type Scores,
 } from "@/lib/generations/content-policy";
+import { refusalProviderFor } from "@/lib/generations/refusal-attribution";
 
 /** prompt: before a render; output: the rendered picture; feed: a post to the community feed. */
 export type PolicyGate = "prompt" | "output" | "feed";
@@ -153,6 +154,13 @@ export async function gatePrompt(input: {
     return { scores, priorHits };
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) {
+      // A Set shot's prompt is mostly the model's words: a refusal they earn
+      // on their own is logged under the model and never counts against the
+      // person (refusal-attribution.ts). Every other prompt is theirs.
+      const provider =
+        err.reason === "unavailable"
+          ? null
+          : await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true));
       await recordPolicyRefusal({
         userId: input.userId,
         gate: "prompt",
@@ -160,8 +168,24 @@ export async function gatePrompt(input: {
         strictLane: input.hasRealPersonReference === true,
         prompt: input.prompt,
         generationId: input.generationId ?? null,
+        ...(provider ? { provider } : {}),
       });
     }
+    throw err;
+  }
+}
+
+/**
+ * Whether the prompt gate refuses this text on its own: the same lane, no
+ * session history. A gate that cannot read ("unavailable") is not a refusal.
+ * The second judgement refusal-attribution.ts asks for.
+ */
+export async function refusedOnItsOwn(text: string, strictLane: boolean): Promise<boolean> {
+  try {
+    await assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits: 0 });
+    return false;
+  } catch (err) {
+    if (err instanceof ContentPolicyRefusal) return err.reason !== "unavailable";
     throw err;
   }
 }

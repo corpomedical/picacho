@@ -37,7 +37,8 @@ import { ACKNOWLEDGED_WARNING_MARKER } from "@/lib/generations/refund-rules";
 import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import type { Scores } from "@/lib/generations/content-policy";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
-import { recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
+import { recentRefusalCount, recordPolicyRefusal, refusedOnItsOwn } from "@/lib/generations/policy-log";
+import { refusalProviderFor } from "@/lib/generations/refusal-attribution";
 import { OUTPUT_BLOCKED_ISSUE, REFUSED_BEFORE_RENDER_ISSUE } from "@/lib/generations/refund-rules";
 
 export type ContentType = "video" | "image";
@@ -1236,6 +1237,12 @@ export async function runRealPipeline(
     } catch (policyErr) {
       if (!(policyErr instanceof ContentPolicyRefusal)) throw policyErr;
       if (options.policyAudit) {
+        // A Set shot's model-written words, refused on their own, are logged
+        // under the model, not the person (refusal-attribution.ts).
+        const provider =
+          policyErr.reason === "unavailable"
+            ? null
+            : await refusalProviderFor(reviewedPrompt, (text) => refusedOnItsOwn(text, options.strictContentLane === true));
         await recordPolicyRefusal({
           userId: options.policyAudit.userId,
           gate: "prompt",
@@ -1243,6 +1250,7 @@ export async function runRealPipeline(
           strictLane: options.strictContentLane === true,
           prompt: reviewedPrompt,
           generationId: options.policyAudit.generationId ?? null,
+          ...(provider ? { provider } : {}),
         });
       }
       // Terminal, not another attempt. A redraft cannot help: the offending
