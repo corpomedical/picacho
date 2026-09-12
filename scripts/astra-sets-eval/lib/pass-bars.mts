@@ -725,16 +725,23 @@ function callAfter(src: string, callee: string, from = 0): string | null {
  *   attributed  gatePrompt (runGeneration's entry gate, policy-log.ts) and
  *               the pipeline's gate on the compiled prompt each ask
  *               refusalProviderFor, judging with refusedOnItsOwn in their
- *               own lane, and log the provider it returns; refusedOnItsOwn
- *               is the same gate with no session history, "unavailable" no
- *               refusal (the judgement the eval makes, words-gate.mts
- *               makeAloneJudge); and shootInSet runs runGeneration inside
+ *               own lane and with the session history their gate read
+ *               (priorHits), and log the provider it returns;
+ *               refusedOnItsOwn is the same gate with the history it is
+ *               handed, "unavailable" no refusal (the judgement the eval
+ *               makes, words-gate.mts makeAloneJudge, handed the refusing
+ *               gate's count); and shootInSet runs runGeneration inside
  *               withModelWrittenPrompt, its model-only prompt the shot
  *               prompt with the direction taken out, under "astra"
  *   counts      gatePrompt logs its refusal with no provider at all (the
  *               source before 2026-09-12): every refused still prompt
  *               counts against the person
- *   null        anything else: re-verify
+ *   null        anything else: re-verify. That includes a source whose
+ *               second judgement reads no session history (sessionPriorHits
+ *               0, the first form of the attribution): the eval judges with
+ *               the refusing gate's count, so where the history tipped a
+ *               refusal it can call Astra's what that source puts on the
+ *               person, and nothing holds by construction
  */
 export function shotPromptLogging(src: { policyLog: string; pipeline: string; sets: string }): ShotPromptLogging {
   const gate = exportedFunction(src.policyLog, "gatePrompt");
@@ -743,9 +750,9 @@ export function shotPromptLogging(src: { policyLog: string; pipeline: string; se
   if (!gateLog.includes("provider")) return "counts";
   const has = (text: string | null, line: string) => Boolean(text?.includes(compact(line)));
   const logsProvider = (call: string | null) => has(call, "...(provider ? { provider } : {})");
-  const gateAsks = gate.indexOf(compact("await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true))"));
+  const gateAsks = gate.indexOf(compact("await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true, priorHits))"));
   const pipeline = compact(src.pipeline);
-  const pipelineAsks = pipeline.indexOf(compact("await refusalProviderFor(reviewedPrompt, (text) => refusedOnItsOwn(text, options.strictContentLane === true))"));
+  const pipelineAsks = pipeline.indexOf(compact("await refusalProviderFor(reviewedPrompt, (text) => refusedOnItsOwn(text, options.strictContentLane === true, priorHits))"));
   const alone = exportedFunction(src.policyLog, "refusedOnItsOwn");
   const shoot = exportedFunction(src.sets, "shootInSet");
   const attributed =
@@ -753,7 +760,7 @@ export function shotPromptLogging(src: { policyLog: string; pipeline: string; se
     logsProvider(callAfter(gate, "recordPolicyRefusal", gateAsks)) &&
     pipelineAsks >= 0 &&
     logsProvider(callAfter(pipeline, "recordPolicyRefusal", pipelineAsks)) &&
-    has(alone, "assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits: 0 })") &&
+    has(alone, "assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits })") &&
     has(alone, 'return err.reason !== "unavailable";') &&
     has(shoot, 'fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));') &&
     has(shoot, 'const modelOnlyPrompt = buildSetShotPrompt({ ...shot, direction: "" });') &&
@@ -979,7 +986,7 @@ function barPriorHits(rows: readonly DRow[], construction: { ok: boolean; missin
       value: `${n} still prompt(s)`,
       threshold,
       n,
-      arithmetic: `${n} still prompt(s) refused${runs}, and the source no longer shows how the product logs a refused Set shot's prompt (gatePrompt and the pipeline's gate asking refusalProviderFor, shootInSet's prompt without the direction): re-verify`,
+      arithmetic: `${n} still prompt(s) refused${runs}, and the source no longer shows how the product logs a refused Set shot's prompt as the eval judges it (gatePrompt and the pipeline's gate asking refusalProviderFor with the session history their gate read, shootInSet's prompt without the direction): re-verify`,
     });
   }
   if (!construction.ok) return bar({ id, label, verdict: "UNDETERMINED", value: "source changed", threshold, n, arithmetic: `re-verify: ${construction.missing.join("; ")}` });
@@ -988,7 +995,7 @@ function barPriorHits(rows: readonly DRow[], construction: { ok: boolean; missin
     'provider "astra" on model-text refusals',
     "recentRefusalCount keeps provider null",
     logging === "attributed"
-      ? "gatePrompt and the pipeline's gate log the provider refusalProviderFor returns, and shootInSet holds each shot's prompt without the direction"
+      ? "gatePrompt and the pipeline's gate log the provider refusalProviderFor returns, Astra's part judged alone with the session history their gate read, and shootInSet holds each shot's prompt without the direction"
       : logging === "counts"
         ? "gatePrompt logs a refused still prompt with no provider, so one would count"
         : "how a refused still prompt is logged is not read from the source",

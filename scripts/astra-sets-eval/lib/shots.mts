@@ -51,7 +51,10 @@
 // with direction "", composed like the refused one on the composed route):
 // with no direction it is the model's outright; otherwise that prompt is
 // judged alone as refusedOnItsOwn judges it (words-gate.mts
-// makeAloneJudge: the same gate and lane, sessionPriorHits 0, asked once).
+// makeAloneJudge: the same gate, the refusing gate's lane and the
+// sessionPriorHits it read, asked once). The entry gate read the request's
+// priorHits; the pipeline's gate and the composed route's read 0 here (step
+// 3), so a refusal of theirs is judged alone at 0 too.
 // Refused alone → the model's (logged under "astra", never counted); passes
 // → the person's (counted); the judgement fails → the person's. A run
 // stopping before the judgement's turn sends nothing and decides nothing.
@@ -220,8 +223,8 @@ type AssertPromptAllowed = typeof import("../../../src/lib/generations/content-p
 export type ShotDeps = {
   /** runGeneration's entry gate on the still's prompt (words-gate.mts makeShotGate): retries, stop-aware. */
   entryGate: (prompt: string, o: { hasRealPersonReference: boolean; priorHits: number }, ref: string) => Promise<GateReading | NotReached>;
-  /** refusedOnItsOwn's judgement of a refused Set shot's prompt without the direction (words-gate.mts makeAloneJudge): once, stop-aware. */
-  judgeAlone: (text: string, o: { strictLane: boolean }, ref: string) => Promise<AloneReading | NotReached>;
+  /** refusedOnItsOwn's judgement of a refused Set shot's prompt without the direction, in the refusing gate's lane and with the sessionPriorHits it read (words-gate.mts makeAloneJudge): once, stop-aware. */
+  judgeAlone: (text: string, o: { strictLane: boolean; priorHits: number }, ref: string) => Promise<AloneReading | NotReached>;
   /** The pipeline's own gate on a compiled prompt, for the composed route. */
   assertPromptAllowed: AssertPromptAllowed;
   /** A ContentPolicyRefusal's reason, or null for any other error. */
@@ -291,8 +294,16 @@ export function modelOnlyShotPrompt(req: Parameters<typeof shotPrompt>[0]): stri
 /** The tag shootInSet holds a Set shot's model-written part under (withModelWrittenPrompt; checked in the source by pass-bars shotPromptLogging). */
 export const SET_SHOT_PROVIDER = "astra";
 
-/** A prompt our gate refused: the text it read, the same text with the direction taken out (null for a control), and the lane it judged in. */
-export type RefusedPrompt = { prompt: string; modelOnlyPrompt: string | null; strictLane: boolean };
+/** A prompt our gate refused: the text it read, the same text with the direction taken out (null for a control), and the lane and sessionPriorHits it judged with. */
+export type RefusedPrompt = { prompt: string; modelOnlyPrompt: string | null; strictLane: boolean; priorHits: number };
+
+/**
+ * The sessionPriorHits the pipeline's own gates read here: runRealPipeline
+ * reads the person's count only for a policyAudit (pipeline.ts), which the
+ * eval never passes, and the composed route gates as the pipeline does. A
+ * prompt refused there is judged alone with the same.
+ */
+const PIPELINE_PRIOR_HITS = 0;
 
 /** Thrown into decideRefusalProvider when the run stopped before the judgement's turn: nothing was sent. */
 class NotJudged extends Error {}
@@ -302,7 +313,8 @@ class NotJudged extends Error {}
  * own decideRefusalProvider (refusal-attribution-core.ts, imported): the
  * model's with no second judgement when the prompt is its model-only prompt;
  * otherwise the model-only prompt judged alone, as refusedOnItsOwn judges
- * it — refused (any reason but "unavailable") is the model's; allowed or
+ * it, in the lane and with the sessionPriorHits the refusing gate judged
+ * with — refused (any reason but "unavailable") is the model's; allowed or
  * unavailable, the person's; an error, the person's. Null for a control.
  */
 export async function attributeRefusal(judgeAlone: ShotDeps["judgeAlone"], ref: string, refused: RefusedPrompt): Promise<ShotAttribution | null> {
@@ -310,7 +322,7 @@ export async function attributeRefusal(judgeAlone: ShotDeps["judgeAlone"], ref: 
   let reading: AloneReading | NotReached | null = null;
   const provider = await decideRefusalProvider({ modelOnlyPrompt: refused.modelOnlyPrompt, provider: SET_SHOT_PROVIDER }, refused.prompt, async (text) => {
     try {
-      reading = await judgeAlone(text, { strictLane: refused.strictLane }, ref);
+      reading = await judgeAlone(text, { strictLane: refused.strictLane, priorHits: refused.priorHits }, ref);
     } catch (err) {
       reading = { error: err instanceof Error ? err.name : "error" };
     }
@@ -718,7 +730,7 @@ async function pipelineRoute(env: ShotEnv, deps: ShotDeps, req: ShotRequest, pro
     // The gate on the compiled prompt read the attempt's reviewedPrompt: with
     // the drafter off and no brand rules, the shot prompt as sent.
     const read = result.attempts[result.attempts.length - 1]?.compiledPrompt || prompt;
-    const refused = verdict.outcome === "prompt_blocked" ? { prompt: read, modelOnlyPrompt: modelOnlyShotPrompt(req), strictLane: attached.strictContentLane } : undefined;
+    const refused = verdict.outcome === "prompt_blocked" ? { prompt: read, modelOnlyPrompt: modelOnlyShotPrompt(req), strictLane: attached.strictContentLane, priorHits: PIPELINE_PRIOR_HITS } : undefined;
     return { verdict, picture: null, file: null, ...(refused ? { refused } : {}) };
   }
   if (done && result.resultUrl === dataUri(done.picture)) return { verdict, picture: done.picture, file: done.file };
@@ -734,13 +746,16 @@ async function composedRoute(env: ShotEnv, deps: ShotDeps, req: ShotRequest, pro
   const composed = pipelinePrompt(prompt);
   let promptScores: Awaited<ReturnType<AssertPromptAllowed>>;
   try {
-    promptScores = await deps.assertPromptAllowed({ prompt: composed, hasRealPersonReference: true, sessionPriorHits: 0 });
+    promptScores = await deps.assertPromptAllowed({ prompt: composed, hasRealPersonReference: true, sessionPriorHits: PIPELINE_PRIOR_HITS });
   } catch (err) {
     const reason = deps.promptRefusal(err);
     if (reason === null || reason === "unavailable") return v("unjudged", null, "the gate on the composed prompt could not run");
     // The gate read the prompt with the notes: its model-only twin is composed the same way.
     const alone = modelOnlyShotPrompt(req);
-    return { ...v("prompt_blocked", reason, "the gate on the composed prompt (the pipeline's compiled-prompt gate)"), refused: { prompt: composed, modelOnlyPrompt: alone === null ? null : pipelinePrompt(alone), strictLane: true } };
+    return {
+      ...v("prompt_blocked", reason, "the gate on the composed prompt (the pipeline's compiled-prompt gate)"),
+      refused: { prompt: composed, modelOnlyPrompt: alone === null ? null : pipelinePrompt(alone), strictLane: true, priorHits: PIPELINE_PRIOR_HITS },
+    };
   }
   // The pipeline's own checkpoint before a render (pipelineRoute's checkCancelled).
   if (env.stopping()) return v("not_run", null, `not reached: the run stopped (${env.stopWhy()})`);
@@ -754,7 +769,7 @@ async function composedRoute(env: ShotEnv, deps: ShotDeps, req: ShotRequest, pro
   if (!picture) return v("error", null, "the rendered picture could not be downloaded");
   const file = writeStill(env.runDir, req.shotId, picture);
   try {
-    await deps.judgeRender({ url: dataUri(picture), kind: "image", promptScores, sessionPriorHits: 0, strictLane: true });
+    await deps.judgeRender({ url: dataUri(picture), kind: "image", promptScores, sessionPriorHits: PIPELINE_PRIOR_HITS, strictLane: true });
   } catch (err) {
     const reason = deps.outputRefusal(err);
     rmSync(join(env.runDir, file), { force: true });
@@ -831,8 +846,8 @@ export async function shoot(env: ShotEnv, req: ShotRequest): Promise<ShotRecord>
   if (gate === NOT_REACHED) return { ...base, entryGate: "not-reached", note: `not reached: the run stopped (${env.stopWhy()})` };
   if (gate.verdict === "unavailable") return { ...base, entryGate: "unavailable", outcome: "unjudged", note: "the entry gate could not run" };
   if (typeof gate.verdict === "object") {
-    // gatePrompt asks whose words these are before it logs the refusal.
-    const attribution = await attributeRefusal(deps.judgeAlone, req.shotId, { prompt, modelOnlyPrompt: modelOnlyShotPrompt(req), strictLane });
+    // gatePrompt asks whose words these are before it logs the refusal, with the count its gate read.
+    const attribution = await attributeRefusal(deps.judgeAlone, req.shotId, { prompt, modelOnlyPrompt: modelOnlyShotPrompt(req), strictLane, priorHits: req.priorHits });
     return { ...base, entryGate: `refused:${gate.verdict.refused}`, outcome: "prompt_blocked", reason: gate.verdict.refused, attribution, note: "runGeneration's entry gate" };
   }
   // The gate takes seconds, and a stop may land meanwhile. An unpriced

@@ -77,7 +77,7 @@ describe("the picture check", () => {
 // A refused Set shot's prompt without the direction, judged as
 // policy-log.ts refusedOnItsOwn judges it: whose refusal it is.
 describe("the alone judgement", () => {
-  it("is the same gate in the refusing gate's lane with no session history, asked once and tagged for the meter", async () => {
+  it("is the same gate in the refusing gate's lane and with the session history it read, asked once and tagged for the meter", async () => {
     const seen: Parameters<AssertPromptAllowed>[0][] = [];
     const tags: (string | undefined)[] = [];
     const judge = makeAloneJudge({
@@ -88,29 +88,30 @@ describe("the alone judgement", () => {
       },
       refusalReason,
     });
-    expect(await judge("Render the location photorealistically.", { strictLane: true }, "ds-1")).toBe("allowed");
-    expect(await judge("Render the location photorealistically.", { strictLane: false }, "cs-2")).toBe("allowed");
+    // A refusing gate that read two counted refusals: the second judgement reads the same two, never none.
+    expect(await judge("Render the location photorealistically.", { strictLane: true, priorHits: 2 }, "ds-1")).toBe("allowed");
+    expect(await judge("Render the location photorealistically.", { strictLane: false, priorHits: 0 }, "cs-2")).toBe("allowed");
     expect(seen).toEqual([
-      { prompt: "Render the location photorealistically.", hasRealPersonReference: true, sessionPriorHits: 0 },
+      { prompt: "Render the location photorealistically.", hasRealPersonReference: true, sessionPriorHits: 2 },
       { prompt: "Render the location photorealistically.", hasRealPersonReference: false, sessionPriorHits: 0 },
     ]);
     expect(tags).toEqual(["alone-gate", "alone-gate"]);
   });
 
   it("a refusal is a reading; unavailable is not tried again; an error that is no refusal comes back by name, never its text", async () => {
-    expect(await makeAloneJudge({ assertPromptAllowed: async () => Promise.reject(new Refusal("sexual")), refusalReason })("x", { strictLane: true }, "r")).toEqual({ refused: "sexual" });
+    expect(await makeAloneJudge({ assertPromptAllowed: async () => Promise.reject(new Refusal("sexual")), refusalReason })("x", { strictLane: true, priorHits: 0 }, "r")).toEqual({ refused: "sexual" });
     let calls = 0;
     const down = makeAloneJudge({ assertPromptAllowed: async () => (calls++, Promise.reject(new Refusal("unavailable"))), refusalReason });
-    expect(await down("x", { strictLane: true }, "r")).toBe("unavailable");
+    expect(await down("x", { strictLane: true, priorHits: 0 }, "r")).toBe("unavailable");
     expect(calls).toBe(1);
     const odd = makeAloneJudge({ assertPromptAllowed: async () => Promise.reject(new TypeError("the words were: a secret prompt")), refusalReason });
-    expect(await odd("x", { strictLane: true }, "r")).toEqual({ error: "TypeError" });
+    expect(await odd("x", { strictLane: true, priorHits: 0 }, "r")).toEqual({ error: "TypeError" });
   });
 
   it("a run stopping by its turn sends nothing", async () => {
     let calls = 0;
     const judge = makeAloneJudge({ assertPromptAllowed: async () => (calls++, {}), refusalReason, stopping: () => true });
-    expect(await judge("x", { strictLane: true }, "ds-1")).toBe(NOT_REACHED);
+    expect(await judge("x", { strictLane: true, priorHits: 0 }, "ds-1")).toBe(NOT_REACHED);
     expect(calls).toBe(0);
   });
 });

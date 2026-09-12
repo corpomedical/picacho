@@ -27,10 +27,10 @@
 //                rides) or on an ordinary render (a control: nothing rides).
 //   alone        assertPromptAllowed({ prompt: a refused Set shot's prompt
 //                without the direction, hasRealPersonReference: the refusing
-//                gate's lane, sessionPriorHits: 0 }) — policy-log.ts
-//                refusedOnItsOwn, the second judgement that decides whose
-//                refusal it is (refusal-attribution.ts). Asked once, as the
-//                product asks it.
+//                gate's lane, sessionPriorHits: the count the refusing gate
+//                read }) — policy-log.ts refusedOnItsOwn, the second
+//                judgement that decides whose refusal it is
+//                (refusal-attribution.ts). Asked once, as the product asks it.
 //
 // "unavailable" is not a reading. Every gate but the alone judgement tries
 // again at 1.5 s and 5 s (production hands the answer to the next poll tick,
@@ -162,22 +162,24 @@ export type AloneReading = GateVerdict | { error: string };
 /**
  * The second judgement a refused Set shot's prompt gets in the product
  * (policy-log.ts refusedOnItsOwn): the same gate on the prompt without the
- * direction, in the refusing gate's lane, with no session history. Asked
- * once, as the product asks it: an "unavailable" reading is not tried again
- * (refusedOnItsOwn reads it as no refusal), and an error that is no refusal
- * is handed back by name (refusedOnItsOwn rethrows it, and the refusal
- * stays the person's). Only the error's name is kept: never the text. It is
- * one more gate call, metered like the others, and a run that is stopping
- * by the time its turn comes sends nothing (NOT_REACHED).
+ * direction, in the refusing gate's lane and with the sessionPriorHits that
+ * gate read (`priorHits`), so the only thing that differs from the refused
+ * judgement is the direction, taken out. Asked once, as the product asks
+ * it: an "unavailable" reading is not tried again (refusedOnItsOwn reads it
+ * as no refusal), and an error that is no refusal is handed back by name
+ * (refusedOnItsOwn rethrows it, and the refusal stays the person's). Only
+ * the error's name is kept: never the text. It is one more gate call,
+ * metered like the others, and a run that is stopping by the time its turn
+ * comes sends nothing (NOT_REACHED).
  */
-export function makeAloneJudge(deps: Pick<GateDeps, "assertPromptAllowed" | "refusalReason" | "concurrency" | "stopping">): (text: string, o: { strictLane: boolean }, ref: string) => Promise<AloneReading | NotReached> {
+export function makeAloneJudge(deps: Pick<GateDeps, "assertPromptAllowed" | "refusalReason" | "concurrency" | "stopping">): (text: string, o: { strictLane: boolean; priorHits: number }, ref: string) => Promise<AloneReading | NotReached> {
   const sem = new Semaphore(deps.concurrency ?? 4);
   return (text, o, ref) =>
     sem.use(async () => {
       if (deps.stopping?.()) return NOT_REACHED;
       return withNetContext({ tag: "alone-gate", ref, settled: false }, async (): Promise<AloneReading> => {
         try {
-          await deps.assertPromptAllowed({ prompt: text, hasRealPersonReference: o.strictLane, sessionPriorHits: 0 });
+          await deps.assertPromptAllowed({ prompt: text, hasRealPersonReference: o.strictLane, sessionPriorHits: o.priorHits });
           return "allowed";
         } catch (err) {
           const reason = deps.refusalReason(err);

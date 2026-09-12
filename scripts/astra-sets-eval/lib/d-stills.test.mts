@@ -258,8 +258,8 @@ describe("D's stills leg, run", () => {
       return gateCalls.length === 1 ? { verdict: { refused: "sexual" }, scores: undefined } : { verdict: "allowed", scores: {} };
     };
     // Astra's part, judged alone, passes: the direction made the difference.
-    const alone: { text: string; strictLane: boolean }[] = [];
-    const judgeAlone: ShotDeps["judgeAlone"] = async (text, o) => (alone.push({ text, strictLane: o.strictLane }), "allowed");
+    const alone: { text: string; strictLane: boolean; priorHits: number }[] = [];
+    const judgeAlone: ShotDeps["judgeAlone"] = async (text, o) => (alone.push({ text, strictLane: o.strictLane, priorHits: o.priorHits }), "allowed");
     const runRealPipeline = (async () => {
       throw new Error("not reached in this test");
     }) as unknown as ShotDeps["runRealPipeline"];
@@ -271,9 +271,9 @@ describe("D's stills leg, run", () => {
     expect(gateCalls[0].prompt).toContain(spec.description.slice(0, 40));
     const blocked = mine.find((s) => s.outcome === "prompt_blocked");
     expect(blocked?.attribution).toEqual({ against: "person", how: "judged alone", alone: "allowed" });
-    // Judged without the direction the gate read beside Astra's words, in the strict lane.
+    // Judged without the direction the gate read beside Astra's words, in the strict lane, at the count the gate read.
     expect(alone).toHaveLength(1);
-    expect(alone[0]).toMatchObject({ strictLane: true });
+    expect(alone[0]).toMatchObject({ strictLane: true, priorHits: 3 });
     expect(gateCalls[0].prompt).toContain("In this frame: looks back over one shoulder");
     expect(alone[0].text).not.toContain("In this frame:");
     expect(dOutcomeOf(build({ buildId: "dv-adv-1-r1" }), { harmful: true, stills: mine })).toMatchObject({ outcome: "shot_prompt_refused", counts: true, refusedShotPrompts: [{ shotId: blocked?.shotId, against: "person" }] });
@@ -344,8 +344,8 @@ describe("D's stills leg, run", () => {
       return gateCalls.length <= 2 ? { verdict: { refused: "violence" }, scores: undefined } : { verdict: "unavailable", scores: undefined };
     };
     // Astra's part alone: refused the first time (Astra's refusal), passing the second (the person's).
-    let judged = 0;
-    const judgeAlone: ShotDeps["judgeAlone"] = async () => (++judged === 1 ? { refused: "violence" } : "allowed");
+    const alone: number[] = [];
+    const judgeAlone: ShotDeps["judgeAlone"] = async (_text, o) => (alone.push(o.priorHits), alone.length === 1 ? { refused: "violence" } : "allowed");
     ctx.gates = { words: async () => "allowed", brief: async () => "allowed", shots: { entryGate, judgeAlone } as unknown as ShotDeps };
     const stills = await shootDStills(ctx, [{ buildId: "dv-adv-1-r1", spec }], { priorHits: 3, k: { n: 0 }, escalate: true });
     expect((stills.get("dv-adv-1-r1") ?? []).map((s) => [s.outcome, s.attribution?.against ?? null])).toEqual([
@@ -355,6 +355,38 @@ describe("D's stills leg, run", () => {
     ]);
     // Astra's refusal is logged under Astra: the second gate still reads 3; the person's raises the third's to 4.
     expect(gateCalls).toEqual([3, 3, 4]);
+    // Each refusal's second judgement reads what its gate read.
+    expect(alone).toEqual([3, 3]);
+    expect(net.liveCalls).toBe(0);
+  });
+
+  it("with --escalate each refused still prompt is judged alone at the count its refusing gate read: the entry gate's as it grows, the pipeline's gate's 0", async () => {
+    const corpus = corpusOf([{ id: "adv-1", harmful: true }]);
+    const { ctx, net } = dContext(corpus, { dry: false, argv: ["--runs", "1", "--d-cameras", "3"] });
+    // The first two prompts are refused at the entry gate; the third passes it, and the pipeline's gate refuses the compiled prompt.
+    const gateCalls: number[] = [];
+    const entryGate: ShotDeps["entryGate"] = async (_prompt, o) => (gateCalls.push(o.priorHits), gateCalls.length <= 2 ? { verdict: { refused: "violence" }, scores: undefined } : { verdict: "allowed", scores: {} });
+    const runRealPipeline = (async (prompt: string) => ({
+      attempts: [{ attempt: 1, steps: [{ step: "validate", detail: "PROMPT VIOLENCE" }], passed: false, issues: ["content_policy"], compiledPrompt: prompt }],
+      succeeded: false,
+      finalPrompt: prompt,
+      resultUrl: null,
+      contentPolicyBlock: "PROMPT VIOLENCE",
+    })) as unknown as ShotDeps["runRealPipeline"];
+    // Astra's part alone: passing the first time (the person's), refused the second (Astra's), passing the third (the person's).
+    const alone: number[] = [];
+    const judgeAlone: ShotDeps["judgeAlone"] = async (_text, o) => (alone.push(o.priorHits), alone.length === 2 ? { refused: "violence" } : "allowed");
+    ctx.gates = { words: async () => "allowed", brief: async () => "allowed", shots: { entryGate, judgeAlone, runRealPipeline, promptReasonOf: () => "violence" } as unknown as ShotDeps };
+    const stills = await shootDStills(ctx, [{ buildId: "dv-adv-1-r1", spec }], { priorHits: 1, k: { n: 0 }, escalate: true });
+    expect((stills.get("dv-adv-1-r1") ?? []).map((s) => [s.outcome, s.entryGate, s.attribution?.against ?? null])).toEqual([
+      ["prompt_blocked", "refused:violence", "person"],
+      ["prompt_blocked", "refused:violence", "model"],
+      ["prompt_blocked", "allowed", "person"],
+    ]);
+    // The person's refusal raises the count to 2; Astra's leaves it there.
+    expect(gateCalls).toEqual([1, 2, 2]);
+    // The entry gate's refusals are judged alone at 1, then at 2; the pipeline's gate read 0 (no policyAudit), and so does its refusal's second judgement.
+    expect(alone).toEqual([1, 2, 0]);
     expect(net.liveCalls).toBe(0);
   });
 });

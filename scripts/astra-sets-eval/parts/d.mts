@@ -231,7 +231,7 @@ export function priorHitsCheck(repoRoot: string): { ok: boolean; missing: string
 
 /** The summary's line on how the source logs a refused still prompt. */
 export function loggingLine(logging: ShotPromptLogging): string {
-  if (logging === "attributed") return "attributed: Astra's part judged alone at both gates (refusalProviderFor), a refusal of it logged under Astra, never counted";
+  if (logging === "attributed") return "attributed: Astra's part judged alone at both gates (refusalProviderFor), with the session history each gate read; a refusal of it logged under Astra, never counted";
   if (logging === "counts") return "COUNTED against the person, every one: gatePrompt logs it with no provider (the source before 2026-09-12)";
   return "NOT READ: the source no longer shows it (gatePrompt, the pipeline's gate, shootInSet); re-verify";
 }
