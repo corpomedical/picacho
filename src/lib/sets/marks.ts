@@ -24,6 +24,11 @@
 // blocks only where it stands taller than a seat. Round shapes tipped over,
 // and rings, fall back to the box around them. Every copy of a repeated
 // object counts.
+//
+// THE PERSON'S OWN FIGURE follows the same rule: a layout they saved is
+// normalised through it (set-spec.ts normaliseSetLayout), and the stage runs
+// it when they drop the figure (set-view.tsx), so the figure they see is the
+// one the sketch is drawn with.
 
 import type { SetMark, SetObject } from "./set-spec";
 
@@ -175,12 +180,13 @@ export function blockerAt(point: Point, list: readonly Blocker[]): Blocker | nul
  * The marks, each on open floor. A blocked mark moves to the nearest free
  * spot inside the set, looking first away from whatever it stood in; one
  * with no free spot within MARK_SEARCH_M stays where it was. Deterministic.
+ * Anything with a place and a facing: Astra's marks, or the person's figure.
  */
-export function clearMarks(
-  marks: readonly SetMark[],
+export function clearMarks<M extends Pick<SetMark, "x" | "z" | "facingDeg">>(
+  marks: readonly M[],
   objects: readonly SetObject[],
   bounds: { x: number; z: number },
-): { marks: SetMark[]; moved: number; stuck: number } {
+): { marks: M[]; moved: number; stuck: number } {
   const list = blockers(objects);
   const halfX = bounds.x / 2 - PERSON_RADIUS_M;
   const halfZ = bounds.z / 2 - PERSON_RADIUS_M;

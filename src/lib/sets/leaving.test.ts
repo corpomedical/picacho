@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import { buildingHintKey, pageSetNotice, photoMetaKey, setNoticePath, setNoticeTag } from "./leaving";
 import en from "../i18n/messages/en";
 import es from "../i18n/messages/es";
@@ -148,13 +149,73 @@ describe("the notification a Sets tab shows for a build it settled itself", () =
     expect(worker).not.toContain('addEventListener("fetch"');
   });
 
-  it("a set's tap never takes an unrelated tab: the set's own tab, else a Sets tab, else a new window", () => {
-    const worker = readSource("public/push-sw.js");
-    const click = worker.slice(worker.indexOf('self.addEventListener("notificationclick"'));
-    const sets = click.slice(click.indexOf('tag.startsWith("set-")'), click.indexOf("const win = wins.find"));
-    expect(sets).toContain("pathOf(w) === path");
-    expect(sets).toContain('pathOf(w).startsWith("/app/sets")');
-    expect(sets).toContain("return clients.openWindow(path);");
-    expect(setNoticeTag("x")).toBe("set-x");
+  // The worker itself, run against pretend windows: which tab a tap takes.
+  type Win = { url: string; visibilityState: "visible" | "hidden"; focused: boolean; did: string[] };
+  const tap = async (wins: Win[], notification: { tag?: string; path: string | null }) => {
+    const listeners: Record<string, (e: unknown) => void> = {};
+    const opened: string[] = [];
+    const clients = {
+      matchAll: async () =>
+        wins.map((w) => ({
+          ...w,
+          focus: async function (this: Win) {
+            w.did.push("focus");
+            return this;
+          },
+          navigate: async (to: string) => {
+            w.did.push(`navigate ${to}`);
+          },
+        })),
+      openWindow: async (to: string) => {
+        opened.push(to);
+      },
+      claim: async () => {},
+    };
+    const self = { addEventListener: (type: string, fn: (e: unknown) => void) => (listeners[type] = fn), clients, skipWaiting() {} };
+    runInNewContext(readSource("public/push-sw.js"), { self, clients, URL });
+    let done: Promise<unknown> = Promise.resolve();
+    listeners.notificationclick({
+      notification: { tag: notification.tag ?? "", data: { path: notification.path }, close() {} },
+      waitUntil: (p: Promise<unknown>) => (done = p),
+    });
+    await done;
+    return opened;
+  };
+  const win = (path: string, visibilityState: Win["visibilityState"], focused = false): Win => ({
+    url: `https://picacho.test${path}`,
+    visibilityState,
+    focused,
+    did: [],
+  });
+  const SET_PATH = `/app/sets/${SET}`;
+
+  it("a set's tap brings forward a tab already on the set", async () => {
+    const composer = win("/app", "visible", true);
+    const there = win(SET_PATH, "hidden");
+    expect(await tap([composer, there], { tag: setNoticeTag(SET), path: SET_PATH })).toEqual([]);
+    expect(there.did).toEqual(["focus"]);
+    expect(composer.did).toEqual([]);
+  });
+
+  it("else it sends the Sets list there, from a background tab only", async () => {
+    const composer = win("/app", "visible", true);
+    const list = win("/app/sets", "hidden");
+    expect(await tap([composer, list], { tag: setNoticeTag(SET), path: SET_PATH })).toEqual([]);
+    expect(list.did).toEqual(["focus", `navigate ${SET_PATH}`]);
+    expect(composer.did).toEqual([]);
+  });
+
+  it("never a tab the person may be using: the list on screen, another set's page, the composer", async () => {
+    const listOnScreen = win("/app/sets", "visible", true);
+    const otherSet = win("/app/sets/another-set", "hidden");
+    const composer = win("/app", "hidden");
+    expect(await tap([listOnScreen, otherSet, composer], { tag: setNoticeTag(SET), path: SET_PATH })).toEqual([SET_PATH]);
+    for (const w of [listOnScreen, otherSet, composer]) expect(w.did).toEqual([]);
+  });
+
+  it("the composer's own notification (no path) still only brings its tab forward", async () => {
+    const composer = win("/app", "hidden");
+    expect(await tap([composer], { path: null })).toEqual([]);
+    expect(composer.did).toEqual(["focus"]);
   });
 });

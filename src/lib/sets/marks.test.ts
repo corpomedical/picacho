@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   MARK_SEARCH_M,
   PERSON_RADIUS_M,
@@ -8,7 +10,7 @@ import {
   clearMarks,
   rotationXYZ,
 } from "./marks";
-import { normaliseSetSpec, type SetMark, type SetObject } from "./set-spec";
+import { normaliseSetLayout, normaliseSetSpec, type SetMark, type SetObject } from "./set-spec";
 import beach from "./fixtures-beach.json";
 import rainyMarket from "./fixtures-rainy-market.json";
 import showroomClosed from "./fixtures-showroom-closed.json";
@@ -177,5 +179,38 @@ describe("normaliseSetSpec moves blocked marks, and only those", () => {
       const raw = (fixture as { marks: { x: number; z: number }[] }).marks;
       n.spec.marks.forEach((m, i) => expect([m.x, m.z]).toEqual([raw[i].x, raw[i].z]));
     }
+  });
+});
+
+describe("the person's own figure follows the same rule", () => {
+  const n = normaliseSetSpec({
+    bounds: { x: 20, z: 20, height: 6 },
+    objects: [{ shape: "box", position: [4, 0.55, 0], size: [1.9, 0.5, 3.7] }],
+    marks: [{ label: "Beside the car", x: 0, z: 0, facingDeg: 0 }],
+    cameras: [{ label: "Wide", position: [6, 1.6, 6], target: [0, 1, 0], fovDeg: 40 }],
+  });
+  if (!n.ok) throw new Error("fixture");
+  const spec = n.spec;
+
+  it("a saved figure inside the car comes back on open floor, facing as saved", () => {
+    const l = normaliseSetLayout({ markId: "m1", mark: { x: 4, z: 0, facingDeg: 120 } }, spec);
+    expect(l).not.toBeNull();
+    expect(blockerAt([l!.mark.x, l!.mark.z], blockers(spec.objects))).toBeNull();
+    expect(l!.mark.facingDeg).toBe(120);
+    expect(Math.hypot(l!.mark.x - 4, l!.mark.z)).toBeLessThan(2);
+  });
+
+  it("a saved figure already on open floor stays exactly where they put it", () => {
+    expect(normaliseSetLayout({ markId: "m1", mark: { x: -3.25, z: 2.5, facingDeg: 30 } }, spec)?.mark).toEqual({
+      x: -3.25,
+      z: 2.5,
+      facingDeg: 30,
+    });
+  });
+
+  it("the stage runs it where the figure is dropped (read as source)", () => {
+    const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+    const onUp = view.slice(view.indexOf("const onUp = (e: PointerEvent) => {"));
+    expect(onUp.slice(0, onUp.indexOf("canvas.addEventListener"))).toContain("clearMarks([{ ...dropped,");
   });
 });

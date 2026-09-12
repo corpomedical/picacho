@@ -1791,7 +1791,7 @@ const pt = {
     briefHint: "Só lugares — o Astra nunca constrói pessoas. Diga a hora do dia e a luz; deixe as marcas de fora.",
     buildButton: "Construir o set",
     starting: "Começando…",
-    buildMeta: "Construído pelo GPT-6 Astra · 1–2 minutos",
+    buildMeta: "Construído pelo GPT-6 Astra · 1–5 minutos",
     monthlyUsage: "Sets construídos neste mês de faturamento: {used} de {limit}",
     unlimitedUsage: "Sem limite de construções enquanto os Sets estão em teste",
     modeDescribe: "Descrever",
@@ -1812,9 +1812,9 @@ const pt = {
     emptyBody:
       "Descreva um lugar acima. Quando estiver pronto, abra, coloque o boneco do seu personagem numa marca, enquadre e fotografe.",
     statusBuilding: "Construindo…",
-    statusBuildingHint: "1–2 minutos. Você pode sair — volte em até dez minutos para buscá-lo.",
+    statusBuildingHint: "1–5 minutos. Você pode sair — volte em até dez minutos para buscá-lo.",
     statusBuildingHintFinishes:
-      "1–2 minutos. Você pode sair — ele termina sozinho, e este navegador avisa quando ficar pronto se as notificações estiverem ativadas.",
+      "1–5 minutos. Você pode sair — ele termina sozinho, e este navegador avisa quando ficar pronto se as notificações estiverem ativadas.",
     statusBuildingPhotoHint:
       "2–5 minutos. Mantenha esta página aberta até ficar pronto — uma construção que ninguém busca se perde depois de uns dez minutos e volta para a sua cota.",
     statusBuildingPhotoHintFinishes:
@@ -1853,6 +1853,7 @@ const pt = {
     lookBadge: "Visual",
     backToCamera: "Voltar para esta câmera",
     dragHint: "Arraste para orbitar · Shift + arrastar para deslizar · role para aproximar · arraste o boneco para movê-lo, clique duas vezes para enquadrá-lo",
+    figureMovedOut: "O boneco fica em chão livre, então saiu de dentro desse objeto.",
     frameHint: "O quadrado iluminado é o enquadramento. O que ficar fora dele não entra na foto.",
     standInNote:
       "O boneco cinza só marca onde o seu personagem fica, o tamanho dele e para onde olha. A foto pega o rosto, o cabelo e os traços das fotos do próprio personagem.",

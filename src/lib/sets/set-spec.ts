@@ -500,11 +500,13 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
   const m = obj(root.mark) ?? {};
   const halfX = spec.bounds.x / 2;
   const halfZ = spec.bounds.z / 2;
-  const mark = {
-    x: num(m.x, -halfX, halfX, base.x),
-    z: num(m.z, -halfZ, halfZ, base.z),
-    facingDeg: facing(m.facingDeg ?? base.facingDeg),
-  };
+  // Where they dropped the figure, on open floor as Astra's marks are: a
+  // figure saved inside a car or a wall moves out, as the stage moves it.
+  const [mark] = clearMarks(
+    [{ x: num(m.x, -halfX, halfX, base.x), z: num(m.z, -halfZ, halfZ, base.z), facingDeg: facing(m.facingDeg ?? base.facingDeg) }],
+    spec.objects,
+    spec.bounds,
+  ).marks;
   const c = obj(root.camera);
   let camera: SetLayout["camera"] = null;
   if (c) {

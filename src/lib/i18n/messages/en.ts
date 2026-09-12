@@ -1903,7 +1903,7 @@ const en = {
     briefHint: "Places only — Astra never builds people. Say the time of day and the light; leave out brand names.",
     buildButton: "Build set",
     starting: "Starting…",
-    buildMeta: "Built by GPT-6 Astra · about 1–2 minutes",
+    buildMeta: "Built by GPT-6 Astra · about 1–5 minutes",
     monthlyUsage: "Set builds this billing month: {used} of {limit}",
     unlimitedUsage: "No build limit while Sets are in testing",
     modeDescribe: "Describe it",
@@ -1927,9 +1927,9 @@ const en = {
     emptyBody:
       "Describe a place above. Once it's built, open it, stand your character's stand-in on a mark, frame the shot and shoot.",
     statusBuilding: "Building…",
-    statusBuildingHint: "About 1–2 minutes. You can leave — come back within ten minutes to collect it.",
+    statusBuildingHint: "About 1–5 minutes. You can leave — come back within ten minutes to collect it.",
     statusBuildingHintFinishes:
-      "About 1–2 minutes. You can leave — it finishes on its own, and this browser tells you when it's ready if notifications are on.",
+      "About 1–5 minutes. You can leave — it finishes on its own, and this browser tells you when it's ready if notifications are on.",
     statusBuildingPhotoHint:
       "About 2–5 minutes. Keep this page open until it's ready — a build nobody collects is lost after about ten minutes and goes back to your allowance.",
     statusBuildingPhotoHintFinishes:
@@ -1968,6 +1968,7 @@ const en = {
     lookBadge: "Look",
     backToCamera: "Back to this camera",
     dragHint: "Drag to orbit · Shift-drag to slide · scroll to dolly · drag the figure to move it, double-click it to frame it",
+    figureMovedOut: "The figure stands on open floor, so it moved out of that object.",
     frameHint: "The bright square is the frame. Anything outside it stays out of the still.",
     standInNote:
       "The grey figure only marks where your character stands, how big they are and which way they face. The still takes their face, hair and features from their own photos.",

@@ -10,6 +10,7 @@ import { isStaleDeployError } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet } from "@/lib/sets/actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
+import { clearMarks } from "@/lib/sets/marks";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
 import { SET_PHOTO_UNREADABLE } from "@/lib/sets/messages";
@@ -167,6 +168,10 @@ export function SetView({
   const guideRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<StageApi | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // A figure dropped inside something built moved to open floor: the hint
+  // says so for a few seconds, in place of the drag hint.
+  const [figureMoved, setFigureMoved] = useState(false);
+  const figureMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutRef = useRef({ markId: startMarkId, mark: startMark });
   // The stage calls this when an orbit settles; it points at scheduleSave,
   // which is declared below the stage's effect.
@@ -269,7 +274,16 @@ export function SetView({
           if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
           canvas.style.cursor = "";
           const p = standIn.group.position;
-          setMark((m) => ({ x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100, facingDeg: m.facingDeg }));
+          // On open floor, as the server keeps it (normaliseSetLayout): a
+          // figure inside a car or a wall is hidden in the sketch.
+          const dropped = { x: Math.round(p.x * 100) / 100, z: Math.round(p.z * 100) / 100 };
+          const open = clearMarks([{ ...dropped, facingDeg: layoutRef.current.mark.facingDeg }], spec.objects, spec.bounds);
+          if (open.moved > 0) {
+            setFigureMoved(true);
+            if (figureMovedTimerRef.current) clearTimeout(figureMovedTimerRef.current);
+            figureMovedTimerRef.current = setTimeout(() => setFigureMoved(false), 5000);
+          }
+          setMark(open.marks[0]);
         };
         canvas.addEventListener("pointerdown", onDown);
         canvas.addEventListener("pointermove", onMove);
@@ -574,6 +588,7 @@ export function SetView({
   useEffect(() => {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      if (figureMovedTimerRef.current) clearTimeout(figureMovedTimerRef.current);
     };
   }, []);
 
@@ -833,8 +848,11 @@ export function SetView({
             aria-hidden
             className="pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] outline outline-1 outline-white/40"
           />
-          <span className="pointer-events-none absolute bottom-3 left-3 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80">
-            {s.dragHint}
+          <span
+            aria-live="polite"
+            className="pointer-events-none absolute bottom-3 left-3 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80"
+          >
+            {figureMoved ? s.figureMovedOut : s.dragHint}
           </span>
           {/* Pan and tilt: turn the camera where it stands. */}
           <div role="group" aria-label={s.aimLabel} className="absolute bottom-3 right-3 grid grid-cols-3 gap-1">

@@ -312,6 +312,7 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "compareTitle",
     "comparePhoto",
     "compareNote",
+    "figureMovedOut",
   ] as const;
   const SERVER_KEYS = [
     "setPhotoUnreadable",
@@ -360,15 +361,20 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     }
   });
 
-  it("gives a photo build the measured 2–5 minutes in both versions and every language", () => {
-    // The three test builds took 123–183 s (docs 3.2), and a closing retry
-    // adds an attempt.
+  it("gives a photo build the measured 2–5 minutes and a build from words 1–5, in both versions and every language", () => {
+    // The three photo test builds took 123–183 s (docs 3.2); a build from
+    // words took 84 s for one attempt, and the race track about five minutes
+    // with the page closed (2 attempts). A closing retry adds an attempt, and
+    // the finisher collects on the minute.
     for (const t of [en, es, pt, it_]) {
       for (const k of ["photoMeta", "photoMetaFinishes", "statusBuildingPhotoHint", "statusBuildingPhotoHintFinishes"] as const) {
         expect(t.sets[k], k).toContain("2–5");
         expect(t.sets[k], k).not.toContain("4–6");
       }
-      for (const k of ["statusBuildingHint", "statusBuildingHintFinishes"] as const) expect(t.sets[k], k).toContain("1–2");
+      for (const k of ["buildMeta", "statusBuildingHint", "statusBuildingHintFinishes"] as const) {
+        expect(t.sets[k], k).toContain("1–5");
+        expect(t.sets[k], k).not.toContain("1–2");
+      }
     }
   });
 

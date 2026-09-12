@@ -1791,7 +1791,7 @@ const es = {
     briefHint: "Solo lugares — Astra nunca construye personas. Di la hora del día y la luz; deja fuera las marcas.",
     buildButton: "Construir el set",
     starting: "Empezando…",
-    buildMeta: "Construido por GPT-6 Astra · 1–2 minutos",
+    buildMeta: "Construido por GPT-6 Astra · 1–5 minutos",
     monthlyUsage: "Sets construidos este mes de facturación: {used} de {limit}",
     unlimitedUsage: "Sin límite de construcciones mientras los Sets están en pruebas",
     modeDescribe: "Descríbelo",
@@ -1812,9 +1812,9 @@ const es = {
     emptyBody:
       "Describe un lugar arriba. Cuando esté construido, ábrelo, coloca la figura de tu personaje en una marca, encuadra y dispara.",
     statusBuilding: "Construyendo…",
-    statusBuildingHint: "1–2 minutos. Puedes salir — vuelve en menos de diez minutos para recogerlo.",
+    statusBuildingHint: "1–5 minutos. Puedes salir — vuelve en menos de diez minutos para recogerlo.",
     statusBuildingHintFinishes:
-      "1–2 minutos. Puedes salir — se termina solo, y este navegador te avisa cuando esté listo si tienes las notificaciones activadas.",
+      "1–5 minutos. Puedes salir — se termina solo, y este navegador te avisa cuando esté listo si tienes las notificaciones activadas.",
     statusBuildingPhotoHint:
       "2–5 minutos. Mantén esta página abierta hasta que esté listo — una construcción que nadie recoge se pierde a los diez minutos más o menos y vuelve a tu asignación.",
     statusBuildingPhotoHintFinishes:
@@ -1853,6 +1853,7 @@ const es = {
     lookBadge: "Aspecto",
     backToCamera: "Volver a esta cámara",
     dragHint: "Arrastra para orbitar · Mayús + arrastrar para desplazar · rueda para acercar · arrastra la figura para moverla, doble clic para encuadrarla",
+    figureMovedOut: "La figura va sobre suelo libre, así que salió de ese objeto.",
     frameHint: "El cuadrado iluminado es el encuadre. Lo que quede fuera no sale en la foto.",
     standInNote:
       "La figura gris solo marca dónde está tu personaje, su tamaño y hacia dónde mira. La foto toma su cara, su pelo y sus rasgos de sus propias fotos.",

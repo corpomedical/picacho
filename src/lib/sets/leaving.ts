@@ -4,9 +4,10 @@
 // load it as it is (leaving.test.ts; the vitest "@/" gotcha).
 //
 // THE PROMISE. While the finisher can run (finisher.ts finisherCanRun) a
-// build completes with the page closed, so the pages say "you can leave";
-// without it only an open Sets page collects a build, so they say to come
-// back within ten minutes or, for a photo build, to keep the page open.
+// build completes with the page closed, so the pages say "it finishes on
+// its own"; without it only an open Sets page collects a build, so they say
+// to come back within ten minutes or, for a photo build, to keep the page
+// open.
 //
 // HOW IT IS KEPT. Exactly one tick settles a build (build-tick.ts), and
 // that tick's caller tells the person. The finisher pushes to their

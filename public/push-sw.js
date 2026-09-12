@@ -40,9 +40,11 @@ self.addEventListener("push", (event) => {
 // push would have: its tap opens the set, like the push's.
 // A set's notification (tag "set-<id>") is usually tapped while the person
 // works in another Picacho tab, and the most recently focused window is the
-// first one listed — so it never takes an unrelated tab: a tab already on
-// that page is brought forward, else a Sets tab is sent there, else the
-// page opens in a new window.
+// first one listed — so it never takes a tab they may be using: a tab
+// already on that page is brought forward; else the Sets list is sent there,
+// but only from a background tab (one they can see may hold a brief half
+// typed); never another set's page (it may be mid-match or mid-shot); else
+// the page opens in a new window.
 // An uncontrolled tab cannot be navigated by the worker, so a tap with a
 // path opens that path in a new window rather than silently only focusing.
 self.addEventListener("notificationclick", (event) => {
@@ -61,11 +63,13 @@ self.addEventListener("notificationclick", (event) => {
         };
         const there = wins.find((w) => pathOf(w) === path && "focus" in w);
         if (there) return there.focus();
-        const sets = wins.find((w) => pathOf(w).startsWith("/app/sets") && "focus" in w && "navigate" in w);
-        if (sets) {
-          return sets
+        const list = wins.find(
+          (w) => pathOf(w) === "/app/sets" && w.visibilityState === "hidden" && "focus" in w && "navigate" in w,
+        );
+        if (list) {
+          return list
             .focus()
-            .then((w) => (w || sets).navigate(path))
+            .then((w) => (w || list).navigate(path))
             .catch(() => clients.openWindow(path));
         }
         return clients.openWindow(path);

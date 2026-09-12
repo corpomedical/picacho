@@ -1790,7 +1790,7 @@ const it = {
     briefHint: "Solo luoghi — Astra non costruisce mai persone. Indica l'ora del giorno e la luce; lascia fuori i marchi.",
     buildButton: "Costruisci il set",
     starting: "Avvio…",
-    buildMeta: "Costruito da GPT-6 Astra · 1–2 minuti",
+    buildMeta: "Costruito da GPT-6 Astra · 1–5 minuti",
     monthlyUsage: "Set costruiti in questo mese di fatturazione: {used} di {limit}",
     unlimitedUsage: "Nessun limite di costruzioni finché i Set sono in test",
     modeDescribe: "Descrivilo",
@@ -1811,9 +1811,9 @@ const it = {
     emptyBody:
       "Descrivi un luogo qui sopra. Quando è pronto, aprilo, metti la sagoma del tuo personaggio su un segno, inquadra e scatta.",
     statusBuilding: "In costruzione…",
-    statusBuildingHint: "1–2 minuti. Puoi uscire — torna entro dieci minuti per ritirarlo.",
+    statusBuildingHint: "1–5 minuti. Puoi uscire — torna entro dieci minuti per ritirarlo.",
     statusBuildingHintFinishes:
-      "1–2 minuti. Puoi uscire — si completa da solo, e questo browser ti avvisa quando è pronto se le notifiche sono attive.",
+      "1–5 minuti. Puoi uscire — si completa da solo, e questo browser ti avvisa quando è pronto se le notifiche sono attive.",
     statusBuildingPhotoHint:
       "2–5 minuti. Tieni aperta questa pagina finché non è pronto — una costruzione che nessuno ritira va persa dopo una decina di minuti e torna nella tua quota.",
     statusBuildingPhotoHintFinishes:
@@ -1852,6 +1852,7 @@ const it = {
     lookBadge: "Aspetto",
     backToCamera: "Torna a questa camera",
     dragHint: "Trascina per orbitare · Maiusc + trascina per spostare · scorri per avvicinare · trascina la sagoma per spostarla, doppio clic per inquadrarla",
+    figureMovedOut: "La sagoma sta su un pavimento libero, quindi è uscita da quell'oggetto.",
     frameHint: "Il quadrato illuminato è l'inquadratura. Ciò che resta fuori non entra nella foto.",
     standInNote:
       "La sagoma grigia indica solo dove sta il tuo personaggio, quanto è alto e dove guarda. La foto prende volto, capelli e lineamenti dalle sue foto.",

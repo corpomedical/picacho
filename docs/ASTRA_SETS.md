@@ -1,6 +1,6 @@
 # Astra Sets
 
-Date: 2026-09-10. Status: Phase 0 and Phase 1 are built and switched off (flag `astra_sets`, admins only once on). Of Phase 2, Sets from a photo and Match this shot are built and switched off (flag `astra_photo_sets`, 2026-09-11), and the set finisher is built (a one-minute cron, 2026-09-11); the rest of Phase 2 (credits), and Phase 3, are not built. Evidence comes from four places:
+Date: 2026-09-10. Status (read in production 2026-09-12): Phase 0 and Phase 1 are built and on, for admins only (flag `astra_sets`). Of Phase 2, Sets from a photo and Match this shot are built and on for admins, switched on by the operator for testing (flag `astra_photo_sets`, 2026-09-11), and the set finisher runs (a one-minute cron, 2026-09-11); the rest of Phase 2 (credits), and Phase 3, are not built. Evidence comes from four places:
 - 13 live responses from `gpt-6-astra` on Picacho's own key, recorded 2026-09-10. Total spend was $1.297.
 - OpenAI's documentation.
 - Competitors' own pages.
@@ -36,7 +36,7 @@ Higgsfield's 3D Jutsu ships the grey-box half of this. No competitor I found pub
 
 **Built.** Phase 0 (both ungated image paths now pass the picture check; the utility readers refuse any `gpt-6` model; a hashed `safety_identifier`; the guard test; the three flags, off) and Phase 1 (Sets from a description, admins only). Code: `src/lib/sets/`, `src/lib/generations/providers/astra.ts`, `src/lib/astra/prices.ts`, `src/components/sets/`, `src/app/app/sets/`. SQL: `supabase/applied/2026-09-10/astra-sets.sql` (run in production 2026-09-11; flags confirmed off, tables present, anonymous key refused).
 
-**3.2 Sets from a photo: built 2026-09-11, switched off** (flag `astra_photo_sets`, admins only; SQL `supabase/applied/2026-09-11/astra-photo-sets.sql`, run in production 2026-09-11: both photo columns present, the switch off). Worst case $1.81625 a build (`set-config.ts`). Match this shot is built behind the same switch (no SQL; worst case $0.16625 a match, no live read made yet; see 3.2). The finisher is built (a one-minute cron instead of the planned webhook, 2026-09-11 — see Phase 2); credits are not. Photos with people are unmeasured (eval D).
+**3.2 Sets from a photo: built 2026-09-11, on for admins since the operator's test** (flag `astra_photo_sets`, admins only; SQL `supabase/applied/2026-09-11/astra-photo-sets.sql`, run in production 2026-09-11: both photo columns present, the switch then off; on when read 2026-09-12). Worst case $1.81625 a build (`set-config.ts`). Match this shot is built behind the same switch (no SQL; worst case $0.16625 a match, no live read made yet; see 3.2). The finisher is built (a one-minute cron instead of the planned webhook, 2026-09-11 — see Phase 2); credits are not. Photos with people are unmeasured (eval D).
 
 **Three live photo builds before shipping (2026-09-11)**, through the repo's own code (photo.ts re-encode, astra-request.ts, providers/astra.ts, the normaliser, closure.ts), with no database: one people-free bakery photo made by GPT Image, 1536×1024, sent inline at detail high.
 
@@ -265,7 +265,7 @@ Our key's rate limits for Astra are 500 requests/min and 500K tokens/min (from t
 ### 3.1 Feature 1: Sets from a description
 
 **User flow**
-1. **Describe.** Sets → New set, e.g. "a rainy market street at night, one stall, a lamp post". The button states price and time before anything is spent: "Build set · 2 credits · about 1–2 min" (in Phase 1: "1 of 10 set builds this month").
+1. **Describe.** Sets → New set, e.g. "a rainy market street at night, one stall, a lamp post". The button states price and time before anything is spent: "Build set · 2 credits · about 1–5 min" (in Phase 1: "1 of 10 set builds this month").
 2. **Gate the words.** Picacho gates the text with `gatePrompt` before anything is sent to OpenAI. It is the user's own text, logged against them as usual (`policy-log.ts:129`).
 3. **Build in the background.** Astra runs on the Responses API with `background: true`, `store: false`, `tools: []`, a strict `json_schema`, `max_output_tokens` 10,000, effort `low` or `medium` (the eval decides) and a `safety_identifier`. The page polls, the same way the Hunyuan proxy is polled today (`angle-stage.ts:69-88`); as built, a one-minute finisher on the server runs the same step whether or not the page is open (Phase 2).
 4. **Normalise.** `normaliseSetSpec` clamps counts, sizes, numbers and colours. It is the only path from model output to the screen. Astra's one-line description of the place is gated as model-written text.
@@ -366,7 +366,7 @@ ends in a failed build: the first set is kept and delivered).
 - **Identity dilution.** The extra reference image may lower identity. The identity gate absorbs misses, but at our cost, so the miss rate must be measured.
 - **Palette habits.** Testers report "AI design smell" (forest-green palettes, flat design) (https://www.mindstudio.ai/blog/gpt6-astra-practical-use-cases, unverified). Mitigation: palette instructions, and the user can recolour by picking.
 - **Brands in real venues.** Sets of real venues can bake brands into stills; the Lakers court and the Tomb Raider poster already turned up in our own renders. Mitigation: instruct "no brand names or logos"; the description is gated.
-- **Lost builds.** The wait is about 84 s. If the user leaves and nothing polls within about 10 minutes, the `store: false` result is gone. The slot comes back (a failed build is not counted). Since 2026-09-11 the finisher polls every minute whether or not a page is open (Phase 2), so a build is lost this way only while the finisher cannot run (no `CRON_SECRET`), and the pages then say to come back or keep the page open.
+- **Lost builds.** The wait is about 84 s for one attempt; the page quotes "about 1–5 minutes" (2026-09-12), because a closing retry adds an attempt and the finisher collects on the minute (the operator's race track: about five minutes, 2 attempts, page closed). If the user leaves and nothing polls within about 10 minutes, the `store: false` result is gone. The slot comes back (a failed build is not counted). Since 2026-09-11 the finisher polls every minute whether or not a page is open (Phase 2), so a build is lost this way only while the finisher cannot run (no `CRON_SECRET`), and the pages then say to come back or keep the page open.
 - **Mobile GPUs.** At most 400 objects, and repeats instead of copies.
 
 ### 3.2 Feature 2: Sets from a photo, and Match this shot
@@ -518,7 +518,7 @@ Flag: `astra_photo_sets`.
 - **Credit ledger for charges that are not renders.** This is the one real schema change:
   - `supabase/pending/<date>/credit-charges.sql`: a `credit_charges` table, a guarded reserve RPC, and `monthly_credits_used` summing both tables.
   - Code: `core.ts` allowance, `quote.ts` (`quoteSetBuild`), `refund-rules.ts` (a failed build returns its credits), model-aware `src/lib/admin/economics.ts:26-28`, an LLM-spend card under Admin > AI providers, and the `verify-db` manifest.
-- **Push notification: built 2026-09-11.** When the finisher's own tick settles a build, the owner is told through `src/lib/push/send.ts`: "Your set is ready" with the set's title (Astra's, already passed by the strict-lane words gate), opening `/app/sets/<id>`, or "Your set couldn't be built … The build is back in your allowance", opening `/app/sets`. Both answer to the render switches in Settings → Notifications (`notify_render_ready`, `notify_render_failed`). They go to browsers only (web push, `notifyUser`'s `webOnly` option), never the phone app, because Sets stay web-only while the Play appeal is pending (section 5). When the page's own tick settles a build, nothing is pushed, and the page says so itself. The card changes, and a Sets tab in the background shows the same notification (`sets-home.tsx`, under the same two switches, never asking for permission). A hidden tab keeps polling every 5 s, so it usually collects the build before the finisher's next minute. Both notifications carry the set's tag and open the same page (`src/lib/sets/leaving.ts`), so a browser shows one per set. With the finisher able to run, the Sets pages say "you can leave"; without `CRON_SECRET` they keep saying to come back within ten minutes, or, for a photo build, to keep the page open.
+- **Push notification: built 2026-09-11.** When the finisher's own tick settles a build, the owner is told through `src/lib/push/send.ts`: "Your set is ready" with the set's title (Astra's, already passed by the strict-lane words gate), opening `/app/sets/<id>`, or "Your set couldn't be built … The build is back in your allowance", opening `/app/sets`. Both answer to the render switches in Settings → Notifications (`notify_render_ready`, `notify_render_failed`). They go to browsers only (web push, `notifyUser`'s `webOnly` option), never the phone app, because Sets stay web-only while the Play appeal is pending (section 5). When the page's own tick settles a build, nothing is pushed, and the page says so itself. The card changes, and a Sets tab in the background shows the same notification (`sets-home.tsx`, under the same two switches, never asking for permission). A hidden tab keeps polling every 5 s, so it usually collects the build before the finisher's next minute. Both notifications carry the set's tag and open the same page (`src/lib/sets/leaving.ts`), so a browser shows one per set. A tap brings forward a tab already on that set, else sends the Sets list there from a tab in the background, else opens a new window: never another set's page, or a list on screen that may hold a brief half typed (`public/push-sw.js`, 2026-09-12). With the finisher able to run, the Sets pages say "it finishes on its own"; without `CRON_SECRET` they keep saying to come back within ten minutes, or, for a photo build, to keep the page open.
 
 ### Phase 3: Previz board (about 2 weeks, only if the A/B passes)
 
@@ -546,18 +546,20 @@ Flag: `astra_previz`.
 | Canary | 10 fixed briefs a week through Batch, about $1.60 | Alert if validity drops below 90% or p95 tokens move more than 30% (one alias, no dated snapshot) |
 
 ```
-Eval spend (Batch = half of standard):
-  A/B words:   90 × $0.32 = $28.80 → $14.40 Batch     (worst at the cap: 90 × $0.54 / 2 = $24.30)
-  A/B photos:  60 × $0.70 = $42.00 → $21.00 Batch     (worst: 60 × $0.86 / 2 = $25.80)
+Eval spend, an estimate (Batch = half of standard; only builds from words go on Batch, since a photo never goes into a Batch file):
+  A/B words:   90 × $0.32 = $28.80 → $14.40 Batch     (worst at the first attempt's cap: 90 × $0.54 / 2 = $24.30)
+  A/B photos:  60 × $0.70 = $42.00 at standard price  (worst at the first attempt's cap: 60 × $0.86 = $51.60)
   Baselines (Sonnet 5 is 5x cheaper per token, mini about 11–13x): ≤ $10
-  E match:     90 × $0.103 = $9.27 → $4.64 Batch
+  E match:     90 × $0.103 = $9.27 at standard price  (worst at the cap: 90 × $0.16625 = $14.96)
   C stills:    60 × $0.17 GPT Image 2 (plans.ts reference-photo figure, dated 2026-08-10) = $10.20
                60 × $0.03 Seedream v4 edit (fal page) = $1.80
                FLUX.2 edit: read fal's price before the run
                scoring + output gate, assumed ~$0.01 per still = ~$1.80
   D safety:    ≤ 40 × $0.54 = $21.60 at standard price (most briefs stop at our gate first)
-  Expected ≈ $86; worst case ≈ $101; plus FLUX stills
+  Expected ≈ $111; worst at the first attempts' caps ≈ $137; plus FLUX stills
 ```
+
+The ceiling is the runner's, not this block's: its README's Spend table (`scripts/astra-sets-eval/README.md`) adds each build's closing retry, both Astra efforts, three runs of D, and C's look and control arms, and its dry run prints the live numbers.
 
 Part C needs characters used with consent. Eva, Adam and Blondie are real people, so the operator must confirm consent for them. Alternatively, create two AI-persona characters; the account has none today.
 

@@ -64,7 +64,7 @@ function photoPlan(ctx: RunContext): PlanOut {
     lines: planAPhotos({ photos, runs, builders: arms, wordsGate: f.wordsGate, book: b }),
     notes: [
       `${LOCATION_PHOTOS_WANTED} photos × 3 runs = ${specBuilds} builds: the spend block's "A/B photos: 60 builds", at SET_PHOTO_BUILD_EFFORT (${SET_PHOTO_BUILD_EFFORT}), the arm that decides. --builders astra-low,astra-medium adds the other effort, reported beside it.`,
-      `The spend block prices those builds on Batch at the first attempt's ${usd(b.astraPhotoFirstWorstUsd, 2)} (${specBuilds} × ${usd(b.astraPhotoFirstWorstUsd, 2)} × ${b.batchMultiplier} = ${usd(specBuilds * b.astraPhotoFirstWorstUsd * b.batchMultiplier, 2)}). A photo never goes into a Batch input file here (it would sit in OpenAI's Files storage, which the product never does), so every photo build runs in background at standard price, and the closing retry raises the worst case to ${usd(b.astraPhotoBuildWorstUsd, 5)} a build (set-config.ts). These numbers stand; the doc is not edited.`,
+      `The spend block prices those builds at standard price, at the first attempt's worst ${usd(b.astraPhotoFirstWorstUsd, 2)} (${specBuilds} × ${usd(b.astraPhotoFirstWorstUsd, 2)} = ${usd(specBuilds * b.astraPhotoFirstWorstUsd, 2)}). A photo never goes into a Batch input file here (it would sit in OpenAI's Files storage, which the product never does), so every photo build runs in background at standard price, and the closing retry raises the worst case to ${usd(b.astraPhotoBuildWorstUsd, 5)} a build (set-config.ts). This is the ceiling; section 4 points here for it.`,
       `Expected, not a ceiling: the three test builds' $0.49–$0.65 a build (set-config.ts header) × ${specBuilds} ≈ ${usd(specBuilds * 0.49, 2)}–${usd(specBuilds * 0.65, 2)}, plus retries. Medium effort has never been measured on a photo.`,
       "Astra only: section 4 bars photo builds on Astra's cost ($1.12 for photos) and names no baseline for them, so the Sonnet and mini baselines stay words-only.",
       "Like the words arm, A runs no input gate: the notes gate and the picture check are D's photo leg. The words gate on Astra's answers runs as for words.",
@@ -142,7 +142,7 @@ export const partA: PartModule = {
     const f = ctx.flags;
     if (f.photos) return photoPlan(ctx);
     const notes = [
-      "A/B words in the doc's spend block price 90 builds at $0.54; section 4's table asks for two Astra efforts (180 builds), and the closing retry raised the worst case to $1.155 a build (set-config.ts). These numbers stand; the doc is not edited.",
+      "A/B words in the doc's spend block price 90 builds at $0.54; section 4's table asks for two Astra efforts (180 builds), and the closing retry raised the worst case to $1.155 a build (set-config.ts). This is the ceiling; section 4 points here for it.",
       "Expected, not a ceiling: the Astra-low arm at the measured ≤ $0.33 a build (set-config.ts header, 8 builds) × 90 × 0.5 ≈ $14.85, plus mends for about 1 in 8. Medium effort has never been measured.",
       "The photo arm is its own run: a --photos (location-photos.json, Astra only, background).",
     ];
