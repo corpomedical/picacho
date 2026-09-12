@@ -12,6 +12,7 @@ import { matchSetShot } from "@/lib/sets/match-actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
 import { clearMarks } from "@/lib/sets/marks";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
+import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
 import { SET_PHOTO_UNREADABLE } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
@@ -79,11 +80,6 @@ const FRAME_EYE_Y = 1.45;
 // set-config.ts: a matched shot is held to the same limits. The up limit
 // keeps a tilt inside the orbit's maxPolarAngle below.
 
-/** The newest finished still, the look's default. */
-function newestStill(shots: SetShot[]): string | null {
-  return shots.find((shot) => shot.status === "succeeded" && shot.resultUrl)?.generationId ?? null;
-}
-
 export function SetView({
   setId,
   spec,
@@ -139,14 +135,20 @@ export function SetView({
   const [ready, setReady] = useState(false);
   const [shots, setShots] = useState<SetShot[]>(initialShots);
   const [lastMiss, setLastMiss] = useState<string | null>(null);
-  // The look (2026-09-11): the earlier still whose objects and finishes the
-  // next shot keeps, so the car is the same car. OFF until the person turns
-  // it on (2026-09-12): GPT Image, handed a finished photograph of the same
-  // place, copies its camera and framing too, whatever the prompt says — the
-  // operator's second still took the first one's whole picture instead of
-  // its own sketch (docs/ASTRA_SETS.md). It stays a choice, with that said
-  // beside it, until the look sends only the objects.
-  const [lookId, setLookId] = useState<string | null>(null);
+  // The look (2026-09-11): the earlier still whose objects the next shot
+  // keeps, so the car is the same car. Only its objects ride, cut out onto
+  // grey on the server, so the shot keeps its own camera (2026-09-12,
+  // look-cutout.ts) — which needs the still's recorded camera, so only such
+  // stills are offered (look.ts canBeLook). It follows the newest of them
+  // until the person picks one or turns it off.
+  const [lookId, setLookId] = useState<string | null>(() => newestLook(initialShots));
+  // A ref, not state: a shot resolving tens of seconds after it started must
+  // read the person's latest choice, not the one from the render it began in
+  // (review, 2026-09-11 — turning the look off mid-render was undone).
+  const lookPinnedRef = useRef(false);
+  // The last shot asked for a look that could not be cut out, and went
+  // without it: said once, under the shot, until the next one.
+  const [lookDropped, setLookDropped] = useState(false);
   // A photo set: the photo's shape (from the picture once it loads), and
   // camera 1's view drawn at that shape to lay beside it. Nothing is saved.
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
@@ -778,23 +780,27 @@ export function SetView({
     if (shooting || matching || !characterId || !ready) return;
     setError("");
     setLastMiss(null);
+    setLookDropped(false);
     const frame = apiRef.current?.snapshot(SET_FRAME_PX);
     if (!frame) {
       setError(s.loadFailed);
       return;
     }
     setShooting(true);
+    // The camera and the canvas shape the frame was just taken from: stored
+    // with the still, they say where its objects are when it is a look.
     const pose = apiRef.current?.pose() ?? null;
-    const shotCharacterId = characterId;
+    const canvasAspect = apiRef.current?.canvasAspect();
     let result: Awaited<ReturnType<typeof shootInSet>>;
     try {
       result = await shootInSet(setId, {
         frameDataUri: frame,
-        characterId: shotCharacterId,
+        characterId,
         direction,
         layout: { ...layoutRef.current, camera: pose },
         lifted: apiRef.current?.lifted === true,
         lookGenerationId: lookShot?.generationId ?? null,
+        canvasAspect,
       });
     } catch (err) {
       // The take may still be running on the server (a dropped connection
@@ -810,30 +816,27 @@ export function SetView({
       setError(result.error);
       return;
     }
-    setShots((prev) => [
-      {
-        generationId: result.generationId,
-        status: result.succeeded ? "succeeded" : "failed",
-        resultUrl: result.resultUrl,
-        score: result.score,
-        createdAt: new Date().toISOString(),
-        characterId: shotCharacterId,
-      },
-      ...prev,
-    ]);
+    const shot: SetShot = {
+      generationId: result.generationId,
+      status: result.succeeded ? "succeeded" : "failed",
+      resultUrl: result.resultUrl,
+      score: result.score,
+      createdAt: new Date().toISOString(),
+      hasCamera: result.hasCamera,
+    };
+    setShots((prev) => [shot, ...prev]);
+    setLookDropped(result.lookDropped);
     if (!result.succeeded) setLastMiss(result.generationId);
+    else if (canBeLook(shot) && !lookPinnedRef.current) setLookId(result.generationId);
   }
 
-  const lookShot = shots.find((shot) => shot.generationId === lookId && shot.status === "succeeded" && shot.resultUrl) ?? null;
-  const latestStill = newestStill(shots);
+  const lookShot = shots.find((shot) => shot.generationId === lookId && canBeLook(shot)) ?? null;
+  const latestStill = newestLook(shots);
 
   function pickLook(generationId: string | null) {
     setLookId(generationId);
+    lookPinnedRef.current = true;
   }
-  // The outfit only carries over from a still of the same character, and
-  // never over their saved outfit photo, which rides every render.
-  const lookCarriesOutfit =
-    lookShot?.characterId === characterId && !characters.find((c) => c.id === characterId)?.hasOutfit;
 
   const chip = (active: boolean) =>
     `cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${
@@ -1122,7 +1125,7 @@ export function SetView({
                 <>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={lookShot.resultUrl} alt="" className="h-8 w-8 rounded-[4px] object-cover" />
-                  <span className="max-w-md">{lookCarriesOutfit ? s.lookOnSame : s.lookOn}</span>
+                  <span className="max-w-md">{s.lookOn}</span>
                   <button type="button" onClick={() => pickLook(null)} className={chip(false)}>
                     {s.lookOff}
                   </button>
@@ -1161,6 +1164,11 @@ export function SetView({
                 </Link>
               </p>
             )}
+            {lookDropped && (
+              <p className="text-xs text-atelier-muted" aria-live="polite">
+                {s.lookDropped}
+              </p>
+            )}
           </>
         )}
       </div>
@@ -1174,8 +1182,10 @@ export function SetView({
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {shots.map((shot) => {
               const low = shot.score !== null && shot.score < identityBar;
-              const canBeLook = shot.status === "succeeded" && Boolean(shot.resultUrl);
-              const isLook = canBeLook && shot.generationId === lookShot?.generationId;
+              // A still with no recorded camera offers no look: nobody can
+              // say where its objects are (look.ts).
+              const lookable = canBeLook(shot);
+              const isLook = lookable && shot.generationId === lookShot?.generationId;
               return (
                 <div key={shot.generationId} className="relative">
                 <Link
@@ -1208,7 +1218,7 @@ export function SetView({
                   <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-atelier-accent px-2 py-0.5 text-[10px] font-semibold text-black">
                     {s.lookBadge}
                   </span>
-                ) : canBeLook ? (
+                ) : lookable ? (
                   <button
                     type="button"
                     onClick={() => pickLook(shot.generationId)}

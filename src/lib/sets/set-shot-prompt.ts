@@ -68,36 +68,35 @@ export function describeFacing(layout: Pick<SetLayout, "mark" | "camera"> | null
 }
 
 /**
- * The look (2026-09-11, operator's choice): an earlier still from this set
- * rides beside the sketch, so the car, the furniture and the finishes are the
- * same objects from shot to shot — nothing in a set says which car it is, and
- * without it every still designed its own. Tested: the second angle kept the
- * first still's car, and also its person's dress — so the outfit carrying
- * over is said out loud, and only for the same character; for another
- * character the person in it is fenced off entirely. Described by what it
- * shows, not by position: the reference photos arrive character first.
+ * The look (2026-09-11, operator's choice; 2026-09-12, what rides): the
+ * set's objects, cut out of an earlier still onto plain grey
+ * (look-cutout.ts), so the car, the furniture and the finishes are the same
+ * objects from shot to shot — nothing in a set says which car it is, and
+ * without it every still designed its own. Handed the whole earlier still,
+ * GPT Image copied its camera, framing and background too, whatever the
+ * words said (4 of 4 orderings and wordings, 2026-09-12). Handed a cutout
+ * instead, the new still kept its own camera and the car's design — twice:
+ * a car cut by hand, and one cut by SAM 2 as the product cuts it, sent in
+ * production's order (the person, the sketch, then the look) with this
+ * sentence word for word and the photos unnumbered. So these are the tested
+ * words, not to be reworded on a hunch. Described by what it shows, not by
+ * position: the reference photos arrive character first. The cutout holds
+ * no person, so the sentence says nothing of one.
  */
-function lookSentences(look: { sameCharacter: boolean; savedOutfit?: boolean } | null | undefined): string[] {
-  if (!look) return [];
-  return [
-    "One reference photo is an earlier still from this same set, a finished photograph of the place: everything in it is the same object here, so keep each one's design, colour, materials and details exactly as they are there. Take nothing else from it: not its camera, framing or light.",
-    !look.sameCharacter
-      ? "The person in it is someone else: take nothing about them from it."
-      : look.savedOutfit
-        ? // The character's saved outfit photo rides too and decides the
-          // clothes (hasSavedOutfit): a second clothing instruction here would
-          // leave the model to pick one.
-          "The person in it is the same person, but take what they wear from the outfit photo, and their face, hair and features only from the character photos."
-        : "The person in it is the same person: unless 'In this frame' says what they wear, dress them as they are dressed there. Their face, hair and features still come only from the character photos.",
-  ];
-}
+const LOOK_SENTENCE =
+  "One reference photo shows objects from this same place, cut out of an earlier photograph onto a plain grey ground: draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its angle, crop, framing or light.";
 
 export function buildSetShotPrompt(input: {
   description: string;
   direction: string;
   lifted?: boolean;
   layout?: Pick<SetLayout, "mark" | "camera"> | null;
-  look?: { sameCharacter: boolean; savedOutfit?: boolean } | null;
+  /**
+   * The look, when one rides. What rides is always the cutout, whoever
+   * stood in the still it was cut from, so any value standing for it will
+   * do: only whether it rides changes the words.
+   */
+  look?: object | null;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
@@ -112,7 +111,7 @@ export function buildSetShotPrompt(input: {
       ? "The sketch is lit brighter than the real scene so its layout can be read: take the time of day, how dark it is and the colour of the light from the description, not from the sketch."
       : "",
     description ? `Render the location photorealistically, as it really looks: ${description}` : "Render the location photorealistically, as it really looks.",
-    ...lookSentences(input.look),
+    input.look ? LOOK_SENTENCE : "",
     facing
       ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`
       : "The person stands where the grey figure stands, at its scale, facing the same way.",

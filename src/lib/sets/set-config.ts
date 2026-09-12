@@ -244,3 +244,17 @@ export function setFramePath(userId: string, frameId: string): string {
 export function setPhotoPath(userId: string, setId: string): string {
   return `${userId}/sets/${setId}.photo.jpg`;
 }
+// A look's cutout (2026-09-12): the objects cut out of an earlier still of
+// the set onto grey (look-cutout.ts), made the first time that still is a
+// look and reused by every later shot that takes it. The person's own data,
+// beside the card: fixed per set and still, so deleting the set removes
+// every cutout by listing its folder for LOOK_CUTOUT_PREFIX, and account
+// deletion sweeps the folder. Written once and never rewritten.
+const LOOK_CUTOUT_INFIX = ".look-";
+export function setLookCutoutPath(userId: string, setId: string, lookGenerationId: string): string {
+  return `${userId}/sets/${setId}${LOOK_CUTOUT_INFIX}${lookGenerationId}.jpg`;
+}
+/** What the name of every cutout of one set starts with, inside `<user>/sets/`. */
+export function setLookCutoutPrefix(setId: string): string {
+  return `${setId}${LOOK_CUTOUT_INFIX}`;
+}

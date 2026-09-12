@@ -50,29 +50,41 @@ describe("buildSetShotPrompt", () => {
     expect(p).toContain("Wherever they are looking, make it unmistakable");
   });
 
-  it("with an earlier still as the look, keeps the set's objects the same and nothing else", () => {
-    const same = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: true } });
-    expect(same).toContain("an earlier still from this same set");
-    expect(same).toContain("keep each one's design, colour, materials and details exactly as they are there");
-    expect(same).toContain("not its camera, framing or light");
-    expect(same).toContain("dress them as they are dressed there");
-    expect(same).toContain("Their face, hair and features still come only from the character photos.");
-    const other = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: false } });
-    expect(other).toContain("The person in it is someone else: take nothing about them from it.");
-    expect(other).not.toContain("dress them as they are dressed there");
-    expect(p).not.toContain("earlier still");
+  // The words the cutout was tested with (2026-09-12, "C3": a SAM 2 cutout
+  // in production's image order, the photos unnumbered) — word for word,
+  // because these words are what was measured.
+  const C3 =
+    "One reference photo shows objects from this same place, cut out of an earlier photograph onto a plain grey ground: draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its angle, crop, framing or light.";
+
+  it("with a look, says the tested sentence about the cutout, word for word, and only then", () => {
+    const withLook = buildSetShotPrompt({ description: "d", direction: "", look: { url: "/api/media/generated-images/u/sets/s.look-g.jpg" } });
+    expect(withLook).toContain(C3);
+    expect(withLook.split(C3).length - 1).toBe(1);
+    expect(p).not.toContain("cut out of an earlier photograph");
+    expect(buildSetShotPrompt({ description: "d", direction: "", look: null })).not.toContain("cut out of an earlier photograph");
   });
 
-  it("never gives two clothing instructions: a saved outfit photo decides what they wear", () => {
-    const saved = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: true, savedOutfit: true } });
-    expect(saved).toContain("take what they wear from the outfit photo");
-    expect(saved).not.toContain("dress them as they are dressed there");
-    expect(saved).toContain("an earlier still from this same set");
+  it("puts it after the place and before the person, as it was tested", () => {
+    const withLook = buildSetShotPrompt({ description: "Rain-dark cobbles.", direction: "She waits.", look: {} });
+    expect(withLook.indexOf("Render the location photorealistically")).toBeLessThan(withLook.indexOf(C3));
+    expect(withLook.indexOf(C3)).toBeLessThan(withLook.indexOf("The person stands where the grey figure stands"));
+  });
+
+  it("says nothing about a person or an outfit in the look: the cutout holds none", () => {
+    // Whatever the caller hands in as the look, the words are the same.
+    const a = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: true, savedOutfit: false } });
+    const b = buildSetShotPrompt({ description: "d", direction: "", look: { sameCharacter: false } });
+    const c = buildSetShotPrompt({ description: "d", direction: "", look: { url: "x" } });
+    expect(a).toBe(c);
+    expect(b).toBe(c);
+    for (const gone of ["The person in it", "dress them as they are dressed there", "outfit photo", "earlier still", "not its camera, framing or light"]) {
+      expect(c).not.toContain(gone);
+    }
   });
 
   it("stays under the prompt cap with every sentence in", () => {
     const layout = { mark: { x: 0, z: 0, facingDeg: 135 }, camera: { position: [0, 1.6, 5] as [number, number, number], target: [0, 1, 0] as [number, number, number], fovDeg: 40 } };
-    const longest = buildSetShotPrompt({ description: "d".repeat(300), direction: "x".repeat(300), lifted: true, layout, look: { sameCharacter: true } });
+    const longest = buildSetShotPrompt({ description: "d".repeat(300), direction: "x".repeat(300), lifted: true, layout, look: { url: "x" } });
     expect(longest.length).toBeLessThan(3000);
   });
 });

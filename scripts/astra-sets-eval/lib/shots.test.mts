@@ -212,9 +212,9 @@ describe("what the stills copy from the product", () => {
     const look = { sameCharacter: true, savedOutfit: false };
     const withLook = shotPrompt({ ...request(), look });
     expect(withLook).toBe(buildSetShotPrompt({ description: spec.description, direction: "looks back over one shoulder", lifted: true, layout, look }));
-    expect(withLook).toContain("One reference photo is an earlier still from this same set");
-    expect(withLook).toContain("The person in it is the same person");
-    expect(shotPrompt(request())).not.toContain("earlier still");
+    expect(withLook).toContain("One reference photo shows objects from this same place, cut out of an earlier photograph");
+    expect(withLook).not.toContain("The person in it");
+    expect(shotPrompt(request())).not.toContain("cut out of an earlier photograph");
     expect(shotPrompt({ ...request(), arm: "control", camera: null })).toBe(cleanText(`looks back over one shoulder. ${spec.description}`, 500));
   });
 
@@ -675,7 +675,7 @@ describe("many stills", () => {
     const records = await runShots(env, { groups: [group("gpt-image")], singles: [], concurrency: 2, onRecord: () => {} });
     const look = records.find((r) => r.arm === "look");
     expect(look).toMatchObject({ outcome: "rendered", look: { fromShotId: "cs-c1-gpt-image", sameCharacter: true, savedOutfit: false }, promptParity: true });
-    expect(look?.prompt).toContain("earlier still from this same set");
+    expect(look?.prompt).toContain("cut out of an earlier photograph");
     expect(look?.expectedPrompt).toContain(LOOK_REFERENCE_NOTE);
     const sentLook = calls.pipeline.find((c) => c.prompt === look?.prompt)?.options.lookImageUrl as string;
     expect(sentLook).toMatch(/^https:\/\/eval\.invalid\/ref\//);

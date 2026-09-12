@@ -30,7 +30,9 @@ import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
-import { hasSavedOutfit, lookStoragePath } from "@/lib/sets/look";
+import { lookStoragePath } from "@/lib/sets/look";
+import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
+import { readShotCameras, recordShotCamera, shotCameraOf } from "@/lib/sets/shot-camera";
 import {
   CLEAR_PHOTO_SOURCE,
   isMissingColumn,
@@ -75,7 +77,10 @@ import {
 // never letting a person delete a row (deletion is soft): a deleted build
 // still counts, because it was still paid for. A shot is an ordinary image
 // take through runGeneration — quoted, charged, gated, scored and refunded
-// exactly as one sent from the composer, because it IS one.
+// exactly as one sent from the composer, because it IS one. A shot whose
+// look has not been cut yet also pays for one SAM 2 cut, once per still and
+// behind the shot's burst brake (look-cutout.ts: $0.0024 measured, $0.024
+// at worst).
 //
 // THE GATES. The brief is gated before OpenAI sees it (a refusal costs
 // nothing and is logged against the person, as is OpenAI refusing the brief
@@ -505,7 +510,17 @@ export async function saveSetThumbnail(setId: string, dataUri: string): Promise<
 
 type ShootResult =
   | { error: string }
-  | { error: null; generationId: string; succeeded: boolean; resultUrl: string | null; score: number | null };
+  | {
+      error: null;
+      generationId: string;
+      succeeded: boolean;
+      resultUrl: string | null;
+      score: number | null;
+      /** This still's camera was recorded, so it can be a later shot's look (shot-camera.ts). */
+      hasCamera: boolean;
+      /** A look was asked for and did not ride: the still was shot without it. */
+      lookDropped: boolean;
+    };
 
 /**
  * One still in a Set: the square snapshot the person framed, their
@@ -522,6 +537,8 @@ export async function shootInSet(
     lifted?: boolean;
     /** An earlier still from this set whose objects this one keeps (look.ts). */
     lookGenerationId?: string | null;
+    /** Width ÷ height of the stage canvas the frame's square was cut from (set-view.tsx canvasAspect). */
+    canvasAspect?: number;
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -541,7 +558,7 @@ export async function shootInSet(
   if (!UUID_RE.test(characterId)) return { error: SET_PICK_CHARACTER };
   const { data: character } = await access.supabase
     .from("character_profiles")
-    .select("id, reference_image_urls, outfit_image_urls")
+    .select("id, reference_image_urls")
     .eq("id", characterId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -550,13 +567,14 @@ export async function shootInSet(
   }
 
   // The look: an earlier still the browser names by id. It must be a shot of
-  // THIS set, the person's own, finished and not deleted; its picture is
-  // re-signed here, never passed on as sent. Anything else and the still is
-  // shot without a look, as before — a stale id (a take deleted in another
-  // tab) is no reason to refuse the shot.
-  let look: { url: string; sameCharacter: boolean; savedOutfit: boolean } | null = null;
+  // THIS set, the person's own, finished and not deleted, and its picture
+  // must sit in their own folder (look.ts). Anything else and the still is
+  // shot without a look — a stale id (a take deleted in another tab) is no
+  // reason to refuse the shot.
   const lookId = typeof input.lookGenerationId === "string" ? input.lookGenerationId : "";
-  if (UUID_RE.test(lookId)) {
+  const lookAsked = UUID_RE.test(lookId);
+  let lookPath: string | null = null;
+  if (lookAsked) {
     const { data: lookShot } = await access.supabase
       .from("location_set_shots")
       .select("generation_id")
@@ -567,29 +585,51 @@ export async function shootInSet(
     if (lookShot) {
       const { data: lookTake } = await access.supabase
         .from("generations")
-        .select("status, result_url, character_profile_id, deleted_at")
+        .select("status, result_url, deleted_at")
         .eq("id", lookId)
         .eq("user_id", userId)
         .maybeSingle();
-      const lookPath =
+      lookPath =
         lookTake && lookTake.status === "succeeded" && !lookTake.deleted_at
           ? lookStoragePath(lookTake.result_url, userId)
           : null;
-      if (lookPath) {
-        look = {
-          url: mediaUrl("generated-images", lookPath),
-          sameCharacter: lookTake?.character_profile_id === characterId,
-          // The saved outfit rides this shot too (runGeneration's rule), and
-          // then it — not the earlier still — decides the clothes.
-          savedOutfit: hasSavedOutfit(character.outfit_image_urls, userId),
-        };
-      }
     }
   }
 
   if (await rateLimited(userId, "set-shot", 60 * 10, 12)) return { error: SET_SHOOT_TOO_FAST };
 
   const admin = createAdminClient();
+
+  // What rides as the look is NEVER that still (2026-09-12): handed a
+  // finished photograph of the same place, GPT Image copies its camera and
+  // framing, whatever the prompt says. Only its objects ride, cut out onto
+  // grey — kept from an earlier shot, or cut now from the camera recorded
+  // with the still, at most one SAM 2 call per still (look-cutout-store.ts).
+  // Its URL is the cutout's own; the still's is never made. Any step that
+  // fails and the shot goes without a look and says so, rather than send
+  // the whole still again. Past the burst brake, because a cut is paid for.
+  let look: { url: string } | null = null;
+  let lookDropped = false;
+  if (lookAsked) {
+    const cut: LookCutoutResult = lookPath
+      ? await lookCutout({
+          admin,
+          userId,
+          setId,
+          lookGenerationId: lookId,
+          stillPath: lookPath,
+          spec: owned.spec,
+          camera: (await readShotCameras(access.supabase, setId, userId, [lookId])).get(lookId) ?? null,
+        })
+      : { ok: false, reason: "not a finished still of this set" };
+    if (cut.ok) {
+      look = { url: mediaUrl("generated-images", cut.path) };
+    } else {
+      lookDropped = true;
+      console.warn(`[sets] shot without its look: ${cut.reason}`);
+    }
+  }
+
   const framePath = setFramePath(userId, crypto.randomUUID());
   const { error: uploadError } = await admin.storage
     .from("chat-attachments")
@@ -623,7 +663,7 @@ export async function shootInSet(
   fd.set("prompt_is_final", "1");
   // The sketch rides as the one neutral reference; the look, when there is
   // one, as a "look" photo (pipeline.ts says what it is, so it is never
-  // taken for the person). The look is the person's existing picture in
+  // taken for the person). The look is the set's kept cutout in
   // generated-images: it is not a chat attachment, so deleting this take
   // never deletes it.
   fd.set(
@@ -646,6 +686,12 @@ export async function shootInSet(
     .from("location_set_shots")
     .insert({ set_id: setId, generation_id: result.id, user_id: userId });
   if (shotError) console.error("shootInSet couldn't record the shot:", shotError.message);
+  // The camera this frame was taken from, so this still can be a later
+  // shot's look: in an update of its own after the row is in, whose failure
+  // is ignored — until set-shot-camera.sql runs the column is missing, and
+  // naming it in the insert above would fail every shot (shot-camera.ts).
+  const camera = shotError ? null : shotCameraOf(layout?.camera, input.canvasAspect);
+  const hasCamera = camera ? await recordShotCamera(admin, { setId, generationId: result.id, userId }, camera) : false;
   if (layout) {
     await admin
       .from("location_sets")
@@ -661,6 +707,8 @@ export async function shootInSet(
     succeeded: result.succeeded,
     resultUrl: result.resultUrl,
     score: typeof result.matchScore === "number" ? result.matchScore : null,
+    hasCamera,
+    lookDropped,
   };
 }
 
@@ -736,6 +784,10 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
     // astra-photo-sets.sql has run.
     await removeSetPhoto(admin, userId, setId);
     await admin.from("location_sets").update(CLEAR_PHOTO_SOURCE).eq("id", setId);
+    // The looks' cutouts: the set's objects cut out of its stills, kept
+    // beside its card at fixed names (set-config.ts setLookCutoutPath), so
+    // listing the folder finds them all. Best-effort, like the photo.
+    await removeSetLookCutouts(admin, userId, setId);
     return { error: null };
   }
   return { error: SET_DELETE_FAILED };

@@ -10,6 +10,7 @@ import { maybeNotifyLowCredits } from "@/lib/push/low-credits";
 import { readGenerationDefaults } from "@/lib/generations/generation-defaults-server";
 import { judgeRender, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { reelPosterKeyFor } from "@/lib/media/reel-encode";
+import { removeLookCutoutsOf } from "@/lib/sets/look-cutout-store";
 import { generateImageWithFlux, recutAlphaWithBiRefNet } from "@/lib/generations/providers/fal-image";
 import {
   LAYERS_MAX_BYTES,
@@ -3878,6 +3879,16 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
   if (imagePaths.length > 0) {
     await supabase.storage.from("generated-images").remove(imagePaths);
   }
+
+  // A Set's look cutouts (since 2026-09-12): when a still is a later shot's
+  // look, its objects are cut out of it and kept beside its set, at a name
+  // fixed per set and still (sets/look-cutout-store.ts). A copy derived from
+  // this picture, like a video's poster: it goes with it. Best-effort.
+  await removeLookCutoutsOf(
+    supabase,
+    userData.user.id,
+    rows.map((r) => r.id as string),
+  );
 
   // Videos, since 2026-09-04. Rows written before that hold a provider CDN URL
   // rather than one of ours; extractStoragePath returns null for those, so they

@@ -56,15 +56,32 @@ export function storageKey(value) {
 // Every row, not the first page. PostgREST caps a response at 1,000 rows
 // regardless of `limit`, and a set that silently stops there is a purge that
 // starts deleting referenced files the day a table outgrows a page. Ordered
-// by id so pages cannot overlap or skip while rows are being inserted.
-async function allRows(rest, table, select) {
+// by a unique key — id, or the table's own key where it has no id — so
+// pages cannot overlap or skip while rows are being inserted.
+async function allRows(rest, table, select, order = "id.asc") {
   const out = [];
   const PAGE = 1000;
   for (let offset = 0; ; offset += PAGE) {
-    const rows = await rest(`${table}?select=${select}&order=id.asc&limit=${PAGE}&offset=${offset}`);
+    const rows = await rest(`${table}?select=${select}&order=${order}&limit=${PAGE}&offset=${offset}`);
     out.push(...rows);
     if (rows.length < PAGE) return out;
   }
+}
+
+/**
+ * The keys a live set's look cutouts may sit at (2026-09-12): one per still
+ * shot in it, `<user>/sets/<set>.look-<still>.jpg` — the name
+ * src/lib/sets/set-config.ts setLookCutoutPath gives them (a test holds the
+ * two to the same name). A cutout exists only for a still someone took as a
+ * look; a key with no file behind it matches nothing. A deleted set's are
+ * not counted: deleting the set removes them (src/lib/sets/actions.ts), so
+ * one still stored is a leftover to report.
+ */
+export function lookCutoutKeys(sets, shots) {
+  const live = new Set(sets.filter((s) => !s.deleted_at).map((s) => s.id));
+  return shots
+    .filter((s) => live.has(s.set_id) && s.user_id && s.generation_id)
+    .map((s) => `${s.user_id}/sets/${s.set_id}.look-${s.generation_id}.jpg`);
 }
 
 // THE BUCKETS THIS SET IS VALID FOR. It reads the columns that point into
@@ -103,10 +120,16 @@ export async function referencedKeys(rest) {
   // set is building or ready: a failed or deleted set's photo was removed
   // (src/lib/sets/actions.ts), and its row keeps the path as a record — so a
   // photo still stored for one is a leftover to report, not a reference.
-  for (const s of await allRows(rest, "location_sets", "*")) {
+  const sets = await allRows(rest, "location_sets", "*");
+  for (const s of sets) {
     add(s.thumb_path);
     if (!s.deleted_at && (s.status === "building" || s.status === "ready")) add(s.source_photo_path);
   }
+  // A live set's look cutouts (lookCutoutKeys). The shots table has no id
+  // column — its key is (set_id, generation_id) — so it is paged in that
+  // order, and names only columns every version of it has.
+  const shots = await allRows(rest, "location_set_shots", "set_id,generation_id,user_id", "set_id.asc,generation_id.asc");
+  for (const key of lookCutoutKeys(sets, shots)) referenced.add(key);
   return referenced;
 }
 

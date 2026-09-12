@@ -79,7 +79,6 @@ export const MIRRORED: readonly Mirrored[] = [
     label: "runGeneration: the identity scorer's trait summary",
     text: 'const traitSummary = [ character?.traits?.hair ? `hair: ${character.traits.hair}` : null, character?.traits?.distinguishing_features ? `distinguishing features: ${character.traits.distinguishing_features}` : null, ] .filter(Boolean) .join("; ");',
   },
-  { file: "src/lib/sets/actions.ts", label: "shootInSet: the look is the same character's when the still is theirs", text: "sameCharacter: lookTake?.character_profile_id === characterId," },
   { file: "src/lib/sets/actions.ts", label: "shootInSet: the shot prompt is final (no drafter)", text: 'fd.set("prompt_is_final", "1");' },
   { file: "src/lib/sets/actions.ts", label: "shootInSet: the sketch rides as a reference", text: '{ url: mediaUrl("chat-attachments", framePath), role: "reference" },' },
   { file: "src/lib/sets/actions.ts", label: "shootInSet: the look rides as a look", text: '...(look ? [{ url: look.url, role: "look" }] : []),' },

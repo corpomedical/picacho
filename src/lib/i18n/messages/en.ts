@@ -1958,12 +1958,14 @@ const en = {
     aimUp: "Tilt up",
     aimDown: "Tilt down",
     lookLabel: "Look",
-    lookOn: "Keeps the objects and finishes of this still. It can also pull the framing toward that still's.",
-    lookOnSame: "Keeps the objects and finishes of this still, and the outfit too unless you describe another. It can also pull the framing toward that still's.",
+    // The look sends only the objects, cut out of the still on grey
+    // (2026-09-12): the new shot never takes the earlier one's framing.
+    lookOn: "Keeps the objects in this still. They're cut out of it, so this shot keeps its own camera.",
     lookOff: "Turn off",
-    lookOffNote: "Off: each still follows its own camera and designs the set's objects afresh.",
+    lookOffNote: "Off: each still designs the set's objects afresh.",
     lookUseLatest: "Match the latest still",
-    lookFirst: "After your first still, you can have the next ones keep its objects and finishes.",
+    lookFirst: "The next still you shoot sets the look: the ones after it keep its objects.",
+    lookDropped: "The look couldn't be cut out this time, so this still was shot without it.",
     lookUse: "Use its look",
     lookBadge: "Look",
     backToCamera: "Back to this camera",
