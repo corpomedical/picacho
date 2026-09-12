@@ -139,13 +139,13 @@ export function SetView({
   const [shots, setShots] = useState<SetShot[]>(initialShots);
   const [lastMiss, setLastMiss] = useState<string | null>(null);
   // The look (2026-09-11): the earlier still whose objects and finishes the
-  // next shot keeps, so the car is the same car. It follows the newest still
-  // until the person picks one or turns it off.
-  const [lookId, setLookId] = useState<string | null>(() => newestStill(initialShots));
-  // A ref, not state: a shot resolving tens of seconds after it started must
-  // read the person's latest choice, not the one from the render it began in
-  // (review, 2026-09-11 — turning the look off mid-render was undone).
-  const lookPinnedRef = useRef(false);
+  // next shot keeps, so the car is the same car. OFF until the person turns
+  // it on (2026-09-12): GPT Image, handed a finished photograph of the same
+  // place, copies its camera and framing too, whatever the prompt says — the
+  // operator's second still took the first one's whole picture instead of
+  // its own sketch (docs/ASTRA_SETS.md). It stays a choice, with that said
+  // beside it, until the look sends only the objects.
+  const [lookId, setLookId] = useState<string | null>(null);
   // A photo set: the photo's shape (from the picture once it loads), and
   // camera 1's view drawn at that shape to lay beside it. Nothing is saved.
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
@@ -801,7 +801,6 @@ export function SetView({
       ...prev,
     ]);
     if (!result.succeeded) setLastMiss(result.generationId);
-    else if (result.resultUrl && !lookPinnedRef.current) setLookId(result.generationId);
   }
 
   const lookShot = shots.find((shot) => shot.generationId === lookId && shot.status === "succeeded" && shot.resultUrl) ?? null;
@@ -809,7 +808,6 @@ export function SetView({
 
   function pickLook(generationId: string | null) {
     setLookId(generationId);
-    lookPinnedRef.current = true;
   }
   // The outfit only carries over from a still of the same character, and
   // never over their saved outfit photo, which rides every render.
