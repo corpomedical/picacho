@@ -7,9 +7,10 @@
 // lane when the set was built) and Picacho wrote the framing sentences; only
 // the direction they typed is theirs, and often there is none. So when such
 // a prompt is refused, the part that is not theirs is judged again on its
-// own, fresh: refused alone, the refusal was the model's words, and it is
-// logged under the model (provider "astra", which never counts); passing
-// alone, their words made the difference, and it counts as it always did.
+// own, in the same lane and with the same session history: refused alone,
+// the refusal was the model's words, and it is logged under the model
+// (provider "astra", which never counts); passing alone, their words made
+// the difference, and it counts as it always did.
 //
 // NOT A REQUEST FIELD. runGeneration is a server action any browser can
 // call with any form fields, so a flag there would let anyone mark their
@@ -32,8 +33,8 @@ export function withModelWrittenPrompt<T>(written: ModelWrittenPrompt, fn: () =>
 
 /**
  * Who a refusal of `prompt` is logged against: null for the person (it
- * counts), or the model's provider tag. `refusedAlone` judges a text as the
- * refused prompt was judged, with no session history.
+ * counts), or the model's provider tag. `refusedAlone` judges a text exactly
+ * as the refused prompt was judged — the same lane, the same session history.
  */
 export async function refusalProviderFor(
   prompt: string,

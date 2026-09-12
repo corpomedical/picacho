@@ -160,7 +160,7 @@ export async function gatePrompt(input: {
       const provider =
         err.reason === "unavailable"
           ? null
-          : await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true));
+          : await refusalProviderFor(input.prompt, (text) => refusedOnItsOwn(text, input.hasRealPersonReference === true, priorHits));
       await recordPolicyRefusal({
         userId: input.userId,
         gate: "prompt",
@@ -176,13 +176,16 @@ export async function gatePrompt(input: {
 }
 
 /**
- * Whether the prompt gate refuses this text on its own: the same lane, no
- * session history. A gate that cannot read ("unavailable") is not a refusal.
- * The second judgement refusal-attribution.ts asks for.
+ * Whether the prompt gate refuses this text on its own: the same lane and
+ * the same session history the refused prompt was judged with, so the only
+ * thing that differs is the person's words, taken out. (Judged with no
+ * history, a refusal the history tipped would be put on the person as soon
+ * as they had typed anything.) A gate that cannot read ("unavailable") is
+ * not a refusal. The second judgement refusal-attribution.ts asks for.
  */
-export async function refusedOnItsOwn(text: string, strictLane: boolean): Promise<boolean> {
+export async function refusedOnItsOwn(text: string, strictLane: boolean, sessionPriorHits: number): Promise<boolean> {
   try {
-    await assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits: 0 });
+    await assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits });
     return false;
   } catch (err) {
     if (err instanceof ContentPolicyRefusal) return err.reason !== "unavailable";

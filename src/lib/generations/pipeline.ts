@@ -1242,7 +1242,7 @@ export async function runRealPipeline(
         const provider =
           policyErr.reason === "unavailable"
             ? null
-            : await refusalProviderFor(reviewedPrompt, (text) => refusedOnItsOwn(text, options.strictContentLane === true));
+            : await refusalProviderFor(reviewedPrompt, (text) => refusedOnItsOwn(text, options.strictContentLane === true, priorHits));
         await recordPolicyRefusal({
           userId: options.policyAudit.userId,
           gate: "prompt",

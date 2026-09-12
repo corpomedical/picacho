@@ -68,15 +68,17 @@ describe("where it is wired (read as source)", () => {
     ] as const) {
       const src = read(file);
       expect(src, file).toContain(`await refusalProviderFor(${prompt}, (text) => refusedOnItsOwn(text,`);
+      // …judged with the same session history as the refusal it explains.
+      expect(src, file).toMatch(/refusedOnItsOwn\(text, [^)]*, priorHits\)\);/);
       expect(src, file).toContain("...(provider ? { provider } : {}),");
       expect(src, file).toMatch(/reason === "unavailable"\s*\?\s*null/);
     }
   });
 
-  it("the second judgement is the same gate, the same lane, no session history", () => {
+  it("the second judgement is the same gate, the same lane, the same session history", () => {
     const src = read("policy-log.ts");
     const fn = src.slice(src.indexOf("export async function refusedOnItsOwn("));
-    expect(fn).toContain("assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits: 0 })");
+    expect(fn).toContain("assertPromptAllowed({ prompt: text, hasRealPersonReference: strictLane, sessionPriorHits })");
     expect(fn).toContain('return err.reason !== "unavailable";');
   });
 
