@@ -28,8 +28,12 @@ export type SetShot = {
   /** 0–100 identity score against the character's photo; null when unscored. */
   score: number | null;
   createdAt: string;
-  /** Its camera was recorded (shot-camera.ts), so its objects can be cut out for a look (look.ts canBeLook). */
-  hasCamera: boolean;
+  /**
+   * Its objects can be cut out for a later shot's look: its camera and
+   * figure were recorded (shot-camera.ts) and objects showed clear of the
+   * person (look-cutout.ts seesLookObjects). look.ts canBeLook reads it.
+   */
+  hasLookObjects: boolean;
 };
 
 export type SetCharacter = {

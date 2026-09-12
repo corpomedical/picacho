@@ -1846,7 +1846,7 @@ const it = {
     lookOff: "Disattiva",
     lookOffNote: "Disattivato: ogni foto ridisegna gli oggetti del set.",
     lookUseLatest: "Abbina l'ultima foto",
-    lookFirst: "La prossima foto che scatti definisce l'aspetto: le successive ne mantengono gli oggetti.",
+    lookFirst: "La prossima foto in cui compaiono gli oggetti del set definisce l'aspetto: le successive li mantengono.",
     lookDropped: "Questa volta non è stato possibile ritagliare gli oggetti dell'aspetto, quindi questa foto è stata scattata senza.",
     lookUse: "Usa il suo aspetto",
     lookBadge: "Aspetto",

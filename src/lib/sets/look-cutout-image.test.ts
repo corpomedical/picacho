@@ -3,6 +3,7 @@ import {
   LOOK_CROP_MARGIN,
   LOOK_MAX_MASK_SHARE,
   LOOK_MIN_MASK_SHARE,
+  clearRegion,
   composeLookCutout,
   maskExtent,
 } from "./look-cutout-image";
@@ -61,7 +62,7 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
   const block = (x: number, y: number) => x >= 180 && x < 360 && y >= 90 && y < 210;
 
   it("lays the kept pixels on grey, cropped to them with a small margin, as a JPEG", async () => {
-    const out = await composeLookCutout(await samAnswer(block));
+    const out = await composeLookCutout(await samAnswer(block), null);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect(out.share).toBeCloseTo(0.12, 6);
@@ -99,7 +100,7 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
   });
 
   it("keeps the crop inside the frame when the mask touches its edge", async () => {
-    const out = await composeLookCutout(await samAnswer((x, y) => x < 120 && y < 90));
+    const out = await composeLookCutout(await samAnswer((x, y) => x < 120 && y < 90), null);
     expect(out.ok).toBe(true);
     if (out.ok) expect([out.width, out.height]).toEqual([138, 108]);
   });
@@ -107,21 +108,85 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
   it("is no look when the mask caught next to nothing", async () => {
     // 0.5% of the frame, under the 1% floor; and nothing at all.
     expect(LOOK_MIN_MASK_SHARE).toBe(0.01);
-    expect(await composeLookCutout(await samAnswer((x, y) => x < 30 && y < 30))).toEqual({ ok: false, reason: "empty" });
-    expect(await composeLookCutout(await samAnswer(() => false))).toEqual({ ok: false, reason: "empty" });
+    expect(await composeLookCutout(await samAnswer((x, y) => x < 30 && y < 30), null)).toEqual({ ok: false, reason: "empty" });
+    expect(await composeLookCutout(await samAnswer(() => false), null)).toEqual({ ok: false, reason: "empty" });
     // Just over the floor is a look.
-    expect((await composeLookCutout(await samAnswer((x, y) => x < 61 && y < 30))).ok).toBe(true);
+    expect((await composeLookCutout(await samAnswer((x, y) => x < 61 && y < 30), null)).ok).toBe(true);
   });
 
   it("is no look when the mask took most of the frame: that would be the whole still again", async () => {
     expect(LOOK_MAX_MASK_SHARE).toBe(0.75);
-    expect(await composeLookCutout(await samAnswer((x) => x < 480))).toEqual({ ok: false, reason: "whole" });
-    expect(await composeLookCutout(await samAnswer(() => true))).toEqual({ ok: false, reason: "whole" });
+    expect(await composeLookCutout(await samAnswer((x) => x < 480), null)).toEqual({ ok: false, reason: "whole" });
+    expect(await composeLookCutout(await samAnswer(() => true), null)).toEqual({ ok: false, reason: "whole" });
     // Three-quarters exactly is still a look.
-    expect((await composeLookCutout(await samAnswer((x) => x < 450))).ok).toBe(true);
+    expect((await composeLookCutout(await samAnswer((x) => x < 450), null)).ok).toBe(true);
   });
 
   it("is no look, never a throw, for bytes that are not a picture", async () => {
-    expect(await composeLookCutout(Buffer.from("not a png"))).toEqual({ ok: false, reason: "unreadable" });
+    expect(await composeLookCutout(Buffer.from("not a png"), null)).toEqual({ ok: false, reason: "unreadable" });
+  });
+});
+
+describe.skipIf(!sharp)("never the person (sharp)", () => {
+  // A car (x 60–330, y 90–240) and, beside it, a person SAM 2 took in with
+  // it (x 380–460, y 30–280), both in the one mask. The person's region, as
+  // look-cutout.ts gives it: x 360–480 of 600, y 15–294 of 300.
+  const car = (x: number, y: number) => x >= 60 && x < 330 && y >= 90 && y < 240;
+  const person = (x: number, y: number) => x >= 380 && x < 460 && y >= 30 && y < 280;
+  const region = { u0: 360 / W, v0: 15 / H, u1: 480 / W, v1: 294 / H };
+
+  async function pixels(jpeg: Buffer) {
+    const { data, info } = await sharp!(jpeg).raw().toBuffer({ resolveWithObject: true });
+    return { info, at: (x: number, y: number) => [0, 1, 2].map((c) => data[(y * info.width + x) * info.channels + c]) };
+  }
+
+  it("clears the person's region whatever the mask kept there: the crop is the car's alone", async () => {
+    const out = await composeLookCutout(await samAnswer((x, y) => car(x, y) || person(x, y)), region);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    // Measured and cropped without the person: the car and its 18 px margin.
+    expect(out.share).toBeCloseTo((270 * 150) / (W * H), 6);
+    expect([out.width, out.height]).toEqual([270 + 36, 150 + 36]);
+    // Without the region, the same mask crops round both.
+    const both = await composeLookCutout(await samAnswer((x, y) => car(x, y) || person(x, y)), null);
+    expect(both.ok && [both.width, both.height]).toEqual([400 + 36, 250 + 36]);
+  });
+
+  it("keeps the part of an object outside the region, and lays the part inside it on grey", async () => {
+    // The person stands in front of the car's right end: the region takes
+    // the car from x 300 on.
+    const inFront = { u0: 300 / W, v0: 0, u1: 420 / W, v1: 1 };
+    const out = await composeLookCutout(await samAnswer(car), inFront);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect([out.width, out.height]).toEqual([240 + 36, 150 + 36]);
+    const { at } = await pixels(out.jpeg);
+    // The car is still blue well inside what is left of it.
+    const [r, g, b] = at(100, 90);
+    expect(b).toBeGreaterThan(220);
+    expect(r + g).toBeLessThan(60);
+    // Its end past x 300 is gone: the margin beyond it is ground, not car.
+    for (const [cr, cg, cb] of [at(out.width - 4, 90), at(out.width - 4, 40), at(out.width - 4, 140)]) {
+      for (const c of [cr, cg, cb]) expect(Math.abs(c - 128)).toBeLessThanOrEqual(3);
+    }
+  });
+
+  it("is no look when all the mask kept was the person", async () => {
+    expect(await composeLookCutout(await samAnswer(person), region)).toEqual({ ok: false, reason: "empty" });
+  });
+});
+
+describe("clearRegion", () => {
+  it("makes the region transparent, rounded outward to whole pixels, and touches nothing else", () => {
+    const w = 10;
+    const h = 4;
+    const data = Buffer.alloc(w * h * 4, 255);
+    clearRegion(data, w, h, 4, { u0: 0.25, v0: 0.3, u1: 0.51, v1: 0.5 });
+    const cleared: string[] = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[(y * w + x) * 4 + 3] === 0) cleared.push(`${x},${y}`);
+    // x from floor(2.5) = 2 to ceil(5.1) = 6, y from floor(1.2) = 1 to ceil(2) = 2.
+    expect(cleared).toEqual(["2,1", "3,1", "4,1", "5,1"]);
+    // Colour is left as it was; only alpha goes.
+    expect(data[(1 * w + 2) * 4]).toBe(255);
   });
 });

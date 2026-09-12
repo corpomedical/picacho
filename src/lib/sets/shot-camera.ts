@@ -3,9 +3,15 @@
 // as it is.
 //
 // A still is a look's source only when the server knows where its objects
-// are in it, and that needs the camera its sketch was taken from
-// (look-cutout.ts). The page sends the camera and the stage canvas's shape
-// with every shot; the shot action records them here, after the shot's row.
+// and its person are in it, and that needs the camera its sketch was taken
+// from and where the grey figure stood (look-cutout.ts). The page sends the
+// stage's pose, the figure's mark and the stage canvas's shape with every
+// shot; the shot action records them here, after the shot's row, exactly as
+// sent. Not the saved layout's copy: normaliseSetLayout holds a camera to
+// the set's reach (its own bounds plus 10 m, never below 0.2 m), while the
+// stage lets the orbit go further and lower, so a clamped camera is not the
+// one the frame was drawn from and its boxes would miss what the still
+// shows. A pose outside what any stage can be is not recorded at all.
 //
 // THE ONLY MODULE IN src/ THAT NAMES THE COLUMN (shot-camera.test.ts scans
 // for it). location_set_shots.camera arrives with
@@ -30,17 +36,26 @@ function warnOnce(op: string, message: string) {
 }
 
 /**
- * The camera a shot's frame was taken from, as it is stored: the layout's
- * normalised camera and the canvas's shape, through the same bounds a read
- * applies. Null when either is missing or out of bounds — then nothing is
- * stored, and the shot is never a look's source.
+ * The frame a shot was taken from, as it is stored: the pose and the
+ * figure's mark from the layout the page sent (`layout.camera`,
+ * `layout.mark`), as sent, and the canvas's shape — through the bounds a
+ * read applies, which move nothing. Null when any of it is missing or out
+ * of bounds: then nothing is stored, and the shot is never a look's source.
+ * A crafted pose or mark can only spoil its sender's own look.
  */
-export function shotCameraOf(
-  camera: { position: ShotCamera["position"]; target: ShotCamera["target"]; fovDeg: number } | null | undefined,
-  canvasAspect: unknown,
-): ShotCamera | null {
-  if (!camera) return null;
-  return normaliseShotCamera({ position: camera.position, target: camera.target, fovDeg: camera.fovDeg, canvasAspect });
+export function shotCameraOf(layout: unknown, canvasAspect: unknown): ShotCamera | null {
+  const record = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+  const sent = record(layout);
+  const camera = record(sent?.camera);
+  const mark = record(sent?.mark);
+  if (!camera || !mark) return null;
+  return normaliseShotCamera({
+    position: camera.position,
+    target: camera.target,
+    fovDeg: camera.fovDeg,
+    canvasAspect,
+    figure: { x: mark.x, z: mark.z },
+  });
 }
 
 /**

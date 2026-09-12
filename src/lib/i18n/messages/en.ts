@@ -1964,7 +1964,7 @@ const en = {
     lookOff: "Turn off",
     lookOffNote: "Off: each still designs the set's objects afresh.",
     lookUseLatest: "Match the latest still",
-    lookFirst: "The next still you shoot sets the look: the ones after it keep its objects.",
+    lookFirst: "The next still that shows the set's objects sets the look: the ones after it keep them.",
     lookDropped: "The look couldn't be cut out this time, so this still was shot without it.",
     lookUse: "Use its look",
     lookBadge: "Look",

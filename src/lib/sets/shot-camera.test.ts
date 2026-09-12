@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import showroomOpen from "./fixtures-showroom-open.json";
 import { readShotCameras, recordShotCamera, shotCameraOf } from "./shot-camera";
+import { normaliseSetLayout, normaliseSetSpec } from "./set-spec";
 
 // The camera each Set shot was framed from (2026-09-12). Until
 // set-shot-camera.sql runs, the column does not exist and PostgREST fails
@@ -16,7 +18,10 @@ const SET = "22222222-2222-4222-8222-222222222222";
 const G1 = "33333333-3333-4333-8333-333333333333";
 const G2 = "44444444-4444-4444-8444-444444444444";
 const POSE = { position: [-3.67, 1.89, 4.69] as [number, number, number], target: [-0.36, 1.13, 1.03] as [number, number, number], fovDeg: 44.7 };
-const CAMERA = { ...POSE, canvasAspect: 1.6 };
+const MARK = { x: 1.39, z: 2.37, facingDeg: 230 };
+// What the page sends with a shot: the layout it saves, with the stage's pose as its camera.
+const LAYOUT = { markId: "m2", mark: MARK, camera: POSE };
+const CAMERA = { ...POSE, canvasAspect: 1.6, figure: { x: MARK.x, z: MARK.z } };
 
 /** A PostgREST stand-in: every filter returns the builder and is recorded; awaiting it returns the answer. */
 function fakeDb(answer: () => Promise<{ data: unknown; error: { code?: string; message: string } | null }>) {
@@ -31,14 +36,36 @@ function fakeDb(answer: () => Promise<{ data: unknown; error: { code?: string; m
 }
 
 describe("shotCameraOf", () => {
-  it("is the layout's camera and the canvas's shape, as a read would give it back", () => {
-    expect(shotCameraOf(POSE, 1.6)).toEqual(CAMERA);
+  it("is the stage's pose, the figure's mark and the canvas's shape as the page sent them, as a read gives them back", () => {
+    expect(shotCameraOf(LAYOUT, 1.6)).toEqual(CAMERA);
   });
 
-  it("is nothing without either: such a still is never a look's source", () => {
-    expect(shotCameraOf(null, 1.6)).toBeNull();
-    expect(shotCameraOf(undefined, 1.6)).toBeNull();
-    for (const bad of [undefined, null, "1.6", Number.NaN, 0, -1]) expect(shotCameraOf(POSE, bad)).toBeNull();
+  it("keeps a pose the saved layout would move: the frame was drawn from it, not from the layout's copy", () => {
+    // The showroom's layout holds a camera to its bounds plus 10 m (z ≤ 20)
+    // and never below 0.2 m; the stage's orbit reaches 38.8 m from its
+    // target and floors only at 0.1 m. Scrolled out to z 30 with the 135 mm
+    // lens, the frame sees the car at two thirds of the size a camera at z
+    // 20 would.
+    const n = normaliseSetSpec(showroomOpen);
+    if (!n.ok) throw new Error("the showroom fixture no longer normalises");
+    for (const position of [[0, 1.6, 30], [0, 0.12, 6]] as [number, number, number][]) {
+      const sent = { markId: n.spec.marks[0].id, mark: { x: 1.8, z: 1.3, facingDeg: 0 }, camera: { position, target: [0, 0.8, 0], fovDeg: 10.16 } };
+      expect(normaliseSetLayout(sent, n.spec)?.camera?.position, "the layout moves it").not.toEqual(position);
+      expect(shotCameraOf(sent, 16 / 9)).toEqual({ position, target: [0, 0.8, 0], fovDeg: 10.16, canvasAspect: 16 / 9, figure: { x: 1.8, z: 1.3 } });
+    }
+  });
+
+  it("is nothing without the pose, the mark or the canvas's shape: such a still is never a look's source", () => {
+    for (const bad of [null, undefined, "layout", [], { mark: MARK }, { camera: POSE }, { ...LAYOUT, mark: { x: 1 } }, { ...LAYOUT, camera: [POSE] }]) {
+      expect(shotCameraOf(bad, 1.6), JSON.stringify(bad)).toBeNull();
+    }
+    for (const bad of [undefined, null, "1.6", Number.NaN, 0, -1]) expect(shotCameraOf(LAYOUT, bad)).toBeNull();
+  });
+
+  it("records nothing, rather than a camera moved to fit, for a pose no stage can have", () => {
+    expect(shotCameraOf({ ...LAYOUT, camera: { ...POSE, fovDeg: 5 } }, 1.6)).toBeNull();
+    expect(shotCameraOf({ ...LAYOUT, camera: { ...POSE, position: [0, 1.6, 900] } }, 1.6)).toBeNull();
+    expect(shotCameraOf(LAYOUT, 40)).toBeNull();
   });
 });
 
@@ -74,7 +101,7 @@ describe("readShotCameras", () => {
       data: [
         { generation_id: G1, camera: CAMERA },
         { generation_id: G2, camera: null },
-        { generation_id: "55555555-5555-4555-8555-555555555555", camera: { ...POSE } },
+        { generation_id: "55555555-5555-4555-8555-555555555555", camera: { ...POSE, canvasAspect: 1.6 } },
         { generation_id: 42, camera: CAMERA },
       ],
       error: null,

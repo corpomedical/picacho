@@ -55,8 +55,8 @@ describe("shootInSet: the look", () => {
 
   it("every way the look can fail drops it, says so in the answer, and logs only the reason", () => {
     // A chosen look that is not a finished still of the set, and any failure
-    // of the cut (lookCutout's reasons: no camera, the still unreadable, no
-    // objects in view, the cut failed, an empty or whole-frame mask, storage).
+    // of the cut (lookCutout's reasons: no camera, the still unreadable,
+    // nothing to cut, the cut failed, an empty or whole-frame mask, storage).
     expect(shoot).toContain(': { ok: false, reason: "not a finished still of this set" };');
     const branch = shoot.slice(shoot.indexOf("if (cut.ok) {"), shoot.indexOf("const framePath"));
     expect(branch).toContain("} else {");
@@ -64,7 +64,7 @@ describe("shootInSet: the look", () => {
     expect(branch).toContain("console.warn(`[sets] shot without its look: ${cut.reason}`);");
     // Dropping is only ever that: the shot goes on without it.
     expect(branch).not.toMatch(/return \{ error/);
-    expect(shoot).toMatch(/hasCamera,\s*lookDropped,\s*};/);
+    expect(shoot).toMatch(/hasLookObjects,\s*lookDropped,\s*};/);
   });
 
   it("leaves the rest of the shot as it was: the prompt, its refusal attribution, the frame", () => {
@@ -82,12 +82,18 @@ describe("shootInSet: the camera", () => {
     const record = shoot.indexOf("await recordShotCamera(admin, { setId, generationId: result.id, userId }, camera)");
     expect(insert).toBeGreaterThan(-1);
     expect(record).toBeGreaterThan(insert);
-    // Built from the normalised layout and the canvas's shape, and only when
-    // the row went in.
-    expect(shoot).toContain("const camera = shotError ? null : shotCameraOf(layout?.camera, input.canvasAspect);");
+    // Built from the layout exactly as the page sent it — the stage's pose
+    // and the figure's mark — never from the normalised layout, whose camera
+    // is held to the set's reach; and only when the row went in.
+    expect(shoot).toContain("const camera = shotError ? null : shotCameraOf(input.layout, input.canvasAspect);");
+    expect(shoot).not.toMatch(/shotCameraOf\(layout/);
     // Nothing about it can fail the shot: its answer is only reported.
-    expect(shoot).toContain("const hasCamera = camera ? await recordShotCamera(");
+    expect(shoot).toContain("const recorded = camera ? await recordShotCamera(");
     expect(shoot.slice(record, shoot.indexOf("return {", record))).not.toMatch(/return \{ error/);
+  });
+
+  it("offers the new still as a look only when there is something to cut out of it, by the rule the set page reads", () => {
+    expect(shoot).toContain("const hasLookObjects = recorded && camera !== null && seesLookObjects(owned.spec, camera);");
   });
 });
 
@@ -121,7 +127,11 @@ describe("the set page reads cameras on their own", () => {
   const data = code(read("data.ts"));
   it("in a query of their own, so the contact sheet never names a column that may not exist", () => {
     expect(data).toContain("const cameras = await readShotCameras(db, setId, access.userId, ids);");
-    expect(data).toContain("hasCamera: cameras.has(g.id as string),");
     expect(data).toContain('.select("generation_id, created_at")');
+  });
+
+  it("offers a still as a look only when there is something to cut out of it, from its camera and the set", () => {
+    expect(data).toContain("return Boolean(spec && camera && seesLookObjects(spec, camera));");
+    expect(data).toContain("hasLookObjects: lendsLook(g.id as string),");
   });
 });

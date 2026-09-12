@@ -76,12 +76,13 @@ export function describeFacing(layout: Pick<SetLayout, "mark" | "camera"> | null
  * GPT Image copied its camera, framing and background too, whatever the
  * words said (4 of 4 orderings and wordings, 2026-09-12). Handed a cutout
  * instead, the new still kept its own camera and the car's design — twice:
- * a car cut by hand, and one cut by SAM 2 as the product cuts it, sent in
- * production's order (the person, the sketch, then the look) with this
- * sentence word for word and the photos unnumbered. So these are the tested
- * words, not to be reworded on a hunch. Described by what it shows, not by
- * position: the reference photos arrive character first. The cutout holds
- * no person, so the sentence says nothing of one.
+ * a car cut by hand, and one cut by SAM 2 (the product's cutter) from a box
+ * placed by hand, sent in production's order (the person, the sketch, then
+ * the look) with this sentence word for word and the photos unnumbered. So
+ * these are the tested words, not to be reworded on a hunch. Described by
+ * what it shows, not by position: the reference photos arrive character
+ * first. The cutout carries no person — their region of the still is
+ * cleared out of it (look-cutout.ts) — so the sentence says nothing of one.
  */
 const LOOK_SENTENCE =
   "One reference photo shows objects from this same place, cut out of an earlier photograph onto a plain grey ground: draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its angle, crop, framing or light.";

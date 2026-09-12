@@ -7,15 +7,23 @@
 // WHAT IS LEFT OF THE STILL. SAM 2 answers with the whole still, every pixel
 // outside the mask made transparent — transparent, not erased: those pixels
 // keep their colour underneath. Laying the picture on grey by its alpha is
-// what removes them, so nothing outside the mask — the background, the
-// person beside the car — reaches the cutout at all. JPEG then drops the
-// alpha along with any metadata.
+// what removes them, so nothing outside the mask reaches the cutout at all.
+// JPEG then drops the alpha along with any metadata.
+//
+// NEVER THE PERSON. A mask can take in the person too, when they stand in
+// front of, beside or on what the boxes were drawn round. So the person's
+// region of the still (look-cutout.ts: the grey figure's place on screen,
+// grown well past it) is made transparent before anything else, whatever
+// SAM 2 kept there: it is grey in the cutout, and the mask's share and the
+// crop are measured without it.
 //
 // WHEN IT IS NO LOOK. A mask under LOOK_MIN_MASK_SHARE of the frame caught
 // nothing worth keeping (SAM found no object in the boxes). A mask over
 // LOOK_MAX_MASK_SHARE took the ground, the walls or the sky along with the
 // objects: sent, it would be most of the earlier still again, which is the
 // one thing the look must never be. Either way the shot goes without it.
+
+import type { FrameBox } from "./look-cutout";
 
 /** The ground the objects are laid on: the "plain grey ground" the look's sentence names (set-shot-prompt.ts). */
 export const LOOK_GROUND = "#808080";
@@ -59,11 +67,27 @@ export function maskExtent(
 }
 
 /**
- * SAM 2's answer (a PNG with alpha) → the cutout: the kept pixels on
- * LOOK_GROUND, cropped to their box plus LOOK_CROP_MARGIN, as a JPEG. Never
- * throws; `ok: false` says why it is no look (see the header).
+ * Make every pixel of `region` (0–1 across and down the picture, rounded
+ * outward to whole pixels) transparent, in place, in raw pixels whose last
+ * channel is alpha.
  */
-export async function composeLookCutout(png: Buffer): Promise<LookCutoutImage> {
+export function clearRegion(data: Buffer, width: number, height: number, channels: number, region: FrameBox): void {
+  const x0 = Math.max(0, Math.floor(region.u0 * width));
+  const x1 = Math.min(width, Math.ceil(region.u1 * width));
+  const y0 = Math.max(0, Math.floor(region.v0 * height));
+  const y1 = Math.min(height, Math.ceil(region.v1 * height));
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) data[(y * width + x) * channels + channels - 1] = 0;
+  }
+}
+
+/**
+ * SAM 2's answer (a PNG with alpha) → the cutout: the kept pixels outside
+ * the person's region on LOOK_GROUND, cropped to their box plus
+ * LOOK_CROP_MARGIN, as a JPEG. Never throws; `ok: false` says why it is no
+ * look (see the header).
+ */
+export async function composeLookCutout(png: Buffer, person: FrameBox | null): Promise<LookCutoutImage> {
   let sharp: (typeof import("sharp"))["default"];
   try {
     ({ default: sharp } = await import("sharp"));
@@ -76,7 +100,10 @@ export async function composeLookCutout(png: Buffer): Promise<LookCutoutImage> {
       .ensureAlpha()
       .raw()
       .toBuffer({ resolveWithObject: true });
-    const { width, height, channels } = info;
+    const { width, height } = info;
+    // ensureAlpha leaves grey + alpha (2) or colour + alpha (4).
+    const channels = info.channels as 2 | 4;
+    if (person) clearRegion(data, width, height, channels, person);
     const { share, box } = maskExtent((i) => data[i * channels + channels - 1], width, height);
     if (!box || share < LOOK_MIN_MASK_SHARE) return { ok: false, reason: "empty" };
     if (share > LOOK_MAX_MASK_SHARE) return { ok: false, reason: "whole" };
@@ -85,7 +112,8 @@ export async function composeLookCutout(png: Buffer): Promise<LookCutoutImage> {
     const top = Math.max(0, box.top - margin);
     const right = Math.min(width, box.right + margin);
     const bottom = Math.min(height, box.bottom + margin);
-    const out = await sharp(png, { limitInputPixels: 25_000_000, failOn: "error" })
+    // From the pixels as cleared above, never from SAM 2's PNG again.
+    const out = await sharp(data, { raw: { width, height, channels } })
       .extract({ left, top, width: right - left, height: bottom - top })
       .flatten({ background: LOOK_GROUND })
       .jpeg({ quality: LOOK_CUTOUT_QUALITY })

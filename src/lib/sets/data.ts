@@ -7,6 +7,7 @@ import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
 import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_RESERVED_BRIEF, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
 import { readShotCameras } from "@/lib/sets/shot-camera";
+import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { normaliseSetLayout, normaliseSetSpec } from "@/lib/sets/set-spec";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
@@ -146,11 +147,20 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       .in("id", ids)
       .eq("user_id", access.userId)
       .is("deleted_at", null);
-    // Which of them had their camera recorded: a read of its own, so the
+    // Which of them had their frame recorded: a read of its own, so the
     // list above never names a column that may not exist yet
     // (shot-camera.ts). A read that fails shows no still as a possible look
     // for this one load; the contact sheet is otherwise the same.
     const cameras = await readShotCameras(db, setId, access.userId, ids);
+    // A still is offered as a look only when there is something to cut out
+    // of it clear of its person: a camera that saw only structure, or a
+    // figure out of frame, would fail every shot that took it. The answer
+    // rests on the set and the camera alone, so it is worked out here, per
+    // load (a few milliseconds for a full contact sheet).
+    const lendsLook = (id: string) => {
+      const camera = cameras.get(id);
+      return Boolean(spec && camera && seesLookObjects(spec, camera));
+    };
     const byId = new Map((gens ?? []).map((g) => [g.id as string, g]));
     shots = ids
       .map((id) => byId.get(id))
@@ -161,7 +171,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
         resultUrl: thumbUrl(g.result_url as string | null, 640),
         score: typeof g.match_score === "number" ? g.match_score : null,
         createdAt: g.created_at as string,
-        hasCamera: cameras.has(g.id as string),
+        hasLookObjects: lendsLook(g.id as string),
       }));
   }
 

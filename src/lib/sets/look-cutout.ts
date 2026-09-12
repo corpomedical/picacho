@@ -8,22 +8,27 @@
 // the prompt says: 4 of 4 prompt and image-order variants did, against the
 // operator's own race-track shot. Handed only the objects, cut out of the
 // still onto plain grey, the new still follows its own sketch and keeps the
-// car's design — tested twice, the second time with a machine cutout made
-// the way this one is (docs/ASTRA_SETS.md, "The operator's first real
-// test"). So the look is only ever the cutout: this module says where the
-// objects are in the earlier still, as boxes; SAM 2 cuts them out
-// (providers/fal-segment.ts) and look-cutout-image.ts lays them on grey.
+// car's design — tested twice: a car cut out by hand, then one cut out by
+// SAM 2 (the cutter used here) from a box placed by hand and sent in the
+// product's image order (docs/ASTRA_SETS.md, "The operator's first real
+// test"). The boxes this module works out, the JPEG and the person's region
+// below have not been through a real cut. So the look is only ever the
+// cutout: this module says where the objects are in the earlier still, as
+// boxes; SAM 2 cuts them out (providers/fal-segment.ts) and
+// look-cutout-image.ts lays them on grey.
 //
 // WHERE THE STILL WAS DRAWN FROM. A still follows its sketch, and the sketch
 // is the centre square of the stage canvas (set-view.tsx cropSquare), seen
-// from the camera recorded with the shot (location_set_shots.camera). On a
-// landscape canvas that square spans the camera's vertical field of view; on
-// a portrait one only the canvas's width, whose angle is
-// 2·atan(aspect·tan(fov/2)) (match-shot.ts works from the same rule). So the
-// sketch is exactly what a SQUARE camera at the same pose, with that field
-// of view, sees; a point's place in that square maps onto the still's own
-// width and height. GPT Image stills are 1024 × 1024; FLUX's may not be
-// square, so each axis is scaled on its own.
+// from the camera recorded with the shot (location_set_shots.camera): the
+// pose the stage was in when the frame was taken, as the page sent it — not
+// the saved layout's copy, which is held to the set's reach and so can be a
+// different camera (shot-camera.ts). On a landscape canvas that square spans
+// the camera's vertical field of view; on a portrait one only the canvas's
+// width, whose angle is 2·atan(aspect·tan(fov/2)) (match-shot.ts works from
+// the same rule). So the sketch is exactly what a SQUARE camera at the same
+// pose, with that field of view, sees; a point's place in that square maps
+// onto the still's own width and height. GPT Image stills are 1024 × 1024;
+// FLUX's may not be square, so each axis is scaled on its own.
 //
 // WHAT COUNTS AS AN OBJECT. What a person recognises from one still to the
 // next — a car, a sofa, a stall — is built from PROP-sized shapes, none
@@ -51,6 +56,24 @@
 // the car came out at about 85% of its sketch size, and higher — so a part
 // can land several percent of its object's size from where it was sketched.
 //
+// NEVER THE PERSON. The still has a person in it, and the look must carry
+// none: the prompt tells the model to draw what the cutout shows exactly as
+// it looks, and it would put the earlier character's body and clothes into
+// a shot of someone else. SAM 2 cuts what is in its boxes, and a box round a
+// car's nose, a chair or a counter can be mostly the person beside, on or
+// behind it. So the grey figure's place is recorded with the camera, and
+// its box on screen, grown well past it, is the person's region: every box
+// is cut back to what lies clear of it, a box it mostly covers is dropped,
+// and look-cutout-image.ts clears it out of whatever SAM 2 kept. It is grown
+// by LOOK_FIGURE_GROW of the figure's height on screen on every side:
+// GPT Image drew the operator's first race-track still's person far larger
+// than the figure and lower, about 1.7 times its height, reaching past its
+// box by some 27% of its height toward the car, 16% above it and 36% below.
+// Whatever part of an object stands inside that region is lost from the
+// look — the price of never carrying a person. A still whose figure was not
+// in its frame, reached behind the lens, or stood hidden behind structure
+// offers no look at all: nobody can say where its person is.
+//
 // THE MONEY. SAM 2 on fal (fal-ai/sam2/image) costs $0.0008 per compute
 // second (unit_price 0.0008, unit "compute seconds": fal's pricing API,
 // GET api.fal.ai/v1/models/pricing?endpoint_id=fal-ai/sam2/image, read
@@ -74,6 +97,7 @@
 // fal already receives the character's own photos for every FLUX render, so
 // no new kind of processor sees the person's pictures.
 
+import { STAND_IN_HEIGHT_M } from "./build-scene";
 import { rotationXYZ } from "./marks";
 import { SET_LIMITS, type SetObject, type SetSpec, type Vec3 } from "./set-spec";
 import { SAM2_TIMEOUT_MS, type SegmentBox } from "../generations/providers/fal-segment";
@@ -109,13 +133,32 @@ export const LOOK_GROW_FRAME = 0.02;
 export const LOOK_MAX_BOXES = 24;
 /** Cells a side of the grid that says what a shape adds on screen: 16 px on a 1024 still. */
 export const LOOK_COVER_GRID = 64;
+/**
+ * Half the grey figure's footprint, whichever way it faces: its hands reach
+ * 0.32 m to each side and its toes 0.19 m ahead (build-scene.ts
+ * buildStandIn), and √(0.32² + 0.19²) ≈ 0.37.
+ */
+export const LOOK_FIGURE_HALF_M = 0.37;
+/** The person's region reaches past the figure's box on screen, on every side, by this share of its height there (plus LOOK_GROW_FRAME). */
+export const LOOK_FIGURE_GROW = 0.4;
+/** A box cut back clear of the person's region must keep at least this share of itself, or it is dropped. */
+export const LOOK_FIGURE_MIN_LEFT = 0.25;
 /** The stage camera's near plane (set-view.tsx): a shape reaching behind it is at the lens, not in the picture. */
 const NEAR_M = 0.05;
 /** The canvas shapes a stored camera may claim, width ÷ height: a phone held upright to a very wide screen. */
 const CANVAS_ASPECT = [0.2, 10] as const;
+/** Heights up the figure that, seen past any structure, put it in the sketch: its middle and its head. */
+const FIGURE_SEEN_AT_M = [0.9, 1.6] as const;
+/** How the boxes are chosen does not depend on the still's size (they are worked out in the square, then scaled). */
+const ANY_STILL = { width: 1024, height: 1024 };
 
-/** The camera a shot's frame was taken from, as location_set_shots.camera holds it. */
-export type ShotCamera = { position: Vec3; target: Vec3; fovDeg: number; canvasAspect: number };
+/**
+ * The frame a shot was taken from, as location_set_shots.camera holds it:
+ * the stage camera's pose and the canvas's shape when the frame was taken,
+ * and where the grey figure stood on the ground (its mark), so the person's
+ * place in the still is known.
+ */
+export type ShotCamera = { position: Vec3; target: Vec3; fovDeg: number; canvasAspect: number; figure: { x: number; z: number } };
 
 /** A box for SAM 2 in the still's own pixels, and which copy of which of the spec's objects it was drawn round. */
 export type LookBox = SegmentBox & { object: number; copy: number };
@@ -123,35 +166,38 @@ export type LookBox = SegmentBox & { object: number; copy: number };
 /** An object kept: its box on screen (0–1, left to right and top to bottom), its share of the frame, its shapes. */
 export type LookObject = { box: FrameBox; share: number; shapes: number };
 
-type FrameBox = { u0: number; v0: number; u1: number; v1: number };
+/** A region of the sketch's square, and so of the still: 0–1 across and down. */
+export type FrameBox = { u0: number; v0: number; u1: number; v1: number };
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+const within = (v: unknown, lo: number, hi: number): v is number => finite(v) && v >= lo && v <= hi;
 
 /**
- * A stored camera, read back through the same bounds it was written with:
- * the lens a saved layout keeps (SET_LIMITS minLayoutFovDeg–maxFovDeg) and a
- * canvas shape inside CANVAS_ASPECT. Null for anything that is not a camera
- * — a missing canvas shape included: without it a portrait still's frame is
- * unknown, and a shot with no camera is never a look's source.
+ * A shot's frame exactly as it was, or nothing: a pose, a lens a saved
+ * layout can hold (SET_LIMITS minLayoutFovDeg–maxFovDeg), a canvas shape
+ * inside CANVAS_ASPECT and the figure's place, every one as given. Nothing
+ * is clamped, because a camera moved to fit a bound is not the camera the
+ * frame was drawn from, and its boxes would miss what the still shows. Null
+ * for anything else — a missing canvas shape or figure included — and a
+ * shot with no camera is never a look's source.
  */
 export function normaliseShotCamera(value: unknown): ShotCamera | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const v = value as Record<string, unknown>;
   const reach = SET_LIMITS.maxCoordinate * 2;
   const vec = (x: unknown): Vec3 | null =>
-    Array.isArray(x) && x.length === 3 && x.every((n) => finite(n) && Math.abs(n) <= reach) ? [x[0], x[1], x[2]] : null;
+    Array.isArray(x) && x.length === 3 && x.every((n) => within(n, -reach, reach)) ? [x[0], x[1], x[2]] : null;
   const position = vec(v.position);
   const target = vec(v.target);
   if (!position || !target) return null;
   if (Math.hypot(target[0] - position[0], target[1] - position[1], target[2] - position[2]) < 0.1) return null;
-  if (!finite(v.fovDeg) || !finite(v.canvasAspect) || v.canvasAspect <= 0) return null;
-  return {
-    position,
-    target,
-    fovDeg: clamp(v.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxFovDeg),
-    canvasAspect: clamp(v.canvasAspect, CANVAS_ASPECT[0], CANVAS_ASPECT[1]),
-  };
+  if (!within(v.fovDeg, SET_LIMITS.minLayoutFovDeg, SET_LIMITS.maxFovDeg)) return null;
+  if (!within(v.canvasAspect, CANVAS_ASPECT[0], CANVAS_ASPECT[1])) return null;
+  const f = v.figure && typeof v.figure === "object" ? (v.figure as Record<string, unknown>) : null;
+  const edge = SET_LIMITS.maxCoordinate;
+  if (!f || !within(f.x, -edge, edge) || !within(f.z, -edge, edge)) return null;
+  return { position, target, fovDeg: v.fovDeg, canvasAspect: v.canvasAspect, figure: { x: f.x, z: f.z } };
 }
 
 /** The field of view of the sketch's square: the lens's on a landscape canvas, the canvas's width's on a portrait one. */
@@ -253,15 +299,68 @@ function entersOnTheWay(from: Vec3, to: Vec3, p: Placed): boolean {
 }
 
 /**
+ * Where the person may be in a still drawn from `camera`: the grey figure's
+ * box on screen — its footprint LOOK_FIGURE_HALF_M each way, ground to head —
+ * grown by LOOK_FIGURE_GROW of its height there plus LOOK_GROW_FRAME on every
+ * side, inside the frame. Null when the sketch did not show the figure: none
+ * of it in frame, part of it behind the lens, or neither its middle nor its
+ * head to be seen past structure.
+ */
+function personRegion(
+  camera: ShotCamera,
+  project: ReturnType<typeof sketchProjector>,
+  structure: readonly Placed[],
+): FrameBox | null {
+  const { x, z } = camera.figure;
+  const seen: { u: number; v: number }[] = [];
+  for (const dx of [-LOOK_FIGURE_HALF_M, LOOK_FIGURE_HALF_M]) {
+    for (const dz of [-LOOK_FIGURE_HALF_M, LOOK_FIGURE_HALF_M]) {
+      for (const y of [0, STAND_IN_HEIGHT_M]) {
+        const s = project([x + dx, y, z + dz]);
+        if (!s) return null;
+        seen.push(s);
+      }
+    }
+  }
+  const figure: FrameBox = {
+    u0: Math.min(...seen.map((s) => s.u)),
+    v0: Math.min(...seen.map((s) => s.v)),
+    u1: Math.max(...seen.map((s) => s.u)),
+    v1: Math.max(...seen.map((s) => s.v)),
+  };
+  if (!clip(figure)) return null;
+  if (FIGURE_SEEN_AT_M.every((y) => structure.some((s) => entersOnTheWay(camera.position, [x, y, z], s)))) return null;
+  const grow = LOOK_FIGURE_GROW * (figure.v1 - figure.v0) + LOOK_GROW_FRAME;
+  return clip({ u0: figure.u0 - grow, v0: figure.v0 - grow, u1: figure.u1 + grow, v1: figure.v1 + grow });
+}
+
+/**
+ * A box cut back to what lies clear of the person's region: itself when the
+ * two do not meet; else its largest part to the left, right, above or below
+ * the region, when that keeps at least LOOK_FIGURE_MIN_LEFT of it; else null.
+ */
+function clearOf(b: FrameBox, person: FrameBox): FrameBox | null {
+  if (b.u1 <= person.u0 || person.u1 <= b.u0 || b.v1 <= person.v0 || person.v1 <= b.v0) return b;
+  let best: FrameBox | null = null;
+  for (const part of [
+    { ...b, u1: Math.min(b.u1, person.u0) },
+    { ...b, u0: Math.max(b.u0, person.u1) },
+    { ...b, v1: Math.min(b.v1, person.v0) },
+    { ...b, v0: Math.max(b.v0, person.v1) },
+  ]) {
+    if (part.u1 > part.u0 && part.v1 > part.v0 && (!best || area(part) > area(best))) best = part;
+  }
+  return best && area(best) >= LOOK_FIGURE_MIN_LEFT * area(b) ? best : null;
+}
+
+/**
  * Every copy of every prop-sized object that the camera could see: wholly in
  * front of it, near enough to count, and with its centre not behind
  * structure — a wall, a grandstand, a plane — as the stage would draw it.
  * (A shape half hidden counts by its centre; props hiding props are left to
  * SAM 2, which cuts the nearer one, itself an object.)
  */
-function propShapes(objects: readonly SetObject[], camera: ShotCamera): Shape[] {
-  const project = sketchProjector(camera);
-  const copies = placedCopies(objects);
+function propShapes(copies: readonly Placed[], camera: ShotCamera, project: ReturnType<typeof sketchProjector>): Shape[] {
   const structure = copies.filter((p) => !p.prop);
   const out: Shape[] = [];
   for (const p of copies) {
@@ -337,21 +436,28 @@ function objectsOf(shapes: Shape[]): Shape[][] {
 
 /**
  * The boxes to send SAM 2 to cut the look's objects out of an earlier still
- * of `width` × `height` pixels, drawn from `camera` (see the header). Empty
- * when no object qualifies — the camera looked at bare structure or sky —
- * and then there is nothing to cut: the shot goes without its look.
+ * of `width` × `height` pixels, drawn from `camera` (see the header), and
+ * the person's region, which is never part of the cutout. No boxes when no
+ * object qualifies clear of the person — the camera looked at bare
+ * structure or sky, or the figure stood in front of everything — or when
+ * the sketch did not show the figure; then there is nothing to cut, and the
+ * shot goes without its look.
  */
 export function lookCutoutBoxes(
   spec: Pick<SetSpec, "objects">,
   camera: ShotCamera,
   still: { width: number; height: number },
-): { boxes: LookBox[]; objects: LookObject[] } {
-  const none = { boxes: [], objects: [] };
+): { boxes: LookBox[]; objects: LookObject[]; person: FrameBox | null } {
+  const none = { boxes: [], objects: [], person: null };
   if (!finite(still.width) || !finite(still.height) || still.width < 1 || still.height < 1) return none;
   const cam = normaliseShotCamera(camera);
   if (!cam) return none;
+  const project = sketchProjector(cam);
+  const copies = placedCopies(spec.objects);
+  const person = personRegion(cam, project, copies.filter((p) => !p.prop));
+  if (!person) return none;
 
-  const kept = objectsOf(propShapes(spec.objects, cam))
+  const kept = objectsOf(propShapes(copies, cam, project))
     .filter((shapes) =>
       [0, 1, 2].every((i) => Math.max(...shapes.map((s) => s.max[i])) - Math.min(...shapes.map((s) => s.min[i])) <= LOOK_GROUP_MAX_M),
     )
@@ -366,7 +472,9 @@ export function lookCutoutBoxes(
       };
       return { box, share: area(box), shapes: inFrame };
     })
-    .filter((g): g is NonNullable<typeof g> => g !== null && g.share >= LOOK_MIN_SHARE)
+    // An object the person mostly stands in front of, or in (a chair, a
+    // counter they lean on), is theirs in the still, not the look's.
+    .filter((g): g is NonNullable<typeof g> => g !== null && g.share >= LOOK_MIN_SHARE && clearOf(g.box, person) !== null)
     .sort((a, b) => b.share - a.share)
     .slice(0, LOOK_MAX_GROUPS);
 
@@ -396,7 +504,9 @@ export function lookCutoutBoxes(
       const [{ s, cells }] = left.splice(best, 1);
       for (const c of cells) covered.add(c);
       const grown = clip({ u0: s.box!.u0 - growU, v0: s.box!.v0 - growV, u1: s.box!.u1 + growU, v1: s.box!.v1 + growV })!;
-      sent.push({ box: grown, object: s.object, copy: s.copy });
+      // Never a box into the person's region: SAM 2 would cut them out with it.
+      const clear = clearOf(grown, person);
+      if (clear) sent.push({ box: clear, object: s.object, copy: s.copy });
     }
   }
 
@@ -412,5 +522,17 @@ export function lookCutoutBoxes(
       copy,
     })),
     objects: kept.map((g) => ({ box: g.box, share: g.share, shapes: g.shapes.length })),
+    person,
   };
+}
+
+/**
+ * Whether a still drawn from `camera` can lend its look: its figure showed
+ * and at least one box would go to SAM 2. The set page offers only such
+ * stills, and a new still is one only when this holds (look.ts canBeLook).
+ * The boxes are chosen in the sketch's square and only then scaled to the
+ * still, so any still size gives the same answer.
+ */
+export function seesLookObjects(spec: Pick<SetSpec, "objects">, camera: ShotCamera): boolean {
+  return lookCutoutBoxes(spec, camera, ANY_STILL).boxes.length > 0;
 }

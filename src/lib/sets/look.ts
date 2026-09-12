@@ -7,9 +7,12 @@
 // finished picture in generated-images, inside the person's own folder. The
 // signature the row carries is never trusted or passed on.
 //
-// A still can be a look only when its camera was recorded with it
-// (shot-camera.ts): without it nobody can say where its objects are. The
-// page offers, and defaults to, only such stills (canBeLook, newestLook).
+// A still can be a look only when its objects can be cut out of it: its
+// camera and figure were recorded with it (shot-camera.ts), without which
+// nobody can say where its objects and its person are, and objects showed
+// clear of the person (look-cutout.ts seesLookObjects) — a still with none
+// would fail every shot that took it. The server says which (hasLookObjects);
+// the page offers, and defaults to, only such stills (canBeLook, newestLook).
 //
 // Relative imports only: tested without the "@/" alias.
 
@@ -17,13 +20,13 @@ import type { SetShot } from "./types";
 
 const MEDIA_IMAGE_RE = /^\/api\/media\/generated-images\/([^?#]+)/;
 
-/** A still on the contact sheet that can lend its objects: finished, with its picture, its camera recorded. */
-export function canBeLook(shot: Pick<SetShot, "status" | "resultUrl" | "hasCamera">): boolean {
-  return shot.status === "succeeded" && Boolean(shot.resultUrl) && shot.hasCamera === true;
+/** A still on the contact sheet that can lend its objects: finished, with its picture, with objects to cut out of it. */
+export function canBeLook(shot: Pick<SetShot, "status" | "resultUrl" | "hasLookObjects">): boolean {
+  return shot.status === "succeeded" && Boolean(shot.resultUrl) && shot.hasLookObjects === true;
 }
 
 /** The look's default: the newest still that can be one (a set's shots come newest first). */
-export function newestLook(shots: readonly Pick<SetShot, "generationId" | "status" | "resultUrl" | "hasCamera">[]): string | null {
+export function newestLook(shots: readonly Pick<SetShot, "generationId" | "status" | "resultUrl" | "hasLookObjects">[]): string | null {
   return shots.find(canBeLook)?.generationId ?? null;
 }
 

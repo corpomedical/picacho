@@ -138,9 +138,10 @@ export function SetView({
   // The look (2026-09-11): the earlier still whose objects the next shot
   // keeps, so the car is the same car. Only its objects ride, cut out onto
   // grey on the server, so the shot keeps its own camera (2026-09-12,
-  // look-cutout.ts) — which needs the still's recorded camera, so only such
-  // stills are offered (look.ts canBeLook). It follows the newest of them
-  // until the person picks one or turns it off.
+  // look-cutout.ts) — which needs the still's recorded camera and objects to
+  // cut clear of its person, so only such stills are offered (look.ts
+  // canBeLook). It follows the newest of them until the person picks one or
+  // turns it off.
   const [lookId, setLookId] = useState<string | null>(() => newestLook(initialShots));
   // A ref, not state: a shot resolving tens of seconds after it started must
   // read the person's latest choice, not the one from the render it began in
@@ -787,8 +788,9 @@ export function SetView({
       return;
     }
     setShooting(true);
-    // The camera and the canvas shape the frame was just taken from: stored
-    // with the still, they say where its objects are when it is a look.
+    // The camera, the figure's mark (in the layout) and the canvas shape the
+    // frame was just taken from: stored with the still as sent, they say
+    // where its objects and its person are when it is a look.
     const pose = apiRef.current?.pose() ?? null;
     const canvasAspect = apiRef.current?.canvasAspect();
     let result: Awaited<ReturnType<typeof shootInSet>>;
@@ -822,7 +824,7 @@ export function SetView({
       resultUrl: result.resultUrl,
       score: result.score,
       createdAt: new Date().toISOString(),
-      hasCamera: result.hasCamera,
+      hasLookObjects: result.hasLookObjects,
     };
     setShots((prev) => [shot, ...prev]);
     setLookDropped(result.lookDropped);
@@ -1182,8 +1184,8 @@ export function SetView({
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {shots.map((shot) => {
               const low = shot.score !== null && shot.score < identityBar;
-              // A still with no recorded camera offers no look: nobody can
-              // say where its objects are (look.ts).
+              // A still with no recorded camera, or nothing to cut out of it
+              // clear of its person, offers no look (look.ts).
               const lookable = canBeLook(shot);
               const isLook = lookable && shot.generationId === lookShot?.generationId;
               return (

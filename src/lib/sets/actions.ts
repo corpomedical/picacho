@@ -32,6 +32,7 @@ import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
 import { lookStoragePath } from "@/lib/sets/look";
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
+import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { readShotCameras, recordShotCamera, shotCameraOf } from "@/lib/sets/shot-camera";
 import {
   CLEAR_PHOTO_SOURCE,
@@ -516,8 +517,8 @@ type ShootResult =
       succeeded: boolean;
       resultUrl: string | null;
       score: number | null;
-      /** This still's camera was recorded, so it can be a later shot's look (shot-camera.ts). */
-      hasCamera: boolean;
+      /** This still can be a later shot's look: its frame was recorded and it shows objects to cut clear of the person (look-cutout.ts). */
+      hasLookObjects: boolean;
       /** A look was asked for and did not ride: the still was shot without it. */
       lookDropped: boolean;
     };
@@ -686,12 +687,18 @@ export async function shootInSet(
     .from("location_set_shots")
     .insert({ set_id: setId, generation_id: result.id, user_id: userId });
   if (shotError) console.error("shootInSet couldn't record the shot:", shotError.message);
-  // The camera this frame was taken from, so this still can be a later
-  // shot's look: in an update of its own after the row is in, whose failure
-  // is ignored — until set-shot-camera.sql runs the column is missing, and
-  // naming it in the insert above would fail every shot (shot-camera.ts).
-  const camera = shotError ? null : shotCameraOf(layout?.camera, input.canvasAspect);
-  const hasCamera = camera ? await recordShotCamera(admin, { setId, generationId: result.id, userId }, camera) : false;
+  // The frame this still was drawn from, so it can be a later shot's look:
+  // the stage's pose and the figure's mark exactly as the page sent them,
+  // never the layout normalised above, which holds the camera to the set's
+  // reach and so can be a camera the frame was not taken from
+  // (shot-camera.ts). In an update of its own after the row is in, whose
+  // failure is ignored — until set-shot-camera.sql runs the column is
+  // missing, and naming it in the insert above would fail every shot.
+  const camera = shotError ? null : shotCameraOf(input.layout, input.canvasAspect);
+  const recorded = camera ? await recordShotCamera(admin, { setId, generationId: result.id, userId }, camera) : false;
+  // Offered as a look only when there is something to cut out of it clear
+  // of the person — the same rule the set page reads (data.ts).
+  const hasLookObjects = recorded && camera !== null && seesLookObjects(owned.spec, camera);
   if (layout) {
     await admin
       .from("location_sets")
@@ -707,7 +714,7 @@ export async function shootInSet(
     succeeded: result.succeeded,
     resultUrl: result.resultUrl,
     score: typeof result.matchScore === "number" ? result.matchScore : null,
-    hasCamera,
+    hasLookObjects,
     lookDropped,
   };
 }

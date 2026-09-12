@@ -31,8 +31,14 @@ const spec = (() => {
   if (!n.ok) throw new Error("the race-track fixture no longer normalises");
   return n.spec;
 })();
-// Still 1's camera (look-cutout.test.ts says where it comes from).
-const CAMERA: ShotCamera = { position: [-3.674, 1.894, 4.691], target: [-0.361, 1.128, 1.025], fovDeg: 44.7, canvasAspect: 16 / 9 };
+// Still 1's camera and figure (look-cutout.test.ts says where they come from).
+const CAMERA: ShotCamera = {
+  position: [-3.674, 1.894, 4.691],
+  target: [-0.361, 1.128, 1.025],
+  fovDeg: 44.7,
+  canvasAspect: 16 / 9,
+  figure: { x: 1.39, z: 2.37 },
+};
 
 type Storage = {
   exists?: (path: string) => Promise<{ data: boolean; error: unknown }>;
@@ -74,17 +80,22 @@ async function stillPng(): Promise<Buffer> {
   return sharp!({ create: { width: 256, height: 256, channels: 3, background: { r: 70, g: 90, b: 110 } } }).png().toBuffer();
 }
 
-/** What SAM 2 answers: the 256² still with everything outside `kept` at alpha 0. */
-async function samAnswer(kept: (x: number, y: number) => boolean): Promise<Buffer> {
+/** What SAM 2 answers: the 256² still with everything outside `kept` at alpha 0 (red, and green where `green` says). */
+async function samAnswer(kept: (x: number, y: number) => boolean, green: (x: number, y: number) => boolean = () => false): Promise<Buffer> {
   const raw = Buffer.alloc(256 * 256 * 4);
   for (let y = 0; y < 256; y++) {
     for (let x = 0; x < 256; x++) {
       const i = (y * 256 + x) * 4;
-      raw.set([200, 20, 30, kept(x, y) ? 255 : 0], i);
+      raw.set([...(green(x, y) ? [20, 200, 30] : [200, 20, 30]), kept(x, y) ? 255 : 0], i);
     }
   }
   return sharp!(raw, { raw: { width: 256, height: 256, channels: 4 } }).png().toBuffer();
 }
+
+// Still 1's objects, and its person beside them where GPT Image drew them
+// (about x 800–1010, y 280–965 of 1024), in a 256² still.
+const carBlock = (x: number, y: number) => x >= 40 && x < 170 && y >= 90 && y < 220;
+const personBlock = (x: number, y: number) => x >= 200 && x < 252 && y >= 70 && y < 241;
 
 const input = (admin: SupabaseClient, over: Partial<Parameters<typeof lookCutout>[0]> = {}) => ({
   admin,
@@ -137,7 +148,7 @@ describe("lookCutout", () => {
         download: async (p) => ({ data: p === STILL_PATH ? blob(still) : null, error: p === STILL_PATH ? null : { message: "no" } }),
         upload: async (path, body, opts) => (uploads.push({ path, body, opts }), { error: null }),
       });
-      const segment = vi.fn(async () => samAnswer((x, y) => x >= 40 && x < 200 && y >= 90 && y < 220));
+      const segment = vi.fn(async () => samAnswer(carBlock));
       expect(await lookCutout(input(f.admin), { segment })).toEqual({ ok: true, path: CUTOUT, made: true });
       // SAM 2 got the still's own bytes and the boxes for a still that size.
       expect(segment).toHaveBeenCalledTimes(1);
@@ -150,22 +161,61 @@ describe("lookCutout", () => {
       expect(uploads[0].opts).toEqual({ contentType: "image/jpeg", upsert: false });
       const meta = await sharp!(uploads[0].body).metadata();
       expect(meta.format).toBe("jpeg");
-      // The 160 × 130 block and 8 px on each side (3% of 256).
-      expect([meta.width, meta.height]).toEqual([176, 146]);
+      // The 130 × 130 block and 8 px on each side (3% of 256).
+      expect([meta.width, meta.height]).toEqual([146, 146]);
     });
 
-    it("a camera that saw no objects is no look, and SAM 2 is never asked", async () => {
+    it("keeps nothing of the person, whatever SAM 2 took in with the car", async () => {
+      const still = await stillPng();
+      const uploads: Buffer[] = [];
+      const f = fakeAdmin({
+        download: async () => ({ data: blob(still), error: null }),
+        upload: async (_path, body) => (uploads.push(body), { error: null }),
+      });
+      // SAM 2 answers with the car and the person beside it in one mask.
+      const segment = async () => samAnswer((x, y) => carBlock(x, y) || personBlock(x, y), personBlock);
+      expect(await lookCutout(input(f.admin), { segment })).toEqual({ ok: true, path: CUTOUT, made: true });
+      // The person's region, from the camera and figure recorded with the still, covers them.
+      const { person } = lookCutoutBoxes(spec, CAMERA, { width: 256, height: 256 });
+      expect(person!.u0 * 256).toBeLessThanOrEqual(200);
+      expect(person!.v0 * 256).toBeLessThanOrEqual(70);
+      expect(person!.v1 * 256).toBeGreaterThanOrEqual(241);
+      // What is kept is the car alone, cropped as if the person had never been in the mask, and nowhere green.
+      const { data, info } = await sharp!(uploads[0]).raw().toBuffer({ resolveWithObject: true });
+      expect([info.width, info.height]).toEqual([146, 146]);
+      for (let i = 0; i < data.length; i += info.channels) {
+        expect(data[i + 1] - Math.max(data[i], data[i + 2]), `pixel ${i / info.channels}`).toBeLessThan(40);
+      }
+    });
+
+    it("no look when the mask held only the person", async () => {
       const still = await stillPng();
       const f = fakeAdmin({ download: async () => ({ data: blob(still), error: null }) });
-      const segment = vi.fn();
-      const sky: ShotCamera = { position: [0, 1.6, 20], target: [0, 30, 60], fovDeg: 40, canvasAspect: 16 / 9 };
-      expect(await lookCutout(input(f.admin, { camera: sky }), { segment })).toEqual({ ok: false, reason: "no objects in view" });
-      expect(segment).not.toHaveBeenCalled();
+      expect(await lookCutout(input(f.admin), { segment: () => samAnswer(personBlock) })).toEqual({ ok: false, reason: "empty mask" });
       expect(f.ops()).not.toContain("upload");
+    });
+
+    it("a camera that saw no objects, or not the figure, is no look, and SAM 2 is never asked", async () => {
+      const still = await stillPng();
+      const segment = vi.fn();
+      // The figure at the foot of the grandstands, and nothing there but structure.
+      const stands: ShotCamera = { position: [-10, 1.6, 0], target: [-35, 5, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -18, z: -4 } };
+      // The car in view, the figure out of frame.
+      const noFigure: ShotCamera = { ...CAMERA, figure: { x: 6, z: 6 } };
+      for (const camera of [stands, noFigure]) {
+        const f = fakeAdmin({ download: async () => ({ data: blob(still), error: null }) });
+        expect(await lookCutout(input(f.admin, { camera }), { segment })).toEqual({ ok: false, reason: "nothing to cut" });
+        expect(f.ops()).not.toContain("upload");
+      }
+      expect(segment).not.toHaveBeenCalled();
     });
 
     it("SAM 2 failing, finding nothing, or taking the whole frame is no look — and nothing is kept", async () => {
       const still = await stillPng();
+      // The figure far down the track, its region some 5% of the frame: the
+      // share is measured once that region is cleared, so a mask of nearly
+      // everything is still most of the still.
+      const farFigure: ShotCamera = { ...CAMERA, figure: { x: 12, z: -6 } };
       const cases: [() => Promise<Buffer | null>, string][] = [
         [async () => null, "cut failed"],
         [async () => Buffer.from("not a png"), "cut failed"],
@@ -174,14 +224,14 @@ describe("lookCutout", () => {
       ];
       for (const [segment, reason] of cases) {
         const f = fakeAdmin({ download: async () => ({ data: blob(still), error: null }) });
-        expect(await lookCutout(input(f.admin), { segment })).toEqual({ ok: false, reason });
+        expect(await lookCutout(input(f.admin, { camera: farFigure }), { segment })).toEqual({ ok: false, reason });
         expect(f.ops()).not.toContain("upload");
       }
     });
 
     it("a refused upload is fine when a shot beside it kept one first, and no look when nothing was kept", async () => {
       const still = await stillPng();
-      const segment = async () => samAnswer((x, y) => x >= 40 && x < 200 && y >= 90 && y < 220);
+      const segment = async () => samAnswer(carBlock);
       let kept = false;
       const raced = fakeAdmin({
         exists: async () => ({ data: kept, error: null }),

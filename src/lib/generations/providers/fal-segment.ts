@@ -19,14 +19,19 @@
 // picture, never fal's text, which could echo the request back. The shot
 // then goes without its look (sets/actions.ts shootInSet).
 //
+// ONE DEADLINE FOR THE WHOLE ANSWER. The cut comes back in the body, some
+// megabytes of base64, after the headers. fetchWithTimeout's deadline ends
+// when the headers arrive, so a body that stalled or trickled in would hold
+// the shot — before its frame is even uploaded — up to the page's own limit.
+// Here one signal covers the request, the headers and the body read, and is
+// cleared only once the body is in.
+//
 // The price and the per-cut arithmetic are in sets/look-cutout.ts.
 //
 // Relative imports only: tested with a fake fetch.
 
-import { fetchWithTimeout } from "./fetch-with-timeout";
-
 export const SAM2_ENDPOINT = "https://fal.run/fal-ai/sam2/image";
-/** Two measured cuts took 2–3 s; past this the shot stops waiting and goes without its look. */
+/** Two measured cuts took 2–3 s; past this, headers and body together, the shot stops waiting and goes without its look. */
 export const SAM2_TIMEOUT_MS = 30_000;
 /** A cut comes back as a PNG the still's size, in base64: a 1024² still is ~2.5 MB of it. */
 const MAX_ANSWER_CHARS = 40 * 1024 * 1024;
@@ -72,26 +77,26 @@ export async function segmentWithBoxes(
     console.warn(`[sets] look cut skipped: ${mime ? "no boxes" : "not a picture"}`);
     return null;
   }
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), opts.timeoutMs ?? SAM2_TIMEOUT_MS);
   try {
-    const res = await fetchWithTimeout(
-      SAM2_ENDPOINT,
-      {
-        method: "POST",
-        headers: { authorization: `Key ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          image_url: `data:${mime};base64,${bytes.toString("base64")}`,
-          box_prompts,
-          apply_mask: true,
-          output_format: "png",
-          sync_mode: true,
-        }),
-      },
-      opts.timeoutMs ?? SAM2_TIMEOUT_MS,
-    );
+    const res = await fetch(SAM2_ENDPOINT, {
+      method: "POST",
+      headers: { authorization: `Key ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        image_url: `data:${mime};base64,${bytes.toString("base64")}`,
+        box_prompts,
+        apply_mask: true,
+        output_format: "png",
+        sync_mode: true,
+      }),
+      signal: deadline.signal,
+    });
     if (!res.ok) {
       console.warn(`[sets] look cut failed: SAM 2 answered ${res.status}`);
       return null;
     }
+    // Still under the deadline: an abort now ends the body read too.
     const text = await res.text();
     if (text.length > MAX_ANSWER_CHARS) {
       console.warn("[sets] look cut failed: SAM 2's answer was too large");
@@ -111,5 +116,7 @@ export async function segmentWithBoxes(
   } catch (err) {
     console.warn(`[sets] look cut failed: ${err instanceof Error ? err.name : "error"}`);
     return null;
+  } finally {
+    clearTimeout(timer);
   }
 }

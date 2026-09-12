@@ -1847,7 +1847,7 @@ const es = {
     lookOff: "Desactivar",
     lookOffNote: "Desactivado: cada foto diseña de nuevo los objetos del set.",
     lookUseLatest: "Igualar la última foto",
-    lookFirst: "La próxima foto que hagas define el aspecto: las siguientes mantienen sus objetos.",
+    lookFirst: "La próxima foto en la que se vean los objetos del set define el aspecto: las siguientes los mantienen.",
     lookDropped: "Esta vez no se pudieron recortar los objetos del aspecto, así que esta foto se hizo sin él.",
     lookUse: "Usar su aspecto",
     lookBadge: "Aspecto",

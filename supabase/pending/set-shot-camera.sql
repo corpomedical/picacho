@@ -8,8 +8,10 @@
 -- cut out of the earlier still onto plain grey (src/lib/sets/look-cutout.ts),
 -- and to find them in that still the server needs the camera it was framed
 -- from: where the camera stood, where it looked, its lens, and the shape of
--- the stage canvas the square frame was cut from. This column holds exactly
--- that, as {position, target, fovDeg, canvasAspect}.
+-- the stage canvas the square frame was cut from; and, so the person in the
+-- still is never part of what is cut out, where the grey figure stood. This
+-- column holds exactly that, as {position, target, fovDeg, canvasAspect,
+-- figure: {x, z}}, as the page sent it.
 --
 -- RUN THIS BEFORE PUSHING THE CODE. It is idempotent: a second paste is
 -- harmless.
@@ -31,8 +33,8 @@
 
 alter table public.location_set_shots add column if not exists camera jsonb;
 
--- The code writes about 150 bytes; the database refuses anything far past
--- that.
+-- The code writes one small object (two points, a lens, a canvas shape and
+-- the figure's place); the database refuses anything past a kilobyte.
 alter table public.location_set_shots drop constraint if exists location_set_shots_camera_size_check;
 alter table public.location_set_shots
   add constraint location_set_shots_camera_size_check check (camera is null or pg_column_size(camera) <= 1024);

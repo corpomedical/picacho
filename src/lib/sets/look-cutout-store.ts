@@ -6,9 +6,10 @@
 // objects cut out onto grey (look-cutout.ts says why). Made the first time
 // a still is someone's look:
 //
-//   the still, from the owner's own folder → where its objects are, from
-//   the camera recorded with it (look-cutout.ts) → SAM 2 cuts them out
-//   (providers/fal-segment.ts) → laid on grey, cropped (look-cutout-image.ts)
+//   the still, from the owner's own folder → where its objects and its
+//   person are, from the camera and figure recorded with it (look-cutout.ts)
+//   → SAM 2 cuts the objects out (providers/fal-segment.ts) → the person's
+//   region cleared, the rest laid on grey and cropped (look-cutout-image.ts)
 //   → kept at setLookCutoutPath, beside the set's card.
 //
 // and every later shot with the same look reuses the kept file: the cut is
@@ -44,7 +45,7 @@ export type LookDrop =
   | "not a finished still of this set"
   | "no camera"
   | "still unreadable"
-  | "no objects in view"
+  | "nothing to cut"
   | "cut failed"
   | "empty mask"
   | "mask took the whole frame"
@@ -106,11 +107,12 @@ export async function lookCutout(
   const size = await stillSize(still);
   if (!size) return { ok: false, reason: "still unreadable" };
 
-  const { boxes } = lookCutoutBoxes(input.spec, input.camera, size);
-  if (boxes.length === 0) return { ok: false, reason: "no objects in view" };
+  const { boxes, person } = lookCutoutBoxes(input.spec, input.camera, size);
+  if (boxes.length === 0) return { ok: false, reason: "nothing to cut" };
   const cut = await (deps.segment ?? segmentWithBoxes)(still, boxes);
   if (!cut) return { ok: false, reason: "cut failed" };
-  const laid = await composeLookCutout(cut);
+  // Whatever SAM 2 kept where the person may be is cleared before it is laid out.
+  const laid = await composeLookCutout(cut, person);
   if (!laid.ok) {
     return { ok: false, reason: laid.reason === "empty" ? "empty mask" : laid.reason === "whole" ? "mask took the whole frame" : "cut failed" };
   }

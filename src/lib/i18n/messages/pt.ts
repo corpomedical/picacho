@@ -1847,7 +1847,7 @@ const pt = {
     lookOff: "Desativar",
     lookOffNote: "Desativado: cada foto cria de novo os objetos do set.",
     lookUseLatest: "Igualar a última foto",
-    lookFirst: "A próxima foto que você tirar define o visual: as seguintes mantêm os objetos dela.",
+    lookFirst: "A próxima foto em que apareçam os objetos do set define o visual: as seguintes mantêm esses objetos.",
     lookDropped: "Desta vez não deu para recortar os objetos do visual, então esta foto foi feita sem ele.",
     lookUse: "Usar este visual",
     lookBadge: "Visual",

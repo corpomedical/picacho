@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { canBeLook, lookStoragePath, newestLook } from "./look";
 
 // A shot's look reference must be a finished picture in the person's own
-// folder — the only check on what a still's row points at — and one whose
-// camera was recorded, or nobody can say where its objects are.
+// folder — the only check on what a still's row points at — and one with
+// objects to cut out of it clear of its person, or every shot that took it
+// would go without.
 
 describe("lookStoragePath", () => {
   const user = "a3102bc1-2355-444a-8ade-caafd7980218";
@@ -33,34 +34,36 @@ describe("lookStoragePath", () => {
 });
 
 describe("which stills the page offers as the look", () => {
-  const shot = (id: string, over: Partial<{ status: string; resultUrl: string | null; hasCamera: boolean }> = {}) => ({
+  const shot = (id: string, over: Partial<{ status: string; resultUrl: string | null; hasLookObjects: boolean }> = {}) => ({
     generationId: id,
     status: "succeeded",
     resultUrl: `/img/${id}.png`,
-    hasCamera: true,
+    hasLookObjects: true,
     ...over,
   });
 
-  it("only a finished still with its picture and its camera recorded", () => {
+  it("only a finished still with its picture and objects to cut out of it", () => {
     expect(canBeLook(shot("a"))).toBe(true);
-    expect(canBeLook(shot("a", { hasCamera: false }))).toBe(false);
+    expect(canBeLook(shot("a", { hasLookObjects: false }))).toBe(false);
     expect(canBeLook(shot("a", { status: "failed" }))).toBe(false);
     expect(canBeLook(shot("a", { status: "processing" }))).toBe(false);
     expect(canBeLook(shot("a", { resultUrl: null }))).toBe(false);
   });
 
-  it("defaults to the newest still WITH a camera, passing over newer ones without", () => {
+  it("defaults to the newest still WITH objects to cut, passing over newer ones without", () => {
     // A set's shots come newest first (data.ts orders them so, and the page
-    // puts each new one in front).
+    // puts each new one in front). A still with nothing to cut — no camera
+    // recorded, only structure in view, the figure out of frame — would
+    // fail every shot that took it, so it is never the default.
     const shots = [
-      shot("newest-no-camera", { hasCamera: false }),
+      shot("newest-nothing-to-cut", { hasLookObjects: false }),
       shot("newest-failed", { status: "failed" }),
-      shot("with-camera"),
-      shot("older-with-camera"),
+      shot("with-objects"),
+      shot("older-with-objects"),
     ];
-    expect(newestLook(shots)).toBe("with-camera");
+    expect(newestLook(shots)).toBe("with-objects");
     // Every still from before cameras were recorded: no look to default to.
-    expect(newestLook([shot("old-1", { hasCamera: false }), shot("old-2", { hasCamera: false })])).toBeNull();
+    expect(newestLook([shot("old-1", { hasLookObjects: false }), shot("old-2", { hasLookObjects: false })])).toBeNull();
     expect(newestLook([])).toBeNull();
   });
 
@@ -78,7 +81,7 @@ describe("which stills the page offers as the look", () => {
     const pick = view.slice(view.indexOf("function pickLook("), view.indexOf("function pickLook(") + 200);
     expect(pick).toContain("lookPinnedRef.current = true;");
     // What the server said about the camera and the look, as it said it.
-    expect(view).toContain("hasCamera: result.hasCamera,");
+    expect(view).toContain("hasLookObjects: result.hasLookObjects,");
     expect(view).toContain("setLookDropped(result.lookDropped);");
     expect(view).toContain("{s.lookDropped}");
     // The frame's canvas shape rides with the shot, read when the frame is taken.

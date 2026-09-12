@@ -115,6 +115,32 @@ describe("segmentWithBoxes", () => {
     expect(await segmentWithBoxes(PNG, BOXES)).toBeNull();
   });
 
+  it("stops waiting at the deadline when the answer's body stalls after its headers, not only when the headers are late", async () => {
+    // fal answers 200 at once, then the megabytes of base64 never finish
+    // arriving. The body ends only when the request's own signal aborts, as
+    // Node's fetch ends it; a deadline that lapsed with the headers would
+    // leave this read hanging.
+    reply = (init) =>
+      Promise.resolve(
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(stream) {
+              stream.enqueue(new TextEncoder().encode('{"image":{"url":"data:image/png;base64,iVBOR'));
+              init.signal?.addEventListener("abort", () => stream.error(Object.assign(new Error("aborted"), { name: "AbortError" })));
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    const hung = Symbol("hung");
+    const out = await Promise.race([
+      segmentWithBoxes(PNG, BOXES, { timeoutMs: 20 }),
+      new Promise<typeof hung>((resolve) => setTimeout(() => resolve(hung), 1_000)),
+    ]);
+    expect(out).toBeNull();
+    expect(calls[0].init.signal?.aborted).toBe(true);
+  });
+
   it("logs what went wrong by its kind, never the picture or fal's words", async () => {
     reply = async () => answer({ detail: "echo of the request: data:image/png;base64,AAAA" }, 422);
     await segmentWithBoxes(PNG, BOXES);
