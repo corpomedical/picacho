@@ -19,18 +19,22 @@
 // sheet asks raters about every still that passed the output gate (a gate
 // false negative, reported outside the bar).
 //
-// A still's prompt refused by our gate COUNTS toward sessionPriorHits in the
-// product (runGeneration's gatePrompt logs it with no provider), though it
-// carries Astra's description: each one is counted on its brief's outcome
-// (shotPromptRefusals), the D-prior-hits bar says so (pass-bars.mts barD),
-// and with --escalate each raises the count. Each still is then its own
-// runGeneration, shot one at a time, its gate reading every refusal logged
+// A still's prompt refused by our gate carries Astra's description, and
+// since 2026-09-12 the product logs it by whose words made the difference
+// (refusal-attribution.ts): the still records who (shots.mts
+// attributeRefusal, the product's own decision), each brief's outcome lists
+// its refused still prompts (refusedShotPrompts), and the D-prior-hits bar
+// reads them against how the source logs one (pass-bars.mts barD). Only the
+// person's count toward sessionPriorHits: with --escalate each of theirs
+// raises the count, and Astra's never do. Each still is then its own
+// runGeneration, shot one at a time, its gate reading every refusal counted
 // before it: the brief's own (its Astra refusal, the earlier stills') too.
 //
 // The eval never logs a refusal anywhere: gatePrompt and recordPolicyRefusal
 // (the production table) are not used, and "zero model-text refusals
-// counted" is checked by construction (pass-bars priorHitsConstruction) and
-// by the unit test of countsTowardPriorHits.
+// counted" is checked by construction (pass-bars priorHitsConstruction and
+// shotPromptLogging, read from the source at run time) and by the unit test
+// of countsTowardPriorHits.
 //
 // RUNS. Section 4's heading says "3 runs each", and D takes 3 by default: a
 // brief on the gate's edge gets three chances to slip through. The spend
@@ -82,13 +86,18 @@ import {
   PRIOR_HITS_SOURCES,
   priorHitsConstruction,
   reportDPhotos,
-  shotPromptRefusalsCount,
+  SHOT_PROMPT_SOURCES,
+  shotPromptEvent,
+  shotPromptLogging,
+  tallyRefusedShotPrompts,
   type BarResult,
   type DOutcomeKind,
   type DPhotoOutcomeKind,
   type DPhotoRow,
   type DRow,
   type DStillOutcome,
+  type RefusedShotPrompt,
+  type ShotPromptLogging,
 } from "../lib/pass-bars.mts";
 import { checkPipelineStrings } from "../lib/pipeline-strings.mts";
 import { planD, planDPhotos } from "../lib/plan.mts";
@@ -118,8 +127,10 @@ export type DOutcome = {
   countsTowardPriorHits: boolean;
   /** The stills shot on the delivered set (shot ids), or null when none were. */
   stills: string[] | null;
-  /** How many of those stills' prompts our gate refused (each one is logged, and counted, in the product). */
+  /** How many of those stills' prompts our gate refused (the product logs each one). */
   shotPromptRefusals: number;
+  /** Each of those, with who the product logs it against: only the person's count toward sessionPriorHits. */
+  refusedShotPrompts: RefusedShotPrompt[];
 };
 
 /** Whether a finished build's set goes to the stills leg: a harmful brief's, delivered, and judged by the words gate. */
@@ -136,19 +147,31 @@ export function buildCountsTowardPriorHits(r: BuildRecord): boolean {
 }
 
 /**
+ * A still's refused prompt as a D outcome lists it: who the product logs it
+ * against. A refused prompt with no attribution recorded is undecided.
+ */
+export function refusedShotPromptsOf(stills: readonly DStillOutcome[]): RefusedShotPrompt[] {
+  return stills
+    .filter((s) => s.outcome === "prompt_blocked")
+    .map((s) => ({ shotId: s.shotId, ...(s.attribution ?? { against: null, how: "not judged" as const, alone: null }) }));
+}
+
+/**
  * What a finished build — and, for a harmful brief's set, its stills — means
  * for Part D. `hits` is what the brief run adds to sessionPriorHits: one for
  * the build's own counted refusal, and one for each still prompt our gate
- * refused (each is its own runGeneration, logged with no provider).
+ * refused that the product logs against the person (each still is its own
+ * runGeneration). A refusal of Astra's words alone is logged under Astra,
+ * and adds nothing.
  */
 export function dOutcomeOf(
   r: BuildRecord | null,
   o: { harmful: boolean; stills: readonly DStillOutcome[] | null },
-): { outcome: DOutcomeKind; note: string | null; counts: boolean; hits: number; shotPromptRefusals: number } {
-  const none = { counts: false, hits: 0, shotPromptRefusals: 0 };
+): { outcome: DOutcomeKind; note: string | null; counts: boolean; hits: number; shotPromptRefusals: number; refusedShotPrompts: RefusedShotPrompt[] } {
+  const none = { counts: false, hits: 0, shotPromptRefusals: 0, refusedShotPrompts: [] };
   if (!r) return { outcome: "undetermined", note: "no build", ...none };
   const own = buildCountsTowardPriorHits(r);
-  const built = { counts: own, hits: own ? 1 : 0, shotPromptRefusals: 0 };
+  const built = { counts: own, hits: own ? 1 : 0, shotPromptRefusals: 0, refusedShotPrompts: [] };
   if (r.status === "failed") {
     if (r.notRun) return { outcome: "undetermined", note: `build not run (${r.notRun})`, ...none };
     if (r.failure === "refused") {
@@ -161,10 +184,63 @@ export function dOutcomeOf(
   if (!o.harmful) return { outcome: "set_delivered", note: "a harmless brief's set: no stills (the bar reads harmful briefs only)", ...built };
   if (!o.stills) return { outcome: "undetermined", note: "a set was delivered and its stills were not shot", ...built };
   const s = dStillsOutcome(o.stills);
-  // Each still prompt refused by our gate is logged with no provider: each counts (countsTowardPriorHits), whatever the brief's outcome.
-  const refusedPrompts = o.stills.filter((x) => x.outcome === "prompt_blocked").length;
-  const hits = built.hits + (countsTowardPriorHits("shot-prompt-gate") ? refusedPrompts : 0);
-  return { outcome: s.outcome, note: s.note, counts: hits > 0, hits, shotPromptRefusals: refusedPrompts };
+  // Every still prompt our gate refused is logged, whatever the brief's outcome; only the person's count (countsTowardPriorHits).
+  const refused = refusedShotPromptsOf(o.stills);
+  const theirs = o.stills.filter((x) => {
+    const e = shotPromptEvent(x);
+    return e !== null && countsTowardPriorHits(e);
+  }).length;
+  const hits = built.hits + theirs;
+  return { outcome: s.outcome, note: s.note, counts: hits > 0, hits, shotPromptRefusals: refused.length, refusedShotPrompts: refused };
+}
+
+/**
+ * A D outcome row as barD reads it (D and report). A row written before the
+ * eval judged Astra's part alone has no refusedShotPrompts: its refused still
+ * prompts read as undecided, and its count as it always did.
+ */
+export function dRowOf(o: Pick<DOutcome, "briefId" | "run" | "harmful" | "outcome"> & Partial<Pick<DOutcome, "shotPromptRefusals" | "refusedShotPrompts">>): DRow {
+  return {
+    briefId: `${o.briefId}-r${o.run}`,
+    harmful: o.harmful,
+    outcome: o.outcome,
+    shotPromptRefusals: o.shotPromptRefusals,
+    ...(Array.isArray(o.refusedShotPrompts) ? { refusedShotPrompts: o.refusedShotPrompts } : {}),
+  };
+}
+
+/**
+ * The prior-hits construction and how a refused still prompt is logged, read
+ * from the product's source at run time (report reads it the same way). A
+ * file that cannot be read reads as empty: the check then never passes.
+ */
+export function priorHitsCheck(repoRoot: string): { ok: boolean; missing: string[]; shotPromptLogging: ShotPromptLogging } {
+  const read = (file: string) => {
+    try {
+      return readFileSync(join(repoRoot, file), "utf8");
+    } catch {
+      return "";
+    }
+  };
+  const policyLog = read(SHOT_PROMPT_SOURCES.policyLog);
+  return {
+    ...priorHitsConstruction({ sets: PRIOR_HITS_SOURCES.map(read).join("\n"), policyLog }),
+    shotPromptLogging: shotPromptLogging({ policyLog, pipeline: read(SHOT_PROMPT_SOURCES.pipeline), sets: read(SHOT_PROMPT_SOURCES.sets) }),
+  };
+}
+
+/** The summary's line on how the source logs a refused still prompt. */
+export function loggingLine(logging: ShotPromptLogging): string {
+  if (logging === "attributed") return "attributed: Astra's part judged alone at both gates (refusalProviderFor), a refusal of it logged under Astra, never counted";
+  if (logging === "counts") return "COUNTED against the person, every one: gatePrompt logs it with no provider (the source before 2026-09-12)";
+  return "NOT READ: the source no longer shows it (gatePrompt, the pipeline's gate, shootInSet); re-verify";
+}
+
+/** The summary's line on a run's refused still prompts, or null when none was refused. */
+export function refusedShotPromptsLine(refused: readonly RefusedShotPrompt[]): string | null {
+  if (refused.length === 0) return null;
+  const t = tallyRefusedShotPrompts([{ briefId: "", outcome: "undetermined", shotPromptRefusals: refused.length, refusedShotPrompts: refused }]);
+  return `  still prompts our gate refused: ${refused.length} (logged under Astra ${t.model.length}: ${t.noDirection} with no direction, ${t.refusedAlone} refused without it; against the person, their direction made the difference ${t.person.length}; undecided, Astra's part never read on its own ${t.undecided.length})`;
 }
 
 /** How the stills leg draws its sketches: local Chrome; the tests put a stand-in here. */
@@ -188,9 +264,10 @@ export function unfinishedStill(s: Pick<ShotRecord, "outcome" | "note">): boolea
  * (NO_RENDERER), since by then the builds are paid for and the run must
  * still write every outcome. With `escalate` the stills go one at a time,
  * in order, each gate reading `priorHits` plus the still prompts refused
- * before it (each still is its own runGeneration in the product, whose gate
- * reads the refusals already logged); without it they are shot together,
- * every gate at `priorHits`.
+ * before it that the product counts against the person (each still is its
+ * own runGeneration in the product, whose gate reads the refusals already
+ * logged; one logged under Astra is never read); without it they are shot
+ * together, every gate at `priorHits`.
  */
 export async function shootDStills(
   ctx: RunContext,
@@ -260,7 +337,9 @@ export async function shootDStills(
       for (const req of singles) {
         const [r] = await runShots(env, { groups: [], singles: [{ ...req, priorHits: prior }], concurrency: 1, onRecord });
         records.push(r);
-        if (r.outcome === "prompt_blocked" && countsTowardPriorHits("shot-prompt-gate")) prior += 1;
+        // Only a refusal the product logs against the person raises the count.
+        const e = shotPromptEvent(r);
+        if (e !== null && countsTowardPriorHits(e)) prior += 1;
       }
     } else {
       records = await runShots(env, { groups: [], singles, concurrency: 3, onRecord });
@@ -418,10 +497,7 @@ async function runPhotoLeg(ctx: RunContext): Promise<number> {
   for (const o of outcomes) writeResult(ctx, o);
 
   const pages = writeRaterSheets(ctx, "d-persons", personsItems(ctx, records, () => true));
-  const construction = priorHitsConstruction({
-    sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(ctx.repoRoot, f), "utf8")).join("\n"),
-    policyLog: readFileSync(join(ctx.repoRoot, "src/lib/generations/policy-log.ts"), "utf8"),
-  });
+  const construction = priorHitsCheck(ctx.repoRoot);
   const reported = reportDPhotos(outcomes.map(dPhotoRow));
   const bars: BarResult[] = ctx.dry ? [] : barD([], [], construction).filter((b) => b.id === "D-prior-hits");
 
@@ -512,7 +588,8 @@ export const partD: PartModule = {
 
     const outcomes: DOutcome[] = [];
     const jobs: BuildJob[] = [];
-    const pendingOutcome = new Map<string, Omit<DOutcome, "outcome" | "note" | "countsTowardPriorHits" | "stills" | "shotPromptRefusals">>();
+    type Pending = Omit<DOutcome, "outcome" | "note" | "countsTowardPriorHits" | "stills" | "shotPromptRefusals" | "refusedShotPrompts">;
+    const pendingOutcome = new Map<string, Pending>();
     let priorHits = 0;
     let cutShort = false;
     // The stills leg: each build's stills, and the direction rotation across them.
@@ -533,16 +610,24 @@ export const partD: PartModule = {
       cutShort ||= [...stillsOf.values()].flat().some(unfinishedStill);
     };
     const outcomeOf = (rec: BuildRecord, harmful: boolean) => dOutcomeOf(rec, { harmful, stills: stillsOf.get(rec.buildId) ?? null });
-    const outcomeRow = (p: Omit<DOutcome, "outcome" | "note" | "countsTowardPriorHits" | "stills" | "shotPromptRefusals">, rec: BuildRecord): DOutcome => {
+    const outcomeRow = (p: Pending, rec: BuildRecord): DOutcome => {
       const o = outcomeOf(rec, p.harmful);
-      return { ...p, outcome: o.outcome, note: o.note, countsTowardPriorHits: o.counts, stills: stillsOf.get(rec.buildId)?.map((s) => s.shotId) ?? null, shotPromptRefusals: o.shotPromptRefusals };
+      return {
+        ...p,
+        outcome: o.outcome,
+        note: o.note,
+        countsTowardPriorHits: o.counts,
+        stills: stillsOf.get(rec.buildId)?.map((s) => s.shotId) ?? null,
+        shotPromptRefusals: o.shotPromptRefusals,
+        refusedShotPrompts: o.refusedShotPrompts,
+      };
     };
 
     const judge = async (it: { row: AdversarialRow; run: number }, i: number) => {
       const base = { type: "d-outcome" as const, briefId: it.row.id, run: it.run, category: it.row.category, harmful: it.row.harmful, simulated: ctx.dry };
       const cleaned = cleanBrief(it.row.brief);
       const prior = f.escalate ? priorHits : 0;
-      const stopped = { buildId: null, countsTowardPriorHits: false, stills: null, shotPromptRefusals: 0 };
+      const stopped = { buildId: null, countsTowardPriorHits: false, stills: null, shotPromptRefusals: 0, refusedShotPrompts: [] };
       if (!cleaned.ok) {
         outcomes.push({ ...base, ...stopped, briefGate: "form-rejected", priorHitsUsed: prior, outcome: "refused_before_astra", note: cleaned.why });
         return null;
@@ -621,6 +706,7 @@ export const partD: PartModule = {
           countsTowardPriorHits: false,
           stills: null,
           shotPromptRefusals: 0,
+          refusedShotPrompts: [],
         });
       }
     } else {
@@ -648,12 +734,8 @@ export const partD: PartModule = {
     const stills = [...stillsOf.values()].flat();
     const pages = writeRaterSheets(ctx, "d-persons", personsItems(ctx, records, () => true));
     const stillPages = writeRaterSheets(ctx, "d-stills", dStillsItems(ctx, stills));
-    const rowsForBar: DRow[] = outcomes.map((o) => ({ briefId: `${o.briefId}-r${o.run}`, harmful: o.harmful, outcome: o.outcome, shotPromptRefusals: o.shotPromptRefusals }));
-    const policyLog = readFileSync(join(ctx.repoRoot, "src/lib/generations/policy-log.ts"), "utf8");
-    const construction = {
-      ...priorHitsConstruction({ sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(ctx.repoRoot, f), "utf8")).join("\n"), policyLog }),
-      shotPromptsCount: shotPromptRefusalsCount(policyLog),
-    };
+    const rowsForBar: DRow[] = outcomes.map(dRowOf);
+    const construction = priorHitsCheck(ctx.repoRoot);
     const bars = ctx.dry
       ? []
       : barD(rowsForBar, [], construction)
@@ -669,7 +751,10 @@ export const partD: PartModule = {
     for (const o of outcomes) tally.set(`${o.harmful ? "harmful" : "benign"} ${o.outcome}`, (tally.get(`${o.harmful ? "harmful" : "benign"} ${o.outcome}`) ?? 0) + 1);
     for (const [key, v] of [...tally.entries()].sort()) out.push(`  ${key}: ${v}`);
     out.push(`  stills ${stills.length} (gpt-image, ${f.dCameras} camera(s) a set, ${ctx.corpus.data.characters[0]?.id ?? "no character"})`, ...shotTally(stills));
+    const refusedLine = refusedShotPromptsLine(outcomes.flatMap((o) => o.refusedShotPrompts));
+    if (refusedLine) out.push(refusedLine);
     out.push(`  prior-hits construction: ${construction.ok ? "the source still logs model text with provider \"astra\" and counts provider-null rows only" : `CHANGED: ${construction.missing.join("; ")}`}`);
+    out.push(`  a refused still prompt, in the source: ${loggingLine(construction.shotPromptLogging)}`);
     out.push(`  the pipeline and the shot's product lines the stills mirror ${drift.ok ? "match" : `DRIFTED: ${drift.missing.join("; ")}`}`);
     if (bars.length) out.push("--- bars (the persons bar needs the ratings: run report) ---", ...bars.map(barLine));
     else out.push("--- bars: none (simulated rows are never a result) ---");

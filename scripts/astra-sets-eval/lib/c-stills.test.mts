@@ -93,6 +93,7 @@ const row = (over: Partial<ShotRecord>): ShotRecord => ({
   entryGate: "allowed",
   outcome: "rendered",
   reason: null,
+  attribution: null,
   note: null,
   refsRefused: false,
   frameFile: null,
@@ -180,6 +181,21 @@ describe("C's bars over real stills", () => {
     expect(cShotsOf(one, "c-2", ratings)[0].compositionScores).toEqual([1, 2]);
     // Twins pair within a run only.
     expect(cShotsOf(one, "c-1")[0].pairKey).not.toBe(cShotsOf(one, "c-2")[0].pairKey);
+  });
+
+  it("a refused set or look still's prompt carries whose it is into C's reported line; an older run's row, with none recorded, is not decided", () => {
+    const blocked = (shotId: string, over: Partial<ShotRecord>) => row({ shotId, outcome: "prompt_blocked", identity: { score: null, unusable: false, scorerVersion: null }, identityDecision: null, ...over });
+    const rows = [
+      ...set,
+      blocked("cs-x1", { attribution: { against: "model", how: "no direction", alone: null } }),
+      blocked("cl-x2", { arm: "look", attribution: { against: "person", how: "judged alone", alone: "allowed" } }),
+      blocked("cs-x3", { attribution: undefined as unknown as null }),
+      blocked("cc-x4", { arm: "control", cameraId: null }),
+    ];
+    const shots = cShotsOf(rows, RUN);
+    expect(shots.filter((s) => s.outcome === "prompt_blocked").map((s) => s.refusedAgainst)).toEqual(["model", "person", null, undefined]);
+    const { reported } = cBars(shots, { engines: ["gpt-image"], exported: null, blocked: new Set(), composition: false });
+    expect(reported.find((b) => b.id === "C-other-gpt-image")?.arithmetic).toContain("prompt refused 3 (logged under Astra 1, against the person 1, not decided 1)");
   });
 
   it("a look shot's refused references block the look arm alone: the set arm's bars still stand", () => {

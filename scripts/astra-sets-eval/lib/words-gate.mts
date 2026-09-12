@@ -25,13 +25,19 @@
 //                hasRealPersonReference, sessionPriorHits }) — runGeneration's
 //                entry gate on a Set's shot (the strict lane: an attachment
 //                rides) or on an ordinary render (a control: nothing rides).
+//   alone        assertPromptAllowed({ prompt: a refused Set shot's prompt
+//                without the direction, hasRealPersonReference: the refusing
+//                gate's lane, sessionPriorHits: 0 }) — policy-log.ts
+//                refusedOnItsOwn, the second judgement that decides whose
+//                refusal it is (refusal-attribution.ts). Asked once, as the
+//                product asks it.
 //
-// "unavailable" is not a reading. Every gate tries again at 1.5 s and 5 s
-// (production hands the answer to the next poll tick, or the person to a
-// second try, instead), then reports "unavailable": a build flagged so is
-// UNJUDGED in Part D and never counted as a refusal. Every call runs inside
-// a net context tagged with the gate and the item, so the meter can
-// attribute the readers' tokens.
+// "unavailable" is not a reading. Every gate but the alone judgement tries
+// again at 1.5 s and 5 s (production hands the answer to the next poll tick,
+// or the person to a second try, instead), then reports "unavailable": a
+// build flagged so is UNJUDGED in Part D and never counted as a refusal.
+// Every call runs inside a net context tagged with the gate and the item, so
+// the meter can attribute the readers' tokens.
 //
 // A STOP REACHES A CALL STILL WAITING FOR ITS TURN. Part D starts every
 // item's gate at once and the calls queue for a slot (the picture check
@@ -148,6 +154,38 @@ export function makeNotesGate(deps: GateDeps): (notes: string, priorHits: number
 export function makeShotGate(deps: GateDeps): (prompt: string, o: { hasRealPersonReference: boolean; priorHits: number }, ref: string) => Promise<GateReading | NotReached> {
   const gate = makeGate(deps);
   return (prompt, o, ref) => gate({ prompt, hasRealPersonReference: o.hasRealPersonReference, sessionPriorHits: o.priorHits }, "shot-gate", ref, true);
+}
+
+/** The alone judgement's reading: the gate's verdict, or the name of an error that is no refusal (refusedOnItsOwn rethrows one). */
+export type AloneReading = GateVerdict | { error: string };
+
+/**
+ * The second judgement a refused Set shot's prompt gets in the product
+ * (policy-log.ts refusedOnItsOwn): the same gate on the prompt without the
+ * direction, in the refusing gate's lane, with no session history. Asked
+ * once, as the product asks it: an "unavailable" reading is not tried again
+ * (refusedOnItsOwn reads it as no refusal), and an error that is no refusal
+ * is handed back by name (refusedOnItsOwn rethrows it, and the refusal
+ * stays the person's). Only the error's name is kept: never the text. It is
+ * one more gate call, metered like the others, and a run that is stopping
+ * by the time its turn comes sends nothing (NOT_REACHED).
+ */
+export function makeAloneJudge(deps: Pick<GateDeps, "assertPromptAllowed" | "refusalReason" | "concurrency" | "stopping">): (text: string, o: { strictLane: boolean }, ref: string) => Promise<AloneReading | NotReached> {
+  const sem = new Semaphore(deps.concurrency ?? 4);
+  return (text, o, ref) =>
+    sem.use(async () => {
+      if (deps.stopping?.()) return NOT_REACHED;
+      return withNetContext({ tag: "alone-gate", ref, settled: false }, async (): Promise<AloneReading> => {
+        try {
+          await deps.assertPromptAllowed({ prompt: text, hasRealPersonReference: o.strictLane, sessionPriorHits: 0 });
+          return "allowed";
+        } catch (err) {
+          const reason = deps.refusalReason(err);
+          if (reason === null) return { error: err instanceof Error ? err.name : "error" };
+          return reason === "unavailable" ? "unavailable" : { refused: reason };
+        }
+      });
+    });
 }
 
 export type PictureDeps = Omit<GateDeps, "assertPromptAllowed"> & { assertOutputAllowed: AssertOutputAllowed };

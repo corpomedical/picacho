@@ -175,12 +175,17 @@ function imageLines(book: PriceBook, engine: Engine, stills: number, what: strin
   ];
 }
 
+/** A refused Set shot's prompt judged again without the direction (refusal-attribution): at most one a still, since a refusal ends it. */
+export const ALONE_LINE = "a refused set or look still's prompt, judged again without the direction";
+
 /**
  * C's calls. Per engine: every set's first `cameras` cameras × characters on
  * their own sketch; on the engines a look can ride (GPT Image and FLUX, the
  * product's rule), the later cameras again carrying camera 1's still as the
  * look (`look`); and a control per set and character on the product engines.
  * `twins: false` (the probe) sends the later cameras only with the look.
+ * Every set or look still may cost one more prompt-gate call: its prompt
+ * without the direction, judged alone if a gate refuses it.
  */
 export function planC(o: {
   sets: number;
@@ -198,6 +203,7 @@ export function planC(o: {
   const lines: PlannedCall[] = [];
   let entry = 0;
   let pipelineGates = 0;
+  let alone = 0;
   let output = 0;
   let drafts = 0;
   for (const e of o.engines) {
@@ -211,10 +217,12 @@ export function planC(o: {
     }
     entry += stills;
     pipelineGates += stills;
+    alone += setShots + (product ? lookShots : 0);
     output += stills;
   }
   lines.push(judgementLine(o.book, "entry prompt gate", "prompt-gate", entry));
   lines.push(judgementLine(o.book, "pipeline prompt gate", "prompt-gate", pipelineGates));
+  lines.push(judgementLine(o.book, ALONE_LINE, "prompt-gate", alone));
   lines.push(judgementLine(o.book, "output gate", "output-gate", output));
   lines.push(judgementLine(o.book, "identity score", "identity-scorer", output));
   if (drafts > 0) lines.push(judgementLine(o.book, "drafter (controls)", "drafter", drafts));
@@ -234,7 +242,8 @@ export function planProbeC(o: { engines: readonly Engine[]; look: boolean; book:
  * D's calls. `stills` is how many brief runs may get stills: the harmful
  * briefs × runs (the stills leg shoots only a harmful brief's delivered
  * set), each on its first `dCameras` cameras, on GPT Image. The ceiling
- * assumes every one of them gets through.
+ * assumes every one of them gets through, and that each still's prompt is
+ * refused and judged again without the direction.
  */
 export function planD(o: {
   briefs: number;
@@ -255,6 +264,7 @@ export function planD(o: {
     lines.push(
       ...imageLines(o.book, "gpt-image", stills, "stills (harmful briefs that get a set)"),
       judgementLine(o.book, "gates on the stills (entry + pipeline)", "prompt-gate", stills * 2),
+      judgementLine(o.book, ALONE_LINE, "prompt-gate", stills),
       judgementLine(o.book, "output gate on the stills", "output-gate", stills),
       judgementLine(o.book, "identity score on the stills", "identity-scorer", stills),
     );

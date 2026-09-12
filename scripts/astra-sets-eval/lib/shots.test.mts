@@ -13,12 +13,14 @@ import { MIRRORED, missingMirrors, pipelinePrompt } from "./pipeline-strings.mts
 import { makePriceBook, type ExternalPrices } from "./prices.mts";
 import { SEEDREAM_SQUARE, type SeedreamInput } from "./seedream.mts";
 import {
+  attributeRefusal,
   BLOCKED_NOTE,
   blockedNote,
   blockKey,
   classifyEngineError,
   LOOK_BLOCKED_NOTE,
   lookRides,
+  modelOnlyShotPrompt,
   OUTPUT_STAGE_FLAG,
   pipelineOutcome,
   reasonBySentence,
@@ -38,6 +40,7 @@ import {
 } from "./shots.mts";
 import { SpendGuard } from "./spend-guard.mts";
 import type { LedgerInput } from "./ledger.mts";
+import { NOT_REACHED, type AloneReading } from "./words-gate.mts";
 import { fixtureJson } from "../parts/simulate.mts";
 
 // One still, sent the way the product sends a Set's shot, over scripted
@@ -81,6 +84,7 @@ afterEach(() => rmSync(root, { recursive: true, force: true }));
 
 type Calls = {
   gate: { prompt: string; o: { hasRealPersonReference: boolean; priorHits: number } }[];
+  alone: { text: string; o: { strictLane: boolean }; ref: string }[];
   pipeline: { prompt: string; options: RealPipelineOptions; maxAttempts: number | undefined; checkCancelled: (() => Promise<boolean>) | undefined }[];
   composedGate: { prompt: string; hasRealPersonReference?: boolean; sessionPriorHits?: number }[];
   seedream: SeedreamInput[];
@@ -109,9 +113,10 @@ function fakeNet(status: (url: string, body: string) => number = () => 200) {
  * plus referenceNotes (as pipeline.ts appends them), then persistImage.
  */
 function fakeDeps(net: NetGuard, over: Partial<ShotDeps> & { sendPrompt?: (prompt: string, notes: string) => string; render?: (o: RealPipelineOptions) => "ok" | "fail" } = {}) {
-  const calls: Calls = { gate: [], pipeline: [], composedGate: [], seedream: [], judge: [], scored: [] };
+  const calls: Calls = { gate: [], alone: [], pipeline: [], composedGate: [], seedream: [], judge: [], scored: [] };
   const deps: ShotDeps = {
     entryGate: async (prompt, o) => (calls.gate.push({ prompt, o }), { verdict: "allowed", scores: {} }),
+    judgeAlone: async (text, o, ref) => (calls.alone.push({ text, o, ref }), "allowed"),
     assertPromptAllowed: (async (i: { prompt: string; hasRealPersonReference?: boolean; sessionPriorHits?: number }) => (calls.composedGate.push(i), { sexual_nudity: "NEGLIGIBLE" })) as unknown as ShotDeps["assertPromptAllowed"],
     promptRefusal: (e) => (e instanceof Refusal ? e.reason : null),
     promptReasonOf: reasonBySentence({ sexual: "PROMPT SEXUAL", unavailable: "PROMPT UNAVAILABLE" }),
@@ -269,6 +274,133 @@ describe("what a pipeline result means", () => {
     expect(renderEngineOf("queue.fal.run", "/fal-ai/bytedance/seedream/v4/edit", "POST")).toBe("seedream");
     expect(renderEngineOf("queue.fal.run", "/fal-ai/bytedance/seedream/v4/edit/requests/abc/status", "GET")).toBeNull();
     expect(renderEngineOf("v3.fal.media", "/files/a.png", "GET")).toBeNull();
+  });
+});
+
+// A Set shot's refused prompt: who the product logs it against
+// (refusal-attribution.ts), decided by its own decideRefusalProvider.
+describe("whose refusal a Set shot's refused prompt is", () => {
+  it("the prompt without the direction is shootInSet's modelOnlyPrompt: buildSetShotPrompt over the same inputs, direction empty", () => {
+    const mark = spec.marks[0];
+    const layout = normaliseSetLayout({ markId: mark.id, mark, camera: { position: spec.cameras[0].position, target: spec.cameras[0].target, fovDeg: spec.cameras[0].fovDeg } }, spec);
+    expect(modelOnlyShotPrompt(request())).toBe(buildSetShotPrompt({ description: spec.description, direction: "", lifted: true, layout, look: null }));
+    expect(modelOnlyShotPrompt(request())).not.toContain("In this frame:");
+    expect(shotPrompt(request())).toContain("In this frame: looks back over one shoulder");
+    // A look shot keeps its look sentences: they are Picacho's.
+    const look = { sameCharacter: true, savedOutfit: false };
+    expect(modelOnlyShotPrompt({ ...request(), arm: "look", look })).toBe(buildSetShotPrompt({ description: spec.description, direction: "", lifted: true, layout, look }));
+    // With no direction the shot prompt is its model-only prompt.
+    expect(modelOnlyShotPrompt(request({ direction: "  " }))).toBe(shotPrompt(request({ direction: "  " })));
+    expect(modelOnlyShotPrompt({ ...request(), arm: "control", camera: null })).toBeNull();
+  });
+
+  const refused = { prompt: "Astra's words. In this frame: she leans on the car.", modelOnlyPrompt: "Astra's words.", strictLane: true };
+  const judging = (reading: AloneReading | typeof NOT_REACHED) => {
+    const seen: { text: string; strictLane: boolean; ref: string }[] = [];
+    const judge = async (text: string, o: { strictLane: boolean }, ref: string) => (seen.push({ text, strictLane: o.strictLane, ref }), reading);
+    return { judge, seen };
+  };
+
+  it("decides as the product decides: no direction is Astra's, refused alone is Astra's, passing alone is the person's", async () => {
+    const none = judging("allowed");
+    expect(await attributeRefusal(none.judge, "ds-1", { ...refused, prompt: "Astra's words." })).toEqual({ against: "model", how: "no direction", alone: null });
+    expect(none.seen).toEqual([]);
+    const alone = judging({ refused: "sexual" });
+    expect(await attributeRefusal(alone.judge, "ds-1", refused)).toEqual({ against: "model", how: "judged alone", alone: "refused:sexual" });
+    expect(alone.seen).toEqual([{ text: "Astra's words.", strictLane: true, ref: "ds-1" }]);
+    expect(await attributeRefusal(judging("allowed").judge, "ds-1", refused)).toEqual({ against: "person", how: "judged alone", alone: "allowed" });
+  });
+
+  it("a judgement that cannot read or fails leaves it the person's, as the product's fallback does; a stop decides nothing; a control has no model-written part", async () => {
+    // refusedOnItsOwn reads "unavailable" as no refusal.
+    expect(await attributeRefusal(judging("unavailable").judge, "ds-1", refused)).toEqual({ against: "person", how: "judged alone", alone: "unavailable" });
+    expect(await attributeRefusal(judging({ error: "TypeError" }).judge, "ds-1", refused)).toEqual({ against: "person", how: "judgement failed", alone: "error:TypeError" });
+    const thrown = async () => {
+      throw new RangeError("boom");
+    };
+    expect(await attributeRefusal(thrown, "ds-1", refused)).toEqual({ against: "person", how: "judgement failed", alone: "error:RangeError" });
+    expect(await attributeRefusal(judging(NOT_REACHED).judge, "ds-1", refused)).toEqual({ against: null, how: "not judged", alone: null });
+    const control = judging({ refused: "sexual" });
+    expect(await attributeRefusal(control.judge, "cc-1", { ...refused, modelOnlyPrompt: null })).toBeNull();
+    expect(control.seen).toEqual([]);
+  });
+
+  it("at the entry gate: a set or look still's refusal is attributed in the strict lane; a control's is not", async () => {
+    const { net, sent } = fakeNet();
+    const refuse: ShotDeps["entryGate"] = async () => ({ verdict: { refused: "violence" }, scores: undefined });
+    const judged: { text: string; o: { strictLane: boolean }; ref: string }[] = [];
+    const astras = fakeDeps(net, { entryGate: refuse, judgeAlone: async (text, o, ref) => (judged.push({ text, o, ref }), { refused: "violence" }) });
+    const r = await shoot(envOf(net, astras.deps).env, request());
+    expect(r).toMatchObject({ outcome: "prompt_blocked", entryGate: "refused:violence", attribution: { against: "model", how: "judged alone", alone: "refused:violence" }, engineCalls: 0 });
+    expect(judged).toEqual([{ text: modelOnlyShotPrompt(request()), o: { strictLane: true }, ref: "cs-set1-c1-char-a-gpt-image" }]);
+    expect(astras.calls.pipeline).toEqual([]);
+    // The person's direction made the difference: Astra's part passes alone.
+    const theirs = fakeDeps(net, { entryGate: refuse });
+    const look = { fromShotId: "cs-1", still: { bytes: PNG, mime: "image/png" }, sameCharacter: true, savedOutfit: false };
+    expect((await shoot(envOf(net, theirs.deps).env, request({ arm: "look", shotId: "cl-1", look }))).attribution).toEqual({ against: "person", how: "judged alone", alone: "allowed" });
+    // The look shot's prompt without the direction keeps its look sentences.
+    expect(theirs.calls.alone[0].text).toContain("One reference photo is an earlier still from this same set");
+    // No direction: all of it Astra's, and nothing is judged twice.
+    const bare = fakeDeps(net, { entryGate: refuse });
+    expect((await shoot(envOf(net, bare.deps).env, request({ direction: "" }))).attribution).toEqual({ against: "model", how: "no direction", alone: null });
+    expect(bare.calls.alone).toEqual([]);
+    // A control is an ordinary render: the refusal is the person's, and the product asks nothing.
+    const control = fakeDeps(net, { entryGate: refuse });
+    expect((await shoot(envOf(net, control.deps).env, request({ arm: "control", shotId: "cc-1", camera: null, frame: null, frameFile: null }))).attribution).toBeNull();
+    expect(control.calls.alone).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("at the pipeline's gate on the compiled prompt: the text it read, judged without the direction; an unavailable gate is no refusal and asks nothing", async () => {
+    const { net, sent } = fakeNet();
+    const blocked = (sentence: string) =>
+      (async (prompt: string) => ({
+        attempts: [{ attempt: 1, steps: [{ step: "validate", detail: sentence }], passed: false, issues: ["content_policy"], compiledPrompt: prompt }],
+        succeeded: false,
+        finalPrompt: prompt,
+        resultUrl: null,
+        contentPolicyBlock: sentence,
+      })) as unknown as ShotDeps["runRealPipeline"];
+    const judged: { text: string; o: { strictLane: boolean }; ref: string }[] = [];
+    const refusedAlone = fakeDeps(net, { runRealPipeline: blocked("PROMPT SEXUAL"), judgeAlone: async (text, o, ref) => (judged.push({ text, o, ref }), { refused: "sexual" }) });
+    const r = await shoot(envOf(net, refusedAlone.deps).env, request({ engine: "flux", shotId: "cs-flux" }));
+    expect(r).toMatchObject({ outcome: "prompt_blocked", entryGate: "allowed", reason: "sexual", attribution: { against: "model", how: "judged alone", alone: "refused:sexual" } });
+    expect(judged).toEqual([{ text: modelOnlyShotPrompt(request()), o: { strictLane: true }, ref: "cs-flux" }]);
+    const down = fakeDeps(net, { runRealPipeline: blocked("PROMPT UNAVAILABLE") });
+    expect(await shoot(envOf(net, down.deps).env, request({ engine: "flux", shotId: "cs-flux-2" }))).toMatchObject({ outcome: "unjudged", attribution: null });
+    expect(down.calls.alone).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+
+  it("at the composed route's gate (Seedream): the prompt with the notes, against the same prompt without the direction, composed alike", async () => {
+    const { net } = fakeNet();
+    const assertPromptAllowed = (async () => Promise.reject(new Refusal("minors"))) as unknown as ShotDeps["assertPromptAllowed"];
+    const d = fakeDeps(net, { assertPromptAllowed });
+    const r = await shoot(envOf(net, d.deps).env, request({ engine: "seedream", shotId: "cs-sd" }));
+    expect(r).toMatchObject({ outcome: "prompt_blocked", reason: "minors", attribution: { against: "person", how: "judged alone", alone: "allowed" } });
+    expect(d.calls.alone).toEqual([{ text: pipelinePrompt(modelOnlyShotPrompt(request()) as string), o: { strictLane: true }, ref: "cs-sd" }]);
+    expect(d.calls.seedream).toEqual([]);
+    // With no direction the composed prompt is its own model-only prompt: Astra's, unjudged.
+    const bare = fakeDeps(net, { assertPromptAllowed });
+    expect((await shoot(envOf(net, bare.deps).env, request({ engine: "seedream", shotId: "cs-sd-2", direction: "" }))).attribution).toEqual({ against: "model", how: "no direction", alone: null });
+    expect(bare.calls.alone).toEqual([]);
+  });
+
+  it("a stop that lands while the gate refuses decides nothing and sends nothing more", async () => {
+    const { net, sent } = fakeNet();
+    const box: { guard?: SpendGuard } = {};
+    const entryGate: ShotDeps["entryGate"] = async () => {
+      box.guard?.stop("sigint");
+      return { verdict: { refused: "sexual" }, scores: undefined };
+    };
+    // The real judge asks the run's stop when its turn comes (words-gate.mts makeAloneJudge).
+    const judged: string[] = [];
+    const { deps } = fakeDeps(net, { entryGate, judgeAlone: async (text) => (box.guard?.stopped ? NOT_REACHED : (judged.push(text), "allowed")) });
+    const { env, guard } = envOf(net, deps);
+    box.guard = guard;
+    expect((await shoot(env, request())).attribution).toEqual({ against: null, how: "not judged", alone: null });
+    expect(judged).toEqual([]);
+    expect(sent).toEqual([]);
   });
 });
 

@@ -1,10 +1,11 @@
 // The snapshot page's files, served from MEMORY on 127.0.0.1 only: the
-// product's src/lib/sets/{set-spec,build-scene,exposure,compare}.ts with
-// their types stripped (Node's own stripTypeScriptTypes; all four have zero
-// runtime imports once stripped), three.js from node_modules,
-// snap-page.html, and one /spec/<key>.json per set. Nothing is written to
-// disk, so no generated .js ever lands where tsc, ESLint or vitest would
-// sweep it up.
+// product's src/lib/sets/{set-spec,marks,build-scene,exposure,compare}.ts
+// with their types stripped (Node's own stripTypeScriptTypes; once stripped,
+// their only runtime import is set-spec's of marks, since 2026-09-12, and
+// every relative import is rewritten to the served .js), three.js from
+// node_modules, snap-page.html, and one /spec/<key>.json per set. Nothing is
+// written to disk, so no generated .js ever lands where tsc, ESLint or
+// vitest would sweep it up.
 
 import { createServer, type Server } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
@@ -38,9 +39,12 @@ function strip(src: string): string {
   }
 }
 
+/** The product modules the page loads, by name under src/lib/sets/. A module one of them imports at runtime must be here too, or the page never loads. */
+export const STAGE_MODULES = ["set-spec", "marks", "build-scene", "exposure", "compare"] as const;
+
 export function stageFiles(repoRoot: string): Map<string, File> {
   const files = new Map<string, File>();
-  for (const name of ["set-spec", "build-scene", "exposure", "compare"]) {
+  for (const name of STAGE_MODULES) {
     const src = readFileSync(join(repoRoot, `src/lib/sets/${name}.ts`), "utf8");
     const js = strip(src).replace(/from\s+"\.\/([\w-]+)"/g, 'from "./$1.js"');
     files.set(`/${name}.js`, { body: js, type: "text/javascript" });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { netContext } from "./net-guard.mts";
-import { makeBriefGate, makeNotesGate, makePictureCheck, makeWordsJudge, NOT_REACHED, type AssertOutputAllowed, type AssertPromptAllowed } from "./words-gate.mts";
+import { makeAloneJudge, makeBriefGate, makeNotesGate, makePictureCheck, makeWordsJudge, NOT_REACHED, type AssertOutputAllowed, type AssertPromptAllowed } from "./words-gate.mts";
 
 // D's photo leg calls the product's gates directly, as submitSetPhotoBuild
 // does, and never the database: the notes with a real photograph beside
@@ -71,6 +71,47 @@ describe("the picture check", () => {
     expect(await flaky("d", { promptScores: null, priorHits: 0 }, "r")).toBe("allowed");
     const down = makePictureCheck({ assertOutputAllowed: async () => Promise.reject(new Refusal("unavailable")), refusalReason, ...noWait });
     expect(await down("d", { promptScores: null, priorHits: 0 }, "r")).toBe("unavailable");
+  });
+});
+
+// A refused Set shot's prompt without the direction, judged as
+// policy-log.ts refusedOnItsOwn judges it: whose refusal it is.
+describe("the alone judgement", () => {
+  it("is the same gate in the refusing gate's lane with no session history, asked once and tagged for the meter", async () => {
+    const seen: Parameters<AssertPromptAllowed>[0][] = [];
+    const tags: (string | undefined)[] = [];
+    const judge = makeAloneJudge({
+      assertPromptAllowed: async (input) => {
+        seen.push(input);
+        tags.push(netContext.getStore()?.tag);
+        return {};
+      },
+      refusalReason,
+    });
+    expect(await judge("Render the location photorealistically.", { strictLane: true }, "ds-1")).toBe("allowed");
+    expect(await judge("Render the location photorealistically.", { strictLane: false }, "cs-2")).toBe("allowed");
+    expect(seen).toEqual([
+      { prompt: "Render the location photorealistically.", hasRealPersonReference: true, sessionPriorHits: 0 },
+      { prompt: "Render the location photorealistically.", hasRealPersonReference: false, sessionPriorHits: 0 },
+    ]);
+    expect(tags).toEqual(["alone-gate", "alone-gate"]);
+  });
+
+  it("a refusal is a reading; unavailable is not tried again; an error that is no refusal comes back by name, never its text", async () => {
+    expect(await makeAloneJudge({ assertPromptAllowed: async () => Promise.reject(new Refusal("sexual")), refusalReason })("x", { strictLane: true }, "r")).toEqual({ refused: "sexual" });
+    let calls = 0;
+    const down = makeAloneJudge({ assertPromptAllowed: async () => (calls++, Promise.reject(new Refusal("unavailable"))), refusalReason });
+    expect(await down("x", { strictLane: true }, "r")).toBe("unavailable");
+    expect(calls).toBe(1);
+    const odd = makeAloneJudge({ assertPromptAllowed: async () => Promise.reject(new TypeError("the words were: a secret prompt")), refusalReason });
+    expect(await odd("x", { strictLane: true }, "r")).toEqual({ error: "TypeError" });
+  });
+
+  it("a run stopping by its turn sends nothing", async () => {
+    let calls = 0;
+    const judge = makeAloneJudge({ assertPromptAllowed: async () => (calls++, {}), refusalReason, stopping: () => true });
+    expect(await judge("x", { strictLane: true }, "ds-1")).toBe(NOT_REACHED);
+    expect(calls).toBe(0);
   });
 });
 

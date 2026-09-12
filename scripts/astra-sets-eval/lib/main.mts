@@ -20,7 +20,7 @@ import { BATCH_DOC_SENTENCE, makePriceBook, validateExternalPrices } from "./pri
 import { checkPlan, SpendGuard } from "./spend-guard.mts";
 import { EVAL_DIR, HarnessError, newRunId, REPO_ROOT, usd } from "./util.mts";
 import { evalSafetyId } from "./builders.mts";
-import { makeBriefGate, makeNotesGate, makePictureCheck, makeShotGate, makeWordsJudge } from "./words-gate.mts";
+import { makeAloneJudge, makeBriefGate, makeNotesGate, makePictureCheck, makeShotGate, makeWordsJudge } from "./words-gate.mts";
 import { downloadPicture, reasonBySentence } from "./shots.mts";
 import { runSeedream } from "./seedream.mts";
 import { ConfigAbort } from "./build-flow.mts";
@@ -193,6 +193,8 @@ export async function main(o: { cli: Exclude<Cli, { cmd: "help" }>; net: NetGuar
       const scorer = await import("../../../src/lib/generations/providers/openai.ts");
       gates.shots = {
         entryGate: makeShotGate({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, onOddError, stopping }),
+        // A refused Set shot's prompt, without the direction, judged alone: whose refusal it is.
+        judgeAlone: makeAloneJudge({ assertPromptAllowed: cp.assertPromptAllowed, refusalReason, stopping }),
         assertPromptAllowed: cp.assertPromptAllowed,
         promptRefusal: refusalReason,
         promptReasonOf: reasonBySentence(cp.refusalMessages),

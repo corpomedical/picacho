@@ -26,9 +26,12 @@
 //                       and identity and composition likewise — with the
 //                       camera heights and the rest, REPORTED. A C run at the
 //                       other effort is REPORTED beside it, never deciding
-//   stills (D)          D's outcomes carry the stills leg's verdicts; the
-//                       d-stills sheet (stills that passed the output gate,
-//                       rated off limits or not) is REPORTED, outside the bar
+//   stills (D)          D's outcomes carry the stills leg's verdicts, and
+//                       each refused still prompt with who the product logs
+//                       it against, which D-prior-hits reads against how the
+//                       source logs one (read at report time); the d-stills
+//                       sheet (stills that passed the output gate, rated off
+//                       limits or not) is REPORTED, outside the bar
 //   the photo arm       (runs whose manifest says photos: A and B on the
 //                       location photos, D on the photos with people) is read
 //                       apart: its own bars — A photo validity and cost
@@ -68,12 +71,9 @@ import {
   capAtUndetermined,
   capPhotoPersons,
   defaultCredits,
-  PRIOR_HITS_SOURCES,
   photoArm,
-  priorHitsConstruction,
   reportDPhotos,
   reportDStills,
-  shotPromptRefusalsCount,
   type BarResult,
   type BItem,
   type DRow,
@@ -83,7 +83,7 @@ import { tokenCounts, type PriceBook } from "../lib/prices.mts";
 import { canonicalJson, newRunId, pct, usd } from "../lib/util.mts";
 import { readRun } from "./b.mts";
 import { cEffortOf, cFromRuns } from "./c.mts";
-import { dPhotoRow, type DOutcome, type DPhotoOutcome } from "./d.mts";
+import { dPhotoRow, dRowOf, priorHitsCheck, type DOutcome, type DPhotoOutcome } from "./d.mts";
 import { eItems, type EPhotoRow, type EReadRow } from "./e.mts";
 
 type LoadedRun = {
@@ -250,13 +250,8 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
       choices: (combined.get(k)?.ratings ?? []).map((x) => x.choice).filter((x): x is "yes" | "no" | "unsure" => typeof x === "string"),
     }));
   };
-  const construction = () => {
-    const policyLog = readFileSync(join(o.repoRoot, "src/lib/generations/policy-log.ts"), "utf8");
-    return {
-      ...priorHitsConstruction({ sets: PRIOR_HITS_SOURCES.map((f) => readFileSync(join(o.repoRoot, f), "utf8")).join("\n"), policyLog }),
-      shotPromptsCount: shotPromptRefusalsCount(policyLog),
-    };
-  };
+  // How the product logs model-text refusals and a refused still prompt, read from its source now (as D reads it).
+  const construction = () => priorHitsCheck(o.repoRoot);
   const words = real.filter((r) => !r.photos);
 
   // A
@@ -335,7 +330,8 @@ export async function runReport(o: { runDirs: readonly string[]; flags: Flags; b
   const dOutcomes = dRuns.flatMap((r) => r.rows.filter((x) => x.type === "d-outcome") as unknown as DOutcome[]);
   let priorHitsBar: BarResult | null = null;
   if (dOutcomes.length) {
-    const rows: DRow[] = dOutcomes.map((x) => ({ briefId: `${x.briefId}-r${x.run}`, harmful: x.harmful, outcome: x.outcome, shotPromptRefusals: x.shotPromptRefusals }));
+    // A row from before the eval judged Astra's part alone reads as it did: its refused still prompts undecided.
+    const rows: DRow[] = dOutcomes.map(dRowOf);
     // Every item on every real words persons sheet (A's and D's).
     const persons = personsOf(words);
     const personsFrom = words.filter((r) => r.keys.some((k) => k.kind === "d-persons"));

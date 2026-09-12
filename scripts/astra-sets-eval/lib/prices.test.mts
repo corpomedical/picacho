@@ -14,7 +14,7 @@ import { MATCH_SHOT_INPUT_TEXT, MATCH_SHOT_INSTRUCTIONS, MATCH_SHOT_JSON_SCHEMA 
 import { COST_BASIS_USD_PER_CREDIT } from "../../../src/lib/generations/providers/video-models.ts";
 import { defaultCredits } from "./pass-bars.mts";
 import { baselineInputBoundChars, costOfTokens, makePriceBook, matchBaselineInputBound, tokenCounts, validateExternalPrices, type ExternalPrices } from "./prices.mts";
-import { ceilingOf, planA, planAPhotos, planC, planCanary, planD, planDPhotos, planE, planProbeA, planProbeC } from "./plan.mts";
+import { ALONE_LINE, ceilingOf, planA, planAPhotos, planC, planCanary, planD, planDPhotos, planE, planProbeA, planProbeC } from "./plan.mts";
 import { checkPlan } from "./spend-guard.mts";
 import { partE } from "../parts/e.mts";
 import type { RunContext } from "./context.mts";
@@ -125,6 +125,9 @@ describe("the plans", () => {
     expect(plan.find((l) => l.kind === "gpt-image" && l.label.startsWith("look shots"))?.count).toBe(80);
     expect(plan.some((l) => l.kind === "seedream" && l.label.startsWith("look shots"))).toBe(false);
     for (const g of ["entry prompt gate", "pipeline prompt gate", "output gate", "identity score"]) expect(countOf(plan, g)).toBe(300);
+    // A refused set or look still's prompt is judged again without the direction: 60 set shots × 3 engines + 40 look shots × 2, never a control.
+    expect(countOf(plan, ALONE_LINE)).toBe(60 * 3 + 40 * 2);
+    expect(plan.find((l) => l.label.startsWith(ALONE_LINE))?.kind).toBe("gates");
     expect(countOf(plan, "drafter")).toBe(40);
     expect(ceilingOf(plan).unpriced.sort()).toEqual(["drafter", "flux", "gates", "scorer", "seedream"]);
   });
@@ -135,6 +138,7 @@ describe("the plans", () => {
     expect(renders(plan, "flux")).toBe(160);
     expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(27.2, 9);
     expect(countOf(plan, "entry prompt gate")).toBe(220);
+    expect(countOf(plan, ALONE_LINE)).toBe(180);
     const look = planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image"], control: true, look: true, book });
     expect(ceilingOf(look).ceilingUsd - ceilingOf(planC({ sets: 10, cameras: 3, characters: 2, engines: ["gpt-image"], control: true, look: false, book })).ceilingUsd).toBeCloseTo(13.6, 9);
   });
@@ -147,11 +151,12 @@ describe("the plans", () => {
     expect(renders(plan, "seedream")).toBe(1);
     expect(plan.find((l) => l.kind === "gpt-image" && l.label.startsWith("look shots"))?.count).toBe(2);
     expect(plan.some((l) => l.label.startsWith("controls"))).toBe(false);
-    for (const g of ["entry prompt gate", "pipeline prompt gate", "output gate", "identity score"]) expect(countOf(plan, g)).toBe(5);
+    for (const g of ["entry prompt gate", "pipeline prompt gate", ALONE_LINE, "output gate", "identity score"]) expect(countOf(plan, g)).toBe(5);
     // --no-look: one still per engine, $0.34.
     const bare = planProbeC({ engines: ["gpt-image", "flux", "seedream"], look: false, book });
     expect(ceilingOf(bare).ceilingUsd).toBeCloseTo(0.34, 9);
     expect(countOf(bare, "entry prompt gate")).toBe(3);
+    expect(countOf(bare, ALONE_LINE)).toBe(3);
   });
 
   it("D: 40 × $1.155 standard, plus 2 GPT Image renders a still for every harmful brief run that may get a set", () => {
@@ -165,6 +170,10 @@ describe("the plans", () => {
     const two = planD({ briefs: 40, runs: 3, dCameras: 2, transport: "background", stills: 20 * 3, book });
     expect(ceilingOf(two).ceilingUsd).toBeCloseTo(138.6 + 120 * 0.34, 9);
     expect(two.find((l) => l.label.startsWith("output gate on the stills"))?.count).toBe(120);
+    // Each still's prompt, refused, judged again without the direction: one more prompt-gate call a still at most.
+    expect(two.find((l) => l.label.startsWith("gates on the stills"))?.count).toBe(240);
+    expect(two.find((l) => l.label.startsWith(ALONE_LINE))?.count).toBe(120);
+    expect(noStills.some((l) => l.label.startsWith(ALONE_LINE))).toBe(false);
   });
 
   it("A photos: 20 photos × 3 runs at standard price (never Batch) = 60 × $1.81625 = $108.975; Astra only", () => {

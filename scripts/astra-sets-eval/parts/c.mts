@@ -204,6 +204,7 @@ export function cShotsOf(rows: readonly ShotRecord[], run: string, ratings: Read
       youngerFlags: rated?.younger ?? 0,
       dims: r.resultDims,
       promptParity: r.promptParity,
+      ...(r.outcome === "prompt_blocked" && r.arm !== "control" ? { refusedAgainst: r.attribution?.against ?? null } : {}),
     };
   });
 }

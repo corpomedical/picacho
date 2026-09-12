@@ -7,7 +7,7 @@ import { compareCrop, compareOutputSize, widenFovDeg } from "../../../src/lib/se
 import { SET_COMPARE_PX } from "../../../src/lib/sets/set-config.ts";
 import { REPO_ROOT } from "../lib/util.mts";
 import { comparePose } from "./render-sets.mts";
-import { stageFiles } from "./stage.mts";
+import { STAGE_MODULES, stageFiles } from "./stage.mts";
 import { checkViewerParity, MIRRORED_LINES, MIRRORED_MATCH_LINES, MIRRORED_PHOTO_LINES } from "./viewer-parity.mts";
 
 // B's photo arm draws camera 1 at a photo's shape with the product's own
@@ -19,6 +19,32 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "astra-stage-"));
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+describe("the snapshot page's product modules", () => {
+  // set-spec.ts took a runtime import of marks.ts on 2026-09-12; a module the
+  // page cannot fetch stops it loading, and every sketch with it.
+  it("serves every module a served module imports at runtime", () => {
+    const files = stageFiles(REPO_ROOT);
+    for (const name of STAGE_MODULES) {
+      const js = String(files.get(`/${name}.js`)?.body ?? "");
+      expect(js, name).not.toBe("");
+      for (const m of js.matchAll(/\bfrom\s+"\.\/([\w-]+\.js)"/g)) expect(files.has(`/${m[1]}`), `${name}.js imports ./${m[1]}`).toBe(true);
+      // Every relative import is rewritten to the served .js.
+      expect(js, name).not.toMatch(/\bfrom\s+"\.\/[\w-]+"/);
+    }
+    expect(String(files.get("/set-spec.js")?.body)).toContain('from "./marks.js"');
+  });
+
+  it("the page's set-spec.js loads with its marks and normalises a set as the product does", async () => {
+    const files = stageFiles(REPO_ROOT);
+    for (const name of STAGE_MODULES) writeFileSync(join(dir, `${name}.js`), String(files.get(`/${name}.js`)?.body));
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ type: "module" }));
+    const served = (await import(pathToFileURL(join(dir, "set-spec.js")).href)) as typeof import("../../../src/lib/sets/set-spec.ts");
+    const product = await import("../../../src/lib/sets/set-spec.ts");
+    const raw = JSON.parse(readFileSync(join(REPO_ROOT, "src/lib/sets/fixtures-showroom-closed.json"), "utf8"));
+    expect(served.normaliseSetSpec(raw)).toEqual(product.normaliseSetSpec(raw));
+  });
+});
 
 describe("the snapshot page's compare.js", () => {
   it("is the product's compare.ts, type-stripped, and computes what it computes", async () => {
