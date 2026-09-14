@@ -124,8 +124,8 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "Couldn't remove this from the community — try again.": "unshareFailed",
   // Sets (lib/sets/messages.ts) — the Sets pages' error lines, and a failed
   // build's card.
-  "Sets aren't available right now.": "setsUnavailable",
-  "Sets are in private testing and aren't part of any plan yet.": "setsNotOpen",
+  "Helios isn't available right now.": "setsUnavailable",
+  "Helios is in private testing and isn't part of any plan yet.": "setsNotOpen",
   "That set isn't available.": "setNotFound",
   "This set is still being built.": "setNotReady",
   "Describe the place in a few more words.": "setBriefTooShort",

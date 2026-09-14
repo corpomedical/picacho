@@ -41,7 +41,7 @@ const en = {
     generate: "Generate",
     upscale: "Upscale video",
     layers: "Layers",
-    sets: "Sets",
+    sets: "Helios",
     tools: "Tools",
     newBadge: "New",
     templates: "Templates",
@@ -1890,12 +1890,12 @@ const en = {
   // description typed here, or a photo of the place and the notes beside it
   // (Sets from a photo, 2026-09-11) — never the character.
   sets: {
-    eyebrow: "Sets · built by GPT-6 Astra",
-    title: "Sets",
+    eyebrow: "Helios · built by GPT-6 Astra",
+    title: "Helios",
     subtitle:
       "Build a location once, then shoot your characters in it from any angle. Astra builds the place and never sees your character; each still takes the face from your character's own photos and is scored like every take.",
-    previewNote: "In private testing — only admins can see Sets.",
-    webOnly: "Sets are on the web for now. Open Picacho on a computer to build and shoot in one.",
+    previewNote: "In private testing — only admins can see Helios.",
+    webOnly: "Helios is on the web for now. Open Picacho on a computer to build a set and shoot in it.",
     newTitle: "New set",
     briefLabel: "Describe the place",
     briefPlaceholder:
@@ -1905,7 +1905,7 @@ const en = {
     starting: "Starting…",
     buildMeta: "Built by GPT-6 Astra · about 1–5 minutes",
     monthlyUsage: "Set builds this billing month: {used} of {limit}",
-    unlimitedUsage: "No build limit while Sets are in testing",
+    unlimitedUsage: "No build limit while Helios is in testing",
     modeDescribe: "Describe it",
     fromPhoto: "From a photo",
     photoPick: "Choose a photo",
@@ -2137,7 +2137,7 @@ const en = {
     rowCost: "Cost",
     costLine: "{credits} · about a minute",
     astraLabel: "Astra",
-    panelMeta: "Sets · GPT Image 2.5",
+    panelMeta: "Helios · GPT Image 2.5",
     frameProse: "Here's the frame — shoot it, or tell me what to change.",
     shotInSeconds: "Shot in {s} seconds.",
     newestFirst: "the newest first",
@@ -2364,8 +2364,8 @@ const en = {
     // entry above. setBuildRefused names no category and gives no advice on
     // getting past it, the refusal rules everywhere else; "the build is back"
     // is true because a failed build never counts against the monthly cap.
-    setsUnavailable: "Sets aren't available right now.",
-    setsNotOpen: "Sets are in private testing and aren't part of any plan yet.",
+    setsUnavailable: "Helios isn't available right now.",
+    setsNotOpen: "Helios is in private testing and isn't part of any plan yet.",
     setNotFound: "That set isn't available.",
     setNotReady: "This set is still being built.",
     setBriefTooShort: "Describe the place in a few more words.",
