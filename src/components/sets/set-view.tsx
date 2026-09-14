@@ -109,7 +109,7 @@ type Revision = {
 /** What this visit knows of a still it shot: how long it took and the frame it was shot from. */
 type ShotFacts = { seconds: number; frame: string };
 
-type MenuId = "camera" | "lens" | "figure" | "history" | "mode";
+type MenuId = "camera" | "lens" | "figure" | "history" | "mode" | "who";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -129,6 +129,46 @@ const DEG = Math.PI / 180;
 const RING = "shadow-[0_0_0_1px_rgba(35,37,45,0.06),0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.14)]";
 const MENU =
   "absolute left-0 top-full z-30 mt-2 flex min-w-[11rem] flex-col gap-0.5 rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.22)] backdrop-blur-xl";
+
+// ---- the pill controller (drawn 2026-09-14, then built to the drawing) ----
+// The controller floats at the stage's foot where the primary pointer is
+// coarse; the toolbar, the stage's aim arrows and the composer's chips hide
+// there, because the pill holds all of them. The chat keeps the words.
+
+// What a press answers in the palm: navigator.vibrate patterns, milliseconds.
+// Android buzzes; where the hand can't (iPhone's browser has no vibrate),
+// the press still lands quietly.
+const HAND = {
+  /** One wheel step: a pan or a tilt. */
+  step: 8,
+  /** One collar detent: a turn. */
+  detent: 5,
+  /** Shoot fires: grip, fire, settle. */
+  fire: [12, 60, 24],
+  /** A toggle, or a pick from a menu. */
+  toggle: 15,
+  /** A press the controller refuses: the hand learns no without a toast. */
+  refused: [8, 40, 8],
+} as const;
+
+function buzz(pattern: number | readonly number[]) {
+  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(pattern as number | number[]);
+}
+
+// The pill's skin: machined keys on a dark body. Like the stage it keeps one
+// look in both themes — onmedia text on near-black, the ochre reserved for
+// the kept look, and Shoot the one lit thing on the body.
+const PILL_BODY =
+  "bg-[linear-gradient(to_bottom,#34363f,#1d1e24_55%,#131418)] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_22px_44px_-12px_rgba(0,0,0,0.60)]";
+const KEY =
+  "inline-flex h-10 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,#3b3e48,#262831_45%,#16171c)] px-3.5 text-[13px] font-medium text-onmedia/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-1px_0_rgba(0,0,0,0.40),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-45";
+const KEY_LOOK_ON =
+  "inline-flex h-10 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,rgba(240,190,132,0.28),rgba(224,164,104,0.08))] px-3.5 text-[13px] font-medium text-[#f0cda6] shadow-[inset_0_1px_0_rgba(255,255,255,0.20),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38),inset_0_0_0_1.5px_rgba(240,196,142,0.75)] transition-transform active:translate-y-px";
+/** The toolbar's menu, opened upward from the pill. */
+const PILL_MENU =
+  "absolute bottom-full left-0 z-30 mb-2 flex min-w-[11rem] flex-col gap-0.5 rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.22)] backdrop-blur-xl";
+/** An invisible press area over the wheel's face. */
+const WHEEL_HIT = "absolute cursor-pointer rounded-full transition-colors active:bg-white/10 aria-disabled:cursor-default";
 
 function Chevron() {
   return (
@@ -161,6 +201,66 @@ function FrameIcon({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
       <rect x="3" y="5" width="18" height="14" rx="2" />
       <path d="M8 5v14M16 5v14M3 12h18" />
+    </svg>
+  );
+}
+
+/**
+ * The wheel's face, exactly as drawn: the knurled collar that turns the
+ * figure, the aim ring's four sectors, and the hub that frames. One picture;
+ * the presses are invisible buttons laid over it (WHEEL_HIT).
+ */
+function WheelFace({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 320 320" className={className} aria-hidden>
+      <defs>
+        <radialGradient id="set-wheel-collar" cx="50%" cy="38%" r="70%">
+          <stop offset="0%" stopColor="#2b2d34" />
+          <stop offset="100%" stopColor="#17181d" />
+        </radialGradient>
+        <radialGradient id="set-wheel-ring" cx="50%" cy="34%" r="75%">
+          <stop offset="0%" stopColor="#33353e" />
+          <stop offset="100%" stopColor="#1e1f26" />
+        </radialGradient>
+        <radialGradient id="set-wheel-hub" cx="42%" cy="34%" r="80%">
+          <stop offset="0%" stopColor="#3d4049" />
+          <stop offset="100%" stopColor="#22232a" />
+        </radialGradient>
+      </defs>
+      <circle cx="160" cy="160" r="158" fill="rgba(0,0,0,0.35)" />
+      <circle cx="160" cy="160" r="141" fill="none" stroke="url(#set-wheel-collar)" strokeWidth="30" />
+      <circle cx="160" cy="160" r="141" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="22" strokeDasharray="2.5 5" />
+      <circle cx="160" cy="160" r="156" fill="none" stroke="rgba(255,255,255,0.10)" />
+      <text x="60" y="66" textAnchor="middle" fontSize="17" fill="rgba(255,255,255,0.65)">
+        ↺
+      </text>
+      <text x="260" y="66" textAnchor="middle" fontSize="17" fill="rgba(255,255,255,0.65)">
+        ↻
+      </text>
+      <circle cx="160" cy="160" r="90" fill="none" stroke="url(#set-wheel-ring)" strokeWidth="56" />
+      <path d="M 70,160 A 90 90 0 0 1 250,160" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="52" />
+      <circle cx="160" cy="160" r="118" fill="none" stroke="rgba(255,255,255,0.10)" />
+      <g stroke="#14151a" strokeWidth="8" strokeLinecap="round">
+        <line x1="202.4" y1="117.6" x2="246.3" y2="73.7" />
+        <line x1="202.4" y1="202.4" x2="246.3" y2="246.3" />
+        <line x1="117.6" y1="202.4" x2="73.7" y2="246.3" />
+        <line x1="117.6" y1="117.6" x2="73.7" y2="73.7" />
+      </g>
+      <g fontSize="21" fill="#e8e9ee" textAnchor="middle">
+        <text x="160" y="78">↑</text>
+        <text x="160" y="266">↓</text>
+        <text x="72" y="168">←</text>
+        <text x="248" y="168">→</text>
+      </g>
+      <circle cx="160" cy="160" r="52" fill="url(#set-wheel-hub)" stroke="rgba(255,255,255,0.16)" strokeWidth="1.5" />
+      <g stroke="#e8e9ee" strokeWidth="2.2" strokeLinecap="round" fill="none">
+        <path d="M 151,138 H 144 V 145" />
+        <path d="M 169,138 H 176 V 145" />
+        <path d="M 144,163 V 170 H 151" />
+        <path d="M 176,163 V 170 H 169" />
+        <circle cx="160" cy="149" r="3.2" />
+        <path d="M 154,162 Q 160,156 166,162" />
+      </g>
     </svg>
   );
 }
@@ -1327,6 +1427,109 @@ export function SetView({
     }`;
   const toggleMenu = (id: MenuId) => setMenu((m) => (m === id ? null : id));
 
+  // ---- the pill controller's presses ----
+  /** A pill key's press: refused with a shiver, or answered in the palm and done. */
+  const press = (enabled: boolean, answer: number | readonly number[], go: () => void) => {
+    if (!enabled) {
+      buzz(HAND.refused);
+      return;
+    }
+    buzz(answer);
+    go();
+  };
+  const onStill = Boolean(viewingShot);
+  const canShoot = ready && !shooting && !matching && Boolean(characterId) && !loadFailed;
+
+  // One set of options each, shared by the toolbar's dropdowns and the
+  // pill's keys — the same picks, wherever the menu opened.
+  const cameraOptions = (
+    <>
+      {spec.cameras.map((c, i) => (
+        <Option
+          key={c.id}
+          active={cameraId === c.id}
+          onPick={() => {
+            buzz(HAND.toggle);
+            pickCamera(c.id);
+            setMenu(null);
+          }}
+        >
+          {c.label || formatMsg(s.cameraN, { n: i + 1 })}
+        </Option>
+      ))}
+      {cameraId === null && (
+        <Option active onPick={() => setMenu(null)}>
+          {s.yourCamera}
+        </Option>
+      )}
+    </>
+  );
+  const lensOptions = LENSES_MM.map((mm) => (
+    <Option
+      key={mm}
+      active={activeLens === mm}
+      hint={mm === 18 ? s.lensWide : mm === 85 ? s.lensPortrait : mm === 135 ? s.lensLong : undefined}
+      onPick={() => {
+        buzz(HAND.toggle);
+        pickLens(mm);
+        setMenu(null);
+      }}
+    >
+      {formatMsg(s.lensMm, { mm })}
+    </Option>
+  ));
+  const figureOptions = spec.marks.map((m, i) => (
+    <Option
+      key={m.id}
+      active={markId === m.id}
+      onPick={() => {
+        buzz(HAND.toggle);
+        pickMark(m.id);
+        setMenu(null);
+      }}
+    >
+      {m.label || formatMsg(s.markN, { n: i + 1 })}
+    </Option>
+  ));
+  const historyOptions = [...revisions].reverse().map((r) => (
+    <Option
+      key={r.id}
+      active={r.id === frameNumber}
+      hint={r.label}
+      onPick={() => {
+        buzz(HAND.toggle);
+        restoreRevision(r);
+        setMenu(null);
+      }}
+    >
+      {formatMsg(s.revisionN, { n: r.id })}
+    </Option>
+  ));
+  const modeOptions = (
+    <>
+      <Option
+        active={askFirst}
+        onPick={() => {
+          buzz(HAND.toggle);
+          setAskFirst(true);
+          setMenu(null);
+        }}
+      >
+        {s.askBeforeShooting}
+      </Option>
+      <Option
+        active={!askFirst}
+        onPick={() => {
+          buzz(HAND.toggle);
+          setAskFirst(false);
+          setMenu(null);
+        }}
+      >
+        {s.shootWithoutAsking}
+      </Option>
+    </>
+  );
+
   return (
     <div data-set-workspace className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_25rem]">
       {menu && <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} aria-hidden />}
@@ -1348,8 +1551,9 @@ export function SetView({
               >
                 {figureMoved ? s.figureMovedOut : s.dragHint}
               </span>
-              {/* Pan and tilt: turn the camera where it stands. */}
-              <div role="group" aria-label={s.aimLabel} className="absolute bottom-3.5 right-3.5 grid grid-cols-3 gap-1">
+              {/* Pan and tilt: turn the camera where it stands. On touch the
+                  pill controller's wheel does this, so the arrows rest. */}
+              <div role="group" aria-label={s.aimLabel} className="absolute bottom-3.5 right-3.5 grid grid-cols-3 gap-1 pointer-coarse:hidden">
                 {(
                   [
                     [null, [0, AIM_STEP, s.aimUp, "↑"], null],
@@ -1452,41 +1656,274 @@ export function SetView({
           )}
         </div>
 
-        {/* One toolbar: what the frame is set to, and the tools */}
-        <div className="flex flex-wrap items-center gap-2">
-          <Select label={s.toolbarCamera} value={cameraLabel} open={menu === "camera"} onToggle={() => toggleMenu("camera")} disabled={!ready}>
-            {spec.cameras.map((c, i) => (
-              <Option
-                key={c.id}
-                active={cameraId === c.id}
-                onPick={() => {
-                  pickCamera(c.id);
-                  setMenu(null);
-                }}
+        {/* The pill: the controller for the hand, as drawn — floats at the
+            stage's foot on touch screens. The setup on the left, the decision
+            in the middle with Shoot lit, the wheel on the right: the ring
+            aims (on a still it walks the filmstrip), the collar turns the
+            figure, the hub frames (on a still, back to the frame). The chat
+            keeps the words; every press answers in the palm (HAND). */}
+        <div className="sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 hidden pointer-coarse:block">
+          <div className={`mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2.5 rounded-[40px] px-4 py-3.5 ring-1 ring-white/10 sm:rounded-full sm:px-5 ${PILL_BODY}`}>
+            {/* the setup */}
+            <div className="flex min-w-0 max-w-[26rem] flex-wrap items-center justify-center gap-2">
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => press(characters.length > 0, HAND.toggle, () => toggleMenu("who"))}
+                  aria-haspopup="listbox"
+                  aria-expanded={menu === "who"}
+                  aria-disabled={characters.length === 0}
+                  title={s.mentionHint}
+                  className={`${KEY} pl-1.5`}
+                >
+                  {character?.thumbUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={character.thumbUrl} alt="" className="h-[26px] w-[26px] rounded-full object-cover ring-1 ring-white/25" />
+                  ) : (
+                    <span className="h-[26px] w-[26px] rounded-full bg-white/15" />
+                  )}
+                  {character?.name || s.characterLabel}
+                  <Chevron />
+                </button>
+                {menu === "who" && (
+                  <div role="listbox" aria-label={s.mentionTitle} className={PILL_MENU}>
+                    {characters.map((c) => (
+                      <Option
+                        key={c.id}
+                        active={characterId === c.id}
+                        onPick={() => {
+                          buzz(HAND.toggle);
+                          setCharacterId(c.id);
+                          setMenu(null);
+                        }}
+                      >
+                        {c.name}
+                      </Option>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => press(Boolean(lookShot || latestStill), HAND.toggle, () => pickLook(lookShot ? null : latestStill))}
+                aria-pressed={Boolean(lookShot)}
+                aria-disabled={!lookShot && !latestStill}
+                title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
+                className={lookShot ? KEY_LOOK_ON : KEY}
               >
-                {c.label || formatMsg(s.cameraN, { n: i + 1 })}
-              </Option>
-            ))}
-            {cameraId === null && (
-              <Option active onPick={() => setMenu(null)}>
-                {s.yourCamera}
-              </Option>
-            )}
+                {s.lookLabel} · {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
+              </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => press(ready, HAND.toggle, () => toggleMenu("camera"))}
+                  aria-haspopup="listbox"
+                  aria-expanded={menu === "camera"}
+                  aria-disabled={!ready}
+                  className={KEY}
+                >
+                  {cameraLabel}
+                  <Chevron />
+                </button>
+                {menu === "camera" && (
+                  <div role="listbox" aria-label={s.toolbarCamera} className={PILL_MENU}>
+                    {cameraOptions}
+                  </div>
+                )}
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => press(ready, HAND.toggle, () => toggleMenu("lens"))}
+                  aria-haspopup="listbox"
+                  aria-expanded={menu === "lens"}
+                  aria-disabled={!ready}
+                  className={KEY}
+                >
+                  {lensLabel}
+                  <Chevron />
+                </button>
+                {menu === "lens" && (
+                  <div role="listbox" aria-label={s.toolbarLens} className={PILL_MENU}>
+                    {lensOptions}
+                  </div>
+                )}
+              </div>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => press(ready && spec.marks.length > 1, HAND.toggle, () => toggleMenu("figure"))}
+                  aria-haspopup="listbox"
+                  aria-expanded={menu === "figure"}
+                  aria-disabled={!ready || spec.marks.length < 2}
+                  className={KEY}
+                >
+                  {markLabel}
+                  <Chevron />
+                </button>
+                {menu === "figure" && (
+                  <div role="listbox" aria-label={s.toolbarFigure} className={PILL_MENU}>
+                    {figureOptions}
+                  </div>
+                )}
+              </div>
+              {revisions.length > 1 && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => press(ready && !shooting, HAND.toggle, () => toggleMenu("history"))}
+                    aria-haspopup="listbox"
+                    aria-expanded={menu === "history"}
+                    aria-disabled={!ready || shooting}
+                    className={KEY}
+                  >
+                    {formatMsg(s.revisionN, { n: frameNumber })}
+                    <Chevron />
+                  </button>
+                  {menu === "history" && (
+                    <div role="listbox" aria-label={s.historyLabel} className={PILL_MENU}>
+                      {historyOptions}
+                    </div>
+                  )}
+                </div>
+              )}
+              {matchOn && (
+                <button
+                  type="button"
+                  onClick={() => press(ready && !matching && !shooting, HAND.toggle, () => matchFileRef.current?.click())}
+                  aria-disabled={!ready || matching || shooting}
+                  className={KEY}
+                >
+                  {s.matchShot}
+                </button>
+              )}
+            </div>
+
+            {/* the decision */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="relative">
+                {canShoot && (
+                  <>
+                    <span aria-hidden className="absolute -inset-x-4 -inset-y-3 rounded-full bg-[#e0a468] opacity-20 blur-2xl" />
+                    <span
+                      aria-hidden
+                      className="absolute -inset-x-1.5 -inset-y-1 rounded-full bg-[#eab27a] opacity-50 blur-lg motion-safe:animate-[shoot-breathe_3.2s_ease-in-out_infinite]"
+                    />
+                  </>
+                )}
+                <button
+                  type="button"
+                  onClick={() => press(canShoot, HAND.fire, () => void shoot())}
+                  aria-disabled={!canShoot}
+                  className="relative inline-flex h-12 cursor-pointer items-center justify-center whitespace-nowrap rounded-full bg-[radial-gradient(120%_150%_at_50%_28%,#fffef8,#f7f0e0_60%,#ead9bc)] px-7 text-[15px] font-semibold text-[#23252d] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_0_rgba(0,0,0,0.40),0_8px_18px_rgba(0,0,0,0.35),inset_0_0_0_1.5px_rgba(207,168,120,0.8)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-60"
+                >
+                  {shootLabel}
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => press(ready && !shooting, HAND.toggle, anotherAngle)} aria-disabled={!ready || shooting} className={KEY}>
+                  {s.anotherAngle}
+                </button>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => press(true, HAND.toggle, () => toggleMenu("mode"))}
+                    aria-haspopup="listbox"
+                    aria-expanded={menu === "mode"}
+                    title={s.modeHint}
+                    className={KEY}
+                  >
+                    {askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
+                    <Chevron />
+                  </button>
+                  {menu === "mode" && (
+                    <div role="listbox" aria-label={s.modeHint} className={PILL_MENU}>
+                      {modeOptions}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* the wheel */}
+            <div className="relative h-[164px] w-[164px] flex-shrink-0 select-none">
+              <WheelFace className="absolute inset-0 h-full w-full" />
+              <button
+                type="button"
+                onClick={() => press(ready && !onStill, HAND.step, () => aimBy(0, AIM_STEP))}
+                aria-disabled={!ready || onStill}
+                aria-label={s.aimUp}
+                title={s.aimUp}
+                className={`${WHEEL_HIT} left-[60px] top-[14px] h-11 w-11`}
+              />
+              <button
+                type="button"
+                onClick={() => press(ready && !onStill, HAND.step, () => aimBy(0, -AIM_STEP))}
+                aria-disabled={!ready || onStill}
+                aria-label={s.aimDown}
+                title={s.aimDown}
+                className={`${WHEEL_HIT} left-[60px] top-[106px] h-11 w-11`}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  onStill
+                    ? press(shots.length > 1, HAND.step, () => setViewing(shots[(viewingAt - 1 + shots.length) % shots.length].generationId))
+                    : press(ready, HAND.step, () => aimBy(AIM_STEP, 0))
+                }
+                aria-disabled={onStill ? shots.length < 2 : !ready}
+                aria-label={onStill ? s.previousStill : s.aimLeft}
+                title={onStill ? s.previousStill : s.aimLeft}
+                className={`${WHEEL_HIT} left-[14px] top-[60px] h-11 w-11`}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  onStill
+                    ? press(shots.length > 1, HAND.step, () => setViewing(shots[(viewingAt + 1) % shots.length].generationId))
+                    : press(ready, HAND.step, () => aimBy(-AIM_STEP, 0))
+                }
+                aria-disabled={onStill ? shots.length < 2 : !ready}
+                aria-label={onStill ? s.nextStill : s.aimRight}
+                title={onStill ? s.nextStill : s.aimRight}
+                className={`${WHEEL_HIT} left-[106px] top-[60px] h-11 w-11`}
+              />
+              <button
+                type="button"
+                onClick={() => press(ready && !onStill, HAND.detent, () => turn(-TURN_STEP))}
+                aria-disabled={!ready || onStill}
+                aria-label={s.turnLeft}
+                title={s.turnLeft}
+                className={`${WHEEL_HIT} left-[15px] top-[15px] h-8 w-8`}
+              />
+              <button
+                type="button"
+                onClick={() => press(ready && !onStill, HAND.detent, () => turn(TURN_STEP))}
+                aria-disabled={!ready || onStill}
+                aria-label={s.turnRight}
+                title={s.turnRight}
+                className={`${WHEEL_HIT} left-[117px] top-[15px] h-8 w-8`}
+              />
+              <button
+                type="button"
+                onClick={() => (onStill ? press(true, HAND.toggle, () => setViewing(null)) : press(ready, HAND.toggle, frameFigure))}
+                aria-disabled={onStill ? false : !ready}
+                aria-label={onStill ? s.backToFrame : s.frameFigure}
+                title={onStill ? s.backToFrame : s.frameFigure}
+                className={`${WHEEL_HIT} left-[55px] top-[55px] h-[54px] w-[54px]`}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* One toolbar: what the frame is set to, and the tools. On touch the
+            pill controller above holds all of it, so the toolbar rests. */}
+        <div className="flex flex-wrap items-center gap-2 pointer-coarse:hidden">
+          <Select label={s.toolbarCamera} value={cameraLabel} open={menu === "camera"} onToggle={() => toggleMenu("camera")} disabled={!ready}>
+            {cameraOptions}
           </Select>
           <Select label={s.toolbarLens} value={lensLabel} open={menu === "lens"} onToggle={() => toggleMenu("lens")} disabled={!ready}>
-            {LENSES_MM.map((mm) => (
-              <Option
-                key={mm}
-                active={activeLens === mm}
-                hint={mm === 18 ? s.lensWide : mm === 85 ? s.lensPortrait : mm === 135 ? s.lensLong : undefined}
-                onPick={() => {
-                  pickLens(mm);
-                  setMenu(null);
-                }}
-              >
-                {formatMsg(s.lensMm, { mm })}
-              </Option>
-            ))}
+            {lensOptions}
           </Select>
           <Select
             label={s.toolbarFigure}
@@ -1495,18 +1932,7 @@ export function SetView({
             onToggle={() => toggleMenu("figure")}
             disabled={!ready || spec.marks.length < 2}
           >
-            {spec.marks.map((m, i) => (
-              <Option
-                key={m.id}
-                active={markId === m.id}
-                onPick={() => {
-                  pickMark(m.id);
-                  setMenu(null);
-                }}
-              >
-                {m.label || formatMsg(s.markN, { n: i + 1 })}
-              </Option>
-            ))}
+            {figureOptions}
           </Select>
           <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} className={iconTool} aria-label={s.turnLeft} title={s.turnLeft}>
             ↺
@@ -1551,19 +1977,7 @@ export function SetView({
               onToggle={() => toggleMenu("history")}
               disabled={!ready || shooting}
             >
-              {[...revisions].reverse().map((r) => (
-                <Option
-                  key={r.id}
-                  active={r.id === frameNumber}
-                  hint={r.label}
-                  onPick={() => {
-                    restoreRevision(r);
-                    setMenu(null);
-                  }}
-                >
-                  {formatMsg(s.revisionN, { n: r.id })}
-                </Option>
-              ))}
+              {historyOptions}
             </Select>
           )}
         </div>
@@ -1943,7 +2357,7 @@ export function SetView({
                   aria-expanded={mentionOpen}
                   aria-haspopup="listbox"
                   title={s.mentionHint}
-                  className={`${chip(false)} pl-1`}
+                  className={`${chip(false)} pl-1 pointer-coarse:hidden`}
                 >
                   {character?.thumbUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -1961,11 +2375,11 @@ export function SetView({
                 disabled={!lookShot && !latestStill}
                 aria-pressed={Boolean(lookShot)}
                 title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
-                className={chip(Boolean(lookShot))}
+                className={`${chip(Boolean(lookShot))} pointer-coarse:hidden`}
               >
                 {s.lookLabel} · {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
               </button>
-              <div className="relative">
+              <div className="relative pointer-coarse:hidden">
                 <button
                   type="button"
                   onClick={() => toggleMenu("mode")}
@@ -1979,24 +2393,7 @@ export function SetView({
                 </button>
                 {menu === "mode" && (
                   <div role="listbox" aria-label={s.modeHint} className={`${MENU} bottom-full top-auto mb-2 mt-0`}>
-                    <Option
-                      active={askFirst}
-                      onPick={() => {
-                        setAskFirst(true);
-                        setMenu(null);
-                      }}
-                    >
-                      {s.askBeforeShooting}
-                    </Option>
-                    <Option
-                      active={!askFirst}
-                      onPick={() => {
-                        setAskFirst(false);
-                        setMenu(null);
-                      }}
-                    >
-                      {s.shootWithoutAsking}
-                    </Option>
+                    {modeOptions}
                   </div>
                 )}
               </div>

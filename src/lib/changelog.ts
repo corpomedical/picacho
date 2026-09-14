@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.31.0",
+    build: 44,
+    date: "2026-09-14",
+    title: "A set's controls become a controller",
+    items: [
+      "On a touch screen, a set's page now puts its controls in one pill at the stage's foot — drawn first, approved, then built to the drawing. The left of the pill holds the setup: who is in the frame, the look, camera, lens, mark, Match a shot and History. The middle holds the decision: Shoot, softly lit and breathing while it waits for the word, with its price on its face, beside Another angle and Ask before shooting. The right is a wheel: its ring aims the camera where it stands — and when a still is on the stage, walks the stills instead — its collar turns the figure, and its hub is Frame the figure, or Back to the frame on a still. The toolbar, the stage's aim arrows and the composer's chips rest on touch, because the pill holds all of them; the words still belong to the conversation. Every press answers in the palm where the phone can (a short tick for a wheel step, a thump when Shoot fires, a small shiver for a press the controller refuses); where it can't, the press lands quietly. A mouse-and-keyboard screen is unchanged.",
+    ],
+  },
+  {
     version: "1.30.0",
     build: 43,
     date: "2026-09-14",

@@ -303,6 +303,19 @@ html:has([data-app-scroll]) body {
   }
 }
 
+/* The Sets pill controller's lit Shoot: a dim breath on a loop while it
+   waits for the word. The pill shows only where the primary pointer is
+   coarse (set-view.tsx); motion-safe guards the loop for reduced motion. */
+@keyframes shoot-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
 html.native-app {
   /* No rubber-band overscroll on the document. Inner scrollers keep theirs,
      so lists still feel right — it's the PAGE bouncing and revealing a blank
