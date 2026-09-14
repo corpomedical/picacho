@@ -161,9 +161,9 @@ function buzz(pattern: number | readonly number[]) {
 const PILL_BODY =
   "bg-[linear-gradient(to_bottom,#34363f,#1d1e24_55%,#131418)] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_22px_44px_-12px_rgba(0,0,0,0.60)]";
 const KEY =
-  "inline-flex h-10 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,#3b3e48,#262831_45%,#16171c)] px-3.5 text-[13px] font-medium text-onmedia/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-1px_0_rgba(0,0,0,0.40),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-45";
+  "inline-flex h-9 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,#3b3e48,#262831_45%,#16171c)] px-3 text-[13px] font-medium text-onmedia/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-1px_0_rgba(0,0,0,0.40),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-45";
 const KEY_LOOK_ON =
-  "inline-flex h-10 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,rgba(240,190,132,0.28),rgba(224,164,104,0.08))] px-3.5 text-[13px] font-medium text-[#f0cda6] shadow-[inset_0_1px_0_rgba(255,255,255,0.20),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38),inset_0_0_0_1.5px_rgba(240,196,142,0.75)] transition-transform active:translate-y-px";
+  "inline-flex h-9 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,rgba(240,190,132,0.28),rgba(224,164,104,0.08))] px-3 text-[13px] font-medium text-[#f0cda6] shadow-[inset_0_1px_0_rgba(255,255,255,0.20),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38),inset_0_0_0_1.5px_rgba(240,196,142,0.75)] transition-transform active:translate-y-px";
 /** The toolbar's menu, opened upward from the pill. */
 const PILL_MENU =
   "absolute bottom-full left-0 z-30 mb-2 flex min-w-[11rem] flex-col gap-0.5 rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.22)] backdrop-blur-xl";
@@ -1596,10 +1596,13 @@ export function SetView({
             figure, the hub frames (on a still, back to the frame). The chat
             keeps the words; on a phone that can, every press answers in the
             palm (HAND). */}
-        <div className="pointer-events-none z-30 mt-3.5 flex justify-center md:absolute md:inset-x-0 md:bottom-4 md:mt-0">
-          <div className={`pointer-events-auto mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2.5 rounded-[40px] px-4 py-3.5 ring-1 ring-white/10 sm:rounded-full sm:px-5 ${PILL_BODY}`}>
+        <div className="pointer-events-none z-30 mt-3.5 flex justify-center md:absolute md:inset-x-0 md:bottom-4 md:mt-0 md:px-4">
+          {/* One band from md up: the setup wraps within its own zone on the
+              left, the decision holds the middle, the wheel is pinned at the
+              right end — the pill stays the stage's chin, never its face. */}
+          <div className={`pointer-events-auto flex w-full max-w-[64rem] flex-wrap items-center justify-center gap-x-3 gap-y-2.5 rounded-[40px] px-4 py-3 ring-1 ring-white/10 sm:rounded-full sm:px-5 md:flex-nowrap ${PILL_BODY}`}>
             {/* the setup */}
-            <div className="flex min-w-0 max-w-[26rem] flex-wrap items-center justify-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-center gap-2 md:flex-1 md:justify-start">
               <div className="relative">
                 <button
                   type="button"
@@ -1612,9 +1615,9 @@ export function SetView({
                 >
                   {character?.thumbUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={character.thumbUrl} alt="" className="h-[26px] w-[26px] rounded-full object-cover ring-1 ring-white/25" />
+                    <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-white/25" />
                   ) : (
-                    <span className="h-[26px] w-[26px] rounded-full bg-white/15" />
+                    <span className="h-6 w-6 rounded-full bg-white/15" />
                   )}
                   {character?.name || s.characterLabel}
                   <Chevron />
@@ -1748,7 +1751,7 @@ export function SetView({
             </div>
 
             {/* the decision */}
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-2 md:shrink-0">
               <div className="relative">
                 {canShoot && (
                   <>
@@ -1763,7 +1766,7 @@ export function SetView({
                   type="button"
                   onClick={() => press(canShoot, HAND.fire, () => void shoot())}
                   aria-disabled={!canShoot}
-                  className="relative inline-flex h-12 cursor-pointer items-center justify-center whitespace-nowrap rounded-full bg-[radial-gradient(120%_150%_at_50%_28%,#fffef8,#f7f0e0_60%,#ead9bc)] px-7 text-[15px] font-semibold text-[#23252d] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_0_rgba(0,0,0,0.40),0_8px_18px_rgba(0,0,0,0.35),inset_0_0_0_1.5px_rgba(207,168,120,0.8)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-60"
+                  className="relative inline-flex h-11 cursor-pointer items-center justify-center whitespace-nowrap rounded-full bg-[radial-gradient(120%_150%_at_50%_28%,#fffef8,#f7f0e0_60%,#ead9bc)] px-6 text-[15px] font-semibold text-[#23252d] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_0_rgba(0,0,0,0.40),0_8px_18px_rgba(0,0,0,0.35),inset_0_0_0_1.5px_rgba(207,168,120,0.8)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-60"
                 >
                   {shootLabel}
                 </button>
