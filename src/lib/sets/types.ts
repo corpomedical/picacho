@@ -45,6 +45,8 @@ export type SetShot = {
   kind: "still" | "take";
   /** A take's poster frame once it has arrived; stills carry none. */
   posterUrl: string | null;
+  /** A take's length — takes come in engine lengths (take.ts); stills carry null. */
+  seconds: number | null;
 };
 
 export type SetCharacter = {

@@ -30,7 +30,13 @@ import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
-import { buildSetTakePrompt, SET_TAKE_MODEL, SET_TAKE_SECONDS, SET_TAKES_PER_10_MIN } from "@/lib/sets/take";
+import {
+  buildSetTakePrompt,
+  isSetTakeEngine,
+  SET_TAKE_DEFAULT_ENGINE,
+  SET_TAKE_ENGINES,
+  SET_TAKES_PER_10_MIN,
+} from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
 import { lookSheet } from "@/lib/sets/look-sheet";
@@ -764,10 +770,13 @@ export type TakeResult =
  * A take in Helios (take.ts, 2026-09-15): a clip from an earlier still to
  * the frame on the stage now. The end frame is shot first as an ordinary
  * still with the START riding as its look, so both frames show the same
- * world; then Kling 1.6's start-and-end-frame lane animates between the two
- * rendered stills, through the ordinary video pipeline — drafted, gated,
- * priced and scored like any clip. The clip returns QUEUED: it renders in
- * the background and the page shows it as a take still rendering.
+ * world; then the engine's start-and-end-frame lane animates between the
+ * two rendered stills, through the ordinary video pipeline — drafted,
+ * gated, priced and scored like any clip. Two engines (take.ts): Gemini
+ * Omni Flash the take, Veo 3.1 the premium take; an unknown engine falls
+ * back to the default rather than failing a real frame over a bad enum.
+ * The clip returns QUEUED: it renders in the background and the page shows
+ * it as a take still rendering.
  */
 export async function takeInSet(
   setId: string,
@@ -777,6 +786,7 @@ export async function takeInSet(
     characterId: string;
     direction: string;
     layout: unknown;
+    engine?: string;
     lifted?: boolean;
     canvasAspect?: number;
     words?: string;
@@ -841,10 +851,11 @@ export async function takeInSet(
   const endUrl = typeof endGen?.result_url === "string" ? endGen.result_url : null;
   if (!endUrl) return { error: null, still, takeGenerationId: null, takeError: SET_TAKE_FAILED };
 
+  const engine = SET_TAKE_ENGINES[isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE];
   const fd = new FormData();
   fd.set("content_type", "video");
-  fd.set("video_model_id", SET_TAKE_MODEL);
-  fd.set("video_duration_seconds", String(SET_TAKE_SECONDS));
+  fd.set("video_model_id", engine.model);
+  fd.set("video_duration_seconds", String(engine.seconds));
   fd.set("character_id", input.characterId);
   fd.set("prompt", buildSetTakePrompt(typeof input.direction === "string" ? input.direction : ""));
   fd.set("storyboard_start_path", startUrl);

@@ -220,7 +220,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   if (ids.length > 0) {
     const { data: gens } = await db
       .from("generations")
-      .select("id, status, result_url, poster_url, content_type, match_score, created_at")
+      .select("id, status, result_url, poster_url, content_type, video_duration_seconds, match_score, created_at")
       .in("id", ids)
       .eq("user_id", access.userId)
       .is("deleted_at", null);
@@ -257,6 +257,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
           viewUrl: isTake ? null : thumbUrl(g.result_url as string | null, 1600),
           posterUrl: isTake ? thumbUrl(g.poster_url as string | null, 640) : null,
           kind: (isTake ? "take" : "still") as "still" | "take",
+          // Takes come in engine lengths since the second engine (take.ts),
+          // so the caption reads the row rather than assuming one number.
+          seconds: isTake && typeof g.video_duration_seconds === "number" ? g.video_duration_seconds : null,
           score: typeof g.match_score === "number" ? g.match_score : null,
           createdAt: g.created_at as string,
           hasLookObjects: lendsLook(g.id as string),

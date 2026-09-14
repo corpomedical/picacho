@@ -14,7 +14,12 @@ import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
 import { clearMarks } from "@/lib/sets/marks";
-import { SET_TAKE_SECONDS, takeQuoteInput } from "@/lib/sets/take";
+import {
+  SET_TAKE_DEFAULT_ENGINE,
+  SET_TAKE_ENGINES,
+  takeQuoteInput,
+  type SetTakeEngine,
+} from "@/lib/sets/take";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
@@ -321,6 +326,10 @@ export function SetView({
   const [compareOpen, setCompareOpen] = useState(false);
   // A take under way: the still it starts from, while the end is framed.
   const [takeStart, setTakeStart] = useState<{ id: string; n: number } | null>(null);
+  // Which engine renders the take (take.ts): Omni the take, Veo the premium
+  // take. Reset to the default when a new take starts, so the price on the
+  // button is never a leftover from an earlier, pricier choice.
+  const [takeEngine, setTakeEngine] = useState<SetTakeEngine>(SET_TAKE_DEFAULT_ENGINE);
   // The composer's who menu, opened by "@" in the words or by the chip.
   const [mentionForced, setMentionForced] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1125,6 +1134,7 @@ export function SetView({
       viewUrl: result.resultUrl,
       posterUrl: null,
       kind: "still",
+      seconds: null,
       score: result.score,
       createdAt: new Date().toISOString(),
       hasLookObjects: result.hasLookObjects,
@@ -1176,6 +1186,7 @@ export function SetView({
         characterId,
         direction: said,
         layout: { ...layoutRef.current, camera: pose },
+        engine: takeEngine,
         lifted: apiRef.current?.lifted === true,
         canvasAspect,
         words: asked,
@@ -1199,6 +1210,7 @@ export function SetView({
       viewUrl: result.still.resultUrl,
       posterUrl: null,
       kind: "still",
+      seconds: null,
       score: result.still.score,
       createdAt: new Date().toISOString(),
       hasLookObjects: result.still.hasLookObjects,
@@ -1213,6 +1225,7 @@ export function SetView({
             viewUrl: null,
             posterUrl: null,
             kind: "take",
+            seconds: SET_TAKE_ENGINES[takeEngine].seconds,
             score: null,
             createdAt: new Date().toISOString(),
             hasLookObjects: false,
@@ -1498,7 +1511,7 @@ export function SetView({
   const placedLine = formatMsg(s.placedLine, { name: characterName, mark: markLabel, facing: facingLabel, camera: cameraLabel, lens: lensLabel });
   const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
   // A take's whole price: the end still plus the clip, as the server charges them.
-  const takeCredits = quote.totalCredits + quoteSend(takeQuoteInput()).totalCredits;
+  const takeCredits = quote.totalCredits + quoteSend(takeQuoteInput(takeEngine)).totalCredits;
   const shootLabel = shooting
     ? s.shooting
     : quote.totalCredits === 1
@@ -1944,6 +1957,7 @@ export function SetView({
                       type="button"
                       onClick={() => {
                         setTakeStart({ id: viewingShot.generationId, n: stillNumber(viewingShot) });
+                        setTakeEngine(SET_TAKE_DEFAULT_ENGINE);
                         setViewing(null);
                       }}
                       className={glassBtn}
@@ -2109,7 +2123,7 @@ export function SetView({
                               <div className="min-w-0 flex flex-col gap-1">
                                 <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.takeTile, { n: stillNumber(shot) })}</span>
                                 <span className="text-xs text-[#9aa0ad] tabular-nums">
-                                  {formatMsg(s.takeSeconds, { s: SET_TAKE_SECONDS })} · <LocalDate date={shot.createdAt} />
+                                  {formatMsg(s.takeSeconds, { s: shot.seconds ?? SET_TAKE_ENGINES[SET_TAKE_DEFAULT_ENGINE].seconds })} · <LocalDate date={shot.createdAt} />
                                 </span>
                               </div>
                             </div>
@@ -2257,6 +2271,16 @@ export function SetView({
                           <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCost}</dt>
                           <dd className="text-[#ecedf1] tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
                         </dl>
+                        {takeStart && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            <button type="button" onClick={() => setTakeEngine("omni")} className={chip(takeEngine === "omni")}>
+                              {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
+                            </button>
+                            <button type="button" onClick={() => setTakeEngine("veo")} className={chip(takeEngine === "veo")}>
+                              {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
+                            </button>
+                          </div>
+                        )}
                         <div className="flex flex-wrap items-center gap-2 pt-1">
                           <button
                             type="button"

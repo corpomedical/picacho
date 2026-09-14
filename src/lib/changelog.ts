@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.34.0",
+    build: 47,
+    date: "2026-09-15",
+    title: "The take gets its engines: Gemini Omni, and Veo when it matters",
+    items: [
+      "Takes now render on Gemini Omni Flash 1.1 instead of Kling — Google's near-flagship at the same three credits, and it arrives with sound: every take carries the scene's own audio, because Omni renders picture and sound in one pass. Both engines were proved live with two real Helios frames before being offered — each honoured the start and the end frame, kept the person, and turned the square frames into a coherent widescreen picture by extending the scene rather than cropping it. A take renders in well under a minute now, where Kling took several.",
+      "A second engine sits on the take card: Veo 3.1, the premium take — eight seconds instead of five, the strongest picture in the catalogue, its whole price on the button before the word is given. Pick it when the moment deserves it; the take is Omni unless you say otherwise, and each take's card says how long it really is.",
+      "Under the hood, start & end frames stopped being Kling's private lane: the video pipeline now asks each model's own capability table, and Gemini Omni and Veo both answer with real frame lanes at their ordinary per-second price — no surcharge, unlike Kling's pricier storyboard endpoint. The composer's advanced tray is unchanged for now; Helios is where the frames fly.",
+    ],
+  },
+  {
     version: "1.33.0",
     build: 46,
     date: "2026-09-15",

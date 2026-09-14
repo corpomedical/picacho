@@ -43,8 +43,10 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
     "trialSilentClips",
   "Multi-image reference and storyboard are available on the Studio and Elite plans. Upgrade to use them, or turn these options off.":
     "advancedNeedsPlan",
-  "Multi-image reference and start & end frames need Kling 1.6 as the selected video model — switch models, or turn these options off.":
-    "advancedNeedsKling",
+  "Multi-image reference needs Kling 1.6 as the selected video model — switch models, or turn it off.":
+    "multiRefNeedsKling",
+  "Start & end frames need Kling 1.6, Gemini Omni Flash, or Veo as the video model — switch models, or turn them off.":
+    "framesNeedFrameModel",
   "Using multiple characters together needs Kling 1.6 as the selected video model — switch models, or remove the extra characters.":
     "multiNeedsKling",
   "Storyboards run on Kling O3 Pro — switch the model, or clear the storyboard.": "storyboardNeedsO3",

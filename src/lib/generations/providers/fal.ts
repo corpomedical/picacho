@@ -705,13 +705,44 @@ async function buildVideoRequest(
     // cannot cure ("the only complete fix is to stop handing the raw photo
     // in as frame one"). reference-to-video binds the likeness by citation
     // instead, so the clip can open mid-motion. Both lanes bill the same
-    // per-second rate, so choosing the better one is free. The cost of
-    // dropping image-to-video is its optional end_image_url, a start/end
-    // lane that was never wired here anyway.
+    // per-second rate, so choosing the better one is free. image-to-video
+    // exists in this branch for exactly one job — the start/end-frame lane
+    // below, where an opening frame is the point rather than the defect.
     const geminiResolution =
       options.resolution === "4k" ? "4k" : options.resolution === "1080p" ? "1080p" : "720p";
     const geminiDuration = options.durationSeconds ?? DEFAULT_DURATION_SECONDS;
-    if (anchorImages.length > 0) {
+    const geminiFrames = Boolean(options.startImageUrl || options.endImageUrl);
+    if (geminiFrames) {
+      // The start/end-frame lane (Helios takes, 2026-09-15 — "wire both",
+      // after the operator vetoed Kling): image-to-video, whose optional
+      // end_image_url turns it into first-and-last-frame interpolation
+      // ("When provided, the model interpolates between the two images" —
+      // fal's schema, read 2026-09-15). Schema then PROBED LIVE the same
+      // day with two real 1024x1024 Helios frames: rendered in 42 s, both
+      // frames honoured, the photoreal person accepted, and the square
+      // inputs recomposed into a coherent 16:9 — the model extends the
+      // scene sideways rather than letterboxing (docs/ASTRA_SETS.md).
+      //
+      // Bills the family's one per-second rate like every other lane in
+      // this branch, so unlike Kling's storyboard lane there is no
+      // surcharge to price — quote.ts's frame surcharge helper correctly
+      // returns 0 here.
+      //
+      // No identity photos ride: the frames themselves carry the person,
+      // exactly as on the Kling storyboard lane below. End-only opens on
+      // the end frame instead — the same compromise that lane documents.
+      endpoint = "google/gemini-omni-flash/v1.1/image-to-video";
+      body = {
+        prompt,
+        image_url: options.startImageUrl ?? options.endImageUrl,
+        ...(options.startImageUrl && options.endImageUrl
+          ? { end_image_url: options.endImageUrl }
+          : {}),
+        duration: geminiDuration,
+        resolution: geminiResolution,
+        aspect_ratio: resolvedAspectRatio,
+      };
+    } else if (anchorImages.length > 0) {
       endpoint = "google/gemini-omni-flash/v1.1/reference-to-video";
       // Zero-indexed citations, and one line that names every photo as the
       // SAME person — a flat list would otherwise read as several different
@@ -741,9 +772,9 @@ async function buildVideoRequest(
         aspect_ratio: resolvedAspectRatio,
       };
     }
-    label = `Gemini Omni Flash 1.1${anchorImages.length > 0 ? " (reference)" : ""}${
-      options.resolution ? ` (${options.resolution})` : ""
-    }`;
+    label = `Gemini Omni Flash 1.1${
+      geminiFrames ? " (start/end frame)" : anchorImages.length > 0 ? " (reference)" : ""
+    }${options.resolution ? ` (${options.resolution})` : ""}`;
   } else if (modelId === "kling-2.5") {
     // Kling 2.5 Turbo Pro. First-frame image-to-video, so image_url is
     // required and the clip does open on that photo — this model is the
@@ -826,6 +857,52 @@ async function buildVideoRequest(
       ...(options.endImageUrl ? { end_image_url: options.endImageUrl } : {}),
     };
     label = "Kling O3";
+  } else if (modelId === "veo" && (options.startImageUrl || options.endImageUrl)) {
+    // Veo 3.1's start/end-frame lane (2026-09-15 — "wire both"). With both
+    // frames this is the dedicated first-last-frame endpoint. Schema read
+    // off fal's own API page the same day: first_frame_url / last_frame_url
+    // (both required), duration "4s"|"6s"|"8s" (formatDuration already
+    // speaks Veo's "s" suffix), resolution 720p/1080p/4k, generate_audio,
+    // aspect_ratio defaulting to "auto". Then PROBED LIVE with two real
+    // 1024x1024 Helios frames: rendered in 53 s, both frames honoured, the
+    // photoreal person accepted (docs/ASTRA_SETS.md).
+    //
+    // Same per-second price as every other Veo lane — "$0.20 without audio
+    // or $0.40 with audio for 720p or 1080p", verbatim from fal's page,
+    // read 2026-09-15 — so the existing weights cover it and there is no
+    // surcharge to price, unlike Kling's storyboard lane below.
+    //
+    // aspect_ratio is deliberately NOT sent: its default "auto" lets the
+    // frames' own shape decide, the closest match to the Kling storyboard
+    // lane below (which has no aspect parameter at all). In the live probe
+    // "auto" widened two square frames into a coherent 16:9.
+    //
+    // A single frame falls back to image-to-video, whichever frame it is —
+    // the same compromise the Kling lane below documents for end-only.
+    // Identity photos never ride either shape: the frames carry the person.
+    if (options.startImageUrl && options.endImageUrl) {
+      endpoint = "fal-ai/veo3.1/first-last-frame-to-video";
+      body = {
+        prompt,
+        first_frame_url: options.startImageUrl,
+        last_frame_url: options.endImageUrl,
+        duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+        generate_audio: options.generateNativeAudio ?? true,
+        ...(options.resolution ? { resolution: options.resolution } : {}),
+      };
+      label = "Veo 3.1 (start/end frame)";
+    } else {
+      endpoint = "fal-ai/veo3.1/image-to-video";
+      body = {
+        prompt,
+        image_url: options.startImageUrl ?? options.endImageUrl,
+        aspect_ratio: resolvedAspectRatio,
+        duration: formatDuration(modelId, options.durationSeconds ?? DEFAULT_DURATION_SECONDS),
+        generate_audio: options.generateNativeAudio ?? true,
+        ...(options.resolution ? { resolution: options.resolution } : {}),
+      };
+      label = "Veo 3.1 (one frame)";
+    }
   } else if (options.startImageUrl || options.endImageUrl) {
     // Storyboard — image-to-video requires a start frame; if only an end
     // frame was supplied, use it as the start frame too rather than failing

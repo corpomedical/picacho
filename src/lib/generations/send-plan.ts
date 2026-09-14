@@ -263,7 +263,13 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     identity: { max: 1, mechanism: "first-frame", required: false },
     outfitImage: false,
     continuation: false,
-    startEndFrames: false,
+    // true since 2026-09-15 ("wire both"): fal-ai/veo3.1/first-last-frame-
+    // to-video takes first_frame_url + last_frame_url at the same
+    // per-second price as every other Veo lane (schema and pricing read off
+    // fal's pages that day, then probed live with two real frames — see
+    // the branch in fal.ts). Adapter changed in the same commit, per this
+    // table's header rule.
+    startEndFrames: true,
     storyboard: false,
     multiPerson: false,
     aspectControl: "param",
@@ -291,7 +297,13 @@ export const MODEL_CAPABILITIES: Record<VideoModelId | ImageModelId, ModelCapabi
     // equivalent rule. Charging Seedance's discount against Google's prices
     // is exactly the guess the 2026-08-31 continuation audit cleaned up.
     continuation: false,
-    startEndFrames: false,
+    // true since 2026-09-15 ("wire both"): the image-to-video sibling's
+    // optional end_image_url is first-and-last-frame interpolation, at the
+    // family's one per-second rate (schema read off fal's page that day,
+    // then probed live with two real frames — see the branch in fal.ts).
+    // This is the lane Helios takes render on. Adapter changed in the same
+    // commit, per this table's header rule.
+    startEndFrames: true,
     storyboard: false,
     multiPerson: false,
     aspectControl: "param",

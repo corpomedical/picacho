@@ -28,7 +28,7 @@ import {
 import { probeImage } from "@/lib/media/image-probe";
 import { SESSION_EXPIRED_MESSAGE } from "@/lib/generations/user-facing-error";
 import { forceRefundEligible } from "@/lib/generations/refund-rules";
-import { baselineIdentityReferences, resolveSendPlan } from "@/lib/generations/send-plan";
+import { baselineIdentityReferences, MODEL_CAPABILITIES, resolveSendPlan } from "@/lib/generations/send-plan";
 import { describeImageAsPrompt, describeSubjectImage } from "@/lib/generations/providers/describe-image";
 import { resolvePresetBlocks } from "@/lib/generations/cinema-presets";
 import { getOrigin } from "@/lib/origin";
@@ -1231,15 +1231,30 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     };
   }
 
-  // Multi-image reference and storyboard are specific to Kling 1.6's
-  // "elements"/storyboard endpoints — Kling O3 and Veo have no equivalent
-  // wired up here. Catch this before spending a generation attempt, not
-  // after a wasted paid call that silently ignores the options.
-  if (wantsAdvancedVideoOptions && videoModelId !== "kling") {
+  // Split gates since 2026-09-15 ("wire both"). Multi-image reference is
+  // still specific to Kling 1.6's "elements" endpoint — nothing else here
+  // takes a 2-4 photo identity array. Start & end frames became a
+  // CAPABILITY: the table row says which models have a real frame lane
+  // wired (Kling 1.6's storyboard endpoint, Gemini Omni Flash's
+  // end_image_url, Veo 3.1's first-last-frame endpoint — see fal.ts), so
+  // this check follows the adapter instead of naming one model. Either way
+  // the refusal lands before a generation attempt is spent, not after a
+  // wasted paid call that silently ignores the options.
+  if (referencePhotoPaths.length > 0 && videoModelId !== "kling") {
     return {
       error:
-        "Multi-image reference and start & end frames need Kling 1.6 as the selected video model — " +
-        "switch models, or turn these options off.",
+        "Multi-image reference needs Kling 1.6 as the selected video model — " +
+        "switch models, or turn it off.",
+    };
+  }
+  if (
+    (storyboardStartPath || storyboardEndPath) &&
+    !MODEL_CAPABILITIES[videoModelId as keyof typeof MODEL_CAPABILITIES]?.startEndFrames
+  ) {
+    return {
+      error:
+        "Start & end frames need Kling 1.6, Gemini Omni Flash, or Veo as the video model — " +
+        "switch models, or turn them off.",
     };
   }
 

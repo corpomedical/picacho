@@ -1,19 +1,39 @@
 // A take in Helios (2026-09-15): a clip, not a still. The person frames
 // where the move ENDS while an earlier still marks where it STARTS; Helios
 // shoots the end frame with the start still riding as its look (same world,
-// same person, look-sheet.ts), then Kling 1.6's start-and-end-frame lane
-// animates between the two rendered stills. Pure and relative-import only:
-// the test holds the model, the length and the prompt to what the action
-// sends, and the quote to what the server will charge.
+// same person, look-sheet.ts), then a start-and-end-frame video lane
+// animates between the two rendered stills. Two engines since 2026-09-15
+// (operator: "wire both", after vetoing Kling): Gemini Omni Flash 1.1 is
+// the take, Veo 3.1 the premium take — both probed live with two real
+// Helios frames before they were offered (42 s and 53 s, no policy refusal
+// on the person, both frames honoured; docs/ASTRA_SETS.md). Pure and
+// relative-import only: the test holds each engine's model, length and
+// prompt to what the action sends, and the quote to what the server will
+// charge.
 
 import type { SendQuoteInput } from "../generations/quote";
 import { cleanText } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 
-/** Start/end frames are Kling 1.6's lane (generations/actions.ts refuses them anywhere else). */
-export const SET_TAKE_MODEL = "kling";
-/** One length for every take, the model's short default: priced before the word is given. */
-export const SET_TAKE_SECONDS = 5;
+export type SetTakeEngine = "omni" | "veo";
+
+/**
+ * One fixed length per engine, priced before the word is given. Omni takes
+ * its short 5 s (catalogue durations 5/8/10); Veo's shortest ladder step
+ * above a blink is its own 8 s default (4/6/8) — and at $0.40/s the length
+ * IS the price difference, so the number sits on the button either way.
+ */
+export const SET_TAKE_ENGINES = {
+  omni: { model: "gemini-omni", seconds: 5 },
+  veo: { model: "veo", seconds: 8 },
+} as const satisfies Record<SetTakeEngine, { model: string; seconds: number }>;
+
+export const SET_TAKE_DEFAULT_ENGINE: SetTakeEngine = "omni";
+
+export function isSetTakeEngine(v: unknown): v is SetTakeEngine {
+  return v === "omni" || v === "veo";
+}
+
 export const SET_TAKES_PER_10_MIN = 4;
 
 /**
@@ -33,15 +53,18 @@ export function buildSetTakePrompt(direction: string): string {
 
 /**
  * What the take's VIDEO leg will cost, as quoteSend prices it on the
- * server: Kling at the take's length with a start and end frame riding
- * (the frame surcharge included). The end still is priced separately as
- * the one image it is.
+ * server: the engine's model at its fixed length with a start and end
+ * frame riding. framePicked stays true for both engines — quoteSend adds a
+ * surcharge only where the frame lane really bills above the base weight
+ * (Kling's did; Omni's and Veo's frame lanes bill their base per-second
+ * rate, so the surcharge helper prices them at zero). The end still is
+ * priced separately as the one image it is.
  */
-export function takeQuoteInput(): SendQuoteInput {
+export function takeQuoteInput(engine: SetTakeEngine = SET_TAKE_DEFAULT_ENGINE): SendQuoteInput {
   return {
     contentType: "video",
-    videoModelId: SET_TAKE_MODEL,
-    videoDurationSeconds: SET_TAKE_SECONDS,
+    videoModelId: SET_TAKE_ENGINES[engine].model,
+    videoDurationSeconds: SET_TAKE_ENGINES[engine].seconds,
     videoResolution: null,
     storyboardTotalSeconds: null,
     referencePhotoCount: 0,
