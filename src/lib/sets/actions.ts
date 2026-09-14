@@ -30,6 +30,7 @@ import { cleanText, normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@
 import { setBuildInput } from "@/lib/sets/set-builder-prompt";
 import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
+import { buildSetTakePrompt, SET_TAKE_MODEL, SET_TAKE_SECONDS, SET_TAKES_PER_10_MIN } from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
 import { lookSheet } from "@/lib/sets/look-sheet";
@@ -67,6 +68,8 @@ import {
   SET_PICK_CHARACTER,
   SET_SAVE_FAILED,
   SET_SHOOT_TOO_FAST,
+  SET_TAKE_BAD_START,
+  SET_TAKE_FAILED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
 
@@ -743,6 +746,127 @@ export async function shootInSet(
     hasLookObjects,
     lookDropped,
   };
+}
+
+export type TakeResult =
+  | { error: string }
+  | {
+      error: null;
+      /** The end frame, shot first — a whole ShootResult of its own. */
+      still: Extract<ShootResult, { error: null }>;
+      /** The clip's row, rendering in the background when it started; null when the video leg could not start. */
+      takeGenerationId: string | null;
+      /** Said when takeGenerationId is null: the end still is in, the clip is not. */
+      takeError: string | null;
+    };
+
+/**
+ * A take in Helios (take.ts, 2026-09-15): a clip from an earlier still to
+ * the frame on the stage now. The end frame is shot first as an ordinary
+ * still with the START riding as its look, so both frames show the same
+ * world; then Kling 1.6's start-and-end-frame lane animates between the two
+ * rendered stills, through the ordinary video pipeline — drafted, gated,
+ * priced and scored like any clip. The clip returns QUEUED: it renders in
+ * the background and the page shows it as a take still rendering.
+ */
+export async function takeInSet(
+  setId: string,
+  input: {
+    startGenerationId: string;
+    frameDataUri: string;
+    characterId: string;
+    direction: string;
+    layout: unknown;
+    lifted?: boolean;
+    canvasAspect?: number;
+    words?: string;
+  },
+): Promise<TakeResult> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  const { userId } = access;
+
+  // The start: a finished still of THIS set, the person's own, not deleted.
+  const startId = typeof input?.startGenerationId === "string" ? input.startGenerationId : "";
+  if (!UUID_RE.test(startId)) return { error: SET_TAKE_BAD_START };
+  const { data: startShot } = await access.supabase
+    .from("location_set_shots")
+    .select("generation_id")
+    .eq("set_id", setId)
+    .eq("generation_id", startId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const { data: startGen } = startShot
+    ? await access.supabase
+        .from("generations")
+        .select("status, result_url, content_type, deleted_at")
+        .eq("id", startId)
+        .eq("user_id", userId)
+        .maybeSingle()
+    : { data: null };
+  const startUrl =
+    startGen &&
+    startGen.status === "succeeded" &&
+    !startGen.deleted_at &&
+    startGen.content_type === "image" &&
+    typeof startGen.result_url === "string"
+      ? startGen.result_url
+      : null;
+  if (!startUrl) return { error: SET_TAKE_BAD_START };
+  if (await rateLimited(userId, "set-take", 60 * 10, SET_TAKES_PER_10_MIN)) return { error: SET_SHOOT_TOO_FAST };
+
+  // The end frame: an ordinary still, every check inside running again,
+  // with the start riding as its look so the two frames share one world.
+  const still = await shootInSet(setId, {
+    frameDataUri: input.frameDataUri,
+    characterId: input.characterId,
+    direction: input.direction,
+    layout: input.layout,
+    lifted: input.lifted,
+    canvasAspect: input.canvasAspect,
+    words: input.words,
+    lookGenerationId: startId,
+  });
+  if (still.error !== null) return { error: still.error };
+  if (!still.succeeded) return { error: null, still, takeGenerationId: null, takeError: SET_TAKE_FAILED };
+
+  // The two frames' RAW stored urls — resolveMaybeSignedUrl in the video
+  // lane takes our own /api/media paths, never a thumbnail transform.
+  const { data: endGen } = await access.supabase
+    .from("generations")
+    .select("result_url")
+    .eq("id", still.generationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const endUrl = typeof endGen?.result_url === "string" ? endGen.result_url : null;
+  if (!endUrl) return { error: null, still, takeGenerationId: null, takeError: SET_TAKE_FAILED };
+
+  const fd = new FormData();
+  fd.set("content_type", "video");
+  fd.set("video_model_id", SET_TAKE_MODEL);
+  fd.set("video_duration_seconds", String(SET_TAKE_SECONDS));
+  fd.set("character_id", input.characterId);
+  fd.set("prompt", buildSetTakePrompt(typeof input.direction === "string" ? input.direction : ""));
+  fd.set("storyboard_start_path", startUrl);
+  fd.set("storyboard_end_path", endUrl);
+  const clip = await runGeneration(fd);
+  if (clip.error !== null) {
+    console.warn("takeInSet video leg refused:", clip.error);
+    return { error: null, still, takeGenerationId: null, takeError: clip.error };
+  }
+
+  // The take joins the set's shots like a still does, with the words that
+  // asked for it; a failure to record leaves it in History all the same.
+  const admin = createAdminClient();
+  const { error: takeRowError } = await admin
+    .from("location_set_shots")
+    .insert({ set_id: setId, generation_id: clip.id, user_id: userId });
+  if (takeRowError) console.error("takeInSet couldn't record the take:", takeRowError.message);
+  else {
+    const words = cleanText(typeof input.words === "string" ? input.words : "", SHOT_WORDS_STORED_MAX_CHARS);
+    if (words.length > 0) await recordShotWords(admin, { setId, generationId: clip.id, userId }, words);
+  }
+  return { error: null, still, takeGenerationId: clip.id, takeError: null };
 }
 
 // ---------------------------------------------------------------------------

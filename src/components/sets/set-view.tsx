@@ -8,12 +8,13 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError } from "@/lib/stale-deploy";
-import { saveSetLayout, saveSetThumbnail, shootInSet } from "@/lib/sets/actions";
-import { editSetWithAstra } from "@/lib/sets/editor-actions";
+import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
+import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
 import { clearMarks } from "@/lib/sets/marks";
+import { SET_TAKE_SECONDS, takeQuoteInput } from "@/lib/sets/take";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
@@ -318,6 +319,8 @@ export function SetView({
   const [chatOpen, setChatOpen] = useState(true);
   // A photo set's photo beside camera 1, folded behind a chip.
   const [compareOpen, setCompareOpen] = useState(false);
+  // A take under way: the still it starts from, while the end is framed.
+  const [takeStart, setTakeStart] = useState<{ id: string; n: number } | null>(null);
   // The composer's who menu, opened by "@" in the words or by the chip.
   const [mentionForced, setMentionForced] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -372,6 +375,8 @@ export function SetView({
   const layoutRef = useRef({ markId: startMarkId, mark: startMark });
   // The open menu, for the Esc handler (a ref is not read during render).
   const menuRef = useRef<MenuId | null>(null);
+  // The set as it stood before the last Astra edit, for the changed line's Undo.
+  const specBeforeEditRef = useRef<SetSpec | null>(null);
   // The stage calls this when an orbit settles; it points at scheduleSave,
   // which is declared below the stage's effect.
   const settledRef = useRef<(() => void) | null>(null);
@@ -1118,6 +1123,8 @@ export function SetView({
       status: result.succeeded ? "succeeded" : "failed",
       resultUrl: result.resultUrl,
       viewUrl: result.resultUrl,
+      posterUrl: null,
+      kind: "still",
       score: result.score,
       createdAt: new Date().toISOString(),
       hasLookObjects: result.hasLookObjects,
@@ -1134,6 +1141,97 @@ export function SetView({
     else if (canBeLook(shot) && !lookPinnedRef.current) setLookId(result.generationId);
     // The still takes the stage's place until the person goes back to the frame.
     if (result.succeeded) setViewing(result.generationId);
+  }
+
+  /**
+   * A take (take.ts): the frame on the stage now is the END of the move —
+   * shot first as an ordinary still with takeStart's still as its look, so
+   * both frames show one world — then the clip renders between the two in
+   * the background, and lands in the filmstrip as a take.
+   */
+  async function take(directionNow?: string) {
+    if (!takeStart || shooting || matching || !characterId || !ready) return;
+    setError("");
+    setLastMiss(null);
+    setViewing(null);
+    setMenu(null);
+    const frame = apiRef.current?.snapshot(SET_FRAME_PX);
+    if (!frame) {
+      setError(s.loadFailed);
+      return;
+    }
+    setShooting(true);
+    const startedAt = new Date().getTime();
+    const pose = apiRef.current?.pose() ?? null;
+    const canvasAspect = apiRef.current?.canvasAspect();
+    const asked = pendingRef.current.length > 0 ? pendingRef.current.join("\n") : undefined;
+    const said = directionNow ?? direction;
+    const frameLabel = `${cameraLabel} · ${lensLabel} · ${markLabel}`;
+    keepRevision(said, cameraId);
+    let result: Awaited<ReturnType<typeof takeInSet>>;
+    try {
+      result = await takeInSet(setId, {
+        startGenerationId: takeStart.id,
+        frameDataUri: frame,
+        characterId,
+        direction: said,
+        layout: { ...layoutRef.current, camera: pose },
+        lifted: apiRef.current?.lifted === true,
+        canvasAspect,
+        words: asked,
+      });
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+      return;
+    } finally {
+      setShooting(false);
+    }
+    if (result.error !== null) {
+      setError(result.error);
+      return;
+    }
+    const endStill: SetShot = {
+      generationId: result.still.generationId,
+      status: result.still.succeeded ? "succeeded" : "failed",
+      resultUrl: result.still.resultUrl,
+      viewUrl: result.still.resultUrl,
+      posterUrl: null,
+      kind: "still",
+      score: result.still.score,
+      createdAt: new Date().toISOString(),
+      hasLookObjects: result.still.hasLookObjects,
+      words: asked ?? null,
+    };
+    const rows: SetShot[] = result.takeGenerationId
+      ? [
+          {
+            generationId: result.takeGenerationId,
+            status: "generating",
+            resultUrl: null,
+            viewUrl: null,
+            posterUrl: null,
+            kind: "take",
+            score: null,
+            createdAt: new Date().toISOString(),
+            hasLookObjects: false,
+            words: asked ?? null,
+          },
+          endStill,
+        ]
+      : [endStill];
+    setShots((prev) => [...rows, ...prev]);
+    setShotFacts((prev) => ({
+      ...prev,
+      [endStill.generationId]: { seconds: Math.round((new Date().getTime() - startedAt) / 1000), frame: frameLabel },
+    }));
+    pendingRef.current = [];
+    setPendingAsks([]);
+    setNote(null);
+    setTakeStart(null);
+    if (result.takeError) setError(result.takeError);
+    if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
   }
 
   // ---- the conversation ----
@@ -1198,25 +1296,52 @@ export function SetView({
     return moved;
   }
 
+  /** The card picture follows an edit: camera 1, no figure, a frame after the rebuild settles. */
+  function refreshThumbnail(next: SetSpec) {
+    requestAnimationFrame(() => {
+      const one = next.cameras[0];
+      const thumb = apiRef.current?.snapshot(SET_THUMB_PX, {
+        hideFigure: true,
+        from: { position: one.position, target: one.target, fovDeg: one.fovDeg },
+      });
+      if (thumb) void saveSetThumbnail(setId, thumb);
+    });
+  }
+
   /**
    * Words about the place itself — "make the barriers brick red", "now
    * golden hour" — handed to Astra, which edits the set's data server-side
    * (editor-actions.ts, gated like a build) and hands the revised set back.
    * The stage rebuilds under the camera; the line under the frame says how
-   * many pieces changed. The Build editor's tools and Astra's original are
-   * one press away for anything by hand.
+   * many pieces changed, with Undo beside it. The Build editor's tools and
+   * Astra's original stay one press away for anything by hand.
    */
   async function editSet(message: string) {
     setEditingSet(true);
+    const before = spec;
     const res = await editSetWithAstra(setId, message);
     setEditingSet(false);
     if (res.error !== null) {
       setError(res.error);
       return;
     }
+    specBeforeEditRef.current = before;
     setSpec(res.spec);
     apiRef.current?.rebuild(res.spec);
     setSetChanged(res.changed);
+    refreshThumbnail(res.spec);
+  }
+
+  /** The changed line's Undo: the set as it stood before the last Astra edit, saved back. */
+  async function undoSetEdit() {
+    const before = specBeforeEditRef.current;
+    if (!before) return;
+    specBeforeEditRef.current = null;
+    setSetChanged(null);
+    setSpec(before);
+    apiRef.current?.rebuild(before);
+    refreshThumbnail(before);
+    await saveSetEdit(setId, before);
   }
 
   /**
@@ -1263,7 +1388,7 @@ export function SetView({
       setDirection(message);
       setNote({ fallback: true, talk: false, moved: null });
       keepRevision(message, cameraId);
-      if (!askFirst) await shoot(message);
+      if (!askFirst) await (takeStart ? take(message) : shoot(message));
       return;
     }
     // Words about the place itself go to Astra, which edits the set.
@@ -1277,7 +1402,7 @@ export function SetView({
     }
     const moved = applyWords(words);
     setNote({ fallback: false, talk: false, moved: moved && moved !== "none" ? moved : null });
-    if (words.intent === "shoot" || !askFirst) await shoot(words.direction || message);
+    if (words.intent === "shoot" || !askFirst) await (takeStart ? take(words.direction || message) : shoot(words.direction || message));
   }
 
   // The message from the Sets home, once the stage can act on it — then the
@@ -1372,6 +1497,8 @@ export function SetView({
   })();
   const placedLine = formatMsg(s.placedLine, { name: characterName, mark: markLabel, facing: facingLabel, camera: cameraLabel, lens: lensLabel });
   const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
+  // A take's whole price: the end still plus the clip, as the server charges them.
+  const takeCredits = quote.totalCredits + quoteSend(takeQuoteInput()).totalCredits;
   const shootLabel = shooting
     ? s.shooting
     : quote.totalCredits === 1
@@ -1397,7 +1524,10 @@ export function SetView({
         ? s.stillUnscored
         : formatMsg(low ? s.stillBelow : s.stillAbove, { score: shot.score, bar: identityBar });
   };
-  const stillNumber = (shot: SetShot) => shots.length - shots.findIndex((x) => x.generationId === shot.generationId);
+  const stillNumber = (shot: SetShot) => {
+    const same = shots.filter((x) => x.kind === shot.kind);
+    return same.length - same.findIndex((x) => x.generationId === shot.generationId);
+  };
   const tile = (active: boolean) =>
     `relative h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 transition-shadow ${
       active ? "ring-2 ring-[#e0a468]" : "ring-1 ring-white/15 hover:ring-white/40"
@@ -1693,6 +1823,16 @@ export function SetView({
             </div>
           )}
 
+          {/* a take under way: where it starts, until the end frame is taken */}
+          {takeStart && !viewingShot && (
+            <div className="absolute left-3.5 top-16 z-20 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black">{formatMsg(s.takeBanner, { n: takeStart.n })}</span>
+              <button type="button" onClick={() => setTakeStart(null)} className={glassBtn}>
+                {t.common.cancel}
+              </button>
+            </div>
+          )}
+
           {/* the drag hint, above the filmstrip */}
           {!viewingShot && !loadFailed && (
             <span
@@ -1736,7 +1876,13 @@ export function SetView({
           {/* A still in the stage's place: the stage stays underneath, running. */}
           {viewingShot && (
             <div className="absolute inset-0 z-10 bg-[#101116]">
-              {viewingShot.viewUrl || viewingShot.resultUrl ? (
+              {viewingShot.kind === "take" ? (
+                viewingShot.resultUrl ? (
+                  <video src={viewingShot.resultUrl} controls autoPlay loop poster={viewingShot.posterUrl ?? undefined} className="h-full w-full object-contain" />
+                ) : (
+                  <span className="flex h-full items-center justify-center px-10 text-center text-sm text-onmedia/70">{s.takeRendering}</span>
+                )
+              ) : viewingShot.viewUrl || viewingShot.resultUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={viewingShot.viewUrl ?? viewingShot.resultUrl ?? ""} alt="" className="h-full w-full object-contain" />
               ) : (
@@ -1781,7 +1927,7 @@ export function SetView({
               )}
               <div className={`absolute bottom-3.5 left-3.5 flex flex-wrap items-center justify-between gap-2 right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}>
                 <span className="rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 tabular-nums">
-                  {formatMsg(s.stillTile, { n: stillNumber(viewingShot) })} · <LocalDate date={viewingShot.createdAt} />
+                  {formatMsg(viewingShot.kind === "take" ? s.takeTile : s.stillTile, { n: stillNumber(viewingShot) })} · <LocalDate date={viewingShot.createdAt} />
                   {shotFacts[viewingShot.generationId] ? ` · ${shotFacts[viewingShot.generationId].frame}` : ""}
                 </span>
                 <span className="flex items-center gap-1.5">
@@ -1792,6 +1938,18 @@ export function SetView({
                   )}
                   {viewingShot.generationId === lookShot?.generationId && (
                     <span className="rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black">{s.lookKept}</span>
+                  )}
+                  {viewingShot.kind === "still" && viewingShot.status === "succeeded" && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTakeStart({ id: viewingShot.generationId, n: stillNumber(viewingShot) });
+                        setViewing(null);
+                      }}
+                      className={glassBtn}
+                    >
+                      {s.takeItSomewhere}
+                    </button>
                   )}
                   <Link href={`/app/history/${viewingShot.generationId}`} className={glassBtn}>
                     {s.openTake}
@@ -1817,26 +1975,36 @@ export function SetView({
               <FrameIcon className="h-4 w-4" />
               {s.frameTile}
             </button>
-            {shots.map((shot, i) => (
+            {shots.map((shot) => (
               <button
                 key={shot.generationId}
                 type="button"
                 onClick={() => setViewing(shot.generationId)}
                 aria-pressed={viewing === shot.generationId}
-                title={formatMsg(s.stillTile, { n: shots.length - i })}
+                title={formatMsg(shot.kind === "take" ? s.takeTile : s.stillTile, { n: stillNumber(shot) })}
                 className={tile(viewing === shot.generationId)}
               >
-                {shot.resultUrl ? (
+                {shot.kind === "take" ? (
+                  shot.posterUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={shot.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full items-center justify-center text-lg text-onmedia/70">▶</span>
+                  )
+                ) : shot.resultUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
                 ) : (
-                  <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{formatMsg(s.stillTile, { n: shots.length - i })}</span>
+                  <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{formatMsg(s.stillTile, { n: stillNumber(shot) })}</span>
                 )}
                 {shot.score !== null && (
                   <span className="absolute left-1 top-1 rounded-full bg-black/60 px-1.5 py-px text-[9px] font-semibold text-onmedia tabular-nums">{shot.score}</span>
                 )}
                 {shot.generationId === lookShot?.generationId && (
                   <span className="absolute bottom-1 left-1 rounded-full bg-[#e0a468] px-1.5 py-px text-[9px] font-bold uppercase text-black">{s.lookBadge}</span>
+                )}
+                {shot.kind === "take" && shot.posterUrl && (
+                  <span aria-hidden className="absolute bottom-1 right-1 text-[10px] text-onmedia">▶</span>
                 )}
               </button>
             ))}
@@ -1913,6 +2081,49 @@ export function SetView({
 
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
               {thread.map((shot) => {
+                if (shot.kind === "take") {
+                  return (
+                    <Fragment key={shot.generationId}>
+                      <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                        {shot.words ?? s.shootWord}
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                        <AstraMark />
+                        <div className="min-w-0 flex-1 space-y-2.5">
+                          <p className="text-sm leading-relaxed text-[#c6c9d1]">{shot.status === "succeeded" ? stillLine(shot) : s.takeRendering}</p>
+                          <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setViewing(shot.generationId)}
+                                title={formatMsg(s.takeTile, { n: stillNumber(shot) })}
+                                className="relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ring-1 ring-white/15"
+                              >
+                                {shot.posterUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={shot.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                                ) : (
+                                  <span className="flex h-full items-center justify-center text-lg text-onmedia/70">▶</span>
+                                )}
+                              </button>
+                              <div className="min-w-0 flex flex-col gap-1">
+                                <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.takeTile, { n: stillNumber(shot) })}</span>
+                                <span className="text-xs text-[#9aa0ad] tabular-nums">
+                                  {formatMsg(s.takeSeconds, { s: SET_TAKE_SECONDS })} · <LocalDate date={shot.createdAt} />
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
+                                {s.openTake}
+                              </Link>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Fragment>
+                  );
+                }
                 // A still with no recorded camera, or nothing to cut out of it
                 // clear of its people, offers no look (look.ts).
                 const lookable = canBeLook(shot);
@@ -1990,7 +2201,12 @@ export function SetView({
                 <div className="flex items-start gap-2.5">
                   <AstraMark />
                   <p className="text-sm leading-relaxed text-[#c6c9d1]">
-                    {setChanged === 0 ? s.editorAskNothing : setChanged === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: setChanged })}
+                    {setChanged === 0 ? s.editorAskNothing : setChanged === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: setChanged })}{" "}
+                    {setChanged > 0 && (
+                      <button type="button" onClick={() => void undoSetEdit()} className="cursor-pointer font-medium text-[#e0a468]">
+                        {s.editorUndo}
+                      </button>
+                    )}
                   </p>
                 </div>
               )}
@@ -2044,11 +2260,11 @@ export function SetView({
                         <div className="flex flex-wrap items-center gap-2 pt-1">
                           <button
                             type="button"
-                            onClick={() => void shoot()}
+                            onClick={() => void (takeStart ? take() : shoot())}
                             disabled={shooting || matching || !characterId || loadFailed || !ready}
                             className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
                           >
-                            {shootLabel}
+                            {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
                           </button>
                           <button
                             type="button"
@@ -2097,7 +2313,7 @@ export function SetView({
                 e.preventDefault();
                 if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
                 else if (draft.trim()) void send(draft);
-                else void shoot();
+                else void (takeStart ? take() : shoot());
               }}
               className="relative border-t border-white/[0.07] px-3.5 pb-3.5 pt-3"
             >

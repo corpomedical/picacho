@@ -28,10 +28,17 @@ import {
 // logged; what a shot keeps of it is written by the shot action itself
 // (shot-words-store.ts), with the still it led to.
 
-/** The set is the person's own, not deleted, ready and drawable: its spec. */
+/**
+ * The set is the person's own, not deleted, ready and drawable: the spec
+ * the page draws — the WORKING copy when one is saved (the Set Editor,
+ * 2026-09-15), so the reader knows the cameras and marks as they are now,
+ * an added camera included, not as Astra first built them. The working
+ * copy is read on its own, defensively, like everywhere else.
+ */
 async function readyOwnedSpec(setId: string, userId: string): Promise<{ error: string } | { error: null; spec: SetSpec }> {
   if (typeof setId !== "string" || !UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
-  const { data: row } = await createAdminClient()
+  const admin = createAdminClient();
+  const { data: row } = await admin
     .from("location_sets")
     .select("status, spec")
     .eq("id", setId)
@@ -42,6 +49,18 @@ async function readyOwnedSpec(setId: string, userId: string): Promise<{ error: s
   if (row.status !== "ready") return { error: SET_NOT_READY };
   const n = normaliseSetSpec(row.spec);
   if (!n.ok) return { error: SET_NOT_FOUND };
+  const { data: editedRow, error: editedError } = await admin
+    .from("location_sets")
+    .select("edited_spec")
+    .eq("id", setId)
+    .eq("user_id", userId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (editedError) console.warn("[sets] reader could not read the working copy:", editedError.message);
+  else if (editedRow?.edited_spec) {
+    const edited = normaliseSetSpec(editedRow.edited_spec);
+    if (edited.ok) return { error: null, spec: edited.spec };
+  }
   return { error: null, spec: n.spec };
 }
 

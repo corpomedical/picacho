@@ -2231,6 +2231,13 @@ const en = {
     // The workspace as 3D Jutsu has one (2026-09-15): the viewport is the
     // page, the conversation floats inside it, and three modes say how much
     // Astra does on its own.
+    // Takes (2026-09-15): a clip from one still to a newly framed end.
+    takeItSomewhere: "Take it somewhere",
+    takeBanner: "The take starts at Still {n} — frame where the move ends, then say the word.",
+    takeButton: "Take · {n} credits",
+    takeTile: "Take {n}",
+    takeSeconds: "{s} s",
+    takeRendering: "The take is rendering — it lands here in a few minutes. Open the take to watch it arrive.",
     justTalking: "Just talking",
     justTalkNote: "Nothing moved — Just talking is on. Switch the mode and say it again to do it.",
     downloadFrame: "Download the frame",
@@ -2416,6 +2423,8 @@ const en = {
     setEditRefused: "That change can't be made here.",
     setEditTooFast: "You're changing the set quickly — give it a moment.",
     setEditTimedOut: "That change took too long — try again in a moment.",
+    setTakeBadStart: "That still can't start a take — pick another.",
+    setTakeFailed: "The end frame is in, but the take couldn't start — try the take again in a moment.",
   },
   apiKeys: {
     title: "API keys",

@@ -41,6 +41,10 @@ export type SetShot = {
   hasLookObjects: boolean;
   /** What the person asked for, in their words (shot-words-store.ts); null before set-shot-words.sql or when nothing was said. */
   words: string | null;
+  /** A still, or a take — a clip shot from one still to a newly framed end (take.ts, 2026-09-15). */
+  kind: "still" | "take";
+  /** A take's poster frame once it has arrived; stills carry none. */
+  posterUrl: string | null;
 };
 
 export type SetCharacter = {

@@ -173,6 +173,10 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That change can't be made here.": "setEditRefused",
   "You're changing the set quickly — give it a moment.": "setEditTooFast",
   "That change took too long — try again in a moment.": "setEditTimedOut",
+  // Takes (lib/sets/messages.ts, 2026-09-15) — a clip from one still to a
+  // newly shot end frame.
+  "That still can't start a take — pick another.": "setTakeBadStart",
+  "The end frame is in, but the take couldn't start — try the take again in a moment.": "setTakeFailed",
 };
 
 // The prompt gate's answers (content-policy.ts refusalMessages). The composer

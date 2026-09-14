@@ -82,6 +82,10 @@ export const SET_EDIT_REFUSED = "That change can't be made here.";
 export const SET_EDIT_TOO_FAST = "You're changing the set quickly — give it a moment.";
 export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a moment.";
 
+// Takes (2026-09-15): a clip from one still to a newly shot end frame.
+export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";
+export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start — try the take again in a moment.";
+
 /**
  * A read that did not come back → the sentence shown, by the provider's
  * failure kind (providers/astra.ts), or "invalid" for an answer that came

@@ -220,7 +220,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   if (ids.length > 0) {
     const { data: gens } = await db
       .from("generations")
-      .select("id, status, result_url, match_score, created_at")
+      .select("id, status, result_url, poster_url, content_type, match_score, created_at")
       .in("id", ids)
       .eq("user_id", access.userId)
       .is("deleted_at", null);
@@ -246,16 +246,23 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     shots = ids
       .map((id) => byId.get(id))
       .filter((g): g is NonNullable<typeof g> => Boolean(g))
-      .map((g) => ({
-        generationId: g.id as string,
-        status: g.status as string,
-        resultUrl: thumbUrl(g.result_url as string | null, 640),
-        viewUrl: thumbUrl(g.result_url as string | null, 1600),
-        score: typeof g.match_score === "number" ? g.match_score : null,
-        createdAt: g.created_at as string,
-        hasLookObjects: lendsLook(g.id as string),
-        words: words.get(g.id as string) ?? null,
-      }));
+      .map((g) => {
+        // A take is a video row among the shots (take.ts): its result is the
+        // clip itself, watched raw, with the poster as its picture.
+        const isTake = g.content_type === "video";
+        return {
+          generationId: g.id as string,
+          status: g.status as string,
+          resultUrl: isTake ? ((g.result_url as string | null) ?? null) : thumbUrl(g.result_url as string | null, 640),
+          viewUrl: isTake ? null : thumbUrl(g.result_url as string | null, 1600),
+          posterUrl: isTake ? thumbUrl(g.poster_url as string | null, 640) : null,
+          kind: (isTake ? "take" : "still") as "still" | "take",
+          score: typeof g.match_score === "number" ? g.match_score : null,
+          createdAt: g.created_at as string,
+          hasLookObjects: lendsLook(g.id as string),
+          words: words.get(g.id as string) ?? null,
+        };
+      });
   }
 
   const characters = await shootableCharacters(db, access.userId);
