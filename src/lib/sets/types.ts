@@ -1,4 +1,5 @@
 import type { SetLayout, SetSpec } from "./set-spec";
+import type { SetFilm } from "./film";
 
 // What the Sets pages hand their client components. Plain data only — every
 // value crosses the server→client boundary.
@@ -67,6 +68,8 @@ export type SetDetail = {
   /** The owner's working copy (the Set Editor, 2026-09-14): what the stage draws when it exists. */
   editedSpec: SetSpec | null;
   layout: SetLayout | null;
+  /** The saved move (Helios Film, 2026-09-15): null until one is kept, or before helios-film.sql runs. */
+  film: SetFilm | null;
   hasThumb: boolean;
   fromPhoto: boolean;
   /** The photo a ready photo set was built from, signed for its owner; null otherwise. */

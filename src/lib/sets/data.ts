@@ -11,6 +11,7 @@ import { readShotCameras } from "@/lib/sets/shot-camera";
 import { readShotWords } from "@/lib/sets/shot-words-store";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
+import { normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
@@ -197,6 +198,21 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       if (edited.ok) editedSpec = edited.spec;
     }
   }
+  // The saved move (Helios Film, 2026-09-15): its own read for the same
+  // reason as the working copy's — supabase/pending/helios-film.sql may not
+  // have run yet, and the page must open either way.
+  let film: SetFilm | null = null;
+  if (spec) {
+    const { data: filmRow, error: filmError } = await db
+      .from("location_sets")
+      .select("film")
+      .eq("id", setId)
+      .eq("user_id", access.userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (filmError) console.warn("getSetPage could not read the film:", filmError.message);
+    else if (filmRow?.film) film = normaliseSetFilm(filmRow.film);
+  }
   // What the page actually draws — and what the layout and the look are
   // held against.
   const drawn = editedSpec ?? spec;
@@ -296,6 +312,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       failure: status === "failed" ? setFailureMessage(row.failure as string | null, fromPhoto ? "photo" : "text") : null,
       spec,
       editedSpec,
+      film,
       layout,
       hasThumb: isCurrentSetThumb(row.thumb_path, access.userId, row.id as string),
       fromPhoto,

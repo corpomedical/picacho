@@ -93,6 +93,8 @@ export default async function SetPage({
         setId={data.set.id}
         title={data.set.title}
         spec={data.set.editedSpec ?? data.set.spec}
+        savedFilm={data.set.film}
+        initialFilmOpen={first(query.film) === "1"}
         initialLayout={data.set.layout}
         hasThumb={data.set.hasThumb}
         sourcePhotoUrl={data.set.sourcePhotoUrl}

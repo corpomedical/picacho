@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.35.0",
+    build: 48,
+    date: "2026-09-15",
+    title: "Helios films: the move on a timeline, shot as one continuous take after another",
+    items: [
+      "A third tab beside Build and Shoot: Film. The viewport stays the workspace — what's new is time. Orbit the stage to a view and press K: that view becomes a keyframe, the end of a beat. The dock at the stage's foot holds the move: the still the film starts on, then a cell per beat with its own words for what happens in it, the engine — Gemini Omni's five seconds a beat, or Veo's eight — and one price for the whole film, said before anything renders. Play the move flies the camera through the beats right in the viewport, free, before a credit is spent.",
+      "Rendering is honest by construction: each beat renders as a take — its end frame is shot in the set from the saved keyframe with the previous frame riding as its look, then the engine animates the seconds between. Beat two starts on the exact frame beat one ended on, so the film is one continuous shot however many beats it has. The beats fill in as they arrive, everything rendered lands in the filmstrip as takes, and a beat that fails stops the chain and says so — everything before it is kept. Three beats is the ceiling for now: a whole film stays inside the take limiter with one take to spare.",
+      "When the last beat is in, Play the film runs them as one, edge to edge where the viewport was. And the page finally watches renders instead of asking you to come back: any take still rendering — a film's beat or an ordinary take — turns into its clip in place, a few seconds after the engine finishes.",
+      "Deliberately not in this cut: cuts between different shots (a film here is one continuous move), audio direction (Omni brings the scene's own sound on every beat), keyframed objects (the camera is yours in numbers; the life inside a beat is yours in words), and single-file download — each beat's clip downloads from History while the in-browser stitch earns its way in. The move saves with the set once its one-line SQL runs.",
+    ],
+  },
+  {
     version: "1.34.0",
     build: 47,
     date: "2026-09-15",

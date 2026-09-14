@@ -20,6 +20,8 @@ import {
   takeQuoteInput,
   type SetTakeEngine,
 } from "@/lib/sets/take";
+import { FILM_MAX_BEATS, filmSeconds, normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
+import { readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
@@ -65,6 +67,31 @@ import type { SetCharacter, SetShot } from "@/lib/sets/types";
 // on this route.
 
 type Pose = { position: Vec3; target: Vec3; fovDeg: number };
+
+const lerp3 = (a: Vec3, b: Vec3, k: number): Vec3 => [
+  a[0] + (b[0] - a[0]) * k,
+  a[1] + (b[1] - a[1]) * k,
+  a[2] + (b[2] - a[2]) * k,
+];
+
+/** Fly the stage camera from one pose to another — the film's previz, free. */
+function tweenPose(api: { goTo(p: Pose): void }, a: Pose, b: Pose, ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / ms);
+      const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      api.goTo({
+        position: lerp3(a.position, b.position, e),
+        target: lerp3(a.target, b.target, e),
+        fovDeg: a.fovDeg + (b.fovDeg - a.fovDeg) * e,
+      });
+      if (k < 1) requestAnimationFrame(step);
+      else resolve();
+    };
+    requestAnimationFrame(step);
+  });
+}
 type Mark = { x: number; z: number; facingDeg: number };
 
 type StageApi = {
@@ -127,7 +154,7 @@ type Revision = {
 /** What this visit knows of a still it shot: how long it took and the frame it was shot from. */
 type ShotFacts = { seconds: number; frame: string };
 
-type MenuId = "camera" | "lens" | "figure" | "history" | "mode" | "who";
+type MenuId = "camera" | "lens" | "figure" | "history" | "mode" | "who" | "filmStart";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -234,6 +261,8 @@ export function SetView({
   initialAsk = null,
   initialCharacterId = null,
   initialAskFirst = true,
+  savedFilm = null,
+  initialFilmOpen = false,
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -254,6 +283,10 @@ export function SetView({
   initialCharacterId?: string | null;
   /** Whether Astra waits for the word after framing (Ask before shooting). */
   initialAskFirst?: boolean;
+  /** The saved move (Helios Film): null until one is kept, or before helios-film.sql runs. */
+  savedFilm?: SetFilm | null;
+  /** Open on the Film dock (?film=1). */
+  initialFilmOpen?: boolean;
 }) {
   const { t, locale } = useLocale();
   const s = t.sets;
@@ -330,6 +363,22 @@ export function SetView({
   // take. Reset to the default when a new take starts, so the price on the
   // button is never a leftover from an earlier, pricier choice.
   const [takeEngine, setTakeEngine] = useState<SetTakeEngine>(SET_TAKE_DEFAULT_ENGINE);
+
+  // ---- the film: the move (Helios Film, drawn as canvas page H) ----
+  // The dock replaces the filmstrip while it is open; the stage stays the
+  // stage — orbit to a view, K keeps it as a beat's end. The move autosaves
+  // like the editor's working copy; rendering is a chain of takes.
+  const [filmOpen, setFilmOpen] = useState(initialFilmOpen);
+  const [film, setFilm] = useState<SetFilm>(() => normaliseSetFilm(savedFilm));
+  const [filmSel, setFilmSel] = useState<number | null>(null);
+  /** Rendering: which beat the chain is on; null when idle. */
+  const [filmBusy, setFilmBusy] = useState<{ beat: number } | null>(null);
+  const [filmError, setFilmError] = useState("");
+  /** The last render's clip ids in beat order (null where a beat's clip never started). */
+  const [filmClips, setFilmClips] = useState<(string | null)[]>([]);
+  /** The reel: which clip is playing on the stage; null when closed. */
+  const [reel, setReel] = useState<number | null>(null);
+  const [previz, setPreviz] = useState(false);
   // The composer's who menu, opened by "@" in the words or by the chip.
   const [mentionForced, setMentionForced] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1247,6 +1296,129 @@ export function SetView({
     if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
   }
 
+  // ---- the film's hands ----
+
+  /** The view on the stage now becomes the next beat's end. */
+  function filmAddKeyframe() {
+    const pose = apiRef.current?.pose();
+    if (!pose) return;
+    setFilm((f) =>
+      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose }] },
+    );
+    setFilmSel((n) => n ?? null);
+  }
+
+  function filmGoTo(i: number) {
+    const b = film.beats[i];
+    if (b) apiRef.current?.goTo(b.end);
+    setFilmSel(i);
+  }
+
+  /** Fly the camera through the move — the previz, before a credit is spent. */
+  async function playMove() {
+    const api = apiRef.current;
+    if (!api || previz || film.beats.length === 0) return;
+    setPreviz(true);
+    let from = api.pose();
+    for (const beat of film.beats) {
+      await tweenPose(api, from, beat.end, 1400);
+      from = beat.end;
+    }
+    setPreviz(false);
+  }
+
+  /**
+   * Render the film: one take per beat, back to back — each beat's end
+   * frame shot from its saved pose with the previous frame as its look, so
+   * beat n opens on the exact frame beat n-1 closed on. A beat that fails
+   * stops the chain and says so; everything already rendered is kept, in
+   * the filmstrip like any take.
+   */
+  async function renderFilm() {
+    const api = apiRef.current;
+    if (!api || filmBusy || shooting || !ready) return;
+    if (!characterId || !film.startId) {
+      setFilmError(s.filmNeedsStart);
+      return;
+    }
+    if (film.beats.length === 0) return;
+    setFilmError("");
+    setFilmClips([]);
+    setReel(null);
+    setViewing(null);
+    let startId = film.startId;
+    for (let i = 0; i < film.beats.length; i++) {
+      setFilmBusy({ beat: i });
+      const beat = film.beats[i];
+      const frame = api.snapshot(SET_FRAME_PX, { from: beat.end });
+      if (!frame) {
+        setFilmError(s.loadFailed);
+        break;
+      }
+      let result: Awaited<ReturnType<typeof takeInSet>>;
+      try {
+        result = await takeInSet(setId, {
+          startGenerationId: startId,
+          frameDataUri: frame,
+          characterId,
+          direction: beat.words,
+          layout: { ...layoutRef.current, camera: beat.end },
+          engine: film.engine,
+          lifted: api.lifted === true,
+          canvasAspect: api.canvasAspect(),
+        });
+      } catch (err) {
+        const stale = isStaleDeployError(err);
+        setFilmError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+        if (stale) setTimeout(() => window.location.reload(), 1800);
+        break;
+      }
+      if (result.error !== null) {
+        setFilmError(result.error);
+        break;
+      }
+      const endStill: SetShot = {
+        generationId: result.still.generationId,
+        status: result.still.succeeded ? "succeeded" : "failed",
+        resultUrl: result.still.resultUrl,
+        viewUrl: result.still.resultUrl,
+        posterUrl: null,
+        kind: "still",
+        seconds: null,
+        score: result.still.score,
+        createdAt: new Date().toISOString(),
+        hasLookObjects: result.still.hasLookObjects,
+        words: beat.words || null,
+      };
+      const rows: SetShot[] = result.takeGenerationId
+        ? [
+            {
+              generationId: result.takeGenerationId,
+              status: "generating",
+              resultUrl: null,
+              viewUrl: null,
+              posterUrl: null,
+              kind: "take",
+              seconds: SET_TAKE_ENGINES[film.engine].seconds,
+              score: null,
+              createdAt: new Date().toISOString(),
+              hasLookObjects: false,
+              words: beat.words || null,
+            },
+            endStill,
+          ]
+        : [endStill];
+      setShots((prev) => [...rows, ...prev]);
+      setFilmClips((prev) => [...prev, result.takeGenerationId]);
+      if (!result.still.succeeded || result.takeGenerationId === null) {
+        setFilmError(result.takeError ?? s.filmBeatFailed);
+        break;
+      }
+      startId = result.still.generationId;
+    }
+    setFilmBusy(null);
+  }
+
   // ---- the conversation ----
 
   /**
@@ -1454,6 +1626,68 @@ export function SetView({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // K keeps the view on the stage as the next beat's end, while the film
+  // dock is open — Blender's key, doing Blender's job.
+  useEffect(() => {
+    if (!filmOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "k" && e.key !== "K") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+      const pose = apiRef.current?.pose();
+      if (!pose) return;
+      setFilm((f) =>
+        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose }] },
+      );
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filmOpen]);
+
+  // The move autosaves like the editor's working copy — a beat after the
+  // hands stop. The first run is the loaded film itself, not an edit.
+  const filmLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!filmLoadedRef.current) {
+      filmLoadedRef.current = true;
+      return;
+    }
+    const id = setTimeout(() => {
+      void saveSetFilm(setId, film).then((r) => {
+        if (r.error) setFilmError(r.error);
+      });
+    }, 1200);
+    return () => clearTimeout(id);
+  }, [film, setId]);
+
+  // A take still rendering is watched, not waited on: while any kind:"take"
+  // row is generating — a film's beat or an ordinary take — the page asks
+  // after it every few seconds and the row turns into the clip in place.
+  const generatingKey = shots
+    .filter((sh) => sh.kind === "take" && sh.status === "generating")
+    .map((sh) => sh.generationId)
+    .join(",");
+  useEffect(() => {
+    if (!generatingKey) return;
+    const ids = generatingKey.split(",");
+    const timer = setInterval(() => {
+      void readTakes(setId, ids).then((r) => {
+        if (r.error !== null) return;
+        const byId = new Map(r.takes.map((tk) => [tk.id, tk]));
+        setShots((prev) =>
+          prev.map((sh) => {
+            const tk = sh.kind === "take" ? byId.get(sh.generationId) : undefined;
+            return tk && tk.status !== sh.status
+              ? { ...sh, status: tk.status, resultUrl: tk.resultUrl, posterUrl: tk.posterUrl }
+              : sh;
+          }),
+        );
+      });
+    }, 8000);
+    return () => clearInterval(timer);
+  }, [generatingKey, setId]);
+
   /** The frame as a picture on disk — 3D Jutsu's static-frame export, for the frame the still would be shot from. */
   function downloadFrame() {
     const shot = apiRef.current?.snapshot(SET_FRAME_PX);
@@ -1512,6 +1746,17 @@ export function SetView({
   const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
   // A take's whole price: the end still plus the clip, as the server charges them.
   const takeCredits = quote.totalCredits + quoteSend(takeQuoteInput(takeEngine)).totalCredits;
+  // The film's whole price: every beat is one take — an end frame and a
+  // clip — priced by the same quotes the server charges with.
+  const filmCredits = film.beats.length * (quote.totalCredits + quoteSend(takeQuoteInput(film.engine)).totalCredits);
+  const filmClipShots = filmClips.map((id) => (id ? (shots.find((sh) => sh.generationId === id) ?? null) : null));
+  const reelReady =
+    film.beats.length > 0 &&
+    filmClips.length === film.beats.length &&
+    filmClipShots.every((sh) => sh !== null && sh.status === "succeeded" && Boolean(sh.resultUrl));
+  const reelShots = reelReady ? (filmClipShots as SetShot[]) : [];
+  const filmStartShot = film.startId ? (shots.find((sh) => sh.generationId === film.startId) ?? null) : null;
+  const filmStartOptions = shots.filter((sh) => sh.kind === "still" && sh.status === "succeeded");
   const shootLabel = shooting
     ? s.shooting
     : quote.totalCredits === 1
@@ -1664,9 +1909,37 @@ export function SetView({
           >
             {s.editorBuildTab}
           </Link>
-          <span className="flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
+          <button
+            type="button"
+            onClick={() => {
+              setFilmOpen(false);
+              setReel(null);
+              window.history.replaceState(null, "", `/app/sets/${setId}`);
+            }}
+            className={
+              filmOpen
+                ? "flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+                : "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
+            }
+          >
             {s.editorShootTab}
-          </span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setFilmOpen(true);
+              setTakeStart(null);
+              setViewing(null);
+              window.history.replaceState(null, "", `/app/sets/${setId}?film=1`);
+            }}
+            className={
+              filmOpen
+                ? "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
+                : "flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+            }
+          >
+            {s.filmTab}
+          </button>
         </span>
         <span className="flex-1" />
         <div className="relative">
@@ -1886,6 +2159,32 @@ export function SetView({
             </div>
           )}
 
+          {/* The reel: the film's beats playing as one, where the viewport was. */}
+          {reel !== null && reelReady && reelShots[reel] && (
+            <div className="absolute inset-0 z-20 bg-black">
+              <video
+                key={reelShots[reel].generationId}
+                src={reelShots[reel].resultUrl ?? undefined}
+                autoPlay
+                playsInline
+                onEnded={() => setReel((r) => (r !== null && r + 1 < reelShots.length ? r + 1 : null))}
+                className="h-full w-full object-contain"
+              />
+              <span className="absolute left-3.5 top-3.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia tabular-nums">
+                {formatMsg(s.filmBeatLabel, { n: reel + 1 })} · {reel + 1}/{reelShots.length}
+              </span>
+              <button
+                type="button"
+                onClick={() => setReel(null)}
+                aria-label={t.common.dismiss}
+                title={t.common.dismiss}
+                className="absolute right-3.5 top-3.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/60 text-onmedia hover:bg-black/80"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {/* A still in the stage's place: the stage stays underneath, running. */}
           {viewingShot && (
             <div className="absolute inset-0 z-10 bg-[#101116]">
@@ -1974,6 +2273,7 @@ export function SetView({
           )}
 
           {/* The filmstrip — the workspace's timeline: the frame, then every still, newest first */}
+          {!filmOpen && (
           <div
             className={`absolute bottom-3.5 left-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-white/[0.08] bg-black/40 p-1.5 backdrop-blur right-3.5 ${
               chatOpen ? "md:right-[404px]" : "md:right-24"
@@ -2028,6 +2328,173 @@ export function SetView({
               </span>
             )}
           </div>
+          )}
+
+          {/* The film dock (canvas page H): the move where the filmstrip was —
+              transport and price above, then the start still and a cell per
+              beat. The stage stays the stage: orbit, then K keeps the view. */}
+          {filmOpen && (
+            <div
+              className={`absolute bottom-3.5 left-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-white/[0.08] bg-black/40 p-2 backdrop-blur right-3.5 ${
+                chatOpen ? "md:right-[404px]" : "md:right-24"
+              } ${viewingShot ? "hidden md:flex" : ""}`}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void playMove()}
+                  disabled={!ready || previz || film.beats.length === 0}
+                  className={chip(false)}
+                >
+                  ▶ {s.filmPlayMove}
+                </button>
+                <span className="whitespace-nowrap text-[11px] text-[#9aa0ad] tabular-nums">
+                  {formatMsg(s.filmLength, { s: filmSeconds(film), n: film.beats.length })}
+                </span>
+                <span className="flex-1" />
+                <button
+                  type="button"
+                  onClick={() => setFilm((f) => ({ ...f, engine: "omni" }))}
+                  className={chip(film.engine === "omni")}
+                >
+                  {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFilm((f) => ({ ...f, engine: "veo" }))}
+                  className={chip(film.engine === "veo")}
+                >
+                  {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
+                </button>
+                {reelReady && (
+                  <button type="button" onClick={() => setReel(0)} className={chip(false)}>
+                    ▶ {s.filmPlayFilm}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void renderFilm()}
+                  disabled={
+                    !ready || Boolean(filmBusy) || shooting || matching || film.beats.length === 0 || !film.startId || !characterId
+                  }
+                  className="inline-flex h-8 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-xs font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  {filmBusy
+                    ? formatMsg(s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
+                    : formatMsg(s.filmRender, { n: filmCredits })}
+                </button>
+              </div>
+              <div className="flex items-stretch gap-2 overflow-x-auto">
+                <div className="relative flex-shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => toggleMenu("filmStart")}
+                    aria-haspopup="listbox"
+                    aria-expanded={menu === "filmStart"}
+                    title={s.filmStarts}
+                    className={`${tile(false)} flex flex-col items-center justify-center gap-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-onmedia/85`}
+                  >
+                    {filmStartShot?.resultUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={filmStartShot.resultUrl} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      s.filmStarts
+                    )}
+                  </button>
+                  {menu === "filmStart" && (
+                    <div
+                      role="listbox"
+                      aria-label={s.filmStarts}
+                      className="absolute bottom-full left-0 z-40 mb-2 flex max-h-80 min-w-[11rem] flex-col gap-0.5 overflow-y-auto rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
+                    >
+                      {filmStartOptions.length === 0 ? (
+                        <span className="block px-3 py-2 text-xs text-[#9aa0ad]">{s.filmPickStill}</span>
+                      ) : (
+                        filmStartOptions.map((shot) => (
+                          <button
+                            key={shot.generationId}
+                            type="button"
+                            role="option"
+                            aria-selected={film.startId === shot.generationId}
+                            onClick={() => {
+                              setFilm((f) => ({ ...f, startId: shot.generationId }));
+                              setMenu(null);
+                            }}
+                            className={`flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-1.5 text-left text-xs hover:bg-white/[0.06] ${
+                              film.startId === shot.generationId ? "text-[#e0a468]" : "text-[#c6c9d1]"
+                            }`}
+                          >
+                            {formatMsg(s.stillTile, { n: stillNumber(shot) })}
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                {film.beats.map((b, i) => (
+                  <div
+                    key={i}
+                    className={`flex min-w-[190px] max-w-[280px] flex-1 flex-col gap-1.5 rounded-[10px] bg-white/[0.04] p-2 ring-1 ${
+                      filmSel === i ? "ring-[#e0a468]" : "ring-white/[0.08]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#6b6f7a]">
+                      <button type="button" onClick={() => filmGoTo(i)} className="cursor-pointer hover:text-[#e0a468]">
+                        {formatMsg(s.filmBeatLabel, { n: i + 1 })}
+                      </button>
+                      <span className="normal-case tabular-nums">
+                        {formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}
+                      </span>
+                      {filmBusy?.beat === i ? (
+                        <span className="normal-case text-[#e0a468]">{s.filmBeatStill}</span>
+                      ) : filmClipShots[i] ? (
+                        <span
+                          className={`normal-case ${filmClipShots[i]!.status === "succeeded" ? "text-[#5f9e6e]" : "text-[#e0a468]"}`}
+                        >
+                          {filmClipShots[i]!.status === "succeeded" ? s.filmBeatDone : s.filmBeatClip}
+                        </span>
+                      ) : null}
+                      <span className="flex-1" />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== i) }));
+                          setFilmSel(null);
+                        }}
+                        aria-label={t.common.dismiss}
+                        className="cursor-pointer hover:text-[#ecedf1]"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <input
+                      value={b.words}
+                      onChange={(e) =>
+                        setFilm((f) => ({
+                          ...f,
+                          beats: f.beats.map((bb, j) => (j === i ? { ...bb, words: e.target.value } : bb)),
+                        }))
+                      }
+                      onFocus={() => setFilmSel(i)}
+                      placeholder={s.filmBeatWords}
+                      className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-white/[0.08] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
+                    />
+                  </div>
+                ))}
+                {film.beats.length < FILM_MAX_BEATS && (
+                  <button
+                    type="button"
+                    onClick={filmAddKeyframe}
+                    disabled={!ready}
+                    className={`${chip(false)} h-auto min-h-[52px] flex-shrink-0 whitespace-nowrap`}
+                  >
+                    + {s.filmKeyframe}
+                  </button>
+                )}
+              </div>
+              {filmError && <p className="px-1 text-xs text-red-400">{localizeServerText(filmError, t)}</p>}
+            </div>
+          )}
 
           {/* A photo set: the photo beside camera 1, where the photographer stood */}
           {sourcePhotoUrl && compareOpen && (
