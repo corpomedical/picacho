@@ -19,6 +19,9 @@ export type SetSummary = {
   /** The English wire sentence for a failed build (localized at display). */
   failure: string | null;
   fromPhoto: boolean;
+  /** Stills shot in it (the Sets dashboard, 2026-09-14), and when the last one was. */
+  shots: number;
+  lastShotAt: string | null;
 };
 
 export type SetShot = {
@@ -66,6 +69,8 @@ export type SetsHomeData =
       usedThisMonth: number;
       /** -1 = unlimited (admin). */
       monthlyLimit: number;
+      /** Stills shot in any of these sets since the billing month began (the dashboard). */
+      shotsThisMonth: number;
       /** Whether this person may build a set from a photo (admins, flag astra_photo_sets). */
       photoSetsOn: boolean;
     };

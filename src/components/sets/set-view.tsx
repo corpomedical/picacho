@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { LocalDate } from "@/components/local-date";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
@@ -147,9 +148,15 @@ export function SetView({
   // read the person's latest choice, not the one from the render it began in
   // (review, 2026-09-11 — turning the look off mid-render was undone).
   const lookPinnedRef = useRef(false);
+  // The same fact as state, for what the panel says (a ref is not read
+  // during render): whether the look still follows the newest still.
+  const [lookPinned, setLookPinned] = useState(false);
   // The last shot asked for a look that could not be cut out, and went
   // without it: said once, under the shot, until the next one.
   const [lookDropped, setLookDropped] = useState(false);
+  // The look picker (2026-09-14): open while the person chooses another
+  // still to keep the objects from; closed by a pick.
+  const [pickingLook, setPickingLook] = useState(false);
   // A photo set: the photo's shape (from the picture once it loads), and
   // camera 1's view drawn at that shape to lay beside it. Nothing is saved.
   const [photoAspect, setPhotoAspect] = useState<number | null>(null);
@@ -834,10 +841,13 @@ export function SetView({
 
   const lookShot = shots.find((shot) => shot.generationId === lookId && canBeLook(shot)) ?? null;
   const latestStill = newestLook(shots);
+  // Every still that can lend a look, newest first: the picker's choices.
+  const lookables = shots.filter((shot) => canBeLook(shot));
 
   function pickLook(generationId: string | null) {
     setLookId(generationId);
     lookPinnedRef.current = true;
+    setLookPinned(true);
   }
 
   const chip = (active: boolean) =>
@@ -849,7 +859,12 @@ export function SetView({
   const activeLens = nearestLens(fovDeg);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
+      {/* Two columns on a wide screen (2026-09-14): the stage and its
+          controls on the left, the shoot panel beside it; one column on a
+          phone, in the same order. The stills shot here follow below. */}
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
+      <div className="min-w-0 space-y-6">
       {/* The stage */}
       <div className="space-y-2.5">
         <div className="relative overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage">
@@ -1074,8 +1089,10 @@ export function SetView({
         </div>
       )}
 
-      {/* Shoot */}
-      <div className="space-y-3 border-t border-atelier-rule pt-4">
+      </div>
+
+      {/* Shoot: the panel beside the stage */}
+      <aside className="space-y-4 rounded-media border border-atelier-rule bg-atelier-surface p-5 lg:sticky lg:top-4">
         <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.shootTitle}</h2>
         {characters.length === 0 ? (
           <div className="flex flex-wrap items-center gap-3 text-sm text-atelier-muted">
@@ -1120,44 +1137,82 @@ export function SetView({
                 className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent"
               />
             </label>
-            {/* The look: which earlier still this one keeps the objects of. */}
-            <div className="flex flex-wrap items-center gap-2 text-xs text-atelier-muted">
-              <span className="text-[11px] font-medium uppercase tracking-widest">{s.lookLabel}</span>
-              {lookShot?.resultUrl ? (
-                <>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={lookShot.resultUrl} alt="" className="h-8 w-8 rounded-[4px] object-cover" />
-                  <span className="max-w-md">{s.lookOn}</span>
-                  <button type="button" onClick={() => pickLook(null)} className={chip(false)}>
-                    {s.lookOff}
+            {/* The look: which earlier still this one keeps the objects of —
+                a card of its own, with the still it follows and a picker of
+                every still that can lend one (2026-09-14: the control used to
+                be a ten-pixel pill in a thumbnail's corner). */}
+            <div className="space-y-2.5 rounded-control border border-atelier-rule p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.lookLabel}</span>
+                {lookShot && !pickingLook && lookables.length > 1 && (
+                  <button type="button" onClick={() => setPickingLook(true)} className={chip(false)}>
+                    {s.lookChange}
                   </button>
-                </>
+                )}
+              </div>
+              {lookShot?.resultUrl ? (
+                <div className="flex items-start gap-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={lookShot.resultUrl} alt="" className="h-14 w-14 shrink-0 rounded-[4px] border border-atelier-rule object-cover" />
+                  <div className="min-w-0 flex-1 space-y-1 text-xs text-atelier-muted">
+                    <p className="font-medium text-atelier-ink/85">
+                      <LocalDate date={lookShot.createdAt} />
+                      {!lookPinned && lookShot.generationId === latestStill ? ` · ${s.lookFromNewest}` : ""}
+                    </p>
+                    <p>{s.lookOn}</p>
+                    <button type="button" onClick={() => pickLook(null)} className="cursor-pointer font-medium text-atelier-accent underline underline-offset-2">
+                      {s.lookOff}
+                    </button>
+                  </div>
+                </div>
               ) : latestStill ? (
-                <>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-atelier-muted">
                   <span>{s.lookOffNote}</span>
                   <button type="button" onClick={() => pickLook(latestStill)} className={chip(false)}>
                     {s.lookUseLatest}
                   </button>
-                </>
+                </div>
               ) : (
-                <span>{s.lookFirst}</span>
+                <p className="text-xs text-atelier-muted">{s.lookFirst}</p>
+              )}
+              {pickingLook && (
+                <div className="space-y-2 border-t border-atelier-rule pt-2.5">
+                  <p className="text-xs text-atelier-muted">{s.lookPickTitle}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {lookables.map((shot) => (
+                      <button
+                        key={shot.generationId}
+                        type="button"
+                        aria-pressed={shot.generationId === lookShot?.generationId}
+                        onClick={() => {
+                          pickLook(shot.generationId);
+                          setPickingLook(false);
+                        }}
+                        className={`cursor-pointer overflow-hidden rounded-[6px] border-2 transition-colors ${
+                          shot.generationId === lookShot?.generationId ? "border-atelier-accent" : "border-transparent hover:border-atelier-rule"
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={shot.resultUrl ?? ""} alt="" className="h-16 w-16 object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              {error && <p className="mr-auto text-sm text-red-600">{localizeServerText(error, t)}</p>}
-              <button
-                type="button"
-                onClick={() => void shoot()}
-                disabled={shooting || matching || !characterId || loadFailed || !ready}
-                className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-              >
-                {shooting
-                  ? s.shooting
-                  : quote.totalCredits === 1
-                    ? s.shootButtonOne
-                    : formatMsg(s.shootButton, { n: quote.totalCredits })}
-              </button>
-            </div>
+            {error && <p className="text-sm text-red-600">{localizeServerText(error, t)}</p>}
+            <button
+              type="button"
+              onClick={() => void shoot()}
+              disabled={shooting || matching || !characterId || loadFailed || !ready}
+              className="w-full cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              {shooting
+                ? s.shooting
+                : quote.totalCredits === 1
+                  ? s.shootButtonOne
+                  : formatMsg(s.shootButton, { n: quote.totalCredits })}
+            </button>
             {lastMiss && (
               <p className="text-sm text-atelier-muted">
                 {s.shotDidNotFinish}{" "}
@@ -1173,66 +1228,73 @@ export function SetView({
             )}
           </>
         )}
+      </aside>
       </div>
 
-      {/* Contact sheet */}
-      <div className="space-y-3 border-t border-atelier-rule pt-4">
-        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.contactSheet}</h2>
+      {/* The stills shot here: a card each, its date and its part in the look
+          in a row under the picture — never a control hidden in a corner. */}
+      <div className="space-y-3 border-t border-atelier-rule pt-5">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.contactSheet}</h2>
+          {shots.length > 0 && (
+            <span className="text-xs tabular-nums text-atelier-muted">
+              {shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })}
+            </span>
+          )}
+        </div>
         {shots.length === 0 ? (
           <p className="text-xs text-atelier-muted">{s.contactSheetEmpty}</p>
         ) : (
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          <ul className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {shots.map((shot) => {
               const low = shot.score !== null && shot.score < identityBar;
               // A still with no recorded camera, or nothing to cut out of it
-              // clear of its person, offers no look (look.ts).
+              // clear of its people, offers no look (look.ts).
               const lookable = canBeLook(shot);
               const isLook = lookable && shot.generationId === lookShot?.generationId;
               return (
-                <div key={shot.generationId} className="relative">
-                <Link
-                  href={`/app/history/${shot.generationId}`}
-                  className="group relative block aspect-square overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
-                >
-                  {shot.resultUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="flex h-full items-center justify-center p-3 text-center text-xs text-onmedia/60">
-                      {s.openTake}
+                <li key={shot.generationId} className={`overflow-hidden rounded-media border bg-atelier-surface ${isLook ? "border-atelier-accent" : "border-atelier-rule"}`}>
+                  <Link href={`/app/history/${shot.generationId}`} className="relative block aspect-square overflow-hidden bg-atelier-stage">
+                    {shot.resultUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    ) : (
+                      <span className="flex h-full items-center justify-center p-3 text-center text-xs text-onmedia/60">
+                        {s.openTake}
+                      </span>
+                    )}
+                    <span
+                      className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
+                        shot.score === null
+                          ? "bg-black/60 text-onmedia/80"
+                          : low
+                            ? "bg-amber-500 text-black"
+                            : "bg-black/60 text-onmedia"
+                      }`}
+                      title={low ? formatMsg(s.identityLow, { bar: identityBar }) : undefined}
+                    >
+                      {shot.score === null ? s.unscored : formatMsg(s.identityScore, { score: shot.score })}
                     </span>
-                  )}
-                  <span
-                    className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
-                      shot.score === null
-                        ? "bg-black/60 text-onmedia/80"
-                        : low
-                          ? "bg-amber-500 text-black"
-                          : "bg-black/60 text-onmedia"
-                    }`}
-                    title={low ? formatMsg(s.identityLow, { bar: identityBar }) : undefined}
-                  >
-                    {shot.score === null ? s.unscored : formatMsg(s.identityScore, { score: shot.score })}
-                  </span>
-                </Link>
-                {/* Beside the link, not in it: a button inside a link is not a button. */}
-                {isLook ? (
-                  <span className="pointer-events-none absolute bottom-2 right-2 rounded-full bg-atelier-accent px-2 py-0.5 text-[10px] font-semibold text-black">
-                    {s.lookBadge}
-                  </span>
-                ) : lookable ? (
-                  <button
-                    type="button"
-                    onClick={() => pickLook(shot.generationId)}
-                    className="absolute bottom-2 right-2 cursor-pointer rounded-full border border-onmedia/10 bg-black/60 px-2 py-0.5 text-[10px] font-medium text-onmedia/90 transition-colors hover:text-onmedia"
-                  >
-                    {s.lookUse}
-                  </button>
-                ) : null}
-                </div>
+                  </Link>
+                  {/* Beside the link, not in it: a button inside a link is not a button. */}
+                  <div className="flex min-h-10 items-center justify-between gap-2 px-3 py-2">
+                    <span className="text-xs tabular-nums text-atelier-muted">
+                      <LocalDate date={shot.createdAt} />
+                    </span>
+                    {isLook ? (
+                      <span className="rounded-full bg-atelier-accent px-2 py-0.5 text-[10px] font-semibold text-black">{s.lookBadge}</span>
+                    ) : lookable ? (
+                      <button type="button" onClick={() => pickLook(shot.generationId)} className={chip(false)}>
+                        {s.lookUse}
+                      </button>
+                    ) : (
+                      <span className="text-[11px] text-atelier-muted">{s.lookCannot}</span>
+                    )}
+                  </div>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </div>
     </div>

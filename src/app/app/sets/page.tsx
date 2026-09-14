@@ -61,6 +61,7 @@ export default async function SetsPage() {
           initialSets={data.sets}
           usedThisMonth={data.usedThisMonth}
           monthlyLimit={data.monthlyLimit}
+          shotsThisMonth={data.shotsThisMonth}
           photoSetsOn={data.photoSetsOn}
           finisherOn={finisherCanRun()}
           notifyReady={notify.ready}

@@ -81,10 +81,38 @@ export async function getSetsHome(): Promise<SetsHomeData> {
       access.userId,
     )
   ).sources;
+  // The stills shot in these sets, for the dashboard (2026-09-14): how many
+  // in each, when the last one was, and how many this billing month. One
+  // read of the shot rows' dates, counted here; a read that fails shows
+  // zeros for this one load, never an error.
+  const shotsBySet = new Map<string, { count: number; last: string | null }>();
+  let shotsThisMonth = 0;
+  const ids = (rows ?? []).map((r) => r.id as string);
+  if (ids.length > 0) {
+    const since = monthlyWindowStart(access.periodStart).toISOString();
+    const { data: shotRows, error: shotsError } = await access.supabase
+      .from("location_set_shots")
+      .select("set_id, created_at")
+      .eq("user_id", access.userId)
+      .in("set_id", ids)
+      .order("created_at", { ascending: false })
+      .limit(5000);
+    if (shotsError) console.error("getSetsHome could not count the stills:", shotsError.message);
+    for (const shot of (shotRows ?? []) as { set_id: unknown; created_at: unknown }[]) {
+      if (typeof shot.set_id !== "string" || typeof shot.created_at !== "string") continue;
+      const so = shotsBySet.get(shot.set_id) ?? { count: 0, last: null };
+      so.count += 1;
+      // Newest first, so the first seen is the last shot.
+      if (!so.last) so.last = shot.created_at;
+      shotsBySet.set(shot.set_id, so);
+      if (shot.created_at >= since) shotsThisMonth += 1;
+    }
+  }
   const sets: SetSummary[] = (rows ?? []).map((r) => {
     const status = asStatus(r.status);
     const fromPhoto = photos.has(r.id as string);
     const brief = (r.brief as string) ?? "";
+    const shots = shotsBySet.get(r.id as string);
     return {
       id: r.id as string,
       title: (r.title as string) ?? "",
@@ -94,6 +122,8 @@ export async function getSetsHome(): Promise<SetsHomeData> {
       thumbUrl: r.thumb_path ? thumbUrl(mediaUrl("generated-images", r.thumb_path as string), 640) : null,
       failure: status === "failed" ? setFailureMessage(r.failure as string | null, fromPhoto ? "photo" : "text") : null,
       fromPhoto,
+      shots: shots?.count ?? 0,
+      lastShotAt: shots?.last ?? null,
     };
   });
   return {
@@ -101,6 +131,7 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     sets,
     usedThisMonth: (await countSetBuildsThisMonth(access.userId, access.periodStart)) ?? 0,
     monthlyLimit: access.monthlyLimit,
+    shotsThisMonth,
     photoSetsOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
   };
 }

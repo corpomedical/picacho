@@ -121,6 +121,7 @@ export function SetsHome({
   initialSets,
   usedThisMonth,
   monthlyLimit,
+  shotsThisMonth,
   photoSetsOn,
   finisherOn,
   notifyReady,
@@ -129,6 +130,8 @@ export function SetsHome({
   initialSets: SetSummary[];
   usedThisMonth: number;
   monthlyLimit: number;
+  /** Stills shot in these sets this billing month (the dashboard strip). */
+  shotsThisMonth: number;
   /** Sets from a photo are on for this person: the form offers both ways in. */
   photoSetsOn: boolean;
   /** The finisher can run (finisher.ts finisherCanRun): a build completes with the page closed. */
@@ -280,6 +283,8 @@ export function SetsHome({
         thumbUrl: null,
         failure: null,
         fromPhoto: false,
+        shots: 0,
+        lastShotAt: null,
       },
       ...prev,
     ]);
@@ -335,6 +340,8 @@ export function SetsHome({
         thumbUrl: null,
         failure: null,
         fromPhoto: true,
+        shots: 0,
+        lastShotAt: null,
       },
       ...prev,
     ]);
@@ -381,8 +388,34 @@ export function SetsHome({
         : "border-atelier-rule text-atelier-muted hover:text-atelier-ink"
     }`;
 
+  const readyCount = sets.filter((x) => x.status === "ready").length;
+  const buildingCount = sets.filter((x) => x.status === "building").length;
+
   return (
     <div className="space-y-8">
+      {/* The dashboard strip (2026-09-14): what this account has and has
+          spent, at a glance, before the form and the cards. */}
+      <dl className="grid grid-cols-3 gap-3">
+        <div className="rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3">
+          <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsSets}</dt>
+          <dd className="mt-1 text-2xl font-semibold tabular-nums text-atelier-ink">
+            {readyCount}
+            {buildingCount > 0 && <span className="ml-2 text-xs font-medium text-atelier-accent">+{buildingCount} {s.statusBuilding}</span>}
+          </dd>
+        </div>
+        <div className="rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3">
+          <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsShots}</dt>
+          <dd className="mt-1 text-2xl font-semibold tabular-nums text-atelier-ink">{shotsThisMonth}</dd>
+        </div>
+        <div className="rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3">
+          <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsBuilds}</dt>
+          <dd className="mt-1 text-2xl font-semibold tabular-nums text-atelier-ink">
+            {used}
+            {monthlyLimit >= 0 && <span className="text-sm font-medium text-atelier-muted"> / {monthlyLimit}</span>}
+          </dd>
+        </div>
+      </dl>
+
       {/* New set */}
       <section className="space-y-3 rounded-media border border-atelier-rule bg-atelier-surface p-5">
         <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.newTitle}</h2>
@@ -569,6 +602,17 @@ export function SetsHome({
                     <span className="inline-block rounded-full border border-atelier-rule px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
                       {s.fromPhoto}
                     </span>
+                  )}
+                  {x.status === "ready" && (
+                    <p className="text-xs tabular-nums text-atelier-muted">
+                      {x.shots === 0 ? s.noShots : x.shots === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: x.shots })}
+                      {x.lastShotAt && (
+                        <>
+                          {" · "}
+                          <LocalDate date={x.lastShotAt} />
+                        </>
+                      )}
+                    </p>
                   )}
                   {x.status === "building" && (
                     <p className="text-xs text-atelier-muted">{s[buildingHintKey(x.fromPhoto, finisherOn)]}</p>
