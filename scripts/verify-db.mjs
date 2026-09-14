@@ -108,10 +108,10 @@ const COLUMNS = {
     "response_id", "attempts", "failure", "cost_usd", "thumb_path", "updated_at", "deleted_at",
     "source_photo_path", "source_photo_sha256",
   ],
-  // The last one is the camera a still was framed from (pending/set-shot-camera.sql):
-  // until it exists no still is ever a look's source, so no shot carries a
-  // look, and every shot is otherwise untouched — which is why nobody would
-  // notice it missing.
+  // The last one is the camera a still was framed from
+  // (applied/2026-09-14/set-shot-camera.sql): without it no still is ever a
+  // look's source, so no shot carries a look, and every shot is otherwise
+  // untouched — which is why nobody would notice it missing.
   location_set_shots: ["set_id", "generation_id", "user_id", "created_at", "camera"],
 };
 

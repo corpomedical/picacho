@@ -15,12 +15,13 @@
 //
 // THE ONLY MODULE IN src/ THAT NAMES THE COLUMN (shot-camera.test.ts scans
 // for it). location_set_shots.camera arrives with
-// supabase/pending/set-shot-camera.sql, and until the operator runs it the
-// column does not exist — and PostgREST fails a whole statement that names a
-// missing column. So no existing query names it: the camera is written in
-// an update of its own whose failure is ignored, and read in queries of
-// their own whose failure reads as "no camera". Before the SQL, every shot
-// works exactly as it did, and none carries a look.
+// supabase/applied/2026-09-14/set-shot-camera.sql (run in production on
+// 2026-09-14). It was written to survive the column's absence, and still
+// is: PostgREST fails a whole statement that names a missing column, so no
+// existing query names it — the camera is written in an update of its own
+// whose failure is ignored, and read in queries of their own whose failure
+// reads as "no camera". Without the column, every shot works exactly as it
+// did, and none carries a look.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normaliseShotCamera, type ShotCamera } from "./look-cutout";
