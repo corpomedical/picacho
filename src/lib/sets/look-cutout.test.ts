@@ -5,6 +5,7 @@ import {
   LOOK_CUT_MEASURED_USD,
   LOOK_CUT_WORST_USD,
   LOOK_FIGURE_GROW,
+  LOOK_FIGURE_GROW_UP,
   LOOK_GROUP_MAX_M,
   LOOK_MAX_GROUPS,
   LOOK_MEASURED_USD,
@@ -338,6 +339,24 @@ describe("never the person", () => {
     expectClearOfPerson(got, "still 1");
     // Before the fence, the car's box ran through the person to x 950.
     for (const c of got.cuts) expect(c.box.x_max, `object ${c.object}`).toBeLessThanOrEqual(r.x_min + 1);
+  });
+
+  it("still 3: shot from behind the car with the person at its middle, drawn so much closer than the sketch that the head stands high above the figure — the region still covers it", () => {
+    // The operator's first still after the camera column (2026-09-14, no
+    // look to take): GPT Image drew the person from about x 405 to 530 and
+    // from y 318 (the hair) down behind the car's roof at about y 500.
+    const still3: ShotCamera = { position: [-2.952, 2.069, -4.408], target: [1.115, 1.333, 2.515], fovDeg: 53.13, canvasAspect: 2.325242718446602, figure: { x: 1.39, z: 2.37 } };
+    const got = lookCuts(spec, still3, SQUARE);
+    expect(LOOK_FIGURE_GROW_UP).toBe(0.7);
+    const r = regionPx(got.person!);
+    expect(r.x_min).toBeLessThanOrEqual(405);
+    expect(r.x_max).toBeGreaterThanOrEqual(530);
+    expect(r.y_min).toBeLessThanOrEqual(318);
+    expect(r.y_max).toBeGreaterThanOrEqual(500);
+    // The car is cut from what lies clear of the person: the strip below.
+    expectClearOfPerson(got, "still 3");
+    expect(got.cuts).toHaveLength(1);
+    expect(got.cuts[0].box.y_min).toBeGreaterThanOrEqual(r.y_max - 1);
   });
 
   it("wherever the figure stands by the car — behind it, beside it on the camera's side, in front of its nose — no box reaches the person, and some of the car is still cut", () => {

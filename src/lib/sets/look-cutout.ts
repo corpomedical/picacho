@@ -89,11 +89,16 @@
 // its box on screen, grown well past it, is the person's region: every box
 // is cut back to what lies clear of it, a box it mostly covers is dropped,
 // and look-cutout-image.ts clears it out of whatever SAM 2 kept. It is grown
-// by LOOK_FIGURE_GROW of the figure's height on screen on every side:
-// GPT Image drew the operator's first race-track still's person far larger
-// than the figure and lower, about 1.7 times its height, reaching past its
-// box by some 27% of its height toward the car, 16% above it and 36% below.
-// Whatever part of an object stands inside that region is lost from the
+// by LOOK_FIGURE_GROW of the figure's height on screen to each side and
+// below, and by LOOK_FIGURE_GROW_UP above: GPT Image drew the operator's
+// first race-track still's person far larger than the figure and lower,
+// about 1.7 times its height, reaching past its box by some 27% of its
+// height toward the car, 16% above it and 36% below; and the third still's
+// (2026-09-14, shot from behind the car with the person at its middle) so
+// much closer than the sketch that the head reached 59% of the figure's
+// height above its box. The head is what must never come through, and
+// little of an object ever stands above one, so the region reaches highest
+// there. Whatever part of an object stands inside that region is lost from the
 // look — the price of never carrying a person. A still whose figure was not
 // in its frame, reached behind the lens, or stood hidden behind structure
 // offers no look at all: nobody can say where its person is.
@@ -173,8 +178,10 @@ export const LOOK_GROW_FRAME = 0.02;
  * buildStandIn), and √(0.32² + 0.19²) ≈ 0.37.
  */
 export const LOOK_FIGURE_HALF_M = 0.37;
-/** The person's region reaches past the figure's box on screen, on every side, by this share of its height there (plus LOOK_GROW_FRAME). */
+/** The person's region reaches past the figure's box on screen, to each side and below, by this share of its height there (plus LOOK_GROW_FRAME)… */
 export const LOOK_FIGURE_GROW = 0.4;
+/** …and above, where the head is, by this share: the operator's third still drew the person's head 59% of the figure's height above it. */
+export const LOOK_FIGURE_GROW_UP = 0.7;
 /** A box cut back clear of the person's region must keep at least this share of itself, or it is dropped. */
 export const LOOK_FIGURE_MIN_LEFT = 0.25;
 /** The stage camera's near plane (set-view.tsx): a shape reaching behind it is at the lens, not in the picture. */
@@ -400,8 +407,10 @@ function personRegion(
   };
   if (!clip(figure)) return null;
   if (FIGURE_SEEN_AT_M.every((y) => structure.some((s) => entersOnTheWay(camera.position, [x, y, z], s)))) return null;
-  const grow = LOOK_FIGURE_GROW * (figure.v1 - figure.v0) + LOOK_GROW_FRAME;
-  return clip({ u0: figure.u0 - grow, v0: figure.v0 - grow, u1: figure.u1 + grow, v1: figure.v1 + grow });
+  const height = figure.v1 - figure.v0;
+  const grow = LOOK_FIGURE_GROW * height + LOOK_GROW_FRAME;
+  const up = LOOK_FIGURE_GROW_UP * height + LOOK_GROW_FRAME;
+  return clip({ u0: figure.u0 - grow, v0: figure.v0 - up, u1: figure.u1 + grow, v1: figure.v1 + grow });
 }
 
 /**
