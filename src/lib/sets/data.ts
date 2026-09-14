@@ -228,6 +228,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
         generationId: g.id as string,
         status: g.status as string,
         resultUrl: thumbUrl(g.result_url as string | null, 640),
+        viewUrl: thumbUrl(g.result_url as string | null, 1600),
         score: typeof g.match_score === "number" ? g.match_score : null,
         createdAt: g.created_at as string,
         hasLookObjects: lendsLook(g.id as string),

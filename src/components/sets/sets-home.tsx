@@ -711,8 +711,8 @@ export function SetsHome({
                       </div>
                     )}
                   </div>
-                  <button type="button" onClick={() => setAskFirst((v) => !v)} aria-pressed={askFirst} title={s.askFirstHint} className={chip(askFirst)}>
-                    {s.askFirst}
+                  <button type="button" onClick={() => setAskFirst((v) => !v)} aria-pressed={askFirst} title={s.modeHint} className={chip(askFirst)}>
+                    {askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
                   </button>
                 </div>
                 <div className="flex items-center gap-3">

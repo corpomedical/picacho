@@ -30,15 +30,17 @@ import type { SetLayout, SetSpec, Vec3 } from "@/lib/sets/set-spec";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 
 // A Set, open (Astra Sets, 2026-09-10; a conversation since 2026-09-14). The
-// page is a thread with Astra, the way the Generate page is a thread: the
-// person says who is in the frame, what happens and where the camera stands;
-// Astra stands the figure on its mark, places the camera and shows the frame
-// — the live stage, in its own bubble, which the person can still grab and
-// turn — and waits. On their word (the Shoot button, or "shoot" in the
-// composer) it shoots a still of exactly the square framed, and the still
-// comes back in the thread with its identity score, under the words that
-// asked for it. Earlier stills open the thread, oldest first, each under the
-// words kept with it (shot-words-store.ts).
+// page is a workspace the way Higgsfield's 3D Jutsu is one (docs/ASTRA_SETS.md,
+// the 2026-09-14 reading): the stage on the left is the page — the live
+// frame, draggable as ever, and the viewer the stills come back in, with a
+// filmstrip of every still under it — and the conversation with Astra is
+// the panel beside it. The person says who is in the frame, what happens
+// and where the camera stands; Astra answers in a sentence and shows the
+// frame as chips (camera, lens, mark, engine, price), and Shoot is the word
+// that approves it. The still comes back in the viewer, and in the thread
+// under the words that asked for it. Earlier stills open the thread, oldest
+// first, each under the words kept with it (shot-words-store.ts). Every
+// frame Astra sets is a revision the person can step back to.
 //
 // The words are read by a small model into fields (shot-words.ts), never
 // into text of its own: everything Astra says here is Picacho's own
@@ -91,6 +93,16 @@ type FrameNote = {
   moved: CameraMove | null;
 };
 
+/** A frame as Astra or the person set it, to step back to (this visit only). */
+type Revision = {
+  id: number;
+  cameraId: string | null;
+  pose: Pose;
+  markId: string;
+  mark: Mark;
+  direction: string;
+};
+
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
 /** One press of a pan or tilt arrow. */
@@ -102,6 +114,9 @@ const FRAME_EYE_Y = 1.45;
 // How far a tilt may go (SET_MAX_TILT_UP_DEG, SET_MAX_TILT_DOWN_DEG) is in
 // set-config.ts: a matched shot is held to the same limits. The up limit
 // keeps a tilt inside the orbit's maxPolarAngle below.
+/** Frames kept to step back to. */
+const REVISIONS_MAX = 12;
+const DEG = Math.PI / 180;
 
 const BUBBLE_SHADOW = "shadow-[0_1px_2px_rgba(33,29,22,0.05),0_8px_20px_-14px_rgba(33,29,22,0.12)]";
 const SHEET_SHADOW =
@@ -110,32 +125,27 @@ const SHEET_SHADOW =
 function UserTurn({ text }: { text: string }) {
   return (
     <div className="flex justify-end">
-      <div className={`max-w-[85%] whitespace-pre-wrap rounded-[18px] rounded-br-[6px] bg-atelier-surface px-4.5 py-3 text-sm leading-relaxed text-atelier-ink ${BUBBLE_SHADOW}`}>
+      <div className={`max-w-[88%] whitespace-pre-wrap rounded-[18px] rounded-br-[6px] bg-atelier-surface px-4 py-2.5 text-sm leading-relaxed text-atelier-ink ${BUBBLE_SHADOW}`}>
         {text}
       </div>
     </div>
   );
 }
 
-function AstraTurn({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
+function AstraTurn({ children }: { children: ReactNode }) {
   return (
     <div className="flex justify-start">
-      <div className={`${wide ? "w-full" : ""} max-w-[92%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4.5 py-4 ${BUBBLE_SHADOW}`}>
-        {children}
-      </div>
+      <div className={`w-full max-w-[94%] rounded-[18px] rounded-bl-[6px] bg-atelier-surface px-4 py-3 ${BUBBLE_SHADOW}`}>{children}</div>
     </div>
   );
 }
 
-function Step({ label, live = false, children }: { label: string; live?: boolean; children?: ReactNode }) {
+/** A fact of the frame, said as a chip: never a control. */
+function Fact({ children }: { children: ReactNode }) {
   return (
-    <li className="flex items-start gap-3">
-      <span className={`mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full ${live ? "animate-pulse bg-atelier-ink" : "bg-atelier-rule"}`} />
-      <div className="min-w-0 flex-1 space-y-2">
-        <p className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{label}</p>
-        {children}
-      </div>
-    </li>
+    <span className="inline-flex items-center rounded-full bg-atelier-ink/[0.045] px-2.5 py-1 text-[11px] font-medium text-atelier-ink/80 tabular-nums">
+      {children}
+    </span>
   );
 }
 
@@ -153,6 +163,15 @@ function Spinner({ className }: { className?: string }) {
     <svg className={`animate-spin ${className ?? ""}`} viewBox="0 0 24 24" fill="none" aria-hidden>
       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
       <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function FrameIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="M8 5v14M16 5v14M3 12h18" />
     </svg>
   );
 }
@@ -188,7 +207,7 @@ export function SetView({
   initialAsk?: string | null;
   /** The character picked on the Sets home. */
   initialCharacterId?: string | null;
-  /** Whether Astra waits for the word after framing (the Ask first chip). */
+  /** Whether Astra waits for the word after framing (Ask before shooting). */
   initialAskFirst?: boolean;
 }) {
   const { t, locale } = useLocale();
@@ -211,6 +230,10 @@ export function SetView({
   const [fovDeg, setFovDeg] = useState(startPose.fovDeg);
   const [markId, setMarkId] = useState(startMarkId);
   const [mark, setMark] = useState<Mark>(startMark);
+  // The camera as it stands, for what Astra says about the frame: kept up
+  // to date whenever a move settles (scheduleSave), since a ref is not read
+  // during render.
+  const [poseNow, setPoseNow] = useState<Pose>(startPose);
   const [characterId, setCharacterId] = useState(
     () => characters.find((c) => c.id === initialCharacterId)?.id ?? characters[0]?.id ?? "",
   );
@@ -238,8 +261,15 @@ export function SetView({
   const [draft, setDraft] = useState("");
   const [reading, setReading] = useState(false);
   const [askFirst, setAskFirst] = useState(initialAskFirst);
+  // The composer's who menu, opened by "@" in the words or by the chip.
+  const [mentionForced, setMentionForced] = useState(false);
+  const draftRef = useRef<HTMLTextAreaElement | null>(null);
   // The frame's own controls (camera, lens, mark, match), shown on request.
   const [framing, setFraming] = useState(false);
+  // The viewer: a still in the stage's place, or the frame itself (null).
+  const [viewing, setViewing] = useState<string | null>(null);
+  // Frames set this visit, to step back to.
+  const [revisions, setRevisions] = useState<Revision[]>([]);
   // The look (2026-09-11): the earlier still whose objects the next shot
   // keeps, so the car is the same car. Only its objects ride, cut out onto
   // grey on the server, so the shot keeps its own camera (2026-09-12,
@@ -679,6 +709,9 @@ export function SetView({
 
   // ---- the arrangement follows state, and is saved a moment after it settles ----
   const scheduleSave = useCallback(() => {
+    // What Astra says about the frame reads the camera as it stands now.
+    const now = apiRef.current?.pose();
+    if (now) setPoseNow(now);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       // Without a running stage there is no camera to save, and saving
@@ -883,6 +916,43 @@ export function SetView({
     renderCount: 1,
   });
 
+  // ---- revisions: every frame set this visit, to step back to ----
+
+  /** The frame as it stands, kept unless it is the one already kept last. */
+  function keepRevision(directionNow: string, cameraNow: string | null) {
+    const api = apiRef.current;
+    if (!api) return;
+    const pose = api.pose();
+    const { markId: mId, mark: m } = layoutRef.current;
+    setRevisions((prev) => {
+      const last = prev[prev.length - 1];
+      if (
+        last &&
+        JSON.stringify(last.pose) === JSON.stringify(pose) &&
+        last.markId === mId &&
+        JSON.stringify(last.mark) === JSON.stringify(m) &&
+        last.direction === directionNow
+      ) {
+        return prev;
+      }
+      const id = (last?.id ?? 0) + 1;
+      return [...prev, { id, cameraId: cameraNow, pose, markId: mId, mark: m, direction: directionNow }].slice(-REVISIONS_MAX);
+    });
+  }
+
+  function restoreRevision(r: Revision) {
+    const api = apiRef.current;
+    if (!api || shooting) return;
+    api.goTo(r.pose);
+    setFovDeg(r.pose.fovDeg);
+    setCameraId(r.cameraId);
+    setMarkId(r.markId);
+    setMark(r.mark);
+    setDirection(r.direction);
+    setViewing(null);
+    scheduleSave();
+  }
+
   // ---- the conversation ----
 
   /**
@@ -896,10 +966,12 @@ export function SetView({
     const api = apiRef.current;
     if (!api) return null;
     let m: Mark = layoutRef.current.mark;
+    let mId = layoutRef.current.markId;
     if (words.markId) {
       const picked = spec.marks.find((x) => x.id === words.markId);
       if (picked) {
         m = { x: picked.x, z: picked.z, facingDeg: picked.facingDeg };
+        mId = words.markId;
         setMarkId(words.markId);
         setMark(m);
         // The figure now, not after the render: the camera is placed against
@@ -908,8 +980,10 @@ export function SetView({
       }
     }
     let moved: CameraMove | null = null;
+    let cameraNow: string | null = cameraId;
     if (words.cameraId) {
       pickCamera(words.cameraId);
+      cameraNow = words.cameraId;
       if (words.lensMm) pickLens(words.lensMm);
     } else if (hasCameraWords(words)) {
       const { match, from } = wordsToMatch(words, { mark: m, current: api.pose() });
@@ -922,6 +996,7 @@ export function SetView({
         canvasAspect: api.canvasAspect(),
       });
       moved = api.matchTo(solved.pose);
+      cameraNow = null;
       setFovDeg(solved.pose.fovDeg);
       setCameraId(null);
       scheduleSave();
@@ -931,7 +1006,12 @@ export function SetView({
       m = { ...m, facingDeg };
       setMark(m);
     }
+    const directionNow = words.direction || direction;
     if (words.direction) setDirection(words.direction);
+    // The frame Astra set, kept to step back to: the mark as it will be
+    // after the render, the camera as it stands now.
+    layoutRef.current = { markId: mId, mark: m };
+    keepRevision(directionNow, cameraNow);
     return moved;
   }
 
@@ -945,6 +1025,8 @@ export function SetView({
     if (!message || reading || shooting || !ready) return;
     setError("");
     setDraft("");
+    setMentionForced(false);
+    setViewing(null);
     pendingRef.current = [...pendingRef.current, message];
     setPendingAsks(pendingRef.current);
     setNote(null);
@@ -969,6 +1051,7 @@ export function SetView({
     if (!words) {
       setDirection(message);
       setNote({ fallback: true, talk: false, moved: null });
+      keepRevision(message, cameraId);
       if (!askFirst) await shoot(message);
       return;
     }
@@ -1006,9 +1089,11 @@ export function SetView({
     const at = spec.cameras.findIndex((c) => c.id === cameraId);
     const next = spec.cameras[(at + 1) % spec.cameras.length];
     pickCamera(next.id);
+    setViewing(null);
     pendingRef.current = [...pendingRef.current, s.anotherAngle];
     setPendingAsks(pendingRef.current);
     setNote({ fallback: false, talk: false, moved: null });
+    keepRevision(direction, next.id);
   }
 
   /**
@@ -1023,6 +1108,7 @@ export function SetView({
     setError("");
     setLastMiss(null);
     setLookDropped(false);
+    setViewing(null);
     const frame = apiRef.current?.snapshot(SET_FRAME_PX);
     if (!frame) {
       setError(s.loadFailed);
@@ -1038,6 +1124,7 @@ export function SetView({
     // sent before state has caught up with it.
     const asked = pendingRef.current.length > 0 ? pendingRef.current.join("\n") : undefined;
     const said = directionNow ?? direction;
+    keepRevision(said, cameraId);
     let result: Awaited<ReturnType<typeof shootInSet>>;
     try {
       result = await shootInSet(setId, {
@@ -1068,6 +1155,7 @@ export function SetView({
       generationId: result.generationId,
       status: result.succeeded ? "succeeded" : "failed",
       resultUrl: result.resultUrl,
+      viewUrl: result.resultUrl,
       score: result.score,
       createdAt: new Date().toISOString(),
       hasLookObjects: result.hasLookObjects,
@@ -1081,6 +1169,8 @@ export function SetView({
     setLookDropped(result.lookDropped);
     if (!result.succeeded) setLastMiss(result.generationId);
     else if (canBeLook(shot) && !lookPinnedRef.current) setLookId(result.generationId);
+    // The still takes the stage's place until the person goes back to the frame.
+    if (result.succeeded) setViewing(result.generationId);
   }
 
   const lookShot = shots.find((shot) => shot.generationId === lookId && canBeLook(shot)) ?? null;
@@ -1089,6 +1179,19 @@ export function SetView({
   function pickLook(generationId: string | null) {
     setLookId(generationId);
     lookPinnedRef.current = true;
+  }
+
+  // ---- the composer's who menu: "@" in the words, or the chip ----
+  const mentionMatch = /(?:^|\s)@([^\s@]*)$/.exec(draft);
+  const mentionQuery = mentionForced ? "" : (mentionMatch?.[1] ?? null);
+  const mentionOpen = characters.length > 0 && mentionQuery !== null;
+  const mentionList = mentionOpen ? characters.filter((c) => c.name.toLowerCase().startsWith(mentionQuery.toLowerCase())) : [];
+
+  function pickMention(c: SetCharacter) {
+    setCharacterId(c.id);
+    if (mentionMatch) setDraft(draft.replace(/(^|\s)@[^\s@]*$/, "$1"));
+    setMentionForced(false);
+    draftRef.current?.focus();
   }
 
   const chip = (active: boolean) =>
@@ -1110,7 +1213,19 @@ export function SetView({
     const i = spec.cameras.findIndex((c) => c.id === cameraId);
     return spec.cameras[i]?.label || formatMsg(s.cameraN, { n: i + 1 });
   })();
-  const placedLine = `${formatMsg(s.placedAt, { mark: markLabel })} · ${cameraLabel} · ${formatMsg(s.lensMm, { mm: activeLens })}`;
+  const lensLabel = formatMsg(s.lensMm, { mm: activeLens });
+  // Which way the figure faces, as the camera sees it: toward it, away from
+  // it, or to the picture's left or right (shot-words.ts facingFor's rule,
+  // read back).
+  const facingLabel = (() => {
+    const bearing = Math.atan2(poseNow.position[0] - mark.x, poseNow.position[2] - mark.z) / DEG;
+    const d = ((((mark.facingDeg - bearing) % 360) + 540) % 360) - 180;
+    if (Math.abs(d) <= 45) return s.facingCamera;
+    if (Math.abs(d) >= 135) return s.facingAway;
+    return d > 0 ? s.facingRight : s.facingLeft;
+  })();
+  const placedLine = formatMsg(s.placedLine, { name: characterName, mark: markLabel, facing: facingLabel, camera: cameraLabel, lens: lensLabel });
+  const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
   const shootLabel = shooting
     ? s.shooting
     : quote.totalCredits === 1
@@ -1123,54 +1238,403 @@ export function SetView({
         .join(" ");
   // Oldest first: the thread reads down to the frame.
   const thread = [...shots].reverse();
+  const viewingAt = viewing ? shots.findIndex((x) => x.generationId === viewing) : -1;
+  const viewingShot = viewingAt >= 0 ? shots[viewingAt] : null;
+  const stillLine = (shot: SetShot) => {
+    const low = shot.score !== null && shot.score < identityBar;
+    return shot.status !== "succeeded"
+      ? s.stillFailed
+      : shot.score === null
+        ? s.stillUnscored
+        : formatMsg(low ? s.stillBelow : s.stillAbove, { score: shot.score, bar: identityBar });
+  };
+  const tile = (active: boolean) =>
+    `relative h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] bg-atelier-stage transition-shadow ${
+      active ? "ring-2 ring-atelier-accent" : "ring-1 ring-atelier-rule hover:ring-atelier-muted"
+    }`;
 
   return (
-    <div className="space-y-5">
-      {/* The thread */}
-      <div className={`isolate relative rounded-[26px] bg-atelier-surface/80 ${SHEET_SHADOW} backdrop-blur-xl`}>
-        <div className="space-y-6 p-4 sm:p-6">
-          {thread.map((shot) => {
-            const low = shot.score !== null && shot.score < identityBar;
-            // A still with no recorded camera, or nothing to cut out of it
-            // clear of its people, offers no look (look.ts).
-            const lookable = canBeLook(shot);
-            const isLook = lookable && shot.generationId === lookShot?.generationId;
-            const line =
-              shot.status !== "succeeded"
-                ? s.stillFailed
-                : shot.score === null
-                  ? s.stillUnscored
-                  : formatMsg(low ? s.stillBelow : s.stillAbove, { score: shot.score, bar: identityBar });
-            return (
-              <Fragment key={shot.generationId}>
-                <UserTurn text={shot.words ?? s.shootWord} />
-                <AstraTurn>
-                  <div className="space-y-3">
-                    <Link
-                      href={`/app/history/${shot.generationId}`}
-                      className={`relative block aspect-square w-full max-w-[360px] overflow-hidden rounded-media bg-atelier-stage ${
-                        isLook ? "ring-2 ring-atelier-accent" : ""
-                      }`}
-                    >
-                      {shot.resultUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="flex h-full items-center justify-center p-3 text-center text-xs text-onmedia/60">{s.openTake}</span>
-                      )}
-                      <span
-                        className={`absolute left-2 top-2 rounded-full px-2 py-0.5 text-[10px] font-semibold tabular-nums ${
-                          shot.score === null ? "bg-black/60 text-onmedia/80" : low ? "bg-amber-500 text-black" : "bg-black/60 text-onmedia"
-                        }`}
-                        title={low ? formatMsg(s.identityLow, { bar: identityBar }) : undefined}
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start">
+      {/* The workspace: the frame, and the stills in its place */}
+      <section className="min-w-0 space-y-3">
+        <div className={`relative overflow-hidden rounded-[22px] bg-atelier-stage ${SHEET_SHADOW}`}>
+          <div ref={hostRef} className="aspect-video min-h-[320px] w-full" />
+          <div
+            ref={guideRef}
+            aria-hidden
+            className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] outline outline-1 outline-white/40 ${viewingShot ? "hidden" : ""}`}
+          />
+          {!viewingShot && (
+            <>
+              <span
+                aria-live="polite"
+                className="pointer-events-none absolute bottom-3 left-3 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80"
+              >
+                {figureMoved ? s.figureMovedOut : s.dragHint}
+              </span>
+              {/* Pan and tilt: turn the camera where it stands. */}
+              <div role="group" aria-label={s.aimLabel} className="absolute bottom-3 right-3 grid grid-cols-3 gap-1">
+                {(
+                  [
+                    [null, [0, AIM_STEP, s.aimUp, "↑"], null],
+                    [[AIM_STEP, 0, s.aimLeft, "←"], null, [-AIM_STEP, 0, s.aimRight, "→"]],
+                    [null, [0, -AIM_STEP, s.aimDown, "↓"], null],
+                  ] as const
+                ).flatMap((row, r) =>
+                  row.map((cell, c) =>
+                    cell ? (
+                      <button
+                        key={`${r}${c}`}
+                        type="button"
+                        onClick={() => aimBy(cell[0], cell[1])}
+                        disabled={!ready}
+                        aria-label={cell[2]}
+                        title={cell[2]}
+                        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-xs text-onmedia/80 transition-colors hover:text-onmedia disabled:cursor-default disabled:opacity-50"
                       >
-                        {shot.score === null ? s.unscored : formatMsg(s.identityScore, { score: shot.score })}
-                      </span>
-                    </Link>
-                    <p className="text-sm text-atelier-ink/80">
-                      {line} <span className="text-atelier-muted tabular-nums"><LocalDate date={shot.createdAt} /></span>
+                        {cell[3]}
+                      </button>
+                    ) : (
+                      <span key={`${r}${c}`} aria-hidden />
+                    ),
+                  ),
+                )}
+              </div>
+            </>
+          )}
+          {loadFailed && !viewingShot && (
+            <div className="absolute inset-0 flex items-center justify-center bg-atelier-stage/90 p-6 text-center text-sm text-onmedia/80">
+              {s.loadFailed}
+            </div>
+          )}
+          {/* A still in the stage's place: the stage stays underneath, running. */}
+          {viewingShot && (
+            <div className="absolute inset-0 z-10 bg-atelier-stage">
+              {viewingShot.viewUrl || viewingShot.resultUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={viewingShot.viewUrl ?? viewingShot.resultUrl ?? ""} alt="" className="h-full w-full object-contain" />
+              ) : (
+                <span className="flex h-full items-center justify-center text-sm text-onmedia/60">{s.openTake}</span>
+              )}
+              <span
+                className={`absolute left-3 top-3 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums ${
+                  viewingShot.score === null
+                    ? "bg-black/60 text-onmedia/80"
+                    : viewingShot.score < identityBar
+                      ? "bg-amber-500 text-black"
+                      : "bg-black/60 text-onmedia"
+                }`}
+              >
+                {viewingShot.score === null ? s.unscored : formatMsg(s.identityScore, { score: viewingShot.score })}
+              </span>
+              <button
+                type="button"
+                onClick={() => setViewing(null)}
+                className="absolute right-3 top-3 flex cursor-pointer items-center gap-1.5 rounded-full border border-onmedia/10 bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia transition-colors hover:bg-black/75"
+              >
+                <FrameIcon className="h-3.5 w-3.5" />
+                {s.backToFrame}
+              </button>
+              {shots.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setViewing(shots[(viewingAt - 1 + shots.length) % shots.length].generationId)}
+                    aria-label={s.previousStill}
+                    title={s.previousStill}
+                    className="absolute left-3 top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-onmedia/80 transition-colors hover:text-onmedia"
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewing(shots[(viewingAt + 1) % shots.length].generationId)}
+                    aria-label={s.nextStill}
+                    title={s.nextStill}
+                    className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-onmedia/80 transition-colors hover:text-onmedia"
+                  >
+                    ›
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* The filmstrip: the frame, then every still, newest first */}
+        <div className="flex items-center gap-2 overflow-x-auto py-0.5">
+          <button
+            type="button"
+            onClick={() => setViewing(null)}
+            aria-pressed={!viewingShot}
+            title={s.frameTile}
+            className={`${tile(!viewingShot)} flex flex-col items-center justify-center gap-1 text-[10px] font-medium text-onmedia/80`}
+          >
+            <FrameIcon className="h-5 w-5" />
+            {s.frameTile}
+          </button>
+          {shots.map((shot, i) => (
+            <button
+              key={shot.generationId}
+              type="button"
+              onClick={() => setViewing(shot.generationId)}
+              aria-pressed={viewing === shot.generationId}
+              title={formatMsg(s.stillTile, { n: shots.length - i })}
+              className={tile(viewing === shot.generationId)}
+            >
+              {shot.resultUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+              ) : (
+                <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{formatMsg(s.stillTile, { n: shots.length - i })}</span>
+              )}
+              {shot.generationId === lookShot?.generationId && (
+                <span className="absolute bottom-1 left-1 rounded-full bg-atelier-accent px-1.5 py-px text-[9px] font-semibold text-black">{s.lookBadge}</span>
+              )}
+            </button>
+          ))}
+        </div>
+
+        {/* By hand: the camera, lens, mark and match chips, on request */}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setFraming((f) => !f)} aria-expanded={framing} className={chip(framing)}>
+              {framing ? s.doneFraming : s.changeFrame}
+            </button>
+            {revisions.length > 1 && (
+              <>
+                <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.revisionsLabel}</span>
+                {revisions.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => restoreRevision(r)}
+                    disabled={!ready || shooting}
+                    title={s.useThisFrame}
+                    className={`${chip(false)} tabular-nums`}
+                  >
+                    {formatMsg(s.revisionN, { n: r.id })}
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+
+          {framing && (
+            <div className="space-y-3 rounded-media bg-atelier-surface/70 p-4 shadow-[0_0_0_1px_var(--frost-ring)]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.cameraLabel}</span>
+                {spec.cameras.map((c, i) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    aria-pressed={cameraId === c.id}
+                    onClick={() => pickCamera(c.id)}
+                    disabled={!ready}
+                    className={chip(cameraId === c.id)}
+                  >
+                    {c.label || formatMsg(s.cameraN, { n: i + 1 })}
+                  </button>
+                ))}
+                <span className={`${chip(cameraId === null)} cursor-default`}>{s.freeCamera}</span>
+                <button type="button" onClick={frameFigure} disabled={!ready} className={chip(false)}>
+                  {s.frameFigure}
+                </button>
+                {matchOn && (
+                  <>
+                    <input
+                      ref={matchFileRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        // Cleared, so choosing the same picture again still counts as a choice.
+                        e.target.value = "";
+                        void pickReference(file);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => matchFileRef.current?.click()}
+                      disabled={!ready || matching || shooting}
+                      className={chip(false)}
+                    >
+                      {s.matchShot}
+                    </button>
+                  </>
+                )}
+              </div>
+              {/* Match this shot: the hint, the read in progress, or what it matched. */}
+              {matchOn && (
+                <div className="space-y-1.5 sm:pl-[4.5rem]">
+                  {matching ? (
+                    <p className="text-xs text-atelier-muted" aria-live="polite">
+                      {s.matchReading}
                     </p>
-                    <div className="flex flex-wrap items-center gap-2">
+                  ) : matched && matchedLine ? (
+                    <div className="flex items-start gap-2.5" aria-live="polite">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={matched.photo}
+                        alt={s.matchReferenceAlt}
+                        className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-atelier-rule object-cover"
+                      />
+                      <div className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed">
+                        <p className="text-atelier-ink/85">{matchedLine.line}</p>
+                        {matchedLine.notes && <p className="text-atelier-muted">{matchedLine.notes}</p>}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMatched(null)}
+                        aria-label={t.common.dismiss}
+                        title={t.common.dismiss}
+                        className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm text-atelier-muted transition-colors hover:text-atelier-ink"
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ) : (
+                    <p className="max-w-2xl text-xs text-atelier-muted">{s.matchHint}</p>
+                  )}
+                  {matchError && <p className="text-xs text-red-600">{localizeServerText(matchError, t)}</p>}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.lensLabel}</span>
+                {LENSES_MM.map((mm) => (
+                  <button
+                    key={mm}
+                    type="button"
+                    aria-pressed={activeLens === mm}
+                    onClick={() => pickLens(mm)}
+                    disabled={!ready}
+                    className={`${chip(activeLens === mm)} tabular-nums`}
+                  >
+                    {mm} mm
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.markLabel}</span>
+                {spec.marks.length > 1 &&
+                  spec.marks.map((m, i) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      aria-pressed={markId === m.id}
+                      onClick={() => pickMark(m.id)}
+                      disabled={!ready}
+                      className={chip(markId === m.id)}
+                    >
+                      {m.label || formatMsg(s.markN, { n: i + 1 })}
+                    </button>
+                  ))}
+                <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} className={chip(false)} aria-label={s.turnLeft} title={s.turnLeft}>
+                  ↺
+                </button>
+                <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} className={chip(false)} aria-label={s.turnRight} title={s.turnRight}>
+                  ↻
+                </button>
+              </div>
+              <p className="text-xs leading-relaxed text-atelier-muted">{s.frameHint}</p>
+              <p className="max-w-2xl text-xs leading-relaxed text-atelier-muted">{s.standInNote}</p>
+
+              {/* A photo set: the photo beside camera 1, where the photographer stood */}
+              {sourcePhotoUrl && (
+                <div className="space-y-2.5 pt-2">
+                  <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.compareTitle}</h2>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <figure className="space-y-1.5">
+                      <div
+                        className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
+                        style={{ aspectRatio: photoAspect ?? 4 / 3 }}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          ref={readPhotoShape}
+                          src={sourcePhotoUrl}
+                          alt={s.comparePhoto}
+                          onLoad={(e) => readPhotoShape(e.currentTarget)}
+                          className="h-full w-full object-cover"
+                        />
+                      </div>
+                      <figcaption className="text-xs text-atelier-muted">{s.comparePhoto}</figcaption>
+                    </figure>
+                    <figure className="space-y-1.5">
+                      <div
+                        className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
+                        style={{ aspectRatio: photoAspect ?? 4 / 3 }}
+                      >
+                        {cameraOneShot ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={cameraOneShot} alt={formatMsg(s.cameraN, { n: 1 })} className="h-full w-full object-cover" />
+                        ) : (
+                          <div
+                            aria-hidden
+                            className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
+                          />
+                        )}
+                      </div>
+                      <figcaption className="text-xs text-atelier-muted">{formatMsg(s.cameraN, { n: 1 })}</figcaption>
+                    </figure>
+                  </div>
+                  <p className="text-xs text-atelier-muted">{s.compareNote}</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {description && (
+          <div className="px-1 pt-1">
+            <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.descriptionLabel}</h2>
+            <p className="mt-1 max-w-3xl text-sm text-atelier-ink/85">{description}</p>
+          </div>
+        )}
+      </section>
+
+      {/* The conversation, beside the workspace */}
+      <aside className="min-w-0 lg:sticky lg:top-4">
+        <div className={`isolate relative flex flex-col rounded-[26px] bg-atelier-surface/80 ${SHEET_SHADOW} backdrop-blur-xl lg:max-h-[calc(100vh-2rem)]`}>
+          <div className="flex-1 space-y-5 overflow-y-auto p-4">
+            {thread.map((shot, i) => {
+              // A still with no recorded camera, or nothing to cut out of it
+              // clear of its people, offers no look (look.ts).
+              const lookable = canBeLook(shot);
+              const isLook = lookable && shot.generationId === lookShot?.generationId;
+              return (
+                <Fragment key={shot.generationId}>
+                  <UserTurn text={shot.words ?? s.shootWord} />
+                  <AstraTurn>
+                    <div className="flex items-start gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setViewing(shot.generationId)}
+                        title={formatMsg(s.stillTile, { n: i + 1 })}
+                        className={`relative h-20 w-20 flex-shrink-0 cursor-pointer overflow-hidden rounded-[8px] bg-atelier-stage ${
+                          isLook ? "ring-2 ring-atelier-accent" : "ring-1 ring-atelier-rule"
+                        }`}
+                      >
+                        {shot.resultUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{s.openTake}</span>
+                        )}
+                      </button>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className="text-sm text-atelier-ink/85">{stillLine(shot)}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {shot.score !== null && <Fact>{formatMsg(s.identityScore, { score: shot.score })}</Fact>}
+                          <Fact>
+                            <LocalDate date={shot.createdAt} />
+                          </Fact>
+                          {isLook && <Fact>{s.lookBadge}</Fact>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       {isLook ? (
                         <span className="rounded-full bg-atelier-accent px-2.5 py-1 text-[10px] font-semibold text-black">{s.lookKept}</span>
                       ) : lookable ? (
@@ -1187,397 +1651,208 @@ export function SetView({
                         {s.openTake}
                       </Link>
                     </div>
-                    {isLook && <p className="text-xs text-atelier-muted">{s.lookOnLine}</p>}
-                  </div>
-                </AstraTurn>
-              </Fragment>
-            );
-          })}
+                    {isLook && <p className="mt-2 text-xs text-atelier-muted">{s.lookOnLine}</p>}
+                  </AstraTurn>
+                </Fragment>
+              );
+            })}
 
-          {pendingAsks.map((ask, i) => (
-            <UserTurn key={`ask-${i}`} text={ask} />
-          ))}
+            {pendingAsks.map((ask, i) => (
+              <UserTurn key={`ask-${i}`} text={ask} />
+            ))}
 
-          {/* The frame: Astra's live bubble, the stage inside it. Built once
-              per set (the effect above): its host must stay where it is. */}
-          <AstraTurn wide>
-            <ol className="space-y-4">
+            {/* Astra's turn: the frame in a sentence, as chips, and Shoot to approve it */}
+            <AstraTurn>
               {characters.length === 0 ? (
-                <Step label={s.characterLabel}>
-                  <p className="text-sm text-atelier-ink/80">
-                    {s.noCharacters}{" "}
-                    <Link href="/app/character/new" className="font-medium text-atelier-accent underline underline-offset-2">
-                      {s.createCharacter}
-                    </Link>
-                  </p>
-                </Step>
+                <p className="text-sm text-atelier-ink/85">
+                  {s.noCharacters}{" "}
+                  <Link href="/app/character/new" className="font-medium text-atelier-accent underline underline-offset-2">
+                    {s.createCharacter}
+                  </Link>
+                </p>
               ) : (
-                <Step label={formatMsg(s.stepPlacing, { name: characterName })}>
-                  <p className="text-sm text-atelier-ink/80">{placedLine}</p>
-                  {direction && (
-                    <p className="text-sm text-atelier-ink/80">
-                      <span className="text-atelier-muted">{s.whatHappens}: </span>
-                      {direction}
+                <div className="space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <span className={`mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full ${reading || shooting ? "animate-pulse bg-atelier-ink" : "bg-atelier-rule"}`} />
+                    <p className="text-sm leading-relaxed text-atelier-ink/85">
+                      {frameLead ? `${frameLead} ` : ""}
+                      {placedLine}
+                      {direction ? ` ${s.whatHappens}: ${direction}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pl-4">
+                    <Fact>{cameraLabel}</Fact>
+                    <Fact>{lensLabel}</Fact>
+                    <Fact>{markLabel}</Fact>
+                    <Fact>{s.engineChip}</Fact>
+                    <Fact>{credits}</Fact>
+                  </div>
+                  <p className="pl-4 text-xs text-atelier-muted">{formatMsg(s.frameLine, { name: characterName })}</p>
+                  <div className="flex flex-wrap items-center gap-2 pl-4">
+                    <button
+                      type="button"
+                      onClick={() => void shoot()}
+                      disabled={shooting || matching || !characterId || loadFailed || !ready}
+                      className="cursor-pointer rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                    >
+                      {shootLabel}
+                    </button>
+                    <button type="button" onClick={anotherAngle} disabled={!ready || shooting} className={chip(false)}>
+                      {s.anotherAngle}
+                    </button>
+                  </div>
+                  {error && <p className="pl-4 text-sm text-red-600">{localizeServerText(error, t)}</p>}
+                  {lastMiss && (
+                    <p className="pl-4 text-sm text-atelier-muted">
+                      {s.shotDidNotFinish}{" "}
+                      <Link href={`/app/history/${lastMiss}`} className="font-medium text-atelier-accent underline underline-offset-2">
+                        {s.openTake}
+                      </Link>
                     </p>
                   )}
-                </Step>
-              )}
-              <Step label={s.stepFrame} live={reading}>
-                <div className="relative overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage">
-                  <div ref={hostRef} className="aspect-video min-h-[300px] w-full" />
-                  <div
-                    ref={guideRef}
-                    aria-hidden
-                    className="pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.6)] outline outline-1 outline-white/40"
-                  />
-                  <span
-                    aria-live="polite"
-                    className="pointer-events-none absolute bottom-3 left-3 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80"
-                  >
-                    {figureMoved ? s.figureMovedOut : s.dragHint}
-                  </span>
-                  {/* Pan and tilt: turn the camera where it stands. */}
-                  <div role="group" aria-label={s.aimLabel} className="absolute bottom-3 right-3 grid grid-cols-3 gap-1">
-                    {(
-                      [
-                        [null, [0, AIM_STEP, s.aimUp, "↑"], null],
-                        [[AIM_STEP, 0, s.aimLeft, "←"], null, [-AIM_STEP, 0, s.aimRight, "→"]],
-                        [null, [0, -AIM_STEP, s.aimDown, "↓"], null],
-                      ] as const
-                    ).flatMap((row, r) =>
-                      row.map((cell, c) =>
-                        cell ? (
-                          <button
-                            key={`${r}${c}`}
-                            type="button"
-                            onClick={() => aimBy(cell[0], cell[1])}
-                            disabled={!ready}
-                            aria-label={cell[2]}
-                            title={cell[2]}
-                            className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-xs text-onmedia/80 transition-colors hover:text-onmedia disabled:cursor-default disabled:opacity-50"
-                          >
-                            {cell[3]}
-                          </button>
-                        ) : (
-                          <span key={`${r}${c}`} aria-hidden />
-                        ),
-                      ),
-                    )}
-                  </div>
-                  {loadFailed && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-atelier-stage/90 p-6 text-center text-sm text-onmedia/80">
-                      {s.loadFailed}
-                    </div>
+                  {lookDropped && (
+                    <p className="pl-4 text-xs text-atelier-muted" aria-live="polite">
+                      {s.lookDropped}
+                    </p>
                   )}
                 </div>
-                <p className="text-sm text-atelier-ink/80">
-                  {frameLead ? `${frameLead} ` : ""}
-                  {characters.length > 0 ? formatMsg(s.frameLine, { name: characterName }) : s.frameHint}
-                </p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void shoot()}
-                    disabled={shooting || matching || !characterId || loadFailed || !ready}
-                    className="cursor-pointer rounded-control bg-atelier-ink px-4 py-2 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-                  >
-                    {shootLabel}
-                  </button>
-                  <button type="button" onClick={() => setFraming((f) => !f)} aria-expanded={framing} className={chip(framing)}>
-                    {framing ? s.doneFraming : s.changeFrame}
-                  </button>
-                  <button type="button" onClick={anotherAngle} disabled={!ready || shooting} className={chip(false)}>
-                    {s.anotherAngle}
-                  </button>
-                </div>
-
-                {framing && (
-                  <div className="space-y-3 border-t border-atelier-rule pt-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.cameraLabel}</span>
-                      {spec.cameras.map((c, i) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          aria-pressed={cameraId === c.id}
-                          onClick={() => pickCamera(c.id)}
-                          disabled={!ready}
-                          className={chip(cameraId === c.id)}
-                        >
-                          {c.label || formatMsg(s.cameraN, { n: i + 1 })}
-                        </button>
-                      ))}
-                      <span className={`${chip(cameraId === null)} cursor-default`}>{s.freeCamera}</span>
-                      <button type="button" onClick={frameFigure} disabled={!ready} className={chip(false)}>
-                        {s.frameFigure}
-                      </button>
-                      {matchOn && (
-                        <>
-                          <input
-                            ref={matchFileRef}
-                            type="file"
-                            accept="image/jpeg,image/png,image/webp"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              // Cleared, so choosing the same picture again still counts as a choice.
-                              e.target.value = "";
-                              void pickReference(file);
-                            }}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => matchFileRef.current?.click()}
-                            disabled={!ready || matching || shooting}
-                            className={chip(false)}
-                          >
-                            {s.matchShot}
-                          </button>
-                        </>
-                      )}
-                    </div>
-                    {/* Match this shot: the hint, the read in progress, or what it matched. */}
-                    {matchOn && (
-                      <div className="space-y-1.5 sm:pl-[4.5rem]">
-                        {matching ? (
-                          <p className="text-xs text-atelier-muted" aria-live="polite">
-                            {s.matchReading}
-                          </p>
-                        ) : matched && matchedLine ? (
-                          <div className="flex items-start gap-2.5" aria-live="polite">
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={matched.photo}
-                              alt={s.matchReferenceAlt}
-                              className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-atelier-rule object-cover"
-                            />
-                            <div className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed">
-                              <p className="text-atelier-ink/85">{matchedLine.line}</p>
-                              {matchedLine.notes && <p className="text-atelier-muted">{matchedLine.notes}</p>}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => setMatched(null)}
-                              aria-label={t.common.dismiss}
-                              title={t.common.dismiss}
-                              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm text-atelier-muted transition-colors hover:text-atelier-ink"
-                            >
-                              ×
-                            </button>
-                          </div>
-                        ) : (
-                          <p className="max-w-2xl text-xs text-atelier-muted">{s.matchHint}</p>
-                        )}
-                        {matchError && <p className="text-xs text-red-600">{localizeServerText(matchError, t)}</p>}
-                      </div>
-                    )}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.lensLabel}</span>
-                      {LENSES_MM.map((mm) => (
-                        <button
-                          key={mm}
-                          type="button"
-                          aria-pressed={activeLens === mm}
-                          onClick={() => pickLens(mm)}
-                          disabled={!ready}
-                          className={`${chip(activeLens === mm)} tabular-nums`}
-                        >
-                          {mm} mm
-                        </button>
-                      ))}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="w-16 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.markLabel}</span>
-                      {spec.marks.length > 1 &&
-                        spec.marks.map((m, i) => (
-                          <button
-                            key={m.id}
-                            type="button"
-                            aria-pressed={markId === m.id}
-                            onClick={() => pickMark(m.id)}
-                            disabled={!ready}
-                            className={chip(markId === m.id)}
-                          >
-                            {m.label || formatMsg(s.markN, { n: i + 1 })}
-                          </button>
-                        ))}
-                      <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} className={chip(false)} aria-label={s.turnLeft} title={s.turnLeft}>
-                        ↺
-                      </button>
-                      <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} className={chip(false)} aria-label={s.turnRight} title={s.turnRight}>
-                        ↻
-                      </button>
-                    </div>
-                    <p className="text-xs leading-relaxed text-atelier-muted">{s.frameHint}</p>
-                    <p className="max-w-2xl text-xs leading-relaxed text-atelier-muted">{s.standInNote}</p>
-
-                    {/* A photo set: the photo beside camera 1, where the photographer stood */}
-                    {sourcePhotoUrl && (
-                      <div className="space-y-2.5 pt-2">
-                        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.compareTitle}</h2>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                          <figure className="space-y-1.5">
-                            <div
-                              className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
-                              style={{ aspectRatio: photoAspect ?? 4 / 3 }}
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                ref={readPhotoShape}
-                                src={sourcePhotoUrl}
-                                alt={s.comparePhoto}
-                                onLoad={(e) => readPhotoShape(e.currentTarget)}
-                                className="h-full w-full object-cover"
-                              />
-                            </div>
-                            <figcaption className="text-xs text-atelier-muted">{s.comparePhoto}</figcaption>
-                          </figure>
-                          <figure className="space-y-1.5">
-                            <div
-                              className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
-                              style={{ aspectRatio: photoAspect ?? 4 / 3 }}
-                            >
-                              {cameraOneShot ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={cameraOneShot} alt={formatMsg(s.cameraN, { n: 1 })} className="h-full w-full object-cover" />
-                              ) : (
-                                <div
-                                  aria-hidden
-                                  className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
-                                />
-                              )}
-                            </div>
-                            <figcaption className="text-xs text-atelier-muted">{formatMsg(s.cameraN, { n: 1 })}</figcaption>
-                          </figure>
-                        </div>
-                        <p className="text-xs text-atelier-muted">{s.compareNote}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {error && <p className="text-sm text-red-600">{localizeServerText(error, t)}</p>}
-                {lastMiss && (
-                  <p className="text-sm text-atelier-muted">
-                    {s.shotDidNotFinish}{" "}
-                    <Link href={`/app/history/${lastMiss}`} className="font-medium text-atelier-accent underline underline-offset-2">
-                      {s.openTake}
-                    </Link>
-                  </p>
-                )}
-                {lookDropped && (
-                  <p className="text-xs text-atelier-muted" aria-live="polite">
-                    {s.lookDropped}
-                  </p>
-                )}
-              </Step>
-            </ol>
-          </AstraTurn>
-
-          {shooting && (
-            <AstraTurn>
-              <div className="flex items-center gap-3 text-sm text-atelier-muted">
-                <Spinner className="h-4 w-4 flex-shrink-0" />
-                <div>
-                  <p className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{s.stepShooting}</p>
-                  <p className="mt-0.5">{s.shootingLine}</p>
-                </div>
-              </div>
+              )}
             </AstraTurn>
-          )}
-          <div ref={threadEndRef} aria-hidden />
-        </div>
-      </div>
 
-      {/* The composer: who, the look, whether to wait, and the words. Docked
-          like the Generate page's, borderless, its edge from the shadow ring. */}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (draft.trim()) void send(draft);
-          else void shoot();
-        }}
-        className={`isolate relative z-10 rounded-[22px] bg-atelier-surface/90 p-4 ${SHEET_SHADOW} backdrop-blur-xl sm:sticky sm:bottom-4`}
-      >
-        <div className="mb-2.5 flex flex-wrap items-center gap-2">
-          {characters.length > 0 && (
-            <div role="radiogroup" aria-label={s.characterLabel} className="flex flex-wrap gap-2">
-              {characters.map((c) => (
+            {shooting && (
+              <AstraTurn>
+                <div className="flex items-center gap-3 text-sm text-atelier-muted">
+                  <Spinner className="h-4 w-4 flex-shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{s.stepShooting}</p>
+                    <p className="mt-0.5">{s.shootingLine}</p>
+                  </div>
+                </div>
+              </AstraTurn>
+            )}
+            <div ref={threadEndRef} aria-hidden />
+          </div>
+
+          {/* The composer at the panel's foot: who, the look, the mode, the words */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+              else if (draft.trim()) void send(draft);
+              else void shoot();
+            }}
+            className="relative border-t border-atelier-rule/60 p-3"
+          >
+            <div className="mb-2 flex flex-wrap items-center gap-1.5">
+              {characters.length > 0 && (
                 <button
-                  key={c.id}
                   type="button"
-                  role="radio"
-                  aria-checked={characterId === c.id}
-                  onClick={() => setCharacterId(c.id)}
-                  className={`${chip(characterId === c.id)} pl-1`}
+                  onClick={() => setMentionForced((v) => !v)}
+                  aria-expanded={mentionOpen}
+                  aria-haspopup="listbox"
+                  title={s.mentionHint}
+                  className={`${chip(false)} pl-1`}
                 >
-                  {c.thumbUrl ? (
+                  {character?.thumbUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={c.thumbUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                    <img src={character.thumbUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
                   ) : (
                     <span className="h-5 w-5 rounded-full bg-atelier-rule" />
                   )}
-                  {c.name}
+                  {character?.name || s.characterLabel}
                 </button>
-              ))}
+              )}
+              <button
+                type="button"
+                onClick={() => pickLook(lookShot ? null : latestStill)}
+                disabled={!lookShot && !latestStill}
+                aria-pressed={Boolean(lookShot)}
+                title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
+                className={chip(Boolean(lookShot))}
+              >
+                {s.lookLabel}
+                {lookShot ? (
+                  <span className="tabular-nums">
+                    · <LocalDate date={lookShot.createdAt} />
+                  </span>
+                ) : (
+                  <span>· {s.lookOff}</span>
+                )}
+              </button>
+              <button type="button" onClick={() => setAskFirst((v) => !v)} aria-pressed={askFirst} title={s.modeHint} className={chip(askFirst)}>
+                {askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
+              </button>
             </div>
-          )}
-          <button
-            type="button"
-            onClick={() => pickLook(lookShot ? null : latestStill)}
-            disabled={!lookShot && !latestStill}
-            aria-pressed={Boolean(lookShot)}
-            title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
-            className={chip(Boolean(lookShot))}
-          >
-            {s.lookLabel}
-            {lookShot ? (
-              <span className="tabular-nums">
-                · <LocalDate date={lookShot.createdAt} />
-              </span>
-            ) : (
-              <span>· {s.lookOff}</span>
+            {mentionOpen && (
+              <div
+                role="listbox"
+                aria-label={s.mentionTitle}
+                className="absolute bottom-full left-3 z-30 mb-2 w-max min-w-[12rem] rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+              >
+                <p className="px-2.5 pb-1 pt-1 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">{s.mentionTitle}</p>
+                {mentionList.length === 0 ? (
+                  <p className="px-2.5 py-1.5 text-xs text-atelier-muted">{s.mentionHint}</p>
+                ) : (
+                  mentionList.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      role="option"
+                      aria-selected={characterId === c.id}
+                      onClick={() => pickMention(c)}
+                      className={`flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors ${
+                        characterId === c.id ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink" : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
+                      }`}
+                    >
+                      {c.thumbUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={c.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+                      ) : (
+                        <span className="h-6 w-6 rounded-full bg-atelier-rule" />
+                      )}
+                      {c.name}
+                    </button>
+                  ))
+                )}
+              </div>
             )}
-          </button>
-          <button type="button" onClick={() => setAskFirst((v) => !v)} aria-pressed={askFirst} title={s.askFirstHint} className={chip(askFirst)}>
-            {s.askFirst}
-          </button>
+            <div className="flex items-end gap-2">
+              <textarea
+                ref={draftRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && mentionOpen) {
+                    e.preventDefault();
+                    setMentionForced(false);
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+                    else if (draft.trim()) void send(draft);
+                  }
+                }}
+                rows={2}
+                aria-label={s.threadPlaceholder}
+                placeholder={reading ? s.threadReading : s.threadPlaceholder}
+                disabled={reading || shooting}
+                className="min-h-[44px] min-w-0 flex-1 resize-none border-none bg-transparent px-2 py-1.5 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
+              />
+              <button
+                type="submit"
+                disabled={reading || shooting || !ready || (!draft.trim() && !characterId)}
+                title={draft.trim() ? s.threadPlaceholder : shootLabel}
+                aria-label={draft.trim() ? s.threadPlaceholder : shootLabel}
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {reading || shooting ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
+              </button>
+            </div>
+            <p className="mt-1 px-2 text-[11px] text-atelier-muted">{s.mentionHint}</p>
+          </form>
         </div>
-        <div className="flex items-end gap-2">
-          <textarea
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                if (draft.trim()) void send(draft);
-              }
-            }}
-            rows={1}
-            aria-label={s.threadPlaceholder}
-            placeholder={reading ? s.threadReading : s.threadPlaceholder}
-            disabled={reading || shooting}
-            className="min-h-[40px] min-w-0 flex-1 resize-none border-none bg-transparent px-2.5 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
-          />
-          <span className="hidden text-xs tabular-nums text-atelier-muted sm:inline">{draft.trim() ? "" : shootLabel}</span>
-          <button
-            type="submit"
-            disabled={reading || shooting || !ready || (!draft.trim() && !characterId)}
-            title={draft.trim() ? s.threadPlaceholder : shootLabel}
-            aria-label={draft.trim() ? s.threadPlaceholder : shootLabel}
-            className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            {reading || shooting ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
-          </button>
-        </div>
-      </form>
-
-      {description && (
-        <div className="px-1 pt-1">
-          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.descriptionLabel}</h2>
-          <p className="mt-1 max-w-3xl text-sm text-atelier-ink/85">{description}</p>
-        </div>
-      )}
+      </aside>
     </div>
   );
 }

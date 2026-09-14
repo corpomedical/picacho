@@ -28,6 +28,8 @@ export type SetShot = {
   generationId: string;
   status: string;
   resultUrl: string | null;
+  /** The same still, larger, for the viewer beside the conversation (Astra chat, 2026-09-14). */
+  viewUrl: string | null;
   /** 0–100 identity score against the character's photo; null when unscored. */
   score: number | null;
   createdAt: string;

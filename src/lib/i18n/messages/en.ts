@@ -2097,6 +2097,28 @@ const en = {
     talkReply: "Say who is in the frame, what happens, or where to put the camera.",
     buildingLine: "Astra is building the place from your words.",
     buildFailedLine: "The place couldn't be built, so nothing was shot.",
+    // The workspace (2026-09-14, after reading how Higgsfield's 3D Jutsu and
+    // Supercomputer show their work): the stage on the left with a viewer
+    // for the stills, the conversation beside it; Astra speaks in a
+    // sentence, then the frame as chips, and Shoot approves it.
+    placedLine: "{name} stands on {mark}, {facing}. The camera is at {camera}, {lens}.",
+    askBeforeShooting: "Ask before shooting",
+    shootWithoutAsking: "Shoot without asking",
+    modeHint: "Ask before shooting: Astra frames the shot and waits for your word. Shoot without asking: it shoots as soon as the frame is set.",
+    engineChip: "GPT Image 2.5",
+    creditsOne: "1 credit",
+    creditsMany: "{n} credits",
+    backToFrame: "Back to the frame",
+    frameTile: "The frame",
+    stillTile: "Still {n}",
+    previousStill: "Previous still",
+    nextStill: "Next still",
+    revisionsLabel: "Frame revisions",
+    revisionN: "Frame {n}",
+    useThisFrame: "Use this frame",
+    mentionTitle: "Who is in the frame",
+    mentionHint: "Type @ to pick who is in the frame",
+    shotLine: "Shot from {camera} at {lens}.",
   },
   // Push notifications — resolved PER DEVICE from push_tokens.locale by
   // lib/push/send.ts, because a push arrives while no screen is open to
