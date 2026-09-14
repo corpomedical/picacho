@@ -180,7 +180,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   const spec = normalised?.ok ? normalised.spec : null;
   // The owner's working copy (the Set Editor, 2026-09-14): read on its own,
   // so the read above never names a column that may not exist yet
-  // (supabase/pending/set-editor.sql). A read that fails opens the set as
+  // (supabase/applied/2026-09-14/set-editor.sql, run in production 2026-09-14). A read that fails opens the set as
   // built, for this one load.
   let editedSpec: SetSpec | null = null;
   if (spec) {

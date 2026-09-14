@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
-import { formatMsg } from "@/lib/i18n/format";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
 import { getSetPage } from "@/lib/sets/data";
@@ -85,45 +84,42 @@ export default async function SetPage({
       />
     );
   }
+  // A ready set is the workspace itself: the viewport takes the whole
+  // screen, the way 3D Jutsu's does, and carries its own bar — the page's
+  // frame is only for a set still building, or one that failed.
+  if (ready && data.error === null && data.set.spec) {
+    return (
+      <SetView
+        setId={data.set.id}
+        title={data.set.title}
+        spec={data.set.editedSpec ?? data.set.spec}
+        initialLayout={data.set.layout}
+        hasThumb={data.set.hasThumb}
+        sourcePhotoUrl={data.set.sourcePhotoUrl}
+        characters={data.characters}
+        initialShots={data.shots}
+        identityBar={data.identityBar}
+        matchOn={data.matchOn}
+        initialAsk={ask}
+        initialCharacterId={character}
+        initialAskFirst={askFirst}
+      />
+    );
+  }
+
   // A photo set has no brief: it says where it came from, and the photographer's notes if any.
   const brief = set ? (set.fromPhoto ? (set.brief ? `${s.fromPhoto} · ${set.brief}` : s.fromPhoto) : set.brief) : "";
-  const stillsLine = data.error === null ? (data.shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: data.shots.length })) : "";
 
   return (
-    <div className={ready ? "space-y-5" : "mx-auto max-w-5xl space-y-5"}>
-      {ready ? (
-        // The workspace's bar: where you are, in one line.
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-atelier-rule/60 pb-4">
-          <Link href="/app/sets" className="text-xs font-medium text-atelier-muted hover:text-atelier-ink">
-            ← {s.back}
-          </Link>
-          <span aria-hidden className="hidden h-5 w-px bg-atelier-rule sm:block" />
-          <h1 className="font-display text-lg font-semibold tracking-tight text-atelier-ink">{set?.title || s.untitled}</h1>
-          {set?.description && (
-            <p className="min-w-0 flex-1 truncate text-xs text-atelier-muted" title={set.description}>
-              {set.description}
-            </p>
-          )}
-          <span className="ml-auto rounded-full bg-atelier-ink/[0.045] px-3 py-1 text-xs font-medium tabular-nums text-atelier-muted">{stillsLine}</span>
-          {set && (
-            <Link
-              href={`/app/sets/${set.id}?build=1`}
-              className="rounded-full bg-atelier-accent/10 px-3 py-1 text-xs font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)] hover:bg-atelier-accent/15"
-            >
-              {s.editorOpen}
-            </Link>
-          )}
-        </div>
-      ) : (
-        <div>
-          <Link href="/app/sets" className="text-xs font-medium text-atelier-muted hover:text-atelier-ink">
-            ← {s.back}
-          </Link>
-          <p className="mt-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{s.eyebrow}</p>
-          <h1 className="font-display text-3xl font-semibold tracking-tight text-atelier-ink">{set?.title || s.untitled}</h1>
-          {brief && <p className="mt-1 max-w-2xl text-sm text-atelier-muted">{brief}</p>}
-        </div>
-      )}
+    <div className="mx-auto max-w-5xl space-y-5">
+      <div>
+        <Link href="/app/sets" className="text-xs font-medium text-atelier-muted hover:text-atelier-ink">
+          ← {s.back}
+        </Link>
+        <p className="mt-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{s.eyebrow}</p>
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-atelier-ink">{set?.title || s.untitled}</h1>
+        {brief && <p className="mt-1 max-w-2xl text-sm text-atelier-muted">{brief}</p>}
+      </div>
 
       {native ? (
         <p className="text-sm text-atelier-muted">{s.webOnly}</p>
@@ -131,26 +127,11 @@ export default async function SetPage({
         <p className="text-sm text-atelier-muted">{localizeServerText(data.error, t)}</p>
       ) : data.set.status === "building" ? (
         <SetBuilding setId={data.set.id} ask={ask} hint={s[buildingHintKey(data.set.fromPhoto, finisherOn)]} />
-      ) : data.set.status === "failed" || !data.set.spec ? (
+      ) : (
         <div className="space-y-2 text-sm text-atelier-muted">
           {ask && <p>{s.buildFailedLine}</p>}
-          <p>{data.set.failure ? localizeServerText(data.set.failure, t) : s.loadFailed}</p>
+          <p>{data.error === null && data.set.failure ? localizeServerText(data.set.failure, t) : s.loadFailed}</p>
         </div>
-      ) : (
-        <SetView
-          setId={data.set.id}
-          spec={data.set.editedSpec ?? data.set.spec}
-          initialLayout={data.set.layout}
-          hasThumb={data.set.hasThumb}
-          sourcePhotoUrl={data.set.sourcePhotoUrl}
-          characters={data.characters}
-          initialShots={data.shots}
-          identityBar={data.identityBar}
-          matchOn={data.matchOn}
-          initialAsk={ask}
-          initialCharacterId={character}
-          initialAskFirst={askFirst}
-        />
       )}
     </div>
   );

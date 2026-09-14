@@ -9,6 +9,7 @@ import { formatMsg } from "@/lib/i18n/format";
 import { quoteSend } from "@/lib/generations/quote";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet } from "@/lib/sets/actions";
+import { editSetWithAstra } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
@@ -85,6 +86,12 @@ type StageApi = {
   matchTo(pose: Pose): CameraMove;
   /** Width ÷ height of the canvas the still's centre square is cut from. */
   canvasAspect(): number;
+  /**
+   * The set changed under the camera (an Astra edit from the conversation,
+   * editor-actions.ts): the drawn scene is replaced whole, the camera and
+   * the figure stay where they are.
+   */
+  rebuild(next: SetSpec): void;
 };
 
 /** What Astra did with the last message, said above the frame. */
@@ -95,6 +102,8 @@ type FrameNote = {
   talk: boolean;
   /** How the camera had to move round something built, if it did. */
   moved: CameraMove | null;
+  /** Just talking is on: the words were read, and nothing moved. */
+  planned?: boolean;
 };
 
 /** A frame as Astra or the person set it, to step back to (this visit only). */
@@ -116,8 +125,6 @@ type MenuId = "camera" | "lens" | "figure" | "history" | "mode" | "who";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
-/** One press of a pan or tilt arrow. */
-const AIM_STEP = 5;
 // Framing the figure: a full-length shot, a little headroom and floor.
 const FRAME_HEIGHT_M = 2.3;
 const FRAME_TARGET_Y = 0.95;
@@ -129,50 +136,25 @@ const FRAME_EYE_Y = 1.45;
 const REVISIONS_MAX = 12;
 const DEG = Math.PI / 180;
 
-const RING = "shadow-[0_0_0_1px_rgba(35,37,45,0.06),0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.14)]";
-// ---- the pill controller (drawn 2026-09-14, then built to the drawing) ----
-// The set's controls are ONE pill floating at the stage's foot, on every
-// screen: it holds what the toolbar, the stage's aim arrows and the
-// composer's chips used to. The chat keeps the words.
-
-// What a press answers in the palm: navigator.vibrate patterns, milliseconds.
-// Android buzzes; where the hand can't (iPhone's browser has no vibrate),
-// the press still lands quietly.
-const HAND = {
-  /** One wheel step: a pan or a tilt. */
-  step: 8,
-  /** One collar detent: a turn. */
-  detent: 5,
-  /** Shoot fires: grip, fire, settle. */
-  fire: [12, 60, 24],
-  /** A toggle, or a pick from a menu. */
-  toggle: 15,
-  /** A press the controller refuses: the hand learns no without a toast. */
-  refused: [8, 40, 8],
-} as const;
-
-function buzz(pattern: number | readonly number[]) {
-  if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(pattern as number | number[]);
-}
-
-// The pill's skin: machined keys on a dark body. Like the stage it keeps one
-// look in both themes — onmedia text on near-black, the ochre reserved for
-// the kept look, and Shoot the one lit thing on the body.
-const PILL_BODY =
-  "bg-[linear-gradient(to_bottom,#34363f,#1d1e24_55%,#131418)] shadow-[inset_0_1px_0_rgba(255,255,255,0.14),0_22px_44px_-12px_rgba(0,0,0,0.60)]";
-const KEY =
-  "inline-flex h-9 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,#3b3e48,#262831_45%,#16171c)] px-3 text-[13px] font-medium text-onmedia/90 shadow-[inset_0_1px_0_rgba(255,255,255,0.22),inset_0_-1px_0_rgba(0,0,0,0.40),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-45";
-const KEY_LOOK_ON =
-  "inline-flex h-9 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full bg-[linear-gradient(to_bottom,rgba(240,190,132,0.28),rgba(224,164,104,0.08))] px-3 text-[13px] font-medium text-[#f0cda6] shadow-[inset_0_1px_0_rgba(255,255,255,0.20),0_1px_0_rgba(0,0,0,0.55),0_7px_14px_rgba(0,0,0,0.38),inset_0_0_0_1.5px_rgba(240,196,142,0.75)] transition-transform active:translate-y-px";
-/** The toolbar's menu, opened upward from the pill. */
-const PILL_MENU =
-  "absolute bottom-full left-0 z-30 mb-2 flex min-w-[11rem] flex-col gap-0.5 rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.22)] backdrop-blur-xl";
-/** An invisible press area over the wheel's face. */
-const WHEEL_HIT = "absolute cursor-pointer rounded-full transition-colors active:bg-white/10 aria-disabled:cursor-default";
+// ---- the workspace's skin (2026-09-14, "make it work exactly like
+// higgsfield"): the viewport IS the page, dark in both themes like the
+// stage and the Build editor, with the conversation as a panel floating
+// inside it and the setup as glass chips on the picture itself. ----
+/** A glass chip on the stage. */
+const DCHIP =
+  "inline-flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-white/10 bg-black/60 px-3 text-xs font-medium text-onmedia/90 backdrop-blur transition-colors hover:bg-black/80 aria-disabled:cursor-default aria-disabled:opacity-45";
+/** The same chip, lit ochre — the kept look. */
+const DCHIP_ON =
+  "inline-flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-transparent bg-black/60 px-3 text-xs font-medium text-[#f0cda6] backdrop-blur shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]";
+/** A menu opened downward from a chip, dark. */
+const DMENU =
+  "absolute left-0 top-full z-40 mt-2 flex max-h-80 min-w-[11rem] flex-col gap-0.5 overflow-y-auto rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]";
+/** The conversation panel's surface. */
+const PANEL_BG = "border border-white/[0.11] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
 
 function Chevron() {
   return (
-    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 text-atelier-muted" aria-hidden>
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3 opacity-60" aria-hidden>
       <path d="M3 4.5l3 3 3-3" />
     </svg>
   );
@@ -205,72 +187,12 @@ function FrameIcon({ className }: { className?: string }) {
   );
 }
 
-/**
- * The wheel's face, exactly as drawn: the knurled collar that turns the
- * figure, the aim ring's four sectors, and the hub that frames. One picture;
- * the presses are invisible buttons laid over it (WHEEL_HIT).
- */
-function WheelFace({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 320 320" className={className} aria-hidden>
-      <defs>
-        <radialGradient id="set-wheel-collar" cx="50%" cy="38%" r="70%">
-          <stop offset="0%" stopColor="#2b2d34" />
-          <stop offset="100%" stopColor="#17181d" />
-        </radialGradient>
-        <radialGradient id="set-wheel-ring" cx="50%" cy="34%" r="75%">
-          <stop offset="0%" stopColor="#33353e" />
-          <stop offset="100%" stopColor="#1e1f26" />
-        </radialGradient>
-        <radialGradient id="set-wheel-hub" cx="42%" cy="34%" r="80%">
-          <stop offset="0%" stopColor="#3d4049" />
-          <stop offset="100%" stopColor="#22232a" />
-        </radialGradient>
-      </defs>
-      <circle cx="160" cy="160" r="158" fill="rgba(0,0,0,0.35)" />
-      <circle cx="160" cy="160" r="141" fill="none" stroke="url(#set-wheel-collar)" strokeWidth="30" />
-      <circle cx="160" cy="160" r="141" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="22" strokeDasharray="2.5 5" />
-      <circle cx="160" cy="160" r="156" fill="none" stroke="rgba(255,255,255,0.10)" />
-      <text x="60" y="66" textAnchor="middle" fontSize="17" fill="rgba(255,255,255,0.65)">
-        ↺
-      </text>
-      <text x="260" y="66" textAnchor="middle" fontSize="17" fill="rgba(255,255,255,0.65)">
-        ↻
-      </text>
-      <circle cx="160" cy="160" r="90" fill="none" stroke="url(#set-wheel-ring)" strokeWidth="56" />
-      <path d="M 70,160 A 90 90 0 0 1 250,160" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="52" />
-      <circle cx="160" cy="160" r="118" fill="none" stroke="rgba(255,255,255,0.10)" />
-      <g stroke="#14151a" strokeWidth="8" strokeLinecap="round">
-        <line x1="202.4" y1="117.6" x2="246.3" y2="73.7" />
-        <line x1="202.4" y1="202.4" x2="246.3" y2="246.3" />
-        <line x1="117.6" y1="202.4" x2="73.7" y2="246.3" />
-        <line x1="117.6" y1="117.6" x2="73.7" y2="73.7" />
-      </g>
-      <g fontSize="21" fill="#e8e9ee" textAnchor="middle">
-        <text x="160" y="78">↑</text>
-        <text x="160" y="266">↓</text>
-        <text x="72" y="168">←</text>
-        <text x="248" y="168">→</text>
-      </g>
-      <circle cx="160" cy="160" r="52" fill="url(#set-wheel-hub)" stroke="rgba(255,255,255,0.16)" strokeWidth="1.5" />
-      <g stroke="#e8e9ee" strokeWidth="2.2" strokeLinecap="round" fill="none">
-        <path d="M 151,138 H 144 V 145" />
-        <path d="M 169,138 H 176 V 145" />
-        <path d="M 144,163 V 170 H 151" />
-        <path d="M 176,163 V 170 H 169" />
-        <circle cx="160" cy="149" r="3.2" />
-        <path d="M 154,162 Q 160,156 166,162" />
-      </g>
-    </svg>
-  );
-}
-
-/** Astra's mark beside what it says: the wordmark's P, ochre underlined. */
+/** Astra's mark beside what it says: the wordmark's A, ochre underlined — light on the workspace's dark, like the editor's. */
 function AstraMark() {
   return (
-    <span className="relative mt-0.5 inline-flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[6px] bg-atelier-ink font-display text-[12px] font-bold text-atelier-paper">
+    <span className="relative mt-0.5 inline-flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[6px] bg-[#ecedf1] font-display text-[12px] font-bold text-[#1b1c20]">
       A
-      <span aria-hidden className="absolute bottom-1 left-1.5 right-1.5 h-[1.5px] bg-atelier-accent" />
+      <span aria-hidden className="absolute bottom-1 left-1.5 right-1.5 h-[1.5px] bg-[#a84e24]" />
     </span>
   );
 }
@@ -283,18 +205,19 @@ function Option({ active, onPick, hint, children }: { active: boolean; onPick: (
       aria-selected={active}
       onClick={onPick}
       className={`flex h-9 w-full cursor-pointer items-center justify-between gap-4 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
-        active ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink" : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
+        active ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
       }`}
     >
       <span className="tabular-nums">{children}</span>
-      {active ? <span aria-hidden>✓</span> : hint ? <span className="text-[11px] text-atelier-muted">{hint}</span> : null}
+      {active ? <span aria-hidden>✓</span> : hint ? <span className="text-[11px] text-[#6b6f7a]">{hint}</span> : null}
     </button>
   );
 }
 
 export function SetView({
   setId,
-  spec,
+  title,
+  spec: initialSpec,
   initialLayout,
   hasThumb,
   sourcePhotoUrl,
@@ -307,6 +230,8 @@ export function SetView({
   initialAskFirst = true,
 }: {
   setId: string;
+  /** The set's name, said in the workspace's own bar. */
+  title: string;
   spec: SetSpec;
   initialLayout: SetLayout | null;
   hasThumb: boolean;
@@ -326,6 +251,13 @@ export function SetView({
 }) {
   const { t, locale } = useLocale();
   const s = t.sets;
+
+  // The set as drawn NOW: the working copy the page opened with, replaced
+  // whole when an Astra edit lands from the conversation (send → editSet).
+  // Everything below reads this, so the frame card, the marks and the
+  // camera menus follow the edit; the engine swaps its scene via
+  // api.rebuild and keeps its own initial bounds for the drag clamps.
+  const [spec, setSpec] = useState<SetSpec>(initialSpec);
 
   const startPose: Pose = initialLayout?.camera ?? {
     position: spec.cameras[0].position,
@@ -375,6 +307,17 @@ export function SetView({
   const [draft, setDraft] = useState("");
   const [reading, setReading] = useState(false);
   const [askFirst, setAskFirst] = useState(initialAskFirst);
+  // The third mode, the way 3D Jutsu has an ask-only mode: the words are
+  // read and answered, but nothing moves and nothing is spent.
+  const [justTalk, setJustTalk] = useState(false);
+  // An Astra edit of the set itself, asked from the conversation: in
+  // flight, and what the last one touched (said once, until the next turn).
+  const [editingSet, setEditingSet] = useState(false);
+  const [setChanged, setSetChanged] = useState<number | null>(null);
+  // The conversation panel floats over the stage and can fold away.
+  const [chatOpen, setChatOpen] = useState(true);
+  // A photo set's photo beside camera 1, folded behind a chip.
+  const [compareOpen, setCompareOpen] = useState(false);
   // The composer's who menu, opened by "@" in the words or by the chip.
   const [mentionForced, setMentionForced] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -427,6 +370,8 @@ export function SetView({
   const [figureMoved, setFigureMoved] = useState(false);
   const figureMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const layoutRef = useRef({ markId: startMarkId, mark: startMark });
+  // The open menu, for the Esc handler (a ref is not read during render).
+  const menuRef = useRef<MenuId | null>(null);
   // The stage calls this when an orbit settles; it points at scheduleSave,
   // which is declared below the stage's effect.
   const settledRef = useRef<(() => void) | null>(null);
@@ -475,6 +420,11 @@ export function SetView({
         scene.add(built.root);
         if (built.background) scene.background = built.background;
         if (built.fog) scene.fog = built.fog;
+        // What frees the CURRENT build's resources. An Astra edit from the
+        // conversation rebuilds the scene INSIDE built.root (api.rebuild):
+        // the group keeps its identity, so everything aimed at it — the
+        // matcher above all — keeps working; only its children change.
+        let disposeLive: () => void = () => built.dispose();
 
         const standIn = buildStandIn(THREE, ACCENT);
         placeStandIn(standIn, layoutRef.current.mark);
@@ -777,6 +727,21 @@ export function SetView({
             const c = renderer.domElement;
             return c.width / Math.max(1, c.height);
           },
+          rebuild(next) {
+            // The new set's things move into the SAME root group, so the
+            // matcher (placeMatchedCamera against built.root) never notices;
+            // the old build's geometries and materials are freed, and the
+            // fresh group's own dispose is kept for the edit after this one.
+            const fresh = buildSetScene(THREE, next, { shadows: !coarse });
+            disposeLive();
+            for (const child of [...fresh.root.children]) built.root.add(child);
+            disposeLive = () => fresh.dispose();
+            scene.background = fresh.background;
+            scene.fog = fresh.fog;
+            camera.far = fresh.farPlane;
+            camera.updateProjectionMatrix();
+            placeStandIn(standIn, layoutRef.current.mark);
+          },
         };
 
         setReady(true);
@@ -802,7 +767,7 @@ export function SetView({
           canvas.removeEventListener("pointercancel", onUp);
           canvas.removeEventListener("dblclick", onDoubleClick);
           controls.dispose();
-          built.dispose();
+          disposeLive();
           standIn.dispose();
           renderer.dispose();
           canvas.remove();
@@ -919,11 +884,6 @@ export function SetView({
     scheduleSave();
   }
 
-  function aimBy(leftDeg: number, upDeg: number) {
-    apiRef.current?.aim(leftDeg, upDeg);
-    setCameraId(null);
-    scheduleSave();
-  }
 
   // Match this shot: the reference is prepared here (upright, at most 2048 px,
   // a JPEG with no metadata — photo-client.ts), its camera is read on the
@@ -1239,17 +1199,39 @@ export function SetView({
   }
 
   /**
+   * Words about the place itself — "make the barriers brick red", "now
+   * golden hour" — handed to Astra, which edits the set's data server-side
+   * (editor-actions.ts, gated like a build) and hands the revised set back.
+   * The stage rebuilds under the camera; the line under the frame says how
+   * many pieces changed. The Build editor's tools and Astra's original are
+   * one press away for anything by hand.
+   */
+  async function editSet(message: string) {
+    setEditingSet(true);
+    const res = await editSetWithAstra(setId, message);
+    setEditingSet(false);
+    if (res.error !== null) {
+      setError(res.error);
+      return;
+    }
+    setSpec(res.spec);
+    apiRef.current?.rebuild(res.spec);
+    setSetChanged(res.changed);
+  }
+
+  /**
    * A message from the composer, or the one carried from the Sets home: read
    * into a frame (readShotWords), done to the stage, and shot at once when
    * the words say so or Astra is not asked to wait.
    */
   async function send(text: string) {
     const message = text.trim();
-    if (!message || reading || shooting || !ready) return;
+    if (!message || reading || shooting || editingSet || !ready) return;
     setError("");
     setDraft("");
     setMentionForced(false);
     setViewing(null);
+    setSetChanged(null);
     pendingRef.current = [...pendingRef.current, message];
     setPendingAsks(pendingRef.current);
     setNote(null);
@@ -1271,11 +1253,22 @@ export function SetView({
     } finally {
       setReading(false);
     }
+    // Just talking (3D Jutsu's ask-only mode): the words are read and
+    // answered, but nothing moves and nothing is spent.
+    if (justTalk) {
+      setNote({ fallback: !words, talk: words?.intent === "talk", moved: null, planned: true });
+      return;
+    }
     if (!words) {
       setDirection(message);
       setNote({ fallback: true, talk: false, moved: null });
       keepRevision(message, cameraId);
       if (!askFirst) await shoot(message);
+      return;
+    }
+    // Words about the place itself go to Astra, which edits the set.
+    if (words.intent === "edit") {
+      await editSet(message);
       return;
     }
     if (words.intent === "talk" && !words.direction && !hasCameraWords(words) && !words.markId && !words.facing) {
@@ -1306,6 +1299,33 @@ export function SetView({
     threadEndRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [pendingAsks, shooting, shots.length]);
 
+  // Esc steps out, the way 3D Jutsu's Esc leaves a camera view: an open
+  // menu first, then the still viewer, back to the frame.
+  useEffect(() => {
+    menuRef.current = menu;
+  }, [menu]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+      if (menuRef.current) setMenu(null);
+      else setViewing(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /** The frame as a picture on disk — 3D Jutsu's static-frame export, for the frame the still would be shot from. */
+  function downloadFrame() {
+    const shot = apiRef.current?.snapshot(SET_FRAME_PX);
+    if (!shot) return;
+    const a = document.createElement("a");
+    a.href = shot;
+    a.download = `${(title || "set").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-frame.jpg`;
+    a.click();
+  }
+
   /** Another angle: the set's next camera, in the same frame. */
   function anotherAngle() {
     if (!ready || shooting) return;
@@ -1335,8 +1355,8 @@ export function SetView({
   const chip = (active: boolean) =>
     `flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${
       active
-        ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
-        : "bg-atelier-ink/[0.045] text-atelier-muted hover:bg-atelier-ink/[0.07] hover:text-atelier-ink"
+        ? "bg-[rgba(224,164,104,0.15)] text-[#f0cda6] shadow-[inset_0_0_0_1px_rgba(240,196,142,0.5)]"
+        : "bg-white/[0.06] text-[#9aa0ad] hover:bg-white/[0.1] hover:text-[#ecedf1]"
     }`;
   const glassBtn =
     "inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-onmedia/10 bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia transition-colors hover:bg-black/75";
@@ -1357,11 +1377,13 @@ export function SetView({
     : quote.totalCredits === 1
       ? s.shootButtonOne
       : formatMsg(s.shootButton, { n: quote.totalCredits });
-  const frameLead = note?.talk
-    ? s.talkReply
-    : [note?.fallback ? s.wordsFallback : null, note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null]
-        .filter(Boolean)
-        .join(" ");
+  const frameLead = note?.planned
+    ? s.justTalkNote
+    : note?.talk
+      ? s.talkReply
+      : [note?.fallback ? s.wordsFallback : null, note?.moved ? formatMsg(s.frameLineMoved, { name: characterName }) : null]
+          .filter(Boolean)
+          .join(" ");
   const frameNumber = revisions[revisions.length - 1]?.id ?? 1;
   // Oldest first: the thread reads down to the frame.
   const thread = [...shots].reverse();
@@ -1377,23 +1399,10 @@ export function SetView({
   };
   const stillNumber = (shot: SetShot) => shots.length - shots.findIndex((x) => x.generationId === shot.generationId);
   const tile = (active: boolean) =>
-    `relative h-20 w-20 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-atelier-stage transition-shadow ${
-      active ? "ring-2 ring-atelier-accent" : "ring-1 ring-atelier-rule hover:ring-atelier-muted"
+    `relative h-16 w-16 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 transition-shadow ${
+      active ? "ring-2 ring-[#e0a468]" : "ring-1 ring-white/15 hover:ring-white/40"
     }`;
   const toggleMenu = (id: MenuId) => setMenu((m) => (m === id ? null : id));
-
-  // ---- the pill controller's presses ----
-  /** A pill key's press: refused with a shiver, or answered in the palm and done. */
-  const press = (enabled: boolean, answer: number | readonly number[], go: () => void) => {
-    if (!enabled) {
-      buzz(HAND.refused);
-      return;
-    }
-    buzz(answer);
-    go();
-  };
-  const onStill = Boolean(viewingShot);
-  const canShoot = ready && !shooting && !matching && Boolean(characterId) && !loadFailed;
 
   // One set of options each, shared by the toolbar's dropdowns and the
   // pill's keys — the same picks, wherever the menu opened.
@@ -1404,7 +1413,6 @@ export function SetView({
           key={c.id}
           active={cameraId === c.id}
           onPick={() => {
-            buzz(HAND.toggle);
             pickCamera(c.id);
             setMenu(null);
           }}
@@ -1425,7 +1433,6 @@ export function SetView({
       active={activeLens === mm}
       hint={mm === 18 ? s.lensWide : mm === 85 ? s.lensPortrait : mm === 135 ? s.lensLong : undefined}
       onPick={() => {
-        buzz(HAND.toggle);
         pickLens(mm);
         setMenu(null);
       }}
@@ -1438,7 +1445,6 @@ export function SetView({
       key={m.id}
       active={markId === m.id}
       onPick={() => {
-        buzz(HAND.toggle);
         pickMark(m.id);
         setMenu(null);
       }}
@@ -1452,7 +1458,6 @@ export function SetView({
       active={r.id === frameNumber}
       hint={r.label}
       onPick={() => {
-        buzz(HAND.toggle);
         restoreRevision(r);
         setMenu(null);
       }}
@@ -1463,63 +1468,274 @@ export function SetView({
   const modeOptions = (
     <>
       <Option
-        active={askFirst}
+        active={askFirst && !justTalk}
         onPick={() => {
-          buzz(HAND.toggle);
           setAskFirst(true);
+          setJustTalk(false);
           setMenu(null);
         }}
       >
         {s.askBeforeShooting}
       </Option>
       <Option
-        active={!askFirst}
+        active={!askFirst && !justTalk}
         onPick={() => {
-          buzz(HAND.toggle);
           setAskFirst(false);
+          setJustTalk(false);
           setMenu(null);
         }}
       >
         {s.shootWithoutAsking}
       </Option>
+      <Option
+        active={justTalk}
+        onPick={() => {
+          setJustTalk(true);
+          setMenu(null);
+        }}
+      >
+        {s.justTalking}
+      </Option>
     </>
   );
 
   return (
-    <div data-set-workspace className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem] lg:items-start xl:grid-cols-[minmax(0,1fr)_25rem]">
+    <div data-set-workspace className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#101116] text-[#c6c9d1]">
       {menu && <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} aria-hidden />}
 
-      {/* The workspace: the frame, and the stills in its place */}
-      <section className="min-w-0 space-y-3.5">
-        {/* The stage with the pill at its foot: one block, so from md up the
-            controller floats over the black screen itself — the stage fixed
-            behind it, as drawn. */}
+      {/* The workspace's own bar: where you are, the set's two lives, History and the frame on disk. */}
+      <div className="flex h-12 flex-none items-center gap-3 border-b border-white/[0.07] bg-[#191a20] px-3.5">
+        <Link href="/app/sets" className="whitespace-nowrap text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1]">
+          ← {s.back}
+        </Link>
+        <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
+        <h1 className="min-w-0 truncate font-display text-[14px] font-semibold text-[#ecedf1]">{title || s.untitled}</h1>
+        <span className="hidden whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a] sm:inline">
+          {shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })}
+        </span>
+        <span className="flex-1" />
+        <span className="hidden h-7 items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] sm:flex">
+          <Link
+            href={`/app/sets/${setId}?build=1`}
+            className="flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+          >
+            {s.editorBuildTab}
+          </Link>
+          <span className="flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
+            {s.editorShootTab}
+          </span>
+        </span>
+        <span className="flex-1" />
         <div className="relative">
-        <div className={`relative overflow-hidden rounded-[16px] bg-atelier-stage ${RING}`}>
-          <div ref={hostRef} className="aspect-video min-h-[320px] w-full" />
+          <button
+            type="button"
+            onClick={() => toggleMenu("history")}
+            aria-haspopup="listbox"
+            aria-expanded={menu === "history"}
+            disabled={revisions.length < 2}
+            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-[6px] px-2.5 text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+          >
+            {s.historyLabel} · {formatMsg(s.revisionN, { n: frameNumber })}
+            <Chevron />
+          </button>
+          {menu === "history" && (
+            <div role="listbox" aria-label={s.historyLabel} className={`${DMENU} left-auto right-0`}>
+              {historyOptions}
+            </div>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={downloadFrame}
+          disabled={!ready}
+          title={s.downloadFrame}
+          aria-label={s.downloadFrame}
+          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
+            <path d="M12 3v12" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M4 19h16" />
+          </svg>
+        </button>
+      </div>
+
+      {/* The viewport, with everything floating on it. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="relative min-h-0 flex-1">
+          <div ref={hostRef} className="absolute inset-0" />
           <div
             ref={guideRef}
             aria-hidden
             className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-white/45 ${viewingShot ? "hidden" : ""}`}
           />
-          {/* Pan and tilt live on the pill controller's wheel at the stage's
-              foot; the stage itself keeps only the drag hint. */}
+          {loadFailed && !viewingShot && (
+            <div className="absolute inset-0 flex items-center justify-center bg-[#101116]/90 p-6 text-center text-sm text-onmedia/80">{s.loadFailed}</div>
+          )}
+
+          {/* The setup, as chips on the picture itself. */}
           {!viewingShot && (
+            <div className={`absolute left-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2 right-3.5 ${chatOpen ? "md:right-[404px]" : "md:right-24"}`}>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => toggleMenu("who")}
+                  aria-haspopup="listbox"
+                  aria-expanded={menu === "who"}
+                  disabled={characters.length === 0}
+                  title={s.mentionHint}
+                  className={`${DCHIP} pl-1.5`}
+                >
+                  {character?.thumbUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-white/25" />
+                  ) : (
+                    <span className="h-6 w-6 rounded-full bg-white/15" />
+                  )}
+                  {character?.name || s.characterLabel}
+                  <Chevron />
+                </button>
+                {menu === "who" && (
+                  <div role="listbox" aria-label={s.mentionTitle} className={DMENU}>
+                    {characters.map((c) => (
+                      <Option
+                        key={c.id}
+                        active={characterId === c.id}
+                        onPick={() => {
+                          setCharacterId(c.id);
+                          setMenu(null);
+                        }}
+                      >
+                        {c.name}
+                      </Option>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => pickLook(lookShot ? null : latestStill)}
+                aria-pressed={Boolean(lookShot)}
+                disabled={!lookShot && !latestStill}
+                title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
+                className={lookShot ? DCHIP_ON : DCHIP}
+              >
+                {s.lookLabel} · {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
+              </button>
+              <div className="relative">
+                <button type="button" onClick={() => toggleMenu("camera")} aria-haspopup="listbox" aria-expanded={menu === "camera"} disabled={!ready} className={DCHIP}>
+                  {cameraLabel}
+                  <Chevron />
+                </button>
+                {menu === "camera" && (
+                  <div role="listbox" aria-label={s.toolbarCamera} className={DMENU}>
+                    {cameraOptions}
+                  </div>
+                )}
+              </div>
+              <div className="relative">
+                <button type="button" onClick={() => toggleMenu("lens")} aria-haspopup="listbox" aria-expanded={menu === "lens"} disabled={!ready} className={DCHIP}>
+                  {lensLabel}
+                  <Chevron />
+                </button>
+                {menu === "lens" && (
+                  <div role="listbox" aria-label={s.toolbarLens} className={DMENU}>
+                    {lensOptions}
+                  </div>
+                )}
+              </div>
+              {spec.marks.length > 1 && (
+                <div className="relative">
+                  <button type="button" onClick={() => toggleMenu("figure")} aria-haspopup="listbox" aria-expanded={menu === "figure"} disabled={!ready} className={DCHIP}>
+                    {markLabel}
+                    <Chevron />
+                  </button>
+                  {menu === "figure" && (
+                    <div role="listbox" aria-label={s.toolbarFigure} className={DMENU}>
+                      {figureOptions}
+                    </div>
+                  )}
+                </div>
+              )}
+              <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} aria-label={s.turnLeft} title={s.turnLeft} className={`${DCHIP} w-8 justify-center px-0`}>
+                ↺
+              </button>
+              <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} aria-label={s.turnRight} title={s.turnRight} className={`${DCHIP} w-8 justify-center px-0`}>
+                ↻
+              </button>
+              <button type="button" onClick={frameFigure} disabled={!ready} className={DCHIP}>
+                {s.frameFigure}
+              </button>
+              {matchOn && (
+                <>
+                  <input
+                    ref={matchFileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      // Cleared, so choosing the same picture again still counts as a choice.
+                      e.target.value = "";
+                      void pickReference(file);
+                    }}
+                  />
+                  <button type="button" onClick={() => matchFileRef.current?.click()} disabled={!ready || matching || shooting} className={DCHIP}>
+                    {s.matchShot}
+                  </button>
+                </>
+              )}
+              {sourcePhotoUrl && (
+                <button type="button" onClick={() => setCompareOpen((v) => !v)} aria-pressed={compareOpen} className={compareOpen ? DCHIP_ON : DCHIP}>
+                  {s.compareTitle}
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* the drag hint, above the filmstrip */}
+          {!viewingShot && !loadFailed && (
             <span
               aria-live="polite"
-              className="pointer-events-none absolute bottom-3.5 left-3.5 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 md:bottom-auto md:top-3.5"
+              className="pointer-events-none absolute bottom-[104px] left-3.5 z-10 max-w-[60%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80"
             >
               {figureMoved ? s.figureMovedOut : s.dragHint}
             </span>
           )}
-          {loadFailed && !viewingShot && (
-            <div className="absolute inset-0 flex items-center justify-center bg-atelier-stage/90 p-6 text-center text-sm text-onmedia/80">
-              {s.loadFailed}
+
+          {/* Match this shot: the read in progress, what it matched, or what went wrong */}
+          {matchOn && (matching || matched || matchError) && (
+            <div className={`absolute left-3.5 top-16 z-20 max-w-md space-y-1.5 rounded-[12px] p-3 ${PANEL_BG}`}>
+              {matching ? (
+                <p className="text-xs text-[#9aa0ad]" aria-live="polite">
+                  {s.matchReading}
+                </p>
+              ) : matched && matchedLine ? (
+                <div className="flex items-start gap-2.5" aria-live="polite">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={matched.photo} alt={s.matchReferenceAlt} className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-white/10 object-cover" />
+                  <div className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed">
+                    <p className="text-[#ecedf1]/90">{matchedLine.line}</p>
+                    {matchedLine.notes && <p className="text-[#9aa0ad]">{matchedLine.notes}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMatched(null)}
+                    aria-label={t.common.dismiss}
+                    title={t.common.dismiss}
+                    className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm text-[#9aa0ad] transition-colors hover:text-[#ecedf1]"
+                  >
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              {matchError && <p className="text-xs text-red-400">{localizeServerText(matchError, t)}</p>}
             </div>
           )}
+
           {/* A still in the stage's place: the stage stays underneath, running. */}
           {viewingShot && (
-            <div className="absolute inset-0 z-10 bg-atelier-stage">
+            <div className="absolute inset-0 z-10 bg-[#101116]">
               {viewingShot.viewUrl || viewingShot.resultUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={viewingShot.viewUrl ?? viewingShot.resultUrl ?? ""} alt="" className="h-full w-full object-contain" />
@@ -1537,7 +1753,7 @@ export function SetView({
               >
                 {viewingShot.score === null ? s.unscored : stillLine(viewingShot)}
               </span>
-              <button type="button" onClick={() => setViewing(null)} className={`absolute right-3.5 top-3.5 ${glassBtn}`}>
+              <button type="button" onClick={() => setViewing(null)} className={`absolute top-3.5 ${glassBtn} right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}>
                 <FrameIcon className="h-3.5 w-3.5" />
                 {s.backToFrame}
               </button>
@@ -1557,15 +1773,13 @@ export function SetView({
                     onClick={() => setViewing(shots[(viewingAt + 1) % shots.length].generationId)}
                     aria-label={s.nextStill}
                     title={s.nextStill}
-                    className="absolute right-3.5 top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-lg text-onmedia/80 transition-colors hover:text-onmedia"
+                    className={`absolute top-1/2 flex h-9 w-9 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-lg text-onmedia/80 transition-colors hover:text-onmedia right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}
                   >
                     ›
                   </button>
                 </>
               )}
-              {/* The pill floats over the still's foot from md up, so this
-                  row moves under the score and Back to the frame there. */}
-              <div className="absolute bottom-3.5 left-3.5 right-3.5 flex flex-wrap items-center justify-between gap-2 md:bottom-auto md:top-14">
+              <div className={`absolute bottom-3.5 left-3.5 flex flex-wrap items-center justify-between gap-2 right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}>
                 <span className="rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 tabular-nums">
                   {formatMsg(s.stillTile, { n: stillNumber(viewingShot) })} · <LocalDate date={viewingShot.createdAt} />
                   {shotFacts[viewingShot.generationId] ? ` · ${shotFacts[viewingShot.generationId].frame}` : ""}
@@ -1577,7 +1791,7 @@ export function SetView({
                     </button>
                   )}
                   {viewingShot.generationId === lookShot?.generationId && (
-                    <span className="rounded-full bg-atelier-accent px-3 py-1.5 text-xs font-semibold text-black">{s.lookKept}</span>
+                    <span className="rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black">{s.lookKept}</span>
                   )}
                   <Link href={`/app/history/${viewingShot.generationId}`} className={glassBtn}>
                     {s.openTake}
@@ -1586,672 +1800,400 @@ export function SetView({
               </div>
             </div>
           )}
-        </div>
 
-        {/* The pill: the set's controls, as drawn — one controller at the
-            stage's foot, on every screen: over the black screen itself from
-            md up, just under it below. The setup on the left, the decision
-            in the middle with Shoot lit, the wheel on the right: the ring
-            aims (on a still it walks the filmstrip), the collar turns the
-            figure, the hub frames (on a still, back to the frame). The chat
-            keeps the words; on a phone that can, every press answers in the
-            palm (HAND). */}
-        <div className="pointer-events-none z-30 mt-3.5 flex justify-center md:absolute md:inset-x-0 md:bottom-4 md:mt-0 md:px-4">
-          {/* One band from md up: the setup wraps within its own zone on the
-              left, the decision holds the middle, the wheel is pinned at the
-              right end — the pill stays the stage's chin, never its face. */}
-          <div className={`pointer-events-auto flex w-full max-w-[64rem] flex-wrap items-center justify-center gap-x-3 gap-y-2.5 rounded-[40px] px-4 py-3 ring-1 ring-white/10 sm:rounded-full sm:px-5 md:flex-nowrap ${PILL_BODY}`}>
-            {/* the setup */}
-            <div className="flex min-w-0 flex-wrap items-center justify-center gap-2 md:flex-1 md:justify-start">
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => press(characters.length > 0, HAND.toggle, () => toggleMenu("who"))}
-                  aria-haspopup="listbox"
-                  aria-expanded={menu === "who"}
-                  aria-disabled={characters.length === 0}
-                  title={s.mentionHint}
-                  className={`${KEY} pl-1.5`}
-                >
-                  {character?.thumbUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={character.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover ring-1 ring-white/25" />
-                  ) : (
-                    <span className="h-6 w-6 rounded-full bg-white/15" />
-                  )}
-                  {character?.name || s.characterLabel}
-                  <Chevron />
-                </button>
-                {menu === "who" && (
-                  <div role="listbox" aria-label={s.mentionTitle} className={PILL_MENU}>
-                    {characters.map((c) => (
-                      <Option
-                        key={c.id}
-                        active={characterId === c.id}
-                        onPick={() => {
-                          buzz(HAND.toggle);
-                          setCharacterId(c.id);
-                          setMenu(null);
-                        }}
-                      >
-                        {c.name}
-                      </Option>
-                    ))}
-                  </div>
-                )}
-              </div>
+          {/* The filmstrip — the workspace's timeline: the frame, then every still, newest first */}
+          <div
+            className={`absolute bottom-3.5 left-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-white/[0.08] bg-black/40 p-1.5 backdrop-blur right-3.5 ${
+              chatOpen ? "md:right-[404px]" : "md:right-24"
+            } ${viewingShot ? "hidden md:flex" : ""}`}
+          >
+            <button
+              type="button"
+              onClick={() => setViewing(null)}
+              aria-pressed={!viewingShot}
+              title={s.frameTile}
+              className={`${tile(!viewingShot)} flex flex-col items-center justify-center gap-1 text-[9px] font-semibold uppercase tracking-[0.04em] text-onmedia/85`}
+            >
+              <FrameIcon className="h-4 w-4" />
+              {s.frameTile}
+            </button>
+            {shots.map((shot, i) => (
               <button
+                key={shot.generationId}
                 type="button"
-                onClick={() => press(Boolean(lookShot || latestStill), HAND.toggle, () => pickLook(lookShot ? null : latestStill))}
-                aria-pressed={Boolean(lookShot)}
-                aria-disabled={!lookShot && !latestStill}
-                title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
-                className={lookShot ? KEY_LOOK_ON : KEY}
+                onClick={() => setViewing(shot.generationId)}
+                aria-pressed={viewing === shot.generationId}
+                title={formatMsg(s.stillTile, { n: shots.length - i })}
+                className={tile(viewing === shot.generationId)}
               >
-                {s.lookLabel} · {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
+                {shot.resultUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{formatMsg(s.stillTile, { n: shots.length - i })}</span>
+                )}
+                {shot.score !== null && (
+                  <span className="absolute left-1 top-1 rounded-full bg-black/60 px-1.5 py-px text-[9px] font-semibold text-onmedia tabular-nums">{shot.score}</span>
+                )}
+                {shot.generationId === lookShot?.generationId && (
+                  <span className="absolute bottom-1 left-1 rounded-full bg-[#e0a468] px-1.5 py-px text-[9px] font-bold uppercase text-black">{s.lookBadge}</span>
+                )}
               </button>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => press(ready, HAND.toggle, () => toggleMenu("camera"))}
-                  aria-haspopup="listbox"
-                  aria-expanded={menu === "camera"}
-                  aria-disabled={!ready}
-                  className={KEY}
-                >
-                  {cameraLabel}
-                  <Chevron />
-                </button>
-                {menu === "camera" && (
-                  <div role="listbox" aria-label={s.toolbarCamera} className={PILL_MENU}>
-                    {cameraOptions}
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => press(ready, HAND.toggle, () => toggleMenu("lens"))}
-                  aria-haspopup="listbox"
-                  aria-expanded={menu === "lens"}
-                  aria-disabled={!ready}
-                  className={KEY}
-                >
-                  {lensLabel}
-                  <Chevron />
-                </button>
-                {menu === "lens" && (
-                  <div role="listbox" aria-label={s.toolbarLens} className={PILL_MENU}>
-                    {lensOptions}
-                  </div>
-                )}
-              </div>
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={() => press(ready && spec.marks.length > 1, HAND.toggle, () => toggleMenu("figure"))}
-                  aria-haspopup="listbox"
-                  aria-expanded={menu === "figure"}
-                  aria-disabled={!ready || spec.marks.length < 2}
-                  className={KEY}
-                >
-                  {markLabel}
-                  <Chevron />
-                </button>
-                {menu === "figure" && (
-                  <div role="listbox" aria-label={s.toolbarFigure} className={PILL_MENU}>
-                    {figureOptions}
-                  </div>
-                )}
-              </div>
-              {revisions.length > 1 && (
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => press(ready && !shooting, HAND.toggle, () => toggleMenu("history"))}
-                    aria-haspopup="listbox"
-                    aria-expanded={menu === "history"}
-                    aria-disabled={!ready || shooting}
-                    className={KEY}
-                  >
-                    {formatMsg(s.revisionN, { n: frameNumber })}
-                    <Chevron />
-                  </button>
-                  {menu === "history" && (
-                    <div role="listbox" aria-label={s.historyLabel} className={PILL_MENU}>
-                      {historyOptions}
-                    </div>
-                  )}
-                </div>
-              )}
-              {matchOn && (
-                <>
-                  <input
-                    ref={matchFileRef}
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      // Cleared, so choosing the same picture again still counts as a choice.
-                      e.target.value = "";
-                      void pickReference(file);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => press(ready && !matching && !shooting, HAND.toggle, () => matchFileRef.current?.click())}
-                    aria-disabled={!ready || matching || shooting}
-                    className={KEY}
-                  >
-                    {s.matchShot}
-                  </button>
-                </>
-              )}
-            </div>
-
-            {/* the decision */}
-            <div className="flex flex-col items-center gap-2 md:shrink-0">
-              <div className="relative">
-                {canShoot && (
-                  <>
-                    <span aria-hidden className="absolute -inset-x-4 -inset-y-3 rounded-full bg-[#e0a468] opacity-20 blur-2xl" />
-                    <span
-                      aria-hidden
-                      className="absolute -inset-x-1.5 -inset-y-1 rounded-full bg-[#eab27a] opacity-50 blur-lg motion-safe:animate-[shoot-breathe_3.2s_ease-in-out_infinite]"
-                    />
-                  </>
-                )}
-                <button
-                  type="button"
-                  onClick={() => press(canShoot, HAND.fire, () => void shoot())}
-                  aria-disabled={!canShoot}
-                  className="relative inline-flex h-11 cursor-pointer items-center justify-center whitespace-nowrap rounded-full bg-[radial-gradient(120%_150%_at_50%_28%,#fffef8,#f7f0e0_60%,#ead9bc)] px-6 text-[15px] font-semibold text-[#23252d] shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_1px_0_rgba(0,0,0,0.40),0_8px_18px_rgba(0,0,0,0.35),inset_0_0_0_1.5px_rgba(207,168,120,0.8)] transition-transform active:translate-y-px aria-disabled:cursor-default aria-disabled:opacity-60"
-                >
-                  {shootLabel}
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <button type="button" onClick={() => press(ready && !shooting, HAND.toggle, anotherAngle)} aria-disabled={!ready || shooting} className={KEY}>
-                  {s.anotherAngle}
-                </button>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => press(true, HAND.toggle, () => toggleMenu("mode"))}
-                    aria-haspopup="listbox"
-                    aria-expanded={menu === "mode"}
-                    title={s.modeHint}
-                    className={KEY}
-                  >
-                    {askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
-                    <Chevron />
-                  </button>
-                  {menu === "mode" && (
-                    <div role="listbox" aria-label={s.modeHint} className={PILL_MENU}>
-                      {modeOptions}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* the wheel */}
-            <div className="relative h-[164px] w-[164px] flex-shrink-0 select-none">
-              <WheelFace className="absolute inset-0 h-full w-full" />
-              <button
-                type="button"
-                onClick={() => press(ready && !onStill, HAND.step, () => aimBy(0, AIM_STEP))}
-                aria-disabled={!ready || onStill}
-                aria-label={s.aimUp}
-                title={s.aimUp}
-                className={`${WHEEL_HIT} left-[60px] top-[14px] h-11 w-11`}
-              />
-              <button
-                type="button"
-                onClick={() => press(ready && !onStill, HAND.step, () => aimBy(0, -AIM_STEP))}
-                aria-disabled={!ready || onStill}
-                aria-label={s.aimDown}
-                title={s.aimDown}
-                className={`${WHEEL_HIT} left-[60px] top-[106px] h-11 w-11`}
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  onStill
-                    ? press(shots.length > 1, HAND.step, () => setViewing(shots[(viewingAt - 1 + shots.length) % shots.length].generationId))
-                    : press(ready, HAND.step, () => aimBy(AIM_STEP, 0))
-                }
-                aria-disabled={onStill ? shots.length < 2 : !ready}
-                aria-label={onStill ? s.previousStill : s.aimLeft}
-                title={onStill ? s.previousStill : s.aimLeft}
-                className={`${WHEEL_HIT} left-[14px] top-[60px] h-11 w-11`}
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  onStill
-                    ? press(shots.length > 1, HAND.step, () => setViewing(shots[(viewingAt + 1) % shots.length].generationId))
-                    : press(ready, HAND.step, () => aimBy(-AIM_STEP, 0))
-                }
-                aria-disabled={onStill ? shots.length < 2 : !ready}
-                aria-label={onStill ? s.nextStill : s.aimRight}
-                title={onStill ? s.nextStill : s.aimRight}
-                className={`${WHEEL_HIT} left-[106px] top-[60px] h-11 w-11`}
-              />
-              <button
-                type="button"
-                onClick={() => press(ready && !onStill, HAND.detent, () => turn(-TURN_STEP))}
-                aria-disabled={!ready || onStill}
-                aria-label={s.turnLeft}
-                title={s.turnLeft}
-                className={`${WHEEL_HIT} left-[15px] top-[15px] h-8 w-8`}
-              />
-              <button
-                type="button"
-                onClick={() => press(ready && !onStill, HAND.detent, () => turn(TURN_STEP))}
-                aria-disabled={!ready || onStill}
-                aria-label={s.turnRight}
-                title={s.turnRight}
-                className={`${WHEEL_HIT} left-[117px] top-[15px] h-8 w-8`}
-              />
-              <button
-                type="button"
-                onClick={() => (onStill ? press(true, HAND.toggle, () => setViewing(null)) : press(ready, HAND.toggle, frameFigure))}
-                aria-disabled={onStill ? false : !ready}
-                aria-label={onStill ? s.backToFrame : s.frameFigure}
-                title={onStill ? s.backToFrame : s.frameFigure}
-                className={`${WHEEL_HIT} left-[55px] top-[55px] h-[54px] w-[54px]`}
-              />
-            </div>
+            ))}
+            {shots.length > 0 && (
+              <span className="mx-1.5 whitespace-nowrap text-[11px] text-[#9aa0ad] tabular-nums">
+                {shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })} · {s.newestFirst}
+              </span>
+            )}
           </div>
-        </div>
-        </div>
 
-        {/* Match this shot: the read in progress, what it matched, or what went wrong */}
-        {matchOn && (matching || matched || matchError) && (
-          <div className="space-y-1.5">
-            {matching ? (
-              <p className="text-xs text-atelier-muted" aria-live="polite">
-                {s.matchReading}
-              </p>
-            ) : matched && matchedLine ? (
-              <div className="flex items-start gap-2.5" aria-live="polite">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={matched.photo}
-                  alt={s.matchReferenceAlt}
-                  className="h-12 w-auto max-w-[5.5rem] shrink-0 rounded-[4px] border border-atelier-rule object-cover"
-                />
-                <div className="min-w-0 flex-1 space-y-0.5 text-xs leading-relaxed">
-                  <p className="text-atelier-ink/85">{matchedLine.line}</p>
-                  {matchedLine.notes && <p className="text-atelier-muted">{matchedLine.notes}</p>}
-                </div>
+          {/* A photo set: the photo beside camera 1, where the photographer stood */}
+          {sourcePhotoUrl && compareOpen && (
+            <div className={`absolute bottom-[104px] left-3.5 z-20 w-[min(640px,80%)] space-y-2.5 rounded-[14px] p-3.5 ${PANEL_BG}`}>
+              <div className="flex items-center justify-between">
+                <h2 className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.compareTitle}</h2>
                 <button
                   type="button"
-                  onClick={() => setMatched(null)}
+                  onClick={() => setCompareOpen(false)}
                   aria-label={t.common.dismiss}
                   title={t.common.dismiss}
-                  className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded-full text-sm text-atelier-muted transition-colors hover:text-atelier-ink"
+                  className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-full text-sm text-[#9aa0ad] hover:text-[#ecedf1]"
                 >
                   ×
                 </button>
               </div>
-            ) : null}
-            {matchError && <p className="text-xs text-red-600">{localizeServerText(matchError, t)}</p>}
-          </div>
-        )}
-
-        {/* The filmstrip: the frame, then every still, newest first */}
-        <div className="flex items-center gap-3 overflow-x-auto py-0.5">
-          <button
-            type="button"
-            onClick={() => setViewing(null)}
-            aria-pressed={!viewingShot}
-            title={s.frameTile}
-            className={`${tile(!viewingShot)} flex flex-col items-center justify-center gap-1 text-[10px] font-semibold uppercase tracking-[0.04em] text-onmedia/85`}
-          >
-            <FrameIcon className="h-5 w-5" />
-            {s.frameTile}
-          </button>
-          {shots.map((shot, i) => (
-            <button
-              key={shot.generationId}
-              type="button"
-              onClick={() => setViewing(shot.generationId)}
-              aria-pressed={viewing === shot.generationId}
-              title={formatMsg(s.stillTile, { n: shots.length - i })}
-              className={tile(viewing === shot.generationId)}
-            >
-              {shot.resultUrl ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{formatMsg(s.stillTile, { n: shots.length - i })}</span>
-              )}
-              {shot.score !== null && (
-                <span className="absolute left-1.5 top-1.5 rounded-full bg-black/60 px-1.5 py-px text-[9px] font-semibold text-onmedia tabular-nums">{shot.score}</span>
-              )}
-              {shot.generationId === lookShot?.generationId && (
-                <span className="absolute bottom-1.5 left-1.5 rounded-full bg-atelier-accent px-1.5 py-px text-[9px] font-bold uppercase text-black">{s.lookBadge}</span>
-              )}
-            </button>
-          ))}
-          {shots.length > 0 && (
-            <span className="ml-1 whitespace-nowrap text-xs text-atelier-muted tabular-nums">
-              {shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })} · {s.newestFirst}
-            </span>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <figure className="space-y-1.5">
+                  <div className="overflow-hidden rounded-media border border-white/10 bg-black/60" style={{ aspectRatio: photoAspect ?? 4 / 3 }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img ref={readPhotoShape} src={sourcePhotoUrl} alt={s.comparePhoto} onLoad={(e) => readPhotoShape(e.currentTarget)} className="h-full w-full object-cover" />
+                  </div>
+                  <figcaption className="text-xs text-[#9aa0ad]">{s.comparePhoto}</figcaption>
+                </figure>
+                <figure className="space-y-1.5">
+                  <div className="overflow-hidden rounded-media border border-white/10 bg-black/60" style={{ aspectRatio: photoAspect ?? 4 / 3 }}>
+                    {cameraOneShot ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={cameraOneShot} alt={formatMsg(s.cameraN, { n: 1 })} className="h-full w-full object-cover" />
+                    ) : (
+                      <div
+                        aria-hidden
+                        className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
+                      />
+                    )}
+                  </div>
+                  <figcaption className="text-xs text-[#9aa0ad]">{formatMsg(s.cameraN, { n: 1 })}</figcaption>
+                </figure>
+              </div>
+              <p className="text-[11px] text-[#6b6f7a]">{s.compareNote}</p>
+            </div>
           )}
         </div>
 
-        <p className="max-w-3xl text-xs leading-relaxed text-atelier-muted">
-          {viewingShot ? s.viewerHint : formatMsg(s.frameHintShort, { name: characterName })}
-        </p>
-
-        {/* A photo set: the photo beside camera 1, where the photographer stood */}
-        {sourcePhotoUrl && (
-          <div className="space-y-2.5 pt-2">
-            <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.compareTitle}</h2>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <figure className="space-y-1.5">
-                <div
-                  className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
-                  style={{ aspectRatio: photoAspect ?? 4 / 3 }}
+        {/* The conversation, floating in the viewport — 3D Jutsu's chat panel, ours. */}
+        {chatOpen ? (
+          <aside
+            className={`z-30 flex min-h-0 flex-col overflow-hidden max-md:h-[42%] max-md:flex-none max-md:border-t max-md:border-white/[0.11] max-md:bg-[#16171c] md:absolute md:bottom-3.5 md:right-3.5 md:top-3.5 md:w-[392px] md:rounded-[16px] ${PANEL_BG} max-md:border-x-0 max-md:border-b-0 max-md:shadow-none`}
+          >
+            <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.astraLabel}</span>
+              <span className="flex items-center gap-2">
+                <span className="text-[11px] text-[#6b6f7a]">{s.panelMeta}</span>
+                <button
+                  type="button"
+                  onClick={() => setChatOpen(false)}
+                  title={s.chatHide}
+                  aria-label={s.chatHide}
+                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#6b6f7a] hover:text-[#ecedf1] md:flex"
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    ref={readPhotoShape}
-                    src={sourcePhotoUrl}
-                    alt={s.comparePhoto}
-                    onLoad={(e) => readPhotoShape(e.currentTarget)}
-                    className="h-full w-full object-cover"
-                  />
-                </div>
-                <figcaption className="text-xs text-atelier-muted">{s.comparePhoto}</figcaption>
-              </figure>
-              <figure className="space-y-1.5">
-                <div
-                  className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-stage"
-                  style={{ aspectRatio: photoAspect ?? 4 / 3 }}
-                >
-                  {cameraOneShot ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={cameraOneShot} alt={formatMsg(s.cameraN, { n: 1 })} className="h-full w-full object-cover" />
-                  ) : (
-                    <div
-                      aria-hidden
-                      className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
-                    />
-                  )}
-                </div>
-                <figcaption className="text-xs text-atelier-muted">{formatMsg(s.cameraN, { n: 1 })}</figcaption>
-              </figure>
+                  ›
+                </button>
+              </span>
             </div>
-            <p className="text-xs text-atelier-muted">{s.compareNote}</p>
-          </div>
-        )}
-      </section>
 
-      {/* The conversation, beside the workspace */}
-      <aside className="min-w-0 lg:sticky lg:top-6">
-        <div className={`flex flex-col overflow-hidden rounded-[20px] bg-atelier-surface/85 ${RING} backdrop-blur-xl lg:h-[calc(100vh-3rem)] lg:min-h-[560px]`}>
-          <div className="flex items-center justify-between border-b border-atelier-rule/60 px-4 py-3">
-            <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.astraLabel}</span>
-            <span className="text-xs text-atelier-muted">{s.panelMeta}</span>
-          </div>
-
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-            {thread.map((shot) => {
-              // A still with no recorded camera, or nothing to cut out of it
-              // clear of its people, offers no look (look.ts).
-              const lookable = canBeLook(shot);
-              const isLook = lookable && shot.generationId === lookShot?.generationId;
-              const facts = shotFacts[shot.generationId];
-              return (
-                <Fragment key={shot.generationId}>
-                  <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-atelier-ink px-3.5 py-2.5 text-sm leading-relaxed text-atelier-paper">
-                    {shot.words ?? s.shootWord}
-                  </div>
-                  <div className="flex items-start gap-2.5">
-                    <AstraMark />
-                    <div className="min-w-0 flex-1 space-y-2.5">
-                      <p className="text-sm leading-relaxed text-atelier-ink/85">
-                        {facts ? `${formatMsg(s.shotInSeconds, { s: facts.seconds })} ` : ""}
-                        {stillLine(shot)}
-                        {isLook ? ` ${s.lookOnLine}` : ""}
-                      </p>
-                      <div className={`rounded-[14px] bg-atelier-surface p-3 ${RING} space-y-3`}>
-                        <div className="flex items-center gap-3">
-                          <button
-                            type="button"
-                            onClick={() => setViewing(shot.generationId)}
-                            title={formatMsg(s.stillTile, { n: stillNumber(shot) })}
-                            className={`relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-atelier-stage ${
-                              isLook ? "ring-2 ring-atelier-accent" : "ring-1 ring-atelier-rule"
-                            }`}
-                          >
-                            {shot.resultUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-                            ) : (
-                              <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{s.openTake}</span>
-                            )}
-                          </button>
-                          <div className="min-w-0 flex flex-col gap-1">
-                            <span className="text-[13px] font-medium text-atelier-ink">{formatMsg(s.stillTile, { n: stillNumber(shot) })}</span>
-                            <span className="text-xs text-atelier-muted tabular-nums">
-                              {shot.score !== null ? `${formatMsg(s.identityScore, { score: shot.score })} · ` : ""}
-                              <LocalDate date={shot.createdAt} />
-                            </span>
-                            {facts && <span className="text-xs text-atelier-muted">{facts.frame}</span>}
+            <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+              {thread.map((shot) => {
+                // A still with no recorded camera, or nothing to cut out of it
+                // clear of its people, offers no look (look.ts).
+                const lookable = canBeLook(shot);
+                const isLook = lookable && shot.generationId === lookShot?.generationId;
+                const facts = shotFacts[shot.generationId];
+                return (
+                  <Fragment key={shot.generationId}>
+                    <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                      {shot.words ?? s.shootWord}
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <AstraMark />
+                      <div className="min-w-0 flex-1 space-y-2.5">
+                        <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                          {facts ? `${formatMsg(s.shotInSeconds, { s: facts.seconds })} ` : ""}
+                          {stillLine(shot)}
+                          {isLook ? ` ${s.lookOnLine}` : ""}
+                        </p>
+                        <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setViewing(shot.generationId)}
+                              title={formatMsg(s.stillTile, { n: stillNumber(shot) })}
+                              className={`relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ${
+                                isLook ? "ring-2 ring-[#e0a468]" : "ring-1 ring-white/15"
+                              }`}
+                            >
+                              {shot.resultUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                              ) : (
+                                <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{s.openTake}</span>
+                              )}
+                            </button>
+                            <div className="min-w-0 flex flex-col gap-1">
+                              <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.stillTile, { n: stillNumber(shot) })}</span>
+                              <span className="text-xs text-[#9aa0ad] tabular-nums">
+                                {shot.score !== null ? `${formatMsg(s.identityScore, { score: shot.score })} · ` : ""}
+                                <LocalDate date={shot.createdAt} />
+                              </span>
+                              {facts && <span className="text-xs text-[#9aa0ad]">{facts.frame}</span>}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {isLook ? (
+                              <span className="inline-flex h-8 items-center rounded-full bg-[#e0a468] px-3 text-[11px] font-semibold text-black">{s.lookKept}</span>
+                            ) : lookable ? (
+                              <button type="button" onClick={() => pickLook(shot.generationId)} className={chip(false)}>
+                                {s.keepLook}
+                              </button>
+                            ) : null}
+                            <button type="button" onClick={anotherAngle} disabled={!ready || shooting} className={chip(false)}>
+                              {s.anotherAngle}
+                            </button>
+                            <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
+                              {s.openTake}
+                            </Link>
                           </div>
                         </div>
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          {isLook ? (
-                            <span className="inline-flex h-8 items-center rounded-full bg-atelier-accent px-3 text-[11px] font-semibold text-black">{s.lookKept}</span>
-                          ) : lookable ? (
-                            <button type="button" onClick={() => pickLook(shot.generationId)} className={chip(false)}>
-                              {s.keepLook}
-                            </button>
-                          ) : null}
-                          <button type="button" onClick={anotherAngle} disabled={!ready || shooting} className={chip(false)}>
+                      </div>
+                    </div>
+                  </Fragment>
+                );
+              })}
+
+              {pendingAsks.map((ask, i) => (
+                <div key={`ask-${i}`} className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                  {ask}
+                </div>
+              ))}
+
+              {/* An Astra edit of the set, landed: how much of it changed. */}
+              {setChanged !== null && (
+                <div className="flex items-start gap-2.5">
+                  <AstraMark />
+                  <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                    {setChanged === 0 ? s.editorAskNothing : setChanged === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: setChanged })}
+                  </p>
+                </div>
+              )}
+
+              {/* Astra's turn: the frame in a sentence, then as a card, and Shoot to approve it */}
+              <div className="flex items-start gap-2.5">
+                <AstraMark />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  {characters.length === 0 ? (
+                    <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                      {s.noCharacters}{" "}
+                      <Link href="/app/character/new" className="font-medium text-[#e0a468] underline underline-offset-2">
+                        {s.createCharacter}
+                      </Link>
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                        {frameLead ? `${frameLead} ` : ""}
+                        {placedLine} {s.frameProse}
+                      </p>
+                      <div className="rounded-[14px] bg-white/[0.05] p-4 ring-1 ring-white/[0.07] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.frameCard}</span>
+                          <span className="text-xs text-[#6b6f7a] tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
+                        </div>
+                        <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px] leading-[18px]">
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowWho}</dt>
+                          <dd className="flex items-center gap-1.5 text-[#ecedf1]">
+                            {character?.thumbUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={character.thumbUrl} alt="" className="h-[18px] w-[18px] rounded-full object-cover" />
+                            ) : (
+                              <span className="h-[18px] w-[18px] rounded-full bg-white/15" />
+                            )}
+                            {characterName}
+                          </dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowWhere}</dt>
+                          <dd className="text-[#ecedf1]">
+                            {markLabel} · {facingLabel}
+                          </dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCamera}</dt>
+                          <dd className="text-[#ecedf1] tabular-nums">
+                            {cameraLabel} · {lensLabel}
+                          </dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowHappens}</dt>
+                          <dd className={direction ? "text-[#ecedf1]" : "text-[#6b6f7a]"}>{direction || "—"}</dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCost}</dt>
+                          <dd className="text-[#ecedf1] tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
+                        </dl>
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => void shoot()}
+                            disabled={shooting || matching || !characterId || loadFailed || !ready}
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
+                          >
+                            {shootLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={anotherAngle}
+                            disabled={!ready || shooting}
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
+                          >
                             {s.anotherAngle}
                           </button>
-                          <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
-                            {s.openTake}
-                          </Link>
                         </div>
+                        {error && <p className="text-sm text-red-400">{localizeServerText(error, t)}</p>}
+                        {lastMiss && (
+                          <p className="text-sm text-[#9aa0ad]">
+                            {s.shotDidNotFinish}{" "}
+                            <Link href={`/app/history/${lastMiss}`} className="font-medium text-[#e0a468] underline underline-offset-2">
+                              {s.openTake}
+                            </Link>
+                          </p>
+                        )}
+                        {lookDropped && (
+                          <p className="text-xs text-[#9aa0ad]" aria-live="polite">
+                            {s.lookDropped}
+                          </p>
+                        )}
                       </div>
-                    </div>
-                  </div>
-                </Fragment>
-              );
-            })}
-
-            {pendingAsks.map((ask, i) => (
-              <div key={`ask-${i}`} className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-atelier-ink px-3.5 py-2.5 text-sm leading-relaxed text-atelier-paper">
-                {ask}
+                    </>
+                  )}
+                </div>
               </div>
-            ))}
 
-            {/* Astra's turn: the frame in a sentence, then as a card, and Shoot to approve it */}
-            <div className="flex items-start gap-2.5">
-              <AstraMark />
-              <div className="min-w-0 flex-1 space-y-2.5">
-                {characters.length === 0 ? (
-                  <p className="text-sm leading-relaxed text-atelier-ink/85">
-                    {s.noCharacters}{" "}
-                    <Link href="/app/character/new" className="font-medium text-atelier-accent underline underline-offset-2">
-                      {s.createCharacter}
-                    </Link>
+              {(reading || shooting || editingSet) && (
+                <div className="flex items-center gap-2.5">
+                  <AstraMark />
+                  <p className="flex items-center gap-2 text-sm text-[#9aa0ad]">
+                    <Spinner className="h-4 w-4 flex-shrink-0" />
+                    {editingSet ? s.editorAsking : shooting ? `${s.shooting} ${s.shootingLine}` : s.threadReading}
                   </p>
-                ) : (
-                  <>
-                    <p className="text-sm leading-relaxed text-atelier-ink/85">
-                      {frameLead ? `${frameLead} ` : ""}
-                      {placedLine} {s.frameProse}
-                    </p>
-                    <div className={`rounded-[14px] bg-atelier-surface p-4 ${RING} space-y-3`}>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.frameCard}</span>
-                        <span className="text-xs text-atelier-muted tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
-                      </div>
-                      <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px] leading-[18px]">
-                        <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-atelier-muted">{s.rowWho}</dt>
-                        <dd className="flex items-center gap-1.5 text-atelier-ink">
-                          {character?.thumbUrl ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={character.thumbUrl} alt="" className="h-[18px] w-[18px] rounded-full object-cover" />
-                          ) : (
-                            <span className="h-[18px] w-[18px] rounded-full bg-atelier-rule" />
-                          )}
-                          {characterName}
-                        </dd>
-                        <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-atelier-muted">{s.rowWhere}</dt>
-                        <dd className="text-atelier-ink">
-                          {markLabel} · {facingLabel}
-                        </dd>
-                        <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-atelier-muted">{s.rowCamera}</dt>
-                        <dd className="text-atelier-ink tabular-nums">
-                          {cameraLabel} · {lensLabel}
-                        </dd>
-                        <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-atelier-muted">{s.rowHappens}</dt>
-                        <dd className={direction ? "text-atelier-ink" : "text-atelier-muted"}>{direction || "—"}</dd>
-                        <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-atelier-muted">{s.rowCost}</dt>
-                        <dd className="text-atelier-ink tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
-                      </dl>
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        <button
-                          type="button"
-                          onClick={() => void shoot()}
-                          disabled={shooting || matching || !characterId || loadFailed || !ready}
-                          className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-atelier-ink px-[18px] text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-                        >
-                          {shootLabel}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={anotherAngle}
-                          disabled={!ready || shooting}
-                          className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-atelier-surface px-4 text-sm font-medium text-atelier-ink shadow-[0_0_0_1px_rgba(35,37,45,0.1)] transition-colors hover:bg-atelier-ink/5 disabled:opacity-40"
-                        >
-                          {s.anotherAngle}
-                        </button>
-                      </div>
-                      {error && <p className="text-sm text-red-600">{localizeServerText(error, t)}</p>}
-                      {lastMiss && (
-                        <p className="text-sm text-atelier-muted">
-                          {s.shotDidNotFinish}{" "}
-                          <Link href={`/app/history/${lastMiss}`} className="font-medium text-atelier-accent underline underline-offset-2">
-                            {s.openTake}
-                          </Link>
-                        </p>
-                      )}
-                      {lookDropped && (
-                        <p className="text-xs text-atelier-muted" aria-live="polite">
-                          {s.lookDropped}
-                        </p>
-                      )}
-                    </div>
-                  </>
-                )}
-              </div>
+                </div>
+              )}
+              <div ref={threadEndRef} aria-hidden />
             </div>
 
-            {(reading || shooting) && (
-              <div className="flex items-center gap-2.5">
-                <AstraMark />
-                <p className="flex items-center gap-2 text-sm text-atelier-muted">
-                  <Spinner className="h-4 w-4 flex-shrink-0" />
-                  {shooting ? `${s.shooting} ${s.shootingLine}` : s.threadReading}
-                </p>
-              </div>
-            )}
-            <div ref={threadEndRef} aria-hidden />
-          </div>
-
-          {/* The composer at the panel's foot: the words, then who, the look, the mode */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
-              else if (draft.trim()) void send(draft);
-              else void shoot();
-            }}
-            className="relative border-t border-atelier-rule/60 px-3.5 pb-3.5 pt-3"
-          >
-            {mentionOpen && (
-              <div
-                role="listbox"
-                aria-label={s.mentionTitle}
-                className="absolute bottom-full left-3.5 z-30 mb-2 w-max min-w-[13rem] rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.22)] backdrop-blur-xl"
-              >
-                <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.mentionTitle}</p>
-                {mentionList.length === 0 ? (
-                  <p className="px-2.5 py-1.5 text-xs text-atelier-muted">{s.mentionHint}</p>
-                ) : (
-                  mentionList.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      role="option"
-                      aria-selected={characterId === c.id}
-                      onClick={() => pickMention(c)}
-                      className={`flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
-                        characterId === c.id ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink" : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
-                      }`}
-                    >
-                      {c.thumbUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={c.thumbUrl} alt="" className="h-[22px] w-[22px] rounded-full object-cover" />
-                      ) : (
-                        <span className="h-[22px] w-[22px] rounded-full bg-atelier-rule" />
-                      )}
-                      {c.name}
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-            <textarea
-              ref={draftRef}
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Escape" && mentionOpen) {
-                  e.preventDefault();
-                  setMentionForced(false);
-                  return;
-                }
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
-                  else if (draft.trim()) void send(draft);
-                }
+            {/* The composer at the panel's foot: the words, then who, the mode and the price */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+                else if (draft.trim()) void send(draft);
+                else void shoot();
               }}
-              rows={2}
-              aria-label={s.threadPlaceholder}
-              placeholder={reading ? s.threadReading : s.threadPlaceholder}
-              disabled={reading || shooting}
-              className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
-            />
-            {/* Who, the look and the mode are keys on the pill controller;
-                the composer keeps the words ("@" still opens the who menu). */}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="flex-1" />
-              <button
-                type="submit"
-                disabled={reading || shooting || !ready || (!draft.trim() && !characterId)}
-                title={draft.trim() ? s.threadPlaceholder : shootLabel}
-                aria-label={draft.trim() ? s.threadPlaceholder : shootLabel}
-                className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-              >
-                {reading || shooting ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
-              </button>
-            </div>
-          </form>
-        </div>
-      </aside>
+              className="relative border-t border-white/[0.07] px-3.5 pb-3.5 pt-3"
+            >
+              {mentionOpen && (
+                <div
+                  role="listbox"
+                  aria-label={s.mentionTitle}
+                  className="absolute bottom-full left-3.5 z-30 mb-2 w-max min-w-[13rem] rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
+                >
+                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.mentionTitle}</p>
+                  {mentionList.length === 0 ? (
+                    <p className="px-2.5 py-1.5 text-xs text-[#9aa0ad]">{s.mentionHint}</p>
+                  ) : (
+                    mentionList.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        role="option"
+                        aria-selected={characterId === c.id}
+                        onClick={() => pickMention(c)}
+                        className={`flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
+                          characterId === c.id ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+                        }`}
+                      >
+                        {c.thumbUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={c.thumbUrl} alt="" className="h-[22px] w-[22px] rounded-full object-cover" />
+                        ) : (
+                          <span className="h-[22px] w-[22px] rounded-full bg-white/15" />
+                        )}
+                        {c.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+              <textarea
+                ref={draftRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && mentionOpen) {
+                    e.preventDefault();
+                    setMentionForced(false);
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+                    else if (draft.trim()) void send(draft);
+                  }
+                }}
+                rows={2}
+                aria-label={s.threadPlaceholder}
+                placeholder={reading ? s.threadReading : s.threadPlaceholder}
+                disabled={reading || shooting || editingSet}
+                className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#6b6f7a] disabled:opacity-60"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <button type="button" onClick={() => setMentionForced(true)} disabled={characters.length === 0} className={chip(false)} title={s.mentionHint}>
+                  @ {character?.name || s.characterLabel}
+                </button>
+                <div className="relative">
+                  <button type="button" onClick={() => toggleMenu("mode")} aria-haspopup="listbox" aria-expanded={menu === "mode"} title={s.modeHint} className={chip(justTalk)}>
+                    {justTalk ? s.justTalking : askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
+                    <Chevron />
+                  </button>
+                  {menu === "mode" && (
+                    <div role="listbox" aria-label={s.modeHint} className={`${DMENU} bottom-full top-auto mb-2 mt-0`}>
+                      {modeOptions}
+                    </div>
+                  )}
+                </div>
+                <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#9aa0ad] tabular-nums">
+                  {s.engineChip} · {credits}
+                </span>
+                <span className="flex-1" />
+                <button
+                  type="submit"
+                  disabled={reading || shooting || editingSet || !ready || (!draft.trim() && !characterId)}
+                  title={draft.trim() ? s.threadPlaceholder : shootLabel}
+                  aria-label={draft.trim() ? s.threadPlaceholder : shootLabel}
+                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
+                >
+                  {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
+                </button>
+              </div>
+            </form>
+          </aside>
+        ) : (
+          <button type="button" onClick={() => setChatOpen(true)} className={`absolute bottom-3.5 right-3.5 z-30 ${DCHIP} h-10 pl-1.5`}>
+            <AstraMark />
+            {s.astraLabel}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

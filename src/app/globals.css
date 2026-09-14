@@ -288,34 +288,6 @@ html:has([data-app-scroll]) body {
   overflow: hidden;
 }
 
-/* A Set's workspace (Astra Sets, 2026-09-14): the stage and the conversation
-   side by side need the whole width, not the reading column every other app
-   page sits in. The page marks its root data-set-workspace and the content
-   wrapper (app/layout.tsx data-app-content) lets go of its max-width and
-   trims its padding for it, with the same :has() the shell already relies
-   on above. Phones keep the top padding that clears the fixed top bar. */
-[data-app-content]:has([data-set-workspace]) {
-  max-width: none;
-}
-@media (min-width: 768px) {
-  [data-app-content]:has([data-set-workspace]) {
-    padding: 1.5rem;
-  }
-}
-
-/* The Sets pill controller's lit Shoot: a dim breath on a loop while it
-   waits for the word. The pill shows only where the primary pointer is
-   coarse (set-view.tsx); motion-safe guards the loop for reduced motion. */
-@keyframes shoot-breathe {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
-
 html.native-app {
   /* No rubber-band overscroll on the document. Inner scrollers keep theirs,
      so lists still feel right — it's the PAGE bouncing and revealing a blank

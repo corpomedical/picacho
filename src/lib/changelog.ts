@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.33.0",
+    build: 46,
+    date: "2026-09-15",
+    title: "The set page is the viewport, the way 3D Jutsu is",
+    items: [
+      "A ready set now opens as the whole screen: the stage is the page, dark edge to edge, with its own bar — the set's name, Build and Shoot as one pair of tabs, History, and the frame as a file (a download button saves the exact square the next still would be shot from). The pill controller is retired; the setup lives as glass chips on the picture itself — who is in the frame, the look, the camera, the lens, the mark, the turn arrows, Frame the figure, Match a shot, and a photo set's Beside-the-photo — each opening a dark menu in place. The filmstrip runs along the stage's foot like a timeline: the frame, then every still with its score, the look marked. Esc steps out of whatever is open — a menu, then a still, back to the frame.",
+      "The conversation floats inside the viewport, the way 3D Jutsu's chat panel floats — a dark glass column on the right that folds away to a small Astra button and comes back. Everything it did it still does: your words as light bubbles, Astra in plain text, the frame as one card with Shoot on it, the stills as cards; the composer now carries the who chip, the mode, and the engine with its price — GPT Image 2.5 · 1 credit — said before you send, the way Higgsfield says a cost up front.",
+      "Astra now edits the set from the conversation. Words about the place itself — \"make the barriers brick red\", \"add a row of flags along the straight\", \"now golden hour\" — are recognised by the reader as an edit and handed to Astra, which rewrites the set's data server-side under the same gate, the same schema and the same limits as the first build. The stage rebuilds under your camera without a reload, Astra says how many pieces changed, and the working copy is what later shots and visits use; Astra's original stays one press away in Build. Camera words still move the camera, shoot words still shoot — one composer, three kinds of sentence.",
+      "Three modes now, like 3D Jutsu's: Shoot without asking, Ask before shooting, and Just talking — where Astra reads the words, moves nothing and spends nothing, and tells you so. The mode sits on the composer; the small model reads every message either way, so switching modes changes what happens, never what is understood.",
+    ],
+  },
+  {
     version: "1.32.0",
     build: 45,
     date: "2026-09-14",

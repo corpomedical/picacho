@@ -125,6 +125,10 @@ describe("parseShotWords", () => {
     expect(parseShotWords(`Sure:\n\`\`\`json\n${answer({ intent: "talk" })}\n\`\`\``, stage)?.intent).toBe("talk");
     for (const bad of ["", "shoot it", "[1,2]", "{not json", "null"]) expect(parseShotWords(bad, stage), bad).toBeNull();
   });
+
+  it("reads a change to the place itself as an edit (the workspace hands it to Astra)", () => {
+    expect(parseShotWords(answer({ intent: "edit" }), stage)?.intent).toBe("edit");
+  });
 });
 
 describe("shotWordsInstructions", () => {
@@ -135,6 +139,7 @@ describe("shotWordsInstructions", () => {
     expect(text).toContain("18, 24, 35, 50, 85, 135 mm");
     expect(text).toContain("Eva, Marco");
     expect(text).toContain('"facing":null}');
+    expect(text).toContain('"edit" when they ask to change the PLACE ITSELF');
     expect(text).not.toContain('"place"');
     expect(text).toContain("Never describe the person.");
   });

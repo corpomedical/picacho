@@ -2228,6 +2228,13 @@ const en = {
     editorAskDone: "Done — {n} pieces of the set changed.",
     editorAskDoneOne: "Done — one piece of the set changed.",
     editorAskNothing: "Astra changed nothing — it read the set as already so.",
+    // The workspace as 3D Jutsu has one (2026-09-15): the viewport is the
+    // page, the conversation floats inside it, and three modes say how much
+    // Astra does on its own.
+    justTalking: "Just talking",
+    justTalkNote: "Nothing moved — Just talking is on. Switch the mode and say it again to do it.",
+    downloadFrame: "Download the frame",
+    chatHide: "Hide the conversation",
     editorShapes: { box: "Box", cylinder: "Cylinder", cone: "Cone", sphere: "Sphere", torus: "Ring", capsule: "Capsule", plane: "Sheet" },
     editorLights: { sun: "The sun", hemisphere: "Sky fill", ambient: "All-over light", point: "Bulb", spot: "Spotlight" },
     editorSkyKinds: { color: "One color", gradient: "Gradient", night: "Night" },

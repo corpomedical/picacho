@@ -23,7 +23,7 @@ import { SET_EDIT_DEADLINE_MS, SET_EDIT_MAX_CHARS, SET_EDIT_PER_10_MIN, SET_EDIT
 import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
 
 // The Set Editor's actions (2026-09-14). The working copy lives in
-// `location_sets.edited_spec` (supabase/pending/set-editor.sql); Astra's
+// `location_sets.edited_spec` (supabase/applied/2026-09-14/set-editor.sql, run in production 2026-09-14); Astra's
 // original stays in `spec`, untouched, so it can always be brought back.
 //
 // The trust boundary holds on every path: whatever a browser sends is a

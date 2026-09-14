@@ -34,7 +34,7 @@ export const SHOT_WORDS_MAX_CHARS = 600;
 export const SHOT_WORDS_PER_10_MIN = 40;
 const SEED = 7;
 
-export const SHOT_INTENTS = ["frame", "shoot", "talk"] as const;
+export const SHOT_INTENTS = ["frame", "shoot", "talk", "edit"] as const;
 export type ShotIntent = (typeof SHOT_INTENTS)[number];
 /** Where the camera stands relative to the figure, by the figure's own front. */
 export const CAMERA_SIDES = ["front", "front_left", "front_right", "left", "right", "back_left", "back_right", "back"] as const;
@@ -98,7 +98,7 @@ export function shotWordsInstructions(stage: { spec: SetSpec | null; characters:
   if (stage.characters.length > 0) lines.push(`Characters they may name: ${stage.characters.join(", ")}.`);
   lines.push(`Answer exactly this shape: ${SHAPE}${stage.askPlace ? ',"place":null' : ""}}`);
   lines.push(
-    '- intent: "shoot" when they ask to take the picture now (shoot, go, take it, do it, one more); "frame" when they set up the shot: who, what happens, where the camera stands; "talk" when the words are about neither.',
+    '- intent: "shoot" when they ask to take the picture now (shoot, go, take it, do it, one more); "frame" when they set up the shot: who, what happens, where the camera stands; "edit" when they ask to change the PLACE ITSELF — recolour, add, remove, move or relight what is built (make the walls red, add a row of flags, remove the car, now golden hour) — never for the camera or the person; "talk" when the words are about none of these.',
     "- direction: what happens in the picture — the pose, the action, the expression, the mood — in their own words, without the camera settings and without the place. Empty when they said nothing about it.",
     "- camera_id: one of the camera ids, only when they name that camera. side: where the camera stands relative to the person: front, back, left, right, or front_left, front_right, back_left, back_right (from behind: back; over the shoulder: back_left; profile: left). size: close_up, medium, full (the whole person), wide (the person small in the place). height: low, eye, high. tilt_deg: degrees the camera tilts, + up and − down, only when they say so. lens_mm: one of the lenses, when they name one. mark_id: one of the mark ids, when they name a mark or the spot it names. facing: where the person faces: camera, away, left, right.",
   );
