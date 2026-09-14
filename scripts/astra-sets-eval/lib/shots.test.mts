@@ -212,9 +212,9 @@ describe("what the stills copy from the product", () => {
     const look = { sameCharacter: true, savedOutfit: false };
     const withLook = shotPrompt({ ...request(), look });
     expect(withLook).toBe(buildSetShotPrompt({ description: spec.description, direction: "looks back over one shoulder", lifted: true, layout, look }));
-    expect(withLook).toContain("One reference photo shows objects from this same place, cut out of an earlier photograph");
+    expect(withLook).toContain("One reference photo is a design sheet of objects from this same place: each shown several times on a plain grey ground");
     expect(withLook).not.toContain("The person in it");
-    expect(shotPrompt(request())).not.toContain("cut out of an earlier photograph");
+    expect(shotPrompt(request())).not.toContain("design sheet");
     expect(shotPrompt({ ...request(), arm: "control", camera: null })).toBe(cleanText(`looks back over one shoulder. ${spec.description}`, 500));
   });
 
@@ -343,7 +343,7 @@ describe("whose refusal a Set shot's refused prompt is", () => {
     const look = { fromShotId: "cs-1", still: { bytes: PNG, mime: "image/png" }, sameCharacter: true, savedOutfit: false };
     expect((await shoot(envOf(net, theirs.deps).env, request({ arm: "look", shotId: "cl-1", look }))).attribution).toEqual({ against: "person", how: "judged alone", alone: "allowed" });
     // The look shot's prompt without the direction keeps its look sentences.
-    expect(theirs.calls.alone[0].text).toContain("One reference photo shows objects from this same place");
+    expect(theirs.calls.alone[0].text).toContain("One reference photo is a design sheet of objects from this same place");
     // No direction: all of it Astra's, and nothing is judged twice.
     const bare = fakeDeps(net, { entryGate: refuse });
     expect((await shoot(envOf(net, bare.deps).env, request({ direction: "" }))).attribution).toEqual({ against: "model", how: "no direction", alone: null });
@@ -675,7 +675,7 @@ describe("many stills", () => {
     const records = await runShots(env, { groups: [group("gpt-image")], singles: [], concurrency: 2, onRecord: () => {} });
     const look = records.find((r) => r.arm === "look");
     expect(look).toMatchObject({ outcome: "rendered", look: { fromShotId: "cs-c1-gpt-image", sameCharacter: true, savedOutfit: false }, promptParity: true });
-    expect(look?.prompt).toContain("cut out of an earlier photograph");
+    expect(look?.prompt).toContain("design sheet of objects from this same place");
     expect(look?.expectedPrompt).toContain(LOOK_REFERENCE_NOTE);
     const sentLook = calls.pipeline.find((c) => c.prompt === look?.prompt)?.options.lookImageUrl as string;
     expect(sentLook).toMatch(/^https:\/\/eval\.invalid\/ref\//);

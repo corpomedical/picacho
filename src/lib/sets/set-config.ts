@@ -258,3 +258,15 @@ export function setLookCutoutPath(userId: string, setId: string, lookGenerationI
 export function setLookCutoutPrefix(setId: string): string {
   return `${setId}${LOOK_CUTOUT_INFIX}`;
 }
+// A look's object sheet (2026-09-14): the cutout's objects drawn four ways on
+// grey by the image model (look-sheet.ts), what a shot actually carries as
+// its look. Kept beside the cutout it was drawn from, under the same rules:
+// made once per still, removed with the set or the still.
+const LOOK_SHEET_INFIX = ".sheet-";
+export function setLookSheetPath(userId: string, setId: string, lookGenerationId: string): string {
+  return `${userId}/sets/${setId}${LOOK_SHEET_INFIX}${lookGenerationId}.jpg`;
+}
+/** What the name of every object sheet of one set starts with, inside `<user>/sets/`. */
+export function setLookSheetPrefix(setId: string): string {
+  return `${setId}${LOOK_SHEET_INFIX}`;
+}

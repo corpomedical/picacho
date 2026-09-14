@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { lookCutoutKeys } from "../../../scripts/lib/storage-references.mjs";
-import { setLookCutoutPath } from "./set-config";
+import { setLookCutoutPath, setLookSheetPath } from "./set-config";
 
 // The look sends only the objects (2026-09-12). The shot action and the
 // deletes are "use server" modules, which cannot load here, so they are read
@@ -40,13 +40,16 @@ describe("shootInSet: the look", () => {
     expect(shoot).toContain("spec: owned.spec,");
   });
 
-  it("sends only ever the cutout: the one look URL is the cutout's, and the still's is never made", () => {
+  it("sends only ever the object sheet drawn from the cutout: the one look URL is the sheet's, and the still's is never made", () => {
     const lookUrls = [...shoot.matchAll(/mediaUrl\("generated-images", ([^)]+)\)/g)].map((m) => m[1]);
-    expect(lookUrls).toEqual(["cut.path"]);
+    expect(lookUrls).toEqual(["sheet.path"]);
     expect(shoot).not.toMatch(/mediaUrl\([^)]*lookPath/);
-    // look is set in one place, to the cutout, and rides as the "look" role.
+    expect(shoot).not.toMatch(/mediaUrl\([^)]*cut\.path/);
+    // The sheet is drawn from this shot's own cutout, and look is set in one
+    // place, to the sheet, and rides as the "look" role.
+    expect(shoot).toContain("const sheet = await lookSheet({ admin, userId, setId, lookGenerationId: lookId, cutoutPath: cut.path });");
     expect(shoot.match(/\blook = /g)).toHaveLength(1);
-    expect(shoot).toContain('look = { url: mediaUrl("generated-images", cut.path) };');
+    expect(shoot).toContain('look = { url: mediaUrl("generated-images", sheet.path) };');
     expect(shoot).toContain('let look: { url: string } | null = null;');
     expect(shoot).toContain('...(look ? [{ url: look.url, role: "look" }] : []),');
     // The still's own path goes to the cutout step and nowhere else.
@@ -54,14 +57,17 @@ describe("shootInSet: the look", () => {
   });
 
   it("every way the look can fail drops it, says so in the answer, and logs only the reason", () => {
-    // A chosen look that is not a finished still of the set, and any failure
-    // of the cut (lookCutout's reasons: no camera, the still unreadable,
-    // nothing to cut, the cut failed, an empty or whole-frame mask, storage).
+    // A chosen look that is not a finished still of the set, any failure of
+    // the cut (lookCutout's reasons: no camera, the still unreadable, the
+    // people unknown, nothing to cut, the cut failed, an empty or whole-frame
+    // mask, storage), and any failure of the sheet (lookSheet's: storage, the
+    // render refused or failed).
     expect(shoot).toContain(': { ok: false, reason: "not a finished still of this set" };');
-    const branch = shoot.slice(shoot.indexOf("if (cut.ok) {"), shoot.indexOf("const framePath"));
-    expect(branch).toContain("} else {");
+    const branch = shoot.slice(shoot.indexOf("if (!cut.ok) {"), shoot.indexOf("const framePath"));
     expect(branch).toContain("lookDropped = true;");
     expect(branch).toContain("console.warn(`[sets] shot without its look: ${cut.reason}`);");
+    expect(branch).toContain("console.warn(`[sets] shot without its look: ${sheet.reason}`);");
+    expect(branch.match(/lookDropped = true;/g)).toHaveLength(2);
     // Dropping is only ever that: the shot goes on without it.
     expect(branch).not.toMatch(/return \{ error/);
     expect(shoot).toMatch(/hasLookObjects,\s*lookDropped,\s*};/);
@@ -110,7 +116,7 @@ describe("the cutouts go with what they were made from", () => {
     expect(del).toMatch(/await removeLookCutoutsOf\(\s*supabase,\s*userData\.user\.id,\s*rows\.map\(\(r\) => r\.id as string\),\s*\);/);
   });
 
-  it("the storage audit counts a live set's cutouts as referenced, at the name the product gives them", () => {
+  it("the storage audit counts a live set's cutouts and object sheets as referenced, at the names the product gives them", () => {
     const sets = [
       { id: "set-live", deleted_at: null },
       { id: "set-gone", deleted_at: "2026-09-12T00:00:00Z" },
@@ -119,7 +125,7 @@ describe("the cutouts go with what they were made from", () => {
       { set_id: "set-live", generation_id: "g1", user_id: "u1" },
       { set_id: "set-gone", generation_id: "g2", user_id: "u1" },
     ];
-    expect(lookCutoutKeys(sets, shots)).toEqual([setLookCutoutPath("u1", "set-live", "g1")]);
+    expect(lookCutoutKeys(sets, shots)).toEqual([setLookCutoutPath("u1", "set-live", "g1"), setLookSheetPath("u1", "set-live", "g1")]);
   });
 });
 

@@ -894,7 +894,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   ) {
     return {
       error:
-        "Combining multiple characters in one image needs GPT Image 2 or Flux 2 Pro as the image model — " +
+        "Combining multiple characters in one image needs GPT Image 2.5 or Flux 2 Pro as the image model — " +
         "ask an admin to switch it in Admin > AI Providers, or remove the extra characters.",
     };
   }
@@ -1889,6 +1889,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           nativeAudio: videoSound,
           skipRefinement,
         skipBrandProhibitions: formData.get("skip_brand_rules") === "1",
+        // A Set's shot (sets/actions.ts shootInSet): its prompt is built from
+        // Picacho's own fixed sentences round the person's direction, and the
+        // brand rules are read through them (pipeline.ts, set-shot-prompt.ts).
+        setShot: formData.get("set_shot") === "1",
           policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),

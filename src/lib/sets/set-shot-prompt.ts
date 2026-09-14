@@ -68,24 +68,70 @@ export function describeFacing(layout: Pick<SetLayout, "mark" | "camera"> | null
 }
 
 /**
- * The look (2026-09-11, operator's choice; 2026-09-12, what rides): the
- * set's objects, cut out of an earlier still onto plain grey
- * (look-cutout.ts), so the car, the furniture and the finishes are the same
- * objects from shot to shot — nothing in a set says which car it is, and
- * without it every still designed its own. Handed the whole earlier still,
- * GPT Image copied its camera, framing and background too, whatever the
- * words said (4 of 4 orderings and wordings, 2026-09-12). Handed a cutout
- * instead, the new still kept its own camera and the car's design — twice:
- * a car cut by hand, and one cut by SAM 2 (the product's cutter) from a box
- * placed by hand, sent in production's order (the person, the sketch, then
- * the look) with this sentence word for word and the photos unnumbered. So
- * these are the tested words, not to be reworded on a hunch. Described by
- * what it shows, not by position: the reference photos arrive character
- * first. The cutout carries no person — their region of the still is
- * cleared out of it (look-cutout.ts) — so the sentence says nothing of one.
+ * The look (2026-09-11, operator's choice; 2026-09-12, what rides; since
+ * 2026-09-14, the object sheet): the set's objects, cut out of an earlier
+ * still onto plain grey (look-cutout.ts) and then drawn four ways on grey by
+ * the image model (look-sheet.ts) — front three-quarter, side, rear
+ * three-quarter, rear — so the car, the furniture and the finishes are the
+ * same objects from shot to shot, from whichever side the new frame sees
+ * them. Handed the whole earlier still, GPT Image copied its camera, framing
+ * and background too, whatever the words said (4 of 4 orderings and
+ * wordings, 2026-09-12). Handed one cutout, from one side, it kept the
+ * design only while the new frame saw the same side: the operator's fourth
+ * still, shot from behind with a front three-quarter cutout, came back as a
+ * different car (2026-09-14). Handed the sheet, the still from behind came
+ * back as that car's own rear — the twin exhausts, the light bar, the wing —
+ * and a still from the front as its front (GPT Image 2.5 Sunburst,
+ * 2026-09-14). Described by what it shows, not by position: the reference
+ * photos arrive character first. The sheet carries no person — the cutout
+ * it is drawn from has every person's region cleared out of it
+ * (look-cutout.ts, look-people.ts), and the sheet is asked for none — so the
+ * sentence says nothing of one.
  */
-const LOOK_SENTENCE =
-  "One reference photo shows objects from this same place, cut out of an earlier photograph onto a plain grey ground: draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its angle, crop, framing or light.";
+export const LOOK_SENTENCE =
+  "One reference photo is a design sheet of objects from this same place: each shown several times on a plain grey ground, from different sides. Draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its layout, angle, crop, framing or light.";
+
+const SKETCH_SENTENCES = [
+  "The attached layout sketch is a grey 3D mock-up of the location — a guide to composition, not a style reference.",
+  "Match its camera position, lens, framing, horizon and the direction of its light exactly.",
+  "Every object in it is a rough stand-in built from simple blocks: keep each one's place, size and orientation, but draw the real thing it stands for, with its true shape, detail and materials, at full size. Never reproduce the blocky shapes; nothing may look like a toy, a model or a miniature.",
+];
+// Only when exposure.ts lifted this set's sketch so its layout reads: the
+// scene itself is not brighter for it. For a daylit set it would be false.
+const LIFTED_SENTENCE =
+  "The sketch is lit brighter than the real scene so its layout can be read: take the time of day, how dark it is and the colour of the light from the description, not from the sketch.";
+const RENDER_PREFIX = "Render the location photorealistically, as it really looks";
+const GAZE_SENTENCE = "Wherever they are looking, make it unmistakable: turn the head and eyes to it.";
+const FACE_SENTENCE = "The grey figure has no face, hair or clothing to copy: take the person's face, hair and features only from the character photos.";
+const NO_TEXT_SENTENCE = "No text, logos or brand names anywhere in the picture.";
+
+/** Every fixed sentence a Set shot's prompt is built from: Picacho's words, never the person's or Astra's. */
+export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
+  ...SKETCH_SENTENCES,
+  LIFTED_SENTENCE,
+  `${RENDER_PREFIX}:`,
+  `${RENDER_PREFIX}.`,
+  LOOK_SENTENCE,
+  GAZE_SENTENCE,
+  FACE_SENTENCE,
+  NO_TEXT_SENTENCE,
+];
+
+/**
+ * The prompt's fixed sentences — Picacho's own words, the same in every Set
+ * shot — with the description and the person's direction left in place.
+ * The pipeline's brand-rule check reads a Set shot through this (2026-09-14):
+ * the operator's fourth still lost an attempt to "No copyrighted characters",
+ * the classifier's evidence being the sentence about the grey figure and the
+ * character photos. Those sentences are not the person's, and not what a
+ * brand rule is about.
+ */
+export function stripSetShotScaffold(prompt: string): string {
+  let out = prompt;
+  for (const fixed of SET_SHOT_FIXED_SENTENCES) out = out.split(fixed).join(" ");
+  out = out.replace(/The person stands where the grey figure stands, at its scale(?:; their body [^.]*|, facing the same way)\./g, " ");
+  return out.replace(/\s+/g, " ").trim();
+}
 
 export function buildSetShotPrompt(input: {
   description: string;
@@ -103,23 +149,17 @@ export function buildSetShotPrompt(input: {
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
   const facing = describeFacing(input.layout ?? null);
   return [
-    "The attached layout sketch is a grey 3D mock-up of the location — a guide to composition, not a style reference.",
-    "Match its camera position, lens, framing, horizon and the direction of its light exactly.",
-    "Every object in it is a rough stand-in built from simple blocks: keep each one's place, size and orientation, but draw the real thing it stands for, with its true shape, detail and materials, at full size. Never reproduce the blocky shapes; nothing may look like a toy, a model or a miniature.",
-    // Only when exposure.ts lifted this set's sketch so its layout reads: the
-    // scene itself is not brighter for it. For a daylit set it would be false.
-    input.lifted
-      ? "The sketch is lit brighter than the real scene so its layout can be read: take the time of day, how dark it is and the colour of the light from the description, not from the sketch."
-      : "",
-    description ? `Render the location photorealistically, as it really looks: ${description}` : "Render the location photorealistically, as it really looks.",
+    ...SKETCH_SENTENCES,
+    input.lifted ? LIFTED_SENTENCE : "",
+    description ? `${RENDER_PREFIX}: ${description}` : `${RENDER_PREFIX}.`,
     input.look ? LOOK_SENTENCE : "",
     facing
       ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`
       : "The person stands where the grey figure stands, at its scale, facing the same way.",
     direction ? `In this frame: ${direction}` : "",
-    "Wherever they are looking, make it unmistakable: turn the head and eyes to it.",
-    "The grey figure has no face, hair or clothing to copy: take the person's face, hair and features only from the character photos.",
-    "No text, logos or brand names anywhere in the picture.",
+    GAZE_SENTENCE,
+    FACE_SENTENCE,
+    NO_TEXT_SENTENCE,
   ]
     .filter(Boolean)
     .join(" ");

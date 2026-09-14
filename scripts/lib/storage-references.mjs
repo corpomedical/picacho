@@ -81,7 +81,9 @@ export function lookCutoutKeys(sets, shots) {
   const live = new Set(sets.filter((s) => !s.deleted_at).map((s) => s.id));
   return shots
     .filter((s) => live.has(s.set_id) && s.user_id && s.generation_id)
-    .map((s) => `${s.user_id}/sets/${s.set_id}.look-${s.generation_id}.jpg`);
+    // The cutout, and the object sheet drawn from it (2026-09-14,
+    // setLookSheetPath): both per still, both removed with the set.
+    .flatMap((s) => [`${s.user_id}/sets/${s.set_id}.look-${s.generation_id}.jpg`, `${s.user_id}/sets/${s.set_id}.sheet-${s.generation_id}.jpg`]);
 }
 
 // THE BUCKETS THIS SET IS VALID FOR. It reads the columns that point into

@@ -2,7 +2,7 @@
 // (kept as-is — it's the safe default and needs no API keys). runRealPipeline()
 // does the same job using real providers: a single Claude call drafts, and
 // either a video model (fal.ai — Kling by default) or an image model
-// (GPT Image 2 by default, Flux alternative) generates the result. Which one
+// (GPT Image 2.5 by default, Flux alternative) generates the result. Which one
 // runs is decided by the 'real_ai_providers' feature flag, checked by the
 // caller in src/lib/generations/actions.ts.
 
@@ -28,7 +28,8 @@ import {
 } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { referenceNotes } from "@/lib/generations/providers/reference-notes";
-import { ImageSafetyRejection } from "@/lib/generations/providers/openai-images";
+import { ImageSafetyRejection, describeImageUsage, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
+import { stripSetShotScaffold } from "@/lib/sets/set-shot-prompt";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
 import type { BrandRule } from "@/lib/brand-rules/types";
@@ -659,6 +660,14 @@ export type RealPipelineOptions = {
   // their own rules — this is agency over one's own rulebook, not a
   // compliance bypass; the send is still logged as rules-suspended.
   skipBrandProhibitions?: boolean;
+  /**
+   * A Set's shot (2026-09-14): the prompt is Picacho's fixed sentences round
+   * Astra's description and the person's direction, and the brand rules are
+   * judged with the fixed sentences taken out (sets/set-shot-prompt.ts
+   * stripSetShotScaffold) — the operator's fourth still lost an attempt to
+   * "No copyrighted characters" on the sentence about the character photos.
+   */
+  setShot?: boolean;
   // The person was shown a provider-policy warning for this exact send and
   // chose to continue. Recorded as a step in the attempt log so it travels
   // with the generation — including into a QUEUED video's resume state, which
@@ -1124,10 +1133,14 @@ export async function runRealPipeline(
       // Semantic check first (Phase 3 — with evidence). Word matching is
       // kept as the fallback for when the classifier can't be reached —
       // weaker, but compliance must never fail open on a network blip.
-      const verdict = await classifyProhibitions(reviewedPrompt, brandProhibitions);
+      // A Set's shot is judged without Picacho's own fixed sentences (the
+      // setShot option): what is left is Astra's description and the
+      // person's direction, which is what a brand rule is about.
+      const brandText = options.setShot ? stripSetShotScaffold(reviewedPrompt) : reviewedPrompt;
+      const verdict = await classifyProhibitions(brandText, brandProhibitions);
       const violated = verdict.checked
         ? brandProhibitions.filter((r) => verdict.violations.some((v) => v.id === r.id))
-        : brandProhibitions.filter((r) => isElementPresent(reviewedPrompt, r.value));
+        : brandProhibitions.filter((r) => isElementPresent(brandText, r.value));
       const blocking = violated.filter((r) => r.severity === "block");
       // The trigger words + suggested fix per blocking rule, for the
       // actionable failure UI. Fallback-matched rules quote the matched
@@ -1524,6 +1537,7 @@ export async function runRealPipeline(
             });
           let fallbackNote: string | null = null;
           let actualModelName: string | null = null;
+          let imageUsage: OpenAiImageUsage | null = null;
           resultUrl = await generateImage(
             imageModelId,
             imagePrompt,
@@ -1537,6 +1551,9 @@ export async function runRealPipeline(
             outfitActive ? options.outfitImageUrl : null,
             propActive ? options.propImageUrl : null,
             lookActive ? options.lookImageUrl : null,
+            (usage) => {
+              imageUsage = usage;
+            },
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Report the model that ACTUALLY produced the image. This used to
@@ -1553,7 +1570,7 @@ export async function runRealPipeline(
                     : options.referenceImageUrl
                       ? " (anchored to reference photo)"
                       : ""
-                }${genTry > 1 ? " (recovered after a retry)" : ""}.`,
+                }${genTry > 1 ? " (recovered after a retry)" : ""}.${imageUsage ? ` ${describeImageUsage(imageUsage)}` : ""}`,
           });
         }
         // THE OUTPUT GATE. The prompt was judged; now the picture is — the

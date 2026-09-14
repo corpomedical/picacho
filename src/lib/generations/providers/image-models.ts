@@ -3,11 +3,14 @@
 
 export const IMAGE_MODELS = [
   {
+    // GPT Image 2.5 Sunburst since 2026-09-14 (openai-images.ts names the
+    // snapshot and says why). The id stays "gpt-image" for the same reason
+    // "flux" stayed: it is the value stored in Admin > AI Providers.
     id: "gpt-image",
-    name: "GPT Image 2",
+    name: "GPT Image 2.5",
     provider: "openai" as const,
     recommended: true,
-    description: "Best prompt fidelity and identity-locking for consistent characters.",
+    description: "Best prompt fidelity and identity-locking for consistent characters; OpenAI's most capable editing model.",
   },
   {
     // Upgraded from Flux 1 dev to FLUX.2 Pro (2026-08-26, operator-approved

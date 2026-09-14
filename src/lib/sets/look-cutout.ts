@@ -86,9 +86,14 @@
 // a shot of someone else. SAM 2 cuts what is in its boxes, and a box round a
 // car's nose, a chair or a counter can be mostly the person beside, on or
 // behind it. So the grey figure's place is recorded with the camera, and
-// its box on screen, grown well past it, is the person's region: every box
-// is cut back to what lies clear of it, a box it mostly covers is dropped,
-// and look-cutout-image.ts clears it out of whatever SAM 2 kept. It is grown
+// its box on screen, grown well past it, is the person's region — AND,
+// since 2026-09-14, so is every person a vision model finds in the still
+// itself (look-people.ts): the operator's fourth still had the person drawn
+// sitting a metre from where the figure stood, and the region from the
+// figure alone left her in the cut. Every box is cut back to what lies
+// clear of every region, a box they mostly cover is dropped, and
+// look-cutout-image.ts clears them out of whatever SAM 2 kept. The figure's
+// region is grown
 // by LOOK_FIGURE_GROW of the figure's height on screen to each side and
 // below, and by LOOK_FIGURE_GROW_UP above: GPT Image drew the operator's
 // first race-track still's person far larger than the figure and lower,
@@ -494,16 +499,23 @@ export function lookCuts(
   spec: LookSet,
   camera: ShotCamera,
   still: { width: number; height: number },
-): { cuts: LookCut[]; objects: LookObject[]; person: FrameBox | null } {
-  const none = { cuts: [], objects: [], person: null };
+  // Where the still's people were found in it (look-people.ts), on top of
+  // where the sketch's figure stood: every one is cleared.
+  found: readonly FrameBox[] = [],
+): { cuts: LookCut[]; objects: LookObject[]; people: FrameBox[] } {
+  const none = { cuts: [], objects: [], people: [] };
   if (!finite(still.width) || !finite(still.height) || still.width < 1 || still.height < 1) return none;
   const cam = normaliseShotCamera(camera);
   if (!cam) return none;
   const project = sketchProjector(cam);
   const copies = placedCopies(spec.objects, spec.bounds);
   const structure = copies.filter((p) => !p.prop);
-  const person = personRegion(cam, project, structure);
-  if (!person) return none;
+  const figure = personRegion(cam, project, structure);
+  if (!figure) return none;
+  const people = [figure, ...found.map((b) => clip(b)).filter((b): b is FrameBox => b !== null)];
+  // Clear of every region in turn: what is left of a box after the first is
+  // what the second cuts back, and so on.
+  const clearOfAll = (b: FrameBox): FrameBox | null => people.reduce<FrameBox | null>((left, region) => (left ? clearOf(left, region) : null), b);
 
   // The objects, from the set alone; then what of each the sketch showed.
   const kept = objectsOf(copies.filter((p) => p.prop))
@@ -525,9 +537,9 @@ export function lookCuts(
       };
       return { box, share: area(box), shapes: shown };
     })
-    // An object the person mostly stands in front of, or in (a chair, a
+    // An object a person mostly stands in front of, or in (a chair, a
     // counter they lean on), is theirs in the still, not the look's.
-    .filter((g): g is NonNullable<typeof g> => g !== null && g.share >= LOOK_MIN_SHARE && clearOf(g.box, person) !== null)
+    .filter((g): g is NonNullable<typeof g> => g !== null && g.share >= LOOK_MIN_SHARE && clearOfAll(g.box) !== null)
     .sort((a, b) => b.share - a.share)
     .slice(0, LOOK_MAX_GROUPS);
 
@@ -539,8 +551,8 @@ export function lookCuts(
     const growU = LOOK_GROW_SHARE * (g.box.u1 - g.box.u0) + LOOK_GROW_FRAME;
     const growV = LOOK_GROW_SHARE * (g.box.v1 - g.box.v0) + LOOK_GROW_FRAME;
     const grown = clip({ u0: g.box.u0 - growU, v0: g.box.v0 - growV, u1: g.box.u1 + growU, v1: g.box.v1 + growV })!;
-    // Never a box into the person's region: SAM 2 would cut them out with it.
-    const box = clearOf(grown, person);
+    // Never a box into anyone's region: SAM 2 would cut them out with it.
+    const box = clearOfAll(grown);
     if (!box) continue;
     // The point (the header): the middle of the object on screen when a
     // part lies there; else the middle of the box as cut back, when a part
@@ -575,7 +587,7 @@ export function lookCuts(
     });
     objects.push({ box: g.box, share: g.share, shapes: g.shapes.length });
   }
-  return { cuts, objects, person };
+  return { cuts, objects, people };
 }
 
 /**

@@ -18,11 +18,12 @@
 // look.
 //
 // NEVER THE PERSON. A mask can take in the person too, when they stand in
-// front of, beside or on what the boxes were drawn round. So the person's
-// region of the still (look-cutout.ts: the grey figure's place on screen,
-// grown well past it) is made transparent before anything else, whatever
-// SAM 2 kept there: it is grey in the cutout, and the mask's share and the
-// crop are measured without it.
+// front of, beside or on what the boxes were drawn round. So every region a
+// person may be in (look-cutout.ts: the grey figure's place on screen, grown
+// well past it, and every person a vision model found in the still itself,
+// look-people.ts) is made transparent before anything else, whatever SAM 2
+// kept there: it is grey in the cutout, and the mask's share and the crop
+// are measured without it.
 //
 // WHEN IT IS NO LOOK. A mask under LOOK_MIN_MASK_SHARE of the frame caught
 // nothing worth keeping (SAM found no object in the boxes). A mask over
@@ -90,11 +91,11 @@ export function clearRegion(data: Buffer, width: number, height: number, channel
 
 /**
  * SAM 2's answers (a PNG with alpha each, one an object, all of one still)
- * → the cutout: the pixels any of them kept, outside the person's region,
- * on LOOK_GROUND, cropped to their box plus LOOK_CROP_MARGIN, as a JPEG.
- * Never throws; `ok: false` says why it is no look (see the header).
+ * → the cutout: the pixels any of them kept, outside every region a person
+ * may be in, on LOOK_GROUND, cropped to their box plus LOOK_CROP_MARGIN, as
+ * a JPEG. Never throws; `ok: false` says why it is no look (see the header).
  */
-export async function composeLookCutout(cuts: Buffer | readonly Buffer[], person: FrameBox | null): Promise<LookCutoutImage> {
+export async function composeLookCutout(cuts: Buffer | readonly Buffer[], people: readonly FrameBox[]): Promise<LookCutoutImage> {
   const pngs = Buffer.isBuffer(cuts) ? [cuts] : cuts;
   if (pngs.length === 0) return { ok: false, reason: "unreadable" };
   let sharp: (typeof import("sharp"))["default"];
@@ -121,7 +122,7 @@ export async function composeLookCutout(cuts: Buffer | readonly Buffer[], person
         if (more.data[at + channels - 1] > data[at + channels - 1]) more.data.copy(data, at, at, at + channels);
       }
     }
-    if (person) clearRegion(data, width, height, channels, person);
+    for (const region of people) clearRegion(data, width, height, channels, region);
     const { share, box } = maskExtent((i) => data[i * channels + channels - 1], width, height);
     if (!box || share < LOOK_MIN_MASK_SHARE) return { ok: false, reason: "empty" };
     if (share > LOOK_MAX_MASK_SHARE) return { ok: false, reason: "whole" };

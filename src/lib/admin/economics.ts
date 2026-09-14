@@ -16,6 +16,13 @@ import type { PlanId } from "@/lib/plans";
 //     times that, which is exactly how the weights were set.
 //   • IMAGE_COST_USD (0.17) — the figure the pricing analysis used for a GPT
 //     Image render, and the same one PLAN_REFERENCE_IMAGE_LIMITS is built on.
+//     Kept as the pricing basis; the measured price is under it. Since
+//     2026-09-14 every OpenAI render's `usage` is read and priced
+//     (providers/openai-images.ts) and written into the take's log: on
+//     GPT Image 2.5 Sunburst at quality high, a Set shot with three input
+//     pictures cost $0.0767 (2,688 image tokens in, 1,756 out), with four
+//     $0.0798, and a one-picture object sheet $0.0586. Text input is a few
+//     hundred tokens at $5 per million.
 //
 // Revenue is what the account's plan is worth per month plus any one-off
 // credit purchases. It is NOT read from Stripe invoices — we do not sync

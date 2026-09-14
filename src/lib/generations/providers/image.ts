@@ -1,4 +1,4 @@
-import { generateImageWithOpenAI } from "@/lib/generations/providers/openai-images";
+import { generateImageWithOpenAI, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
@@ -76,6 +76,9 @@ export async function generateImage(
   // A set's earlier still (2026-09-11, Astra Sets) — same extra-image
   // contract, last in the array; pipeline.ts says what it is.
   lookImageUrl?: string | null,
+  // Told what an OpenAI answer cost (openai-images.ts, THE MONEY); the
+  // pipeline writes it into the take's log. Flux answers carry no usage.
+  onUsage?: (usage: OpenAiImageUsage) => void,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -150,6 +153,6 @@ export async function generateImage(
   // daily cap, like Flux's. See refusal-messages.ts for which sentence says
   // what about money, and why.
   chargeBudget(budget);
-  const base64 = await generateImageWithOpenAI(prompt, openAiRefs);
+  const base64 = await generateImageWithOpenAI(prompt, openAiRefs, { onUsage });
   return persistBase64(base64);
 }

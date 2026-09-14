@@ -355,7 +355,7 @@ const it = {
       renoise: {
         heroSubtitle: "Renoise è una canvas multimodello: modelli di frontiera per immagini, video e audio sotto lo stesso tetto, con prezzi al secondo e un flusso manuale di ancoraggio del personaggio — generi, scegli il risultato migliore e lo ricolleghi come riferimento inquadratura per inquadratura. Picacho è costruito per altro: il personaggio è un oggetto salvato con tratti e regole, integrato automaticamente in ogni prompt e con ogni immagine valutata. Ecco il confronto onesto.",
         cellIdentity: "Un flusso di riferimenti — blocchi un risultato generato e lo ricolleghi tu stesso a ogni inquadratura, cambiando modello lungo il percorso.",
-        cellFormat: "Una canvas multimodello: Seedance 2.5/2.0, Kling 3.0 Omni, GPT Image 2, Midjourney V8.2 e altri, più modelli audio e una chat-agente (beta).",
+        cellFormat: "Una canvas multimodello: Seedance 2.5/2.0, Kling 3.0 Omni, GPT Image 2.5, Midjourney V8.2 e altri, più modelli audio e una chat-agente (beta).",
         cellEntry: "A pagamento: Starter $20/mese (1.200 crediti, ≈60 video Seedance 2.0), Standard $60/mese (3.600), Advanced $200/mese (14.000 + bonus). Le promo del primo periodo variano.",
         cellCost: "Prezzo a consumo, al secondo e per modello — es. Seedance 2.5 da ~$0,113–0,133/s sui piani in abbonamento; i piani maggiori aggiungono sconti.",
         cellWatermark: "Esportazioni senza watermark sui piani a pagamento.",

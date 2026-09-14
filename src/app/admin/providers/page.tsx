@@ -409,7 +409,7 @@ export default async function AdminProvidersPage({
       <Card className="mt-6">
         <h2 className="text-sm font-semibold text-neutral-900">Image model</h2>
         <p className="mt-1 text-xs text-neutral-500">
-          Used for scene generation and character reference photos. GPT Image 2 anchors to the
+          Used for scene generation and character reference photos. GPT Image 2.5 anchors to the
           character&apos;s saved reference photo for consistency; Flux is faster and cheaper.
         </p>
 

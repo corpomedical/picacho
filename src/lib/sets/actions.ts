@@ -32,6 +32,7 @@ import { photoBuildRequest, setAstraRequest } from "@/lib/sets/astra-request";
 import { buildSetShotPrompt } from "@/lib/sets/set-shot-prompt";
 import { lookStoragePath } from "@/lib/sets/look";
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
+import { lookSheet } from "@/lib/sets/look-sheet";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { readShotCameras, recordShotCamera, shotCameraOf } from "@/lib/sets/shot-camera";
 import {
@@ -605,12 +606,16 @@ export async function shootInSet(
 
   // What rides as the look is NEVER that still (2026-09-12): handed a
   // finished photograph of the same place, GPT Image copies its camera and
-  // framing, whatever the prompt says. Only its objects ride, cut out onto
-  // grey — kept from an earlier shot, or cut now from the camera recorded
-  // with the still, at most one SAM 2 call per still (look-cutout-store.ts).
-  // Its URL is the cutout's own; the still's is never made. Any step that
+  // framing, whatever the prompt says. Its objects are cut out onto grey —
+  // kept from an earlier shot, or cut now from the camera recorded with the
+  // still, one SAM 2 request an object (look-cutout-store.ts) — and what
+  // rides is the object sheet drawn from that cutout (look-sheet.ts,
+  // 2026-09-14): the objects four ways round on grey, made once per still,
+  // because a cutout from one side kept a car's design only from that side.
+  // The URL is the sheet's own; the still's is never made. Any step that
   // fails and the shot goes without a look and says so, rather than send
-  // the whole still again. Past the burst brake, because a cut is paid for.
+  // the whole still again. Past the burst brake, because a cut and a sheet
+  // are paid for.
   let look: { url: string } | null = null;
   let lookDropped = false;
   if (lookAsked) {
@@ -625,11 +630,17 @@ export async function shootInSet(
           camera: (await readShotCameras(access.supabase, setId, userId, [lookId])).get(lookId) ?? null,
         })
       : { ok: false, reason: "not a finished still of this set" };
-    if (cut.ok) {
-      look = { url: mediaUrl("generated-images", cut.path) };
-    } else {
+    if (!cut.ok) {
       lookDropped = true;
       console.warn(`[sets] shot without its look: ${cut.reason}`);
+    } else {
+      const sheet = await lookSheet({ admin, userId, setId, lookGenerationId: lookId, cutoutPath: cut.path });
+      if (sheet.ok) {
+        look = { url: mediaUrl("generated-images", sheet.path) };
+      } else {
+        lookDropped = true;
+        console.warn(`[sets] shot without its look: ${sheet.reason}`);
+      }
     }
   }
 
@@ -664,6 +675,9 @@ export async function shootInSet(
   // would rewrite the composition instructions it exists to carry. Still
   // gated, in the strict lane, inside runGeneration.
   fd.set("prompt_is_final", "1");
+  // Its brand rules are judged with Picacho's fixed sentences taken out
+  // (pipeline.ts setShot, set-shot-prompt.ts stripSetShotScaffold).
+  fd.set("set_shot", "1");
   // The sketch rides as the one neutral reference; the look, when there is
   // one, as a "look" photo (pipeline.ts says what it is, so it is never
   // taken for the person). The look is the set's kept cutout in

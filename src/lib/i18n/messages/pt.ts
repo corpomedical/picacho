@@ -356,7 +356,7 @@ const pt = {
       renoise: {
         heroSubtitle: "O Renoise é uma tela multimodelo: modelos de ponta de imagem, vídeo e áudio sob o mesmo teto, com preços por segundo e um fluxo manual de ancoragem de personagem — você gera, escolhe o melhor resultado e o reanexa como referência plano a plano. O Picacho foi construído para outra coisa: o personagem é um objeto salvo com características e regras, integrado automaticamente em cada prompt e com cada imagem pontuada. Aqui está a comparação honesta.",
         cellIdentity: "Um fluxo de referências — você trava um resultado gerado e o reanexa em cada plano, trocando de modelo pelo caminho.",
-        cellFormat: "Uma tela multimodelo: Seedance 2.5/2.0, Kling 3.0 Omni, GPT Image 2, Midjourney V8.2 e mais, além de modelos de áudio e um chat-agente (beta).",
+        cellFormat: "Uma tela multimodelo: Seedance 2.5/2.0, Kling 3.0 Omni, GPT Image 2.5, Midjourney V8.2 e mais, além de modelos de áudio e um chat-agente (beta).",
         cellEntry: "Pago: Starter $20/mês (1.200 créditos, ≈60 vídeos Seedance 2.0), Standard $60/mês (3.600), Advanced $200/mês (14.000 + bônus). Promoções do primeiro período variam.",
         cellCost: "Preço por uso, por segundo e por modelo — p. ex. Seedance 2.5 a partir de ~$0,113–0,133/s nos planos de assinatura; planos maiores adicionam descontos.",
         cellWatermark: "Exportações sem marca d'água nos planos pagos.",

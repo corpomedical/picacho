@@ -62,7 +62,7 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
   const block = (x: number, y: number) => x >= 180 && x < 360 && y >= 90 && y < 210;
 
   it("lays the kept pixels on grey, cropped to them with a small margin, as a JPEG", async () => {
-    const out = await composeLookCutout(await samAnswer(block), null);
+    const out = await composeLookCutout(await samAnswer(block), []);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect(out.share).toBeCloseTo(0.12, 6);
@@ -103,7 +103,7 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
     // Two objects, cut in two requests: a 120 × 120 block each, 8% of the frame.
     const left = (x: number, y: number) => x >= 60 && x < 180 && y >= 90 && y < 210;
     const right = (x: number, y: number) => x >= 420 && x < 540 && y >= 30 && y < 150;
-    const out = await composeLookCutout([await samAnswer(left), await samAnswer(right)], null);
+    const out = await composeLookCutout([await samAnswer(left), await samAnswer(right)], []);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect(out.share).toBeCloseTo(0.16, 6);
@@ -122,18 +122,18 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
     const [r, g, b] = at(300, 120);
     expect(Math.max(Math.abs(r - 128), Math.abs(g - 128), Math.abs(b - 128)), "the gap").toBeLessThan(12);
     // One answer alone keeps its own block only.
-    const one = await composeLookCutout([await samAnswer(left)], null);
+    const one = await composeLookCutout([await samAnswer(left)], []);
     expect(one.ok && one.share).toBeCloseTo(0.08, 6);
   });
 
   it("answers that are not the same size are no look, and no answer at all is no look", async () => {
     const small = await sharp!({ create: { width: 10, height: 10, channels: 4, background: { r: 0, g: 0, b: 255, alpha: 1 } } }).png().toBuffer();
-    expect(await composeLookCutout([await samAnswer(block), small], null)).toEqual({ ok: false, reason: "unreadable" });
-    expect(await composeLookCutout([], null)).toEqual({ ok: false, reason: "unreadable" });
+    expect(await composeLookCutout([await samAnswer(block), small], [])).toEqual({ ok: false, reason: "unreadable" });
+    expect(await composeLookCutout([], [])).toEqual({ ok: false, reason: "unreadable" });
   });
 
   it("keeps the crop inside the frame when the mask touches its edge", async () => {
-    const out = await composeLookCutout(await samAnswer((x, y) => x < 120 && y < 90), null);
+    const out = await composeLookCutout(await samAnswer((x, y) => x < 120 && y < 90), []);
     expect(out.ok).toBe(true);
     if (out.ok) expect([out.width, out.height]).toEqual([138, 108]);
   });
@@ -141,22 +141,22 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
   it("is no look when the mask caught next to nothing", async () => {
     // 0.5% of the frame, under the 1% floor; and nothing at all.
     expect(LOOK_MIN_MASK_SHARE).toBe(0.01);
-    expect(await composeLookCutout(await samAnswer((x, y) => x < 30 && y < 30), null)).toEqual({ ok: false, reason: "empty" });
-    expect(await composeLookCutout(await samAnswer(() => false), null)).toEqual({ ok: false, reason: "empty" });
+    expect(await composeLookCutout(await samAnswer((x, y) => x < 30 && y < 30), [])).toEqual({ ok: false, reason: "empty" });
+    expect(await composeLookCutout(await samAnswer(() => false), [])).toEqual({ ok: false, reason: "empty" });
     // Just over the floor is a look.
-    expect((await composeLookCutout(await samAnswer((x, y) => x < 61 && y < 30), null)).ok).toBe(true);
+    expect((await composeLookCutout(await samAnswer((x, y) => x < 61 && y < 30), [])).ok).toBe(true);
   });
 
   it("is no look when the mask took most of the frame: that would be the whole still again", async () => {
     expect(LOOK_MAX_MASK_SHARE).toBe(0.75);
-    expect(await composeLookCutout(await samAnswer((x) => x < 480), null)).toEqual({ ok: false, reason: "whole" });
-    expect(await composeLookCutout(await samAnswer(() => true), null)).toEqual({ ok: false, reason: "whole" });
+    expect(await composeLookCutout(await samAnswer((x) => x < 480), [])).toEqual({ ok: false, reason: "whole" });
+    expect(await composeLookCutout(await samAnswer(() => true), [])).toEqual({ ok: false, reason: "whole" });
     // Three-quarters exactly is still a look.
-    expect((await composeLookCutout(await samAnswer((x) => x < 450), null)).ok).toBe(true);
+    expect((await composeLookCutout(await samAnswer((x) => x < 450), [])).ok).toBe(true);
   });
 
   it("is no look, never a throw, for bytes that are not a picture", async () => {
-    expect(await composeLookCutout(Buffer.from("not a png"), null)).toEqual({ ok: false, reason: "unreadable" });
+    expect(await composeLookCutout(Buffer.from("not a png"), [])).toEqual({ ok: false, reason: "unreadable" });
   });
 });
 
@@ -174,14 +174,14 @@ describe.skipIf(!sharp)("never the person (sharp)", () => {
   }
 
   it("clears the person's region whatever the mask kept there: the crop is the car's alone", async () => {
-    const out = await composeLookCutout(await samAnswer((x, y) => car(x, y) || person(x, y)), region);
+    const out = await composeLookCutout(await samAnswer((x, y) => car(x, y) || person(x, y)), [region]);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     // Measured and cropped without the person: the car and its 18 px margin.
     expect(out.share).toBeCloseTo((270 * 150) / (W * H), 6);
     expect([out.width, out.height]).toEqual([270 + 36, 150 + 36]);
     // Without the region, the same mask crops round both.
-    const both = await composeLookCutout(await samAnswer((x, y) => car(x, y) || person(x, y)), null);
+    const both = await composeLookCutout(await samAnswer((x, y) => car(x, y) || person(x, y)), []);
     expect(both.ok && [both.width, both.height]).toEqual([400 + 36, 250 + 36]);
   });
 
@@ -189,7 +189,7 @@ describe.skipIf(!sharp)("never the person (sharp)", () => {
     // The person stands in front of the car's right end: the region takes
     // the car from x 300 on.
     const inFront = { u0: 300 / W, v0: 0, u1: 420 / W, v1: 1 };
-    const out = await composeLookCutout(await samAnswer(car), inFront);
+    const out = await composeLookCutout(await samAnswer(car), [inFront]);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
     expect([out.width, out.height]).toEqual([240 + 36, 150 + 36]);
@@ -205,7 +205,7 @@ describe.skipIf(!sharp)("never the person (sharp)", () => {
   });
 
   it("is no look when all the mask kept was the person", async () => {
-    expect(await composeLookCutout(await samAnswer(person), region)).toEqual({ ok: false, reason: "empty" });
+    expect(await composeLookCutout(await samAnswer(person), [region])).toEqual({ ok: false, reason: "empty" });
   });
 });
 

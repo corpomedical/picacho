@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSetShotPrompt, describeFacing } from "./set-shot-prompt";
+import { LOOK_SENTENCE, SET_SHOT_FIXED_SENTENCES, buildSetShotPrompt, describeFacing, stripSetShotScaffold } from "./set-shot-prompt";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 
 // The server-built prompt for a still in a Set. What it must always say is
@@ -50,18 +50,20 @@ describe("buildSetShotPrompt", () => {
     expect(p).toContain("Wherever they are looking, make it unmistakable");
   });
 
-  // The words the cutout was tested with (2026-09-12, "C3": a SAM 2 cutout
-  // in production's image order, the photos unnumbered) — word for word,
-  // because these words are what was measured.
+  // The words the look was tested with (2026-09-12, "C3": a SAM 2 cutout in
+  // production's image order, the photos unnumbered; 2026-09-14, the object
+  // sheet drawn from that cutout, the same order) — word for word, because
+  // these words are what was measured.
   const C3 =
-    "One reference photo shows objects from this same place, cut out of an earlier photograph onto a plain grey ground: draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its angle, crop, framing or light.";
+    "One reference photo is a design sheet of objects from this same place: each shown several times on a plain grey ground, from different sides. Draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its layout, angle, crop, framing or light.";
 
-  it("with a look, says the tested sentence about the cutout, word for word, and only then", () => {
-    const withLook = buildSetShotPrompt({ description: "d", direction: "", look: { url: "/api/media/generated-images/u/sets/s.look-g.jpg" } });
+  it("with a look, says the tested sentence about the sheet, word for word, and only then", () => {
+    const withLook = buildSetShotPrompt({ description: "d", direction: "", look: { url: "/api/media/generated-images/u/sets/s.sheet-g.jpg" } });
     expect(withLook).toContain(C3);
+    expect(LOOK_SENTENCE).toBe(C3);
     expect(withLook.split(C3).length - 1).toBe(1);
-    expect(p).not.toContain("cut out of an earlier photograph");
-    expect(buildSetShotPrompt({ description: "d", direction: "", look: null })).not.toContain("cut out of an earlier photograph");
+    expect(p).not.toContain("design sheet");
+    expect(buildSetShotPrompt({ description: "d", direction: "", look: null })).not.toContain("design sheet");
   });
 
   it("puts it after the place and before the person, as it was tested", () => {
@@ -122,5 +124,38 @@ describe("describeFacing", () => {
     expect(describeFacing({ mark: { x: 0, z: 0, facingDeg: 0 }, camera: null })).toBeNull();
     expect(describeFacing({ mark: { x: 0, z: 5, facingDeg: 0 }, camera: cam })).toBeNull();
     expect(buildSetShotPrompt({ description: "d", direction: "", layout: null })).toContain("facing the same way");
+  });
+});
+
+describe("stripSetShotScaffold", () => {
+  // The brand-rule check reads a Set shot through this (pipeline.ts setShot):
+  // the operator's fourth still lost an attempt to "No copyrighted
+  // characters" on the sentence about the character photos.
+  const layout = { mark: { x: 0, z: 0, facingDeg: 135 }, camera: { position: [0, 1.6, 5] as [number, number, number], target: [0, 1, 0] as [number, number, number], fovDeg: 40 } };
+
+  it("leaves Astra's description and the person's direction, and nothing of Picacho's fixed sentences", () => {
+    const full = buildSetShotPrompt({ description: "A sunlit circuit; an unbadged scarlet supercar.", direction: "She leans on the car.", lifted: true, layout, look: {} });
+    const left = stripSetShotScaffold(full);
+    expect(left).toBe("A sunlit circuit; an unbadged scarlet supercar. In this frame: She leans on the car.");
+    for (const fixed of SET_SHOT_FIXED_SENTENCES) expect(left).not.toContain(fixed);
+    expect(left).not.toContain("grey figure");
+    expect(left).not.toContain("character photos");
+  });
+
+  it("strips every facing the figure can have, and a prompt with no description or direction to nothing", () => {
+    for (const facingDeg of [0, 45, 90, 135, 180, 225, 270, 315]) {
+      const full = buildSetShotPrompt({ description: "d", direction: "", layout: { ...layout, mark: { ...layout.mark, facingDeg } } });
+      expect(stripSetShotScaffold(full), String(facingDeg)).toBe("d");
+    }
+    expect(stripSetShotScaffold(buildSetShotPrompt({ description: "", direction: "" }))).toBe("");
+  });
+
+  it("every fixed sentence is one the prompt is built from", () => {
+    const full = buildSetShotPrompt({ description: "d", direction: "x", lifted: true, layout: null, look: {} });
+    for (const fixed of SET_SHOT_FIXED_SENTENCES) {
+      if (fixed.endsWith("looks:") || fixed.endsWith("looks.")) continue;
+      expect(full, fixed.slice(0, 40)).toContain(fixed);
+    }
+    expect(SET_SHOT_FIXED_SENTENCES).toContain(LOOK_SENTENCE);
   });
 });

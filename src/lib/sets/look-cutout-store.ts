@@ -35,10 +35,11 @@
 // (providers/reference-notes.ts).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { segmentObject } from "../generations/providers/fal-segment";
+import { segmentObject, stillMime } from "../generations/providers/fal-segment";
 import { lookCuts, type LookSet, type ShotCamera } from "./look-cutout";
 import { composeLookCutout } from "./look-cutout-image";
-import { setLookCutoutPath, setLookCutoutPrefix } from "./set-config";
+import { findPeople } from "./look-people";
+import { setLookCutoutPath, setLookCutoutPrefix, setLookSheetPath, setLookSheetPrefix } from "./set-config";
 
 const BUCKET = "generated-images";
 /** A still is at most a few MB; a download past this is not a still. */
@@ -49,6 +50,7 @@ export type LookDrop =
   | "not a finished still of this set"
   | "no camera"
   | "still unreadable"
+  | "people unknown"
   | "nothing to cut"
   | "cut failed"
   | "empty mask"
@@ -92,7 +94,7 @@ export async function lookCutout(
     spec: LookSet;
     camera: ShotCamera | null;
   },
-  deps: { segment?: typeof segmentObject } = {},
+  deps: { segment?: typeof segmentObject; people?: typeof findPeople } = {},
 ): Promise<LookCutoutResult> {
   const { admin, userId, setId, lookGenerationId } = input;
   const path = setLookCutoutPath(userId, setId, lookGenerationId);
@@ -111,14 +113,18 @@ export async function lookCutout(
   const size = await stillSize(still);
   if (!size) return { ok: false, reason: "still unreadable" };
 
-  const { cuts, person } = lookCuts(input.spec, input.camera, size);
+  // Where the people are in the still itself (look-people.ts): not knowing
+  // is no look — the one thing a look must never carry is a person.
+  const found = await (deps.people ?? findPeople)(still, stillMime(still) ?? "image/png");
+  if (!found) return { ok: false, reason: "people unknown" };
+  const { cuts, people } = lookCuts(input.spec, input.camera, size, found);
   if (cuts.length === 0) return { ok: false, reason: "nothing to cut" };
   // One request an object, together; every object or none (the header).
   const segment = deps.segment ?? segmentObject;
   const answers = await Promise.all(cuts.map((c) => segment(still, c.box, c.point)));
   if (answers.some((a) => a === null)) return { ok: false, reason: "cut failed" };
-  // Whatever SAM 2 kept where the person may be is cleared before it is laid out.
-  const laid = await composeLookCutout(answers as Buffer[], person);
+  // Whatever SAM 2 kept where anyone may be is cleared before it is laid out.
+  const laid = await composeLookCutout(answers as Buffer[], people);
   if (!laid.ok) {
     return { ok: false, reason: laid.reason === "empty" ? "empty mask" : laid.reason === "whole" ? "mask took the whole frame" : "cut failed" };
   }
@@ -151,10 +157,13 @@ async function listCutouts(admin: SupabaseClient, userId: string, prefix: string
   return paths;
 }
 
-/** Best-effort, never throws: remove every cutout a set's looks were given. */
+/** Best-effort, never throws: remove every cutout, and every object sheet drawn from one, a set's looks were given. */
 export async function removeSetLookCutouts(admin: SupabaseClient, userId: string, setId: string): Promise<void> {
   try {
-    const paths = await listCutouts(admin, userId, setLookCutoutPrefix(setId));
+    const paths = [
+      ...(await listCutouts(admin, userId, setLookCutoutPrefix(setId))),
+      ...(await listCutouts(admin, userId, setLookSheetPrefix(setId))),
+    ];
     for (let i = 0; i < paths.length; i += 1000) {
       await admin.storage.from(BUCKET).remove(paths.slice(i, i + 1000));
     }
@@ -164,11 +173,11 @@ export async function removeSetLookCutouts(admin: SupabaseClient, userId: string
 }
 
 /**
- * Best-effort, never throws: remove the cutouts cut from these stills, in
- * whichever of the owner's sets they were shot. A still's cutout sits at a
- * fixed path per set, so the shots' own rows say where to look. `db` may be
- * the owner's own client: they can read their shots and remove files from
- * their own folder.
+ * Best-effort, never throws: remove the cutouts cut from these stills, and
+ * the object sheets drawn from them, in whichever of the owner's sets they
+ * were shot. A still's cutout and sheet sit at fixed paths per set, so the
+ * shots' own rows say where to look. `db` may be the owner's own client:
+ * they can read their shots and remove files from their own folder.
  */
 export async function removeLookCutoutsOf(db: SupabaseClient, userId: string, generationIds: string[]): Promise<void> {
   if (generationIds.length === 0) return;
@@ -180,7 +189,10 @@ export async function removeLookCutoutsOf(db: SupabaseClient, userId: string, ge
       .in("generation_id", generationIds);
     const paths = ((data ?? []) as { set_id: unknown; generation_id: unknown }[])
       .filter((s) => typeof s.set_id === "string" && typeof s.generation_id === "string")
-      .map((s) => setLookCutoutPath(userId, s.set_id as string, s.generation_id as string));
+      .flatMap((s) => [
+        setLookCutoutPath(userId, s.set_id as string, s.generation_id as string),
+        setLookSheetPath(userId, s.set_id as string, s.generation_id as string),
+      ]);
     if (paths.length > 0) await db.storage.from(BUCKET).remove(paths);
   } catch (err) {
     console.warn("[sets] look cutouts of a deleted still could not be removed:", err instanceof Error ? err.message : String(err));
