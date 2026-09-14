@@ -5,22 +5,25 @@
 // reads (pass-bars.mts barC).
 //
 // THE LOOK (the product since 2026-09-11: sets/actions.ts shootInSet and the
-// pipeline's lookImageUrl). For each set, character and engine, camera 1's
-// still is shot first, on its own sketch. The later cameras are shot twice:
-// on their own sketch (the no-look arm) and again carrying camera 1's still
-// as the look, exactly as the product sends it — the same character, so the
-// look sentences with sameCharacter true; no saved outfit photo (the corpus
-// has none). A look rides only where the product lets it: a still, one
-// character, GPT Image or FLUX, beside an identity photo (shots.mts
-// lookRides). So the plan grows by 10 sets × 2 later cameras × 2
-// characters = 40 look shots on each of GPT Image and FLUX. On the
-// composition sheet every later camera's still, in either arm and on every
-// engine, is shown beside its first still and asked one more question,
-// whether its objects, vehicles and finishes are the first still's: a look
-// shot and its twin are presented alike, and the twin is the look's
-// baseline. Report prints that, and identity and composition with the look
-// against without, as REPORTED lines: section 4 has no bar for the look.
-// --no-look drops the arm.
+// pipeline's lookImageUrl). With --look, for each set, character and engine,
+// camera 1's still is shot first, on its own sketch, and the later cameras
+// are shot twice: on their own sketch (the no-look arm) and again carrying
+// camera 1's WHOLE still as the look, the same character. A look rides only
+// where the product lets it: a still, one character, GPT Image or FLUX,
+// beside an identity photo (shots.mts lookRides). So the plan grows by 10
+// sets × 2 later cameras × 2 characters = 40 look shots on each of GPT
+// Image and FLUX. On the composition sheet every later camera's still, in
+// either arm and on every engine, is shown beside its first still and asked
+// one more question, whether its objects, vehicles and finishes are the
+// first still's: a look shot and its twin are presented alike, and the twin
+// is the look's baseline. Report prints that, and identity and composition
+// with the look against without, as REPORTED lines: section 4 has no bar
+// for the look.
+// OFF BY DEFAULT since 2026-09-12: the product no longer sends the whole
+// still but only the set's objects, cut out of it onto grey by SAM 2
+// (sets/look-cutout.ts), and the look sentence the prompt carries describes
+// that cutout. Until the eval cuts the look out the same way, the arm
+// measures neither the old look nor the new one; --look runs it anyway.
 //
 // THE EFFORT. The sets come from an A run at --effort (SET_BUILD_EFFORT by
 // default); the manifest records it, and report decides C on the shipped
@@ -447,8 +450,8 @@ export const partC: PartModule = {
     const notes = [
       `The doc's C line (60 × ${usd(b.gptImageUsd, 2)} = ${usd(60 * b.gptImageUsd, 2)} for GPT Image) grows: ${set} set shots${look ? ` + ${look} look shots` : ""}${control ? ` + ${control} controls` : ""} = ${gpt} GPT Image stills, ${usd(gpt * b.gptImageUsd, 2)} if each renders once, ${usd(gpt * 2 * b.gptImageUsd, 2)} reserved (each still reserves GENERATE_RETRIES = 2 renders).`,
       f.look
-        ? `The look arm (the later cameras again, carrying camera 1's still, as the product sends a shot since 2026-09-11) adds ${look} stills on each of GPT Image and FLUX: ${look} × 2 × ${usd(b.gptImageUsd, 2)} = ${usd(look * 2 * b.gptImageUsd, 2)} reserved on GPT Image. --no-look drops it.`
-        : "--no-look: no look arm.",
+        ? `--look: the look arm (the later cameras again, carrying camera 1's WHOLE still, which the product stopped sending on 2026-09-12 — it sends only the set's objects, cut out of it — so these stills measure neither the old look nor the new one) adds ${look} stills on each of GPT Image and FLUX: ${look} × 2 × ${usd(b.gptImageUsd, 2)} = ${usd(look * 2 * b.gptImageUsd, 2)} reserved on GPT Image.`
+        : "No look arm: the product sends only the set's objects, cut out of the earlier still, and the eval does not cut them out yet (README, Known gaps); --look sends the whole still anyway.",
       "FLUX.2 Pro edit and Seedream v4 edit are unpriced until external-prices.json holds fal's page figures (the doc says $0.03 for Seedream; angle-stage-config.ts says fal publishes no price: re-read before the run). Until then each render is metered, not reserved.",
       "The product's default look follows the newest still (set-view.tsx); the eval pins camera 1's, so every look shot is judged against one first still.",
     ];

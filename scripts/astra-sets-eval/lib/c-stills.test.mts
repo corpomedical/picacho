@@ -64,7 +64,7 @@ describe("C's plan of stills", () => {
     expect([...twins.values()].map((d) => [...d][0]).slice(0, 5)).toEqual(["d0", "d1", "d2", "d3", "d0"]);
   });
 
-  it("no look without an identity photo (the product's rule), and --no-look / --no-control drop their arms", () => {
+  it("no look without an identity photo (the product's rule), and without --look / with --no-control there is no such arm", () => {
     const noPhoto = planCShots({ sets: [framed("s1")], characters: [char("a", false)], directions: ["d"], engines: ["gpt-image"], look: true, control: true });
     expect(noPhoto.groups[0].withLook).toEqual([]);
     const bare = planCShots({ sets: [framed("s1")], characters: [char("a")], directions: ["d"], engines: ["gpt-image", "flux"], look: false, control: false });

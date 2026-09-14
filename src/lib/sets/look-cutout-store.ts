@@ -12,8 +12,9 @@
 //   region cleared, the rest laid on grey and cropped (look-cutout-image.ts)
 //   → kept at setLookCutoutPath, beside the set's card.
 //
-// and every later shot with the same look reuses the kept file: the cut is
-// paid for once per still (look-cutout.ts, THE MONEY). Any step that fails
+// and every later shot with the same look reuses the kept file: a still is
+// cut once, however many shots take it (look-cutout.ts, THE MONEY, says
+// what that comes to under the page's default look). Any step that fails
 // is a reason, never a throw: the shot then goes without its look, and says
 // so (sets/actions.ts shootInSet).
 //
@@ -31,10 +32,9 @@
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { segmentWithBoxes } from "../generations/providers/fal-segment";
-import { lookCutoutBoxes, type ShotCamera } from "./look-cutout";
+import { lookCutoutBoxes, type LookSet, type ShotCamera } from "./look-cutout";
 import { composeLookCutout } from "./look-cutout-image";
 import { setLookCutoutPath, setLookCutoutPrefix } from "./set-config";
-import type { SetSpec } from "./set-spec";
 
 const BUCKET = "generated-images";
 /** A still is at most a few MB; a download past this is not a still. */
@@ -85,7 +85,7 @@ export async function lookCutout(
     setId: string;
     lookGenerationId: string;
     stillPath: string;
-    spec: Pick<SetSpec, "objects">;
+    spec: LookSet;
     camera: ShotCamera | null;
   },
   deps: { segment?: typeof segmentWithBoxes } = {},

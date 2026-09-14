@@ -31,17 +31,25 @@
 // FLUX's may not be square, so each axis is scaled on its own.
 //
 // WHAT COUNTS AS AN OBJECT. What a person recognises from one still to the
-// next — a car, a sofa, a stall — is built from PROP-sized shapes, none
-// longer than LOOK_PROP_MAX_M on any side: a wall, a grandstand or a track
-// is structure, which the sketch already draws and the look must not carry.
-// A shape counts only where the sketch showed it: in front of the camera,
-// within LOOK_MAX_DISTANCE_M, and not behind structure (a box around a car
-// hidden behind a wall would have SAM cut the wall out instead). A car is
-// some fifteen to fifty shapes, so shapes whose boxes touch or nearly touch
-// (LOOK_TOUCH_M) are one object, and a run of them longer than
-// LOOK_GROUP_MAX_M — kerb stones laid end to end down a straight — is
-// scenery again. Only the few largest objects on screen are kept, none
-// smaller than LOOK_MIN_SHARE of the frame.
+// next — a car, a sofa, a stall — is built from PROP-sized shapes. Structure
+// is what the sketch already draws and the look must not carry: a shape
+// longer than LOOK_PROP_MAX_M on a side (a grandstand, a track); a slab
+// broad two ways (LOOK_SLAB_MIN_M — a small room's wall, floor or ceiling,
+// which touch its furniture and would make the whole room one object that
+// fills the frame); a shape standing most of the set's height
+// (LOOK_TALL_SHARE — a wall of a low room, a pillar); a plane; and a run —
+// an object repeated over more than LOOK_GROUP_MAX_M, kerb stones laid down
+// a straight, a row of barriers — which is scenery wherever the camera
+// stands, and never takes the car beside it down with it. Props whose boxes
+// touch or nearly touch (LOOK_TOUCH_M) are one object, decided from the set
+// alone, before any camera: a car is some fifteen to fifty shapes. A chain
+// of them longer than LOOK_GROUP_MAX_M is scenery too. An object then counts
+// by the shapes the sketch showed: in front of the lens, inside the frame,
+// and with its centre not behind structure as the stage draws it (a box
+// round a car hidden behind a wall would have SAM cut the wall out instead).
+// How far off it stands does not matter, only how big it is on screen — a
+// long lens fills the frame from fifty metres: the few largest objects on
+// screen are kept, none smaller than LOOK_MIN_SHARE of the frame.
 //
 // ONE BOX PER SHAPE THAT SHOWS. SAM 2 makes one mask of every box it is
 // given, and a thin part (a car's rear wing) is caught only when it has a
@@ -83,14 +91,17 @@
 //   worst case, a cut run to the 30 s the shot waits for it
 //   (fal-segment.ts SAM2_TIMEOUT_MS): 30 s × $0.0008 = $0.024 — a fal
 //   runner that outlives our wait may still bill it
-// Paid once per look: the cutout is kept (set-config.ts setLookCutoutPath),
-// so every later shot with the same look reuses it. A cut that fails keeps
-// nothing, so the next shot with that look pays to try again — at most as
-// often as the shot's burst brake lets anyone shoot (12 in 10 minutes,
-// actions.ts): 12 × $0.024 = $0.288 in 10 minutes if every one ran out the
-// wait. The person still pays the flat one credit an image take costs; next
-// to a GPT Image still (IMAGE_COST_USD, $0.17, admin/economics.ts) a
-// measured cut is $0.0024 ÷ $0.17 ≈ 1.4% more, once.
+// Paid per cut. The cutout is kept (set-config.ts setLookCutoutPath), so a
+// look pinned to one still is cut once and reused by every shot after it —
+// but the page's default look follows the newest still (set-view.tsx), so
+// under it nearly every shot takes a still never cut before and pays one
+// cut: $0.0024 a shot as measured, next to a GPT Image still's $0.17
+// (IMAGE_COST_USD, admin/economics.ts) about 1.4% more. A cut that fails
+// keeps nothing, so the next shot with that look pays to try again — at
+// most as often as the shot's burst brake lets anyone shoot (12 in 10
+// minutes, actions.ts): 12 × $0.024 = $0.288 in 10 minutes if every one
+// ran out the wait. The person still pays the flat one credit an image take
+// costs.
 //
 // THE PROCESSOR. The still goes to fal inline, as a data URI, and the cut
 // comes back inline in the answer (sync_mode): no link to either is made.
@@ -115,11 +126,13 @@ export const LOOK_CUT_WORST_USD = (SAM2_TIMEOUT_MS / 1000) * SAM2_USD_PER_COMPUT
 
 /** Longer than this on any side and a shape is structure (a wall, a grandstand), not an object. A car is under 5 m. */
 export const LOOK_PROP_MAX_M = 6;
-/** Further from the camera than this and a prop is a handful of pixels in the still. */
-export const LOOK_MAX_DISTANCE_M = 40;
+/** Broad this much two ways and a shape is a slab — a wall, a floor, a ceiling — not an object. A car is under 2 m wide; a bed under 2.2 m. */
+export const LOOK_SLAB_MIN_M = 3;
+/** Standing this share of the set's height and a shape is a wall or a pillar, not an object. */
+export const LOOK_TALL_SHARE = 0.8;
 /** Shapes whose boxes come within this of each other are one object: a wing on its supports, a table's top on its legs. */
 export const LOOK_TOUCH_M = 0.25;
-/** An "object" longer than this on any side is a run of props laid end to end — a kerb line, a row of barriers — and scenery. */
+/** An object repeated over more than this, or a chain of touching props longer than it, is a run — a kerb line, a row of barriers — and scenery. */
 export const LOOK_GROUP_MAX_M = 12;
 /** The objects kept, largest on screen first. */
 export const LOOK_MAX_GROUPS = 3;
@@ -168,6 +181,9 @@ export type LookObject = { box: FrameBox; share: number; shapes: number };
 
 /** A region of the sketch's square, and so of the still: 0–1 across and down. */
 export type FrameBox = { u0: number; v0: number; u1: number; v1: number };
+
+/** What of a set the boxes are worked out from: its objects, and its height (what a wall stands most of). */
+export type LookSet = Pick<SetSpec, "objects"> & { bounds: Pick<SetSpec["bounds"], "height"> };
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -239,34 +255,63 @@ export function sketchProjector(camera: ShotCamera): (point: Vec3) => { u: numbe
   };
 }
 
-type Shape = {
-  object: number;
-  copy: number;
-  /** World box round the shape, as turned. */
-  min: Vec3;
-  max: Vec3;
-  /** Its box in the sketch, clipped to the frame; null when none of it is in frame. */
-  box: FrameBox | null;
-};
+/**
+ * One copy of an object as build-scene.ts places it: its centre, its turn
+ * (rows of three.js's XYZ matrix), half its sides, its eight corners as
+ * turned and the world box round them; and whether it is a prop or structure
+ * (the header), decided for the object as a whole, every copy alike.
+ */
+type Placed = { object: number; copy: number; centre: Vec3; r: number[][]; half: Vec3; corners: Vec3[]; min: Vec3; max: Vec3; prop: boolean };
 
-/** One copy of an object as build-scene.ts places it: its centre, its turn (rows of three.js's XYZ matrix), half its sides. */
-type Placed = { object: number; copy: number; centre: Vec3; r: number[][]; half: Vec3; prop: boolean };
+/** A prop's copy where the sketch showed it: its box in the sketch's square. */
+type Shown = { object: number; copy: number; box: FrameBox };
 
-function placedCopies(objects: readonly SetObject[]): Placed[] {
+function placedCopies(objects: readonly SetObject[], bounds: { height: number }): Placed[] {
   const out: Placed[] = [];
   objects.forEach((o, object) => {
     // A ring is built flat at its real sizes, across × tube × across; a
     // plane lies flat before it is turned, with no thickness (build-scene.ts).
     const [sx, sy, sz] =
       o.shape === "torus" ? [o.size[0], o.size[1], o.size[0]] : o.shape === "plane" ? [o.size[0], 0, o.size[2]] : o.size;
-    const prop = o.shape !== "plane" && Math.max(sx, sy, sz) <= LOOK_PROP_MAX_M;
     const r = rotationXYZ(o.rotation[0] * DEG, o.rotation[1] * DEG, o.rotation[2] * DEG);
+    const half: Vec3 = [sx / 2, sy / 2, sz / 2];
     const count = o.repeat?.count ?? 1;
     const step: Vec3 = o.repeat?.offset ?? [0, 0, 0];
+    const copies: Omit<Placed, "prop">[] = [];
     for (let copy = 0; copy < count; copy++) {
       const centre: Vec3 = [o.position[0] + step[0] * copy, o.position[1] + step[1] * copy, o.position[2] + step[2] * copy];
-      out.push({ object, copy, centre, r, half: [sx / 2, sy / 2, sz / 2], prop });
+      const corners: Vec3[] = [];
+      for (const cx of [-1, 1]) for (const cy of [-1, 1]) for (const cz of [-1, 1]) {
+        const [lx, ly, lz] = [cx * half[0], cy * half[1], cz * half[2]];
+        corners.push([
+          centre[0] + r[0][0] * lx + r[0][1] * ly + r[0][2] * lz,
+          centre[1] + r[1][0] * lx + r[1][1] * ly + r[1][2] * lz,
+          centre[2] + r[2][0] * lx + r[2][1] * ly + r[2][2] * lz,
+        ]);
+      }
+      copies.push({
+        object,
+        copy,
+        centre,
+        r,
+        half,
+        corners,
+        min: [0, 1, 2].map((i) => Math.min(...corners.map((c) => c[i]))) as Vec3,
+        max: [0, 1, 2].map((i) => Math.max(...corners.map((c) => c[i]))) as Vec3,
+      });
     }
+    // Structure or a prop (the header): by the object's sides, longest
+    // first; how tall it stands as turned; and how far its copies reach.
+    const sides = [sx, sy, sz].sort((a, b) => b - a);
+    const standing = copies[0].max[1] - copies[0].min[1];
+    const reach = Math.max(...[0, 1, 2].map((i) => Math.max(...copies.map((c) => c.max[i])) - Math.min(...copies.map((c) => c.min[i]))));
+    const prop =
+      o.shape !== "plane" &&
+      sides[0] <= LOOK_PROP_MAX_M &&
+      sides[1] < LOOK_SLAB_MIN_M &&
+      standing < LOOK_TALL_SHARE * bounds.height &&
+      reach <= LOOK_GROUP_MAX_M;
+    for (const c of copies) out.push({ ...c, prop });
   });
   return out;
 }
@@ -354,42 +399,21 @@ function clearOf(b: FrameBox, person: FrameBox): FrameBox | null {
 }
 
 /**
- * Every copy of every prop-sized object that the camera could see: wholly in
- * front of it, near enough to count, and with its centre not behind
- * structure — a wall, a grandstand, a plane — as the stage would draw it.
- * (A shape half hidden counts by its centre; props hiding props are left to
- * SAM 2, which cuts the nearer one, itself an object.)
+ * Where a prop's copy shows in the sketch: its box there, clipped to the
+ * frame — or null when the camera could not see it: reaching behind the
+ * lens (the camera stands in it or beside it), its centre behind structure
+ * — a wall, a grandstand, a plane — as the stage would draw it, or none of
+ * it inside the frame. (A shape half hidden counts by its centre; props
+ * hiding props are left to SAM 2, which cuts the nearer one, itself an
+ * object.)
  */
-function propShapes(copies: readonly Placed[], camera: ShotCamera, project: ReturnType<typeof sketchProjector>): Shape[] {
-  const structure = copies.filter((p) => !p.prop);
-  const out: Shape[] = [];
-  for (const p of copies) {
-    if (!p.prop) continue;
-    if (Math.hypot(...sub(p.centre, camera.position)) > LOOK_MAX_DISTANCE_M) continue;
-    const world: Vec3[] = [];
-    for (const cx of [-1, 1]) for (const cy of [-1, 1]) for (const cz of [-1, 1]) {
-      const [lx, ly, lz] = [cx * p.half[0], cy * p.half[1], cz * p.half[2]];
-      world.push([
-        p.centre[0] + p.r[0][0] * lx + p.r[0][1] * ly + p.r[0][2] * lz,
-        p.centre[1] + p.r[1][0] * lx + p.r[1][1] * ly + p.r[1][2] * lz,
-        p.centre[2] + p.r[2][0] * lx + p.r[2][1] * ly + p.r[2][2] * lz,
-      ]);
-    }
-    const seen = world.map(project);
-    // Reaching behind the lens: the camera stands in it or beside it.
-    if (seen.some((s) => s === null)) continue;
-    if (structure.some((s) => entersOnTheWay(camera.position, p.centre, s))) continue;
-    const us = seen.map((s) => s!.u);
-    const vs = seen.map((s) => s!.v);
-    out.push({
-      object: p.object,
-      copy: p.copy,
-      min: [0, 1, 2].map((i) => Math.min(...world.map((w) => w[i]))) as Vec3,
-      max: [0, 1, 2].map((i) => Math.max(...world.map((w) => w[i]))) as Vec3,
-      box: clip({ u0: Math.min(...us), v0: Math.min(...vs), u1: Math.max(...us), v1: Math.max(...vs) }),
-    });
-  }
-  return out;
+function shownBox(p: Placed, camera: ShotCamera, project: ReturnType<typeof sketchProjector>, structure: readonly Placed[]): FrameBox | null {
+  const seen = p.corners.map(project);
+  if (seen.some((s) => s === null)) return null;
+  if (structure.some((s) => entersOnTheWay(camera.position, p.centre, s))) return null;
+  const us = seen.map((s) => s!.u);
+  const vs = seen.map((s) => s!.v);
+  return clip({ u0: Math.min(...us), v0: Math.min(...vs), u1: Math.max(...us), v1: Math.max(...vs) });
 }
 
 function clip(b: FrameBox): FrameBox | null {
@@ -411,25 +435,25 @@ function cellsOf(b: FrameBox): number[] {
   return out;
 }
 
-const touch = (a: Shape, b: Shape) =>
+const touch = (a: Placed, b: Placed) =>
   [0, 1, 2].every((i) => a.min[i] - LOOK_TOUCH_M <= b.max[i] && b.min[i] - LOOK_TOUCH_M <= a.max[i]);
 
-/** Shapes that touch, directly or through each other, as one object each. */
-function objectsOf(shapes: Shape[]): Shape[][] {
-  const parent = shapes.map((_, i) => i);
+/** Props that touch, directly or through each other, as one object each. */
+function objectsOf(props: Placed[]): Placed[][] {
+  const parent = props.map((_, i) => i);
   const root = (i: number): number => {
     while (parent[i] !== i) i = parent[i] = parent[parent[i]];
     return i;
   };
-  for (let i = 0; i < shapes.length; i++) {
-    for (let j = i + 1; j < shapes.length; j++) {
-      if (touch(shapes[i], shapes[j])) parent[root(i)] = root(j);
+  for (let i = 0; i < props.length; i++) {
+    for (let j = i + 1; j < props.length; j++) {
+      if (touch(props[i], props[j])) parent[root(i)] = root(j);
     }
   }
-  const groups = new Map<number, Shape[]>();
-  shapes.forEach((s, i) => {
+  const groups = new Map<number, Placed[]>();
+  props.forEach((p, i) => {
     const r = root(i);
-    groups.set(r, [...(groups.get(r) ?? []), s]);
+    groups.set(r, [...(groups.get(r) ?? []), p]);
   });
   return [...groups.values()];
 }
@@ -444,7 +468,7 @@ function objectsOf(shapes: Shape[]): Shape[][] {
  * shot goes without its look.
  */
 export function lookCutoutBoxes(
-  spec: Pick<SetSpec, "objects">,
+  spec: LookSet,
   camera: ShotCamera,
   still: { width: number; height: number },
 ): { boxes: LookBox[]; objects: LookObject[]; person: FrameBox | null } {
@@ -453,24 +477,30 @@ export function lookCutoutBoxes(
   const cam = normaliseShotCamera(camera);
   if (!cam) return none;
   const project = sketchProjector(cam);
-  const copies = placedCopies(spec.objects);
-  const person = personRegion(cam, project, copies.filter((p) => !p.prop));
+  const copies = placedCopies(spec.objects, spec.bounds);
+  const structure = copies.filter((p) => !p.prop);
+  const person = personRegion(cam, project, structure);
   if (!person) return none;
 
-  const kept = objectsOf(propShapes(copies, cam, project))
-    .filter((shapes) =>
-      [0, 1, 2].every((i) => Math.max(...shapes.map((s) => s.max[i])) - Math.min(...shapes.map((s) => s.min[i])) <= LOOK_GROUP_MAX_M),
+  // The objects, from the set alone; then what of each the sketch showed.
+  const kept = objectsOf(copies.filter((p) => p.prop))
+    .filter((group) =>
+      [0, 1, 2].every((i) => Math.max(...group.map((p) => p.max[i])) - Math.min(...group.map((p) => p.min[i])) <= LOOK_GROUP_MAX_M),
     )
-    .map((shapes) => {
-      const inFrame = shapes.filter((s) => s.box !== null);
-      if (inFrame.length === 0) return null;
+    .map((group) => {
+      const shown: Shown[] = [];
+      for (const p of group) {
+        const box = shownBox(p, cam, project, structure);
+        if (box) shown.push({ object: p.object, copy: p.copy, box });
+      }
+      if (shown.length === 0) return null;
       const box: FrameBox = {
-        u0: Math.min(...inFrame.map((s) => s.box!.u0)),
-        v0: Math.min(...inFrame.map((s) => s.box!.v0)),
-        u1: Math.max(...inFrame.map((s) => s.box!.u1)),
-        v1: Math.max(...inFrame.map((s) => s.box!.v1)),
+        u0: Math.min(...shown.map((s) => s.box.u0)),
+        v0: Math.min(...shown.map((s) => s.box.v0)),
+        u1: Math.max(...shown.map((s) => s.box.u1)),
+        v1: Math.max(...shown.map((s) => s.box.v1)),
       };
-      return { box, share: area(box), shapes: inFrame };
+      return { box, share: area(box), shapes: shown };
     })
     // An object the person mostly stands in front of, or in (a chair, a
     // counter they lean on), is theirs in the still, not the look's.
@@ -480,15 +510,15 @@ export function lookCutoutBoxes(
 
   // What the shapes already chosen cover, as sketched (before growing).
   const covered = new Set<number>();
-  const sent: { box: FrameBox; object: number; copy: number }[] = [];
+  const sent: Shown[] = [];
   for (const g of kept) {
     const growU = LOOK_GROW_SHARE * (g.box.u1 - g.box.u0) + LOOK_GROW_FRAME;
     const growV = LOOK_GROW_SHARE * (g.box.v1 - g.box.v0) + LOOK_GROW_FRAME;
     // Largest first; between equals, in the spec's order — so each pick below
     // is the same for the same set, and a tie goes to the bigger shape.
     const left = [...g.shapes]
-      .sort((a, b) => area(b.box!) - area(a.box!) || a.object - b.object || a.copy - b.copy)
-      .map((s) => ({ s, cells: cellsOf(s.box!) }));
+      .sort((a, b) => area(b.box) - area(a.box) || a.object - b.object || a.copy - b.copy)
+      .map((s) => ({ s, cells: cellsOf(s.box) }));
     while (sent.length < LOOK_MAX_BOXES && left.length > 0) {
       let best = -1;
       let bestGain = 0;
@@ -503,7 +533,7 @@ export function lookCutoutBoxes(
       if (best < 0) break;
       const [{ s, cells }] = left.splice(best, 1);
       for (const c of cells) covered.add(c);
-      const grown = clip({ u0: s.box!.u0 - growU, v0: s.box!.v0 - growV, u1: s.box!.u1 + growU, v1: s.box!.v1 + growV })!;
+      const grown = clip({ u0: s.box.u0 - growU, v0: s.box.v0 - growV, u1: s.box.u1 + growU, v1: s.box.v1 + growV })!;
       // Never a box into the person's region: SAM 2 would cut them out with it.
       const clear = clearOf(grown, person);
       if (clear) sent.push({ box: clear, object: s.object, copy: s.copy });
@@ -533,6 +563,6 @@ export function lookCutoutBoxes(
  * The boxes are chosen in the sketch's square and only then scaled to the
  * still, so any still size gives the same answer.
  */
-export function seesLookObjects(spec: Pick<SetSpec, "objects">, camera: ShotCamera): boolean {
+export function seesLookObjects(spec: LookSet, camera: ShotCamera): boolean {
   return lookCutoutBoxes(spec, camera, ANY_STILL).boxes.length > 0;
 }

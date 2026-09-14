@@ -152,7 +152,7 @@ describe("the plans", () => {
     expect(plan.find((l) => l.kind === "gpt-image" && l.label.startsWith("look shots"))?.count).toBe(2);
     expect(plan.some((l) => l.label.startsWith("controls"))).toBe(false);
     for (const g of ["entry prompt gate", "pipeline prompt gate", ALONE_LINE, "output gate", "identity score"]) expect(countOf(plan, g)).toBe(5);
-    // --no-look: one still per engine, $0.34.
+    // Without --look (the default): one still per engine, $0.34.
     const bare = planProbeC({ engines: ["gpt-image", "flux", "seedream"], look: false, book });
     expect(ceilingOf(bare).ceilingUsd).toBeCloseTo(0.34, 9);
     expect(countOf(bare, "entry prompt gate")).toBe(3);

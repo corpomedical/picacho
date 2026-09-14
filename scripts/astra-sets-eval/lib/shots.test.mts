@@ -343,7 +343,7 @@ describe("whose refusal a Set shot's refused prompt is", () => {
     const look = { fromShotId: "cs-1", still: { bytes: PNG, mime: "image/png" }, sameCharacter: true, savedOutfit: false };
     expect((await shoot(envOf(net, theirs.deps).env, request({ arm: "look", shotId: "cl-1", look }))).attribution).toEqual({ against: "person", how: "judged alone", alone: "allowed" });
     // The look shot's prompt without the direction keeps its look sentences.
-    expect(theirs.calls.alone[0].text).toContain("One reference photo is an earlier still from this same set");
+    expect(theirs.calls.alone[0].text).toContain("One reference photo shows objects from this same place");
     // No direction: all of it Astra's, and nothing is judged twice.
     const bare = fakeDeps(net, { entryGate: refuse });
     expect((await shoot(envOf(net, bare.deps).env, request({ direction: "" }))).attribution).toEqual({ against: "model", how: "no direction", alone: null });

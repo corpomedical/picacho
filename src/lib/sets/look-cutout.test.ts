@@ -7,10 +7,11 @@ import {
   LOOK_FIGURE_GROW,
   LOOK_GROUP_MAX_M,
   LOOK_MAX_BOXES,
-  LOOK_MAX_DISTANCE_M,
   LOOK_MAX_GROUPS,
   LOOK_MIN_SHARE,
   LOOK_PROP_MAX_M,
+  LOOK_SLAB_MIN_M,
+  LOOK_TALL_SHARE,
   SAM2_USD_PER_COMPUTE_SECOND,
   lookCutoutBoxes,
   normaliseShotCamera,
@@ -19,10 +20,12 @@ import {
   sketchProjector,
   type FrameBox,
   type LookBox,
+  type LookSet,
   type ShotCamera,
 } from "./look-cutout";
+import { fovForLens } from "./build-scene";
 import { SAM2_TIMEOUT_MS } from "../generations/providers/fal-segment";
-import { normaliseSetSpec, type SetObject, type SetSpec, type Vec3 } from "./set-spec";
+import { normaliseSetSpec, type SetObject, type Vec3 } from "./set-spec";
 
 // Where a set's objects are in an earlier still (2026-09-12): the look sends
 // only them, cut out, so the boxes SAM 2 is given must be where the still's
@@ -327,7 +330,7 @@ describe("never the person", () => {
     ];
     const table = [box({ position: [3, 0.74, 0], size: [1.4, 0.05, 0.9] }), box({ position: [3, 0.36, 0], size: [0.12, 0.72, 0.12] })];
     const camera: ShotCamera = { position: [0.8, 1.5, 6], target: [1.2, 0.7, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: 0, z: 0.2 } };
-    const got = lookCutoutBoxes({ objects: [...chair, ...table] }, camera, SQUARE);
+    const got = lookCutoutBoxes({ objects: [...chair, ...table], bounds: { height: 6 } }, camera, SQUARE);
     expectClearOfPerson(got, "seated");
     expect(got.objects).toHaveLength(1);
     expect(new Set(got.boxes.map((b) => b.object))).toEqual(new Set([4, 5]));
@@ -411,7 +414,8 @@ describe("what the boxes leave out on the race track", () => {
 describe("what counts as an object", () => {
   // The figure far down the left of the frame, small and clear of every prop below.
   const cam: ShotCamera = { position: [0, 1.6, 8], target: [0, 1, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -9, z: -30 } };
-  const scene = (objects: SetObject[]): Pick<SetSpec, "objects"> => ({ objects });
+  // A tall set: nothing below stands most of its height.
+  const scene = (objects: SetObject[], height = 12): LookSet => ({ objects, bounds: { height } });
   const still = SQUARE;
 
   it("a prop, not structure: nothing longer than LOOK_PROP_MAX_M on a side, and never a plane", () => {
@@ -421,14 +425,49 @@ describe("what counts as an object", () => {
     expect(lookCutoutBoxes(scene([box({ shape: "plane", position: [0, 0.5, 0], size: [2, 0.01, 2], rotation: [60, 0, 0] })]), cam, still).boxes).toEqual([]);
   });
 
-  it("only in front of the camera and within LOOK_MAX_DISTANCE_M", () => {
-    expect(LOOK_MAX_DISTANCE_M).toBe(40);
+  it("a small room's walls, floor and ceiling are structure, not one object with the sofa against them", () => {
+    // Found in review (2026-09-12): every piece of a 5 m room is under 6 m on
+    // a side, the pieces touch the furniture, and the whole room came out as
+    // one object filling the frame — the still again, which the look must
+    // never be. A wall is broad two ways (LOOK_SLAB_MIN_M); in a low room it
+    // is under that, but stands the room's height (LOOK_TALL_SHARE).
+    expect(LOOK_SLAB_MIN_M).toBe(3);
+    expect(LOOK_TALL_SHARE).toBe(0.8);
+    const room = (height: number) => [
+      box({ position: [0, height / 2, -2.5], size: [5, height, 0.15] }),
+      box({ position: [-2.5, height / 2, 0], size: [0.15, height, 5] }),
+      box({ position: [2.5, height / 2, 0], size: [0.15, height, 5] }),
+      box({ position: [0, 0.05, 0], size: [5, 0.1, 5] }),
+      box({ position: [0, height - 0.05, 0], size: [5, 0.1, 5] }),
+    ];
+    const sofa = box({ position: [-0.6, 0.45, -2.0], size: [2.2, 0.9, 0.9] });
+    // Inside the room, the figure at its right, clear of the sofa.
+    const inside: ShotCamera = { position: [0, 1.5, 2], target: [0, 1, -2], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: 1.2, z: -1.4 } };
+    for (const height of [3, 2.4]) {
+      const got = lookCutoutBoxes(scene([...room(height), sofa], height), inside, still);
+      expectClearOfPerson(got, `${height} m room`);
+      expect(got.objects, `${height} m room`).toHaveLength(1);
+      expect(got.boxes.length, `${height} m room`).toBeGreaterThan(0);
+      for (const b of got.boxes) expect(b.object, `${height} m room`).toBe(5);
+      // The room alone: nothing to cut.
+      expect(lookCutoutBoxes(scene(room(height), height), inside, still).boxes, `${height} m room, bare`).toEqual([]);
+    }
+    // The same slab rule never takes a car (under 2 m wide) or a bed.
+    expect(lookCutoutBoxes(scene([box({ position: [0, 0.6, 0], size: [1.9, 1.2, 4.5] })]), cam, still).boxes.length).toBeGreaterThan(0);
+    expect(lookCutoutBoxes(scene([box({ position: [0, 0.3, 0], size: [2.1, 0.6, 1.6] })]), cam, still).boxes.length).toBeGreaterThan(0);
+  });
+
+  it("only in front of the camera; how far off does not matter, only how big on screen — a long lens fills the frame from 45 m", () => {
     const behind = box({ position: [0, 1, 12], size: [2, 1, 1] });
-    const far = box({ position: [0, 1, 8 - 41], size: [4, 4, 4] });
-    const near = box({ position: [0, 1, 8 - 39], size: [4, 4, 4] });
     expect(lookCutoutBoxes(scene([behind]), cam, still).boxes).toEqual([]);
-    expect(lookCutoutBoxes(scene([far]), cam, still).boxes).toEqual([]);
-    expect(lookCutoutBoxes(scene([near]), cam, still).boxes).toHaveLength(1);
+    // A car 45 m off, the figure beside it: a speck at 24 mm, most of the frame at 135 mm.
+    const car = box({ position: [0, 0.75, 8 - 45], size: [4.4, 1.5, 2] });
+    const beside = { x: -3, z: 8 - 45 };
+    expect(lookCutoutBoxes(scene([car]), { ...cam, figure: beside }, still).boxes).toEqual([]);
+    const tele = lookCutoutBoxes(scene([car]), { ...cam, fovDeg: fovForLens(135), figure: beside }, still);
+    expectClearOfPerson(tele, "135 mm");
+    expect(tele.boxes).toHaveLength(1);
+    expect(tele.objects[0].share).toBeGreaterThan(0.1);
   });
 
   it("not behind structure, as the stage draws it: outside faces only", () => {
@@ -472,11 +511,26 @@ describe("what counts as an object", () => {
     expect(lookCutoutBoxes(scene([box({ position: [0, 0.05, 0], size: [0.1, 0.1, 0.1] })]), cam, still).boxes).toEqual([]);
   });
 
-  it("a run of props longer than LOOK_GROUP_MAX_M is scenery", () => {
+  it("a run of props longer than LOOK_GROUP_MAX_M is scenery — repeated, or a chain of touching props", () => {
     expect(LOOK_GROUP_MAX_M).toBe(12);
     const barrier = (count: number) => box({ position: [-4, 0.5, 2], size: [1, 1, 2], repeat: { count, offset: [0, 0, -2] } });
     expect(lookCutoutBoxes(scene([barrier(3)]), cam, still).boxes.length).toBeGreaterThan(0);
     expect(lookCutoutBoxes(scene([barrier(8)]), cam, still).boxes).toEqual([]);
+    const chain = Array.from({ length: 7 }, (_, i) => box({ position: [-4, 0.5, 2 - 2 * i], size: [1, 1, 2] }));
+    expect(lookCutoutBoxes(scene(chain), cam, still).boxes).toEqual([]);
+  });
+
+  it("a run beside a car is scenery on its own: the car keeps its boxes", () => {
+    // Found in review (2026-09-12): the run was decided after grouping, so a
+    // car touching a line of kerb stones was thrown away with the line.
+    const body = box({ position: [0, 0.6, 0], size: [2, 0.8, 4.4] });
+    const kerb = (count: number, from: number) => box({ position: [1.2, 0.06, from], size: [0.4, 0.12, 1], repeat: { count, offset: [0, 0, 1] } });
+    const beside = lookCutoutBoxes(scene([body, kerb(20, -9)]), cam, still);
+    expect(beside.objects).toHaveLength(1);
+    expect(beside.objects[0].shapes).toBe(1);
+    expect(beside.boxes.map((b) => b.object)).toEqual([0]);
+    // A short line of them, touching, is part of the car.
+    expect(lookCutoutBoxes(scene([body, kerb(3, -1)]), cam, still).objects[0].shapes).toBe(4);
   });
 
   it("no camera or no still: nothing to cut", () => {

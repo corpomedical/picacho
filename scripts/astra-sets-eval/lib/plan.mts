@@ -211,7 +211,7 @@ export function planC(o: {
     const stills = setShots + (product ? lookShots + controlsPerEngine : 0);
     lines.push(...imageLines(o.book, e, setShots, "set shots"));
     if (product) {
-      lines.push(...imageLines(o.book, e, lookShots, "look shots (the later cameras again, carrying camera 1's still)"));
+      lines.push(...imageLines(o.book, e, lookShots, "look shots (the later cameras again, carrying camera 1's whole still)"));
       lines.push(...imageLines(o.book, e, controlsPerEngine, "controls"));
       drafts += controlsPerEngine;
     }

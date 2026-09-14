@@ -43,7 +43,13 @@ export type Flags = {
   effort: "low" | "medium" | null;
   engines: Engine[];
   control: boolean;
-  /** C's look arm: the later cameras again, carrying camera 1's still (--no-look skips it). */
+  /**
+   * C's look arm: the later cameras again, carrying camera 1's WHOLE still.
+   * Off unless --look asks for it: since 2026-09-12 the product sends only
+   * the set's objects, cut out of the still (sets/look-cutout.ts), so the
+   * arm measures neither the old look nor the new one until the eval cuts
+   * the look out the same way (README, Known gaps).
+   */
   look: boolean;
   escalate: boolean;
   dCameras: number;
@@ -92,7 +98,7 @@ const SPECS: Record<string, Spec> = {
   "--effort": { kind: "str", scopes: ["c", "d"] },
   "--engines": { kind: "list", scopes: ["c"] },
   "--no-control": { kind: "bool", scopes: ["c"] },
-  "--no-look": { kind: "bool", scopes: ["c"] },
+  "--look": { kind: "bool", scopes: ["c"] },
   "--escalate": { kind: "bool", scopes: ["d"] },
   "--d-cameras": { kind: "int", scopes: ["d"] },
   // A writes the persons sheet for its own Astra specs (Part D's bar reads it).
@@ -133,7 +139,8 @@ export const USAGE = `Astra Sets eval runner (docs/ASTRA_SETS.md section 4). Dry
   --effort low|medium       c d        which Astra arm's sets (c); D's build effort
   --engines ...             c          gpt-image,flux,seedream
   --no-control              c          skip the ordinary-render control arm
-  --no-look                 c          skip the look arm (the later cameras again, carrying camera 1's still)
+  --look                    c          add the look arm (the later cameras again, carrying camera 1's WHOLE
+                                       still, which the product no longer sends: see README, Known gaps)
   --escalate                d          carry sessionPriorHits across briefs
   --d-cameras N             d          stills per delivered set (default 1)
   --raters a,b              a b c d e  rater ids (default r1,r2)
@@ -174,7 +181,7 @@ function defaults(): Flags {
     effort: null,
     engines: [...ENGINES],
     control: true,
-    look: true,
+    look: false,
     escalate: false,
     dCameras: 1,
     raters: ["r1", "r2"],
@@ -343,7 +350,7 @@ export function parseCli(argv: readonly string[]): { ok: true; cli: Cli } | { ok
     flags.engines = [...new Set(e)] as Engine[];
   }
   flags.control = raw["--no-control"] !== true;
-  flags.look = raw["--no-look"] !== true;
+  flags.look = raw["--look"] === true;
   flags.escalate = raw["--escalate"] === true;
   const raters = str("--raters");
   if (raters !== null) {

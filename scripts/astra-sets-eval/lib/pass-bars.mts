@@ -502,7 +502,7 @@ const goodObjects = (xs: readonly CShot[]) => {
  * look shot and its twin on the same sketch without the look are presented
  * alike. Reported over those pairs: the objects question, and what the look
  * did to identity and composition. An engine with no look shot (Seedream,
- * or --no-look) reports its later cameras' objects without a look.
+ * or a run without --look) reports its later cameras' objects without a look.
  */
 export function reportCLook(engine: string, shots: readonly CShot[]): BarResult[] {
   const look = shots.filter((s) => s.engine === engine && s.arm === "look");

@@ -79,9 +79,10 @@ import {
 // still counts, because it was still paid for. A shot is an ordinary image
 // take through runGeneration — quoted, charged, gated, scored and refunded
 // exactly as one sent from the composer, because it IS one. A shot whose
-// look has not been cut yet also pays for one SAM 2 cut, once per still and
-// behind the shot's burst brake (look-cutout.ts: $0.0024 measured, $0.024
-// at worst).
+// look has not been cut yet also pays for one SAM 2 cut — once per still,
+// though the page's default look follows the newest still, so most shots
+// pay one — behind the shot's burst brake (look-cutout.ts: $0.0024
+// measured, $0.024 at worst).
 //
 // THE GATES. The brief is gated before OpenAI sees it (a refusal costs
 // nothing and is logged against the person, as is OpenAI refusing the brief
