@@ -167,6 +167,12 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "The shot's camera couldn't be read this time — try again in a moment.": "setMatchCouldntRead",
   "You're matching shots quickly — try again in a little while.": "setMatchTooFast",
   "Reading that shot's camera took too long — try again in a moment.": "setMatchTimedOut",
+  // The Set Editor's Astra edits (lib/sets/messages.ts, 2026-09-14) — the
+  // prompt bar's line when a change could not land.
+  "Astra couldn't make that change — try saying it differently.": "setEditFailed",
+  "That change can't be made here.": "setEditRefused",
+  "You're changing the set quickly — give it a moment.": "setEditTooFast",
+  "That change took too long — try again in a moment.": "setEditTimedOut",
 };
 
 // The prompt gate's answers (content-policy.ts refusalMessages). The composer

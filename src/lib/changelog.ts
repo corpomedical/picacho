@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.32.0",
+    build: 45,
+    date: "2026-09-14",
+    title: "The set opens: a real editor, the way Adobe would build it",
+    items: [
+      "A set's page has a second life. Beside Shoot there is now Build, and Build opens the set as an editor laid out the way a pro tool is laid out — drawn first on the canvas (page G), approved, then built to the drawing. A tool rail on the left: Select, Move, Turn, Size, and Add — the seven shapes, a light, a mark, or a camera taken from the view you are looking through. The canvas is docked in the middle, dark the way editors go dark around the work, and everything Astra built can be picked up: click a thing and it gets the gizmo every 3D hand knows — red X, green Y, blue Z — with snapping to 10 cm and 15°, or exact numbers in the context bar over the canvas. On the right, the set as a tree — sky, ground, fog, each light, every thing with its colour and size, the marks (drawn as the grey figure, draggable, turnable on its facing), the cameras — over a Properties inspector for whatever is picked: position, rotation and size in metres, colour, roughness and metallic, glow, shadow, repeat-in-a-row, a light's kind, intensity and what it points at, a camera's lens and Set to this view.",
+      "Astra builds with you, as a prompt bar at the canvas's foot — the way Photoshop's contextual task bar floats. \"Make the barriers brick red and put a row of flags along the main straight\" goes to Astra, which edits the set's data server-side and answers with the revised set and how many pieces it touched; the person's words pass the same gate as a brief, and Astra's answer passes the same gate, the same schema and the same limits as the first build before it is kept. Every edit — dragged, typed, or Astra's — is a whole new set through the same trust boundary the first build passed, so nothing an editor sends can ever become code, and a browser's edit can move and recolour but never write text: the title, the description and the labels stay what the gated build wrote.",
+      "Nothing is ever lost. Hand edits and Astra's land in one history (Edit 1…n, undo and redo, ⌘Z too), autosave writes your working copy a second after you stop, and Astra's original — the set exactly as first built — is always one press away, itself undoable. The working copy is what the set's page then draws and shoots; stills you have already taken keep their frames and their scores. Until the one-line SQL for the working copy runs, the editor opens and edits but cannot save. Admins only, like all of Sets; desktop first — the pill controller keeps shooting on touch.",
+    ],
+  },
+  {
     version: "1.31.0",
     build: 44,
     date: "2026-09-14",

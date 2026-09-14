@@ -58,6 +58,8 @@ export type SetDetail = {
   status: SetStatus;
   failure: string | null;
   spec: SetSpec | null;
+  /** The owner's working copy (the Set Editor, 2026-09-14): what the stage draws when it exists. */
+  editedSpec: SetSpec | null;
   layout: SetLayout | null;
   hasThumb: boolean;
   fromPhoto: boolean;

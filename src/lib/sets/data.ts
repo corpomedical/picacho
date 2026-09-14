@@ -10,7 +10,7 @@ import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_RESERVED_BRIEF, SET_SHOTS_LIMIT
 import { readShotCameras } from "@/lib/sets/shot-camera";
 import { readShotWords } from "@/lib/sets/shot-words-store";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
-import { normaliseSetLayout, normaliseSetSpec } from "@/lib/sets/set-spec";
+import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
@@ -178,7 +178,29 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   const status = asStatus(row.status);
   const normalised = status === "ready" && row.spec ? normaliseSetSpec(row.spec) : null;
   const spec = normalised?.ok ? normalised.spec : null;
-  const layout = spec && row.layout ? normaliseSetLayout(row.layout, spec) : null;
+  // The owner's working copy (the Set Editor, 2026-09-14): read on its own,
+  // so the read above never names a column that may not exist yet
+  // (supabase/pending/set-editor.sql). A read that fails opens the set as
+  // built, for this one load.
+  let editedSpec: SetSpec | null = null;
+  if (spec) {
+    const { data: editedRow, error: editedError } = await db
+      .from("location_sets")
+      .select("edited_spec")
+      .eq("id", setId)
+      .eq("user_id", access.userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (editedError) console.warn("getSetPage could not read the working copy:", editedError.message);
+    else if (editedRow?.edited_spec) {
+      const edited = normaliseSetSpec(editedRow.edited_spec);
+      if (edited.ok) editedSpec = edited.spec;
+    }
+  }
+  // What the page actually draws — and what the layout and the look are
+  // held against.
+  const drawn = editedSpec ?? spec;
+  const layout = drawn && row.layout ? normaliseSetLayout(row.layout, drawn) : null;
   // Built from a photo? Read on its own, as the person (their SELECT on the
   // table covers every column), so the read above stays exactly as it was.
   // A read that fails shows it as a text set for this one load.
@@ -263,6 +285,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       status,
       failure: status === "failed" ? setFailureMessage(row.failure as string | null, fromPhoto ? "photo" : "text") : null,
       spec,
+      editedSpec,
       layout,
       hasThumb: isCurrentSetThumb(row.thumb_path, access.userId, row.id as string),
       fromPhoto,

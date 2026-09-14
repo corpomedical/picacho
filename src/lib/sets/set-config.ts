@@ -173,6 +173,16 @@ export const SET_MATCH_DEADLINE_MS = 270_000;
 /** A read is not started with less than this left before the deadline: the one measured read took 41.8 s. */
 export const SET_MATCH_MIN_READ_MS = 45_000;
 
+// The Set Editor's Astra edits (2026-09-14): the prompt bar sends the working
+// spec and one change request, and waits inside the server action like a
+// match does — well inside the set page's 300 s budget. The request rides
+// the build's own caps (SET_BUILD_EFFORT, SET_BUILD_MAX_OUTPUT_TOKENS): an
+// edit writes the same shape of answer a build does.
+export const SET_EDIT_MAX_CHARS = 300;
+export const SET_EDIT_POLL_MS = 2_500;
+export const SET_EDIT_DEADLINE_MS = 180_000;
+export const SET_EDIT_PER_10_MIN = 10;
+
 // The stage camera's tilt (set-view.tsx). OrbitControls keeps the camera within 0.62π of
 // straight down from what it looks at, so a tilt past ~21° up would move the camera; the aim
 // arrows and a matched shot stop just short of it.

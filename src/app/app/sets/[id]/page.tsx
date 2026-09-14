@@ -11,6 +11,7 @@ import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
 import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { SetBuilding } from "@/components/sets/set-building";
+import { SetEditor } from "@/components/sets/set-editor";
 import { SetView } from "@/components/sets/set-view";
 
 // One Set, open (Astra Sets, 2026-09-10; a workspace with Astra since
@@ -70,6 +71,20 @@ export default async function SetPage({
   const character = first(query.character);
   const askFirst = first(query.askFirst) !== "0";
   const ready = data.error === null && data.set.status === "ready" && data.set.spec !== null && !native;
+
+  // The set's second life (the Set Editor, drawn on canvas page G and built
+  // 2026-09-14): ?build=1 opens the same set as a full-screen editor — Build
+  // beside Shoot. It replaces the workspace whole, so only one stage runs.
+  if (ready && data.error === null && data.set.spec && first(query.build) === "1") {
+    return (
+      <SetEditor
+        setId={data.set.id}
+        original={data.set.spec}
+        initialEdited={data.set.editedSpec}
+        closeHref={`/app/sets/${data.set.id}`}
+      />
+    );
+  }
   // A photo set has no brief: it says where it came from, and the photographer's notes if any.
   const brief = set ? (set.fromPhoto ? (set.brief ? `${s.fromPhoto} · ${set.brief}` : s.fromPhoto) : set.brief) : "";
   const stillsLine = data.error === null ? (data.shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: data.shots.length })) : "";
@@ -90,6 +105,14 @@ export default async function SetPage({
             </p>
           )}
           <span className="ml-auto rounded-full bg-atelier-ink/[0.045] px-3 py-1 text-xs font-medium tabular-nums text-atelier-muted">{stillsLine}</span>
+          {set && (
+            <Link
+              href={`/app/sets/${set.id}?build=1`}
+              className="rounded-full bg-atelier-accent/10 px-3 py-1 text-xs font-semibold text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)] hover:bg-atelier-accent/15"
+            >
+              {s.editorOpen}
+            </Link>
+          )}
         </div>
       ) : (
         <div>
@@ -116,7 +139,7 @@ export default async function SetPage({
       ) : (
         <SetView
           setId={data.set.id}
-          spec={data.set.spec}
+          spec={data.set.editedSpec ?? data.set.spec}
           initialLayout={data.set.layout}
           hasThumb={data.set.hasThumb}
           sourcePhotoUrl={data.set.sourcePhotoUrl}

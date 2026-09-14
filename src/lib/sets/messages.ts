@@ -74,6 +74,14 @@ export const SET_MATCH_COULDNT_READ = "The shot's camera couldn't be read this t
 export const SET_MATCH_TOO_FAST = "You're matching shots quickly — try again in a little while.";
 export const SET_MATCH_TIMED_OUT = "Reading that shot's camera took too long — try again in a moment.";
 
+// The Set Editor's Astra edits (2026-09-14) — the prompt bar's line when a
+// change could not land. The person's own words refused by the gate say the
+// gate's sentence; these cover Astra's side.
+export const SET_EDIT_FAILED = "Astra couldn't make that change — try saying it differently.";
+export const SET_EDIT_REFUSED = "That change can't be made here.";
+export const SET_EDIT_TOO_FAST = "You're changing the set quickly — give it a moment.";
+export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a moment.";
+
 /**
  * A read that did not come back → the sentence shown, by the provider's
  * failure kind (providers/astra.ts), or "invalid" for an answer that came
