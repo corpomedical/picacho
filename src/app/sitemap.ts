@@ -2,6 +2,7 @@ import type { MetadataRoute } from "next";
 import { CANONICAL_ORIGIN } from "@/lib/domains";
 import { LOCALES } from "@/lib/i18n/locales";
 import { LOCALIZED_PATHS, localizedHref } from "@/lib/i18n/routing";
+import { pageUpdated } from "@/lib/page-dates";
 
 // Env var first (production sets it), canonical fallback for local dev.
 // The old fallback was a third domain the product never
@@ -51,6 +52,15 @@ const PUBLIC_ROUTES = [
   "/docs/api",
 ];
 
+// When the page's words last changed (lib/page-dates.ts), never the time of
+// the request. A translation carries its English page's date: the language
+// files change together. An undated page (the gallery, a live feed) gets no
+// lastmod rather than a guess.
+function lastModifiedFor(basePath: string): { lastModified?: string } {
+  const date = pageUpdated(basePath);
+  return date ? { lastModified: date } : {};
+}
+
 export default function sitemap(): MetadataRoute.Sitemap {
   const entries = PUBLIC_ROUTES.map((route) => {
     // Locale alternates (2026-08-30). Next's MetadataRoute.Sitemap emits
@@ -76,7 +86,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
     return {
       url: `${BASE_URL}${route}`,
-      lastModified: new Date(),
+      ...lastModifiedFor(basePath),
       ...(languages ? { alternates: { languages } } : {}),
     };
   });
@@ -95,7 +105,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     );
     return LOCALES.filter(({ code }) => code !== "en").map(({ code }) => ({
       url: `${BASE_URL}${localizedHref(basePath, code)}`,
-      lastModified: new Date(),
+      ...lastModifiedFor(basePath),
       alternates: { languages },
     }));
   });

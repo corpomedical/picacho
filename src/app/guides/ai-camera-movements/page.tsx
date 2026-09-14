@@ -3,6 +3,7 @@ import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { marketingSocial } from "@/lib/i18n/metadata";
+import { PAGE_UPDATED } from "@/lib/page-dates";
 
 // SEO guide #2 (2026-08-28, from the operator's "our Search Console
 // performance is embarrassing" push): the camera-movement vocabulary,
@@ -274,7 +275,7 @@ export default async function CameraMovementsGuide() {
               "@type": "Article",
               headline: "AI Video Camera Movements: The Director's Cheat Sheet",
               datePublished: "2026-08-28",
-              dateModified: "2026-08-28",
+              dateModified: PAGE_UPDATED["/guides/ai-camera-movements"],
               author: { "@type": "Organization", name: "Picacho" },
               publisher: { "@type": "Organization", name: "Picacho", url: "https://picacho.ai" },
               mainEntityOfPage: "https://picacho.ai/guides/ai-camera-movements",

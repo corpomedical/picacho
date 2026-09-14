@@ -3,6 +3,7 @@ import Link from "next/link";
 import { MarketingHeader } from "@/components/marketing/header";
 import { MarketingFooter } from "@/components/marketing/footer";
 import { marketingSocial } from "@/lib/i18n/metadata";
+import { PAGE_UPDATED } from "@/lib/page-dates";
 
 // SEO guide #3 (2026-08-28): the model-specific guide for Seedance 2.0 —
 // model-name queries are how practitioners search, and this is the model
@@ -230,7 +231,7 @@ export default async function SeedanceGuide() {
               "@type": "Article",
               headline: "Seedance 2.0: The Practical Guide",
               datePublished: "2026-08-28",
-              dateModified: "2026-08-28",
+              dateModified: PAGE_UPDATED["/guides/seedance-2"],
               author: { "@type": "Organization", name: "Picacho" },
               publisher: { "@type": "Organization", name: "Picacho", url: "https://picacho.ai" },
               mainEntityOfPage: "https://picacho.ai/guides/seedance-2",
