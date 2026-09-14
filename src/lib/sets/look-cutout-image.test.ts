@@ -99,6 +99,39 @@ describe.skipIf(!sharp)("composeLookCutout (sharp)", () => {
     expect(g).toBeLessThan(30);
   });
 
+  it("lays several answers of the same still together: a pixel kept by any is kept, and the crop spans them all", async () => {
+    // Two objects, cut in two requests: a 120 × 120 block each, 8% of the frame.
+    const left = (x: number, y: number) => x >= 60 && x < 180 && y >= 90 && y < 210;
+    const right = (x: number, y: number) => x >= 420 && x < 540 && y >= 30 && y < 150;
+    const out = await composeLookCutout([await samAnswer(left), await samAnswer(right)], null);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.share).toBeCloseTo(0.16, 6);
+    const margin = Math.round(LOOK_CROP_MARGIN * Math.max(W, H));
+    expect([out.width, out.height]).toEqual([540 - 60 + 2 * margin, 210 - 30 + 2 * margin]);
+    // Both blocks are blue in it, and the gap between them grey.
+    const { data, info } = await sharp!(out.jpeg).raw().toBuffer({ resolveWithObject: true });
+    const at = (x: number, y: number) => {
+      const i = ((y - 30 + margin) * info.width + (x - 60 + margin)) * info.channels;
+      return [data[i], data[i + 1], data[i + 2]];
+    };
+    for (const [x, y] of [[120, 150], [480, 90]]) {
+      const [r, , b] = at(x, y);
+      expect(b - r, `${x},${y}`).toBeGreaterThan(150);
+    }
+    const [r, g, b] = at(300, 120);
+    expect(Math.max(Math.abs(r - 128), Math.abs(g - 128), Math.abs(b - 128)), "the gap").toBeLessThan(12);
+    // One answer alone keeps its own block only.
+    const one = await composeLookCutout([await samAnswer(left)], null);
+    expect(one.ok && one.share).toBeCloseTo(0.08, 6);
+  });
+
+  it("answers that are not the same size are no look, and no answer at all is no look", async () => {
+    const small = await sharp!({ create: { width: 10, height: 10, channels: 4, background: { r: 0, g: 0, b: 255, alpha: 1 } } }).png().toBuffer();
+    expect(await composeLookCutout([await samAnswer(block), small], null)).toEqual({ ok: false, reason: "unreadable" });
+    expect(await composeLookCutout([], null)).toEqual({ ok: false, reason: "unreadable" });
+  });
+
   it("keeps the crop inside the frame when the mask touches its edge", async () => {
     const out = await composeLookCutout(await samAnswer((x, y) => x < 120 && y < 90), null);
     expect(out.ok).toBe(true);

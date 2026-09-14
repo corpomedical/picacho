@@ -11,11 +11,13 @@
 // car's design — tested twice: a car cut out by hand, then one cut out by
 // SAM 2 (the cutter used here) from a box placed by hand and sent in the
 // product's image order (docs/ASTRA_SETS.md, "The operator's first real
-// test"). The boxes this module works out, the JPEG and the person's region
-// below have not been through a real cut. So the look is only ever the
-// cutout: this module says where the objects are in the earlier still, as
-// boxes; SAM 2 cuts them out (providers/fal-segment.ts) and
-// look-cutout-image.ts lays them on grey.
+// test"). So the look is only ever the cutout: this module says where the
+// objects are in the earlier still, a box and a point each; SAM 2 cuts them
+// out (providers/fal-segment.ts) and look-cutout-image.ts lays them on
+// grey. This module's own cut, the person's region and the JPEG went
+// through fal on 2026-09-14, on that same still, and came back as the car
+// whole on grey with nothing of the person (below, ONE CUT PER OBJECT); a
+// shot of the product's own has yet to send one.
 //
 // WHERE THE STILL WAS DRAWN FROM. A still follows its sketch, and the sketch
 // is the centre square of the stage canvas (set-view.tsx cropSquare), seen
@@ -51,18 +53,32 @@
 // long lens fills the frame from fifty metres: the few largest objects on
 // screen are kept, none smaller than LOOK_MIN_SHARE of the frame.
 //
-// ONE BOX PER SHAPE THAT SHOWS. SAM 2 makes one mask of every box it is
-// given, and a thin part (a car's rear wing) is caught only when it has a
-// box of its own (measured 2026-09-12). So each shape that shows gets one —
-// but a shape lying wholly inside what the object's larger shapes already
-// cover on screen (a tail light on the bodywork, a slat on the engine cover)
-// adds nothing, and is left out: the largest shape first, then whichever
-// adds the most the others do not cover, on a LOOK_COVER_GRID grid, until
-// none adds anything. Every box is then grown well past its shape, by a
-// share of its whole object's size on screen: GPT Image does not put things
-// exactly where the sketch does — in the operator's first race-track still
-// the car came out at about 85% of its sketch size, and higher — so a part
-// can land several percent of its object's size from where it was sketched.
+// ONE CUT PER OBJECT: A BOX AND A POINT. A box alone is not enough. A box
+// drawn from the sketch is always loose — GPT Image does not put things
+// where the sketch does: in the operator's first race-track still the car
+// came out at about 85% of its sketch size, and higher — and with a loose
+// box SAM 2 cuts the biggest thing inside it. Measured 2026-09-14 on that
+// still with this module's own boxes and no point: eight boxes round the
+// car's parts came back as the wall and the road with the car cut out of
+// them; the body's box and the wing's, the same; one box round the whole
+// car, the road under it. The same box with one positive point on the car
+// cut the car whole, rear wing included (the earlier finding that a thin
+// part needs a box of its own was made without a point); the point alone
+// cut the wheel under it. So each object is one request of its own
+// (providers/fal-segment.ts): one box round all of it that shows, grown by
+// LOOK_GROW_SHARE of its size on screen plus LOOK_GROW_FRAME of the frame
+// on every side, and one positive point where the object surely is: the
+// deeper inside it the better, since the object is drawn a little off its
+// sketch. The middle of the object on screen, when one of its parts lies
+// there — a car's body, a sofa's seat, a pedestal table's pedestal; else
+// (a table on four legs is hollow in the middle) the middle of the box
+// once it is cut back clear of the person (below), when a part lies there;
+// else the centre of the largest part that shows, then of the next largest
+// — never a point outside the box as cut back. An object with no such
+// point is not cut. On still 1 the middle lands on the car's body; with the
+// figure at the car's middle instead, the box is the car's rear, clear of
+// the person, and the point its middle, on the rear bodywork. At most
+// LOOK_MAX_GROUPS requests a look, run together.
 //
 // NEVER THE PERSON. The still has a person in it, and the look must carry
 // none: the prompt tells the model to draw what the cutout shows exactly as
@@ -85,23 +101,28 @@
 // THE MONEY. SAM 2 on fal (fal-ai/sam2/image) costs $0.0008 per compute
 // second (unit_price 0.0008, unit "compute seconds": fal's pricing API,
 // GET api.fal.ai/v1/models/pricing?endpoint_id=fal-ai/sam2/image, read
-// 2026-09-12). Two test calls took about 2–3 s of wall time each, the
-// compute inside it:
-//   a measured cut, at most   3 s × $0.0008 = $0.0024
+// 2026-09-12). Seven calls so far took 2–20 s of wall time each, the compute
+// inside it: two of 2–3 s on 2026-09-12, and on 2026-09-14 one cold call of
+// 20 s, then 12, 6.4, 4.5 and 4.3 s. Taking the longest warm call:
+//   a measured cut, at most   7 s × $0.0008 = $0.0056
 //   worst case, a cut run to the 30 s the shot waits for it
 //   (fal-segment.ts SAM2_TIMEOUT_MS): 30 s × $0.0008 = $0.024 — a fal
 //   runner that outlives our wait may still bill it
-// Paid per cut. The cutout is kept (set-config.ts setLookCutoutPath), so a
-// look pinned to one still is cut once and reused by every shot after it —
-// but the page's default look follows the newest still (set-view.tsx), so
-// under it nearly every shot takes a still never cut before and pays one
-// cut: $0.0024 a shot as measured, next to a GPT Image still's $0.17
-// (IMAGE_COST_USD, admin/economics.ts) about 1.4% more. A cut that fails
-// keeps nothing, so the next shot with that look pays to try again — at
-// most as often as the shot's burst brake lets anyone shoot (12 in 10
-// minutes, actions.ts): 12 × $0.024 = $0.288 in 10 minutes if every one
-// ran out the wait. The person still pays the flat one credit an image take
-// costs.
+// Paid per object, at most LOOK_MAX_GROUPS objects a look, cut together:
+//   a look, measured   3 × $0.0056 = $0.0168 at most; most sets have one
+//   object that counts (a car, a sofa) and pay one cut
+//   a look, worst      3 × $0.024 = $0.072
+// The cutout is kept (set-config.ts setLookCutoutPath), so a look pinned to
+// one still is cut once and reused by every shot after it — but the page's
+// default look follows the newest still (set-view.tsx), so under it nearly
+// every shot takes a still never cut before and pays its cuts: $0.0056 a
+// shot for one object as measured, next to a GPT Image still's $0.17
+// (IMAGE_COST_USD, admin/economics.ts) about 3.3% more. A look that fails
+// keeps nothing, so the next shot with it pays to try again — at most as
+// often as the shot's burst brake lets anyone shoot (12 in 10 minutes,
+// actions.ts): 12 × $0.072 = $0.864 in 10 minutes if every object of every
+// one ran out the wait. The person still pays the flat one credit an image
+// take costs.
 //
 // THE PROCESSOR. The still goes to fal inline, as a data URI, and the cut
 // comes back inline in the answer (sync_mode): no link to either is made.
@@ -111,15 +132,15 @@
 import { STAND_IN_HEIGHT_M } from "./build-scene";
 import { rotationXYZ } from "./marks";
 import { SET_LIMITS, type SetObject, type SetSpec, type Vec3 } from "./set-spec";
-import { SAM2_TIMEOUT_MS, type SegmentBox } from "../generations/providers/fal-segment";
+import { SAM2_TIMEOUT_MS, type SegmentBox, type SegmentPoint } from "../generations/providers/fal-segment";
 
 const DEG = Math.PI / 180;
 
 /** fal's SAM 2 price, USD per compute second (pricing API, 2026-09-12). */
 export const SAM2_USD_PER_COMPUTE_SECOND = 0.0008;
-/** The longest of the two measured cuts, wall time, compute included. */
-export const LOOK_CUT_MEASURED_SECONDS = 3;
-/** 3 s × $0.0008 = $0.0024. */
+/** The longest warm cut measured, wall time, compute included (the header). */
+export const LOOK_CUT_MEASURED_SECONDS = 7;
+/** 7 s × $0.0008 = $0.0056. */
 export const LOOK_CUT_MEASURED_USD = LOOK_CUT_MEASURED_SECONDS * SAM2_USD_PER_COMPUTE_SECOND;
 /** A cut is not waited for past SAM2_TIMEOUT_MS: 30 s × $0.0008 = $0.024. */
 export const LOOK_CUT_WORST_USD = (SAM2_TIMEOUT_MS / 1000) * SAM2_USD_PER_COMPUTE_SECOND;
@@ -134,18 +155,18 @@ export const LOOK_TALL_SHARE = 0.8;
 export const LOOK_TOUCH_M = 0.25;
 /** An object repeated over more than this, or a chain of touching props longer than it, is a run — a kerb line, a row of barriers — and scenery. */
 export const LOOK_GROUP_MAX_M = 12;
-/** The objects kept, largest on screen first. */
+/** The objects kept, largest on screen first: one request to SAM 2 each. */
 export const LOOK_MAX_GROUPS = 3;
+/** A look's cuts at most, as measured: 3 × $0.0056 = $0.0168. */
+export const LOOK_MEASURED_USD = LOOK_MAX_GROUPS * LOOK_CUT_MEASURED_USD;
+/** A look's cuts at most, every one run to the wait: 3 × $0.024 = $0.072. */
+export const LOOK_WORST_USD = LOOK_MAX_GROUPS * LOOK_CUT_WORST_USD;
 /** An object smaller than this share of the frame on screen is not kept. */
 export const LOOK_MIN_SHARE = 0.01;
-/** Each box grows, on each side, by this share of its object's size on screen… */
+/** An object's box grows, on each side, by this share of its size on screen… */
 export const LOOK_GROW_SHARE = 0.1;
 /** …plus this share of the frame. */
 export const LOOK_GROW_FRAME = 0.02;
-/** At most this many boxes go to SAM 2, the largest object's first. */
-export const LOOK_MAX_BOXES = 24;
-/** Cells a side of the grid that says what a shape adds on screen: 16 px on a 1024 still. */
-export const LOOK_COVER_GRID = 64;
 /**
  * Half the grey figure's footprint, whichever way it faces: its hands reach
  * 0.32 m to each side and its toes 0.19 m ahead (build-scene.ts
@@ -173,8 +194,12 @@ const ANY_STILL = { width: 1024, height: 1024 };
  */
 export type ShotCamera = { position: Vec3; target: Vec3; fovDeg: number; canvasAspect: number; figure: { x: number; z: number } };
 
-/** A box for SAM 2 in the still's own pixels, and which copy of which of the spec's objects it was drawn round. */
-export type LookBox = SegmentBox & { object: number; copy: number };
+/**
+ * One object to cut, in the still's own pixels: the box round all of it that
+ * shows, and a point on it — the centre on screen of its largest part that
+ * shows, which copy of which of the spec's objects `object` and `copy` say.
+ */
+export type LookCut = { box: SegmentBox; point: SegmentPoint; object: number; copy: number };
 
 /** An object kept: its box on screen (0–1, left to right and top to bottom), its share of the frame, its shapes. */
 export type LookObject = { box: FrameBox; share: number; shapes: number };
@@ -423,18 +448,6 @@ function clip(b: FrameBox): FrameBox | null {
 
 const area = (b: FrameBox) => (b.u1 - b.u0) * (b.v1 - b.v0);
 
-/** The grid cells a box covers (LOOK_COVER_GRID a side); a sliver covers at least one row or column. */
-function cellsOf(b: FrameBox): number[] {
-  const n = LOOK_COVER_GRID;
-  const i0 = Math.min(n - 1, Math.floor(b.u0 * n));
-  const j0 = Math.min(n - 1, Math.floor(b.v0 * n));
-  const i1 = Math.max(i0 + 1, Math.ceil(b.u1 * n));
-  const j1 = Math.max(j0 + 1, Math.ceil(b.v1 * n));
-  const out: number[] = [];
-  for (let j = j0; j < j1; j++) for (let i = i0; i < i1; i++) out.push(j * n + i);
-  return out;
-}
-
 const touch = (a: Placed, b: Placed) =>
   [0, 1, 2].every((i) => a.min[i] - LOOK_TOUCH_M <= b.max[i] && b.min[i] - LOOK_TOUCH_M <= a.max[i]);
 
@@ -459,20 +472,21 @@ function objectsOf(props: Placed[]): Placed[][] {
 }
 
 /**
- * The boxes to send SAM 2 to cut the look's objects out of an earlier still
- * of `width` × `height` pixels, drawn from `camera` (see the header), and
- * the person's region, which is never part of the cutout. No boxes when no
+ * The cuts to ask SAM 2 for — one an object, a box and a point each — to
+ * take the look's objects out of an earlier still of `width` × `height`
+ * pixels, drawn from `camera` (see the header); the objects they are; and
+ * the person's region, which is never part of the cutout. No cuts when no
  * object qualifies clear of the person — the camera looked at bare
  * structure or sky, or the figure stood in front of everything — or when
  * the sketch did not show the figure; then there is nothing to cut, and the
  * shot goes without its look.
  */
-export function lookCutoutBoxes(
+export function lookCuts(
   spec: LookSet,
   camera: ShotCamera,
   still: { width: number; height: number },
-): { boxes: LookBox[]; objects: LookObject[]; person: FrameBox | null } {
-  const none = { boxes: [], objects: [], person: null };
+): { cuts: LookCut[]; objects: LookObject[]; person: FrameBox | null } {
+  const none = { cuts: [], objects: [], person: null };
   if (!finite(still.width) || !finite(still.height) || still.width < 1 || still.height < 1) return none;
   const cam = normaliseShotCamera(camera);
   if (!cam) return none;
@@ -508,61 +522,60 @@ export function lookCutoutBoxes(
     .sort((a, b) => b.share - a.share)
     .slice(0, LOOK_MAX_GROUPS);
 
-  // What the shapes already chosen cover, as sketched (before growing).
-  const covered = new Set<number>();
-  const sent: Shown[] = [];
+  // Onto the still's own pixels, each axis on its own; whole pixels inside it.
+  const px = (t: number, size: number, round: (n: number) => number) => clamp(round(t * size), 0, size - 1);
+  const cuts: LookCut[] = [];
+  const objects: LookObject[] = [];
   for (const g of kept) {
     const growU = LOOK_GROW_SHARE * (g.box.u1 - g.box.u0) + LOOK_GROW_FRAME;
     const growV = LOOK_GROW_SHARE * (g.box.v1 - g.box.v0) + LOOK_GROW_FRAME;
-    // Largest first; between equals, in the spec's order — so each pick below
-    // is the same for the same set, and a tie goes to the bigger shape.
-    const left = [...g.shapes]
-      .sort((a, b) => area(b.box) - area(a.box) || a.object - b.object || a.copy - b.copy)
-      .map((s) => ({ s, cells: cellsOf(s.box) }));
-    while (sent.length < LOOK_MAX_BOXES && left.length > 0) {
-      let best = -1;
-      let bestGain = 0;
-      left.forEach(({ cells }, k) => {
-        const gain = cells.reduce((n, c) => n + (covered.has(c) ? 0 : 1), 0);
-        if (gain > bestGain) {
-          best = k;
-          bestGain = gain;
-        }
-      });
-      // Every shape left lies inside what is already boxed.
-      if (best < 0) break;
-      const [{ s, cells }] = left.splice(best, 1);
-      for (const c of cells) covered.add(c);
-      const grown = clip({ u0: s.box.u0 - growU, v0: s.box.v0 - growV, u1: s.box.u1 + growU, v1: s.box.v1 + growV })!;
-      // Never a box into the person's region: SAM 2 would cut them out with it.
-      const clear = clearOf(grown, person);
-      if (clear) sent.push({ box: clear, object: s.object, copy: s.copy });
-    }
+    const grown = clip({ u0: g.box.u0 - growU, v0: g.box.v0 - growV, u1: g.box.u1 + growU, v1: g.box.v1 + growV })!;
+    // Never a box into the person's region: SAM 2 would cut them out with it.
+    const box = clearOf(grown, person);
+    if (!box) continue;
+    // The point (the header): the middle of the object on screen when a
+    // part lies there; else the middle of the box as cut back, when a part
+    // lies there; else the centre of the largest part that shows, then of
+    // the next largest — always inside the box as cut back. Largest first;
+    // between equals, the spec's order — so the pick is the same for the
+    // same set.
+    const bySize = [...g.shapes].sort((a, b) => area(b.box) - area(a.box) || a.object - b.object || a.copy - b.copy);
+    const inside = (u: number, v: number, b: FrameBox) => u > b.u0 && u < b.u1 && v > b.v0 && v < b.v1;
+    const middleOf = (b: FrameBox) => {
+      const u = (b.u0 + b.u1) / 2;
+      const v = (b.v0 + b.v1) / 2;
+      const s = bySize.find((part) => inside(u, v, part.box));
+      return s ? [{ s, u, v }] : [];
+    };
+    const on = [
+      ...middleOf(g.box),
+      ...middleOf(box),
+      ...bySize.map((s) => ({ s, u: (s.box.u0 + s.box.u1) / 2, v: (s.box.v0 + s.box.v1) / 2 })),
+    ].find(({ u, v }) => inside(u, v, box));
+    if (!on) continue;
+    cuts.push({
+      box: {
+        x_min: px(box.u0, still.width, Math.floor),
+        y_min: px(box.v0, still.height, Math.floor),
+        x_max: px(box.u1, still.width, Math.ceil),
+        y_max: px(box.v1, still.height, Math.ceil),
+      },
+      point: { x: px(on.u, still.width, Math.round), y: px(on.v, still.height, Math.round) },
+      object: on.s.object,
+      copy: on.s.copy,
+    });
+    objects.push({ box: g.box, share: g.share, shapes: g.shapes.length });
   }
-
-  // Onto the still's own pixels, each axis on its own; whole pixels inside it.
-  const px = (t: number, size: number, round: (n: number) => number) => clamp(round(t * size), 0, size - 1);
-  return {
-    boxes: sent.map(({ box, object, copy }) => ({
-      x_min: px(box.u0, still.width, Math.floor),
-      y_min: px(box.v0, still.height, Math.floor),
-      x_max: px(box.u1, still.width, Math.ceil),
-      y_max: px(box.v1, still.height, Math.ceil),
-      object,
-      copy,
-    })),
-    objects: kept.map((g) => ({ box: g.box, share: g.share, shapes: g.shapes.length })),
-    person,
-  };
+  return { cuts, objects, person };
 }
 
 /**
  * Whether a still drawn from `camera` can lend its look: its figure showed
- * and at least one box would go to SAM 2. The set page offers only such
+ * and at least one object would be cut. The set page offers only such
  * stills, and a new still is one only when this holds (look.ts canBeLook).
- * The boxes are chosen in the sketch's square and only then scaled to the
+ * The cuts are chosen in the sketch's square and only then scaled to the
  * still, so any still size gives the same answer.
  */
 export function seesLookObjects(spec: LookSet, camera: ShotCamera): boolean {
-  return lookCutoutBoxes(spec, camera, ANY_STILL).boxes.length > 0;
+  return lookCuts(spec, camera, ANY_STILL).cuts.length > 0;
 }

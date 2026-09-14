@@ -10,6 +10,13 @@
 // what removes them, so nothing outside the mask reaches the cutout at all.
 // JPEG then drops the alpha along with any metadata.
 //
+// SEVERAL CUTS, ONE PICTURE. Each object is cut in a request of its own
+// (look-cutout.ts), so a look with two or three objects is two or three
+// answers, every one the same still: they are laid together first — a pixel
+// kept by any of them is kept — and only then is the person's region
+// cleared and the mask measured. Answers that are not the same size are no
+// look.
+//
 // NEVER THE PERSON. A mask can take in the person too, when they stand in
 // front of, beside or on what the boxes were drawn round. So the person's
 // region of the still (look-cutout.ts: the grey figure's place on screen,
@@ -82,12 +89,14 @@ export function clearRegion(data: Buffer, width: number, height: number, channel
 }
 
 /**
- * SAM 2's answer (a PNG with alpha) → the cutout: the kept pixels outside
- * the person's region on LOOK_GROUND, cropped to their box plus
- * LOOK_CROP_MARGIN, as a JPEG. Never throws; `ok: false` says why it is no
- * look (see the header).
+ * SAM 2's answers (a PNG with alpha each, one an object, all of one still)
+ * → the cutout: the pixels any of them kept, outside the person's region,
+ * on LOOK_GROUND, cropped to their box plus LOOK_CROP_MARGIN, as a JPEG.
+ * Never throws; `ok: false` says why it is no look (see the header).
  */
-export async function composeLookCutout(png: Buffer, person: FrameBox | null): Promise<LookCutoutImage> {
+export async function composeLookCutout(cuts: Buffer | readonly Buffer[], person: FrameBox | null): Promise<LookCutoutImage> {
+  const pngs = Buffer.isBuffer(cuts) ? [cuts] : cuts;
+  if (pngs.length === 0) return { ok: false, reason: "unreadable" };
   let sharp: (typeof import("sharp"))["default"];
   try {
     ({ default: sharp } = await import("sharp"));
@@ -96,13 +105,22 @@ export async function composeLookCutout(png: Buffer, person: FrameBox | null): P
     return { ok: false, reason: "unreadable" };
   }
   try {
-    const { data, info } = await sharp(png, { limitInputPixels: 25_000_000, failOn: "error" })
-      .ensureAlpha()
-      .raw()
-      .toBuffer({ resolveWithObject: true });
+    const decode = (png: Buffer) =>
+      sharp(png, { limitInputPixels: 25_000_000, failOn: "error" }).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const { data, info } = await decode(pngs[0]);
     const { width, height } = info;
     // ensureAlpha leaves grey + alpha (2) or colour + alpha (4).
     const channels = info.channels as 2 | 4;
+    // The other objects' answers laid on: a pixel kept by any is kept, with
+    // that answer's colour (every answer is the same still).
+    for (const png of pngs.slice(1)) {
+      const more = await decode(png);
+      if (more.info.width !== width || more.info.height !== height || more.info.channels !== channels) return { ok: false, reason: "unreadable" };
+      for (let i = 0; i < width * height; i++) {
+        const at = i * channels;
+        if (more.data[at + channels - 1] > data[at + channels - 1]) more.data.copy(data, at, at, at + channels);
+      }
+    }
     if (person) clearRegion(data, width, height, channels, person);
     const { share, box } = maskExtent((i) => data[i * channels + channels - 1], width, height);
     if (!box || share < LOOK_MIN_MASK_SHARE) return { ok: false, reason: "empty" };

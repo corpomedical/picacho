@@ -6,20 +6,21 @@ import {
   LOOK_CUT_WORST_USD,
   LOOK_FIGURE_GROW,
   LOOK_GROUP_MAX_M,
-  LOOK_MAX_BOXES,
   LOOK_MAX_GROUPS,
+  LOOK_MEASURED_USD,
   LOOK_MIN_SHARE,
   LOOK_PROP_MAX_M,
   LOOK_SLAB_MIN_M,
   LOOK_TALL_SHARE,
+  LOOK_WORST_USD,
   SAM2_USD_PER_COMPUTE_SECOND,
-  lookCutoutBoxes,
+  lookCuts,
   normaliseShotCamera,
   seesLookObjects,
   sketchFovDeg,
   sketchProjector,
   type FrameBox,
-  type LookBox,
+  type LookCut,
   type LookSet,
   type ShotCamera,
 } from "./look-cutout";
@@ -107,20 +108,33 @@ const regionPx = (r: FrameBox, still = SQUARE) => ({
 });
 
 /** How far a box reaches into a region, in pixels across and down (0 when they do not meet). */
-function reach(b: LookBox, r: ReturnType<typeof regionPx>): { across: number; down: number } {
+function reach(b: LookCut["box"], r: ReturnType<typeof regionPx>): { across: number; down: number } {
   const across = Math.min(b.x_max, r.x_max) - Math.max(b.x_min, r.x_min);
   const down = Math.min(b.y_max, r.y_max) - Math.max(b.y_min, r.y_min);
   return across > 0 && down > 0 ? { across, down } : { across: 0, down: 0 };
 }
 
-/** No box sent reaches into the person's region by more than the one pixel where their edges round to the same column or row. */
-function expectClearOfPerson(got: ReturnType<typeof lookCutoutBoxes>, label: string) {
+/**
+ * No box sent reaches into the person's region by more than the one pixel
+ * where their edges round to the same column or row, and every point is in
+ * its box — so never in the region either.
+ */
+function expectClearOfPerson(got: ReturnType<typeof lookCuts>, label: string) {
   expect(got.person, label).not.toBeNull();
   const r = regionPx(got.person!);
-  for (const b of got.boxes) {
-    const { across, down } = reach(b, r);
-    expect(Math.min(across, down), `${label}: box round object ${b.object} ${JSON.stringify(b)} into ${JSON.stringify(r)}`).toBeLessThanOrEqual(1);
+  for (const c of got.cuts) {
+    const { across, down } = reach(c.box, r);
+    expect(Math.min(across, down), `${label}: box round object ${c.object} ${JSON.stringify(c)} into ${JSON.stringify(r)}`).toBeLessThanOrEqual(1);
+    expectPointInBox(c, label);
   }
+}
+
+/** A cut's point lies in its box (fal-segment.ts sends nothing otherwise). */
+function expectPointInBox(c: LookCut, label: string) {
+  expect(c.point.x, `${label}: ${JSON.stringify(c)}`).toBeGreaterThanOrEqual(c.box.x_min);
+  expect(c.point.x, `${label}: ${JSON.stringify(c)}`).toBeLessThanOrEqual(c.box.x_max);
+  expect(c.point.y, `${label}: ${JSON.stringify(c)}`).toBeGreaterThanOrEqual(c.box.y_min);
+  expect(c.point.y, `${label}: ${JSON.stringify(c)}`).toBeLessThanOrEqual(c.box.y_max);
 }
 
 describe("normaliseShotCamera", () => {
@@ -202,7 +216,7 @@ describe("the sketch's own projection", () => {
 });
 
 describe("the operator's race track, from still 1's camera", () => {
-  const got = lookCutoutBoxes(spec, STILL_1, SQUARE);
+  const got = lookCuts(spec, STILL_1, SQUARE);
 
   it("keeps one object, the car, the size the sketch drew it", () => {
     expect(got.objects).toHaveLength(1);
@@ -219,22 +233,50 @@ describe("the operator's race track, from still 1's camera", () => {
     expect(car.shapes).toBeGreaterThan(15);
   });
 
-  it("gives the car's body a box and its rear wing one of its own", () => {
-    const objects = new Set(got.boxes.map((b) => b.object));
-    expect(objects.has(CAR.body)).toBe(true);
-    expect(objects.has(CAR.rearWing)).toBe(true);
+  it("cuts the car in one request: a box round all of it that shows, and a point at its middle, on its body", () => {
+    expect(got.cuts).toHaveLength(1);
+    const [car] = got.cuts;
+    // The middle of the car on screen lies on its floor pan and its body;
+    // the pan, the larger, names it.
+    expect(car.object).toBe(CAR.first);
+    expectPointInBox(car, "still 1");
+    const sketched = got.objects[0].box;
+    expect(car.point).toEqual({ x: Math.round(((sketched.u0 + sketched.u1) / 2) * 1024), y: Math.round(((sketched.v0 + sketched.v1) / 2) * 1024) });
+    // GPT Image drew the car from about x 40 to 830 and y 440 to 800 of
+    // 1024, smaller and lower than its sketch: the point lands on its body.
+    expect(car.point.x).toBeGreaterThan(200);
+    expect(car.point.x).toBeLessThan(650);
+    expect(car.point.y).toBeGreaterThan(500);
+    expect(car.point.y).toBeLessThan(760);
+    // Measured 2026-09-14 through fal: this box with a point on the body
+    // cut the car whole, rear wing included (the box's right edge is the
+    // person's region).
+    expect(car.box).toEqual({ x_min: 0, y_min: 302, x_max: 696, y_max: 967 });
+    expect(car.point).toEqual({ x: 491, y: 635 });
   });
 
-  it("gives the stray wall, the grandstands and the kerbs none: every box is round a part of the car", () => {
-    for (const b of got.boxes) {
-      expect(b.object, `box round object ${b.object}`).toBeGreaterThanOrEqual(CAR.first);
-      expect(b.object, `box round object ${b.object}`).toBeLessThanOrEqual(CAR.last);
+  it("gives the stray wall, the grandstands and the kerbs no cut: the one object is the car", () => {
+    expect(got.objects).toHaveLength(1);
+    for (const c of got.cuts) {
+      expect(c.object, `point on object ${c.object}`).toBeGreaterThanOrEqual(CAR.first);
+      expect(c.object, `point on object ${c.object}`).toBeLessThanOrEqual(CAR.last);
     }
-    const objects = got.boxes.map((b) => b.object);
+    const objects = got.cuts.map((c) => c.object);
     for (const not of [STRAY_WALL, ...GRANDSTANDS, ...KERBS]) expect(objects).not.toContain(not);
   });
 
-  it("grows every box well past its part, so a car drawn a little smaller or higher is still inside", () => {
+  it("grows the box well past the car as sketched, wing included, so a car drawn a little smaller or higher is still inside", () => {
+    const [car] = got.cuts;
+    const sketched = got.objects[0].box;
+    const carHeight = (sketched.v1 - sketched.v0) * 1024;
+    const carWidth = (sketched.u1 - sketched.u0) * 1024;
+    // At least 10% of the car's size past it above, below and to the left;
+    // to the right the person's region cuts it back.
+    expect(car.box.y_min).toBeLessThan(sketched.v0 * 1024 - 0.1 * carHeight);
+    expect(car.box.y_max).toBeGreaterThan(sketched.v1 * 1024 + 0.1 * carHeight);
+    expect(car.box.x_min).toBeLessThanOrEqual(Math.max(0, sketched.u0 * 1024 - 0.1 * carWidth));
+    expect(Math.abs(car.box.x_max - regionPx(got.person!).x_min)).toBeLessThanOrEqual(1);
+    // The rear wing, the car's highest and hindmost part, is in the box.
     const project = sketchProjector(STILL_1);
     const o = spec.objects[CAR.rearWing];
     const corners: Vec3[] = [];
@@ -246,56 +288,47 @@ describe("the operator's race track, from still 1's camera", () => {
       corners.push([o.position[0] + x * hx, o.position[1] + c * y * hy - s * z * hz, o.position[2] + s * y * hy + c * z * hz]);
     }
     const seen = corners.map((p) => project(p)!);
-    const sketched = {
-      x_min: Math.min(...seen.map((s) => s.u)) * 1024,
-      x_max: Math.max(...seen.map((s) => s.u)) * 1024,
-      y_min: Math.min(...seen.map((s) => s.v)) * 1024,
-      y_max: Math.max(...seen.map((s) => s.v)) * 1024,
-    };
-    const wing = got.boxes.find((b) => b.object === CAR.rearWing)!;
-    // At least 10% of the car's height on screen past the wing, above and below.
-    const carHeight = (got.objects[0].box.v1 - got.objects[0].box.v0) * 1024;
-    expect(wing.y_min).toBeLessThan(sketched.y_min - 0.1 * carHeight);
-    expect(wing.y_max).toBeGreaterThan(sketched.y_max + 0.1 * carHeight);
-    expect(wing.x_min).toBeLessThanOrEqual(Math.max(0, sketched.x_min));
-    expect(wing.x_max).toBeGreaterThan(sketched.x_max);
+    expect(car.box.y_min).toBeLessThan(Math.min(...seen.map((s) => s.v)) * 1024 - 0.1 * carHeight);
+    expect(car.box.x_min).toBeLessThanOrEqual(Math.max(0, Math.min(...seen.map((s) => s.u)) * 1024));
   });
 
-  it("stays inside the still, in whole pixels, and under the cap", () => {
-    expect(got.boxes.length).toBeGreaterThan(1);
-    expect(got.boxes.length).toBeLessThanOrEqual(LOOK_MAX_BOXES);
-    for (const b of got.boxes) {
-      for (const n of [b.x_min, b.y_min, b.x_max, b.y_max]) expect(Number.isInteger(n)).toBe(true);
-      expect(b.x_min).toBeGreaterThanOrEqual(0);
-      expect(b.y_min).toBeGreaterThanOrEqual(0);
-      expect(b.x_max).toBeLessThanOrEqual(1023);
-      expect(b.y_max).toBeLessThanOrEqual(1023);
-      expect(b.x_max).toBeGreaterThan(b.x_min);
-      expect(b.y_max).toBeGreaterThan(b.y_min);
+  it("stays inside the still, in whole pixels, at most LOOK_MAX_GROUPS cuts", () => {
+    expect(got.cuts.length).toBeLessThanOrEqual(LOOK_MAX_GROUPS);
+    for (const c of got.cuts) {
+      for (const n of [c.box.x_min, c.box.y_min, c.box.x_max, c.box.y_max, c.point.x, c.point.y]) expect(Number.isInteger(n)).toBe(true);
+      expect(c.box.x_min).toBeGreaterThanOrEqual(0);
+      expect(c.box.y_min).toBeGreaterThanOrEqual(0);
+      expect(c.box.x_max).toBeLessThanOrEqual(1023);
+      expect(c.box.y_max).toBeLessThanOrEqual(1023);
+      expect(c.box.x_max).toBeGreaterThan(c.box.x_min);
+      expect(c.box.y_max).toBeGreaterThan(c.box.y_min);
+      expectPointInBox(c, "still 1");
     }
   });
 
   it("maps the square onto a still that is not square, each axis on its own", () => {
-    const wide = lookCutoutBoxes(spec, STILL_1, { width: 1536, height: 1024 });
-    expect(wide.boxes.map((b) => b.object)).toEqual(got.boxes.map((b) => b.object));
+    const wide = lookCuts(spec, STILL_1, { width: 1536, height: 1024 });
+    expect(wide.cuts.map((c) => c.object)).toEqual(got.cuts.map((c) => c.object));
     expect(wide.person).toEqual(got.person);
-    for (const [i, b] of wide.boxes.entries()) {
-      const sq = got.boxes[i];
-      expect(Math.abs(b.x_min - sq.x_min * 1.5)).toBeLessThanOrEqual(2);
-      expect(Math.abs(b.x_max - Math.min(1535, sq.x_max * 1.5))).toBeLessThanOrEqual(2);
-      expect(b.y_min).toBe(sq.y_min);
-      expect(b.y_max).toBe(sq.y_max);
+    for (const [i, c] of wide.cuts.entries()) {
+      const sq = got.cuts[i];
+      expect(Math.abs(c.box.x_min - sq.box.x_min * 1.5)).toBeLessThanOrEqual(2);
+      expect(Math.abs(c.box.x_max - Math.min(1535, sq.box.x_max * 1.5))).toBeLessThanOrEqual(2);
+      expect(c.box.y_min).toBe(sq.box.y_min);
+      expect(c.box.y_max).toBe(sq.box.y_max);
+      expect(Math.abs(c.point.x - sq.point.x * 1.5)).toBeLessThanOrEqual(2);
+      expect(c.point.y).toBe(sq.point.y);
     }
   });
 
   it("is the same from the same camera every time", () => {
-    expect(lookCutoutBoxes(spec, STILL_1, SQUARE)).toEqual(got);
+    expect(lookCuts(spec, STILL_1, SQUARE)).toEqual(got);
   });
 });
 
 describe("never the person", () => {
   it("still 1: the region covers where GPT Image actually drew the person, and no box reaches into it", () => {
-    const got = lookCutoutBoxes(spec, STILL_1, SQUARE);
+    const got = lookCuts(spec, STILL_1, SQUARE);
     expect(LOOK_FIGURE_GROW).toBe(0.4);
     const r = regionPx(got.person!);
     expect(r.x_min).toBeLessThanOrEqual(STILL_1_PERSON.x_min);
@@ -303,9 +336,8 @@ describe("never the person", () => {
     expect(r.x_max).toBeGreaterThanOrEqual(STILL_1_PERSON.x_max);
     expect(r.y_max).toBeGreaterThanOrEqual(STILL_1_PERSON.y_max);
     expectClearOfPerson(got, "still 1");
-    // Before the fence, three boxes ran through the person: 22 and 26 to the
-    // right edge, 23 to x 950.
-    for (const b of got.boxes) expect(b.x_max, `object ${b.object}`).toBeLessThanOrEqual(r.x_min + 1);
+    // Before the fence, the car's box ran through the person to x 950.
+    for (const c of got.cuts) expect(c.box.x_max, `object ${c.object}`).toBeLessThanOrEqual(r.x_min + 1);
   });
 
   it("wherever the figure stands by the car — behind it, beside it on the camera's side, in front of its nose — no box reaches the person, and some of the car is still cut", () => {
@@ -314,11 +346,24 @@ describe("never the person", () => {
       ["beside the car, on the camera's side", -1.5, 1.2],
       ["in front of the nose", -0.6, 2.6],
     ] as const) {
-      const got = lookCutoutBoxes(spec, { ...STILL_1, figure: { x, z } }, SQUARE);
+      const got = lookCuts(spec, { ...STILL_1, figure: { x, z } }, SQUARE);
       expectClearOfPerson(got, label);
-      expect(got.boxes.length, label).toBeGreaterThan(0);
-      for (const b of got.boxes) expect(b.object, label).toBeGreaterThanOrEqual(CAR.first);
+      expect(got.cuts.length, label).toBeGreaterThan(0);
+      for (const c of got.cuts) expect(c.object, label).toBeGreaterThanOrEqual(CAR.first);
     }
+  });
+
+  it("the point moves off a part whose centre the person's region takes, to the next nearest the middle — and an object with none left is not cut", () => {
+    // A two-part object with the figure square in front of its larger part:
+    // the point goes to the smaller part, clear of the person.
+    const big = box({ position: [0, 0.5, 0], size: [2, 1, 1] });
+    const small = box({ position: [1.6, 0.4, 0], size: [1, 0.8, 1] });
+    const cam: ShotCamera = { position: [0.5, 1.6, 8], target: [0.5, 0.5, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -0.2, z: 1.2 } };
+    const moved = lookCuts({ objects: [big, small], bounds: { height: 12 } }, cam, SQUARE);
+    expectClearOfPerson(moved, "figure before the larger part");
+    expect(moved.cuts.map((c) => c.object)).toEqual([1]);
+    // The figure square in front of a one-part object: nothing to point at.
+    expect(lookCuts({ objects: [big], bounds: { height: 12 } }, cam, SQUARE).cuts).toEqual([]);
   });
 
   it("a figure seated on a chair: the chair is theirs, not the look's; the table beside it is cut back clear of them", () => {
@@ -330,10 +375,14 @@ describe("never the person", () => {
     ];
     const table = [box({ position: [3, 0.74, 0], size: [1.4, 0.05, 0.9] }), box({ position: [3, 0.36, 0], size: [0.12, 0.72, 0.12] })];
     const camera: ShotCamera = { position: [0.8, 1.5, 6], target: [1.2, 0.7, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: 0, z: 0.2 } };
-    const got = lookCutoutBoxes({ objects: [...chair, ...table], bounds: { height: 6 } }, camera, SQUARE);
+    const got = lookCuts({ objects: [...chair, ...table], bounds: { height: 6 } }, camera, SQUARE);
     expectClearOfPerson(got, "seated");
     expect(got.objects).toHaveLength(1);
-    expect(new Set(got.boxes.map((b) => b.object))).toEqual(new Set([4, 5]));
+    // One cut, the table's; its point at the table's middle on screen, which
+    // lies on its pedestal.
+    expect(got.cuts.map((c) => c.object)).toEqual([5]);
+    const sketched = got.objects[0].box;
+    expect(got.cuts[0].point).toEqual({ x: Math.round(((sketched.u0 + sketched.u1) / 2) * 1024), y: Math.round(((sketched.v0 + sketched.v1) / 2) * 1024) });
   });
 
   it("a still whose sketch did not show the figure has nothing to cut: nobody can say where its person is", () => {
@@ -344,9 +393,9 @@ describe("never the person", () => {
       // building, which the stage draws from the outside: none of it shows.
       ["hidden inside the pit building", { x: 25, z: -20 }],
     ] as const) {
-      const got = lookCutoutBoxes(spec, { ...STILL_1, figure }, SQUARE);
+      const got = lookCuts(spec, { ...STILL_1, figure }, SQUARE);
       expect(got.person, label).toBeNull();
-      expect(got.boxes, label).toEqual([]);
+      expect(got.cuts, label).toEqual([]);
     }
   });
 });
@@ -355,7 +404,7 @@ describe("which stills can lend a look", () => {
   it("still 1 can, whatever size the still", () => {
     expect(seesLookObjects(spec, STILL_1)).toBe(true);
     for (const still of [SQUARE, { width: 1536, height: 1024 }, { width: 390, height: 844 }]) {
-      expect(lookCutoutBoxes(spec, STILL_1, still).boxes.length).toBe(lookCutoutBoxes(spec, STILL_1, SQUARE).boxes.length);
+      expect(lookCuts(spec, STILL_1, still).cuts.length).toBe(lookCuts(spec, STILL_1, SQUARE).cuts.length);
     }
   });
 
@@ -369,7 +418,7 @@ describe("which stills can lend a look", () => {
   it("nor can a still of bare structure, or one whose figure was out of frame", () => {
     // The figure in view at the foot of the grandstands, and nothing there but structure.
     const stands: ShotCamera = { position: [-10, 1.6, 0], target: [-35, 5, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -18, z: -4 } };
-    expect(lookCutoutBoxes(spec, stands, SQUARE).person).not.toBeNull();
+    expect(lookCuts(spec, stands, SQUARE).person).not.toBeNull();
     expect(seesLookObjects(spec, stands)).toBe(false);
     // The car in view, the figure not.
     expect(seesLookObjects(spec, { ...STILL_1, figure: { x: 6, z: 6 } })).toBe(false);
@@ -381,32 +430,35 @@ describe("what the boxes leave out on the race track", () => {
     // Camera 2 looks from +x; the car's -x half stands inside the wall's copy.
     // The figure stands far down the track, at the right edge of the frame.
     const c2 = { ...spec.cameras[1], canvasAspect: 16 / 9, figure: { x: 0, z: -10 } };
-    const got = lookCutoutBoxes(spec, c2, SQUARE);
+    const got = lookCuts(spec, c2, SQUARE);
     expectClearOfPerson(got, "camera 2");
     expect(got.objects).toHaveLength(1);
-    expect(got.boxes.some((b) => b.object === CAR.rearWing)).toBe(true);
-    for (const b of got.boxes) {
-      const o = spec.objects[b.object];
-      const x = o.position[0] + (o.repeat?.offset[0] ?? 0) * b.copy;
-      expect(x, `object ${b.object} copy ${b.copy}`).toBeGreaterThanOrEqual(-0.2);
+    expect(got.cuts).toHaveLength(1);
+    // Fewer parts show than from still 1's camera, and the point is on one
+    // of the +x half.
+    expect(got.objects[0].shapes).toBeLessThan(lookCuts(spec, STILL_1, SQUARE).objects[0].shapes);
+    for (const c of got.cuts) {
+      const o = spec.objects[c.object];
+      const x = o.position[0] + (o.repeat?.offset[0] ?? 0) * c.copy;
+      expect(x, `object ${c.object} copy ${c.copy}`).toBeGreaterThanOrEqual(-0.2);
     }
   });
 
   it("the grandstands: their seats are hidden by the stands' own base from the track", () => {
     // The figure at the foot of the stands, at the right edge of the frame.
     const camera = { position: [-10, 1.6, 0] as Vec3, target: [-35, 5, 0] as Vec3, fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -18, z: -4 } };
-    const got = lookCutoutBoxes(spec, camera, SQUARE);
+    const got = lookCuts(spec, camera, SQUARE);
     expect(got.person).not.toBeNull();
     expect(got.person!.u0).toBeGreaterThan(0.8);
-    expect(got.boxes).toEqual([]);
+    expect(got.cuts).toEqual([]);
     expect(got.objects).toEqual([]);
   });
 
   it("the kerbs: stones laid end to end down a straight are scenery, however many are in view", () => {
     const camera = { position: [-9, 1.6, 10] as Vec3, target: [-12.4, 0, -10] as Vec3, fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -18, z: -10 } };
-    const got = lookCutoutBoxes(spec, camera, SQUARE);
+    const got = lookCuts(spec, camera, SQUARE);
     expect(got.person).not.toBeNull();
-    expect(got.boxes).toEqual([]);
+    expect(got.cuts).toEqual([]);
     expect(got.objects).toEqual([]);
   });
 });
@@ -420,9 +472,9 @@ describe("what counts as an object", () => {
 
   it("a prop, not structure: nothing longer than LOOK_PROP_MAX_M on a side, and never a plane", () => {
     expect(LOOK_PROP_MAX_M).toBe(6);
-    expect(lookCutoutBoxes(scene([box({ position: [0, 1, 0], size: [2, 1, 1] })]), cam, still).boxes).toHaveLength(1);
-    expect(lookCutoutBoxes(scene([box({ position: [0, 1, 0], size: [6.5, 1, 1] })]), cam, still).boxes).toEqual([]);
-    expect(lookCutoutBoxes(scene([box({ shape: "plane", position: [0, 0.5, 0], size: [2, 0.01, 2], rotation: [60, 0, 0] })]), cam, still).boxes).toEqual([]);
+    expect(lookCuts(scene([box({ position: [0, 1, 0], size: [2, 1, 1] })]), cam, still).cuts).toHaveLength(1);
+    expect(lookCuts(scene([box({ position: [0, 1, 0], size: [6.5, 1, 1] })]), cam, still).cuts).toEqual([]);
+    expect(lookCuts(scene([box({ shape: "plane", position: [0, 0.5, 0], size: [2, 0.01, 2], rotation: [60, 0, 0] })]), cam, still).cuts).toEqual([]);
   });
 
   it("a small room's walls, floor and ceiling are structure, not one object with the sofa against them", () => {
@@ -444,29 +496,29 @@ describe("what counts as an object", () => {
     // Inside the room, the figure at its right, clear of the sofa.
     const inside: ShotCamera = { position: [0, 1.5, 2], target: [0, 1, -2], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: 1.2, z: -1.4 } };
     for (const height of [3, 2.4]) {
-      const got = lookCutoutBoxes(scene([...room(height), sofa], height), inside, still);
+      const got = lookCuts(scene([...room(height), sofa], height), inside, still);
       expectClearOfPerson(got, `${height} m room`);
       expect(got.objects, `${height} m room`).toHaveLength(1);
-      expect(got.boxes.length, `${height} m room`).toBeGreaterThan(0);
-      for (const b of got.boxes) expect(b.object, `${height} m room`).toBe(5);
+      expect(got.cuts.length, `${height} m room`).toBeGreaterThan(0);
+      for (const b of got.cuts) expect(b.object, `${height} m room`).toBe(5);
       // The room alone: nothing to cut.
-      expect(lookCutoutBoxes(scene(room(height), height), inside, still).boxes, `${height} m room, bare`).toEqual([]);
+      expect(lookCuts(scene(room(height), height), inside, still).cuts, `${height} m room, bare`).toEqual([]);
     }
     // The same slab rule never takes a car (under 2 m wide) or a bed.
-    expect(lookCutoutBoxes(scene([box({ position: [0, 0.6, 0], size: [1.9, 1.2, 4.5] })]), cam, still).boxes.length).toBeGreaterThan(0);
-    expect(lookCutoutBoxes(scene([box({ position: [0, 0.3, 0], size: [2.1, 0.6, 1.6] })]), cam, still).boxes.length).toBeGreaterThan(0);
+    expect(lookCuts(scene([box({ position: [0, 0.6, 0], size: [1.9, 1.2, 4.5] })]), cam, still).cuts.length).toBeGreaterThan(0);
+    expect(lookCuts(scene([box({ position: [0, 0.3, 0], size: [2.1, 0.6, 1.6] })]), cam, still).cuts.length).toBeGreaterThan(0);
   });
 
   it("only in front of the camera; how far off does not matter, only how big on screen — a long lens fills the frame from 45 m", () => {
     const behind = box({ position: [0, 1, 12], size: [2, 1, 1] });
-    expect(lookCutoutBoxes(scene([behind]), cam, still).boxes).toEqual([]);
+    expect(lookCuts(scene([behind]), cam, still).cuts).toEqual([]);
     // A car 45 m off, the figure beside it: a speck at 24 mm, most of the frame at 135 mm.
     const car = box({ position: [0, 0.75, 8 - 45], size: [4.4, 1.5, 2] });
     const beside = { x: -3, z: 8 - 45 };
-    expect(lookCutoutBoxes(scene([car]), { ...cam, figure: beside }, still).boxes).toEqual([]);
-    const tele = lookCutoutBoxes(scene([car]), { ...cam, fovDeg: fovForLens(135), figure: beside }, still);
+    expect(lookCuts(scene([car]), { ...cam, figure: beside }, still).cuts).toEqual([]);
+    const tele = lookCuts(scene([car]), { ...cam, fovDeg: fovForLens(135), figure: beside }, still);
     expectClearOfPerson(tele, "135 mm");
-    expect(tele.boxes).toHaveLength(1);
+    expect(tele.cuts).toHaveLength(1);
     expect(tele.objects[0].share).toBeGreaterThan(0.1);
   });
 
@@ -475,49 +527,61 @@ describe("what counts as an object", () => {
     // A tall, narrow wall (structure: 7 m tall) between the camera and the
     // prop, clear of the line to the figure.
     const wall = box({ position: [0, 3.5, 3], size: [2, 7, 0.3] });
-    const walled = lookCutoutBoxes(scene([prop, wall]), cam, still);
+    const walled = lookCuts(scene([prop, wall]), cam, still);
     expect(walled.person).not.toBeNull();
-    expect(walled.boxes).toEqual([]);
+    expect(walled.cuts).toEqual([]);
     // A camera standing inside a big box sees out of it.
     const room = box({ position: [0, 2, 4], size: [12, 8, 12] });
-    expect(lookCutoutBoxes(scene([prop, room]), cam, still).boxes).toHaveLength(1);
+    expect(lookCuts(scene([prop, room]), cam, still).cuts).toHaveLength(1);
   });
 
-  it("shapes that touch are one object, with a box for each part that shows — a thin wing on its posts included", () => {
+  it("shapes that touch are one object, cut in one request: the box round every part that shows, the point on the largest", () => {
     const body = box({ position: [0, 0.6, 0], size: [2, 0.8, 4.4] });
     const posts = box({ position: [-0.7, 1.15, -1.9], size: [0.08, 0.4, 0.2], repeat: { count: 2, offset: [1.4, 0, 0] } });
     const wing = box({ position: [0, 1.4, -1.9], size: [2.2, 0.08, 0.45] });
     const tailLight = box({ position: [0, 0.8, -2.21], size: [0.3, 0.1, 0.02] });
-    const side: ShotCamera = { ...cam, position: [6, 1.6, 3], target: [0, 0.8, 0], figure: { x: -16, z: -2 } };
-    const got = lookCutoutBoxes(scene([body, posts, wing, tailLight]), side, still);
+    // The figure at the left edge of the frame, clear of the car.
+    const side: ShotCamera = { ...cam, position: [6, 1.6, 3], target: [0, 0.8, 0], figure: { x: -16, z: 2 } };
+    const got = lookCuts(scene([body, posts, wing, tailLight]), side, still);
     expect(got.objects).toHaveLength(1);
     expect(got.objects[0].shapes).toBe(5);
-    const objects = got.boxes.map((b) => b.object);
-    expect(objects).toContain(0);
-    expect(objects).toContain(2);
-    // The tail light lies inside what the body's box already covers on screen.
-    expect(objects).not.toContain(3);
+    expect(got.cuts).toHaveLength(1);
+    const [cut] = got.cuts;
+    expect(cut.object).toBe(0);
+    expectPointInBox(cut, "wing on posts");
+    // The box takes in the thin wing above the body, and the point is on the body, under the wing.
+    const project = sketchProjector(side);
+    const wingTop = project([0, 1.44, -1.9])!;
+    expect(cut.box.y_min).toBeLessThan(wingTop.v * 1024);
+    expect(cut.point.y).toBeGreaterThan(wingTop.v * 1024);
+    // The parts' own boxes are all inside the cut's.
+    const whole = got.objects[0].box;
+    expect(cut.box.x_min).toBeLessThanOrEqual(whole.u0 * 1024);
+    expect(cut.box.x_max).toBeGreaterThanOrEqual(whole.u1 * 1024);
+    expect(cut.box.y_min).toBeLessThanOrEqual(whole.v0 * 1024);
+    expect(cut.box.y_max).toBeGreaterThanOrEqual(whole.v1 * 1024);
   });
 
-  it("shapes apart are objects apart; the largest LOOK_MAX_GROUPS on screen are kept, none under LOOK_MIN_SHARE", () => {
+  it("shapes apart are objects apart, a cut each; the largest LOOK_MAX_GROUPS on screen are kept, none under LOOK_MIN_SHARE", () => {
     expect(LOOK_MAX_GROUPS).toBe(3);
     expect(LOOK_MIN_SHARE).toBe(0.01);
     const props = [-3, -1, 1, 3].map((x, i) => box({ position: [x, 0.5, 0], size: [1, 0.4 + i * 0.3, 1] }));
-    const got = lookCutoutBoxes(scene(props), cam, still);
+    const got = lookCuts(scene(props), cam, still);
     expect(got.objects).toHaveLength(3);
-    expect(got.boxes.map((b) => b.object).sort()).toEqual([1, 2, 3]);
+    expect(got.cuts.map((c) => c.object).sort()).toEqual([1, 2, 3]);
+    for (const c of got.cuts) expectPointInBox(c, "three apart");
     for (let i = 1; i < got.objects.length; i++) expect(got.objects[i].share).toBeLessThanOrEqual(got.objects[i - 1].share);
     // A pebble is not an object.
-    expect(lookCutoutBoxes(scene([box({ position: [0, 0.05, 0], size: [0.1, 0.1, 0.1] })]), cam, still).boxes).toEqual([]);
+    expect(lookCuts(scene([box({ position: [0, 0.05, 0], size: [0.1, 0.1, 0.1] })]), cam, still).cuts).toEqual([]);
   });
 
   it("a run of props longer than LOOK_GROUP_MAX_M is scenery — repeated, or a chain of touching props", () => {
     expect(LOOK_GROUP_MAX_M).toBe(12);
     const barrier = (count: number) => box({ position: [-4, 0.5, 2], size: [1, 1, 2], repeat: { count, offset: [0, 0, -2] } });
-    expect(lookCutoutBoxes(scene([barrier(3)]), cam, still).boxes.length).toBeGreaterThan(0);
-    expect(lookCutoutBoxes(scene([barrier(8)]), cam, still).boxes).toEqual([]);
+    expect(lookCuts(scene([barrier(3)]), cam, still).cuts.length).toBeGreaterThan(0);
+    expect(lookCuts(scene([barrier(8)]), cam, still).cuts).toEqual([]);
     const chain = Array.from({ length: 7 }, (_, i) => box({ position: [-4, 0.5, 2 - 2 * i], size: [1, 1, 2] }));
-    expect(lookCutoutBoxes(scene(chain), cam, still).boxes).toEqual([]);
+    expect(lookCuts(scene(chain), cam, still).cuts).toEqual([]);
   });
 
   it("a run beside a car is scenery on its own: the car keeps its boxes", () => {
@@ -525,27 +589,30 @@ describe("what counts as an object", () => {
     // car touching a line of kerb stones was thrown away with the line.
     const body = box({ position: [0, 0.6, 0], size: [2, 0.8, 4.4] });
     const kerb = (count: number, from: number) => box({ position: [1.2, 0.06, from], size: [0.4, 0.12, 1], repeat: { count, offset: [0, 0, 1] } });
-    const beside = lookCutoutBoxes(scene([body, kerb(20, -9)]), cam, still);
+    const beside = lookCuts(scene([body, kerb(20, -9)]), cam, still);
     expect(beside.objects).toHaveLength(1);
     expect(beside.objects[0].shapes).toBe(1);
-    expect(beside.boxes.map((b) => b.object)).toEqual([0]);
+    expect(beside.cuts.map((c) => c.object)).toEqual([0]);
     // A short line of them, touching, is part of the car.
-    expect(lookCutoutBoxes(scene([body, kerb(3, -1)]), cam, still).objects[0].shapes).toBe(4);
+    expect(lookCuts(scene([body, kerb(3, -1)]), cam, still).objects[0].shapes).toBe(4);
   });
 
   it("no camera or no still: nothing to cut", () => {
     const prop = box({ position: [0, 1, 0], size: [2, 1, 1] });
-    expect(lookCutoutBoxes(scene([prop]), { ...cam, canvasAspect: Number.NaN }, still).boxes).toEqual([]);
-    expect(lookCutoutBoxes(scene([prop]), cam, { width: 0, height: 1024 }).boxes).toEqual([]);
+    expect(lookCuts(scene([prop]), { ...cam, canvasAspect: Number.NaN }, still).cuts).toEqual([]);
+    expect(lookCuts(scene([prop]), cam, { width: 0, height: 1024 }).cuts).toEqual([]);
   });
 });
 
 describe("the money", () => {
-  it("is fal's compute-second price times the seconds, and a cut is capped by the wait", () => {
+  it("is fal's compute-second price times the seconds, a cut is capped by the wait, and a look is at most LOOK_MAX_GROUPS cuts", () => {
     expect(SAM2_USD_PER_COMPUTE_SECOND).toBe(0.0008);
-    // 3 s × $0.0008 = $0.0024 measured; 30 s × $0.0008 = $0.024 at worst.
-    expect(LOOK_CUT_MEASURED_USD).toBeCloseTo(0.0024, 10);
+    // 7 s × $0.0008 = $0.0056 measured; 30 s × $0.0008 = $0.024 at worst.
+    expect(LOOK_CUT_MEASURED_USD).toBeCloseTo(0.0056, 10);
     expect(SAM2_TIMEOUT_MS).toBe(30_000);
     expect(LOOK_CUT_WORST_USD).toBeCloseTo(0.024, 10);
+    // 3 × $0.0056 = $0.0168; 3 × $0.024 = $0.072.
+    expect(LOOK_MEASURED_USD).toBeCloseTo(0.0168, 10);
+    expect(LOOK_WORST_USD).toBeCloseTo(0.072, 10);
   });
 });

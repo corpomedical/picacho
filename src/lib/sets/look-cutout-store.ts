@@ -8,7 +8,8 @@
 //
 //   the still, from the owner's own folder → where its objects and its
 //   person are, from the camera and figure recorded with it (look-cutout.ts)
-//   → SAM 2 cuts the objects out (providers/fal-segment.ts) → the person's
+//   → SAM 2 cuts each object out, one request an object, run together
+//   (providers/fal-segment.ts) → the answers laid together, the person's
 //   region cleared, the rest laid on grey and cropped (look-cutout-image.ts)
 //   → kept at setLookCutoutPath, beside the set's card.
 //
@@ -16,7 +17,10 @@
 // cut once, however many shots take it (look-cutout.ts, THE MONEY, says
 // what that comes to under the page's default look). Any step that fails
 // is a reason, never a throw: the shot then goes without its look, and says
-// so (sets/actions.ts shootInSet).
+// so (sets/actions.ts shootInSet). Every object or none: a look with one of
+// its objects missing would be kept for good and never tried again, so one
+// object's cut failing drops the look, and the next shot with it tries all
+// of them again.
 //
 // WHERE THEY GO. A cutout is the person's own data, in their own folder of a
 // bucket account deletion sweeps whole. Deleting the set removes all of its
@@ -31,8 +35,8 @@
 // (providers/reference-notes.ts).
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { segmentWithBoxes } from "../generations/providers/fal-segment";
-import { lookCutoutBoxes, type LookSet, type ShotCamera } from "./look-cutout";
+import { segmentObject } from "../generations/providers/fal-segment";
+import { lookCuts, type LookSet, type ShotCamera } from "./look-cutout";
 import { composeLookCutout } from "./look-cutout-image";
 import { setLookCutoutPath, setLookCutoutPrefix } from "./set-config";
 
@@ -88,7 +92,7 @@ export async function lookCutout(
     spec: LookSet;
     camera: ShotCamera | null;
   },
-  deps: { segment?: typeof segmentWithBoxes } = {},
+  deps: { segment?: typeof segmentObject } = {},
 ): Promise<LookCutoutResult> {
   const { admin, userId, setId, lookGenerationId } = input;
   const path = setLookCutoutPath(userId, setId, lookGenerationId);
@@ -107,12 +111,14 @@ export async function lookCutout(
   const size = await stillSize(still);
   if (!size) return { ok: false, reason: "still unreadable" };
 
-  const { boxes, person } = lookCutoutBoxes(input.spec, input.camera, size);
-  if (boxes.length === 0) return { ok: false, reason: "nothing to cut" };
-  const cut = await (deps.segment ?? segmentWithBoxes)(still, boxes);
-  if (!cut) return { ok: false, reason: "cut failed" };
+  const { cuts, person } = lookCuts(input.spec, input.camera, size);
+  if (cuts.length === 0) return { ok: false, reason: "nothing to cut" };
+  // One request an object, together; every object or none (the header).
+  const segment = deps.segment ?? segmentObject;
+  const answers = await Promise.all(cuts.map((c) => segment(still, c.box, c.point)));
+  if (answers.some((a) => a === null)) return { ok: false, reason: "cut failed" };
   // Whatever SAM 2 kept where the person may be is cleared before it is laid out.
-  const laid = await composeLookCutout(cut, person);
+  const laid = await composeLookCutout(answers as Buffer[], person);
   if (!laid.ok) {
     return { ok: false, reason: laid.reason === "empty" ? "empty mask" : laid.reason === "whole" ? "mask took the whole frame" : "cut failed" };
   }

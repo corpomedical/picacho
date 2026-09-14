@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import raceTrack from "./fixtures-race-track.json";
+import type { segmentObject } from "../generations/providers/fal-segment";
 import { lookCutout, removeLookCutoutsOf, removeSetLookCutouts } from "./look-cutout-store";
-import { lookCutoutBoxes, type ShotCamera } from "./look-cutout";
+import { lookCuts, type ShotCamera } from "./look-cutout";
 import { setLookCutoutPath, setLookCutoutPrefix, setPhotoPath, setThumbPath } from "./set-config";
-import { normaliseSetSpec } from "./set-spec";
+import { normaliseSetSpec, type SetObject } from "./set-spec";
 
 // A look's cutout is made once and kept (2026-09-12): every way it can fail
 // is a reason for the shot to go without its look, never a throw, and never
@@ -150,11 +151,14 @@ describe("lookCutout", () => {
       });
       const segment = vi.fn(async () => samAnswer(carBlock));
       expect(await lookCutout(input(f.admin), { segment })).toEqual({ ok: true, path: CUTOUT, made: true });
-      // SAM 2 got the still's own bytes and the boxes for a still that size.
+      // SAM 2 got the still's own bytes and the one object's box and point for a still that size.
+      const { cuts } = lookCuts(spec, CAMERA, { width: 256, height: 256 });
+      expect(cuts).toHaveLength(1);
       expect(segment).toHaveBeenCalledTimes(1);
-      const [sent, boxes] = segment.mock.calls[0] as unknown as [Buffer, unknown];
+      const [sent, box, point] = segment.mock.calls[0] as unknown as [Buffer, unknown, unknown];
       expect(sent.equals(still)).toBe(true);
-      expect(boxes).toEqual(lookCutoutBoxes(spec, CAMERA, { width: 256, height: 256 }).boxes);
+      expect(box).toEqual(cuts[0].box);
+      expect(point).toEqual(cuts[0].point);
       // What is kept is the cutout — a JPEG of the kept block and its margin — not the still.
       expect(uploads).toHaveLength(1);
       expect(uploads[0].path).toBe(CUTOUT);
@@ -163,6 +167,40 @@ describe("lookCutout", () => {
       expect(meta.format).toBe("jpeg");
       // The 130 × 130 block and 8 px on each side (3% of 256).
       expect([meta.width, meta.height]).toEqual([146, 146]);
+    });
+
+    it("two objects: one request each, laid together — and one of them failing is no look, with nothing kept", async () => {
+      const still = await stillPng();
+      // Two props apart, the figure far down the left of the frame, small and clear of both.
+      const prop = (x: number): SetObject => ({
+        shape: "box", position: [x, 0.5, 0], size: [1.5, 1, 1], rotation: [0, 0, 0], color: "#808080", roughness: 0.8, metalness: 0,
+        emissive: null, emissiveIntensity: 0, castShadow: true, repeat: null,
+      });
+      const two = { objects: [prop(-2), prop(2)], bounds: { height: 12 } };
+      const camera: ShotCamera = { position: [0, 1.6, 8], target: [0, 1, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -9, z: -30 } };
+      const { cuts } = lookCuts(two, camera, { width: 256, height: 256 });
+      expect(cuts.map((c) => c.object).sort()).toEqual([0, 1]);
+      // Each answer is its own block of the still; the cutout spans both.
+      const leftBlock = (x: number, y: number) => x >= 40 && x < 100 && y >= 90 && y < 150;
+      const rightBlock = (x: number, y: number) => x >= 150 && x < 210 && y >= 90 && y < 150;
+      const uploads: Buffer[] = [];
+      const f = fakeAdmin({
+        download: async () => ({ data: blob(still), error: null }),
+        upload: async (_path, body) => (uploads.push(body), { error: null }),
+      });
+      const segment = vi.fn<typeof segmentObject>(async (_still, box) => samAnswer(box.x_min === cuts[0].box.x_min ? leftBlock : rightBlock));
+      expect(await lookCutout(input(f.admin, { spec: two, camera }), { segment })).toEqual({ ok: true, path: CUTOUT, made: true });
+      expect(segment).toHaveBeenCalledTimes(2);
+      expect(segment.mock.calls.map((c) => [c[1], c[2]])).toEqual(cuts.map((c) => [c.box, c.point]));
+      const meta = await sharp!(uploads[0]).metadata();
+      expect([meta.width, meta.height]).toEqual([210 - 40 + 16, 150 - 90 + 16]);
+      // The second object's cut failing: no look, nothing kept, every object tried again next time.
+      const broken = fakeAdmin({ download: async () => ({ data: blob(still), error: null }) });
+      let calls = 0;
+      const half = async () => (calls++ === 0 ? samAnswer(leftBlock) : null);
+      expect(await lookCutout(input(broken.admin, { spec: two, camera }), { segment: half })).toEqual({ ok: false, reason: "cut failed" });
+      expect(calls).toBe(2);
+      expect(broken.ops()).not.toContain("upload");
     });
 
     it("keeps nothing of the person, whatever SAM 2 took in with the car", async () => {
@@ -176,7 +214,7 @@ describe("lookCutout", () => {
       const segment = async () => samAnswer((x, y) => carBlock(x, y) || personBlock(x, y), personBlock);
       expect(await lookCutout(input(f.admin), { segment })).toEqual({ ok: true, path: CUTOUT, made: true });
       // The person's region, from the camera and figure recorded with the still, covers them.
-      const { person } = lookCutoutBoxes(spec, CAMERA, { width: 256, height: 256 });
+      const { person } = lookCuts(spec, CAMERA, { width: 256, height: 256 });
       expect(person!.u0 * 256).toBeLessThanOrEqual(200);
       expect(person!.v0 * 256).toBeLessThanOrEqual(70);
       expect(person!.v1 * 256).toBeGreaterThanOrEqual(241);
