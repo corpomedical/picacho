@@ -108,16 +108,26 @@ export const metadata: Metadata = {
 // layout) rather than just the homepage, since this is identity
 // information ("what/who is Picacho") that search engines use to build a
 // knowledge panel and to attribute the logo to search results, not a
-// per-page claim. Deliberately minimal: name, url, logo and a same-as back
-// to the canonical domain — no aggregateRating, review, or offer fields,
-// since those need to reflect something actually shown on the page and
-// fabricating them risks a manual action from Google, not just no benefit.
+// per-page claim. Deliberately minimal: name, url, logo and the official
+// profiles — no aggregateRating, review, or offer fields, since those need
+// to reflect something actually shown on the page and fabricating them
+// risks a manual action from Google, not just no benefit.
+//
+// sameAs and alternateName are how Google tells which Picacho this is.
+// "Picacho" is also a place (Picacho Peak, Arizona), and Search Console
+// (2026-09-14) had our own name averaging position ~10, with people trying
+// nine misspellings to reach us. sameAs lists only accounts Picacho really
+// runs, as the operator gave them, minus tracking parameters. The Play
+// listing stays out while the app is suspended: it answers 404, and a
+// profile that 404s says nothing.
 const ORGANIZATION_JSON_LD = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: "Picacho",
+  alternateName: "Picacho AI",
   url: SITE_URL,
   logo: `${SITE_URL}/logo.png`,
+  sameAs: ["https://www.instagram.com/picachoai/", "https://www.tiktok.com/@picacho.ai"],
 };
 
 export default async function RootLayout({
