@@ -395,21 +395,22 @@ export function SetsHome({
     <div className="space-y-8">
       {/* The dashboard strip (2026-09-14): what this account has and has
           spent, at a glance, before the form and the cards. */}
-      <dl className="grid grid-cols-3 gap-3">
-        <div className="rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3">
+      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+        {/* A row each on a phone (label left, figure right); a tile each beside the others on a wider screen. */}
+        <div className="flex items-baseline justify-between gap-3 rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3 sm:block">
           <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsSets}</dt>
-          <dd className="mt-1 text-2xl font-semibold tabular-nums text-atelier-ink">
+          <dd className="text-2xl font-semibold tabular-nums text-atelier-ink sm:mt-1">
             {readyCount}
             {buildingCount > 0 && <span className="ml-2 text-xs font-medium text-atelier-accent">+{buildingCount} {s.statusBuilding}</span>}
           </dd>
         </div>
-        <div className="rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3">
+        <div className="flex items-baseline justify-between gap-3 rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3 sm:block">
           <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsShots}</dt>
-          <dd className="mt-1 text-2xl font-semibold tabular-nums text-atelier-ink">{shotsThisMonth}</dd>
+          <dd className="text-2xl font-semibold tabular-nums text-atelier-ink sm:mt-1">{shotsThisMonth}</dd>
         </div>
-        <div className="rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3">
+        <div className="flex items-baseline justify-between gap-3 rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3 sm:block">
           <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsBuilds}</dt>
-          <dd className="mt-1 text-2xl font-semibold tabular-nums text-atelier-ink">
+          <dd className="text-2xl font-semibold tabular-nums text-atelier-ink sm:mt-1">
             {used}
             {monthlyLimit >= 0 && <span className="text-sm font-medium text-atelier-muted"> / {monthlyLimit}</span>}
           </dd>
