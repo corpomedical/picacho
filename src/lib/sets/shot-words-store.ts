@@ -10,8 +10,10 @@
 //
 // THE ONLY MODULE IN src/ THAT NAMES THE COLUMN (shot-words-store.test.ts
 // scans for it, as shot-camera.test.ts does for `camera`).
-// location_set_shots.words arrives with supabase/pending/set-shot-words.sql.
-// Written to survive the column's absence: PostgREST fails a whole statement
+// location_set_shots.words arrives with
+// supabase/applied/2026-09-14/set-shot-words.sql (run in production on
+// 2026-09-14). Written to survive the column's absence, and still is:
+// PostgREST fails a whole statement
 // that names a missing column, so no existing query names it — the words are
 // written in an update of their own whose failure is ignored, and read in a
 // query of its own whose failure reads as "no words". Without the column,
