@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { reportClientError } from "@/lib/generations/reports";
 import { isStaleDeployError } from "@/lib/stale-deploy";
+import { describeBrowser } from "@/lib/browser-label";
 
 // Renders nothing — mounted once in the logged-in app shell (app/layout.tsx)
 // so a real bug (a JS crash, a rejected promise nobody caught) gets filed as
@@ -102,14 +103,21 @@ export function AppErrorReporter() {
       return `thrown: ${kind}\n${stack || fallback}`;
     }
 
+    // Which browser, on the line after the page, where no truncation reaches
+    // it (browser-label.ts says why it was added). The raw user agent goes
+    // LAST, so the server's 1,000-character cap trims it before any stack
+    // frame — and it survives exactly when it is needed: an injected
+    // script's error arrives with no stack, only a file:line.
+    const browser = describeBrowser(navigator.userAgent, navigator.maxTouchPoints);
+    function framed(err: unknown, where: string): string {
+      return `page: ${window.location.pathname}\nbrowser: ${browser}${digestOf(err)}\n${where}\nua: ${navigator.userAgent}`;
+    }
+
     function onError(event: ErrorEvent) {
       const message = event.error instanceof Error ? event.error.message : event.message;
       handle(
         message || "Unknown client error",
-        `page: ${window.location.pathname}${digestOf(event.error)}\n${whereFrom(
-          event.error,
-          `${event.filename}:${event.lineno}:${event.colno}`,
-        )}`,
+        framed(event.error, whereFrom(event.error, `${event.filename}:${event.lineno}:${event.colno}`)),
         event.error,
       );
     }
@@ -119,11 +127,7 @@ export function AppErrorReporter() {
       const message =
         reason instanceof Error ? reason.message : typeof reason === "string" ? reason : "Unhandled promise rejection";
       // Same `??` -> `||` correction, and the same reason.
-      handle(
-        message,
-        `page: ${window.location.pathname}${digestOf(reason)}\n${whereFrom(reason, String(reason))}`,
-        reason,
-      );
+      handle(message, framed(reason, whereFrom(reason, String(reason))), reason);
     }
 
     window.addEventListener("error", onError);

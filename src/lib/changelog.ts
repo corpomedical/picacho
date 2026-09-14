@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.29.0",
+    build: 42,
+    date: "2026-09-14",
+    title: "An error report says which browser it came from",
+    items: [
+      "An app error report now names the browser it came from, on the line after the page: \"Safari 26 · iPhone\", \"Chrome 139 · Windows\", \"Picacho app · Android\" — and the one that matters most, \"Instagram in-app browser · iPhone\". Instagram, Facebook, TikTok and other apps open links in a browser of their own and add scripts to the page, and when one of those scripts breaks, the error catcher files it as ours. Three reports from one account on 12 September — a stack overflow in a script with no file name, on a line none of our scripts has — took two database queries and a production build to trace to a script added to a Safari-engine browser, not our code; a report now says where it happened by itself. An app's browser we can't name reads \"unrecognised app's in-app browser\", never Safari, and the full browser string closes each report for anything the name leaves out. An iPad in Safari's desktop mode, which claims to be a Mac, is named an iPad by its touchscreen. Render and payment failure reports are unchanged: those happen on our servers, where the browser plays no part.",
+    ],
+  },
+  {
     version: "1.28.0",
     build: 41,
     date: "2026-09-12",
