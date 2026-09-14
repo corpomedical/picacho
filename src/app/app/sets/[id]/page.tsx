@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
+import { formatMsg } from "@/lib/i18n/format";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { isNativeApp } from "@/lib/native/server";
 import { getSetPage } from "@/lib/sets/data";
@@ -12,11 +13,17 @@ import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import { SetBuilding } from "@/components/sets/set-building";
 import { SetView } from "@/components/sets/set-view";
 
-// One Set, open (Astra Sets, 2026-09-10; a conversation with Astra since
+// One Set, open (Astra Sets, 2026-09-10; a workspace with Astra since
 // 2026-09-14). Everything the view needs — the normalised set, the person's
 // saved arrangement, their characters, the stills already shot here with
 // the words that asked for them — arrives in one read, so the page paints
 // its real state at once.
+//
+// A ready set is a workspace and takes the app's full width (globals.css
+// lifts the reading column's limit for a page that carries
+// data-set-workspace): a compact bar with the set's name and Astra's
+// description, then the stage and the conversation side by side. A set
+// still building, or one that failed, keeps the ordinary column.
 //
 // A message sent from the Sets home rides in the address (?ask=, with the
 // character picked and whether Astra should wait): a ready set asks it of
@@ -62,24 +69,38 @@ export default async function SetPage({
   const ask = (first(query.ask) ?? "").trim().slice(0, SHOT_WORDS_MAX_CHARS) || null;
   const character = first(query.character);
   const askFirst = first(query.askFirst) !== "0";
+  const ready = data.error === null && data.set.status === "ready" && data.set.spec !== null && !native;
+  // A photo set has no brief: it says where it came from, and the photographer's notes if any.
+  const brief = set ? (set.fromPhoto ? (set.brief ? `${s.fromPhoto} · ${set.brief}` : s.fromPhoto) : set.brief) : "";
+  const stillsLine = data.error === null ? (data.shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: data.shots.length })) : "";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5">
-      <div>
-        <Link href="/app/sets" className="text-xs font-medium text-atelier-muted hover:text-atelier-ink">
-          ← {s.back}
-        </Link>
-        <p className="mt-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{s.eyebrow}</p>
-        <h1 className="font-display text-3xl font-semibold tracking-tight text-atelier-ink">
-          {set?.title || s.untitled}
-        </h1>
-        {set && (
-          <p className="mt-1 max-w-2xl text-sm text-atelier-muted">
-            {/* A photo set has no brief: it says where it came from, and the photographer's notes if any. */}
-            {set.fromPhoto ? (set.brief ? `${s.fromPhoto} · ${set.brief}` : s.fromPhoto) : set.brief}
-          </p>
-        )}
-      </div>
+    <div className={ready ? "space-y-5" : "mx-auto max-w-5xl space-y-5"}>
+      {ready ? (
+        // The workspace's bar: where you are, in one line.
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-atelier-rule/60 pb-4">
+          <Link href="/app/sets" className="text-xs font-medium text-atelier-muted hover:text-atelier-ink">
+            ← {s.back}
+          </Link>
+          <span aria-hidden className="hidden h-5 w-px bg-atelier-rule sm:block" />
+          <h1 className="font-display text-lg font-semibold tracking-tight text-atelier-ink">{set?.title || s.untitled}</h1>
+          {set?.description && (
+            <p className="min-w-0 flex-1 truncate text-xs text-atelier-muted" title={set.description}>
+              {set.description}
+            </p>
+          )}
+          <span className="ml-auto rounded-full bg-atelier-ink/[0.045] px-3 py-1 text-xs font-medium tabular-nums text-atelier-muted">{stillsLine}</span>
+        </div>
+      ) : (
+        <div>
+          <Link href="/app/sets" className="text-xs font-medium text-atelier-muted hover:text-atelier-ink">
+            ← {s.back}
+          </Link>
+          <p className="mt-3 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-atelier-muted">{s.eyebrow}</p>
+          <h1 className="font-display text-3xl font-semibold tracking-tight text-atelier-ink">{set?.title || s.untitled}</h1>
+          {brief && <p className="mt-1 max-w-2xl text-sm text-atelier-muted">{brief}</p>}
+        </div>
+      )}
 
       {native ? (
         <p className="text-sm text-atelier-muted">{s.webOnly}</p>
@@ -99,7 +120,6 @@ export default async function SetPage({
           initialLayout={data.set.layout}
           hasThumb={data.set.hasThumb}
           sourcePhotoUrl={data.set.sourcePhotoUrl}
-          description={data.set.description}
           characters={data.characters}
           initialShots={data.shots}
           identityBar={data.identityBar}

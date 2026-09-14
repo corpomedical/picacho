@@ -2119,6 +2119,30 @@ const en = {
     mentionTitle: "Who is in the frame",
     mentionHint: "Type @ to pick who is in the frame",
     shotLine: "Shot from {camera} at {lens}.",
+    // The workspace drawn on 2026-09-14 ("give me your best"): one toolbar
+    // of dropdowns under the stage, the frame as a card of five rows in the
+    // conversation, the panel headed by Astra.
+    toolbarCamera: "Camera",
+    toolbarLens: "Lens",
+    toolbarFigure: "Figure",
+    historyLabel: "History",
+    lensWide: "wide",
+    lensPortrait: "portrait",
+    lensLong: "long",
+    frameCard: "The frame",
+    rowWho: "Who",
+    rowWhere: "Where",
+    rowCamera: "Camera",
+    rowHappens: "Happens",
+    rowCost: "Cost",
+    costLine: "{credits} · about a minute",
+    astraLabel: "Astra",
+    panelMeta: "Sets · GPT Image 2.5",
+    frameProse: "Here's the frame — shoot it, or tell me what to change.",
+    shotInSeconds: "Shot in {s} seconds.",
+    newestFirst: "the newest first",
+    viewerHint: "The still is in the viewer. Press Back to the frame, or the frame tile, to keep shooting from the stage.",
+    frameHintShort: "The bright square is the frame. The grey figure marks where {name} stands and which way they face; the still takes their face from their own photos.",
   },
   // Push notifications — resolved PER DEVICE from push_tokens.locale by
   // lib/push/send.ts, because a push arrives while no screen is open to
