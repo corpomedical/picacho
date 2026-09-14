@@ -1,3 +1,4 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
@@ -7,6 +8,7 @@ import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
 import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_RESERVED_BRIEF, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
 import { readShotCameras } from "@/lib/sets/shot-camera";
+import { readShotWords } from "@/lib/sets/shot-words-store";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { normaliseSetLayout, normaliseSetSpec } from "@/lib/sets/set-spec";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
@@ -23,6 +25,27 @@ const RESERVED = SET_RESERVED_BRIEF;
 // not only on the write.
 
 const asStatus = (s: unknown): SetStatus => (s === "ready" || s === "failed" ? s : "building");
+
+/**
+ * The person's characters that can be shot: only those with a saved photo,
+ * since the photo is the identity the image lane scores against, and a set
+ * never supplies one. The home's composer and a set's page both read them.
+ */
+async function shootableCharacters(db: SupabaseClient, userId: string): Promise<SetCharacter[]> {
+  const { data: chars } = await db
+    .from("character_profiles")
+    .select("id, name, reference_image_urls")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+  return (chars ?? [])
+    .filter((c) => Array.isArray(c.reference_image_urls) && c.reference_image_urls.length > 0)
+    .map((c) => ({
+      id: c.id as string,
+      name: (c.name as string) ?? "",
+      thumbUrl: thumbUrl(mediaUrl("character-references", (c.reference_image_urls as string[])[0]), 320),
+    }));
+}
 
 /**
  * Builds this billing month: every row that did not fail, DELETED ONES
@@ -133,6 +156,7 @@ export async function getSetsHome(): Promise<SetsHomeData> {
     monthlyLimit: access.monthlyLimit,
     shotsThisMonth,
     photoSetsOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
+    characters: await shootableCharacters(access.supabase, access.userId),
   };
 }
 
@@ -183,6 +207,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // (shot-camera.ts). A read that fails shows no still as a possible look
     // for this one load; the contact sheet is otherwise the same.
     const cameras = await readShotCameras(db, setId, access.userId, ids);
+    // What each was asked for, in the person's words (shot-words-store.ts):
+    // a read of its own for the same reason; a read that fails shows
+    // "Shoot" above every still for this one load.
+    const words = await readShotWords(db, setId, access.userId, ids);
     // A still is offered as a look only when there is something to cut out
     // of it clear of its person: a camera that saw only structure, or a
     // figure out of frame, would fail every shot that took it. The answer
@@ -203,24 +231,11 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
         score: typeof g.match_score === "number" ? g.match_score : null,
         createdAt: g.created_at as string,
         hasLookObjects: lendsLook(g.id as string),
+        words: words.get(g.id as string) ?? null,
       }));
   }
 
-  // Only characters with a saved photo can be shot: the photo is the
-  // identity the image lane scores against, and the set never supplies one.
-  const { data: chars } = await db
-    .from("character_profiles")
-    .select("id, name, reference_image_urls")
-    .eq("user_id", access.userId)
-    .order("created_at", { ascending: false })
-    .limit(50);
-  const characters: SetCharacter[] = (chars ?? [])
-    .filter((c) => Array.isArray(c.reference_image_urls) && c.reference_image_urls.length > 0)
-    .map((c) => ({
-      id: c.id as string,
-      name: (c.name as string) ?? "",
-      thumbUrl: thumbUrl(mediaUrl("character-references", (c.reference_image_urls as string[])[0]), 320),
-    }));
+  const characters = await shootableCharacters(db, access.userId);
 
   // The bar the contact sheet flags a still against: the identity gate's
   // live threshold, or its default while the gate is off (0) — a score is

@@ -8,12 +8,22 @@ import { getSetPage } from "@/lib/sets/data";
 import { finisherCanRun } from "@/lib/sets/finisher";
 import { buildingHintKey } from "@/lib/sets/leaving";
 import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
+import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
+import { SetBuilding } from "@/components/sets/set-building";
 import { SetView } from "@/components/sets/set-view";
 
-// One Set, open (Astra Sets, 2026-09-10). Everything the view needs — the
-// normalised set, the person's saved arrangement, their characters, the
-// stills already shot here — arrives in one read, so the page paints its
-// real state at once.
+// One Set, open (Astra Sets, 2026-09-10; a conversation with Astra since
+// 2026-09-14). Everything the view needs — the normalised set, the person's
+// saved arrangement, their characters, the stills already shot here with
+// the words that asked for them — arrives in one read, so the page paints
+// its real state at once.
+//
+// A message sent from the Sets home rides in the address (?ask=, with the
+// character picked and whether Astra should wait): a ready set asks it of
+// the stage the moment the stage is ready, then forgets it; a set still
+// building shows it above the building step and refreshes into the
+// conversation when the build settles. The address is the person's own;
+// nothing in it is logged.
 //
 // A set still building says how long it takes and whether it can be left:
 // with the finisher running (finisherCanRun, read here on the server) it
@@ -26,13 +36,21 @@ import { SetView } from "@/components/sets/set-view";
 // So does Match this shot, which waits for its read (set-config.ts times it).
 export const maxDuration = 300;
 
-export default async function SetPage({ params }: { params: Promise<{ id: string }> }) {
+const first = (v: string | string[] | undefined): string | null => (Array.isArray(v) ? (v[0] ?? null) : (v ?? null));
+
+export default async function SetPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { id } = await params;
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
   if (!userData.user) redirect("/login");
 
-  const data = await getSetPage(id);
+  const [data, query] = await Promise.all([getSetPage(id), searchParams]);
   if (data.error === SETS_SESSION_EXPIRED) redirect("/login");
   if (data.error === SETS_UNAVAILABLE || data.error === SETS_NOT_OPEN || data.error === SET_NOT_FOUND) notFound();
 
@@ -41,6 +59,9 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
   const native = await isNativeApp();
   const set = data.error === null ? data.set : null;
   const finisherOn = finisherCanRun();
+  const ask = (first(query.ask) ?? "").trim().slice(0, SHOT_WORDS_MAX_CHARS) || null;
+  const character = first(query.character);
+  const askFirst = first(query.askFirst) !== "0";
 
   return (
     <div className="mx-auto max-w-5xl space-y-5">
@@ -65,16 +86,12 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
       ) : data.error !== null ? (
         <p className="text-sm text-atelier-muted">{localizeServerText(data.error, t)}</p>
       ) : data.set.status === "building" ? (
-        <p className="text-sm text-atelier-muted">
-          {s.statusBuilding} {s[buildingHintKey(data.set.fromPhoto, finisherOn)]}{" "}
-          <Link href="/app/sets" className="font-medium text-atelier-accent underline underline-offset-2">
-            {s.back}
-          </Link>
-        </p>
+        <SetBuilding setId={data.set.id} ask={ask} hint={s[buildingHintKey(data.set.fromPhoto, finisherOn)]} />
       ) : data.set.status === "failed" || !data.set.spec ? (
-        <p className="text-sm text-atelier-muted">
-          {data.set.failure ? localizeServerText(data.set.failure, t) : s.loadFailed}
-        </p>
+        <div className="space-y-2 text-sm text-atelier-muted">
+          {ask && <p>{s.buildFailedLine}</p>}
+          <p>{data.set.failure ? localizeServerText(data.set.failure, t) : s.loadFailed}</p>
+        </div>
       ) : (
         <SetView
           setId={data.set.id}
@@ -87,6 +104,9 @@ export default async function SetPage({ params }: { params: Promise<{ id: string
           initialShots={data.shots}
           identityBar={data.identityBar}
           matchOn={data.matchOn}
+          initialAsk={ask}
+          initialCharacterId={character}
+          initialAskFirst={askFirst}
         />
       )}
     </div>

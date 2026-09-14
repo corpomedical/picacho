@@ -35,6 +35,7 @@ import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/s
 import { lookSheet } from "@/lib/sets/look-sheet";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { readShotCameras, recordShotCamera, shotCameraOf } from "@/lib/sets/shot-camera";
+import { recordShotWords, SHOT_WORDS_STORED_MAX_CHARS } from "@/lib/sets/shot-words-store";
 import {
   CLEAR_PHOTO_SOURCE,
   isMissingColumn,
@@ -543,6 +544,8 @@ export async function shootInSet(
     lookGenerationId?: string | null;
     /** Width ÷ height of the stage canvas the frame's square was cut from (set-view.tsx canvasAspect). */
     canvasAspect?: number;
+    /** What the person asked for, as they wrote it: kept with the still for the set's conversation (shot-words-store.ts). */
+    words?: string;
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -703,6 +706,13 @@ export async function shootInSet(
     .from("location_set_shots")
     .insert({ set_id: setId, generation_id: result.id, user_id: userId });
   if (shotError) console.error("shootInSet couldn't record the shot:", shotError.message);
+  // The person's message, as written, in an update of its own whose failure
+  // is ignored (shot-words-store.ts: until set-shot-words.sql runs the
+  // column is missing). Cleaned as the direction is, a little longer.
+  if (!shotError) {
+    const words = cleanText(typeof input.words === "string" ? input.words : "", SHOT_WORDS_STORED_MAX_CHARS);
+    if (words.length > 0) await recordShotWords(admin, { setId, generationId: result.id, userId }, words);
+  }
   // The frame this still was drawn from, so it can be a later shot's look:
   // the stage's pose and the figure's mark exactly as the page sent them,
   // never the layout normalised above, which holds the camera to the set's

@@ -8,9 +8,11 @@ import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { deleteSet, pollSetBuild, submitSetBuild, submitSetPhotoBuild } from "@/lib/sets/actions";
+import { readSetRequest } from "@/lib/sets/words-actions";
 import { buildingHintKey, pageSetNotice, photoMetaKey } from "@/lib/sets/leaving";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { SET_BRIEF_MAX_CHARS, SET_PHOTO_NOTES_MAX_CHARS } from "@/lib/sets/set-config";
+import { SHOT_WORDS_MAX_CHARS } from "@/lib/sets/shot-words";
 import {
   SETS_NOT_OPEN,
   SETS_SESSION_EXPIRED,
@@ -19,14 +21,22 @@ import {
   SET_NOT_FOUND,
   SET_PHOTO_UNREADABLE,
 } from "@/lib/sets/messages";
-import type { SetSummary } from "@/lib/sets/types";
+import type { SetCharacter, SetSummary } from "@/lib/sets/types";
 import { LocalDate } from "@/components/local-date";
 
-// The Sets page (Astra Sets, 2026-09-10): describe a place, and the list of
-// places already built. A build runs at OpenAI in the background for about
-// a minute and a half; this page polls each one that is still building, and
-// the server does the collecting (pollSetBuild), so the card changes the
-// moment the build does.
+// The Sets home (Astra Sets, 2026-09-10; Astra chat since 2026-09-14): it
+// asks what we are shooting today. The person says who is in the frame,
+// where and what happens, in one message; picks who, and a set they have or
+// a new place; and sends. With a set picked the message goes to that set's
+// page, which is a conversation with Astra (set-view.tsx). With a new place,
+// a small reader takes the place out of the message (shot-words.ts, the
+// people and the camera left out — Astra never builds people), the build
+// starts, and the message goes with the person to the new set's page, which
+// asks it once the build is in. Under the composer: example shoots to
+// recreate, then the sets already built. A build runs at OpenAI in the
+// background for about a minute and a half; this page polls each one that
+// is still building, and the server does the collecting (pollSetBuild), so
+// the card changes the moment the build does.
 //
 // LEAVING (2026-09-11). The finisher, a per-minute cron on the server, runs
 // the same collecting step for every build whether or not a page is open,
@@ -58,6 +68,9 @@ const POLL_MAX_MS = 30_000;
 const ACCESS_ERRORS = new Set([SETS_UNAVAILABLE, SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_SUSPENDED]);
 
 type PreparedPhoto = { dataUri: string; width: number; height: number };
+
+const SHEET_SHADOW =
+  "shadow-[0_0_0_1px_var(--frost-ring),0_2px_6px_rgba(0,0,0,0.04),0_24px_56px_-20px_rgba(0,0,0,0.22)]";
 
 // A build that left "building" while this tab was hidden: the finisher's
 // notification, shown from here (leaving.ts pageSetNotice). Only when the
@@ -117,12 +130,30 @@ function announceIfHidden(notice: { title: string; body: string; path: string; t
   }
 }
 
+function SendIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M12 19V5" />
+      <path d="M6 11l6-6 6 6" />
+    </svg>
+  );
+}
+
+function Chevron() {
+  return (
+    <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden>
+      <path d="M3 4.5l3 3 3-3" />
+    </svg>
+  );
+}
+
 export function SetsHome({
   initialSets,
   usedThisMonth,
   monthlyLimit,
   shotsThisMonth,
   photoSetsOn,
+  characters,
   finisherOn,
   notifyReady,
   notifyFailed,
@@ -130,10 +161,12 @@ export function SetsHome({
   initialSets: SetSummary[];
   usedThisMonth: number;
   monthlyLimit: number;
-  /** Stills shot in these sets this billing month (the dashboard strip). */
+  /** Stills shot in these sets this billing month (the dashboard line). */
   shotsThisMonth: number;
-  /** Sets from a photo are on for this person: the form offers both ways in. */
+  /** Sets from a photo are on for this person: the composer offers both ways in. */
   photoSetsOn: boolean;
+  /** Their characters with a saved photo: who the composer can shoot. */
+  characters: SetCharacter[];
   /** The finisher can run (finisher.ts finisherCanRun): a build completes with the page closed. */
   finisherOn: boolean;
   /** The render switches in Settings → Notifications, which the finisher's pushes answer to as well. */
@@ -159,8 +192,15 @@ export function SetsHome({
   const [preparing, setPreparing] = useState(false);
   const [notes, setNotes] = useState("");
   const [photoStarting, setPhotoStarting] = useState(false);
+  // Who is in the frame, where (a set already built, or a new place), and
+  // whether Astra waits for the word after framing.
+  const [characterId, setCharacterId] = useState(characters[0]?.id ?? "");
+  const [setPick, setSetPick] = useState<string | null>(null);
+  const [askFirst, setAskFirst] = useState(true);
+  const [menu, setMenu] = useState<"character" | "set" | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+  const briefRef = useRef<HTMLTextAreaElement | null>(null);
 
   // A refresh brings the server's truth (titles, thumbnails) for sets that
   // finished; it replaces the local list. Adjusted during render, not in an
@@ -254,13 +294,42 @@ export function SetsHome({
     setFailedBody,
   ]);
 
-  async function build() {
-    if (starting || photoStarting) return;
+  /** Where a message goes: the set's page, the message and the choices in the address. */
+  function threadHref(setId: string, message: string): string {
+    const q = new URLSearchParams();
+    q.set("ask", message.slice(0, SHOT_WORDS_MAX_CHARS));
+    if (characterId) q.set("character", characterId);
+    if (!askFirst) q.set("askFirst", "0");
+    return `/app/sets/${setId}?${q.toString()}`;
+  }
+
+  /**
+   * The message, sent. To a set already built: straight to its page. To a
+   * new place: the place is read out of the message (people and camera
+   * left out; the whole message when the reader cannot read it), the build
+   * starts, and the person goes to the new set's page with the message.
+   */
+  async function send() {
+    const message = brief.trim();
+    if (!message || starting || photoStarting) return;
     setError("");
+    if (setPick) {
+      router.push(threadHref(setPick, message));
+      return;
+    }
     setStarting(true);
+    let place = message.slice(0, SET_BRIEF_MAX_CHARS);
     let res: Awaited<ReturnType<typeof submitSetBuild>>;
     try {
-      res = await submitSetBuild(brief);
+      try {
+        const read = await readSetRequest({ text: message });
+        if (read.error === null && read.words?.place) place = read.words.place;
+      } catch (err) {
+        // A reader that is down builds from the whole message; a stale
+        // deploy is caught by the build call below.
+        if (isStaleDeployError(err)) throw err;
+      }
+      res = await submitSetBuild(place);
     } catch (err) {
       const stale = isStaleDeployError(err);
       setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
@@ -277,7 +346,7 @@ export function SetsHome({
       {
         id: res.id,
         title: "",
-        brief: brief.trim(),
+        brief: place,
         status: "building",
         createdAt: new Date().toISOString(),
         thumbUrl: null,
@@ -289,7 +358,7 @@ export function SetsHome({
       ...prev,
     ]);
     setBrief("");
-    router.refresh();
+    router.push(threadHref(res.id, message));
   }
 
   // The photo, prepared in the browser (upright, at most 2048 px, a JPEG
@@ -369,7 +438,17 @@ export function SetsHome({
       return;
     }
     setSets((prev) => prev.filter((x) => x.id !== id));
+    if (setPick === id) setSetPick(null);
     router.refresh();
+  }
+
+  /** An example, into the composer: its words, with the person's own character's name, for a new place. */
+  function recreate(prompt: string) {
+    setBrief(formatMsg(prompt, { name: characters.find((c) => c.id === characterId)?.name || s.exampleCharacter }));
+    setSetPick(null);
+    setMode("describe");
+    briefRef.current?.focus();
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   const used = usedThisMonth;
@@ -382,268 +461,404 @@ export function SetsHome({
   // would hide the only line saying what is happening.
   const submitting = starting || photoStarting;
   const chip = (active: boolean) =>
-    `cursor-pointer rounded-full border px-3 py-1 text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-40 ${
+    `flex cursor-pointer items-center gap-1.5 rounded-full px-3 py-[7px] text-xs font-medium transition-colors disabled:cursor-default disabled:opacity-50 ${
       active
-        ? "border-atelier-accent bg-atelier-accent/10 text-atelier-ink"
-        : "border-atelier-rule text-atelier-muted hover:text-atelier-ink"
+        ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
+        : "bg-atelier-ink/[0.045] text-atelier-muted hover:bg-atelier-ink/[0.07] hover:text-atelier-ink"
+    }`;
+  const menuItem = (active: boolean) =>
+    `flex w-full cursor-pointer items-center gap-2.5 rounded-control px-2.5 py-2 text-left text-sm transition-colors ${
+      active ? "bg-atelier-ink/[0.06] font-medium text-atelier-ink" : "text-atelier-muted hover:bg-atelier-ink/5 hover:text-atelier-ink"
     }`;
 
   const readyCount = sets.filter((x) => x.status === "ready").length;
   const buildingCount = sets.filter((x) => x.status === "building").length;
+  const readySets = sets.filter((x) => x.status === "ready");
+  const character = characters.find((c) => c.id === characterId) ?? null;
+  const pickedSet = readySets.find((x) => x.id === setPick) ?? null;
+  const setName = (x: SetSummary) => x.title || (x.status === "ready" ? s.untitled : x.fromPhoto ? x.brief || s.fromPhoto : x.brief);
+  const stats = [
+    formatMsg(s.statsReady, { n: readyCount }),
+    buildingCount > 0 ? formatMsg(s.statsBuilding, { n: buildingCount }) : null,
+    formatMsg(s.statsStills, { n: shotsThisMonth }),
+    monthlyLimit < 0 ? formatMsg(s.statsBuildsMonth, { n: used }) : formatMsg(s.monthlyUsage, { used, limit: monthlyLimit }),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const canSend = brief.trim().length > 0 && !submitting && (setPick !== null || !atCap);
 
   return (
-    <div className="space-y-8">
-      {/* The dashboard strip (2026-09-14): what this account has and has
-          spent, at a glance, before the form and the cards. */}
-      <dl className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
-        {/* A row each on a phone (label left, figure right); a tile each beside the others on a wider screen. */}
-        <div className="flex items-baseline justify-between gap-3 rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3 sm:block">
-          <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsSets}</dt>
-          <dd className="text-2xl font-semibold tabular-nums text-atelier-ink sm:mt-1">
-            {readyCount}
-            {buildingCount > 0 && <span className="ml-2 text-xs font-medium text-atelier-accent">+{buildingCount} {s.statusBuilding}</span>}
-          </dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3 sm:block">
-          <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsShots}</dt>
-          <dd className="text-2xl font-semibold tabular-nums text-atelier-ink sm:mt-1">{shotsThisMonth}</dd>
-        </div>
-        <div className="flex items-baseline justify-between gap-3 rounded-media border border-atelier-rule bg-atelier-surface px-4 py-3 sm:block">
-          <dt className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.statsBuilds}</dt>
-          <dd className="text-2xl font-semibold tabular-nums text-atelier-ink sm:mt-1">
-            {used}
-            {monthlyLimit >= 0 && <span className="text-sm font-medium text-atelier-muted"> / {monthlyLimit}</span>}
-          </dd>
-        </div>
-      </dl>
-
-      {/* New set */}
-      <section className="space-y-3 rounded-media border border-atelier-rule bg-atelier-surface p-5">
-        <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.newTitle}</h2>
-        {photoSetsOn && (
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              aria-pressed={mode === "describe"}
-              onClick={() => setMode("describe")}
-              disabled={submitting}
-              className={chip(mode === "describe")}
-            >
-              {s.modeDescribe}
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === "photo"}
-              onClick={() => setMode("photo")}
-              disabled={submitting}
-              className={chip(mode === "photo")}
-            >
-              {s.fromPhoto}
-            </button>
-          </div>
-        )}
-        {fromPhoto ? (
-          <>
-            <div className="flex flex-wrap items-start gap-4">
-              <div className="flex h-40 w-full max-w-xs items-center justify-center overflow-hidden rounded-control border border-atelier-rule bg-atelier-stage">
-                {preparing ? (
-                  <span className="px-3 text-center text-xs text-onmedia/70">{s.photoPreparing}</span>
-                ) : photo ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={photo.dataUri} alt={s.photoPreviewAlt} className="h-full w-full object-contain" />
-                ) : (
-                  <div
-                    aria-hidden
-                    className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
-                  />
-                )}
-              </div>
-              <div className="min-w-0 flex-1 space-y-2">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    // Cleared, so choosing the same file again still counts as a choice.
-                    e.target.value = "";
-                    void pickPhoto(file);
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  disabled={preparing || photoStarting}
-                  className="cursor-pointer rounded-control border border-atelier-rule px-4 py-2 text-sm font-medium text-atelier-ink transition-colors hover:border-atelier-accent disabled:opacity-40"
-                >
-                  {photo ? s.photoChange : s.photoPick}
-                </button>
-                <p className="text-xs text-atelier-muted">{s.photoHint}</p>
-              </div>
+    <div className="space-y-10">
+      {/* What are we shooting today? */}
+      <div className="flex flex-col items-center gap-5 pt-2 text-center">
+        <h1 className="font-display text-3xl font-semibold tracking-tight text-atelier-ink">{s.homeHeadline}</h1>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (fromPhoto) void buildFromPhoto();
+            else void send();
+          }}
+          className={`isolate relative w-full max-w-2xl rounded-[28px] bg-atelier-surface/80 p-4 text-left ${SHEET_SHADOW} backdrop-blur-xl`}
+        >
+          {photoSetsOn && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              <button type="button" aria-pressed={mode === "describe"} onClick={() => setMode("describe")} disabled={submitting} className={chip(mode === "describe")}>
+                {s.modeDescribe}
+              </button>
+              <button type="button" aria-pressed={mode === "photo"} onClick={() => setMode("photo")} disabled={submitting} className={chip(mode === "photo")}>
+                {s.fromPhoto}
+              </button>
             </div>
-            <label className="block">
-              <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.photoNotesLabel}</span>
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value.slice(0, SET_PHOTO_NOTES_MAX_CHARS))}
-                rows={2}
-                placeholder={s.photoNotesPlaceholder}
-                disabled={photoStarting}
-                className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent disabled:opacity-40"
-              />
-            </label>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-0.5 text-xs text-atelier-muted">
-                <p>{s[photoMetaKey(finisherOn)]}</p>
-                <p className="tabular-nums">{usageLine}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs tabular-nums text-atelier-muted">
-                  {notes.length}/{SET_PHOTO_NOTES_MAX_CHARS}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void buildFromPhoto()}
-                  disabled={preparing || photoStarting || starting || atCap || !photo}
-                  className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-                >
-                  {photoStarting ? s.photoChecking : s.photoBuildButton}
-                </button>
-              </div>
-            </div>
-          </>
-        ) : (
-          <>
-            <label className="block">
-              <span className="sr-only">{s.briefLabel}</span>
-              <textarea
-                value={brief}
-                onChange={(e) => setBrief(e.target.value.slice(0, SET_BRIEF_MAX_CHARS))}
-                rows={3}
-                placeholder={s.briefPlaceholder}
-                aria-label={s.briefLabel}
-                disabled={starting}
-                className="w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent disabled:opacity-40"
-              />
-            </label>
-            <p className="text-xs text-atelier-muted">{s.briefHint}</p>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="space-y-0.5 text-xs text-atelier-muted">
-                <p>{s.buildMeta}</p>
-                <p className="tabular-nums">{usageLine}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-xs tabular-nums text-atelier-muted">
-                  {brief.length}/{SET_BRIEF_MAX_CHARS}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void build()}
-                  disabled={starting || photoStarting || atCap || brief.trim().length === 0}
-                  className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
-                >
-                  {starting ? s.starting : s.buildButton}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-        {error && <p className="text-sm text-red-600">{localizeServerText(error, t)}</p>}
-      </section>
-
-      {/* The sets */}
-      {sets.length === 0 ? (
-        <div className="space-y-1 text-center">
-          <p className="text-sm font-medium text-atelier-ink">{s.emptyTitle}</p>
-          <p className="mx-auto max-w-md text-sm text-atelier-muted">{s.emptyBody}</p>
-        </div>
-      ) : (
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {sets.map((x) => {
-            // A photo set has no brief: until Astra titles it, it goes by
-            // the photographer's notes, or by where it came from.
-            const name =
-              x.title || (x.status === "ready" ? s.untitled : x.fromPhoto ? x.brief || s.fromPhoto : x.brief);
-            return (
-              <li key={x.id} className="overflow-hidden rounded-media border border-atelier-rule bg-atelier-surface">
-                <div className="relative aspect-square bg-atelier-stage">
-                  {x.thumbUrl ? (
+          )}
+          {fromPhoto ? (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-start gap-4">
+                <div className="flex h-40 w-full max-w-xs items-center justify-center overflow-hidden rounded-control border border-atelier-rule bg-atelier-stage">
+                  {preparing ? (
+                    <span className="px-3 text-center text-xs text-onmedia/70">{s.photoPreparing}</span>
+                  ) : photo ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={x.thumbUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    <img src={photo.dataUri} alt={s.photoPreviewAlt} className="h-full w-full object-contain" />
                   ) : (
                     <div
                       aria-hidden
                       className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
                     />
                   )}
-                  <span
-                    className={`absolute left-3 top-3 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest ${
-                      x.status === "ready"
-                        ? "bg-black/60 text-onmedia"
-                        : x.status === "building"
-                          ? "animate-pulse bg-atelier-accent text-atelier-stage"
-                          : "bg-red-600/90 text-white"
-                    }`}
-                  >
-                    {x.status === "ready" ? s.statusReady : x.status === "building" ? s.statusBuilding : s.statusFailed}
-                  </span>
-                  {x.status === "ready" && (
-                    <Link href={`/app/sets/${x.id}`} className="absolute inset-0" aria-label={`${s.open}: ${name}`} />
-                  )}
                 </div>
-                <div className="space-y-1.5 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <p className="line-clamp-2 text-sm font-medium text-atelier-ink">{name}</p>
-                    <span className="flex-shrink-0 text-xs tabular-nums text-atelier-muted">
-                      <LocalDate date={x.createdAt} />
-                    </span>
-                  </div>
-                  {x.fromPhoto && (
-                    <span className="inline-block rounded-full border border-atelier-rule px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
-                      {s.fromPhoto}
-                    </span>
-                  )}
-                  {x.status === "ready" && (
-                    <p className="text-xs tabular-nums text-atelier-muted">
-                      {x.shots === 0 ? s.noShots : x.shots === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: x.shots })}
-                      {x.lastShotAt && (
-                        <>
-                          {" · "}
-                          <LocalDate date={x.lastShotAt} />
-                        </>
+                <div className="min-w-0 flex-1 space-y-2">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      // Cleared, so choosing the same file again still counts as a choice.
+                      e.target.value = "";
+                      void pickPhoto(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={preparing || photoStarting}
+                    className="cursor-pointer rounded-control border border-atelier-rule px-4 py-2 text-sm font-medium text-atelier-ink transition-colors hover:border-atelier-accent disabled:opacity-40"
+                  >
+                    {photo ? s.photoChange : s.photoPick}
+                  </button>
+                  <p className="text-xs text-atelier-muted">{s.photoHint}</p>
+                </div>
+              </div>
+              <label className="block">
+                <span className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.photoNotesLabel}</span>
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value.slice(0, SET_PHOTO_NOTES_MAX_CHARS))}
+                  rows={2}
+                  placeholder={s.photoNotesPlaceholder}
+                  disabled={photoStarting}
+                  className="mt-1.5 w-full rounded-control border border-atelier-rule bg-transparent px-3 py-2 text-sm text-atelier-ink outline-none transition-colors placeholder:text-atelier-muted/70 focus:border-atelier-accent disabled:opacity-40"
+                />
+              </label>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="space-y-0.5 text-xs text-atelier-muted">
+                  <p>{s[photoMetaKey(finisherOn)]}</p>
+                  <p className="tabular-nums">{usageLine}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs tabular-nums text-atelier-muted">
+                    {notes.length}/{SET_PHOTO_NOTES_MAX_CHARS}
+                  </span>
+                  <button
+                    type="submit"
+                    disabled={preparing || photoStarting || starting || atCap || !photo}
+                    className="cursor-pointer rounded-control bg-atelier-ink px-5 py-2.5 text-sm font-medium text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {photoStarting ? s.photoChecking : s.photoBuildButton}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <textarea
+                ref={briefRef}
+                value={brief}
+                onChange={(e) => setBrief(e.target.value.slice(0, SHOT_WORDS_MAX_CHARS))}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void send();
+                  }
+                }}
+                rows={2}
+                placeholder={s.homePlaceholder}
+                aria-label={s.homeHeadline}
+                disabled={starting}
+                autoFocus
+                className="w-full resize-none border-none bg-transparent px-2.5 py-2 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="relative flex flex-wrap items-center gap-2">
+                  {menu && <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} aria-hidden />}
+                  {/* Who */}
+                  {characters.length === 0 ? (
+                    <Link href="/app/character/new" className={chip(false)}>
+                      {s.createCharacter}
+                    </Link>
+                  ) : (
+                    <div className="relative">
+                      <button
+                        type="button"
+                        onClick={() => setMenu((m) => (m === "character" ? null : "character"))}
+                        aria-expanded={menu === "character"}
+                        aria-haspopup="listbox"
+                        className={`${chip(false)} pl-1`}
+                      >
+                        {character?.thumbUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={character.thumbUrl} alt="" className="h-5 w-5 rounded-full object-cover" />
+                        ) : (
+                          <span className="h-5 w-5 rounded-full bg-atelier-rule" />
+                        )}
+                        {character?.name || s.characterLabel}
+                        <Chevron />
+                      </button>
+                      {menu === "character" && (
+                        <div
+                          role="listbox"
+                          aria-label={s.characterLabel}
+                          className="absolute left-0 top-full z-30 mt-2 w-max min-w-[12rem] rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+                        >
+                          {characters.map((c) => (
+                            <button
+                              key={c.id}
+                              type="button"
+                              role="option"
+                              aria-selected={characterId === c.id}
+                              onClick={() => {
+                                setCharacterId(c.id);
+                                setMenu(null);
+                              }}
+                              className={menuItem(characterId === c.id)}
+                            >
+                              {c.thumbUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={c.thumbUrl} alt="" className="h-6 w-6 rounded-full object-cover" />
+                              ) : (
+                                <span className="h-6 w-6 rounded-full bg-atelier-rule" />
+                              )}
+                              {c.name}
+                            </button>
+                          ))}
+                        </div>
                       )}
-                    </p>
+                    </div>
                   )}
-                  {x.status === "building" && (
-                    <p className="text-xs text-atelier-muted">{s[buildingHintKey(x.fromPhoto, finisherOn)]}</p>
-                  )}
-                  {x.status === "failed" && x.failure && (
-                    <p className="text-xs text-atelier-muted">{localizeServerText(x.failure, t)}</p>
-                  )}
-                  <div className="flex items-center justify-between pt-1">
-                    {x.status === "ready" ? (
-                      <Link href={`/app/sets/${x.id}`} className="text-xs font-medium text-atelier-accent underline underline-offset-2">
-                        {s.open}
-                      </Link>
-                    ) : (
-                      <span />
-                    )}
+                  {/* Where */}
+                  <div className="relative">
                     <button
                       type="button"
-                      onClick={() => void remove(x.id)}
-                      disabled={deleting === x.id}
-                      className="cursor-pointer text-xs text-atelier-muted transition-colors hover:text-red-600 disabled:opacity-50"
+                      onClick={() => setMenu((m) => (m === "set" ? null : "set"))}
+                      aria-expanded={menu === "set"}
+                      aria-haspopup="listbox"
+                      className={chip(false)}
                     >
-                      {deleting === x.id ? s.deleting : s.delete}
+                      <span className="text-atelier-muted/80">{s.setChip}:</span>
+                      {pickedSet ? setName(pickedSet) : s.newPlace}
+                      <Chevron />
                     </button>
+                    {menu === "set" && (
+                      <div
+                        role="listbox"
+                        aria-label={s.setChip}
+                        className="absolute left-0 top-full z-30 mt-2 max-h-72 w-max min-w-[14rem] max-w-[20rem] overflow-y-auto rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.25)] backdrop-blur-xl"
+                      >
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={setPick === null}
+                          onClick={() => {
+                            setSetPick(null);
+                            setMenu(null);
+                          }}
+                          className={menuItem(setPick === null)}
+                        >
+                          {s.newPlace}
+                        </button>
+                        {readySets.map((x) => (
+                          <button
+                            key={x.id}
+                            type="button"
+                            role="option"
+                            aria-selected={setPick === x.id}
+                            onClick={() => {
+                              setSetPick(x.id);
+                              setMenu(null);
+                            }}
+                            className={menuItem(setPick === x.id)}
+                          >
+                            {x.thumbUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={x.thumbUrl} alt="" className="h-6 w-6 rounded-[4px] object-cover" />
+                            ) : (
+                              <span className="h-6 w-6 rounded-[4px] bg-atelier-stage" />
+                            )}
+                            <span className="truncate">{setName(x)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
+                  <button type="button" onClick={() => setAskFirst((v) => !v)} aria-pressed={askFirst} title={s.askFirstHint} className={chip(askFirst)}>
+                    {s.askFirst}
+                  </button>
                 </div>
-              </li>
-            );
-          })}
+                <div className="flex items-center gap-3">
+                  <span className="hidden text-xs tabular-nums text-atelier-muted sm:inline">{setPick ? "" : usageLine}</span>
+                  <button
+                    type="submit"
+                    disabled={!canSend}
+                    title={s.shootHere}
+                    aria-label={s.shootHere}
+                    className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-atelier-ink text-atelier-paper transition-opacity hover:opacity-90 disabled:opacity-40"
+                  >
+                    {starting ? (
+                      <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+                        <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                      </svg>
+                    ) : (
+                      <SendIcon className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+          {error && <p className="mt-2 text-sm text-red-600">{localizeServerText(error, t)}</p>}
+        </form>
+        <p className="max-w-2xl text-sm text-atelier-muted">{s.subtitle}</p>
+      </div>
+
+      {/* Example shoots: recreate one and it fills the composer */}
+      <section className="space-y-4">
+        <h2 className="text-center font-display text-xl font-semibold tracking-tight text-atelier-ink">{s.examplesTitle}</h2>
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {s.examples.map((ex) => (
+            <li key={ex.label} className="flex flex-col gap-3 rounded-media bg-atelier-surface p-4 shadow-[0_0_0_1px_var(--frost-ring),0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)]">
+              <p className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{ex.label}</p>
+              <p className="flex-1 text-sm text-atelier-ink/85">
+                {formatMsg(ex.prompt, { name: character?.name || s.exampleCharacter })}
+              </p>
+              <div>
+                <button type="button" onClick={() => recreate(ex.prompt)} className={chip(false)}>
+                  {s.recreate}
+                </button>
+              </div>
+            </li>
+          ))}
         </ul>
-      )}
+      </section>
+
+      {/* The sets */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-3">
+          <h2 className="text-[11px] font-medium uppercase tracking-widest text-atelier-muted">{s.yourSets}</h2>
+          <span className="text-xs tabular-nums text-atelier-muted">{stats}</span>
+        </div>
+        {sets.length === 0 ? (
+          <div className="space-y-1 text-center">
+            <p className="text-sm font-medium text-atelier-ink">{s.emptyTitle}</p>
+            <p className="mx-auto max-w-md text-sm text-atelier-muted">{s.emptyBody}</p>
+          </div>
+        ) : (
+          <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {sets.map((x) => {
+              // A photo set has no brief: until Astra titles it, it goes by
+              // the photographer's notes, or by where it came from.
+              const name = setName(x);
+              return (
+                <li key={x.id} className="overflow-hidden rounded-media bg-atelier-surface shadow-[0_0_0_1px_var(--frost-ring),0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.12)]">
+                  <div className="relative aspect-[4/3] bg-atelier-stage">
+                    {x.thumbUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={x.thumbUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                    ) : (
+                      <div
+                        aria-hidden
+                        className="h-full w-full opacity-40 [background-image:linear-gradient(to_right,rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.08)_1px,transparent_1px)] [background-size:28px_28px]"
+                      />
+                    )}
+                    <span
+                      className={`absolute left-3 top-3 rounded-full px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-widest ${
+                        x.status === "ready"
+                          ? "bg-black/60 text-onmedia"
+                          : x.status === "building"
+                            ? "animate-pulse bg-atelier-accent text-atelier-stage"
+                            : "bg-red-600/90 text-white"
+                      }`}
+                    >
+                      {x.status === "ready" ? s.statusReady : x.status === "building" ? s.statusBuilding : s.statusFailed}
+                    </span>
+                    {x.status === "ready" && (
+                      <Link href={`/app/sets/${x.id}`} className="absolute inset-0" aria-label={`${s.open}: ${name}`} />
+                    )}
+                  </div>
+                  <div className="space-y-1.5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="line-clamp-2 text-sm font-medium text-atelier-ink">{name}</p>
+                      <span className="flex-shrink-0 text-xs tabular-nums text-atelier-muted">
+                        <LocalDate date={x.createdAt} />
+                      </span>
+                    </div>
+                    {x.fromPhoto && (
+                      <span className="inline-block rounded-full border border-atelier-rule px-2 py-0.5 text-[10px] font-medium uppercase tracking-widest text-atelier-muted">
+                        {s.fromPhoto}
+                      </span>
+                    )}
+                    {x.status === "ready" && (
+                      <p className="text-xs tabular-nums text-atelier-muted">
+                        {x.shots === 0 ? s.noShots : x.shots === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: x.shots })}
+                        {x.lastShotAt && (
+                          <>
+                            {" · "}
+                            <LocalDate date={x.lastShotAt} />
+                          </>
+                        )}
+                      </p>
+                    )}
+                    {x.status === "building" && (
+                      <p className="text-xs text-atelier-muted">{s[buildingHintKey(x.fromPhoto, finisherOn)]}</p>
+                    )}
+                    {x.status === "failed" && x.failure && (
+                      <p className="text-xs text-atelier-muted">{localizeServerText(x.failure, t)}</p>
+                    )}
+                    <div className="flex items-center justify-between pt-1">
+                      {x.status === "ready" ? (
+                        <Link href={`/app/sets/${x.id}`} className={chip(false)}>
+                          {s.shootHere}
+                        </Link>
+                      ) : (
+                        <span />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => void remove(x.id)}
+                        disabled={deleting === x.id}
+                        className="cursor-pointer text-xs text-atelier-muted transition-colors hover:text-red-600 disabled:opacity-50"
+                      >
+                        {deleting === x.id ? s.deleting : s.delete}
+                      </button>
+                    </div>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </section>
     </div>
   );
 }

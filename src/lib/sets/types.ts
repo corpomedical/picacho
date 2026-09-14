@@ -37,6 +37,8 @@ export type SetShot = {
    * person (look-cutout.ts seesLookObjects). look.ts canBeLook reads it.
    */
   hasLookObjects: boolean;
+  /** What the person asked for, in their words (shot-words-store.ts); null before set-shot-words.sql or when nothing was said. */
+  words: string | null;
 };
 
 export type SetCharacter = {
@@ -73,6 +75,8 @@ export type SetsHomeData =
       shotsThisMonth: number;
       /** Whether this person may build a set from a photo (admins, flag astra_photo_sets). */
       photoSetsOn: boolean;
+      /** Their characters with a saved photo: who the home's composer can shoot (Astra chat, 2026-09-14). */
+      characters: SetCharacter[];
     };
 
 export type SetPageData =

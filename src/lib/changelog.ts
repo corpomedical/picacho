@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.30.0",
+    build: 43,
+    date: "2026-09-14",
+    title: "Sets is a conversation with Astra",
+    items: [
+      "The Sets home asks what we are shooting today. One message says who is in the frame, where, and what happens — \"Shoot Eva on a sunlit race track beside a red sports car, camera low at 35 mm\" — with a chip for who (your characters with a saved photo), a chip for where (a set you have built, or a new place) and Ask first, which keeps Astra from shooting until you say so. Send it to a set you have and the set's page opens with it; send it as a new place and Astra takes the place out of your words (never the people — Astra builds places, not characters), starts building it, and the new set's page waits with your message above the building step until the build is in. Under the composer, six example shoots to Recreate, in your own character's name, and your sets with their still counts.",
+      "A set's page is a thread. Your earlier stills open it, oldest first, each under the words that asked for it; then your message; then Astra's frame — where your character stands, which camera and lens, what happens, and the live stage itself in Astra's bubble, still yours to drag, orbit and turn — with Shoot, Change the frame (the camera, lens, mark and Match-a-shot chips, out of the way until you want them) and Another angle. Say \"shoot\" and it shoots; say \"from behind, 50 mm, she walks away\" and the camera moves behind her, the lens changes and what happens changes, then Astra waits for the word. The words are read into a frame by a small model that answers with fields only — a camera or a side of the figure, a size of shot, a height, a tilt, a lens, a mark, where the figure faces, and what happens in your own words — never with words of its own: everything Astra says here is Picacho's sentence in your language. When the reader cannot read a message it takes it as what happens and says so; a message about neither the frame nor the shot gets a pointer. A reading costs under a cent; the still costs what it did.",
+      "What you asked for stays with the still. Each shot now keeps your message (every message since the last still, as one) and shows it above the still when you come back to the set, so a set reads like the conversation it was. Until the one-line SQL for it runs, shots work exactly as before and show \"Shoot\" in its place. The look, the identity score, Match a shot and a photo set's compare view are unchanged; the composer's Look chip follows the newest still that can lend one, and Keep this look under any still pins it.",
+    ],
+  },
+  {
     version: "1.29.0",
     build: 42,
     date: "2026-09-14",
