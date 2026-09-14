@@ -31,17 +31,20 @@ import type { SetCharacter, SetShot } from "@/lib/sets/types";
 
 // A Set, open (Astra Sets, 2026-09-10; a workspace since 2026-09-14, drawn
 // and approved on the design canvas — docs/ASTRA_SETS.md). The stage is
-// the page: the live frame, draggable as ever, with ONE toolbar under it —
-// Camera, Lens and Figure as dropdowns that say what they are set to, the
-// turn arrows, Frame the figure and Match a shot as tools, and History at
-// the end to step back to any earlier frame — then a filmstrip of the
+// the page: the live frame, draggable as ever, with ONE pill controller
+// floating at its foot (drawn first, then built to the drawing) — the
+// setup on the left (who, the look, camera, lens, mark, Match a shot,
+// History), the decision in the middle (Shoot lit and breathing, Another
+// angle, the mode), and the wheel on the right, whose ring aims, whose
+// collar turns the figure, and whose hub frames — then a filmstrip of the
 // frame and every still. A still that lands takes the stage's place, with
 // its score, previous and next, Back to the frame, and its own actions on
-// the picture. The conversation with Astra is the panel beside it: the
+// the picture; the wheel's ← → then walk the stills and its hub goes back
+// to the frame. The conversation with Astra is the panel beside it: the
 // person's words as dark bubbles, Astra in plain text with a small mark,
 // the frame it proposes as ONE card of five rows (who, where, camera, what
-// happens, cost) with Shoot as the word that approves it, and a composer at
-// the foot with who ("@" opens the menu), the look and the mode.
+// happens, cost) with Shoot as the word that approves it, and a composer
+// at the foot that keeps the words ("@" opens the who menu).
 //
 // The words are read by a small model into fields (shot-words.ts), never
 // into text of its own: everything Astra says here is Picacho's own
@@ -127,13 +130,10 @@ const REVISIONS_MAX = 12;
 const DEG = Math.PI / 180;
 
 const RING = "shadow-[0_0_0_1px_rgba(35,37,45,0.06),0_1px_2px_rgba(33,29,22,0.04),0_16px_40px_-24px_rgba(33,29,22,0.14)]";
-const MENU =
-  "absolute left-0 top-full z-30 mt-2 flex min-w-[11rem] flex-col gap-0.5 rounded-[12px] bg-atelier-surface p-1.5 shadow-[0_0_0_1px_var(--frost-ring),0_24px_48px_-12px_rgba(0,0,0,0.22)] backdrop-blur-xl";
-
 // ---- the pill controller (drawn 2026-09-14, then built to the drawing) ----
-// The controller floats at the stage's foot where the primary pointer is
-// coarse; the toolbar, the stage's aim arrows and the composer's chips hide
-// there, because the pill holds all of them. The chat keeps the words.
+// The set's controls are ONE pill floating at the stage's foot, on every
+// screen: it holds what the toolbar, the stage's aim arrows and the
+// composer's chips used to. The chat keeps the words.
 
 // What a press answers in the palm: navigator.vibrate patterns, milliseconds.
 // Android buzzes; where the hand can't (iPhone's browser has no vibrate),
@@ -272,47 +272,6 @@ function AstraMark() {
       A
       <span aria-hidden className="absolute bottom-1 left-1.5 right-1.5 h-[1.5px] bg-atelier-accent" />
     </span>
-  );
-}
-
-/** A dropdown in the toolbar: what it is, what it is set to. */
-function Select({
-  label,
-  value,
-  open,
-  onToggle,
-  disabled = false,
-  children,
-}: {
-  label: string;
-  value: string;
-  open: boolean;
-  onToggle: () => void;
-  disabled?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={onToggle}
-        disabled={disabled}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        className={`inline-flex h-9 cursor-pointer items-center gap-2 whitespace-nowrap rounded-[8px] bg-atelier-surface pl-3 pr-2.5 text-[13px] font-medium text-atelier-ink transition-shadow disabled:cursor-default disabled:opacity-50 ${
-          open ? "shadow-[0_0_0_1px_var(--color-atelier-accent)]" : "shadow-[0_0_0_1px_rgba(35,37,45,0.08)] hover:shadow-[0_0_0_1px_rgba(35,37,45,0.2)]"
-        }`}
-      >
-        <span className="text-[11px] font-medium uppercase tracking-[0.08em] text-atelier-muted">{label}</span>
-        {value}
-        <Chevron />
-      </button>
-      {open && (
-        <div role="listbox" aria-label={label} className={MENU}>
-          {children}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1379,10 +1338,6 @@ export function SetView({
         ? "bg-atelier-accent/10 text-atelier-accent shadow-[inset_0_0_0_1px_rgba(180,90,40,0.45)]"
         : "bg-atelier-ink/[0.045] text-atelier-muted hover:bg-atelier-ink/[0.07] hover:text-atelier-ink"
     }`;
-  const tool =
-    "inline-flex h-9 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[8px] bg-atelier-ink/[0.045] px-3 text-[13px] font-medium text-atelier-muted transition-colors hover:bg-atelier-ink/[0.07] hover:text-atelier-ink disabled:cursor-default disabled:opacity-50";
-  const iconTool =
-    "inline-flex h-9 w-9 cursor-pointer items-center justify-center rounded-[8px] bg-atelier-ink/[0.045] text-sm text-atelier-muted transition-colors hover:bg-atelier-ink/[0.07] hover:text-atelier-ink disabled:cursor-default disabled:opacity-50";
   const glassBtn =
     "inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-onmedia/10 bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia transition-colors hover:bg-black/75";
   // Which way the figure faces, as the camera sees it: toward it, away from
@@ -1536,6 +1491,10 @@ export function SetView({
 
       {/* The workspace: the frame, and the stills in its place */}
       <section className="min-w-0 space-y-3.5">
+        {/* The stage with the pill at its foot: one block, so from md up the
+            controller floats over the black screen itself — the stage fixed
+            behind it, as drawn. */}
+        <div className="relative">
         <div className={`relative overflow-hidden rounded-[16px] bg-atelier-stage ${RING}`}>
           <div ref={hostRef} className="aspect-video min-h-[320px] w-full" />
           <div
@@ -1543,44 +1502,15 @@ export function SetView({
             aria-hidden
             className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-white/45 ${viewingShot ? "hidden" : ""}`}
           />
+          {/* Pan and tilt live on the pill controller's wheel at the stage's
+              foot; the stage itself keeps only the drag hint. */}
           {!viewingShot && (
-            <>
-              <span
-                aria-live="polite"
-                className="pointer-events-none absolute bottom-3.5 left-3.5 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80"
-              >
-                {figureMoved ? s.figureMovedOut : s.dragHint}
-              </span>
-              {/* Pan and tilt: turn the camera where it stands. On touch the
-                  pill controller's wheel does this, so the arrows rest. */}
-              <div role="group" aria-label={s.aimLabel} className="absolute bottom-3.5 right-3.5 grid grid-cols-3 gap-1 pointer-coarse:hidden">
-                {(
-                  [
-                    [null, [0, AIM_STEP, s.aimUp, "↑"], null],
-                    [[AIM_STEP, 0, s.aimLeft, "←"], null, [-AIM_STEP, 0, s.aimRight, "→"]],
-                    [null, [0, -AIM_STEP, s.aimDown, "↓"], null],
-                  ] as const
-                ).flatMap((row, r) =>
-                  row.map((cell, c) =>
-                    cell ? (
-                      <button
-                        key={`${r}${c}`}
-                        type="button"
-                        onClick={() => aimBy(cell[0], cell[1])}
-                        disabled={!ready}
-                        aria-label={cell[2]}
-                        title={cell[2]}
-                        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full border border-onmedia/10 bg-black/60 text-xs text-onmedia/80 transition-colors hover:text-onmedia disabled:cursor-default disabled:opacity-50"
-                      >
-                        {cell[3]}
-                      </button>
-                    ) : (
-                      <span key={`${r}${c}`} aria-hidden />
-                    ),
-                  ),
-                )}
-              </div>
-            </>
+            <span
+              aria-live="polite"
+              className="pointer-events-none absolute bottom-3.5 left-3.5 max-w-[70%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 md:bottom-auto md:top-3.5"
+            >
+              {figureMoved ? s.figureMovedOut : s.dragHint}
+            </span>
           )}
           {loadFailed && !viewingShot && (
             <div className="absolute inset-0 flex items-center justify-center bg-atelier-stage/90 p-6 text-center text-sm text-onmedia/80">
@@ -1633,7 +1563,9 @@ export function SetView({
                   </button>
                 </>
               )}
-              <div className="absolute bottom-3.5 left-3.5 right-3.5 flex flex-wrap items-center justify-between gap-2">
+              {/* The pill floats over the still's foot from md up, so this
+                  row moves under the score and Back to the frame there. */}
+              <div className="absolute bottom-3.5 left-3.5 right-3.5 flex flex-wrap items-center justify-between gap-2 md:bottom-auto md:top-14">
                 <span className="rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 tabular-nums">
                   {formatMsg(s.stillTile, { n: stillNumber(viewingShot) })} · <LocalDate date={viewingShot.createdAt} />
                   {shotFacts[viewingShot.generationId] ? ` · ${shotFacts[viewingShot.generationId].frame}` : ""}
@@ -1656,14 +1588,16 @@ export function SetView({
           )}
         </div>
 
-        {/* The pill: the controller for the hand, as drawn — floats at the
-            stage's foot on touch screens. The setup on the left, the decision
+        {/* The pill: the set's controls, as drawn — one controller at the
+            stage's foot, on every screen: over the black screen itself from
+            md up, just under it below. The setup on the left, the decision
             in the middle with Shoot lit, the wheel on the right: the ring
             aims (on a still it walks the filmstrip), the collar turns the
             figure, the hub frames (on a still, back to the frame). The chat
-            keeps the words; every press answers in the palm (HAND). */}
-        <div className="sticky bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-30 hidden pointer-coarse:block">
-          <div className={`mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2.5 rounded-[40px] px-4 py-3.5 ring-1 ring-white/10 sm:rounded-full sm:px-5 ${PILL_BODY}`}>
+            keeps the words; on a phone that can, every press answers in the
+            palm (HAND). */}
+        <div className="pointer-events-none z-30 mt-3.5 flex justify-center md:absolute md:inset-x-0 md:bottom-4 md:mt-0">
+          <div className={`pointer-events-auto mx-auto flex w-fit max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2.5 rounded-[40px] px-4 py-3.5 ring-1 ring-white/10 sm:rounded-full sm:px-5 ${PILL_BODY}`}>
             {/* the setup */}
             <div className="flex min-w-0 max-w-[26rem] flex-wrap items-center justify-center gap-2">
               <div className="relative">
@@ -1788,14 +1722,28 @@ export function SetView({
                 </div>
               )}
               {matchOn && (
-                <button
-                  type="button"
-                  onClick={() => press(ready && !matching && !shooting, HAND.toggle, () => matchFileRef.current?.click())}
-                  aria-disabled={!ready || matching || shooting}
-                  className={KEY}
-                >
-                  {s.matchShot}
-                </button>
+                <>
+                  <input
+                    ref={matchFileRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      // Cleared, so choosing the same picture again still counts as a choice.
+                      e.target.value = "";
+                      void pickReference(file);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => press(ready && !matching && !shooting, HAND.toggle, () => matchFileRef.current?.click())}
+                    aria-disabled={!ready || matching || shooting}
+                    className={KEY}
+                  >
+                    {s.matchShot}
+                  </button>
+                </>
               )}
             </div>
 
@@ -1915,71 +1863,6 @@ export function SetView({
             </div>
           </div>
         </div>
-
-        {/* One toolbar: what the frame is set to, and the tools. On touch the
-            pill controller above holds all of it, so the toolbar rests. */}
-        <div className="flex flex-wrap items-center gap-2 pointer-coarse:hidden">
-          <Select label={s.toolbarCamera} value={cameraLabel} open={menu === "camera"} onToggle={() => toggleMenu("camera")} disabled={!ready}>
-            {cameraOptions}
-          </Select>
-          <Select label={s.toolbarLens} value={lensLabel} open={menu === "lens"} onToggle={() => toggleMenu("lens")} disabled={!ready}>
-            {lensOptions}
-          </Select>
-          <Select
-            label={s.toolbarFigure}
-            value={markLabel}
-            open={menu === "figure"}
-            onToggle={() => toggleMenu("figure")}
-            disabled={!ready || spec.marks.length < 2}
-          >
-            {figureOptions}
-          </Select>
-          <button type="button" onClick={() => turn(-TURN_STEP)} disabled={!ready} className={iconTool} aria-label={s.turnLeft} title={s.turnLeft}>
-            ↺
-          </button>
-          <button type="button" onClick={() => turn(TURN_STEP)} disabled={!ready} className={iconTool} aria-label={s.turnRight} title={s.turnRight}>
-            ↻
-          </button>
-          <span aria-hidden className="mx-1 h-6 w-px bg-atelier-rule" />
-          <button type="button" onClick={frameFigure} disabled={!ready} className={tool}>
-            {s.frameFigure}
-          </button>
-          {matchOn && (
-            <>
-              <input
-                ref={matchFileRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  // Cleared, so choosing the same picture again still counts as a choice.
-                  e.target.value = "";
-                  void pickReference(file);
-                }}
-              />
-              <button
-                type="button"
-                onClick={() => matchFileRef.current?.click()}
-                disabled={!ready || matching || shooting}
-                className={tool}
-              >
-                {s.matchShot}
-              </button>
-            </>
-          )}
-          <span className="flex-1" />
-          {revisions.length > 1 && (
-            <Select
-              label={s.historyLabel}
-              value={formatMsg(s.revisionN, { n: frameNumber })}
-              open={menu === "history"}
-              onToggle={() => toggleMenu("history")}
-              disabled={!ready || shooting}
-            >
-              {historyOptions}
-            </Select>
-          )}
         </div>
 
         {/* Match this shot: the read in progress, what it matched, or what went wrong */}
@@ -2349,54 +2232,9 @@ export function SetView({
               disabled={reading || shooting}
               className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-atelier-ink outline-none placeholder:text-atelier-muted/80 disabled:opacity-60"
             />
+            {/* Who, the look and the mode are keys on the pill controller;
+                the composer keeps the words ("@" still opens the who menu). */}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {characters.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setMentionForced((v) => !v)}
-                  aria-expanded={mentionOpen}
-                  aria-haspopup="listbox"
-                  title={s.mentionHint}
-                  className={`${chip(false)} pl-1 pointer-coarse:hidden`}
-                >
-                  {character?.thumbUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={character.thumbUrl} alt="" className="h-[22px] w-[22px] rounded-full object-cover" />
-                  ) : (
-                    <span className="h-[22px] w-[22px] rounded-full bg-atelier-rule" />
-                  )}
-                  {character?.name || s.characterLabel}
-                  <Chevron />
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => pickLook(lookShot ? null : latestStill)}
-                disabled={!lookShot && !latestStill}
-                aria-pressed={Boolean(lookShot)}
-                title={lookShot ? s.lookOn : latestStill ? s.lookUseLatest : s.lookFirst}
-                className={`${chip(Boolean(lookShot))} pointer-coarse:hidden`}
-              >
-                {s.lookLabel} · {lookShot ? <LocalDate date={lookShot.createdAt} /> : s.lookOff}
-              </button>
-              <div className="relative pointer-coarse:hidden">
-                <button
-                  type="button"
-                  onClick={() => toggleMenu("mode")}
-                  aria-haspopup="listbox"
-                  aria-expanded={menu === "mode"}
-                  title={s.modeHint}
-                  className={chip(false)}
-                >
-                  {askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
-                  <Chevron />
-                </button>
-                {menu === "mode" && (
-                  <div role="listbox" aria-label={s.modeHint} className={`${MENU} bottom-full top-auto mb-2 mt-0`}>
-                    {modeOptions}
-                  </div>
-                )}
-              </div>
               <span className="flex-1" />
               <button
                 type="submit"
