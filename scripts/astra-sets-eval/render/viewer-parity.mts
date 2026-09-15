@@ -45,7 +45,14 @@ export const MIRRORED_LINES = [
   "const thumb = apiRef.current?.snapshot(SET_THUMB_PX, {",
   "hideFigure: true,",
   "from: { position: first.position, target: first.target, fovDeg: first.fovDeg },",
-  "const frame = apiRef.current?.snapshot(SET_FRAME_PX);",
+  // A shot's frame (2026-09-15, Helios Cinema): rendered by frame() at the
+  // rig format's own size with the pose's field of view across its height.
+  // For the square — the only format the eval shoots — that is a 1024² view
+  // at the pose's vertical field of view: exactly the old centre square of a
+  // landscape canvas, which is what the snapshot page still draws.
+  "const frame = apiRef.current?.frame();",
+  "const cam = new THREE.PerspectiveCamera(from.fovDeg, fr.renderW / fr.renderH, camera.near, camera.far);",
+  "cam.lookAt(new THREE.Vector3(...from.target));",
 ] as const;
 
 /** What B's photo arm also mirrors: camera 1 drawn at the photo's shape, beside the photo. */
@@ -85,10 +92,12 @@ export const MIRRORED_MATCH_LINES = [
   "maxDistance: controls.maxDistance,",
   "camera.position.set(...placed.position);",
   "controls.target.set(...placed.target);",
-  "camera.fov = pose.fovDeg;",
+  // The lens the pose carries (2026-09-15): the stage keeps it apart from the
+  // canvas camera's own, widened field of view (set-view.tsx fit).
+  "poseFov = pose.fovDeg;",
   "const r = (n: number) => Math.round(n * 1000) / 1000;",
   "position: [r(camera.position.x), r(camera.position.y), r(camera.position.z)],",
-  "fovDeg: Math.round(camera.fov * 100) / 100,",
+  "fovDeg: Math.round(poseFov * 100) / 100,",
   "setMatched({ photo: prepared.dataUri, summary: matchSummary(res.match, solved, api.pose()), moved });",
 ] as const;
 

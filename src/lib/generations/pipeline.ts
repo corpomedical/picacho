@@ -28,7 +28,7 @@ import {
 } from "@/lib/generations/providers/image";
 import { getImageModel } from "@/lib/generations/providers/image-models";
 import { referenceNotes } from "@/lib/generations/providers/reference-notes";
-import { ImageSafetyRejection, describeImageUsage, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
+import { ImageSafetyRejection, describeImageUsage, type OpenAiImageSize, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
 import { stripSetShotScaffold } from "@/lib/sets/set-shot-prompt";
 import type { VideoAspectRatio } from "@/lib/generations/aspect-ratio";
 import type { VideoResolution } from "@/lib/generations/providers/video-resolution";
@@ -606,6 +606,8 @@ export type RealPipelineOptions = {
   lookImageUrl?: string | null;
   /** The photograph a photo set was built from (2026-09-15): rides a set shot as pixels, fenced like the look. */
   placeImageUrl?: string | null;
+  /** A Helios rig format's render size (sets/rig.ts): GPT Image only; the set shot cuts it to its frame after. */
+  imageSize?: OpenAiImageSize | null;
   // Does this send carry a user-attached reference photo? (2026-08-29, from
   // the first outside bug report: "I sent an image with the background that
   // I wanted it to use. But it didn't use it. It only used the prompt.")
@@ -1562,6 +1564,7 @@ export async function runRealPipeline(
             (usage) => {
               imageUsage = usage;
             },
+            options.imageSize ?? null,
           );
           if (fallbackNote) steps.push({ step: "generate", detail: fallbackNote });
           // Report the model that ACTUALLY produced the image. This used to

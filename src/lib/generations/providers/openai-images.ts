@@ -36,6 +36,14 @@ import { readOpenAiRefusal } from "./refusal-messages";
 export const OPENAI_IMAGE_MODEL = "gpt-image-2.5-sunburst-2026-09-08";
 /** What the person sees it called (image-models.ts, the pipeline's "Generated via"). */
 export const OPENAI_IMAGE_MODEL_NAME = "GPT Image 2.5";
+/**
+ * The sizes a render may be asked for: the square every take pins, and the
+ * two 3:2 shapes only a Helios rig format asks for (sets/rig.ts). Never
+ * "auto" — the edits endpoint's auto matches the input's shape, and a
+ * phone photo made a pricier picture for the same credit (2026-08-31).
+ */
+export const OPENAI_IMAGE_SIZES = ["1024x1024", "1536x1024", "1024x1536"] as const;
+export type OpenAiImageSize = (typeof OPENAI_IMAGE_SIZES)[number];
 /** Pinned, never "auto" (the header): one quality, one price. 2.5 also offers "xhigh" and "max". */
 export const OPENAI_IMAGE_QUALITY = "high";
 // The edits endpoint's input_fidelity ("high" keeps more of what the input
@@ -205,10 +213,13 @@ export async function generateImageWithOpenAI(
   // model and quality are measurement knobs (the eval and the harnesses in
   // docs/ASTRA_SETS.md): the product never passes them, and sends
   // OPENAI_IMAGE_MODEL at OPENAI_IMAGE_QUALITY.
-  opts: { onUsage?: (usage: OpenAiImageUsage) => void; model?: string; quality?: string } = {},
+  // size: the pinned square unless a Helios rig format asks for its render
+  // (sets/rig.ts: 1536x1024 measured cheaper than 1024x1024, 2026-09-15).
+  opts: { onUsage?: (usage: OpenAiImageUsage) => void; model?: string; quality?: string; size?: OpenAiImageSize } = {},
 ): Promise<string> {
   const model = opts.model ?? OPENAI_IMAGE_MODEL;
   const quality = opts.quality ?? OPENAI_IMAGE_QUALITY;
+  const size: OpenAiImageSize = opts.size && OPENAI_IMAGE_SIZES.includes(opts.size) ? opts.size : "1024x1024";
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     throw new Error(
@@ -247,7 +258,7 @@ export async function generateImageWithOpenAI(
     // INPUT's dimensions — so the same flat 1-credit charge bought a square
     // render for one person and a taller, materially more expensive one for
     // whoever anchored to a phone photo. One price, one output size.
-    form.set("size", "1024x1024");
+    form.set("size", size);
     if (images.length === 1) {
       form.set("image", images[0].blob, images[0].filename);
     } else {
@@ -272,7 +283,7 @@ export async function generateImageWithOpenAI(
           "content-type": "application/json",
           authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ model, quality, prompt, size: "1024x1024" }),
+        body: JSON.stringify({ model, quality, prompt, size }),
       },
       OPENAI_IMAGE_TIMEOUT_MS,
     );

@@ -38,6 +38,22 @@ import {
   SET_TAKES_PER_10_MIN,
 } from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
+import {
+  formatFrame,
+  isRigCheckItem,
+  normaliseSetRig,
+  rigCheckItems,
+  rigSentences,
+  rigWordsByItem,
+  type RigCheckItem,
+  type RigFormat,
+} from "@/lib/sets/rig";
+import { bearingDeg } from "@/lib/sets/light-schemes";
+import { recordShotRig } from "@/lib/sets/shot-rig";
+import { isFilmMove, isFilmTexture } from "@/lib/sets/moves";
+
+/** Where the rig's focus is measured to: the figure's eyes (build-scene's stand-in). */
+const RIG_EYE_Y = 1.5;
 import { lookCutout, removeSetLookCutouts, type LookCutoutResult } from "@/lib/sets/look-cutout-store";
 import { lookSheet } from "@/lib/sets/look-sheet";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
@@ -535,6 +551,10 @@ type ShootResult =
       hasLookObjects: boolean;
       /** A look was asked for and did not ride: the still was shot without it. */
       lookDropped: boolean;
+      /** The rig format the still was cut to (rig.ts); "square" when none. */
+      format: RigFormat;
+      /** The looks the look check will read it against (rig.ts rigCheckItems); none when the rig asked for none. */
+      checks: RigCheckItem[];
     };
 
 /**
@@ -556,6 +576,10 @@ export async function shootInSet(
     canvasAspect?: number;
     /** What the person asked for, as they wrote it: kept with the still for the set's conversation (shot-words-store.ts). */
     words?: string;
+    /** The set's rig as the page holds it (rig.ts): normalised here, never trusted. */
+    rig?: unknown;
+    /** Looks to say harder this time ("Shoot again, pushed"): check items, anything else dropped. */
+    push?: unknown;
   },
 ): Promise<ShootResult> {
   const access = await setsAccess();
@@ -682,6 +706,26 @@ export async function shootInSet(
   // as the camera sees it. A crafted layout changes that one clause, still
   // gated.
   const layout = normaliseSetLayout(input.layout, owned.spec);
+  // The rig (rig.ts, Helios Cinema): its words are worked out here from the
+  // frame's own camera and mark — the focus distances, where the light
+  // stands as this camera sees it — and the format names the cut the image
+  // lane makes after the render (generations/actions.ts set_format).
+  const rig = normaliseSetRig(input.rig);
+  const push = Array.isArray(input.push) ? input.push.filter(isRigCheckItem) : [];
+  const rigCtx = layout?.camera
+    ? {
+        distanceM: Math.hypot(
+          layout.camera.position[0] - layout.mark.x,
+          layout.camera.position[1] - RIG_EYE_Y,
+          layout.camera.position[2] - layout.mark.z,
+        ),
+        fovDeg: layout.camera.fovDeg,
+        cameraBearingDeg: bearingDeg(layout.mark, { x: layout.camera.position[0], z: layout.camera.position[2] }),
+        push,
+      }
+    : { distanceM: 0, fovDeg: 40, cameraBearingDeg: 0, push };
+  const rigWords = rigWordsByItem(rig, rigCtx);
+  const rigFrame = formatFrame(rig.format);
   const fd = new FormData();
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
@@ -691,8 +735,11 @@ export async function shootInSet(
     layout,
     look,
     sourcePhoto: sourcePhotoUrl !== null,
+    rig: rigSentences(rig, rigCtx),
+    rigLight: rig.light !== null,
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
+  fd.set("set_format", rig.format);
   // The same prompt without the person's direction: all of it Astra's
   // description and Picacho's sentences. If the gate refuses the shot, this
   // part is judged again alone, and a refusal it earns by itself is logged
@@ -752,7 +799,13 @@ export async function shootInSet(
   // (shot-camera.ts). In an update of its own after the row is in, whose
   // failure is ignored — until set-shot-camera.sql runs the column is
   // missing, and naming it in the insert above would fail every shot.
-  const camera = shotError ? null : shotCameraOf(input.layout, input.canvasAspect);
+  const camera = shotError
+    ? null
+    : shotCameraOf(input.layout, input.canvasAspect, rigFrame.cut ? { render: rigFrame.renderAspect, band: rigFrame.bandAspect } : null);
+  // The rig it was shot with: the format and each checked look's words as
+  // sent, for the line under it and the look check (shot-rig.ts). Its own
+  // update, failure ignored, like the camera's.
+  if (!shotError) await recordShotRig(admin, { setId, generationId: result.id, userId }, { format: rig.format, words: rigWords });
   const recorded = camera ? await recordShotCamera(admin, { setId, generationId: result.id, userId }, camera) : false;
   // Offered as a look only when there is something to cut out of it clear
   // of the person — the same rule the set page reads (data.ts).
@@ -774,6 +827,8 @@ export async function shootInSet(
     score: typeof result.matchScore === "number" ? result.matchScore : null,
     hasLookObjects,
     lookDropped,
+    format: rig.format,
+    checks: rigCheckItems(rig),
   };
 }
 
@@ -813,6 +868,11 @@ export async function takeInSet(
     lifted?: boolean;
     canvasAspect?: number;
     words?: string;
+    /** The set's rig (rig.ts): the end still shoots with it, and its format sets the clip's shape. */
+    rig?: unknown;
+    /** A film beat's move and textures (moves.ts): words for the path between the frames. */
+    move?: unknown;
+    textures?: unknown;
   },
 ): Promise<TakeResult> {
   const access = await setsAccess();
@@ -859,6 +919,7 @@ export async function takeInSet(
     canvasAspect: input.canvasAspect,
     words: input.words,
     lookGenerationId: startId,
+    rig: input.rig,
   });
   if (still.error !== null) return { error: still.error };
   if (!still.succeeded) return { error: null, still, takeGenerationId: null, takeError: SET_TAKE_FAILED };
@@ -880,7 +941,17 @@ export async function takeInSet(
   fd.set("video_model_id", engine.model);
   fd.set("video_duration_seconds", String(engine.seconds));
   fd.set("character_id", input.characterId);
-  fd.set("prompt", buildSetTakePrompt(typeof input.direction === "string" ? input.direction : ""));
+  const textures = Array.isArray(input.textures) ? [...new Set(input.textures.filter(isFilmTexture))] : [];
+  fd.set(
+    "prompt",
+    buildSetTakePrompt(typeof input.direction === "string" ? input.direction : "", {
+      move: isFilmMove(input.move) ? input.move : null,
+      textures,
+    }),
+  );
+  // A tall frame renders a tall clip; every other rig format renders 16:9
+  // and the page plays it inside its frame lines (shot-rig.ts keeps the format).
+  if (still.format === "vertical") fd.set("video_aspect_ratio", "9:16");
   fd.set("storyboard_start_path", startUrl);
   fd.set("storyboard_end_path", endUrl);
   const clip = await runGeneration(fd);
@@ -899,6 +970,7 @@ export async function takeInSet(
   else {
     const words = cleanText(typeof input.words === "string" ? input.words : "", SHOT_WORDS_STORED_MAX_CHARS);
     if (words.length > 0) await recordShotWords(admin, { setId, generationId: clip.id, userId }, words);
+    if (still.format !== "square") await recordShotRig(admin, { setId, generationId: clip.id, userId }, { format: still.format, words: {} });
   }
   return { error: null, still, takeGenerationId: clip.id, takeError: null };
 }

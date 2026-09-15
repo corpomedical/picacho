@@ -204,7 +204,21 @@ const ANY_STILL = { width: 1024, height: 1024 };
  * and where the grey figure stood on the ground (its mark), so the person's
  * place in the still is known.
  */
-export type ShotCamera = { position: Vec3; target: Vec3; fovDeg: number; canvasAspect: number; figure: { x: number; z: number } };
+export type ShotCamera = {
+  position: Vec3;
+  target: Vec3;
+  fovDeg: number;
+  canvasAspect: number;
+  figure: { x: number; z: number };
+  /**
+   * A rig format's frame (rig.ts, Helios Cinema 2026-09-15): the sketch was
+   * drawn at `render` width ÷ height with `fovDeg` across its height, and
+   * the still is the band of `band` width ÷ height cut from its middle.
+   * Absent for every square still, whose sketch is the canvas's centre
+   * square as before.
+   */
+  frame?: { render: number; band: number };
+};
 
 /**
  * One object to cut, in the still's own pixels: the box round all of it that
@@ -250,8 +264,17 @@ export function normaliseShotCamera(value: unknown): ShotCamera | null {
   const f = v.figure && typeof v.figure === "object" ? (v.figure as Record<string, unknown>) : null;
   const edge = SET_LIMITS.maxCoordinate;
   if (!f || !within(f.x, -edge, edge) || !within(f.z, -edge, edge)) return null;
-  return { position, target, fovDeg: v.fovDeg, canvasAspect: v.canvasAspect, figure: { x: f.x, z: f.z } };
+  const camera: ShotCamera = { position, target, fovDeg: v.fovDeg, canvasAspect: v.canvasAspect, figure: { x: f.x, z: f.z } };
+  if (v.frame !== undefined) {
+    const fr = v.frame && typeof v.frame === "object" ? (v.frame as Record<string, unknown>) : null;
+    if (!fr || !within(fr.render, FRAME_ASPECT[0], FRAME_ASPECT[1]) || !within(fr.band, FRAME_ASPECT[0], FRAME_ASPECT[1])) return null;
+    camera.frame = { render: fr.render, band: fr.band };
+  }
+  return camera;
 }
+
+/** A rig frame's shapes, width ÷ height: 9 : 16 at the narrowest, 2.39 : 1 at the widest, with room. */
+const FRAME_ASPECT = [0.4, 3] as const;
 
 /** The field of view of the sketch's square: the lens's on a landscape canvas, the canvas's width's on a portrait one. */
 export function sketchFovDeg(fovDeg: number, canvasAspect: number): number {
@@ -283,12 +306,24 @@ export function sketchProjector(camera: ShotCamera): (point: Vec3) => { u: numbe
   }
   x = unit(x);
   const y = cross(z, x);
-  const t = Math.tan((sketchFovDeg(camera.fovDeg, camera.canvasAspect) * DEG) / 2);
+  // Half the frame's width and height as tangents: the square's are the
+  // same; a rig frame's band spans the render's full width or full height,
+  // whichever the cut keeps, and the band's own shape sets the other.
+  let tx: number;
+  let ty: number;
+  if (camera.frame) {
+    const tv = Math.tan((camera.fovDeg * DEG) / 2);
+    const kept = Math.min(camera.frame.render, camera.frame.band);
+    tx = tv * kept;
+    ty = (tv * kept) / camera.frame.band;
+  } else {
+    tx = ty = Math.tan((sketchFovDeg(camera.fovDeg, camera.canvasAspect) * DEG) / 2);
+  }
   return (point) => {
     const d = sub(point, camera.position);
     const depth = -dot(d, z);
     if (depth <= NEAR_M) return null;
-    return { u: 0.5 + dot(d, x) / (2 * depth * t), v: 0.5 - dot(d, y) / (2 * depth * t) };
+    return { u: 0.5 + dot(d, x) / (2 * depth * tx), v: 0.5 - dot(d, y) / (2 * depth * ty) };
   };
 }
 

@@ -7,6 +7,7 @@ import {
   takeQuoteInput,
 } from "./take";
 import { quoteSend } from "../generations/quote";
+import { FILM_MOVE_WORDS, FILM_TEXTURE_WORDS } from "./moves";
 import { MODEL_CAPABILITIES } from "../generations/send-plan";
 import { getVideoModel, isValidDuration } from "../generations/providers/video-models";
 
@@ -74,3 +75,14 @@ describe("the take's request", () => {
     expect(dirty).toContain("a b c");
   });
 });
+
+describe("the take's words for a film beat's move (Helios Cinema)", () => {
+  it("says the path and the textures between the frames, before the person's direction", () => {
+    const prompt = buildSetTakePrompt("she freezes", { move: "dolly-zoom", textures: ["handheld"] });
+    expect(prompt).toContain(FILM_MOVE_WORDS["dolly-zoom"]);
+    expect(prompt).toContain(FILM_TEXTURE_WORDS.handheld);
+    expect(prompt.indexOf(FILM_MOVE_WORDS["dolly-zoom"])).toBeLessThan(prompt.indexOf("she freezes"));
+    expect(buildSetTakePrompt("she freezes")).not.toContain("Camera:");
+  });
+});
+

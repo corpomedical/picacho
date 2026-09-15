@@ -44,7 +44,14 @@ function warnOnce(op: string, message: string) {
  * of bounds: then nothing is stored, and the shot is never a look's source.
  * A crafted pose or mark can only spoil its sender's own look.
  */
-export function shotCameraOf(layout: unknown, canvasAspect: unknown): ShotCamera | null {
+export function shotCameraOf(
+  layout: unknown,
+  canvasAspect: unknown,
+  // A rig format's frame (rig.ts formatFrame): the render's and the band's
+  // shapes, worked out on the server from the format's name. Absent for the
+  // square, recorded exactly as before.
+  frame?: { render: number; band: number } | null,
+): ShotCamera | null {
   const record = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
   const sent = record(layout);
   const camera = record(sent?.camera);
@@ -56,6 +63,7 @@ export function shotCameraOf(layout: unknown, canvasAspect: unknown): ShotCamera
     fovDeg: camera.fovDeg,
     canvasAspect,
     figure: { x: mark.x, z: mark.z },
+    ...(frame ? { frame } : {}),
   });
 }
 

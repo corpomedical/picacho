@@ -1,3 +1,4 @@
+import { DEFAULT_SET_RIG, rigSentences } from "./rig";
 import { describe, expect, it } from "vitest";
 import { LOOK_SENTENCE, SET_SHOT_FIXED_SENTENCES, SOURCE_PHOTO_SENTENCE, buildSetShotPrompt, describeFacing, stripSetShotScaffold } from "./set-shot-prompt";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
@@ -177,3 +178,41 @@ describe("stripSetShotScaffold", () => {
     );
   });
 });
+
+describe("the rig's words (Helios Cinema)", () => {
+  const rigLines = rigSentences(
+    {
+      ...DEFAULT_SET_RIG,
+      format: "scope",
+      stock: "film35",
+      lens: "anamorphic",
+      stop: 2,
+      light: { scheme: "contre-jour", azimuthDeg: 190, elevationDeg: 5 },
+      palette: "amber-hour",
+      era: "1980s",
+    },
+    { distanceM: 4, fovDeg: 37.85, cameraBearingDeg: 0 },
+  );
+
+  it("ride after the description, and the strip leaves nothing of them", () => {
+    const full = buildSetShotPrompt({ description: "d", direction: "", rig: rigLines, rigLight: true });
+    for (const line of rigLines) expect(full).toContain(line);
+    expect(full.indexOf("Render the location")).toBeLessThan(full.indexOf(rigLines[0]));
+    expect(stripSetShotScaffold(full)).toBe("d");
+  });
+
+  it("hand the light to the rig: over the description's hour, lifted sketch or not", () => {
+    const plain = buildSetShotPrompt({ description: "d", direction: "", rig: rigLines, rigLight: true });
+    expect(plain).toContain("the light below wins");
+    const lifted = buildSetShotPrompt({ description: "d", direction: "", lifted: true, rig: rigLines, rigLight: true });
+    expect(lifted).toContain("take the light's direction from the sketch, and its mood, hour and colour from the light described below");
+    expect(lifted).not.toContain("take the time of day, how dark it is and the colour of the light from the description");
+    expect(stripSetShotScaffold(lifted)).toBe("d");
+  });
+
+  it("say nothing when the rig asks for nothing", () => {
+    const none = buildSetShotPrompt({ description: "d", direction: "", rig: [], rigLight: false });
+    expect(none).toBe(buildSetShotPrompt({ description: "d", direction: "" }));
+  });
+});
+

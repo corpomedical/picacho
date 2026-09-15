@@ -20,6 +20,21 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.37.0",
+    build: 50,
+    date: "2026-09-15",
+    title: "Helios gets a camera department — the rig — where the set holds what words can't",
+    items: [
+      "A rig docks left of the stage, drawn as canvas page I and saved on the set, so every still, take and film beat shoots with it: the frame's shape, the focal length, a film stock, a lens, a stop, a light, a palette, an era — and a genre that suggests a whole rig, out in the open, which you take or leave. Every section says where its choice lands: HELD BY THE STAGE, or CHECKED AFTER. It is Higgsfield's Cinema Studio idea — a short, curated vocabulary instead of prompting — fixed where their own reviewers found it failing: controls that are only words, and vanish from the picture without anyone being told.",
+      "The frame lines are the picture. Pick Scope, Flat, 16:9, 4:3 or 9:16 and the stage draws that frame, as large as the room between the panels allows; the still renders at 3:2 (or 2:3) and is cut to the lines on the server before it is stored. Measured first: GPT Image 2.5 renders 1536×1024 on 1,372 output tokens against the square's 1,756 with the same three pictures, so a cinema still is still one credit. The focal ring rolls like a lens barrel and the stage's field of view moves with it; Frame the figure frames for the picture, not the render.",
+      "Focus is real optics from the real distance. The stop ring gives the depth of field in metres — a 35 at f/2 on her at 4.0 m is sharp from 3.3 to 5.0 m — the stage blurs what falls outside it (the image's sharpness measured 1,255 at no stop and 685 at f/1.4), and the render is told those numbers in words. The sketch the model sees is never blurred.",
+      "A light scheme is a plot, not an adjective: contre-jour, golden hour, window, overhead, practicals, soft cross, silhouette, hard noon or moonlight places the set's own key light round the figure from where the camera stands, the stage relights at once, and the sketch carries the light's direction to the render. Drag the light round the figure on the plot, raise or lower a sun; As built brings the set's own light back. The set itself is never edited — the stage draws a lit copy. Palettes, named like moods and never after films, grade the stage as a preview.",
+      "Film gets a move library: fourteen moves laid as paths in YOUR set, not tags in a prompt. Pick one for a beat and its end is laid round the figure and flown on the stage, free — a dolly zoom is a real lens change as the camera backs off, so she keeps her size while the world behind closes in. A move stops short of anything built, and beat one starts from the start still's own camera. Handheld, slow motion and a whip ride on top as words; each beat still renders as the take that shipped.",
+      "The rig check: after a still lands, every look its rig asked for in words is read back from the picture by a vision model and marked landed or missed, with the evidence — judged by what the picture shows, never by matching the prompt. A miss is named, with Shoot again, pushed one press away: every look ships in two strengths. Every look starts untested (the cinema-presets proof rule) and says so in the rig; Helios being admin-only, you shoot the proof renders in the product and the check reads each one.",
+      "A still carries the rig it was shot with (its format beside it, the words each look sent), and a take shot in Scope, Flat or 4:3 plays inside its frame lines; a 9:16 take renders tall. A cinema still can still lend the look: the object sheet's boxes are worked out in its band. One database update is waiting for the operator (supabase/pending/helios-rig.sql); until it runs everything works, the rig just isn't remembered between visits and stills carry no check.",
+    ],
+  },
+  {
     version: "1.36.0",
     build: 49,
     date: "2026-09-15",

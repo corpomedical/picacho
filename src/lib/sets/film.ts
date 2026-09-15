@@ -12,6 +12,7 @@ import type { Vec3 } from "./set-spec";
 import { cleanText } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, SET_TAKE_ENGINES, type SetTakeEngine } from "./take";
+import { isFilmMove, isFilmTexture, type FilmMove, type FilmTexture } from "./moves";
 
 /** The stage's own camera pose shape (set-view's Pose, held as data). */
 export type FilmPose = { position: Vec3; target: Vec3; fovDeg: number };
@@ -19,8 +20,12 @@ export type FilmPose = { position: Vec3; target: Vec3; fovDeg: number };
 export type FilmBeat = {
   /** What happens in this beat — the person's words, cleaned like a direction. */
   words: string;
-  /** Where the beat's move ends: a pose captured from the stage. */
+  /** Where the beat's move ends: a pose captured from the stage, or laid by a move. */
   end: FilmPose;
+  /** The move that laid the end (moves.ts, Helios Cinema), said to the video model as the path; null for a keyframe framed by hand. */
+  move: FilmMove | null;
+  /** What rides on top of the path as words alone: handheld, slow motion, a whip. */
+  textures: FilmTexture[];
 };
 
 export type SetFilm = {
@@ -79,7 +84,12 @@ export function normaliseSetFilm(v: unknown): SetFilm {
         typeof (b as Record<string, unknown>).words === "string" ? ((b as Record<string, unknown>).words as string) : "",
         SET_DIRECTION_MAX_CHARS,
       );
-      beats.push({ words, end });
+      const raw = b as Record<string, unknown>;
+      const move = isFilmMove(raw.move) ? raw.move : null;
+      const textures = Array.isArray(raw.textures)
+        ? [...new Set(raw.textures.filter((t): t is FilmTexture => isFilmTexture(t)))]
+        : [];
+      beats.push({ words, end, move, textures });
     }
   }
   return { engine, startId, beats };

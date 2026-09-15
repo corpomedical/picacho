@@ -80,6 +80,9 @@ export const SET_MATCH_TIMED_OUT = "Reading that shot's camera took too long —
 export const SET_EDIT_FAILED = "Astra couldn't make that change — try saying it differently.";
 export const SET_EDIT_REFUSED = "That change can't be made here.";
 export const SET_EDIT_TOO_FAST = "You're changing the set quickly — give it a moment.";
+/** The rig check (rig-check.ts): never a gate — the still is kept either way. */
+export const SET_RIG_CHECK_FAILED = "The rig check couldn't read this still — the still is kept as it is.";
+export const SET_RIG_CHECK_TOO_FAST = "You're checking stills quickly — give it a moment.";
 export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a moment.";
 
 // Takes (2026-09-15): a clip from one still to a newly shot end frame.

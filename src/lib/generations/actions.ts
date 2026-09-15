@@ -137,6 +137,8 @@ import {
   consumePurchasedCredits,
   getMonthlyUsageWith,
   persistGeneratedImage, fitLayerToOriginal, persistImageBytes } from "@/lib/generations/core";
+import { formatFrame, isRigFormat, type RigFormat } from "@/lib/sets/rig";
+import { cutToBand } from "@/lib/sets/frame-cut";
 
 // Account-level brand/compliance rules, read straight from the table rather
 // than via the brand-rules server action — a "use server" export is a
@@ -537,6 +539,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // it changes what the scene role MEANS — pixels riding a final prompt,
   // not an image described into text (see placeImageUrl below).
   const isSetShot = formData.get("set_shot") === "1";
+  // A Helios rig format (sets/rig.ts, 2026-09-15): a set shot names its
+  // format, and the server works out the render and the cut from the name
+  // alone. GPT Image renders the format's 3:2 (or 2:3) shape; the picture is
+  // cut to the frame lines before it is stored. Anything else is the square.
+  const setFormat = isSetShot && isRigFormat(formData.get("set_format")) ? (formData.get("set_format") as RigFormat) : "square";
+  const setFrame = formatFrame(setFormat);
+  const setCut = setFrame.cut ? setFrame.bandAspect : null;
+  const persistSetImage = (base64: string) => (setCut ? cutToBand(base64, setCut) : Promise.resolve(base64));
 
   // Every chat-attachment storage path riding this send, whatever its role —
   // recorded on the row so deletion can clean them up. /api/media/<bucket>/
@@ -1933,7 +1943,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         setShot: isSetShot,
           policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
-          persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),
+          persistImage: async (base64) => persistGeneratedImage(supabase, userData.user!.id, await persistSetImage(base64)),
+          imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
           // Video renders get queued and polled instead of awaited — see
           // job-runner.ts. Images stay inline: a single bounded call that
           // finishes well inside one request and gains nothing from staging.
@@ -2084,6 +2095,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 propImageUrl,
                 lookImageUrl,
                 placeImageUrl,
+                imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
+                cutToBand: setCut,
                 // ONE paid call, not another full allowance. runRealPipeline
                 // mints its own budget of MAX_PAID_IMAGE_CALLS internally, so
                 // re-entering the pipeline would have doubled the ceiling the

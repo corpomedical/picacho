@@ -12,7 +12,7 @@ import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/se
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
-import { LENSES_MM, fovForLens, nearestLens } from "@/lib/sets/build-scene";
+import { fovForLens, nearestLens } from "@/lib/sets/build-scene";
 import { clearMarks } from "@/lib/sets/marks";
 import {
   SET_TAKE_DEFAULT_ENGINE,
@@ -23,6 +23,12 @@ import {
 import { FILM_MAX_BEATS, filmSeconds, normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
 import { oversizedSeating } from "@/lib/sets/human-scale";
 import { readTakes, saveSetFilm } from "@/lib/sets/film-actions";
+import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
+import { RIG_PALETTES, findLook, formatFrame, normaliseSetRig, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
+import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
+import { layMove, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
+import type { RigCheck } from "@/lib/sets/rig-check";
+import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
@@ -31,12 +37,11 @@ import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
   SET_COMPARE_PX,
-  SET_FRAME_PX,
   SET_MAX_TILT_DOWN_DEG,
   SET_MAX_TILT_UP_DEG,
   SET_THUMB_PX,
 } from "@/lib/sets/set-config";
-import type { SetLayout, SetSpec, Vec3 } from "@/lib/sets/set-spec";
+import { SET_LIMITS, type SetLayout, type SetSpec, type Vec3 } from "@/lib/sets/set-spec";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 
 // A Set, open (Astra Sets, 2026-09-10; a workspace since 2026-09-14, drawn
@@ -118,7 +123,23 @@ type StageApi = {
    * between them. Returns how it had to move.
    */
   matchTo(pose: Pose): CameraMove;
-  /** Width ÷ height of the canvas the still's centre square is cut from. */
+  /**
+   * The still's frame (Helios Cinema): the scene from `from` — or the camera
+   * as it stands — rendered at the rig format's render size with the pose's
+   * own field of view across its height. What the frame lines show, exactly.
+   */
+  frame(opts?: { from?: Pose; hideFigure?: boolean }): string | null;
+  /** The frame lines follow the rig's format and the panels round the stage. */
+  relayout(): void;
+  /**
+   * A laid move's camera, kept out of anything built (moves.ts knows the
+   * set's reach, not its walls): cast from the figure's eyes toward the
+   * camera, it stops 0.3 m short of the first thing in the way.
+   */
+  roomFor(pose: Pose): Pose;
+  /** The stage's depth of field for the rig's stop; null draws everything sharp. */
+  setDepth(stop: number | null): void;
+  /** Width ÷ height the recorded frame's field of view is measured against (1: across its height). */
   canvasAspect(): number;
   /**
    * The set changed under the camera (an Astra edit from the conversation,
@@ -155,7 +176,7 @@ type Revision = {
 /** What this visit knows of a still it shot: how long it took and the frame it was shot from. */
 type ShotFacts = { seconds: number; frame: string };
 
-type MenuId = "camera" | "lens" | "figure" | "history" | "mode" | "who" | "filmStart";
+type MenuId = "camera" | "figure" | "history" | "mode" | "who" | "filmStart";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -264,6 +285,7 @@ export function SetView({
   initialAskFirst = true,
   savedFilm = null,
   initialFilmOpen = false,
+  savedRig = null,
 }: {
   setId: string;
   /** The set's name, said in the workspace's own bar. */
@@ -288,6 +310,8 @@ export function SetView({
   savedFilm?: SetFilm | null;
   /** Open on the Film dock (?film=1). */
   initialFilmOpen?: boolean;
+  /** The saved rig (Helios Cinema): null until one is kept, or before helios-rig.sql runs. */
+  savedRig?: SetRig | null;
 }) {
   const { t, locale } = useLocale();
   const s = t.sets;
@@ -380,6 +404,22 @@ export function SetView({
   /** The reel: which clip is playing on the stage; null when closed. */
   const [reel, setReel] = useState<number | null>(null);
   const [previz, setPreviz] = useState(false);
+
+  // ---- the rig (Helios Cinema, drawn as canvas page I) ----
+  // The camera department, docked left of the stage: the frame's shape, the
+  // lens, the film stock, focus, light and palette, saved on the set like
+  // the film. The stage reads it through a ref (it is built once), and shows
+  // every choice before a credit moves: the frame lines, the field of view,
+  // the depth of field, the light, the grade.
+  const [rig, setRig] = useState<SetRig>(() => normaliseSetRig(savedRig));
+  const rigRef = useRef<SetRig>(rig);
+  const [rigOpen, setRigOpen] = useState(false);
+  const [rigError, setRigError] = useState("");
+  // The rig check, per still, while it reads or when it could not.
+  const [rigChecking, setRigChecking] = useState<Record<string, "checking" | "failed">>({});
+  const [rigCheckDismissed, setRigCheckDismissed] = useState<Record<string, true>>({});
+  // What the panels leave of the stage for the frame lines (fit reads it).
+  const insetsRef = useRef({ left: 14, right: 14, top: 64, bottom: 112 });
 
   // The human ruler's second line (human-scale.ts): on a photo set whose
   // furniture reads oversized against a person, one dismissible line offers
@@ -502,6 +542,19 @@ export function SetView({
 
         const camera = new THREE.PerspectiveCamera(startPose.fovDeg, 1, 0.05, built.farPlane);
         camera.position.set(...startPose.position);
+        // The lens as the person set it: its field of view across the RENDER
+        // frame's height (the rig's format, Helios Cinema). The canvas camera
+        // is wider than that whenever the frame lines are shorter than the
+        // canvas — fit() works out by how much (applyFov).
+        let poseFov = startPose.fovDeg;
+        /** The render frame's height on screen, pixels (fit). */
+        let renderPx = 1;
+        // The depth of field (the rig's stop): three.js's bokeh pass over the
+        // live view only — the sketch the model sees is never blurred.
+        let depthStop: number | null = null;
+        let composer: import("three/examples/jsm/postprocessing/EffectComposer.js").EffectComposer | null = null;
+        let bokeh: import("three/examples/jsm/postprocessing/BokehPass.js").BokehPass | null = null;
+        let composerLoading = false;
 
         const halfX = spec.bounds.x / 2;
         const halfZ = spec.bounds.z / 2;
@@ -597,23 +650,85 @@ export function SetView({
         let raf = 0;
         let lastW = 0;
         let lastH = 0;
+        let lastKey = "";
+        /** The projection's full height when the frame lines sit off the canvas's centre (fit). */
+        let fullH = 1;
+        const applyFov = () => {
+          camera.fov = widenFovDeg(poseFov, fullH / Math.max(1, renderPx));
+          camera.updateProjectionMatrix();
+        };
         const fit = () => {
           const w = host.clientWidth;
           const h = host.clientHeight;
-          if (w === lastW && h === lastH) return;
+          const ins = insetsRef.current;
+          const format = rigRef.current.format;
+          const key = `${w}x${h}|${ins.left},${ins.right},${ins.top},${ins.bottom}|${format}`;
+          if (key === lastKey) return;
+          if (w !== lastW || h !== lastH) {
+            renderer.setSize(w, h, false);
+            composer?.setSize(w, h);
+          }
+          lastKey = key;
           lastW = w;
           lastH = h;
-          renderer.setSize(w, h, false);
-          camera.aspect = w / Math.max(1, h);
-          camera.updateProjectionMatrix();
-          // The frame guide: the square the still will be, centred.
-          const side = Math.min(w, h);
+          // The frame lines (Helios Cinema): the rig format's picture, as
+          // large as the stage between the panels allows, centred on that
+          // free stage. The camera's centre is moved there with a view offset
+          // — the canvas is a window onto a larger projection whose middle is
+          // the frame's — so the pose's aim stays the picture's centre. The
+          // render it is cut from spans the pose's field of view across its
+          // height; the projection is widened until that height on screen
+          // does (compare.ts widenFovDeg), and the dark round the lines is
+          // scene the still will not hold.
+          const fr = formatFrame(format);
+          const left = Math.min(ins.left, w / 2 - 40);
+          const right = Math.min(ins.right, w / 2 - 40);
+          const top = Math.min(ins.top, h / 2 - 40);
+          const bottom = Math.min(ins.bottom, h / 2 - 40);
+          const fx = (left + (w - right)) / 2;
+          const fy = (top + (h - bottom)) / 2;
+          let bw = Math.max(80, w - left - right - 24);
+          let bh = bw / fr.bandAspect;
+          const room = Math.max(80, h - top - bottom - 24);
+          if (bh > room) {
+            bh = room;
+            bw = bh * fr.bandAspect;
+          }
+          renderPx = fr.bandAspect >= fr.renderAspect ? bw / fr.renderAspect : bh;
+          const fullW = w + 2 * Math.abs(fx - w / 2);
+          fullH = h + 2 * Math.abs(fy - h / 2);
+          camera.aspect = fullW / Math.max(1, fullH);
+          camera.setViewOffset(fullW, fullH, fullW / 2 - fx, fullH / 2 - fy, w, h);
           const g = guideRef.current;
           if (g) {
-            g.style.width = `${side}px`;
-            g.style.height = `${side}px`;
-            g.style.left = `${(w - side) / 2}px`;
-            g.style.top = `${(h - side) / 2}px`;
+            g.style.width = `${bw}px`;
+            g.style.height = `${bh}px`;
+            g.style.left = `${fx - bw / 2}px`;
+            g.style.top = `${fy - bh / 2}px`;
+          }
+          applyFov();
+        };
+        // The figure's eyes, where the rig's focus is measured to.
+        const eye = new THREE.Vector3();
+        const renderLive = () => {
+          if (depthStop !== null && composer && bokeh) {
+            const p = standIn.group.position;
+            eye.set(p.x, 1.5, p.z);
+            const s = Math.max(0.3, camera.position.distanceTo(eye));
+            // The blur disc a real lens draws on a 24 mm frame, far behind
+            // the focus: f² ÷ (N·s), as a share of the frame's height on
+            // screen — the bokeh pass's reach is 0.4 of its maxblur. A
+            // little over life size, so the stage shows what the stop does.
+            const f = 12 / Math.tan((poseFov * Math.PI) / 360);
+            const discMm = (f * f) / (depthStop * s * 1000);
+            const maxblur = Math.min(0.03, ((1.5 * discMm) / 48 / 0.4) * (renderPx / Math.max(1, lastH)));
+            const u = bokeh.materialBokeh.uniforms;
+            u.focus.value = s;
+            u.maxblur.value = maxblur;
+            u.aperture.value = maxblur / s;
+            composer.render();
+          } else {
+            renderer.render(scene, camera);
           }
         };
         const loop = () => {
@@ -621,7 +736,7 @@ export function SetView({
           fit();
           controls.update();
           if (camera.position.y < 0.1) camera.position.y = 0.1;
-          renderer.render(scene, camera);
+          renderLive();
         };
         // One lift for the whole set, measured before the first frame is
         // shown (exposure.ts): a dark set gets more fill light, then more
@@ -673,13 +788,13 @@ export function SetView({
           goTo(pose) {
             camera.position.set(...pose.position);
             controls.target.set(...pose.target);
-            camera.fov = pose.fovDeg;
-            camera.updateProjectionMatrix();
+            poseFov = pose.fovDeg;
+            applyFov();
             controls.update();
           },
           setFov(f) {
-            camera.fov = f;
-            camera.updateProjectionMatrix();
+            poseFov = f;
+            applyFov();
           },
           placeMark(m) {
             placeStandIn(standIn, m);
@@ -689,8 +804,94 @@ export function SetView({
             return {
               position: [r(camera.position.x), r(camera.position.y), r(camera.position.z)],
               target: [r(controls.target.x), r(controls.target.y), r(controls.target.z)],
-              fovDeg: Math.round(camera.fov * 100) / 100,
+              fovDeg: Math.round(poseFov * 100) / 100,
             };
+          },
+          frame(opts) {
+            const fr = formatFrame(rigRef.current.format);
+            const from = opts?.from ?? {
+              position: [camera.position.x, camera.position.y, camera.position.z] as Vec3,
+              target: [controls.target.x, controls.target.y, controls.target.z] as Vec3,
+              fovDeg: poseFov,
+            };
+            // The ring and arrow are for arranging; the image model must
+            // never see them and draw a ring on the floor.
+            standIn.helpers.visible = false;
+            if (opts?.hideFigure) standIn.figure.visible = false;
+            const cam = new THREE.PerspectiveCamera(from.fovDeg, fr.renderW / fr.renderH, camera.near, camera.far);
+            cam.position.set(...from.position);
+            cam.lookAt(new THREE.Vector3(...from.target));
+            cam.updateProjectionMatrix();
+            // Drawn at the render's own size, then the canvas goes back as it
+            // was before the browser shows a frame.
+            const ratio = renderer.getPixelRatio();
+            renderer.setPixelRatio(1);
+            renderer.setSize(fr.renderW, fr.renderH, false);
+            renderer.render(scene, cam);
+            const out = document.createElement("canvas");
+            out.width = fr.renderW;
+            out.height = fr.renderH;
+            const ctx = out.getContext("2d");
+            let url: string | null = null;
+            if (ctx) {
+              ctx.drawImage(renderer.domElement, 0, 0);
+              url = out.toDataURL("image/jpeg", 0.9);
+            }
+            renderer.setPixelRatio(ratio);
+            renderer.setSize(lastW, lastH, false);
+            standIn.helpers.visible = true;
+            standIn.figure.visible = true;
+            renderLive();
+            return url;
+          },
+          relayout() {
+            lastKey = "";
+            fit();
+          },
+          roomFor(pose) {
+            const p = standIn.group.position;
+            const from = new THREE.Vector3(p.x, FRAME_EYE_Y, p.z);
+            const to = new THREE.Vector3(...pose.position);
+            const dir = new THREE.Vector3().subVectors(to, from);
+            const reach = dir.length();
+            if (reach < 0.5) return pose;
+            dir.normalize();
+            raycaster.set(from, dir);
+            raycaster.far = reach;
+            const hit = raycaster.intersectObject(built.root, true)[0];
+            raycaster.far = Infinity;
+            if (!hit) return pose;
+            const at = from.clone().addScaledVector(dir, Math.max(0.6, hit.distance - 0.3));
+            const r = (n: number) => Math.round(n * 1000) / 1000;
+            return { position: [r(at.x), r(at.y), r(at.z)], target: pose.target, fovDeg: pose.fovDeg };
+          },
+          setDepth(stop) {
+            depthStop = coarse ? null : stop;
+            if (depthStop === null || composer || composerLoading) return;
+            composerLoading = true;
+            void (async () => {
+              try {
+                const [{ EffectComposer }, { RenderPass }, { BokehPass }, { OutputPass }] = await Promise.all([
+                  import("three/examples/jsm/postprocessing/EffectComposer.js"),
+                  import("three/examples/jsm/postprocessing/RenderPass.js"),
+                  import("three/examples/jsm/postprocessing/BokehPass.js"),
+                  import("three/examples/jsm/postprocessing/OutputPass.js"),
+                ]);
+                if (disposed) return;
+                const c = new EffectComposer(renderer);
+                c.addPass(new RenderPass(scene, camera));
+                const b = new BokehPass(scene, camera, { focus: 4, aperture: 0, maxblur: 0 });
+                c.addPass(b);
+                c.addPass(new OutputPass());
+                c.setPixelRatio(renderer.getPixelRatio());
+                c.setSize(lastW, lastH);
+                composer = c;
+                bokeh = b;
+              } catch (err) {
+                // No depth of field on this device: the stage stays sharp.
+                console.warn("SetView depth of field unavailable:", err);
+              }
+            })();
           },
           snapshot(px, opts) {
             // The ring and arrow are for arranging; the image model must
@@ -705,6 +906,10 @@ export function SetView({
               opts?.from && opts.aspect ? compareCrop(renderer.domElement.width, renderer.domElement.height, opts.aspect) : null;
             if (opts?.from) {
               const cam = camera.clone();
+              // The live camera looks through a view offset (fit); a snapshot
+              // at the canvas's own shape and centre does not.
+              cam.clearViewOffset();
+              cam.aspect = lastW / Math.max(1, lastH);
               cam.position.set(...opts.from.position);
               cam.fov = crop ? widenFovDeg(opts.from.fovDeg, crop.fovScale) : opts.from.fovDeg;
               cam.lookAt(new THREE.Vector3(...opts.from.target));
@@ -723,7 +928,10 @@ export function SetView({
           frameFigure() {
             const p = standIn.group.position;
             const eye = new THREE.Vector3(p.x, FRAME_EYE_Y, p.z);
-            const want = FRAME_HEIGHT_M / 2 / Math.tan((camera.fov * Math.PI) / 360);
+            // The whole figure inside the PICTURE: a rig format's band is only
+            // part of the render's height (Scope keeps 643 of 1024 rows).
+            const fr = formatFrame(rigRef.current.format);
+            const want = FRAME_HEIGHT_M / 2 / (Math.tan((poseFov * Math.PI) / 360) * (fr.bandH / fr.renderH));
             // How far the camera can stand from the figure on a bearing
             // before something built is in the way (0.3 m short of it).
             const room = (dir: InstanceType<typeof THREE.Vector3>) => {
@@ -787,15 +995,16 @@ export function SetView({
             });
             camera.position.set(...placed.position);
             controls.target.set(...placed.target);
-            camera.fov = pose.fovDeg;
-            camera.updateProjectionMatrix();
+            poseFov = pose.fovDeg;
+            applyFov();
             controls.update();
             return placed.moved;
           },
           canvasAspect() {
-            // What cropSquare cuts the still from.
-            const c = renderer.domElement;
-            return c.width / Math.max(1, c.height);
+            // The still's frame is rendered at its own shape with the pose's
+            // field of view across its height (frame()) — what a landscape
+            // canvas's centre square always was (look-cutout.ts, match-shot.ts).
+            return 1;
           },
           rebuild(next) {
             // The new set's things move into the SAME root group, so the
@@ -837,6 +1046,8 @@ export function SetView({
           canvas.removeEventListener("pointercancel", onUp);
           canvas.removeEventListener("dblclick", onDoubleClick);
           controls.dispose();
+          composer?.dispose();
+          bokeh?.dispose();
           disposeLive();
           standIn.dispose();
           renderer.dispose();
@@ -892,6 +1103,73 @@ export function SetView({
       if (figureMovedTimerRef.current) clearTimeout(figureMovedTimerRef.current);
     };
   }, []);
+
+  // ---- the rig follows state: the stage reads it through a ref ----
+  useEffect(() => {
+    rigRef.current = rig;
+  }, [rig]);
+
+  // The frame lines follow the format and the panels round the stage: the
+  // rig docked left, the conversation right, the setup chips above and the
+  // filmstrip or the film dock below (md and up; a phone keeps the edges).
+  useEffect(() => {
+    const wide = typeof window !== "undefined" && window.matchMedia?.("(min-width: 768px)").matches;
+    insetsRef.current = {
+      left: wide && rigOpen ? 356 : 14,
+      right: wide ? (chatOpen ? 406 : 96) : 14,
+      top: 64,
+      bottom: filmOpen ? 196 : 112,
+    };
+    apiRef.current?.relayout();
+  }, [rig.format, rigOpen, chatOpen, filmOpen, ready]);
+
+  // The stop ring's depth of field, previewed on the live view only.
+  useEffect(() => {
+    if (ready) apiRef.current?.setDepth(rig.stop);
+  }, [ready, rig.stop]);
+
+  // A light scheme is a plot in the set (light-schemes.ts): the stage draws
+  // a lit copy of the working copy round the figure's mark. Only when the
+  // light, the set or the mark's place changed — the first ready of a set
+  // with no scheme is the stage exactly as built.
+  const litRef = useRef<{ spec: SetSpec; key: string }>({ spec: initialSpec, key: JSON.stringify(null) });
+  const litKey = (light: SetRig["light"], m: { x: number; z: number }) => JSON.stringify(light ? [light, m.x, m.z] : null);
+  /** Draw `next` on the stage now, lit by the rig's scheme — an Astra edit's thumbnail is shot right after. */
+  function drawSet(next: SetSpec) {
+    const m = layoutRef.current.mark;
+    litRef.current = { spec: next, key: litKey(rigRef.current.light, m) };
+    apiRef.current?.rebuild(litSpec(next, rigRef.current.light, m));
+  }
+  useEffect(() => {
+    if (!ready) return;
+    const key = litKey(rig.light, mark);
+    if (litRef.current.spec === spec && litRef.current.key === key) return;
+    // A beat after the last change: dragging the sun round the plot rebuilds
+    // the stage once it rests, not on every step of the drag.
+    const id = setTimeout(() => {
+      litRef.current = { spec, key };
+      apiRef.current?.rebuild(litSpec(spec, rig.light, mark));
+    }, 60);
+    return () => clearTimeout(id);
+    // mark.facingDeg turns the figure only; the lights stay.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, spec, rig.light, mark.x, mark.z]);
+
+  // The rig autosaves like the film — a beat after the hands stop. The
+  // first run is the loaded rig itself, not an edit.
+  const rigLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!rigLoadedRef.current) {
+      rigLoadedRef.current = true;
+      return;
+    }
+    const id = setTimeout(() => {
+      void saveSetRig(setId, rig).then((r) => {
+        setRigError(r.error ?? "");
+      });
+    }, 900);
+    return () => clearTimeout(id);
+  }, [rig, setId]);
 
   // ---- a photo set: camera 1 beside the photo ----
   // Once the stage is ready (its lift measured) and the photo's shape is
@@ -1130,7 +1408,7 @@ export function SetView({
    * (`directionNow` when send() knows it before state does), and every
    * message since the last still kept with it, as one.
    */
-  async function shoot(directionNow?: string) {
+  async function shoot(directionNow?: string, push: RigCheckItem[] = []) {
     // Not during a match (pickReference says why): the frame would be taken
     // now, from a camera the match is about to move.
     if (shooting || matching || !characterId || !ready) return;
@@ -1139,7 +1417,7 @@ export function SetView({
     setLookDropped(false);
     setViewing(null);
     setMenu(null);
-    const frame = apiRef.current?.snapshot(SET_FRAME_PX);
+    const frame = apiRef.current?.frame();
     if (!frame) {
       setError(s.loadFailed);
       return;
@@ -1168,6 +1446,8 @@ export function SetView({
         lookGenerationId: lookShot?.generationId ?? null,
         canvasAspect,
         words: asked,
+        rig: rigRef.current,
+        push,
       });
     } catch (err) {
       // The take may still be running on the server (a dropped connection
@@ -1195,6 +1475,10 @@ export function SetView({
       createdAt: new Date().toISOString(),
       hasLookObjects: result.hasLookObjects,
       words: asked ?? null,
+      format: result.format,
+      rigAsked: result.checks,
+      rigCheck: null,
+      pose,
     };
     setShots((prev) => [shot, ...prev]);
     setShotFacts((prev) => ({ ...prev, [shot.generationId]: { seconds: Math.round((new Date().getTime() - startedAt) / 1000), frame: frameLabel } }));
@@ -1207,6 +1491,39 @@ export function SetView({
     else if (canBeLook(shot) && !lookPinnedRef.current) setLookId(result.generationId);
     // The still takes the stage's place until the person goes back to the frame.
     if (result.succeeded) setViewing(result.generationId);
+    // The rig check reads it back against what the rig asked for in words.
+    if (result.succeeded && result.checks.length > 0) void runRigCheck(result.generationId);
+  }
+
+  /**
+   * The rig check (rig-check.ts): the still read back from the picture
+   * against each look its rig asked for, the verdicts kept with it. Never a
+   * gate; a check that could not read the still says so, with a retry.
+   */
+  async function runRigCheck(generationId: string) {
+    setRigChecking((prev) => ({ ...prev, [generationId]: "checking" }));
+    let res: Awaited<ReturnType<typeof checkShotRig>>;
+    try {
+      res = await checkShotRig(setId, generationId);
+    } catch {
+      res = { error: "failed" };
+    }
+    if (res.error !== null) {
+      setRigChecking((prev) => ({ ...prev, [generationId]: "failed" }));
+      return;
+    }
+    const check: RigCheck | null = res.check;
+    // No check and no error: nothing was kept to check it against (before
+    // helios-rig.sql runs) — the line goes rather than offer a check that
+    // cannot read anything.
+    setShots((prev) =>
+      prev.map((sh) => (sh.generationId === generationId ? (check ? { ...sh, rigCheck: check } : { ...sh, rigAsked: [] }) : sh)),
+    );
+    setRigChecking((prev) => {
+      const next = { ...prev };
+      delete next[generationId];
+      return next;
+    });
   }
 
   /**
@@ -1221,7 +1538,7 @@ export function SetView({
     setLastMiss(null);
     setViewing(null);
     setMenu(null);
-    const frame = apiRef.current?.snapshot(SET_FRAME_PX);
+    const frame = apiRef.current?.frame();
     if (!frame) {
       setError(s.loadFailed);
       return;
@@ -1246,6 +1563,7 @@ export function SetView({
         lifted: apiRef.current?.lifted === true,
         canvasAspect,
         words: asked,
+        rig: rigRef.current,
       });
     } catch (err) {
       const stale = isStaleDeployError(err);
@@ -1271,6 +1589,10 @@ export function SetView({
       createdAt: new Date().toISOString(),
       hasLookObjects: result.still.hasLookObjects,
       words: asked ?? null,
+      format: result.still.format,
+      rigAsked: result.still.checks,
+      rigCheck: null,
+      pose,
     };
     const rows: SetShot[] = result.takeGenerationId
       ? [
@@ -1286,6 +1608,10 @@ export function SetView({
             createdAt: new Date().toISOString(),
             hasLookObjects: false,
             words: asked ?? null,
+            format: result.still.format,
+            rigAsked: [],
+            rigCheck: null,
+            pose: null,
           },
           endStill,
         ]
@@ -1301,6 +1627,7 @@ export function SetView({
     setTakeStart(null);
     if (result.takeError) setError(result.takeError);
     if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
+    if (result.still.succeeded && result.still.checks.length > 0) void runRigCheck(result.still.generationId);
   }
 
   // ---- the film's hands ----
@@ -1310,14 +1637,71 @@ export function SetView({
     const pose = apiRef.current?.pose();
     if (!pose) return;
     setFilm((f) =>
-      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose }] },
+      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [] }] },
     );
     setFilmSel((n) => n ?? null);
   }
 
+  /**
+   * A move from the rig's library (moves.ts): the selected beat's end is
+   * laid round the figure from where the beat starts — the keyframe before
+   * it, or the stage as it stands for the first — and the stage flies it at
+   * once, free. With no beat selected, the move becomes a new beat.
+   */
+  function filmMove(move: FilmMove) {
+    const api = apiRef.current;
+    // Not mid-flight: a pick then lays from where the last one is still flying.
+    if (!api || previz) return;
+    const at = filmSel !== null && film.beats[filmSel] ? filmSel : film.beats.length < FILM_MAX_BEATS ? film.beats.length : null;
+    if (at === null) return;
+    // Beat 1 starts where the film starts: the start still's own camera,
+    // when it was recorded — never wherever the stage happens to be.
+    const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
+    const from = at > 0 ? film.beats[at - 1].end : (startPose ?? api.pose());
+    const m = layoutRef.current.mark;
+    let end = api.roomFor(layMove(move, from, m, spec.bounds));
+    // A dolly zoom stopped short by a wall re-solves its lens, so she still
+    // keeps her size (moves.ts: distance × tan(fov / 2) is held).
+    if (move === "dolly-zoom") {
+      const size = Math.hypot(from.position[0] - m.x, from.position[2] - m.z) * Math.tan((from.fovDeg * Math.PI) / 360);
+      const d = Math.hypot(end.position[0] - m.x, end.position[2] - m.z);
+      if (d > 0.1) {
+        const fov = (2 * Math.atan(size / d) * 180) / Math.PI;
+        end = { ...end, fovDeg: Math.round(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minLayoutFovDeg, fov)) * 100) / 100 };
+      }
+    }
+    setFilm((f) => {
+      const beats = [...f.beats];
+      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [] };
+      return { ...f, beats };
+    });
+    setFilmSel(at);
+    setPreviz(true);
+    void tweenPose(api, from, end, 1400).then(() => {
+      setPreviz(false);
+      // The lens and the frame's words follow the stage to the beat's end.
+      setFovDeg(end.fovDeg);
+      setPoseNow(end);
+    });
+  }
+
+  function filmTexture(texture: FilmTexture) {
+    if (filmSel === null) return;
+    setFilm((f) => ({
+      ...f,
+      beats: f.beats.map((b, i) =>
+        i === filmSel ? { ...b, textures: b.textures.includes(texture) ? b.textures.filter((t) => t !== texture) : [...b.textures, texture] } : b,
+      ),
+    }));
+  }
+
   function filmGoTo(i: number) {
     const b = film.beats[i];
-    if (b) apiRef.current?.goTo(b.end);
+    if (b) {
+      apiRef.current?.goTo(b.end);
+      setFovDeg(b.end.fovDeg);
+      setPoseNow(b.end);
+    }
     setFilmSel(i);
   }
 
@@ -1326,7 +1710,10 @@ export function SetView({
     const api = apiRef.current;
     if (!api || previz || film.beats.length === 0) return;
     setPreviz(true);
-    let from = api.pose();
+    // The move flies from the start still's camera when it was recorded.
+    const start = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
+    let from = start ?? api.pose();
+    if (start) api.goTo(start);
     for (const beat of film.beats) {
       await tweenPose(api, from, beat.end, 1400);
       from = beat.end;
@@ -1357,7 +1744,7 @@ export function SetView({
     for (let i = 0; i < film.beats.length; i++) {
       setFilmBusy({ beat: i });
       const beat = film.beats[i];
-      const frame = api.snapshot(SET_FRAME_PX, { from: beat.end });
+      const frame = api.frame({ from: beat.end });
       if (!frame) {
         setFilmError(s.loadFailed);
         break;
@@ -1373,6 +1760,9 @@ export function SetView({
           engine: film.engine,
           lifted: api.lifted === true,
           canvasAspect: api.canvasAspect(),
+          rig: rigRef.current,
+          move: beat.move,
+          textures: beat.textures,
         });
       } catch (err) {
         const stale = isStaleDeployError(err);
@@ -1396,6 +1786,10 @@ export function SetView({
         createdAt: new Date().toISOString(),
         hasLookObjects: result.still.hasLookObjects,
         words: beat.words || null,
+        format: result.still.format,
+        rigAsked: result.still.checks,
+        rigCheck: null,
+        pose: beat.end,
       };
       const rows: SetShot[] = result.takeGenerationId
         ? [
@@ -1411,6 +1805,10 @@ export function SetView({
               createdAt: new Date().toISOString(),
               hasLookObjects: false,
               words: beat.words || null,
+              format: result.still.format,
+              rigAsked: [],
+              rigCheck: null,
+              pose: null,
             },
             endStill,
           ]
@@ -1519,7 +1917,7 @@ export function SetView({
     }
     specBeforeEditRef.current = before;
     setSpec(res.spec);
-    apiRef.current?.rebuild(res.spec);
+    drawSet(res.spec);
     setSetChanged(res.changed);
     refreshThumbnail(res.spec);
   }
@@ -1531,7 +1929,7 @@ export function SetView({
     specBeforeEditRef.current = null;
     setSetChanged(null);
     setSpec(before);
-    apiRef.current?.rebuild(before);
+    drawSet(before);
     refreshThumbnail(before);
     await saveSetEdit(setId, before);
   }
@@ -1645,7 +2043,7 @@ export function SetView({
       const pose = apiRef.current?.pose();
       if (!pose) return;
       setFilm((f) =>
-        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose }] },
+        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [] }] },
       );
     };
     window.addEventListener("keydown", onKey);
@@ -1697,7 +2095,7 @@ export function SetView({
 
   /** The frame as a picture on disk — 3D Jutsu's static-frame export, for the frame the still would be shot from. */
   function downloadFrame() {
-    const shot = apiRef.current?.snapshot(SET_FRAME_PX);
+    const shot = apiRef.current?.frame();
     if (!shot) return;
     const a = document.createElement("a");
     a.href = shot;
@@ -1778,6 +2176,118 @@ export function SetView({
           .filter(Boolean)
           .join(" ");
   const frameNumber = revisions[revisions.length - 1]?.id ?? 1;
+
+  // ---- the rig check, said and shown (rig-check.ts) ----
+  const rigCheckedLine = (check: RigCheck) => {
+    const landed = check.verdicts.filter((v) => v.landed).length;
+    return landed === check.verdicts.length ? s.rig.checkedAllLine : formatMsg(s.rig.checkedLine, { n: landed, m: check.verdicts.length });
+  };
+  const rigCheckCard = (shot: SetShot, frameWords: string | null) => {
+    if (shot.kind !== "still" || shot.status !== "succeeded" || shot.rigAsked.length === 0 || rigCheckDismissed[shot.generationId]) return null;
+    const state = rigChecking[shot.generationId];
+    const check = shot.rigCheck;
+    if (!check) {
+      return (
+        <div className="flex flex-wrap items-center gap-2 rounded-[14px] bg-white/[0.05] px-3.5 py-3 text-xs text-[#9aa0ad] ring-1 ring-white/[0.07]">
+          {state === "checking" ? (
+            <>
+              <Spinner className="h-3.5 w-3.5 flex-shrink-0" />
+              {s.rig.checking}
+            </>
+          ) : (
+            <>
+              <span className="text-[11px] font-medium uppercase tracking-widest">{s.rig.checkTitle}</span>
+              {state === "failed" && <span>{t.serverText.setRigCheckFailed}</span>}
+              <button type="button" onClick={() => void runRigCheck(shot.generationId)} className="cursor-pointer font-medium text-[#e0a468] hover:underline">
+                {s.rig.checkRetry}
+              </button>
+            </>
+          )}
+        </div>
+      );
+    }
+    const missed = check.verdicts.filter((v) => !v.landed).map((v) => v.item);
+    const landed = check.verdicts.length - missed.length;
+    const againLabel =
+      missed.length === 1
+        ? formatMsg(s.rig.checkAgainOne, { look: s.rig.checkItems[missed[0]].toLowerCase(), credits })
+        : formatMsg(s.rig.checkAgainMany, { n: missed.length, credits });
+    return (
+      <div className="space-y-3 rounded-[14px] bg-white/[0.05] p-3.5 ring-1 ring-white/[0.07]">
+        <div className="flex items-center justify-between">
+          <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.rig.checkTitle}</span>
+          <span className="text-xs tabular-nums text-[#ecedf1]">
+            {missed.length === 0 ? s.rig.checkAll : formatMsg(s.rig.checkLanded, { n: landed, m: check.verdicts.length })}
+          </span>
+        </div>
+        <ul className="space-y-2.5">
+          {check.verdicts.map((v) => (
+            <li key={v.item} className="grid grid-cols-[18px_minmax(0,1fr)] gap-x-2.5">
+              <span
+                aria-hidden
+                className={`mt-px flex h-[18px] w-[18px] items-center justify-center rounded-full ${
+                  v.landed ? "bg-[rgba(95,158,110,0.18)] text-[#7fc08f]" : "bg-[rgba(224,164,104,0.18)] text-[#f0cda6]"
+                }`}
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" className="h-[11px] w-[11px]">
+                  {v.landed ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <path d="M7 7l10 10M17 7L7 17" />}
+                </svg>
+              </span>
+              <span className={`text-[13px] leading-[18px] ${v.landed ? "text-[#ecedf1]" : "text-[#f0cda6]"}`}>
+                {s.rig.checkItems[v.item]}
+                {v.evidence && <span className="block text-xs leading-[17px] text-[#9aa0ad]">{v.evidence}</span>}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="flex flex-wrap items-center gap-2 border-t border-white/[0.07] pt-2.5 text-xs text-[#9aa0ad]">
+          <span className="inline-flex h-[18px] items-center whitespace-nowrap rounded-full bg-[rgba(224,164,104,0.08)] px-2 text-[10px] font-medium text-[#e3c9a6] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.25)]">
+            {s.rig.held}
+          </span>
+          {frameWords ? `${s.rig.formats[shot.format]} · ${frameWords}` : formatMsg(s.rig.checkHeld, { format: s.rig.formats[shot.format] })}
+        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {missed.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void shoot(undefined, missed)}
+              disabled={shooting || matching || !characterId || !ready || Boolean(takeStart)}
+              className="inline-flex h-9 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-[13px] font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              {againLabel}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setRigCheckDismissed((prev) => ({ ...prev, [shot.generationId]: true }))}
+            className="cursor-pointer text-[13px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+          >
+            {s.rig.checkDismiss}
+          </button>
+        </div>
+        <p className="text-[11px] leading-[15px] text-[#6b6f7a]">{s.rig.checkNote}</p>
+      </div>
+    );
+  };
+
+  // ---- the rig, in words and on the stage ----
+  const rigPalette = findLook(RIG_PALETTES, rig.palette);
+  const gradeFilter = rig.gradeStage && rigPalette ? rigPalette.filter : null;
+  const gradeTint = rig.gradeStage && rigPalette ? rigPalette.tint : null;
+  const stopLabel = rig.stop !== null ? `f/${rig.stop}` : null;
+  const rigChipLabel = [s.rig.chip, s.rig.formats[rig.format], lensLabel, stopLabel].filter(Boolean).join(" · ");
+  const rigLooksLine = [rig.stock ? s.rig.stocks[rig.stock] : null, rig.lens ? s.rig.lenses[rig.lens] : null, stopLabel]
+    .filter(Boolean)
+    .join(" · ");
+  // Camera to the figure's eyes, and the bearing the light plot and the
+  // schemes are reckoned from — as the camera stood when it last settled.
+  const eyeDistance = Math.hypot(poseNow.position[0] - mark.x, poseNow.position[1] - 1.5, poseNow.position[2] - mark.z);
+  const cameraBearing = bearingDeg(mark, { x: poseNow.position[0], z: poseNow.position[2] });
+  /** The format a shot was cut to, said beside it (the square says nothing). */
+  const formatNote = (shot: SetShot) => (shot.format !== "square" ? s.rig.formats[shot.format] : null);
+  /** A take whose frames were cut wider or squarer than the 16:9 it renders at: the band it plays inside. */
+  const takeBand = (shot: SetShot) =>
+    shot.kind === "take" && (shot.format === "scope" || shot.format === "flat" || shot.format === "classic") ? formatFrame(shot.format).bandAspect : null;
   // Oldest first: the thread reads down to the frame.
   const thread = [...shots].reverse();
   const viewingAt = viewing ? shots.findIndex((x) => x.generationId === viewing) : -1;
@@ -1823,19 +2333,6 @@ export function SetView({
       )}
     </>
   );
-  const lensOptions = LENSES_MM.map((mm) => (
-    <Option
-      key={mm}
-      active={activeLens === mm}
-      hint={mm === 18 ? s.lensWide : mm === 85 ? s.lensPortrait : mm === 135 ? s.lensLong : undefined}
-      onPick={() => {
-        pickLens(mm);
-        setMenu(null);
-      }}
-    >
-      {formatMsg(s.lensMm, { mm })}
-    </Option>
-  ));
   const figureOptions = spec.marks.map((m, i) => (
     <Option
       key={m.id}
@@ -1987,7 +2484,9 @@ export function SetView({
       {/* The viewport, with everything floating on it. */}
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1">
-          <div ref={hostRef} className="absolute inset-0" />
+          <div ref={hostRef} className="absolute inset-0" style={gradeFilter ? { filter: gradeFilter } : undefined} />
+          {/* the palette's grade, previewed over the stage (never the sketch) */}
+          {gradeTint && <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-soft-light" style={{ background: gradeTint }} />}
           <div
             ref={guideRef}
             aria-hidden
@@ -1999,7 +2498,11 @@ export function SetView({
 
           {/* The setup, as chips on the picture itself. */}
           {!viewingShot && (
-            <div className={`absolute left-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2 right-3.5 ${chatOpen ? "md:right-[404px]" : "md:right-24"}`}>
+            <div
+              className={`absolute left-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2 right-3.5 ${rigOpen ? "md:left-[356px]" : ""} ${
+                chatOpen ? "md:right-[404px]" : "md:right-24"
+              }`}
+            >
               <div className="relative">
                 <button
                   type="button"
@@ -2057,17 +2560,17 @@ export function SetView({
                   </div>
                 )}
               </div>
-              <div className="relative">
-                <button type="button" onClick={() => toggleMenu("lens")} aria-haspopup="listbox" aria-expanded={menu === "lens"} disabled={!ready} className={DCHIP}>
-                  {lensLabel}
-                  <Chevron />
-                </button>
-                {menu === "lens" && (
-                  <div role="listbox" aria-label={s.toolbarLens} className={DMENU}>
-                    {lensOptions}
-                  </div>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => setRigOpen((v) => !v)}
+                aria-pressed={rigOpen}
+                aria-expanded={rigOpen}
+                disabled={!ready}
+                className={rigOpen ? DCHIP_ON : DCHIP}
+              >
+                {rigChipLabel}
+                <Chevron />
+              </button>
               {spec.marks.length > 1 && (
                 <div className="relative">
                   <button type="button" onClick={() => toggleMenu("figure")} aria-haspopup="listbox" aria-expanded={menu === "figure"} disabled={!ready} className={DCHIP}>
@@ -2156,11 +2659,13 @@ export function SetView({
             </div>
           )}
 
-          {/* the drag hint, above the filmstrip */}
-          {!viewingShot && !loadFailed && (
+          {/* the drag hint, above the filmstrip (Film has its dock instead) */}
+          {!viewingShot && !loadFailed && !filmOpen && (
             <span
               aria-live="polite"
-              className="pointer-events-none absolute bottom-[104px] left-3.5 z-10 max-w-[60%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80"
+              className={`pointer-events-none absolute bottom-[104px] left-3.5 z-10 max-w-[60%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 ${
+                rigOpen ? "md:left-[356px]" : ""
+              }`}
             >
               {figureMoved ? s.figureMovedOut : s.dragHint}
             </span>
@@ -2227,7 +2732,20 @@ export function SetView({
             <div className="absolute inset-0 z-10 bg-[#101116]">
               {viewingShot.kind === "take" ? (
                 viewingShot.resultUrl ? (
-                  <video src={viewingShot.resultUrl} controls autoPlay loop poster={viewingShot.posterUrl ?? undefined} className="h-full w-full object-contain" />
+                  takeBand(viewingShot) ? (
+                    // A take shot in a rig format renders 16:9 and plays inside its
+                    // frame lines, the band its stills were cut to (shot-rig.ts).
+                    <div className="flex h-full w-full items-center justify-center" style={{ containerType: "size" }}>
+                      <div
+                        className="overflow-hidden"
+                        style={{ aspectRatio: String(takeBand(viewingShot)), width: `min(100cqw, ${takeBand(viewingShot)} * 100cqh)` }}
+                      >
+                        <video src={viewingShot.resultUrl} controls autoPlay loop poster={viewingShot.posterUrl ?? undefined} className="h-full w-full object-cover" />
+                      </div>
+                    </div>
+                  ) : (
+                    <video src={viewingShot.resultUrl} controls autoPlay loop poster={viewingShot.posterUrl ?? undefined} className="h-full w-full object-contain" />
+                  )
                 ) : (
                   <span className="flex h-full items-center justify-center px-10 text-center text-sm text-onmedia/70">{s.takeRendering}</span>
                 )
@@ -2277,6 +2795,7 @@ export function SetView({
               <div className={`absolute bottom-3.5 left-3.5 flex flex-wrap items-center justify-between gap-2 right-3.5 ${chatOpen ? "md:right-[404px]" : ""}`}>
                 <span className="rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 tabular-nums">
                   {formatMsg(viewingShot.kind === "take" ? s.takeTile : s.stillTile, { n: stillNumber(viewingShot) })} · <LocalDate date={viewingShot.createdAt} />
+                  {formatNote(viewingShot) ? ` · ${formatNote(viewingShot)}` : ""}
                   {shotFacts[viewingShot.generationId] ? ` · ${shotFacts[viewingShot.generationId].frame}` : ""}
                 </span>
                 <span className="flex items-center gap-1.5">
@@ -2314,7 +2833,7 @@ export function SetView({
           <div
             className={`absolute bottom-3.5 left-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-white/[0.08] bg-black/40 p-1.5 backdrop-blur right-3.5 ${
               chatOpen ? "md:right-[404px]" : "md:right-24"
-            } ${viewingShot ? "hidden md:flex" : ""}`}
+            } ${rigOpen ? "md:left-[356px]" : ""} ${viewingShot ? "hidden md:flex" : ""}`}
           >
             <button
               type="button"
@@ -2374,7 +2893,7 @@ export function SetView({
             <div
               className={`absolute bottom-3.5 left-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-white/[0.08] bg-black/40 p-2 backdrop-blur right-3.5 ${
                 chatOpen ? "md:right-[404px]" : "md:right-24"
-              } ${viewingShot ? "hidden md:flex" : ""}`}
+              } ${rigOpen ? "md:left-[356px]" : ""} ${viewingShot ? "hidden md:flex" : ""}`}
             >
               <div className="flex flex-wrap items-center gap-2">
                 <button
@@ -2482,6 +3001,11 @@ export function SetView({
                       <span className="normal-case tabular-nums">
                         {formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}
                       </span>
+                      {b.move && (
+                        <span className="rounded-[4px] bg-[rgba(224,164,104,0.14)] px-1.5 text-[10px] font-semibold normal-case tracking-[0.02em] text-[#f0cda6]">
+                          {s.rig.moves[b.move]}
+                        </span>
+                      )}
                       {filmBusy?.beat === i ? (
                         <span className="normal-case text-[#e0a468]">{s.filmBeatStill}</span>
                       ) : filmClipShots[i] ? (
@@ -2576,6 +3100,33 @@ export function SetView({
           )}
         </div>
 
+        {/* The rig: the camera department, docked left of the stage (canvas page I). */}
+        {rigOpen && (
+          <RigPanel
+            rig={rig}
+            onChange={setRig}
+            s={s}
+            locale={locale}
+            fovDeg={fovDeg}
+            onLens={pickLens}
+            distanceM={eyeDistance}
+            figureName={characterName}
+            cameraBearingDeg={cameraBearing}
+            film={
+              filmOpen
+                ? {
+                    beat: filmSel !== null && film.beats[filmSel] ? filmSel + 1 : null,
+                    move: filmSel !== null ? (film.beats[filmSel]?.move ?? null) : null,
+                    textures: filmSel !== null ? (film.beats[filmSel]?.textures ?? []) : [],
+                    onMove: filmMove,
+                    onTexture: filmTexture,
+                  }
+                : null
+            }
+            onClose={() => setRigOpen(false)}
+          />
+        )}
+
         {/* The conversation, floating in the viewport — 3D Jutsu's chat panel, ours. */}
         {chatOpen ? (
           <aside
@@ -2659,6 +3210,7 @@ export function SetView({
                           {facts ? `${formatMsg(s.shotInSeconds, { s: facts.seconds })} ` : ""}
                           {stillLine(shot)}
                           {isLook ? ` ${s.lookOnLine}` : ""}
+                          {shot.rigCheck ? ` ${rigCheckedLine(shot.rigCheck)}` : ""}
                         </p>
                         <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
                           <div className="flex items-center gap-3">
@@ -2702,6 +3254,7 @@ export function SetView({
                             </Link>
                           </div>
                         </div>
+                        {rigCheckCard(shot, facts?.frame ?? null)}
                       </div>
                     </div>
                   </Fragment>
@@ -2769,7 +3322,28 @@ export function SetView({
                           <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCamera}</dt>
                           <dd className="text-[#ecedf1] tabular-nums">
                             {cameraLabel} · {lensLabel}
+                            {rig.format !== "square" ? ` · ${s.rig.formats[rig.format]}` : ""}
                           </dd>
+                          {rigLooksLine && (
+                            <>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowRig}</dt>
+                              <dd className="text-[#f0cda6] tabular-nums">{rigLooksLine}</dd>
+                            </>
+                          )}
+                          {rig.light && (
+                            <>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowLight}</dt>
+                              <dd className="text-[#f0cda6] tabular-nums">
+                                {s.rig.lights[rig.light.scheme]} · {formatMsg(s.rig.lightHeight, { deg: Math.round(rig.light.elevationDeg) })}
+                              </dd>
+                            </>
+                          )}
+                          {rig.palette && (
+                            <>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowPalette}</dt>
+                              <dd className="text-[#f0cda6]">{s.rig.palettes[rig.palette]}</dd>
+                            </>
+                          )}
                           <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowHappens}</dt>
                           <dd className={direction ? "text-[#ecedf1]" : "text-[#6b6f7a]"}>{direction || "—"}</dd>
                           <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCost}</dt>
@@ -2804,6 +3378,7 @@ export function SetView({
                           </button>
                         </div>
                         {error && <p className="text-sm text-red-400">{localizeServerText(error, t)}</p>}
+                        {rigError && <p className="text-xs text-red-400">{localizeServerText(rigError, t)}</p>}
                         {lastMiss && (
                           <p className="text-sm text-[#9aa0ad]">
                             {s.shotDidNotFinish}{" "}

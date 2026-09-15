@@ -12,6 +12,8 @@ import { readShotWords } from "@/lib/sets/shot-words-store";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
 import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import { normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
+import { normaliseSetRig, RIG_CHECK_ITEMS, type SetRig } from "@/lib/sets/rig";
+import { readShotRigs } from "@/lib/sets/shot-rig";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
@@ -213,6 +215,20 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     if (filmError) console.warn("getSetPage could not read the film:", filmError.message);
     else if (filmRow?.film) film = normaliseSetFilm(filmRow.film);
   }
+  // The saved rig (Helios Cinema, 2026-09-15): its own read, for the same
+  // reason as the film's — supabase/pending/helios-rig.sql may not have run.
+  let rig: SetRig | null = null;
+  if (spec) {
+    const { data: rigRow, error: rigError } = await db
+      .from("location_sets")
+      .select("rig")
+      .eq("id", setId)
+      .eq("user_id", access.userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (rigError) console.warn("getSetPage could not read the rig:", rigError.message);
+    else if (rigRow?.rig) rig = normaliseSetRig(rigRow.rig);
+  }
   // What the page actually draws — and what the layout and the look are
   // held against.
   const drawn = editedSpec ?? spec;
@@ -249,6 +265,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // a read of its own for the same reason; a read that fails shows
     // "Shoot" above every still for this one load.
     const words = await readShotWords(db, setId, access.userId, ids);
+    // The rig each was shot with and its check (shot-rig.ts): a read of its
+    // own again; a read that fails shows every shot square and unchecked.
+    const rigs = await readShotRigs(db, setId, access.userId, ids);
     // A still is offered as a look only when there is something to cut out
     // of it clear of its person: a camera that saw only structure, or a
     // figure out of frame, would fail every shot that took it. The answer
@@ -280,6 +299,13 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
           createdAt: g.created_at as string,
           hasLookObjects: lendsLook(g.id as string),
           words: words.get(g.id as string) ?? null,
+          format: rigs.get(g.id as string)?.rig?.format ?? "square",
+          rigAsked: RIG_CHECK_ITEMS.filter((item) => Boolean(rigs.get(g.id as string)?.rig?.words[item])),
+          rigCheck: rigs.get(g.id as string)?.check ?? null,
+          pose: (() => {
+            const c = cameras.get(g.id as string);
+            return c ? { position: c.position, target: c.target, fovDeg: c.fovDeg } : null;
+          })(),
         };
       });
   }
@@ -313,6 +339,7 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       spec,
       editedSpec,
       film,
+      rig,
       layout,
       hasThumb: isCurrentSetThumb(row.thumb_path, access.userId, row.id as string),
       fromPhoto,

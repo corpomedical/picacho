@@ -2,6 +2,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateImage } from "@/lib/generations/providers/image";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { persistGeneratedImage } from "@/lib/generations/core";
+import type { OpenAiImageSize } from "@/lib/generations/providers/openai-images";
+import { cutToBand } from "@/lib/sets/frame-cut";
 import {
   betterAttemptScore,
   gateLogLine,
@@ -87,6 +89,9 @@ export type GateDeps = {
     /** A set's earlier still, when the first render carried one (Astra Sets). */
     lookImageUrl?: string | null;
     placeImageUrl?: string | null;
+    /** A Helios rig format (sets/rig.ts): the same render size, and the same cut to the frame lines. */
+    imageSize?: OpenAiImageSize | null;
+    cutToBand?: number | null;
     /**
      * The SAME budget object the first render used. Passing it is what stops
      * the retry minting a second full allowance of paid provider calls —
@@ -216,7 +221,12 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       deps.rerender.modelId,
       deps.rerender.compiledPrompt,
       deps.rerender.referenceImageUrl,
-      (base64) => persistGeneratedImage(deps.supabase, deps.userId, base64),
+      async (base64) =>
+        persistGeneratedImage(
+          deps.supabase,
+          deps.userId,
+          deps.rerender.cutToBand ? await cutToBand(base64, deps.rerender.cutToBand) : base64,
+        ),
       undefined,
       // The shared budget — see the note on the field.
       deps.rerender.budget,
@@ -224,6 +234,8 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       deps.rerender.propImageUrl,
       deps.rerender.lookImageUrl,
       deps.rerender.placeImageUrl,
+      undefined,
+      deps.rerender.imageSize ?? null,
     );
   } catch (err) {
     // The re-render failed. The first attempt is still good and still paid

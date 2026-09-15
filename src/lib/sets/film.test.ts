@@ -66,3 +66,19 @@ describe("filmSeconds", () => {
     expect(filmSeconds(normaliseSetFilm(null))).toBe(0);
   });
 });
+
+describe("a beat's move (Helios Cinema)", () => {
+  it("keeps a known move and its textures, once each; drops the rest", () => {
+    const f = normaliseSetFilm({
+      beats: [
+        { words: "", end: goodPose, move: "dolly-zoom", textures: ["handheld", "handheld", "jitter", "slow-motion"] },
+        { words: "", end: goodPose, move: "rack-focus" },
+      ],
+    });
+    expect(f.beats[0].move).toBe("dolly-zoom");
+    expect(f.beats[0].textures).toEqual(["handheld", "slow-motion"]);
+    expect(f.beats[1].move).toBeNull();
+    expect(f.beats[1].textures).toEqual([]);
+  });
+});
+

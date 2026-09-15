@@ -1,4 +1,4 @@
-import { generateImageWithOpenAI, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
+import { generateImageWithOpenAI, type OpenAiImageSize, type OpenAiImageUsage } from "@/lib/generations/providers/openai-images";
 import { generateImageWithFlux } from "@/lib/generations/providers/fal-image";
 import { fetchWithTimeout } from "@/lib/generations/providers/fetch-with-timeout";
 import { getImageModel } from "@/lib/generations/providers/image-models";
@@ -83,6 +83,11 @@ export async function generateImage(
   // Told what an OpenAI answer cost (openai-images.ts, THE MONEY); the
   // pipeline writes it into the take's log. Flux answers carry no usage.
   onUsage?: (usage: OpenAiImageUsage) => void,
+  // A Helios rig format's render (sets/rig.ts, 2026-09-15): 1536x1024 or
+  // 1024x1536 instead of the pinned square, for GPT Image only — the set
+  // shot cuts it to its frame lines after. Measured cheaper than the square
+  // (rig.ts, THE MONEY), so the one price holds. Flux keeps its own size.
+  imageSize?: OpenAiImageSize | null,
 ): Promise<string> {
   const model = getImageModel(modelId);
 
@@ -158,6 +163,6 @@ export async function generateImage(
   // daily cap, like Flux's. See refusal-messages.ts for which sentence says
   // what about money, and why.
   chargeBudget(budget);
-  const base64 = await generateImageWithOpenAI(prompt, openAiRefs, { onUsage });
+  const base64 = await generateImageWithOpenAI(prompt, openAiRefs, { onUsage, size: imageSize ?? undefined });
   return persistBase64(base64);
 }

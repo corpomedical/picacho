@@ -31,6 +31,7 @@
 
 import { cleanText, type SetLayout } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
+import { RIG_FIXED_SENTENCES, RIG_NUMBERED_SENTENCE } from "./rig";
 
 const DEG = Math.PI / 180;
 
@@ -114,6 +115,12 @@ const SKETCH_SENTENCES = [
 // scene itself is not brighter for it. For a daylit set it would be false.
 const LIFTED_SENTENCE =
   "The sketch is lit brighter than the real scene so its layout can be read: take the time of day, how dark it is and the colour of the light from the description, not from the sketch.";
+// A rig light scheme (rig.ts, Helios Cinema 2026-09-15) re-lights the set
+// for the frame: the sketch shows the scheme's light, so the description's
+// hour must give way to it, lifted sketch or not.
+const LIFTED_RIG_SENTENCE =
+  "The sketch is lit brighter than the real scene so its layout can be read: take the light's direction from the sketch, and its mood, hour and colour from the light described below.";
+const LIGHT_WINS_SENTENCE = "Where the description's hour or light differs from the light described below, the light below wins.";
 const RENDER_PREFIX = "Render the location photorealistically, as it really looks";
 const GAZE_SENTENCE = "Wherever they are looking, make it unmistakable: turn the head and eyes to it.";
 const FACE_SENTENCE = "The grey figure has no face, hair or clothing to copy: take the person's face, hair and features only from the character photos.";
@@ -133,6 +140,13 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
 ];
 
 /**
+ * The rig's fixed sentences (rig.ts, Helios Cinema): every look's block and
+ * its pushed strength, the frame's cut, and the two that hand the light to
+ * the rig. A shot carries only the few its rig asks for.
+ */
+export const SET_SHOT_RIG_SENTENCES: readonly string[] = [LIFTED_RIG_SENTENCE, LIGHT_WINS_SENTENCE, ...RIG_FIXED_SENTENCES];
+
+/**
  * The prompt's fixed sentences — Picacho's own words, the same in every Set
  * shot — with the description and the person's direction left in place.
  * The pipeline's brand-rule check reads a Set shot through this (2026-09-14):
@@ -143,7 +157,8 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
  */
 export function stripSetShotScaffold(prompt: string): string {
   let out = prompt;
-  for (const fixed of SET_SHOT_FIXED_SENTENCES) out = out.split(fixed).join(" ");
+  for (const fixed of [...SET_SHOT_FIXED_SENTENCES, ...SET_SHOT_RIG_SENTENCES]) out = out.split(fixed).join(" ");
+  out = out.replace(RIG_NUMBERED_SENTENCE, " ");
   out = out.replace(/The person stands where the grey figure stands, at its scale(?:; their body [^.]*|, facing the same way)\./g, " ");
   return out.replace(/\s+/g, " ").trim();
 }
@@ -161,14 +176,20 @@ export function buildSetShotPrompt(input: {
   look?: object | null;
   /** Whether the set's source photograph rides (a photo set's shots). */
   sourcePhoto?: boolean;
+  /** The rig's sentences for this frame (rig.ts rigSentences), in order; none when the rig asks for nothing. */
+  rig?: readonly string[];
+  /** Whether the rig re-lights the frame (a light scheme is on). */
+  rigLight?: boolean;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
   const facing = describeFacing(input.layout ?? null);
   return [
     ...SKETCH_SENTENCES,
-    input.lifted ? LIFTED_SENTENCE : "",
+    input.lifted ? (input.rigLight ? LIFTED_RIG_SENTENCE : LIFTED_SENTENCE) : "",
     description ? `${RENDER_PREFIX}: ${description}` : `${RENDER_PREFIX}.`,
+    input.rigLight && !input.lifted ? LIGHT_WINS_SENTENCE : "",
+    ...(input.rig ?? []),
     input.look ? LOOK_SENTENCE : "",
     input.sourcePhoto ? SOURCE_PHOTO_SENTENCE : "",
     facing

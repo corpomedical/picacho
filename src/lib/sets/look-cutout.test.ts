@@ -659,3 +659,37 @@ describe("the money", () => {
     expect(LOOK_WORST_USD).toBeCloseTo(0.072, 10);
   });
 });
+
+describe("a rig frame's band (Helios Cinema)", () => {
+  // Looking straight down −Z from the origin, a 40° lens over a 3:2 render
+  // cut to a 2.39 band: the band keeps the render's full width and 1.5/2.39
+  // of its height.
+  const camera = {
+    position: [0, 0, 0] as [number, number, number],
+    target: [0, 0, -10] as [number, number, number],
+    fovDeg: 40,
+    canvasAspect: 1,
+    figure: { x: 0, z: -5 },
+    frame: { render: 1.5, band: 2.39 },
+  };
+  const tv = Math.tan((40 * Math.PI) / 360);
+
+  it("maps the band's own edges to 0 and 1", () => {
+    const project = sketchProjector(camera);
+    const d = 10;
+    const top = project([0, d * tv * (1.5 / 2.39), -d])!;
+    const right = project([d * tv * 1.5, 0, -d])!;
+    expect(top.v).toBeCloseTo(0, 6);
+    expect(top.u).toBeCloseTo(0.5, 6);
+    expect(right.u).toBeCloseTo(1, 6);
+  });
+
+  it("keeps the frame through the one door, and refuses a frame out of shape", () => {
+    expect(normaliseShotCamera(camera)?.frame).toEqual({ render: 1.5, band: 2.39 });
+    expect(normaliseShotCamera({ ...camera, frame: { render: 1.5, band: 9 } })).toBeNull();
+    const square: Partial<typeof camera> = { ...camera };
+    delete square.frame;
+    expect(normaliseShotCamera(square)?.frame).toBeUndefined();
+  });
+});
+
