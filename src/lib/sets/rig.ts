@@ -39,6 +39,8 @@
 // Blocks are English on purpose (text for the model); names are i18n.
 // Relative imports only: the page, the actions and the tests share it.
 
+import type { LabLooks } from "./lab-grade";
+
 export const RIG_FORMATS = {
   square: { band: 1, render: [1024, 1024] },
   scope: { band: 2.39, render: [1536, 1024] },
@@ -113,14 +115,18 @@ export type RigLookKind = "stock" | "lens" | "era" | "palette" | "light";
 // operator on a contact sheet (docs/ASTRA_SETS.md). 33 of the 34 passed —
 // and so did both of the stop ring's focus proofs, f/1.4 and f/8; Silhouette
 // failed — she stayed readable and lit from the front, the one thing the
-// look exists to take away. A look is proven only by being listed here.
+// look exists to take away (its words asked for "the face just readable").
+// Reworded to put the whole figure in shadow, face included, with only a rim
+// of light, it was shot again the same evening and passed, plain and pushed
+// (the "Helios Lab" page). A look is proven only by being listed here.
 //
 // A pass is the operator's judgement that the look is worth offering, not a
 // promise it lands: on the proof stills the check read ten of the passed
 // looks as missed plain and pushed (16 mm, home video, anamorphic, overhead,
 // practicals, Mint Diner, Tropic Static, 2000s, 1970s, 1960s), and Silver
 // Print and Neon Undertow landed only pushed. The check keeps reading every
-// real still and says so on the still.
+// real still and says so on the still. The lab (lab-grade.ts) since holds
+// the film stocks, the lenses and Silver Print, so those always land.
 const PROVEN_LOOKS: ReadonlySet<string> = new Set([
   "stock:digital",
   "stock:film35",
@@ -153,6 +159,7 @@ const PROVEN_LOOKS: ReadonlySet<string> = new Set([
   "light:overhead",
   "light:practicals",
   "light:soft-cross",
+  "light:silhouette",
   "light:hard-noon",
   "light:moonlight",
 ]);
@@ -166,10 +173,13 @@ const eraLook = lookOf("era");
 const lightLook = lookOf("light");
 
 /**
- * A proven look's picture for its tile: its proof still, 240 × 100, in
- * public/helios/looks — the plain still, or the pushed one where only that
- * showed the look (Silver Print, Neon Undertow). Eras are words on the
- * page, no picture; an unproven look keeps its drawn one.
+ * A proven look's picture for its tile, 240 × 100, in public/helios/looks.
+ * A look the lab makes (every stock and lens, Silver Print) shows the lab's
+ * own work on the control proof still — made by lab.ts itself — so its
+ * tiles differ only in the look; the rest show the proof still that showed
+ * them (the plain one, or Neon Undertow's pushed one; Silhouette's is its
+ * reworded still). Eras are words on the page, no picture; an unproven look
+ * keeps its drawn one.
  */
 export function lookStill(kind: RigLookKind, id: string): string | null {
   if (kind === "era" || !PROVEN_LOOKS.has(`${kind}:${id}`)) return null;
@@ -408,8 +418,8 @@ export const RIG_LIGHTS = [
   ),
   lightLook(
     "silhouette",
-    "Light: the person nearly in silhouette against a bright background — a dark figure with a thin bright edge, the face just readable in faint fill.",
-    "Strong silhouette: a very bright background behind the person, the figure dark with a crisp bright edge, the face held just readable by a faint fill.",
+    "Light: silhouette — the person stands against a bright, glowing background with the light entirely behind them; the whole figure falls into dark shadow, face included, with only a thin bright rim tracing the outline of the hair and shoulders. No light reaches the front of the figure.",
+    "A true silhouette: a blazing bright background directly behind the person, the figure a near-black shape with no light on its front at all, the face lost in shadow, only a crisp bright rim of light around the hair and shoulders.",
   ),
   lightLook(
     "hard-noon",
@@ -564,11 +574,32 @@ export function rigCheckItems(rig: SetRig): RigCheckItem[] {
   const out: RigCheckItem[] = [];
   if (rig.light) out.push("light");
   if (rig.stop !== null) out.push("focus");
-  if (rig.palette) out.push("palette");
-  if (rig.stock) out.push("stock");
-  if (rig.lens) out.push("lens");
+  if (rig.palette && !isLabPalette(rig.palette)) out.push("palette");
   if (rig.era) out.push("era");
   return out;
+}
+
+// ---------------------------------------------------------------------------
+// HELD BY THE LAB (lab-grade.ts, 2026-09-15). The film stock, the lens's
+// character and Silver Print are made after the cut on the finished pixels,
+// so they never ride as words and the rig check never reads them: the model
+// draws a clean frame and the lab makes the look. Their `block` and `pushed`
+// stay as each look's written definition — what the lab is tuned to match —
+// and a still shot before the lab keeps the words it was sent.
+// ---------------------------------------------------------------------------
+
+/** The palettes the lab makes rather than asks for: black and white. */
+export function isLabPalette(id: string | null): boolean {
+  return id === "silver-print";
+}
+
+/** What the lab develops for this rig, or null when there is nothing to do (no stock, lens or print it makes). */
+export function labLooksOf(rig: Pick<SetRig, "stock" | "lens" | "palette">): LabLooks | null {
+  const stock = rig.stock && rig.stock !== "digital" ? rig.stock : null;
+  const lens = rig.lens && rig.lens !== "clean" ? rig.lens : null;
+  const silver = isLabPalette(rig.palette);
+  if (!stock && !lens && !silver) return null;
+  return { stock, lens, silver };
 }
 
 export function findLook<T extends RigLook>(list: readonly T[], id: string | null): T | null {
@@ -629,13 +660,10 @@ export function rigWordsByItem(rig: SetRig, ctx: RigShotContext): Partial<Record
         : `Focus: the person, ${d} m from the camera, is sharp, and so is everything from ${m1(nearM)} m to the horizon.`;
     }
   }
-  const lens = say("lens", findLook(RIG_LENSES, rig.lens));
-  if (lens) out.lens = lens;
-  const stock = say("stock", findLook(RIG_STOCKS, rig.stock));
-  if (stock) out.stock = stock;
+  // The stock and the lens are the lab's (the section above): never words.
   const era = say("era", findLook(RIG_ERAS, rig.era));
   if (era) out.era = era;
-  const pal = say("palette", findLook(RIG_PALETTES, rig.palette));
+  const pal = isLabPalette(rig.palette) ? "" : say("palette", findLook(RIG_PALETTES, rig.palette));
   if (pal) out.palette = pal;
   return out;
 }

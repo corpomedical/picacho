@@ -17,6 +17,8 @@ import {
   depthOfField,
   focalMm,
   formatFrame,
+  isLabPalette,
+  labLooksOf,
   lightDirectionWords,
   lookStill,
   normaliseSetRig,
@@ -113,15 +115,15 @@ describe("focus: real optics from the real distance", () => {
 });
 
 describe("the words that ride", () => {
-  it("say the cut, then the light, focus, lens, stock, era and palette, in that order", () => {
+  it("say the cut, then the light, focus, era and palette, in that order — never the stock or the lens, which the lab makes", () => {
     const lines = rigSentences(full, ctx);
     expect(lines[0]).toMatch(/^This frame will be cut to a wide 2\.39 : 1 band/);
     const at = (needle: string) => lines.findIndex((l) => l.includes(needle));
     expect(at("contre-jour")).toBeLessThan(at("Focus:"));
-    expect(at("Focus:")).toBeLessThan(at("anamorphic"));
-    expect(at("anamorphic")).toBeLessThan(at("35 mm motion-picture film"));
-    expect(at("35 mm motion-picture film")).toBeLessThan(at("1980s"));
+    expect(at("Focus:")).toBeLessThan(at("1980s"));
     expect(at("1980s")).toBeLessThan(at("Colour grade"));
+    expect(at("anamorphic")).toBe(-1);
+    expect(at("35 mm motion-picture film")).toBe(-1);
   });
 
   it("puts the focus numbers in words", () => {
@@ -131,9 +133,9 @@ describe("the words that ride", () => {
   });
 
   it("says a missed look harder when it is pushed, and only that look", () => {
-    const pushed = rigWordsByItem(full, { ...ctx, push: ["lens"] });
-    expect(pushed.lens).toBe(RIG_LENSES.find((l) => l.id === "anamorphic")!.pushed);
-    expect(pushed.stock).toBe(RIG_STOCKS.find((l) => l.id === "film35")!.block);
+    const pushed = rigWordsByItem(full, { ...ctx, push: ["era"] });
+    expect(pushed.era).toBe(RIG_ERAS.find((l) => l.id === "1980s")!.pushed);
+    expect(pushed.palette).toBe(RIG_PALETTES.find((l) => l.id === "amber-hour")!.block);
   });
 
   it("asks nothing of a square rig with nothing chosen", () => {
@@ -141,9 +143,29 @@ describe("the words that ride", () => {
     expect(rigCheckItems(DEFAULT_SET_RIG)).toEqual([]);
   });
 
-  it("checks every look it asked for in words — never the frame, which the stage holds", () => {
-    expect(rigCheckItems(full)).toEqual(["light", "focus", "palette", "stock", "lens", "era"]);
+  it("checks every look it asked for in words — never the frame, which the stage holds, nor what the lab makes", () => {
+    expect(rigCheckItems(full)).toEqual(["light", "focus", "palette", "era"]);
     expect(Object.keys(rigWordsByItem(full, ctx)).sort()).toEqual(rigCheckItems(full).sort());
+  });
+});
+
+describe("held by the lab", () => {
+  it("never sends the stock, the lens or Silver Print as words, and never checks them", () => {
+    const silver: SetRig = { ...full, palette: "silver-print" };
+    const words = rigWordsByItem(silver, ctx);
+    expect(words.stock).toBeUndefined();
+    expect(words.lens).toBeUndefined();
+    expect(words.palette).toBeUndefined();
+    expect(rigCheckItems(silver)).toEqual(["light", "focus", "era"]);
+    expect(rigSentences(silver, ctx).join(" ")).not.toContain("black and white");
+  });
+
+  it("names what the lab develops — nothing for the model's own clean render", () => {
+    expect(labLooksOf(full)).toEqual({ stock: "film35", lens: "anamorphic", silver: false });
+    expect(labLooksOf({ stock: "digital", lens: "clean", palette: "amber-hour" })).toBeNull();
+    expect(labLooksOf({ stock: null, lens: null, palette: "silver-print" })).toEqual({ stock: null, lens: null, silver: true });
+    expect(isLabPalette("silver-print")).toBe(true);
+    expect(isLabPalette("amber-hour")).toBe(false);
   });
 
   it("keeps an era to the picture's look, never its objects", () => {
@@ -194,10 +216,14 @@ describe("the proof rule", () => {
     ["light", RIG_LIGHTS],
   ] as const;
 
-  it("proves exactly the looks passed on 2026-09-15's contact sheet — Silhouette stays untested", () => {
+  it("proves every look: 33 passed on 2026-09-15's contact sheet, and Silhouette reworded and passed the same evening", () => {
     const unproven = KINDS.flatMap(([kind, list]) => list.filter((l) => !l.proven).map((l) => `${kind}:${l.id}`));
-    expect(unproven).toEqual(["light:silhouette"]);
-    expect(KINDS.reduce((n, [, list]) => n + list.filter((l) => l.proven).length, 0)).toBe(33);
+    expect(unproven).toEqual([]);
+    expect(KINDS.reduce((n, [, list]) => n + list.filter((l) => l.proven).length, 0)).toBe(34);
+    // The new words: the whole figure in shadow, never "the face just readable".
+    const silhouette = RIG_LIGHTS.find((l) => l.id === "silhouette")!;
+    expect(silhouette.block).toContain("face included");
+    expect(silhouette.block).not.toContain("just readable");
   });
 
   it("gives every proven look with a picture its proof still, on disk — never an unproven one or an era", () => {

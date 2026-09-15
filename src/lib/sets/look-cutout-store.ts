@@ -38,6 +38,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { segmentObject, stillMime } from "../generations/providers/fal-segment";
 import { lookCuts, type LookSet, type ShotCamera } from "./look-cutout";
 import { composeLookCutout } from "./look-cutout-image";
+import { negativePathFor } from "./lab";
 import { findPeople } from "./look-people";
 import { setLookCutoutPath, setLookCutoutPrefix, setLookSheetPath, setLookSheetPrefix } from "./set-config";
 
@@ -101,11 +102,20 @@ export async function lookCutout(
   if (await exists(admin, path)) return { ok: true, path, made: false };
   if (!input.camera) return { ok: false, reason: "no camera" };
 
+  // A still the lab developed lends its objects from its NEGATIVE, the frame
+  // before the lab (lab.ts): a Silver Print still must never hand later
+  // shots a grey car. Any other still is its own negative.
   let still: Buffer;
   try {
-    const { data, error } = await admin.storage.from(BUCKET).download(input.stillPath);
-    if (error || !data) return { ok: false, reason: "storage" };
-    still = Buffer.from(await data.arrayBuffer());
+    const negative = negativePathFor(input.stillPath);
+    const kept = negative ? await admin.storage.from(BUCKET).download(negative) : null;
+    if (kept && !kept.error && kept.data) {
+      still = Buffer.from(await kept.data.arrayBuffer());
+    } else {
+      const { data, error } = await admin.storage.from(BUCKET).download(input.stillPath);
+      if (error || !data) return { ok: false, reason: "storage" };
+      still = Buffer.from(await data.arrayBuffer());
+    }
   } catch {
     return { ok: false, reason: "storage" };
   }

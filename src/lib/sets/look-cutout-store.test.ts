@@ -171,6 +171,22 @@ describe("lookCutout", () => {
       expect([meta.width, meta.height]).toEqual([146, 146]);
     });
 
+    it("cuts a lab still's look from its negative, the frame before the lab — never the developed print", async () => {
+      const print = await sharp!({ create: { width: 256, height: 256, channels: 3, background: { r: 128, g: 128, b: 128 } } }).png().toBuffer();
+      const negative = await sharp!({ create: { width: 256, height: 256, channels: 3, background: { r: 70, g: 90, b: 110 } } }).jpeg().toBuffer();
+      const NEGATIVE_PATH = `${USER}/negatives/${LOOK}.jpg`;
+      const f = fakeAdmin({
+        download: async (p) =>
+          p === NEGATIVE_PATH ? { data: blob(negative), error: null } : p === STILL_PATH ? { data: blob(print), error: null } : { data: null, error: { message: "no" } },
+      });
+      const segment = vi.fn(async () => samAnswer(carBlock));
+      expect(await lookCutout(input(f.admin), { segment, people })).toEqual({ ok: true, path: CUTOUT, made: true });
+      const [sent] = segment.mock.calls[0] as unknown as [Buffer];
+      expect(sent.equals(negative)).toBe(true);
+      // The still itself was never fetched: the negative was there.
+      expect(f.calls.filter((c) => c.op === "download").map((c) => c.args[0])).toEqual([NEGATIVE_PATH]);
+    });
+
     it("two objects: one request each, laid together — and one of them failing is no look, with nothing kept", async () => {
       const still = await stillPng();
       // Two props apart, the figure far down the left of the frame, small and clear of both.

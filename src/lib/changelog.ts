@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.38.0",
+    build: 53,
+    date: "2026-09-15",
+    title: "Helios gets a lab: film stock, lens and black and white are made, not asked for",
+    items: [
+      "The proof showed it: asked in words, the image model mostly draws a clean colour frame whatever the stock, the lens or the print. So those looks moved to a third place in the rig, beside Held by the stage and Checked after: Held by the lab. Film grain, 16 mm's soft texture, a camcorder's smear and scanlines, a vintage lens's glow and dark corners, halation's red-orange bloom, an anamorphic flare streak and a true black-and-white print are now made on our side, after the still is cut to its frame lines. They always land, look the same every time, and cost nothing.",
+      "Your likeness is judged on the frame before the lab touches it, so grain, a camcorder's softness or black and white never count against your character's face. And a still you shot in the lab lends its look to later shots from that same untouched frame, so a black-and-white still never turns the next shot's car grey.",
+      "The Film stock and Lens tiles show the lab's own work on one frame, so the tiles compare only the look. Silver Print carries the lab's flask among the palettes. The rig check no longer reads what the lab makes, since it is always there.",
+      "Silhouette was reworded to put the whole figure in shadow, face included, with only a rim of light, and passed its reshoot. Every look in the rig is now proven.",
+    ],
+  },
+  {
     version: "1.37.2",
     build: 52,
     date: "2026-09-15",

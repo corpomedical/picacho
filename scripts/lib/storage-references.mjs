@@ -138,7 +138,12 @@ export async function referencedKeys(rest) {
 export function isReferenced(referenced, path) {
   if (referenced.has(path)) return true;
   const wm = path.match(/^(.+)\/wm\/(.+)$/);
-  return wm ? referenced.has(`${wm[1]}/${wm[2]}`) : false;
+  if (wm) return referenced.has(`${wm[1]}/${wm[2]}`);
+  // A Helios still's negative (src/lib/sets/lab.ts, 2026-09-15): the frame
+  // before the lab, `<user>/negatives/<file>.jpg` beside the still's
+  // `<user>/<file>.png`, referenced whenever that still is.
+  const negative = path.match(/^([^/]+)\/negatives\/([^/]+)\.jpg$/);
+  return negative ? referenced.has(`${negative[1]}/${negative[2]}.png`) : false;
 }
 
 /** Every object in a bucket, recursively, with size and created_at. */

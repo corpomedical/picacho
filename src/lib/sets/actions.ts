@@ -42,6 +42,7 @@ import {
   formatFrame,
   isRigCheckItem,
   normaliseSetRig,
+  labLooksOf,
   rigCheckItems,
   rigSentences,
   rigWordsByItem,
@@ -740,6 +741,10 @@ export async function shootInSet(
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   fd.set("set_format", rig.format);
+  // What the lab develops after the cut (lab-grade.ts): the stock, the
+  // lens's character, black and white. Never in the words above.
+  const lab = labLooksOf(rig);
+  if (lab) fd.set("set_lab", JSON.stringify(lab));
   // The same prompt without the person's direction: all of it Astra's
   // description and Picacho's sentences. If the gate refuses the shot, this
   // part is judged again alone, and a refusal it earns by itself is logged

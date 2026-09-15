@@ -3,7 +3,6 @@ import { generateImage } from "@/lib/generations/providers/image";
 import { scoreIdentityMatch } from "@/lib/generations/providers/openai";
 import { persistGeneratedImage } from "@/lib/generations/core";
 import type { OpenAiImageSize } from "@/lib/generations/providers/openai-images";
-import { cutToBand } from "@/lib/sets/frame-cut";
 import {
   betterAttemptScore,
   gateLogLine,
@@ -89,9 +88,14 @@ export type GateDeps = {
     /** A set's earlier still, when the first render carried one (Astra Sets). */
     lookImageUrl?: string | null;
     placeImageUrl?: string | null;
-    /** A Helios rig format (sets/rig.ts): the same render size, and the same cut to the frame lines. */
+    /** A Helios rig format (sets/rig.ts): the same render size as the first render. */
     imageSize?: OpenAiImageSize | null;
-    cutToBand?: number | null;
+    /**
+     * How the re-render is stored, when not as it came: a set shot's is cut
+     * to its frame lines and developed by the lab exactly as the first render
+     * was (generations/actions.ts storeSetImage).
+     */
+    persist?: (base64: string) => Promise<string>;
     /**
      * The SAME budget object the first render used. Passing it is what stops
      * the retry minting a second full allowance of paid provider calls —
@@ -103,6 +107,14 @@ export type GateDeps = {
   /** Wall-clock ms already spent on this request, to protect maxDuration. */
   elapsedMs: number;
   absolutize: (url: string) => string;
+  /**
+   * The picture to score in place of a render, when there is one: a lab
+   * still's negative, the frame before the lab (sets/lab.ts). Grain, a
+   * camcorder's smear or black and white are the look the person asked for,
+   * never a lost face — scored after the lab, home video read 32 and Silver
+   * Print 16 on a frame that read 72 untouched.
+   */
+  scoreAs?: (resultUrl: string) => string | null;
 };
 
 async function score(
@@ -140,7 +152,8 @@ async function score(
  */
 export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome> {
   const logLines: string[] = [];
-  const first = await score(deps.absoluteResultUrl, deps.identityPhotoUrl, deps.traitSummary);
+  const firstStandIn = deps.scoreAs?.(deps.resultUrl) ?? null;
+  const first = await score(firstStandIn ? deps.absolutize(firstStandIn) : deps.absoluteResultUrl, deps.identityPhotoUrl, deps.traitSummary);
 
   // A blank/black frame short-circuits everything. It is not a weak likeness,
   // it is a non-delivery, and it has its own established handling in
@@ -221,12 +234,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       deps.rerender.modelId,
       deps.rerender.compiledPrompt,
       deps.rerender.referenceImageUrl,
-      async (base64) =>
-        persistGeneratedImage(
-          deps.supabase,
-          deps.userId,
-          deps.rerender.cutToBand ? await cutToBand(base64, deps.rerender.cutToBand) : base64,
-        ),
+      deps.rerender.persist ?? ((base64) => persistGeneratedImage(deps.supabase, deps.userId, base64)),
       undefined,
       // The shared budget — see the note on the field.
       deps.rerender.budget,
@@ -257,7 +265,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
     };
   }
 
-  const second = await score(deps.absolutize(secondUrl), deps.identityPhotoUrl, deps.traitSummary);
+  const second = await score(deps.absolutize(deps.scoreAs?.(secondUrl) ?? secondUrl), deps.identityPhotoUrl, deps.traitSummary);
 
   const settled: GateDecision = identityGateDecision({
     score: second.score,

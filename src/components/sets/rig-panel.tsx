@@ -17,6 +17,8 @@ import {
   depthOfField,
   focalMm,
   formatFrame,
+  isLabPalette,
+  labLooksOf,
   lookStill,
   type RigFormat,
   type RigGenre,
@@ -34,8 +36,10 @@ import { FILM_MOVES, FILM_TEXTURES, type FilmMove, type FilmTexture } from "@/li
 // department, docked left of the stage — Blender's tool panel to the
 // conversation's side panel, the stage between. One column of sections,
 // each labelled with where its choice lands: HELD BY THE STAGE (the frame,
-// the lens's field of view, a move's two ends) or CHECKED AFTER (the looks
-// the words carry, read back from every still by the rig check). Every
+// the lens's field of view, a move's two ends), HELD BY THE LAB (the film
+// stock, the lens's character and Silver Print, made on the pixels after the
+// render — lab-grade.ts, drawn as the "Helios Lab" page) or CHECKED AFTER
+// (the looks the words carry, read back from every still by the rig check). Every
 // choice shows on the stage before a credit moves: the frame lines, the
 // field of view, the depth of field, the light, the grade.
 
@@ -53,7 +57,7 @@ export type RigFilmContext = {
 
 const PANEL_BG = "border border-white/[0.11] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
 
-type TagStrings = { held: string; checked: string };
+type TagStrings = { held: string; checked: string; lab: string };
 
 function Section({
   title,
@@ -63,7 +67,7 @@ function Section({
   right,
 }: {
   title: string;
-  tag?: "held" | "checked";
+  tag?: TagKind;
   tags: TagStrings;
   children: ReactNode;
   right?: ReactNode;
@@ -80,7 +84,27 @@ function Section({
   );
 }
 
-function Tag({ kind, tags }: { kind: "held" | "checked"; tags: TagStrings }) {
+type TagKind = "held" | "checked" | "lab";
+
+/** The lab's flask (lab-grade.ts): a look made after the render, on the pixels. */
+function Flask({ className }: { className: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+      <path d="M10 2v7.5L4.7 20.5a1 1 0 0 0 .9 1.5h12.8a1 1 0 0 0 .9-1.5L14 9.5V2" />
+      <path d="M8.5 2h7M7 16h10" />
+    </svg>
+  );
+}
+
+function Tag({ kind, tags }: { kind: TagKind; tags: TagStrings }) {
+  if (kind === "lab") {
+    return (
+      <span className="inline-flex h-[18px] items-center gap-1 whitespace-nowrap rounded-full bg-[rgba(224,164,104,0.08)] pl-1.5 pr-2 text-[10px] font-medium text-[#e3c9a6] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.25)]">
+        <Flask className="h-2.5 w-2.5" />
+        {tags.lab}
+      </span>
+    );
+  }
   return kind === "held" ? (
     <span className="inline-flex h-[18px] items-center gap-1 whitespace-nowrap rounded-full bg-[rgba(224,164,104,0.08)] pl-1.5 pr-2 text-[10px] font-medium text-[#e3c9a6] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.25)]">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinejoin="round" className="h-2.5 w-2.5" aria-hidden>
@@ -108,6 +132,7 @@ function Tile({
   children,
   dot,
   untested,
+  lab,
 }: {
   on: boolean;
   onPick: () => void;
@@ -115,6 +140,8 @@ function Tile({
   children: ReactNode;
   dot?: boolean;
   untested?: string;
+  /** Names a look the lab makes, in a section whose other looks are words (Silver Print among the palettes). */
+  lab?: string;
 }) {
   return (
     <button
@@ -128,6 +155,12 @@ function Tile({
       }`}
     >
       {dot && <span aria-hidden className="absolute right-1.5 top-1.5 z-[1] h-[5px] w-[5px] rounded-full bg-[#e0a468]" />}
+      {lab && (
+        <span title={lab} className="absolute left-1.5 top-1.5 z-[1] grid h-[15px] w-[15px] place-items-center rounded-[4px] bg-black/60 text-[#e0a468]">
+          <Flask className="h-2.5 w-2.5" />
+          <span className="sr-only">{lab}</span>
+        </span>
+      )}
       {untested && (
         <span className="absolute left-1.5 top-1.5 z-[1] rounded-[3px] bg-black/65 px-1 text-[8.5px] font-semibold uppercase leading-[13px] tracking-[0.06em] text-[#e0a468]">
           {untested}
@@ -641,7 +674,7 @@ export function RigPanel({
   onClose: () => void;
 }) {
   const r = s.rig;
-  const tags: TagStrings = { held: r.held, checked: r.checked };
+  const tags: TagStrings = { held: r.held, checked: r.checked, lab: r.lab };
   const set = (patch: Partial<SetRig>) => onChange({ ...rig, ...patch });
   const toggle = <K extends keyof SetRig>(key: K, value: SetRig[K]) => set({ [key]: rig[key] === value ? null : value } as Partial<SetRig>);
   const nf = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -821,7 +854,7 @@ export function RigPanel({
           <Ring values={LENSES_MM} value={nearestLens(fovDeg)} onPick={onLens} label={r.focal} format={(v) => String(v)} />
         </Section>
 
-        <Section tags={tags} title={r.stock} tag="checked">
+        <Section tags={tags} title={r.stock} tag="lab">
           <div className="grid grid-cols-4 gap-1.5">
             {RIG_STOCKS.map((st) => {
               const still = lookStill("stock", st.id);
@@ -842,6 +875,7 @@ export function RigPanel({
             {rig.stock ? (
               <>
                 <span className="text-[#ecedf1]">{r.stocks[rig.stock]}</span> — {r.stockLines[rig.stock]}
+                {labLooksOf({ stock: rig.stock, lens: null, palette: null }) && <> {r.labNote}</>}
               </>
             ) : (
               r.offLine
@@ -849,7 +883,7 @@ export function RigPanel({
           </p>
         </Section>
 
-        <Section tags={tags} title={r.lens} tag="checked">
+        <Section tags={tags} title={r.lens} tag="lab">
           <div className="grid grid-cols-4 gap-1.5">
             {RIG_LENSES.map((l) => {
               const still = lookStill("lens", l.id);
@@ -870,6 +904,7 @@ export function RigPanel({
             {rig.lens ? (
               <>
                 <span className="text-[#ecedf1]">{r.lenses[rig.lens]}</span> — {r.lensLines[rig.lens]}
+                {labLooksOf({ stock: null, lens: rig.lens, palette: null }) && <> {r.labNote}</>}
               </>
             ) : (
               r.offLine
@@ -1001,6 +1036,7 @@ export function RigPanel({
                   label={r.palettes[p.id]}
                   dot={suggestion?.palette === p.id}
                   untested={p.proven ? undefined : r.untestedTag}
+                  lab={isLabPalette(p.id) ? r.lab : undefined}
                 >
                   {still && <Still src={still} />}
                   {/* The palette's own colours stay under its still: most grades are subtle on a sunlit frame, the swatch says which is which. */}

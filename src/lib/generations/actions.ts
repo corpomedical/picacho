@@ -139,6 +139,7 @@ import {
   persistGeneratedImage, fitLayerToOriginal, persistImageBytes } from "@/lib/generations/core";
 import { formatFrame, isRigFormat, type RigFormat } from "@/lib/sets/rig";
 import { cutToBand } from "@/lib/sets/frame-cut";
+import { develop, labLine, negativePathFor, normaliseLabLooks } from "@/lib/sets/lab";
 
 // Account-level brand/compliance rules, read straight from the table rather
 // than via the brand-rules server action — a "use server" export is a
@@ -546,7 +547,49 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const setFormat = isSetShot && isRigFormat(formData.get("set_format")) ? (formData.get("set_format") as RigFormat) : "square";
   const setFrame = formatFrame(setFormat);
   const setCut = setFrame.cut ? setFrame.bandAspect : null;
-  const persistSetImage = (base64: string) => (setCut ? cutToBand(base64, setCut) : Promise.resolve(base64));
+  // The lab (sets/lab-grade.ts, 2026-09-15): the film stock, the lens's
+  // character and black and white are made after the cut, on the pixels,
+  // never asked of the model. Named by the set shot and read through the one
+  // door; anything else is no lab at all.
+  const setLab = isSetShot
+    ? normaliseLabLooks(
+        (() => {
+          try {
+            return JSON.parse(String(formData.get("set_lab") ?? "null"));
+          } catch {
+            return null;
+          }
+        })(),
+      )
+    : null;
+  // Each still the lab developed this request → its negative (sets/lab.ts):
+  // the frame before the lab, which the likeness scorer reads instead.
+  const setNegatives = new Map<string, string>();
+  // A set shot's picture, stored: cut to the frame lines, developed by the
+  // lab when the rig asks for it, and the negative kept beside the print. A
+  // lab that fails stores the frame as rendered — a still is never lost to it.
+  const storeSetImage = async (client: typeof supabase, userId: string, base64: string): Promise<string> => {
+    const cut = setCut ? await cutToBand(base64, setCut) : base64;
+    if (!setLab) return persistGeneratedImage(client, userId, cut);
+    let developed: Awaited<ReturnType<typeof develop>> | null = null;
+    try {
+      developed = await develop(cut, setLab);
+    } catch (err) {
+      console.warn("[lab] the still could not be developed; storing it as rendered:", err);
+    }
+    if (!developed) return persistGeneratedImage(client, userId, cut);
+    const url = await persistGeneratedImage(client, userId, developed.print);
+    const stillPath = extractStoragePath(url, "generated-images");
+    const negativePath = stillPath ? negativePathFor(stillPath) : null;
+    if (negativePath) {
+      const { error } = await client.storage
+        .from("generated-images")
+        .upload(negativePath, developed.negative, { contentType: "image/jpeg", upsert: false });
+      if (error) console.warn("[lab] the negative was not kept:", error.message);
+      else setNegatives.set(url, mediaUrl("generated-images", negativePath));
+    }
+    return url;
+  };
 
   // Every chat-attachment storage path riding this send, whatever its role —
   // recorded on the row so deletion can clean them up. /api/media/<bucket>/
@@ -1943,7 +1986,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         setShot: isSetShot,
           policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
-          persistImage: async (base64) => persistGeneratedImage(supabase, userData.user!.id, await persistSetImage(base64)),
+          persistImage: (base64) => storeSetImage(supabase, userData.user!.id, base64),
           imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
           // Video renders get queued and polled instead of awaited — see
           // job-runner.ts. Images stay inline: a single bounded call that
@@ -2096,7 +2139,8 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 lookImageUrl,
                 placeImageUrl,
                 imageSize: setFrame.cut && imageModelId === "gpt-image" ? setFrame.size : null,
-                cutToBand: setCut,
+                // The same cut and the same lab as the first render (storeSetImage).
+                persist: (base64: string) => storeSetImage(supabase, userData.user!.id, base64),
                 // ONE paid call, not another full allowance. runRealPipeline
                 // mints its own budget of MAX_PAID_IMAGE_CALLS internally, so
                 // re-entering the pipeline would have doubled the ceiling the
@@ -2106,6 +2150,9 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
               },
               elapsedMs: Date.now() - requestStartedAt,
               absolutize: (u: string) => absolutizeMediaUrl(u, origin),
+              // A lab still is scored on its negative: grain, a camcorder's
+              // smear or black and white are the look, not a lost face.
+              scoreAs: (u: string) => setNegatives.get(u) ?? null,
             });
             resultUrl = gateOutcome.resultUrl;
             for (const line of gateOutcome.logLines) {
@@ -2113,6 +2160,14 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
             }
           }
         }
+      }
+      if (setLab && succeeded && contentType === "image" && resultUrl) {
+        attempts[attempts.length - 1]?.steps.push({
+          step: "generate",
+          detail: setNegatives.has(resultUrl)
+            ? labLine(setLab)
+            : "The lab couldn't develop this still, so it is as the model rendered it.",
+        });
       }
     } else {
       const result = runPipeline(userInput, characterForPipeline, maxAttempts, contentType);
@@ -2313,9 +2368,11 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
     if (gateOutcome.discardedUrl) {
       const loserPath = extractStoragePath(gateOutcome.discardedUrl, "generated-images");
       if (loserPath) {
+        // With its negative, when the lab kept one (sets/lab.ts).
+        const loserNegative = negativePathFor(loserPath);
         const { error: sweepError } = await createAdminClient()
           .storage.from("generated-images")
-          .remove([loserPath]);
+          .remove(loserNegative ? [loserPath, loserNegative] : [loserPath]);
         if (sweepError) {
           console.warn("Couldn't remove the discarded gate attempt:", sweepError.message);
         }
@@ -3933,7 +3990,11 @@ export async function deleteGeneration(formData: FormData): Promise<{ error: str
     .filter((p): p is string => Boolean(p));
 
   if (imagePaths.length > 0) {
-    await supabase.storage.from("generated-images").remove(imagePaths);
+    // With their negatives (sets/lab.ts): a set shot the lab developed keeps
+    // the frame before the lab beside it. remove() skips keys that are not
+    // there, so a still without one costs nothing.
+    const negativePaths = imagePaths.map(negativePathFor).filter((p): p is string => Boolean(p));
+    await supabase.storage.from("generated-images").remove([...imagePaths, ...negativePaths]);
   }
 
   // A Set's look cutouts (since 2026-09-12): when a still is a later shot's
