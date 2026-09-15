@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.37.1",
+    build: 51,
+    date: "2026-09-15",
+    title: "A relit stage lights once, and the moment you ask for ends where you ended it",
+    items: [
+      "Changing a light scheme twice stacked the lights. Each time the stage relit the set, the last lit copy stayed behind: three schemes in turn put six lights in a set built with two, so the stage — and the sketch sent to the render — came out brighter than the scheme you picked, with a figure that contre-jour should leave dark lit from the front. The same fault left a second Astra edit standing on top of the first until the page was reloaded. The stage now holds exactly the newest build, every time. Found while shooting the looks' proof stills.",
+      "The moment you ask for reaches the render as a sentence of its own. It used to run straight into the next instruction — \"a helmet on her hand Wherever they are looking…\" — whenever it came back from the words reader without a full stop; now it gets one.",
+    ],
+  },
+  {
     version: "1.37.0",
     build: 50,
     date: "2026-09-15",

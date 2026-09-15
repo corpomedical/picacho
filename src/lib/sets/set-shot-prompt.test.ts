@@ -28,6 +28,13 @@ describe("buildSetShotPrompt", () => {
     expect(p).toContain("In this frame: She looks back over her shoulder.");
   });
 
+  it("ends the direction's sentence when the direction does not", () => {
+    const bare = buildSetShotPrompt({ description: "d", direction: "has a helmet on her hand" });
+    expect(bare).toContain("In this frame: has a helmet on her hand. Wherever");
+    const asked = buildSetShotPrompt({ description: "d", direction: "is she smiling?" });
+    expect(asked).toContain("In this frame: is she smiling? Wherever");
+  });
+
   it("works with no direction, and bounds a long one", () => {
     expect(buildSetShotPrompt({ description: "d", direction: "" })).not.toContain("In this frame");
     const long = buildSetShotPrompt({ description: "d", direction: "x".repeat(5000) });

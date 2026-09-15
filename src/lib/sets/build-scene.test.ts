@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { buildSetScene, buildStandIn, fovForLens, lensForFov, nearestLens, placeStandIn } from "./build-scene";
+import { buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn } from "./build-scene";
 import { normaliseSetSpec, specInstanceCount, type SetSpec } from "./set-spec";
 import rainyMarket from "./fixtures-rainy-market.json";
 
@@ -117,6 +117,34 @@ describe("the sun's shadows", () => {
     const corner = new THREE.Vector3(15, 0, 15).sub(light.position).length();
     expect(corner).toBeLessThan(light.shadow.camera.far);
     built.dispose();
+  });
+});
+
+describe("rebuilding a live set in place (moveBuildInto)", () => {
+  const lightsIn = (root: THREE.Object3D) => {
+    let n = 0;
+    root.traverse((o) => {
+      if ((o as THREE.Light).isLight) n++;
+    });
+    return n;
+  };
+
+  it("leaves only the newest build in the root, however many rebuilds ran", () => {
+    // The stage's order (set-view.tsx rebuild): the build it started with,
+    // then each rebuild frees the last one and moves the fresh one in.
+    const live = buildSetScene(THREE, spec);
+    const root = live.root;
+    let disposeLive = () => live.dispose();
+    const darker: SetSpec = { ...spec, lights: spec.lights.slice(0, 1) };
+    for (const next of [spec, darker, spec, darker]) {
+      const fresh = buildSetScene(THREE, next);
+      const count = fresh.root.children.length;
+      disposeLive();
+      disposeLive = moveBuildInto(root, fresh);
+      expect(root.children).toHaveLength(count);
+      expect(lightsIn(root)).toBe(next.lights.length);
+    }
+    disposeLive();
   });
 });
 

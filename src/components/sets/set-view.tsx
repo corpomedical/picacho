@@ -504,7 +504,7 @@ export function SetView({
       try {
         const THREE = await import("three");
         const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
-        const { buildSetScene, buildStandIn, placeStandIn } = await import("@/lib/sets/build-scene");
+        const { buildSetScene, buildStandIn, moveBuildInto, placeStandIn } = await import("@/lib/sets/build-scene");
         const { BASE_EXPOSURE, NO_LIFT, liftSet } = await import("@/lib/sets/exposure");
         if (disposed || !hostRef.current) return;
 
@@ -1009,12 +1009,12 @@ export function SetView({
           rebuild(next) {
             // The new set's things move into the SAME root group, so the
             // matcher (placeMatchedCamera against built.root) never notices;
-            // the old build's geometries and materials are freed, and the
-            // fresh group's own dispose is kept for the edit after this one.
+            // the old build's geometries and materials are freed, its things
+            // leave the root (moveBuildInto), and the fresh build's own
+            // dispose is kept for the edit after this one.
             const fresh = buildSetScene(THREE, next, { shadows: !coarse });
             disposeLive();
-            for (const child of [...fresh.root.children]) built.root.add(child);
-            disposeLive = () => fresh.dispose();
+            disposeLive = moveBuildInto(built.root, fresh);
             scene.background = fresh.background;
             scene.fog = fresh.fog;
             camera.far = fresh.farPlane;

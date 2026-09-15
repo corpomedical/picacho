@@ -158,6 +158,25 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
   };
 }
 
+/**
+ * A fresh build moved into a live set's root, in place of everything the
+ * root held: the group keeps its identity, so whatever is aimed at it keeps
+ * working, and only its children change. Returns what frees the fresh
+ * build's resources, for the swap after this one.
+ *
+ * The root is emptied HERE, not by the old build's dispose: that clears the
+ * old build's own group, which is empty once its things moved into the live
+ * root. Found 2026-09-15 proving Helios's light schemes: every rebuild after
+ * the first left the last one's objects and lights in the set — three
+ * schemes in turn stacked two lights into six, and a second Astra edit left
+ * the first edit's objects standing.
+ */
+export function moveBuildInto(root: ThreeNS.Group, fresh: BuiltSet): () => void {
+  root.clear();
+  for (const child of [...fresh.root.children]) root.add(child);
+  return () => fresh.dispose();
+}
+
 /** Half the width of the interpreter's own floor (closure.ts measures against it). */
 export function groundHalfExtent(spec: SetSpec): number {
   return Math.max(spec.bounds.x, spec.bounds.z) * 3;

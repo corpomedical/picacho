@@ -195,7 +195,10 @@ export function buildSetShotPrompt(input: {
     facing
       ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`
       : "The person stands where the grey figure stands, at its scale, facing the same way.",
-    direction ? `In this frame: ${direction}` : "",
+    // Closed with a full stop when it has none: the words reader hands its
+    // direction back bare, and be0a3eaa's prompt read "a helmet on her hand
+    // Wherever they are looking" as one sentence (2026-09-15).
+    direction ? `In this frame: ${/[.!?…"”')\]]$/.test(direction) ? direction : `${direction}.`}` : "",
     GAZE_SENTENCE,
     FACE_SENTENCE,
     NO_TEXT_SENTENCE,
