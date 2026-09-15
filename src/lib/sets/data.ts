@@ -201,8 +201,8 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     }
   }
   // The saved move (Helios Film, 2026-09-15): its own read for the same
-  // reason as the working copy's — supabase/pending/helios-film.sql may not
-  // have run yet, and the page must open either way.
+  // reason as the working copy's — supabase/applied/2026-09-15/helios-film.sql
+  // (run in production 2026-09-15); a read that fails opens without the move.
   let film: SetFilm | null = null;
   if (spec) {
     const { data: filmRow, error: filmError } = await db
@@ -216,7 +216,8 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     else if (filmRow?.film) film = normaliseSetFilm(filmRow.film);
   }
   // The saved rig (Helios Cinema, 2026-09-15): its own read, for the same
-  // reason as the film's — supabase/pending/helios-rig.sql may not have run.
+  // reason as the film's — supabase/applied/2026-09-15/helios-rig.sql (run in
+  // production 2026-09-15); a read that fails opens with the default rig.
   let rig: SetRig | null = null;
   if (spec) {
     const { data: rigRow, error: rigError } = await db

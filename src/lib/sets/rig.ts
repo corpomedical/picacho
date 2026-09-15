@@ -1,7 +1,7 @@
 // The rig (Helios Cinema, 2026-09-15, drawn as canvas page I and approved
 // with "Build it"): Cinema Studio's camera department, where the set makes
 // it real. One rig per set, saved on it (`location_sets.rig`,
-// supabase/pending/helios-rig.sql), so every still, take and film beat on
+// supabase/applied/2026-09-15/helios-rig.sql), so every still, take and film beat on
 // the set shoots with it — Higgsfield's "projects hold one package", with
 // the set as the project.
 //

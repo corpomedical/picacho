@@ -10,7 +10,7 @@
 //
 // THE ONLY MODULE IN src/ THAT NAMES THESE COLUMNS (shot-rig.test.ts scans
 // for them). location_set_shots.rig and .rig_check arrive with
-// supabase/pending/helios-rig.sql. Written, like shot-camera.ts, to survive
+// supabase/applied/2026-09-15/helios-rig.sql (run in production 2026-09-15). Written, like shot-camera.ts, to survive
 // their absence: PostgREST fails a whole statement that names a missing
 // column, so no existing query names them — each is written in an update of
 // its own whose failure is ignored, and read in a query of its own whose

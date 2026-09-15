@@ -9,7 +9,7 @@ import { SET_NOT_FOUND, SET_SAVE_FAILED, SET_EDIT_TOO_FAST } from "@/lib/sets/me
 
 // The film's actions (Helios Film, 2026-09-15). The move — engine, start
 // still, beats — lives in `location_sets.film`
-// (supabase/pending/helios-film.sql; the page works without it, it just
+// (supabase/applied/2026-09-15/helios-film.sql, run in production 2026-09-15; the page works without it, it just
 // cannot remember the move between visits until the column exists).
 // Rendering is NOT an action here: a film renders as a chain of takes
 // through takeInSet, one per beat, each already gated, priced and limited

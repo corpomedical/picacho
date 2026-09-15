@@ -12,7 +12,7 @@ import { SET_NOT_FOUND, SET_RIG_CHECK_FAILED, SET_RIG_CHECK_TOO_FAST, SET_SAVE_F
 
 // The rig's actions (Helios Cinema, 2026-09-15, canvas page I). The rig —
 // format, stock, lens, stop, light, palette, era, genre — lives in
-// `location_sets.rig` (supabase/pending/helios-rig.sql; the page works
+// `location_sets.rig` (supabase/applied/2026-09-15/helios-rig.sql, run in production 2026-09-15; the page works
 // without it, it just cannot remember the rig between visits until the
 // column exists). Shooting with it is NOT here: shootInSet takes the rig
 // with the frame and works out its words there. This file remembers the rig
