@@ -103,16 +103,25 @@ const COLUMNS = {
   // The last two are Sets from a photo (applied/2026-09-11/astra-photo-sets.sql): until
   // they exist a photo build is refused before anything is spent, and text
   // sets are untouched — but the switch must not be flipped without them.
+  // Then Helios: the Build editor's working copy (applied/2026-09-14/set-editor.sql),
+  // the film's move (applied/2026-09-15/helios-film.sql) and the rig
+  // (applied/2026-09-15/helios-rig.sql). Each is read and written on its own
+  // and fails open, so a missing one only forgets between visits — which is
+  // why nobody would notice it missing.
   location_sets: [
     "user_id", "status", "brief", "title", "description", "spec", "layout",
     "response_id", "attempts", "failure", "cost_usd", "thumb_path", "updated_at", "deleted_at",
     "source_photo_path", "source_photo_sha256",
+    "edited_spec", "film", "rig",
   ],
-  // The last one is the camera a still was framed from
+  // camera: the camera a still was framed from
   // (applied/2026-09-14/set-shot-camera.sql): without it no still is ever a
   // look's source, so no shot carries a look, and every shot is otherwise
-  // untouched — which is why nobody would notice it missing.
-  location_set_shots: ["set_id", "generation_id", "user_id", "created_at", "camera"],
+  // untouched — which is why nobody would notice it missing. words: what the
+  // person asked for (applied/2026-09-14/set-shot-words.sql). rig and
+  // rig_check: the rig a still was shot with and what the rig check read
+  // (applied/2026-09-15/helios-rig.sql).
+  location_set_shots: ["set_id", "generation_id", "user_id", "created_at", "camera", "words", "rig", "rig_check"],
 };
 
 // Feature-flag rows the code reads by key. A missing row reads as OFF
