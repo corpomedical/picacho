@@ -2115,6 +2115,10 @@ const it = {
     filmBeatDone: "pronto",
     filmBeatFailed: "Quel tratto non si è potuto renderizzare — tutto ciò che viene prima resta.",
     filmNeedsStart: "Il film ha bisogno di un inizio: scegli uno still finito e chi c'è dentro.",
+    scaleWarnLine: "I mobili sembrano enormi accanto a una persona — una costruzione da foto può sbagliare la scala.",
+    scaleWarnFix: "Fai riscalare ad Astra",
+    scaleFixAsk:
+      "Ridimensiona mobili e oggetti alla scala umana reale — sedute di divani e sedie a circa 45 cm, tavolini a 35–45 cm, tavoli da pranzo e scrivanie a circa 75 cm — mantenendo la posizione di ogni oggetto, la stanza e i suoi materiali esattamente come sono.",
     justTalking: "Solo parlare",
     justTalkNote: "Non si è mosso nulla — Solo parlare è attivo. Cambia modalità e ridillo per farlo.",
     downloadFrame: "Scarica l'inquadratura",

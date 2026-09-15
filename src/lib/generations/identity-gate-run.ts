@@ -86,6 +86,7 @@ export type GateDeps = {
     propImageUrl?: string | null;
     /** A set's earlier still, when the first render carried one (Astra Sets). */
     lookImageUrl?: string | null;
+    placeImageUrl?: string | null;
     /**
      * The SAME budget object the first render used. Passing it is what stops
      * the retry minting a second full allowance of paid provider calls —
@@ -222,6 +223,7 @@ export async function runImageIdentityGate(deps: GateDeps): Promise<GateOutcome>
       deps.rerender.outfitImageUrl,
       deps.rerender.propImageUrl,
       deps.rerender.lookImageUrl,
+      deps.rerender.placeImageUrl,
     );
   } catch (err) {
     // The re-render failed. The first attempt is still good and still paid

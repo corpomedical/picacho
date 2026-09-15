@@ -604,6 +604,8 @@ export type RealPipelineOptions = {
   // extra image (the caller decides); providers/reference-notes.ts says what
   // it is so it is never mistaken for the person.
   lookImageUrl?: string | null;
+  /** The photograph a photo set was built from (2026-09-15): rides a set shot as pixels, fenced like the look. */
+  placeImageUrl?: string | null;
   // Does this send carry a user-attached reference photo? (2026-08-29, from
   // the first outside bug report: "I sent an image with the background that
   // I wanted it to use. But it didn't use it. It only used the prompt.")
@@ -1511,6 +1513,11 @@ export async function runRealPipeline(
           // photo of the person to match it must never be the only face the
           // model sees.
           const lookActive = Boolean(options.lookImageUrl && !usingMultiCharacterImages && options.referenceImageUrl);
+          // The set's source photograph (see placeImageUrl): the same rule
+          // as the look, for the same reason — a room photo can hold a
+          // person, so it rides only beside a photo of THE person and under
+          // the same identity fence (the place note covers both).
+          const placeActive = Boolean(options.placeImageUrl && !usingMultiCharacterImages && options.referenceImageUrl);
           // What each extra photo is — reference-notes.ts, where the words
           // live and are tested. On the attached-photo sentence: "match its
           // contents faithfully" used to end it — and on the GPT edit path
@@ -1532,7 +1539,7 @@ export async function runRealPipeline(
             referenceNotes({
               outfit: outfitActive,
               attached: propActive,
-              look: lookActive,
+              look: lookActive || placeActive,
               identity: Boolean(options.referenceImageUrl),
             });
           let fallbackNote: string | null = null;
@@ -1551,6 +1558,7 @@ export async function runRealPipeline(
             outfitActive ? options.outfitImageUrl : null,
             propActive ? options.propImageUrl : null,
             lookActive ? options.lookImageUrl : null,
+            placeActive ? options.placeImageUrl : null,
             (usage) => {
               imageUsage = usage;
             },

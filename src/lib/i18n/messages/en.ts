@@ -2256,6 +2256,10 @@ const en = {
     filmBeatDone: "in",
     filmBeatFailed: "That beat couldn't render — everything before it is kept.",
     filmNeedsStart: "The film needs a start: pick a finished still, and who is in it.",
+    scaleWarnLine: "The furniture here looks oversized against a person — a photo build can misread scale.",
+    scaleWarnFix: "Have Astra rescale it",
+    scaleFixAsk:
+      "Resize the furniture and props to real human scale — sofa and chair seats about 45 cm high, coffee tables 35–45 cm, dining tables and desks about 75 cm — keeping every object's position, the room and its materials exactly as they are.",
     justTalking: "Just talking",
     justTalkNote: "Nothing moved — Just talking is on. Switch the mode and say it again to do it.",
     downloadFrame: "Download the frame",

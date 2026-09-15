@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.36.0",
+    build: 49,
+    date: "2026-09-15",
+    title: "A photo set learns its own photograph, and every build learns how tall a person is",
+    items: [
+      "A set built from a photo now shoots WITH that photo. Until today the render inherited your photograph only through Astra's written description — and everything the words didn't pin drifted: pyramid-tile wall art came back as flat squares, a sea view as trees, a cove ceiling as plain. Now every still and every take in a photo set carries the source photograph itself beside the grey mock, with one job: copy the real materials, colours, finishes and details wherever the mock shows the same thing. The camera, framing and light stay yours; anyone who happens to be in the photograph is named out of the shot, the same fence the design sheet keeps.",
+      "Astra builds to human scale now. A photo build had sized a sitting room by how much of the frame each thing filled — the sofa's seat landed at hip height on a standing adult, and the person shot in it came out bigger than the room. The photo rules now carry a ruler: a standing adult is 1.70 m, seats top out at 0.40–0.48 m, tables at their real heights, and the build must check its own numbers before answering. And for sets already built wrong, the page says so: a quiet line appears on a photo set whose furniture dwarfs a person, with the fix one press away — Astra rescales the set in place, keeping every object where it stood.",
+    ],
+  },
+  {
     version: "1.35.0",
     build: 48,
     date: "2026-09-15",

@@ -21,6 +21,7 @@ import {
   type SetTakeEngine,
 } from "@/lib/sets/take";
 import { FILM_MAX_BEATS, filmSeconds, normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
+import { oversizedSeating } from "@/lib/sets/human-scale";
 import { readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
@@ -379,6 +380,12 @@ export function SetView({
   /** The reel: which clip is playing on the stage; null when closed. */
   const [reel, setReel] = useState<number | null>(null);
   const [previz, setPreviz] = useState(false);
+
+  // The human ruler's second line (human-scale.ts): on a photo set whose
+  // furniture reads oversized against a person, one dismissible line offers
+  // the fix through the same Astra edit the chat makes. Reads the LIVE
+  // spec, so the line retires itself the moment a rescale lands.
+  const [scaleDismissed, setScaleDismissed] = useState(false);
   // The composer's who menu, opened by "@" in the words or by the chip.
   const [mentionForced, setMentionForced] = useState(false);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
@@ -1757,6 +1764,7 @@ export function SetView({
   const reelShots = reelReady ? (filmClipShots as SetShot[]) : [];
   const filmStartShot = film.startId ? (shots.find((sh) => sh.generationId === film.startId) ?? null) : null;
   const filmStartOptions = shots.filter((sh) => sh.kind === "still" && sh.status === "succeeded");
+  const scaleWarn = Boolean(sourcePhotoUrl) && !scaleDismissed && ready && oversizedSeating(spec);
   const shootLabel = shooting
     ? s.shooting
     : quote.totalCredits === 1
@@ -2106,6 +2114,35 @@ export function SetView({
                   {s.compareTitle}
                 </button>
               )}
+            </div>
+          )}
+
+          {/* the human ruler's line: a photo build whose furniture dwarfs a person, and the fix one press away */}
+          {scaleWarn && !takeStart && !viewingShot && (
+            <div className="absolute left-3.5 top-16 z-20 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-onmedia/10 bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia">
+                {s.scaleWarnLine}
+              </span>
+              <button
+                type="button"
+                disabled={editingSet}
+                onClick={() => {
+                  setScaleDismissed(true);
+                  void editSet(s.scaleFixAsk);
+                }}
+                className="cursor-pointer rounded-full bg-[#e0a468] px-3 py-1.5 text-xs font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-40"
+              >
+                {s.scaleWarnFix}
+              </button>
+              <button
+                type="button"
+                onClick={() => setScaleDismissed(true)}
+                aria-label={t.common.dismiss}
+                title={t.common.dismiss}
+                className={`${glassBtn} w-8 justify-center px-0`}
+              >
+                ×
+              </button>
             </div>
           )}
 

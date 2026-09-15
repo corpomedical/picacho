@@ -129,7 +129,9 @@ export const SET_BUILD_STALE_MS = 15 * 60 * 1000;
 /** Its own knob, so the eval can move it without moving text builds. */
 export const SET_PHOTO_BUILD_EFFORT = "low" as const;
 export const SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS = 16_000;
-export const SET_PHOTO_BUILD_INPUT_TOKENS = 4_800;
+// 4,900 since 2026-09-15: the photo rules gained the human ruler (~100
+// tokens) after a build sized a sofa's seat at hip height.
+export const SET_PHOTO_BUILD_INPUT_TOKENS = 4_900;
 export const SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS = 12_500;
 export const SET_PHOTO_MAX_SIDE_PX = 2048;
 export const SET_PHOTO_MIN_SIDE_PX = 640;

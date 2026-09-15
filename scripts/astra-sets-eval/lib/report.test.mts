@@ -178,7 +178,7 @@ describe("report, the photo arm", () => {
     expect(r.bar(`A ${PHOTO} validity`)).toBe("");
     expect(r.text).toMatch(/SETS_OPEN_TO_PLANS needs A–D PASS .*: A \? B \? C \? D \?/);
     expect(r.text).toMatch(/Photo arm \(Sets from a photo.*: A ✓ B \? D \?/);
-    expect(r.text).toMatch(/A photo cost bar priced at 4 credits \(ceil\(\$0\.860 \/ \$0\.28\)\).*\$1\.816, would be 7 credits/);
+    expect(r.text).toMatch(/A photo cost bar priced at 4 credits \(ceil\(\$0\.861 \/ \$0\.28\)\).*\$1\.81[78], would be 7 credits/);
     expect(r.text).toMatch(/D photos: no real D photo run in hand/);
     const tighter = await report([photoA("a-photo")], ["--photo-credits", "3"]);
     expect(tighter.bar("A photos: " + PHOTO + " p95 cost")).toMatch(/= \$0\.9000 > \$0\.84; .*→ FAIL/);

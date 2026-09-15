@@ -50,6 +50,7 @@ import {
   parseSetPhotoDataUri,
   photoDataUrl,
   photoSourceColumns,
+  readPhotoSources,
   removeSetPhoto,
 } from "@/lib/sets/photo";
 import {
@@ -665,6 +666,16 @@ export async function shootInSet(
     return { error: SET_FRAME_SAVE_FAILED };
   }
 
+  // A photo set's shot carries the very photograph the set was built from
+  // (2026-09-15): without it the render inherited the photo only through
+  // Astra's words, and everything the words didn't pin drifted — the
+  // operator's pyramid wall art came back as flat squares, the sea view as
+  // trees (docs/ASTRA_SETS.md). The prompt gives it one job — materials and
+  // details, never the camera — and names anyone in it out of the shot. A
+  // read that fails just shoots without it, as every shot did before.
+  const photoSource = (await readPhotoSources(admin, [setId], userId)).sources.get(setId) ?? null;
+  const sourcePhotoUrl = photoSource ? mediaUrl("generated-images", photoSource.path) : null;
+
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
   // The arrangement the frame was taken from, normalised against the set: it
   // is saved below, and the prompt reads it to say which way the figure faces
@@ -674,7 +685,13 @@ export async function shootInSet(
   const fd = new FormData();
   // `lifted` only chooses whether the prompt explains a brightened sketch;
   // a false value from a crafted request changes one sentence, still gated.
-  const shot = { description: owned.spec.description, lifted: input.lifted === true, layout, look };
+  const shot = {
+    description: owned.spec.description,
+    lifted: input.lifted === true,
+    layout,
+    look,
+    sourcePhoto: sourcePhotoUrl !== null,
+  };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   // The same prompt without the person's direction: all of it Astra's
   // description and Picacho's sentences. If the gate refuses the shot, this
@@ -700,6 +717,12 @@ export async function shootInSet(
     JSON.stringify([
       { url: mediaUrl("chat-attachments", framePath), role: "reference" },
       ...(look ? [{ url: look.url, role: "look" }] : []),
+      // The source photograph rides under the scene role, which a set shot
+      // reads as PIXELS (generations/actions.ts placeImageUrl) — the prompt
+      // describes it by what it shows, the same pattern as the look sheet.
+      // Stored in generated-images with the set, so deleting this take
+      // never deletes it.
+      ...(sourcePhotoUrl ? [{ url: sourcePhotoUrl, role: "scene" as const }] : []),
     ]),
   );
 

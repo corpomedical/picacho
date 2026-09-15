@@ -91,6 +91,20 @@ export function describeFacing(layout: Pick<SetLayout, "mark" | "camera"> | null
 export const LOOK_SENTENCE =
   "One reference photo is a design sheet of objects from this same place: each shown several times on a plain grey ground, from different sides. Draw each of them exactly as it looks there — its shape, design, colour, materials and details — in the place, at the size and turned the way the layout sketch shows it, seen from the sketch's camera. Take nothing else from that photo: not its layout, angle, crop, framing or light.";
 
+/**
+ * The source photograph (2026-09-15): a photo set's shot now carries the
+ * very photo the set was built from, beside the sketch. Until it did, the
+ * render only inherited the photo through Astra's words — and everything
+ * the words didn't pin drifted: the operator's pyramid-tile wall art came
+ * back as flat squares, the sea view as trees, the cove ceiling as plain
+ * (the Cream Corner Sitting Room, docs/ASTRA_SETS.md). The sentence gives
+ * the photo one job — materials, colours, finishes, details — and keeps
+ * the camera, framing and light the sketch's; anyone in the photograph is
+ * named out of the shot, the same boundary the look sheet keeps.
+ */
+export const SOURCE_PHOTO_SENTENCE =
+  "One reference photo is a real photograph of this same location. Wherever the sketch and the photograph show the same thing — walls, floor, ceiling, windows, furniture, what hangs or stands anywhere — copy the photograph's materials, colours, finishes and details exactly. Take the camera, framing, crop and light from the sketch, never from the photograph. If anyone appears in the photograph, they are not in this shot: take only the place from it.";
+
 const SKETCH_SENTENCES = [
   "The attached layout sketch is a grey 3D mock-up of the location — a guide to composition, not a style reference.",
   "Match its camera position, lens, framing, horizon and the direction of its light exactly.",
@@ -112,6 +126,7 @@ export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
   `${RENDER_PREFIX}:`,
   `${RENDER_PREFIX}.`,
   LOOK_SENTENCE,
+  SOURCE_PHOTO_SENTENCE,
   GAZE_SENTENCE,
   FACE_SENTENCE,
   NO_TEXT_SENTENCE,
@@ -144,6 +159,8 @@ export function buildSetShotPrompt(input: {
    * do: only whether it rides changes the words.
    */
   look?: object | null;
+  /** Whether the set's source photograph rides (a photo set's shots). */
+  sourcePhoto?: boolean;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
@@ -153,6 +170,7 @@ export function buildSetShotPrompt(input: {
     input.lifted ? LIFTED_SENTENCE : "",
     description ? `${RENDER_PREFIX}: ${description}` : `${RENDER_PREFIX}.`,
     input.look ? LOOK_SENTENCE : "",
+    input.sourcePhoto ? SOURCE_PHOTO_SENTENCE : "",
     facing
       ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`
       : "The person stands where the grey figure stands, at its scale, facing the same way.",

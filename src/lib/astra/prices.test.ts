@@ -89,16 +89,18 @@ describe("the set-build ceiling", () => {
 });
 
 describe("the photo-build ceiling (Sets from a photo, 2026-09-11)", () => {
-  it("matches the arithmetic in set-config.ts: $0.86 first, $0.95625 for a closing retry, $1.81625 a build", () => {
-    // 4,800 × $12.50/1M + 16,000 × $50/1M = $0.06 + $0.80
+  it("matches the arithmetic in set-config.ts: $0.86125 first, $0.95625 for a closing retry, $1.8175 a build", () => {
+    // 4,900 × $12.50/1M + 16,000 × $50/1M = $0.06125 + $0.80 (the input
+    // grew 100 tokens on 2026-09-15, when the photo rules gained the human
+    // ruler).
     const first = worstCaseAstraUsd(SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
     // 12,500 × $12.50/1M + 16,000 × $50/1M = $0.15625 + $0.80
     const closing = worstCaseAstraUsd(SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS);
-    expect(first).toBeCloseTo(0.86, 6);
+    expect(first).toBeCloseTo(0.86125, 6);
     expect(closing).toBeCloseTo(0.95625, 6);
-    expect(first + closing).toBeCloseTo(1.81625, 6);
+    expect(first + closing).toBeCloseTo(1.8175, 6);
     // Two failure retries resend the photo without a set: less than the closing path.
-    expect(2 * first).toBeCloseTo(1.72, 6);
+    expect(2 * first).toBeCloseTo(1.7225, 6);
     expect(2 * first).toBeLessThan(first + closing);
   });
 

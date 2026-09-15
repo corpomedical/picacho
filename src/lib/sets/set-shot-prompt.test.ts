@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LOOK_SENTENCE, SET_SHOT_FIXED_SENTENCES, buildSetShotPrompt, describeFacing, stripSetShotScaffold } from "./set-shot-prompt";
+import { LOOK_SENTENCE, SET_SHOT_FIXED_SENTENCES, SOURCE_PHOTO_SENTENCE, buildSetShotPrompt, describeFacing, stripSetShotScaffold } from "./set-shot-prompt";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 
 // The server-built prompt for a still in a Set. What it must always say is
@@ -151,11 +151,29 @@ describe("stripSetShotScaffold", () => {
   });
 
   it("every fixed sentence is one the prompt is built from", () => {
-    const full = buildSetShotPrompt({ description: "d", direction: "x", lifted: true, layout: null, look: {} });
+    const full = buildSetShotPrompt({
+      description: "d",
+      direction: "x",
+      lifted: true,
+      layout: null,
+      look: {},
+      sourcePhoto: true,
+    });
     for (const fixed of SET_SHOT_FIXED_SENTENCES) {
       if (fixed.endsWith("looks:") || fixed.endsWith("looks.")) continue;
       expect(full, fixed.slice(0, 40)).toContain(fixed);
     }
     expect(SET_SHOT_FIXED_SENTENCES).toContain(LOOK_SENTENCE);
+  });
+
+  it("says what the source photograph is only when one rides, and the strip removes it", () => {
+    const withPhoto = buildSetShotPrompt({ description: "d", direction: "", sourcePhoto: true });
+    expect(withPhoto).toContain(SOURCE_PHOTO_SENTENCE);
+    // The photograph's people are named out of the shot, in the sentence itself.
+    expect(SOURCE_PHOTO_SENTENCE).toContain("they are not in this shot");
+    expect(stripSetShotScaffold(withPhoto)).toBe("d");
+    expect(buildSetShotPrompt({ description: "d", direction: "" })).not.toContain(
+      "real photograph of this same location",
+    );
   });
 });

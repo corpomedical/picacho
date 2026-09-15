@@ -19,6 +19,8 @@ export type ImageReferenceInput = {
   prop?: string | null;
   /** An earlier still from the same set, for its objects' design (Astra Sets). */
   look?: string | null;
+  /** The photograph a photo set was built from, for its real materials (2026-09-15). */
+  place?: string | null;
 };
 
 export function buildImageReferences({
@@ -26,8 +28,19 @@ export function buildImageReferences({
   outfit,
   prop,
   look,
+  place,
 }: ImageReferenceInput): string | string[] | null | undefined {
-  const extras = [...(outfit ? [outfit] : []), ...(prop ? [prop] : []), ...(look ? [look] : [])];
+  const extras = [
+    ...(outfit ? [outfit] : []),
+    ...(prop ? [prop] : []),
+    ...(look ? [look] : []),
+    // The place photograph (2026-09-15): the photo a photo set was built
+    // from, riding a set shot so the render copies the real materials
+    // instead of re-imagining them from words. Last, like the look — the
+    // identity photos arrive first and the prompt names each extra by what
+    // it shows.
+    ...(place ? [place] : []),
+  ];
   if (extras.length === 0) return identity;
   // A multi-character array's ORDER is its meaning (one photo per person) —
   // extras are never merged into it.

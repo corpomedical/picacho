@@ -42,7 +42,11 @@ describe("shootInSet: the look", () => {
 
   it("sends only ever the object sheet drawn from the cutout: the one look URL is the sheet's, and the still's is never made", () => {
     const lookUrls = [...shoot.matchAll(/mediaUrl\("generated-images", ([^)]+)\)/g)].map((m) => m[1]);
-    expect(lookUrls).toEqual(["sheet.path"]);
+    // Two generated-images URLs since 2026-09-15: the sheet, and a photo
+    // set's source photograph — which rides under the SCENE role, never the
+    // look's, so the look lane still carries the sheet alone.
+    expect(lookUrls).toEqual(["sheet.path", "photoSource.path"]);
+    expect(shoot).toContain('...(sourcePhotoUrl ? [{ url: sourcePhotoUrl, role: "scene" as const }] : []),');
     expect(shoot).not.toMatch(/mediaUrl\([^)]*lookPath/);
     expect(shoot).not.toMatch(/mediaUrl\([^)]*cut\.path/);
     // The sheet is drawn from this shot's own cutout, and look is set in one
@@ -74,7 +78,9 @@ describe("shootInSet: the look", () => {
   });
 
   it("leaves the rest of the shot as it was: the prompt, its refusal attribution, the frame", () => {
-    expect(shoot).toContain("const shot = { description: owned.spec.description, lifted: input.lifted === true, layout, look };");
+    expect(shoot).toContain("description: owned.spec.description,");
+    expect(shoot).toContain("lifted: input.lifted === true,");
+    expect(shoot).toContain("sourcePhoto: sourcePhotoUrl !== null,");
     expect(shoot).toContain('const modelOnlyPrompt = buildSetShotPrompt({ ...shot, direction: "" });');
     expect(shoot).toContain('const result = await withModelWrittenPrompt({ modelOnlyPrompt, provider: "astra" }, () => runGeneration(fd));');
     expect(shoot).toContain('{ url: mediaUrl("chat-attachments", framePath), role: "reference" },');

@@ -134,8 +134,16 @@ describe("the photo rules", () => {
   });
 
   it("stay inside the input-token budget set-config.ts prices", () => {
-    // ≤ 2,000 characters ≈ ≤ 500 tokens, the figure in SET_PHOTO_BUILD_INPUT_TOKENS.
-    expect(SET_PHOTO_RULES.length).toBeLessThanOrEqual(2_000);
+    // ≤ 2,400 characters ≈ ≤ 600 tokens, inside SET_PHOTO_BUILD_INPUT_TOKENS.
+    // Raised from 2,000 on 2026-09-15, when the rules gained the human
+    // ruler (a photo build sized a sofa's seat at 0.84 m — hip height).
+    expect(SET_PHOTO_RULES.length).toBeLessThanOrEqual(2_400);
+  });
+
+  it("carry the human ruler the Cream Corner failure wrote", () => {
+    expect(SET_PHOTO_RULES).toContain("a standing adult is 1.70 m");
+    expect(SET_PHOTO_RULES).toContain("seats top out 0.40–0.48 m");
+    expect(SET_PHOTO_RULES).toContain("never by how much frame it fills");
   });
 });
 

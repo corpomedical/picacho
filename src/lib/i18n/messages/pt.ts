@@ -2116,6 +2116,10 @@ const pt = {
     filmBeatDone: "pronto",
     filmBeatFailed: "Esse trecho não pôde ser renderizado — tudo antes dele fica guardado.",
     filmNeedsStart: "O filme precisa de um começo: escolha um still pronto e quem aparece nele.",
+    scaleWarnLine: "Os móveis parecem enormes perto de uma pessoa — uma construção a partir de foto pode errar a escala.",
+    scaleWarnFix: "Deixar a Astra redimensionar",
+    scaleFixAsk:
+      "Redimensione os móveis e objetos para a escala humana real — assentos de sofá e cadeira a uns 45 cm, mesas de centro a 35–45 cm, mesas de jantar e escrivaninhas a uns 75 cm — mantendo a posição de cada objeto, a sala e seus materiais exatamente como estão.",
     justTalking: "Só conversando",
     justTalkNote: "Nada se moveu — o modo Só conversando está ligado. Troque o modo e diga de novo para fazer.",
     downloadFrame: "Baixar o quadro",

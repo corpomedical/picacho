@@ -533,6 +533,10 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   const referenceAttachmentUrl = attachmentRoles?.find((a) => a.role === "reference")?.url ?? "";
   // A Set's earlier still (see AttachmentRoleEntry). Never the identity.
   const lookAttachmentUrl = attachmentRoles?.find((a) => a.role === "look")?.url ?? "";
+  // A Set's shot (sets/actions.ts shootInSet): read once, up here, because
+  // it changes what the scene role MEANS — pixels riding a final prompt,
+  // not an image described into text (see placeImageUrl below).
+  const isSetShot = formData.get("set_shot") === "1";
 
   // Every chat-attachment storage path riding this send, whatever its role —
   // recorded on the row so deletion can clean them up. /api/media/<bucket>/
@@ -1766,6 +1770,24 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           ? absolutizeMediaUrl(lookAttachmentUrl, await getOrigin())
           : null;
 
+      // A Set's source photograph (2026-09-15): a photo set's shot sends
+      // the photo its set was built from under the scene role, and on a set
+      // shot it rides as PIXELS — the set's own prompt says what to take
+      // from it, reference-notes fences identity off it — never through the
+      // describe-into-text lane below, which would append text to a prompt
+      // that is already final. The same guards as the look, for the same
+      // reasons.
+      const placeImageUrl =
+        isSetShot &&
+        sceneAttachmentUrl &&
+        referenceImageUrl &&
+        contentType === "image" &&
+        !wantsMultiCharacter &&
+        !storyboardShots &&
+        (imageModelId === "gpt-image" || imageModelId === "flux")
+          ? absolutizeMediaUrl(sceneAttachmentUrl, await getOrigin())
+          : null;
+
       // Seedance's reference list is capped at 4 images total. When the
       // outfit or the attachment rides beside baseline multi-reference,
       // trim the identity refs to make room — dropping the LAST refs, never
@@ -1790,7 +1812,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
       if (propDescription) {
         promptForPipeline = `${promptForPipeline}\n\nThe user attached an image; its contents (use as the prompt above describes): ${propDescription}`;
       }
-      if (sceneAttachmentUrl && !wantsMultiCharacter) {
+      if (sceneAttachmentUrl && !wantsMultiCharacter && !isSetShot) {
         try {
           const sceneDescription = await describeImageAsPrompt(
             absolutizeMediaUrl(sceneAttachmentUrl, await getOrigin()),
@@ -1885,6 +1907,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
           outfitImageUrl,
           propImageUrl,
           lookImageUrl,
+          placeImageUrl,
           // ONLY when the photo ITSELF rides to the model (propImageUrl).
           // Deliberately not set for the described-attachment lanes (models
           // that can't take an extra image, and the scene role): there the
@@ -1907,7 +1930,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
         // A Set's shot (sets/actions.ts shootInSet): its prompt is built from
         // Picacho's own fixed sentences round the person's direction, and the
         // brand rules are read through them (pipeline.ts, set-shot-prompt.ts).
-        setShot: formData.get("set_shot") === "1",
+        setShot: isSetShot,
           policyWarningAcknowledged,
           brandRules: await loadBrandRules(supabase, userData.user!.id),
           persistImage: (base64) => persistGeneratedImage(supabase, userData.user!.id, base64),
@@ -2060,6 +2083,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
                 outfitImageUrl,
                 propImageUrl,
                 lookImageUrl,
+                placeImageUrl,
                 // ONE paid call, not another full allowance. runRealPipeline
                 // mints its own budget of MAX_PAID_IMAGE_CALLS internally, so
                 // re-entering the pipeline would have doubled the ceiling the

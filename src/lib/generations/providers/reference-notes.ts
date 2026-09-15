@@ -22,8 +22,14 @@ export const OUTFIT_REFERENCE_NOTE =
 export const ATTACHED_REFERENCE_NOTE =
   "One of the reference photos is an image the user attached — the prompt says how to use it. Follow the prompt's instructions about it, and do not copy its framing or composition unless the prompt asks for that.";
 
+// Count-neutral since 2026-09-15: a set shot can now carry TWO place
+// photos — the design sheet and, on a photo set, the very photograph the
+// set was built from — and a sentence claiming only ONE non-person place
+// photo would leave the second to fall under "every other reference photo
+// is the person". "Any" covers however many ride; the prompt's own
+// sentences say which is which.
 export const LOOK_REFERENCE_NOTE =
-  "One of the reference photos is an earlier picture of this same place — the prompt says what to take from it. Never take the face, hair or identity of anyone in it.";
+  "Any reference photo showing this place itself — an earlier picture of it, a design sheet of its objects, or a photograph of the location — is scenery, and the prompt says what to take from it. Never take the face, hair or identity of anyone in it.";
 
 export const PERSON_REFERENCE_NOTE =
   "Every other reference photo is the person — match their face, hair, and identity exactly.";

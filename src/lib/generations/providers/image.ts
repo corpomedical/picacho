@@ -76,6 +76,10 @@ export async function generateImage(
   // A set's earlier still (2026-09-11, Astra Sets) — same extra-image
   // contract, last in the array; pipeline.ts says what it is.
   lookImageUrl?: string | null,
+  // The photograph a photo set was built from (2026-09-15) — same
+  // extra-image contract, after the look; the set's own prompt says what
+  // to take from it and reference-notes fences identity off it.
+  placeImageUrl?: string | null,
   // Told what an OpenAI answer cost (openai-images.ts, THE MONEY); the
   // pipeline writes it into the take's log. Flux answers carry no usage.
   onUsage?: (usage: OpenAiImageUsage) => void,
@@ -111,6 +115,7 @@ export async function generateImage(
     outfit: outfitImageUrl,
     prop: propImageUrl,
     look: lookImageUrl,
+    place: placeImageUrl,
   });
 
   if (model.provider === "fal") {

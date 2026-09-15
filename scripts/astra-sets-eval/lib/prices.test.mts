@@ -35,14 +35,15 @@ describe("the price book", () => {
     expect(book.costBasisUsdPerCredit).toBe(COST_BASIS_USD_PER_CREDIT);
   });
 
-  it("prices a photo build at the photo caps: $0.86 + $0.95625 = $1.81625, and 4 credits → $1.12", () => {
+  it("prices a photo build at the photo caps: $0.86125 + $0.95625 = $1.8175, and 4 credits → $1.12", () => {
     expect(book.astraPhotoFirstWorstUsd).toBe(worstCaseAstraUsd(SET_PHOTO_BUILD_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS));
     expect(book.astraPhotoRetryWorstUsd).toBe(worstCaseAstraUsd(SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS, SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS));
-    // 4,800 × $12.50/1M + 16,000 × $50/1M; 12,500 × $12.50/1M + 16,000 × $50/1M (set-config.ts).
-    expect(book.astraPhotoFirstWorstUsd).toBeCloseTo(0.86, 12);
+    // 4,900 × $12.50/1M + 16,000 × $50/1M; 12,500 × $12.50/1M + 16,000 × $50/1M (set-config.ts,
+    // input grown 100 tokens on 2026-09-15 for the human ruler).
+    expect(book.astraPhotoFirstWorstUsd).toBeCloseTo(0.86125, 12);
     expect(book.astraPhotoRetryWorstUsd).toBeCloseTo(0.95625, 12);
-    expect(book.astraPhotoBuildWorstUsd).toBeCloseTo(1.81625, 12);
-    // Section 4's "$1.12 for photos": ceil(0.86 / 0.28) = 4 credits, as the words' 2 is ceil(0.53 / 0.28).
+    expect(book.astraPhotoBuildWorstUsd).toBeCloseTo(1.8175, 12);
+    // Section 4's "$1.12 for photos": ceil(0.86125 / 0.28) = 4 credits, as the words' 2 is ceil(0.53 / 0.28).
     expect(defaultCredits(book.astraPhotoFirstWorstUsd, book.costBasisUsdPerCredit)).toBe(4);
     expect(4 * book.costBasisUsdPerCredit).toBeCloseTo(1.12, 12);
     expect(defaultCredits(book.astraFirstWorstUsd, book.costBasisUsdPerCredit)).toBe(2);
@@ -176,25 +177,25 @@ describe("the plans", () => {
     expect(noStills.some((l) => l.label.startsWith(ALONE_LINE))).toBe(false);
   });
 
-  it("A photos: 20 photos × 3 runs at standard price (never Batch) = 60 × $1.81625 = $108.975; Astra only", () => {
+  it("A photos: 20 photos × 3 runs at standard price (never Batch) = 60 × $1.8175 = $109.05; Astra only", () => {
     const plan = planAPhotos({ photos: 20, runs: 3, builders: ["astra-low", "sonnet-5", "mini-5.4"], wordsGate: true, book });
     const { ceilingUsd, unpriced } = ceilingOf(plan);
     expect(ceilingUsd).toBeCloseTo(60 * (book.astraPhotoFirstWorstUsd + book.astraPhotoRetryWorstUsd), 9);
-    expect(Math.abs(ceilingUsd - 108.975)).toBeLessThan(1e-9);
+    expect(Math.abs(ceilingUsd - 109.05)).toBeLessThan(1e-9);
     expect(plan.filter((l) => l.kind === "astra")).toHaveLength(1);
     expect(plan.some((l) => l.kind === "sonnet-5" || l.kind === "mini-5.4")).toBe(false);
     expect(plan.find((l) => l.kind === "astra")?.label).toMatch(/standard \(background; photos never go on Batch\)/);
     expect(unpriced).toEqual(["gates"]);
     expect(plan.find((l) => l.kind === "gates")?.count).toBe(120);
     const both = planAPhotos({ photos: 20, runs: 3, builders: ["astra-low", "astra-medium"], wordsGate: false, book });
-    expect(ceilingOf(both).ceilingUsd).toBeCloseTo(217.95, 9);
+    expect(ceilingOf(both).ceilingUsd).toBeCloseTo(218.1, 9);
     expect(both.some((l) => l.kind === "gates")).toBe(false);
   });
 
-  it("D photos: 10 × 3 runs = 30 × $1.81625 = $54.4875; the gates are metered", () => {
+  it("D photos: 10 × 3 runs = 30 × $1.8175 = $54.525; the gates are metered", () => {
     const plan = planDPhotos({ photos: 10, withNotes: 4, runs: 3, book });
-    expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(54.4875, 9);
-    expect(ceilingOf(planDPhotos({ photos: 10, withNotes: 0, runs: 1, book })).ceilingUsd).toBeCloseTo(18.1625, 9);
+    expect(ceilingOf(plan).ceilingUsd).toBeCloseTo(54.525, 9);
+    expect(ceilingOf(planDPhotos({ photos: 10, withNotes: 0, runs: 1, book })).ceilingUsd).toBeCloseTo(18.175, 9);
     const count = (label: string) => plan.find((l) => l.label.startsWith(label))?.count;
     expect(count("notes gate")).toBe(12);
     expect(count("picture check")).toBe(30);
