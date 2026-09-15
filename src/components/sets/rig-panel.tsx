@@ -17,10 +17,12 @@ import {
   depthOfField,
   focalMm,
   formatFrame,
+  lookStill,
   type RigFormat,
   type RigGenre,
   type RigLens,
   type RigLightScheme,
+  type RigLook,
   type RigStock,
   type RigStop,
   type SetRig,
@@ -98,8 +100,22 @@ function Tag({ kind, tags }: { kind: "held" | "checked"; tags: TagStrings }) {
   );
 }
 
-/** A tile: its little picture, its name; pressed when chosen. */
-function Tile({ on, onPick, label, children, dot }: { on: boolean; onPick: () => void; label: string; children: ReactNode; dot?: boolean }) {
+/** A tile: its little picture, its name; pressed when chosen. `untested` names an unproven look (rig.ts, THE PROOF). */
+function Tile({
+  on,
+  onPick,
+  label,
+  children,
+  dot,
+  untested,
+}: {
+  on: boolean;
+  onPick: () => void;
+  label: string;
+  children: ReactNode;
+  dot?: boolean;
+  untested?: string;
+}) {
   return (
     <button
       type="button"
@@ -111,11 +127,22 @@ function Tile({ on, onPick, label, children, dot }: { on: boolean; onPick: () =>
           : "bg-white/[0.03] text-[#9aa0ad] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:bg-white/[0.06] hover:text-[#ecedf1]"
       }`}
     >
-      {dot && <span aria-hidden className="absolute right-1.5 top-1.5 h-[5px] w-[5px] rounded-full bg-[#e0a468]" />}
+      {dot && <span aria-hidden className="absolute right-1.5 top-1.5 z-[1] h-[5px] w-[5px] rounded-full bg-[#e0a468]" />}
+      {untested && (
+        <span className="absolute left-1.5 top-1.5 z-[1] rounded-[3px] bg-black/65 px-1 text-[8.5px] font-semibold uppercase leading-[13px] tracking-[0.06em] text-[#e0a468]">
+          {untested}
+        </span>
+      )}
       <span className="mb-1 block overflow-hidden rounded-[5px]">{children}</span>
       <span className="block truncate">{label}</span>
     </button>
   );
+}
+
+/** A proven look's picture: its own proof still (rig.ts lookStill), the real frame it made on Eva at the race track. */
+function Still({ src }: { src: string }) {
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" loading="lazy" className="block aspect-[12/5] w-full object-cover" />;
 }
 
 /** The pictures' shared paint, drawn once per panel (ids are the document's). */
@@ -183,6 +210,10 @@ function Proof({ children }: { children?: ReactNode }) {
     </svg>
   );
 }
+
+/** Whether any look is still unproven (rig.ts, THE PROOF): the footer explains the Untested tag only while one carries it. */
+const LOOK_LISTS: readonly (readonly RigLook[])[] = [RIG_STOCKS, RIG_LENSES, RIG_ERAS, RIG_PALETTES, RIG_LIGHTS];
+const ANY_UNTESTED = LOOK_LISTS.some((list) => list.some((l) => !l.proven));
 
 const STOCK_ART: Record<RigStock, ReactNode> = {
   digital: <rect width="68" height="36" fill="#6a9bd6" opacity="0.1" />,
@@ -729,7 +760,7 @@ export function RigPanel({
                 <option value="">{r.today}</option>
                 {RIG_ERAS.map((e) => (
                   <option key={e.id} value={e.id}>
-                    {r.eras[e.id]}
+                    {e.proven ? r.eras[e.id] : `${r.eras[e.id]} · ${r.untestedTag}`}
                   </option>
                 ))}
               </select>
@@ -792,11 +823,20 @@ export function RigPanel({
 
         <Section tags={tags} title={r.stock} tag="checked">
           <div className="grid grid-cols-4 gap-1.5">
-            {RIG_STOCKS.map((st) => (
-              <Tile key={st.id} on={rig.stock === st.id} onPick={() => toggle("stock", st.id)} label={r.stocks[st.id]}>
-                <Proof>{STOCK_ART[st.id]}</Proof>
-              </Tile>
-            ))}
+            {RIG_STOCKS.map((st) => {
+              const still = lookStill("stock", st.id);
+              return (
+                <Tile
+                  key={st.id}
+                  on={rig.stock === st.id}
+                  onPick={() => toggle("stock", st.id)}
+                  label={r.stocks[st.id]}
+                  untested={st.proven ? undefined : r.untestedTag}
+                >
+                  {still ? <Still src={still} /> : <Proof>{STOCK_ART[st.id]}</Proof>}
+                </Tile>
+              );
+            })}
           </div>
           <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">
             {rig.stock ? (
@@ -811,11 +851,20 @@ export function RigPanel({
 
         <Section tags={tags} title={r.lens} tag="checked">
           <div className="grid grid-cols-4 gap-1.5">
-            {RIG_LENSES.map((l) => (
-              <Tile key={l.id} on={rig.lens === l.id} onPick={() => toggle("lens", l.id)} label={r.lenses[l.id]}>
-                <Proof>{LENS_ART[l.id]}</Proof>
-              </Tile>
-            ))}
+            {RIG_LENSES.map((l) => {
+              const still = lookStill("lens", l.id);
+              return (
+                <Tile
+                  key={l.id}
+                  on={rig.lens === l.id}
+                  onPick={() => toggle("lens", l.id)}
+                  label={r.lenses[l.id]}
+                  untested={l.proven ? undefined : r.untestedTag}
+                >
+                  {still ? <Still src={still} /> : <Proof>{LENS_ART[l.id]}</Proof>}
+                </Tile>
+              );
+            })}
           </div>
           <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">
             {rig.lens ? (
@@ -872,17 +921,21 @@ export function RigPanel({
           }
         >
           <div className="grid grid-cols-3 gap-1.5">
-            {RIG_LIGHTS.map((l) => (
-              <Tile
-                key={l.id}
-                on={rig.light?.scheme === l.id}
-                onPick={() => pickScheme(l.id)}
-                label={r.lights[l.id]}
-                dot={suggestion?.light === l.id}
-              >
-                <PlotGlyph scheme={l.id} />
-              </Tile>
-            ))}
+            {RIG_LIGHTS.map((l) => {
+              const still = lookStill("light", l.id);
+              return (
+                <Tile
+                  key={l.id}
+                  on={rig.light?.scheme === l.id}
+                  onPick={() => pickScheme(l.id)}
+                  label={r.lights[l.id]}
+                  dot={suggestion?.light === l.id}
+                  untested={l.proven ? undefined : r.untestedTag}
+                >
+                  {still ? <Still src={still} /> : <PlotGlyph scheme={l.id} />}
+                </Tile>
+              );
+            })}
           </div>
           {rig.light ? (
             <>
@@ -938,15 +991,27 @@ export function RigPanel({
           }
         >
           <div className="grid grid-cols-3 gap-1.5">
-            {RIG_PALETTES.map((p) => (
-              <Tile key={p.id} on={rig.palette === p.id} onPick={() => toggle("palette", p.id)} label={r.palettes[p.id]} dot={suggestion?.palette === p.id}>
-                <span className="flex h-[26px]">
-                  {p.swatch.map((c) => (
-                    <i key={c} className="flex-1" style={{ background: c }} />
-                  ))}
-                </span>
-              </Tile>
-            ))}
+            {RIG_PALETTES.map((p) => {
+              const still = lookStill("palette", p.id);
+              return (
+                <Tile
+                  key={p.id}
+                  on={rig.palette === p.id}
+                  onPick={() => toggle("palette", p.id)}
+                  label={r.palettes[p.id]}
+                  dot={suggestion?.palette === p.id}
+                  untested={p.proven ? undefined : r.untestedTag}
+                >
+                  {still && <Still src={still} />}
+                  {/* The palette's own colours stay under its still: most grades are subtle on a sunlit frame, the swatch says which is which. */}
+                  <span className={`flex ${still ? "h-[5px]" : "h-[26px]"}`}>
+                    {p.swatch.map((c) => (
+                      <i key={c} className="flex-1" style={{ background: c }} />
+                    ))}
+                  </span>
+                </Tile>
+              );
+            })}
           </div>
           <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">
             {rig.palette ? (
@@ -959,7 +1024,7 @@ export function RigPanel({
           </p>
         </Section>
 
-        <p className="px-3.5 py-3 text-[11px] leading-[15px] text-[#6b6f7a]">{r.untested}</p>
+        {ANY_UNTESTED && <p className="px-3.5 py-3 text-[11px] leading-[15px] text-[#6b6f7a]">{r.untested}</p>}
       </div>
     </aside>
   );

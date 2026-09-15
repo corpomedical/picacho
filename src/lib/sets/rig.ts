@@ -19,7 +19,8 @@
 //   which landed (rig-check.ts).
 //
 // THE PROOF RULE (cinema-presets.ts): a block is text for the model, and a
-// block that has not proven its look on screen is marked `proven: false`.
+// block that has not proven its look on screen is marked `proven: false`
+// (THE PROOF, 2026-09-15, below, is the record of the ones that have).
 // While Helios is admin-only the page shows unproven looks marked as
 // untested, so the proof renders can be shot in the product itself with
 // the rig check reading each one; before Helios opens beyond admins,
@@ -103,26 +104,95 @@ export function isRigFormat(v: unknown): v is RigFormat {
 // ---------------------------------------------------------------------------
 
 export type RigLook = { id: string; block: string; pushed: string; proven: boolean };
+export type RigLookKind = "stock" | "lens" | "era" | "palette" | "light";
 
-const look = <I extends string>(id: I, block: string, pushed: string): RigLook & { id: I } => ({ id, block, pushed, proven: false });
+// THE PROOF, 2026-09-15. Every look was shot once on one set, one camera and
+// one moment — Eva at the race track in Scope, still be0a3eaa's request word
+// for word with only the look's sentence changed — read back by the rig
+// check, shot again pushed where the check said it missed, and judged by the
+// operator on a contact sheet (docs/ASTRA_SETS.md). 33 of the 34 passed —
+// and so did both of the stop ring's focus proofs, f/1.4 and f/8; Silhouette
+// failed — she stayed readable and lit from the front, the one thing the
+// look exists to take away. A look is proven only by being listed here.
+//
+// A pass is the operator's judgement that the look is worth offering, not a
+// promise it lands: on the proof stills the check read ten of the passed
+// looks as missed plain and pushed (16 mm, home video, anamorphic, overhead,
+// practicals, Mint Diner, Tropic Static, 2000s, 1970s, 1960s), and Silver
+// Print and Neon Undertow landed only pushed. The check keeps reading every
+// real still and says so on the still.
+const PROVEN_LOOKS: ReadonlySet<string> = new Set([
+  "stock:digital",
+  "stock:film35",
+  "stock:film16",
+  "stock:homevideo",
+  "lens:clean",
+  "lens:anamorphic",
+  "lens:vintage",
+  "lens:halation",
+  "era:2000s",
+  "era:1990s",
+  "era:1980s",
+  "era:1970s",
+  "era:1960s",
+  "palette:amber-hour",
+  "palette:sodium-rain",
+  "palette:blue-motel",
+  "palette:rust-cream",
+  "palette:harbour-4am",
+  "palette:silver-print",
+  "palette:mint-diner",
+  "palette:peach-dusk",
+  "palette:tropic-static",
+  "palette:ash-winter",
+  "palette:neon-undertow",
+  "palette:golden-reel",
+  "light:contre-jour",
+  "light:golden-hour",
+  "light:window",
+  "light:overhead",
+  "light:practicals",
+  "light:soft-cross",
+  "light:hard-noon",
+  "light:moonlight",
+]);
+
+const lookOf =
+  (kind: RigLookKind) =>
+  <I extends string>(id: I, block: string, pushed: string): RigLook & { id: I } => ({ id, block, pushed, proven: PROVEN_LOOKS.has(`${kind}:${id}`) });
+const stockLook = lookOf("stock");
+const lensLook = lookOf("lens");
+const eraLook = lookOf("era");
+const lightLook = lookOf("light");
+
+/**
+ * A proven look's picture for its tile: its proof still, 240 × 100, in
+ * public/helios/looks — the plain still, or the pushed one where only that
+ * showed the look (Silver Print, Neon Undertow). Eras are words on the
+ * page, no picture; an unproven look keeps its drawn one.
+ */
+export function lookStill(kind: RigLookKind, id: string): string | null {
+  if (kind === "era" || !PROVEN_LOOKS.has(`${kind}:${id}`)) return null;
+  return `/helios/looks/${kind}-${id}.jpg`;
+}
 
 export const RIG_STOCKS = [
-  look(
+  stockLook(
     "digital",
     "Shot on a modern digital cinema camera: clean, crisp detail, no grain, a wide dynamic range.",
     "Unmistakably shot on a modern digital cinema camera: razor-clean detail, no grain at all, shadows that keep their detail, a crisp, clinical finish.",
   ),
-  look(
+  stockLook(
     "film35",
     "Shot on 35 mm motion-picture film: fine visible grain, highlights that roll off softly, a little warmth in the colour.",
     "Unmistakably shot on 35 mm motion-picture film: fine grain clearly visible across the whole frame, highlights that bloom and roll off softly, warm film colour, slightly lifted blacks.",
   ),
-  look(
+  stockLook(
     "film16",
     "Shot on 16 mm film: coarse visible grain, softer detail, slightly lifted blacks, a documentary texture.",
     "Unmistakably 16 mm film: heavy, coarse grain over everything, soft detail, milky lifted blacks, a faint dark vignette, the texture of a documentary print.",
   ),
-  look(
+  stockLook(
     "homevideo",
     "Recorded on a consumer home-video camcorder: soft analogue detail, a little colour bleed, faint scanlines, washed colours.",
     "Unmistakably a home-video camcorder recording: very soft analogue detail, colours bleeding past their edges, visible scanlines, washed-out colour, an amateur feel.",
@@ -130,22 +200,22 @@ export const RIG_STOCKS = [
 ] as const;
 
 export const RIG_LENSES = [
-  look(
+  lensLook(
     "clean",
     "A clean modern prime lens: sharp across the frame, round and smooth bokeh, no flare.",
     "A clinically sharp modern prime lens: crisp from edge to edge, perfectly round, smooth bokeh, no flare and no distortion.",
   ),
-  look(
+  lensLook(
     "anamorphic",
     "An anamorphic lens: out-of-focus lights become tall oval bokeh, the brightest light throws a thin horizontal flare streak, the edges carry a slight wide-screen stretch.",
     "An anamorphic lens, unmistakably: every out-of-focus light is a tall vertical oval, the brightest light throws a long, thin horizontal blue flare streak across the frame, and the edges bend with a wide-screen stretch.",
   ),
-  look(
+  lensLook(
     "vintage",
     "A vintage lens: a soft glow around highlights, lower contrast, gentle darkening toward the corners, warm rendering.",
     "A strongly vintage lens: a soft blooming glow around every highlight, low contrast, dark soft corners, warm and dreamy rendering.",
   ),
-  look(
+  lensLook(
     "halation",
     "Film halation: bright highlights carry a red-orange glow bleeding into the dark around them.",
     "Strong film halation: every bright highlight and backlit edge carries a vivid red-orange glow bleeding into the surrounding dark.",
@@ -157,27 +227,27 @@ export const RIG_LENSES = [
 // the look sheet's whole promise (look-sheet.ts).
 const ERA_OBJECTS = "not its objects, which stay exactly as the set has them.";
 export const RIG_ERAS = [
-  look(
+  eraLook(
     "2000s",
     `The picture looks as if made in the 2000s — early digital colour, cool slightly green shadows, crisp contrast — its look, ${ERA_OBJECTS}`,
     `The picture looks unmistakably made in the 2000s — early digital colour, cool green-tinted shadows, hard crisp contrast — its look, ${ERA_OBJECTS}`,
   ),
-  look(
+  eraLook(
     "1990s",
     `The picture looks as if made in the 1990s — saturated colour-negative film, warm skin, punchy contrast — its look, ${ERA_OBJECTS}`,
     `The picture looks unmistakably made in the 1990s — strongly saturated colour-negative film, warm skin, punchy contrast, visible grain — its look, ${ERA_OBJECTS}`,
   ),
-  look(
+  eraLook(
     "1980s",
     `The picture looks as if made in the 1980s — soft diffusion, glowing highlights, pastel colour — its look, ${ERA_OBJECTS}`,
     `The picture looks unmistakably made in the 1980s — heavy soft diffusion, glowing haloed highlights, pastel colour — its look, ${ERA_OBJECTS}`,
   ),
-  look(
+  eraLook(
     "1970s",
     `The picture looks as if made in the 1970s — warm brown-amber colour, soft contrast, visible grain — its look, ${ERA_OBJECTS}`,
     `The picture looks unmistakably made in the 1970s — strongly warm brown-amber colour, soft faded contrast, heavy grain — its look, ${ERA_OBJECTS}`,
   ),
-  look(
+  eraLook(
     "1960s",
     `The picture looks as if made in the 1960s — rich dye-transfer saturation, deep blacks, crisp studio polish — its look, ${ERA_OBJECTS}`,
     `The picture looks unmistakably made in the 1960s — intensely rich dye-transfer saturation, inky blacks, crisp studio polish — its look, ${ERA_OBJECTS}`,
@@ -199,7 +269,7 @@ const palette = <I extends string>(
   tint: string | null,
   block: string,
   pushed: string,
-): RigPaletteLook & { id: I } => ({ id, block, pushed, proven: false, swatch, filter, tint });
+): RigPaletteLook & { id: I } => ({ id, block, pushed, proven: PROVEN_LOOKS.has(`palette:${id}`), swatch, filter, tint });
 
 export const RIG_PALETTES = [
   palette(
@@ -306,47 +376,47 @@ export const RIG_PALETTES = [
 // ---------------------------------------------------------------------------
 
 export const RIG_LIGHTS = [
-  look(
+  lightLook(
     "contre-jour",
     "Light: contre-jour — the sun low behind the person, a warm rim of light on the hair and shoulders, the face in soft shade toward the camera, a warm glow in the air.",
     "Strong contre-jour: the low sun directly behind the person, a bright glowing rim on the hair and shoulders, the face in clear soft shade, glowing haze and a little flare around them.",
   ),
-  look(
+  lightLook(
     "golden-hour",
     "Light: golden hour — a low warm sun from the side and behind, long shadows, honeyed light on the skin.",
     "Strong golden hour: a very low, deep-gold sun raking from the side and behind, very long shadows, everything glowing honey-warm.",
   ),
-  look(
+  lightLook(
     "window",
     "Light: soft daylight from one large window to the side — gentle falloff across the face, calm natural shadows.",
     "Strong window light: one large soft window to the side is the only source — bright on one side of the face, falling off to deep soft shadow on the other.",
   ),
-  look(
+  lightLook(
     "overhead",
     "Light: one overhead source — light falling from above onto the head and shoulders, the eyes in soft shadow, the surroundings dark.",
     "Strong overhead light: a single hard source straight above, a pool of light on the head and shoulders, the eyes in shadow, darkness all around.",
   ),
-  look(
+  lightLook(
     "practicals",
     "Light: only the practical lamps in the scene — warm pools of light, deep dark between them, the face lit by the nearest lamp.",
     "Strong practical light: nothing but the warm lamps in the scene, small bright pools in deep darkness, the face caught by the nearest lamp.",
   ),
-  look(
+  lightLook(
     "soft-cross",
     "Light: two soft sources crossing from either side in front — even, flattering light with soft shadows on both sides.",
     "Strong soft cross light: two large soft sources from front-left and front-right, the face evenly and flatteringly lit, shadows soft on both sides.",
   ),
-  look(
+  lightLook(
     "silhouette",
     "Light: the person nearly in silhouette against a bright background — a dark figure with a thin bright edge, the face just readable in faint fill.",
     "Strong silhouette: a very bright background behind the person, the figure dark with a crisp bright edge, the face held just readable by a faint fill.",
   ),
-  look(
+  lightLook(
     "hard-noon",
     "Light: hard midday sun from high above — crisp dark shadows with sharp edges, bright, saturated colour.",
     "Strong hard noon light: the sun straight overhead, short black shadows with razor edges, blazing bright highlights, saturated colour.",
   ),
-  look(
+  lightLook(
     "moonlight",
     "Light: moonlight — cool blue light from high to one side, deep night shadows, the face lit softly in blue.",
     "Strong moonlight: cold blue light from high to one side is the only source, deep black night shadows, the face softly lit in blue.",

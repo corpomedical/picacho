@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.37.2",
+    build: 52,
+    date: "2026-09-15",
+    title: "The rig's looks are proven, and every tile shows the frame its look made",
+    items: [
+      "Every look in the rig was shot once on the same person, set, camera and moment, read back by the rig check, and judged on a contact sheet. 33 of the 34 passed and are proven now. Each tile shows the still that look actually made instead of a drawing, with the palette's own colours kept in a strip under its picture. Silhouette didn't pass: she stayed readable and lit from the front. It keeps its drawn plot, marked Untested, and the note at the foot of the rig now explains only that tag.",
+      "Proven means judged worth offering, not guaranteed: the rig check still reads every still you shoot and says which looks landed on it.",
+    ],
+  },
+  {
     version: "1.37.1",
     build: 51,
     date: "2026-09-15",

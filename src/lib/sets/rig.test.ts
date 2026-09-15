@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SET_RIG,
@@ -16,6 +18,7 @@ import {
   focalMm,
   formatFrame,
   lightDirectionWords,
+  lookStill,
   normaliseSetRig,
   rigCheckItems,
   rigSentences,
@@ -183,9 +186,31 @@ describe("the brand-rule strip can find every rig sentence", () => {
 });
 
 describe("the proof rule", () => {
-  it("ships every look untested until its proof render", () => {
-    for (const list of [RIG_STOCKS, RIG_LENSES, RIG_ERAS, RIG_PALETTES, RIG_LIGHTS]) {
-      for (const l of list) expect(l.proven, l.id).toBe(false);
+  const KINDS = [
+    ["stock", RIG_STOCKS],
+    ["lens", RIG_LENSES],
+    ["era", RIG_ERAS],
+    ["palette", RIG_PALETTES],
+    ["light", RIG_LIGHTS],
+  ] as const;
+
+  it("proves exactly the looks passed on 2026-09-15's contact sheet — Silhouette stays untested", () => {
+    const unproven = KINDS.flatMap(([kind, list]) => list.filter((l) => !l.proven).map((l) => `${kind}:${l.id}`));
+    expect(unproven).toEqual(["light:silhouette"]);
+    expect(KINDS.reduce((n, [, list]) => n + list.filter((l) => l.proven).length, 0)).toBe(33);
+  });
+
+  it("gives every proven look with a picture its proof still, on disk — never an unproven one or an era", () => {
+    for (const [kind, list] of KINDS) {
+      for (const l of list) {
+        const still = lookStill(kind, l.id);
+        if (!l.proven || kind === "era") {
+          expect(still, `${kind}:${l.id}`).toBeNull();
+          continue;
+        }
+        expect(still).toBe(`/helios/looks/${kind}-${l.id}.jpg`);
+        expect(existsSync(join(process.cwd(), "public", still!)), still!).toBe(true);
+      }
     }
   });
 
