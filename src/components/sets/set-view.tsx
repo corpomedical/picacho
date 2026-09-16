@@ -26,6 +26,7 @@ import { readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, findLook, formatFrame, normaliseSetRig, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
+import { LAB_PREVIEW_SHADER, labPreviewCodes } from "@/lib/sets/lab-preview";
 import { layMove, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import type { RigCheck } from "@/lib/sets/rig-check";
 import { RigPanel } from "@/components/sets/rig-panel";
@@ -139,6 +140,8 @@ type StageApi = {
   roomFor(pose: Pose): Pose;
   /** The stage's depth of field for the rig's stop; null draws everything sharp. */
   setDepth(stop: number | null): void;
+  /** What the lab will make of the still, previewed on the live view (lab-preview.ts); 0 and 0 draws it as it is. */
+  setLab(stock: number, lens: number): void;
   /** Width ÷ height the recorded frame's field of view is measured against (1: across its height). */
   canvasAspect(): number;
   /**
@@ -554,7 +557,15 @@ export function SetView({
         let depthStop: number | null = null;
         let composer: import("three/examples/jsm/postprocessing/EffectComposer.js").EffectComposer | null = null;
         let bokeh: import("three/examples/jsm/postprocessing/BokehPass.js").BokehPass | null = null;
+        let labPass: import("three/examples/jsm/postprocessing/ShaderPass.js").ShaderPass | null = null;
         let composerLoading = false;
+        // What the lab will make of this still, shown on the live view
+        // (lab-preview.ts): the stock and the lens's character, never on the
+        // sketch the model sees — frame() and snapshot() render straight from
+        // the renderer, past the composer.
+        let lab = { stock: 0, lens: 0 };
+        const labOn = () => lab.stock > 0 || lab.lens > 0;
+        const frameUv = new THREE.Vector4(0, 0, 1, 1);
 
         const halfX = spec.bounds.x / 2;
         const halfZ = spec.bounds.z / 2;
@@ -699,6 +710,9 @@ export function SetView({
           fullH = h + 2 * Math.abs(fy - h / 2);
           camera.aspect = fullW / Math.max(1, fullH);
           camera.setViewOffset(fullW, fullH, fullW / 2 - fx, fullH / 2 - fy, w, h);
+          // Where the frame lines are, as the lab's preview reads them
+          // (uv, bottom-up): the picture, and nothing round it.
+          frameUv.set((fx - bw / 2) / w, 1 - (fy + bh / 2) / h, (fx + bw / 2) / w, 1 - (fy - bh / 2) / h);
           const g = guideRef.current;
           if (g) {
             g.style.width = `${bw}px`;
@@ -708,10 +722,47 @@ export function SetView({
           }
           applyFov();
         };
+        // The passes the stage draws through: the depth of field, then the
+        // lab. Loaded once, the first time either is asked for.
+        const ensureComposer = () => {
+          if (composer || composerLoading) return;
+          composerLoading = true;
+          void (async () => {
+            try {
+              const [{ EffectComposer }, { RenderPass }, { BokehPass }, { ShaderPass }, { OutputPass }] = await Promise.all([
+                import("three/examples/jsm/postprocessing/EffectComposer.js"),
+                import("three/examples/jsm/postprocessing/RenderPass.js"),
+                import("three/examples/jsm/postprocessing/BokehPass.js"),
+                import("three/examples/jsm/postprocessing/ShaderPass.js"),
+                import("three/examples/jsm/postprocessing/OutputPass.js"),
+              ]);
+              if (disposed) return;
+              const c = new EffectComposer(renderer);
+              c.addPass(new RenderPass(scene, camera));
+              const b = new BokehPass(scene, camera, { focus: 4, aperture: 0, maxblur: 0 });
+              c.addPass(b);
+              c.addPass(new OutputPass());
+              // The lab last, after the output pass: it works on the picture
+              // as shown, the same values lab-grade.ts grades (lab-preview.ts).
+              const l = new ShaderPass(LAB_PREVIEW_SHADER);
+              l.uniforms.uTexel.value = new THREE.Vector2(1 / Math.max(1, lastW), 1 / Math.max(1, lastH));
+              l.uniforms.uFrame.value = new THREE.Vector4(0, 0, 1, 1);
+              c.addPass(l);
+              c.setPixelRatio(renderer.getPixelRatio());
+              c.setSize(lastW, lastH);
+              composer = c;
+              bokeh = b;
+              labPass = l;
+            } catch (err) {
+              // No passes on this device: the stage stays as it is.
+              console.warn("SetView post-processing unavailable:", err);
+            }
+          })();
+        };
         // The figure's eyes, where the rig's focus is measured to.
         const eye = new THREE.Vector3();
         const renderLive = () => {
-          if (depthStop !== null && composer && bokeh) {
+          if ((depthStop !== null || labOn()) && composer && bokeh) {
             const p = standIn.group.position;
             eye.set(p.x, 1.5, p.z);
             const s = Math.max(0.3, camera.position.distanceTo(eye));
@@ -720,12 +771,24 @@ export function SetView({
             // screen — the bokeh pass's reach is 0.4 of its maxblur. A
             // little over life size, so the stage shows what the stop does.
             const f = 12 / Math.tan((poseFov * Math.PI) / 360);
-            const discMm = (f * f) / (depthStop * s * 1000);
-            const maxblur = Math.min(0.03, ((1.5 * discMm) / 48 / 0.4) * (renderPx / Math.max(1, lastH)));
+            // No stop chosen: the pass stays in the chain for the lab, drawing nothing.
+            const discMm = depthStop === null ? 0 : (f * f) / (depthStop * s * 1000);
+            const maxblur = depthStop === null ? 0 : Math.min(0.03, ((1.5 * discMm) / 48 / 0.4) * (renderPx / Math.max(1, lastH)));
             const u = bokeh.materialBokeh.uniforms;
             u.focus.value = s;
             u.maxblur.value = maxblur;
             u.aperture.value = maxblur / s;
+            if (labPass) {
+              const ratio = renderer.getPixelRatio();
+              labPass.uniforms.uStock.value = lab.stock;
+              labPass.uniforms.uLens.value = lab.lens;
+              // The pass draws in the render target's own pixels, so the
+              // glows and the grain keep their size on a 2× display.
+              labPass.uniforms.uTexel.value.set(1 / Math.max(1, lastW * ratio), 1 / Math.max(1, lastH * ratio));
+              labPass.uniforms.uScale.value = ratio;
+              // Only the picture inside the frame lines wears the look.
+              labPass.uniforms.uFrame.value.set(frameUv.x, frameUv.y, frameUv.z, frameUv.w);
+            }
             composer.render();
           } else {
             renderer.render(scene, camera);
@@ -867,31 +930,11 @@ export function SetView({
           },
           setDepth(stop) {
             depthStop = coarse ? null : stop;
-            if (depthStop === null || composer || composerLoading) return;
-            composerLoading = true;
-            void (async () => {
-              try {
-                const [{ EffectComposer }, { RenderPass }, { BokehPass }, { OutputPass }] = await Promise.all([
-                  import("three/examples/jsm/postprocessing/EffectComposer.js"),
-                  import("three/examples/jsm/postprocessing/RenderPass.js"),
-                  import("three/examples/jsm/postprocessing/BokehPass.js"),
-                  import("three/examples/jsm/postprocessing/OutputPass.js"),
-                ]);
-                if (disposed) return;
-                const c = new EffectComposer(renderer);
-                c.addPass(new RenderPass(scene, camera));
-                const b = new BokehPass(scene, camera, { focus: 4, aperture: 0, maxblur: 0 });
-                c.addPass(b);
-                c.addPass(new OutputPass());
-                c.setPixelRatio(renderer.getPixelRatio());
-                c.setSize(lastW, lastH);
-                composer = c;
-                bokeh = b;
-              } catch (err) {
-                // No depth of field on this device: the stage stays sharp.
-                console.warn("SetView depth of field unavailable:", err);
-              }
-            })();
+            if (depthStop !== null) ensureComposer();
+          },
+          setLab(stock, lens) {
+            lab = coarse ? { stock: 0, lens: 0 } : { stock, lens };
+            if (labOn()) ensureComposer();
           },
           snapshot(px, opts) {
             // The ring and arrow are for arranging; the image model must
@@ -1127,6 +1170,18 @@ export function SetView({
   useEffect(() => {
     if (ready) apiRef.current?.setDepth(rig.stop);
   }, [ready, rig.stop]);
+
+  // The lab, previewed on the stage (lab-preview.ts): the film stock and the
+  // lens's character, which the lab makes on the still after the render. The
+  // palettes preview themselves as a grade over the canvas, Silver Print
+  // among them, so the pass leaves colour alone.
+  const rigStock = rig.stock;
+  const rigLens = rig.lens;
+  useEffect(() => {
+    if (!ready) return;
+    const { stock, lens } = labPreviewCodes({ stock: rigStock, lens: rigLens });
+    apiRef.current?.setLab(stock, lens);
+  }, [ready, rigStock, rigLens]);
 
   // A light scheme is a plot in the set (light-schemes.ts): the stage draws
   // a lit copy of the working copy round the figure's mark. Only when the

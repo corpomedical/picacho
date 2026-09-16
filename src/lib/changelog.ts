@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.38.1",
+    build: 54,
+    date: "2026-09-16",
+    title: "The stage shows the film stock and the lens before you shoot",
+    items: [
+      "Every other control in the rig shows on the stage before a credit moves — the frame lines, the lens's field of view, the depth of field, the light, the palette. Now the two the lab makes do too: pick 35 mm and the stage grains, pick 16 mm and it softens and grains coarsely with dark corners, pick home video and it smears, bleeds its colour and draws scanlines; a vintage lens glows and darkens the corners, halation blooms, an anamorphic lens streaks the brightest lights. It stops at the frame lines, because the picture is what sits inside them.",
+      "It shows the texture, not the tone: the lab's lifted blacks and warmth belong to the finished photograph, and on the grey mock they only read as fog. The sketch sent to the render is untouched, as it always was.",
+    ],
+  },
+  {
     version: "1.38.0",
     build: 53,
     date: "2026-09-15",
