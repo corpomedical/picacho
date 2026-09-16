@@ -2158,6 +2158,7 @@ const en = {
     editorSaving: "Saving…",
     editorSaved: "Saved to your copy",
     editorSaveFailed: "Couldn't save — it will try again on your next change",
+    editorLeaveUnsaved: "Your latest changes couldn't be saved. Leave without them?",
     editorOriginal: "Astra's original",
     editorOriginalHint: "Bring the set back as Astra first built it — ↺ undoes this too",
     editorDone: "Done — Shoot",

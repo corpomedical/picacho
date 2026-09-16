@@ -7,7 +7,7 @@ import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
 import { formatMsg } from "@/lib/i18n/format";
 import { quoteSend } from "@/lib/generations/quote";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/sets/actions";
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
@@ -47,7 +47,7 @@ import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
-import { SET_PHOTO_UNREADABLE, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN } from "@/lib/sets/messages";
+import { SET_PHOTO_UNREADABLE, SET_SAVE_FAILED, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
@@ -58,6 +58,7 @@ import {
 } from "@/lib/sets/set-config";
 import { SET_LIMITS, type SetLayout, type SetSpec, type Vec3 } from "@/lib/sets/set-spec";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
+import { dropUnsaved, keepUnsaved, savedFilmKey, savedRigKey, takeUnsaved } from "@/lib/sets/unsaved";
 
 // A Set, open (Astra Sets, 2026-09-10; a workspace since 2026-09-14, drawn
 // and approved on the design canvas — docs/ASTRA_SETS.md). The stage is
@@ -403,6 +404,25 @@ export function SetView({
   const [direction, setDirection] = useState("");
   const [shooting, setShooting] = useState(false);
   const [error, setError] = useState("");
+  // ---- a deploy that leaves this tab behind ----
+  // Once a deploy lands while the page is open, every call from it throws
+  // (stale-deploy.ts), and only a reload cures that. The page says so and
+  // reloads, once (reloadForNewDeploy's guard); what the autosaves could not
+  // save is kept for this tab (unsaved.ts) and comes back after the reload.
+  const staleRef = useRef(false);
+  const refreshNeeded = t.generate.refreshNeeded;
+  /** Whether `err` is that; if so, the reload is on its way. */
+  const leftBehind = useCallback(
+    (err: unknown): boolean => {
+      if (!isStaleDeployError(err)) return false;
+      if (staleRef.current) return true;
+      if (!reloadForNewDeploy({ delayMs: 1800 })) return false;
+      staleRef.current = true;
+      setError(refreshNeeded);
+      return true;
+    },
+    [refreshNeeded],
+  );
   const [loadFailed, setLoadFailed] = useState(false);
   // The stage is a dynamic import plus a WebGL context: until it exists,
   // nothing that drives it (camera, lens, mark, shoot) can do what it says.
@@ -445,6 +465,10 @@ export function SetView({
   // like the editor's working copy; rendering is a chain of takes.
   const [filmOpen, setFilmOpen] = useState(initialFilmOpen);
   const [film, setFilm] = useState<SetFilm>(() => normaliseSetFilm(savedFilm));
+  // What the server holds of the film, compared the way unsaved.ts compares
+  // it: as loaded, then as each save landed.
+  const [loadedFilmKey] = useState(() => savedFilmKey(savedFilm));
+  const filmSavedRef = useRef(loadedFilmKey);
   const [filmSel, setFilmSel] = useState<number | null>(null);
   /** Rendering: which beat the chain is on; null when idle. */
   const [filmBusy, setFilmBusy] = useState<{ beat: number; clipOnly: boolean } | null>(null);
@@ -459,6 +483,37 @@ export function SetView({
    * would leave the next one in the wrong beat's place (filmBusyRef).
    */
   const filmBusyRef = useRef(false);
+  /**
+   * Save the film, never throwing. A film that does not save is kept for
+   * this tab (unsaved.ts) and said in the dock; once a deploy has left the
+   * tab behind nothing more is sent, and the reload saves it.
+   */
+  const saveFilm = useCallback(
+    (next: SetFilm) => {
+      const missed = () => keepUnsaved(setId, "film", next, filmSavedRef.current);
+      if (staleRef.current) {
+        missed();
+        return;
+      }
+      const sentAt = new Date().getTime();
+      saveSetFilm(setId, next).then(
+        (r) => {
+          if (r.error === null) {
+            filmSavedRef.current = savedFilmKey(next);
+            dropUnsaved(setId, "film", sentAt);
+            return;
+          }
+          missed();
+          setFilmError(r.error);
+        },
+        (err) => {
+          missed();
+          if (!leftBehind(err)) setFilmError(SET_SAVE_FAILED);
+        },
+      );
+    },
+    [setId, leftBehind],
+  );
   const editFilm = useCallback((fn: (f: SetFilm) => SetFilm) => {
     if (filmBusyRef.current) return;
     setFilm((f) => filmAfterEdit(f, fn(f)));
@@ -485,6 +540,9 @@ export function SetView({
   // the depth of field, the light, the grade.
   const [rig, setRig] = useState<SetRig>(() => normaliseSetRig(savedRig));
   const rigRef = useRef<SetRig>(rig);
+  // The rig as the server holds it, like the film's.
+  const [loadedRigKey] = useState(() => savedRigKey(savedRig));
+  const rigSavedRef = useRef(loadedRigKey);
   const [rigOpen, setRigOpen] = useState(false);
   const [rigError, setRigError] = useState("");
   // The rig check, per still, while it reads or when it could not.
@@ -560,8 +618,10 @@ export function SetView({
   const layoutRef = useRef({ markId: startMarkId, mark: startMark });
   // The open menu, for the Esc handler (a ref is not read during render).
   const menuRef = useRef<MenuId | null>(null);
-  // The set as it stood before the last Astra edit, for the changed line's Undo.
+  // The set as it stood before the last Astra edit, for the changed line's
+  // Undo, and whether that Undo is being saved.
   const specBeforeEditRef = useRef<SetSpec | null>(null);
+  const undoingRef = useRef(false);
   // The stage calls this when an orbit settles; it points at scheduleSave,
   // which is declared below the stage's effect.
   const settledRef = useRef<(() => void) | null>(null);
@@ -1177,7 +1237,7 @@ export function SetView({
               hideFigure: true,
               from: { position: first.position, target: first.target, fovDeg: first.fovDeg },
             });
-            if (thumb) void saveSetThumbnail(setId, thumb);
+            if (thumb) saveSetThumbnail(setId, thumb).catch((err) => void leftBehind(err));
           });
         }
 
@@ -1223,9 +1283,10 @@ export function SetView({
       // "no camera" would erase the one stored from an earlier visit.
       const api = apiRef.current;
       if (!api) return;
-      void saveSetLayout(setId, { ...layoutRef.current, camera: api.pose() });
+      // Best-effort: the next move that settles saves again.
+      saveSetLayout(setId, { ...layoutRef.current, camera: api.pose() }).catch((err) => void leftBehind(err));
     }, 1500);
-  }, [setId]);
+  }, [setId, leftBehind]);
 
   useEffect(() => {
     settledRef.current = scheduleSave;
@@ -1334,20 +1395,52 @@ export function SetView({
   }, [ready, spec, rig.light, mark.x, mark.z]);
 
   // The rig autosaves like the film — a beat after the hands stop. The
-  // first run is the loaded rig itself, not an edit.
+  // first run is the loaded rig itself, not an edit. A rig that does not
+  // save is kept for this tab (unsaved.ts), and once a deploy has left the
+  // tab behind nothing more is sent: the reload saves it.
   const rigLoadedRef = useRef(false);
   useEffect(() => {
     if (!rigLoadedRef.current) {
       rigLoadedRef.current = true;
       return;
     }
+    const missed = () => keepUnsaved(setId, "rig", rig, rigSavedRef.current);
+    if (staleRef.current) {
+      missed();
+      return;
+    }
     const id = setTimeout(() => {
-      void saveSetRig(setId, rig).then((r) => {
-        setRigError(r.error ?? "");
-      });
+      const sentAt = new Date().getTime();
+      saveSetRig(setId, rig).then(
+        (r) => {
+          setRigError(r.error ?? "");
+          if (r.error !== null) {
+            missed();
+            return;
+          }
+          rigSavedRef.current = savedRigKey(rig);
+          dropUnsaved(setId, "rig", sentAt);
+        },
+        (err) => {
+          missed();
+          if (!leftBehind(err)) setRigError(SET_SAVE_FAILED);
+        },
+      );
     }, 900);
     return () => clearTimeout(id);
-  }, [rig, setId]);
+  }, [rig, setId, leftBehind]);
+
+  // A rig or a film the last load of this page could not save comes back
+  // onto the copy it was made from (unsaved.ts), and the autosaves save it.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const keptRig = takeUnsaved(setId, "rig", rigSavedRef.current);
+      if (keptRig !== null) setRig(normaliseSetRig(keptRig));
+      const keptFilm = takeUnsaved(setId, "film", filmSavedRef.current);
+      if (keptFilm !== null) setFilm(normaliseSetFilm(keptFilm));
+    }, 0);
+    return () => clearTimeout(id);
+  }, [setId]);
 
   // ---- a photo set: camera 1 beside the photo ----
   // Once the stage is ready (its lift measured) and the photo's shape is
@@ -2043,9 +2136,7 @@ export function SetView({
     const keep = (next: SetFilm) => {
       kept = next;
       setFilm(next);
-      void saveSetFilm(setId, next).then((r) => {
-        if (r.error) setFilmError(r.error);
-      });
+      saveFilm(next);
     };
     keep(kept);
     setReel(null);
@@ -2318,7 +2409,7 @@ export function SetView({
         hideFigure: true,
         from: { position: one.position, target: one.target, fovDeg: one.fovDeg },
       });
-      if (thumb) void saveSetThumbnail(setId, thumb);
+      if (thumb) saveSetThumbnail(setId, thumb).catch((err) => void leftBehind(err));
     });
   }
 
@@ -2333,8 +2424,17 @@ export function SetView({
   async function editSet(message: string) {
     setEditingSet(true);
     const before = spec;
-    const res = await editSetWithAstra(setId, message);
-    setEditingSet(false);
+    let res: Awaited<ReturnType<typeof editSetWithAstra>>;
+    try {
+      res = await editSetWithAstra(setId, message);
+    } catch (err) {
+      // A dropped connection or a stale deploy: the conversation is let go
+      // and says so, rather than waiting on Astra for good.
+      if (!leftBehind(err)) setError(t.generate.submitFailed);
+      return;
+    } finally {
+      setEditingSet(false);
+    }
     if (res.error !== null) {
       setError(res.error);
       return;
@@ -2346,16 +2446,36 @@ export function SetView({
     refreshThumbnail(res.spec);
   }
 
-  /** The changed line's Undo: the set as it stood before the last Astra edit, saved back. */
+  /**
+   * The changed line's Undo: the set as it stood before the last Astra
+   * edit, saved back. The page shows it once it is saved: an Undo that
+   * does not save leaves the set as the server has it, Undo still offered,
+   * and says why.
+   */
   async function undoSetEdit() {
     const before = specBeforeEditRef.current;
-    if (!before) return;
+    if (!before || undoingRef.current) return;
+    undoingRef.current = true;
+    let failed: string | null;
+    try {
+      failed = (await saveSetEdit(setId, before)).error;
+    } catch (err) {
+      failed = leftBehind(err) ? null : t.generate.submitFailed;
+      if (failed === null) return;
+    } finally {
+      undoingRef.current = false;
+    }
+    if (failed !== null) {
+      setError(failed);
+      return;
+    }
+    // Another edit landed meanwhile: that one is the set now.
+    if (specBeforeEditRef.current !== before) return;
     specBeforeEditRef.current = null;
     setSetChanged(null);
     setSpec(before);
     drawSet(before);
     refreshThumbnail(before);
-    await saveSetEdit(setId, before);
   }
 
   /**
@@ -2515,13 +2635,13 @@ export function SetView({
       filmLoadedRef.current = true;
       return;
     }
-    const id = setTimeout(() => {
-      void saveSetFilm(setId, film).then((r) => {
-        if (r.error) setFilmError(r.error);
-      });
-    }, 1200);
+    if (staleRef.current) {
+      saveFilm(film);
+      return;
+    }
+    const id = setTimeout(() => saveFilm(film), 1200);
     return () => clearTimeout(id);
-  }, [film, setId]);
+  }, [film, saveFilm]);
 
   // The reel: the clip whose turn it is plays, the others wait, loaded. A
   // browser that will not start a clip by itself gets a tap to go on.
@@ -2545,21 +2665,26 @@ export function SetView({
     if (!generatingKey) return;
     const ids = generatingKey.split(",");
     const timer = setInterval(() => {
-      void readTakes(setId, ids).then((r) => {
-        if (r.error !== null) return;
-        const byId = new Map(r.takes.map((tk) => [tk.id, tk]));
-        setShots((prev) =>
-          prev.map((sh) => {
-            const tk = sh.kind === "take" ? byId.get(sh.generationId) : undefined;
-            return tk && tk.status !== sh.status
-              ? { ...sh, status: tk.status, resultUrl: tk.resultUrl, posterUrl: tk.posterUrl }
-              : sh;
-          }),
-        );
-      });
+      readTakes(setId, ids).then(
+        (r) => {
+          if (r.error !== null) return;
+          const byId = new Map(r.takes.map((tk) => [tk.id, tk]));
+          setShots((prev) =>
+            prev.map((sh) => {
+              const tk = sh.kind === "take" ? byId.get(sh.generationId) : undefined;
+              return tk && tk.status !== sh.status
+                ? { ...sh, status: tk.status, resultUrl: tk.resultUrl, posterUrl: tk.posterUrl }
+                : sh;
+            }),
+          );
+        },
+        // A poll that fails is asked again on the next tick; a tab a deploy
+        // left behind would fail every tick, and reloads instead.
+        (err) => void leftBehind(err),
+      );
     }, 8000);
     return () => clearInterval(timer);
-  }, [generatingKey, setId]);
+  }, [generatingKey, setId, leftBehind]);
 
   /**
    * The frame as a picture on disk — 3D Jutsu's static-frame export. Cut to

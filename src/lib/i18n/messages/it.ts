@@ -2021,6 +2021,7 @@ const it = {
     editorSaving: "Salvataggio…",
     editorSaved: "Salvato nella tua copia",
     editorSaveFailed: "Non è stato possibile salvare — riproverà alla prossima modifica",
+    editorLeaveUnsaved: "Non è stato possibile salvare le ultime modifiche. Uscire senza salvarle?",
     editorOriginal: "L'originale di Astra",
     editorOriginalHint: "Riporta il set com'era quando Astra l'ha costruito — ↺ annulla anche questo",
     editorDone: "Fatto — Scatta",

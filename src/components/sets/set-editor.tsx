@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { formatMsg } from "@/lib/i18n/format";
 import { clearSetEdit, editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
-import { SET_EDIT_TOO_BIG } from "@/lib/sets/messages";
+import { SET_EDIT_TOO_BIG, SET_SAVE_FAILED } from "@/lib/sets/messages";
 import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
+import { dropUnsaved, keepUnsaved, savedEditKey, takeUnsaved } from "@/lib/sets/unsaved";
 import {
   addCamera,
   addLight,
@@ -32,6 +33,7 @@ import {
   type EditTarget,
 } from "@/lib/sets/editor-model";
 import {
+  normaliseSetSpec,
   SET_LIMITS,
   SET_SHAPES,
   SET_SKY_KINDS,
@@ -398,6 +400,15 @@ export function SetEditor({
   const [history, setHistory] = useState<string[]>(() => [JSON.stringify(initialEdited ?? original)]);
   const [at, setAt] = useState(0);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "failed">("idle");
+  // What the server holds, compared the way unsaved.ts compares it: the copy
+  // the editor opened on, then every save that landed. dirtyRef: the copy on
+  // screen is not known to be saved yet.
+  const [openedKey] = useState(() => savedEditKey(initialEdited ?? original));
+  const savedKeyRef = useRef(openedKey);
+  const dirtyRef = useRef(false);
+  // A deploy left this tab behind (stale-deploy.ts): nothing more is sent,
+  // and the reload that cures it is on its way.
+  const staleRef = useRef(false);
   const [flash, setFlash] = useState("");
   const [ready, setReady] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -425,6 +436,7 @@ export function SetEditor({
   const undoRef = useRef<() => void>(() => {});
   const redoRef = useRef<() => void>(() => {});
   const deleteRef = useRef<() => void>(() => {});
+  const commitRef = useRef<(result: EditResult) => void>(() => {});
   const addOpenRef = useRef(false);
 
   function flashLine(text: string) {
@@ -435,11 +447,63 @@ export function SetEditor({
 
   function scheduleSave(next: SetSpec) {
     setSaveState("saving");
+    dirtyRef.current = true;
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
-      void saveSetEdit(setId, next).then((r) => setSaveState(r.error ? "failed" : "saved"));
+      void saveCopy(next);
     }, 1200);
+  }
+
+  /**
+   * A copy that did not save is kept for this tab (unsaved.ts), to come
+   * back if the editor reloads. A deploy that left the tab behind
+   * (stale-deploy.ts) stops the saves: the bar says so and the page
+   * reloads once, keeping the copy on screen at that moment. Whether that
+   * reload is on its way.
+   */
+  function saveMissed(copy: SetSpec, err: unknown): boolean {
+    keepUnsaved(setId, "edit", copy, savedKeyRef.current);
+    if (staleRef.current) return true;
+    if (!isStaleDeployError(err)) return false;
+    const reloading = reloadForNewDeploy({
+      delayMs: 1800,
+      before: () => keepUnsaved(setId, "edit", specRef.current, savedKeyRef.current),
+    });
+    if (!reloading) return false;
+    staleRef.current = true;
+    setAskError(t.generate.refreshNeeded);
+    return true;
+  }
+
+  /**
+   * Save `copy` as the working copy (or, with `clear`, go back to Astra's
+   * original), never throwing, and say whether it landed. The header says
+   * how it went; a copy that did not land is kept (saveMissed).
+   */
+  async function saveCopy(copy: SetSpec, clear = false): Promise<boolean> {
+    if (staleRef.current) {
+      saveMissed(copy, null);
+      return false;
+    }
+    let error: string | null;
+    const sentAt = new Date().getTime();
+    try {
+      error = (clear ? await clearSetEdit(setId) : await saveSetEdit(setId, copy)).error;
+    } catch (err) {
+      if (!saveMissed(copy, err)) setSaveState("failed");
+      return false;
+    }
+    if (error !== null) {
+      saveMissed(copy, null);
+      setSaveState("failed");
+      return false;
+    }
+    savedKeyRef.current = savedEditKey(copy);
+    dropUnsaved(setId, "edit", sentAt);
+    if (specRef.current === copy) dirtyRef.current = false;
+    setSaveState("saved");
+    return true;
   }
 
   function applySpec(next: SetSpec) {
@@ -469,6 +533,8 @@ export function SetEditor({
     setHistory(trimmed);
     setAt(trimmed.length - 1);
     applySpec(next);
+    savedKeyRef.current = savedEditKey(next);
+    dirtyRef.current = false;
     setSaveState("saved");
   }
 
@@ -626,17 +692,25 @@ export function SetEditor({
       saveTimerRef.current = null;
     }
     setSaveState("saving");
-    const r = await clearSetEdit(setId);
-    setSaveState(r.error ? "failed" : "saved");
+    dirtyRef.current = true;
+    await saveCopy(original, true);
   }
 
-  /** Back to shooting: whatever is pending saves first, then the workspace. */
+  /**
+   * Back to shooting: whatever is not saved yet saves first, then the
+   * workspace. A copy that cannot be saved is not left behind unasked (the
+   * Shoot side would show the set without it): the person decides, and a
+   * tab a deploy left behind stays for its reload.
+   */
   async function done() {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
-      const r = await saveSetEdit(setId, specRef.current);
-      setSaveState(r.error ? "failed" : "saved");
+    }
+    if (dirtyRef.current && !(await saveCopy(specRef.current))) {
+      if (staleRef.current || !window.confirm(s.editorLeaveUnsaved)) return;
+      // Left behind on purpose: it does not come back.
+      dropUnsaved(setId, "edit");
     }
     router.push(closeHref);
     router.refresh();
@@ -648,7 +722,21 @@ export function SetEditor({
     setAsking(true);
     setAskError("");
     setAskNote(null);
+    // Astra changes the copy the server holds: a change made by hand a
+    // moment ago is saved first, or Astra would answer without it.
+    if (saveTimerRef.current || dirtyRef.current) {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      if (!(await saveCopy(specRef.current))) {
+        if (!staleRef.current) setAskError(SET_SAVE_FAILED);
+        setAsking(false);
+        return;
+      }
+    }
     let r: Awaited<ReturnType<typeof editSetWithAstra>>;
+    const askedAt = new Date().getTime();
     try {
       r = await editSetWithAstra(setId, text);
     } catch (err) {
@@ -668,6 +756,7 @@ export function SetEditor({
     }
     setAsk("");
     commitFromServer(r.spec);
+    dropUnsaved(setId, "edit", askedAt);
     setAskNote(r.changed);
   }
 
@@ -1020,6 +1109,7 @@ export function SetEditor({
     undoRef.current = undo;
     redoRef.current = redo;
     deleteRef.current = removeSelected;
+    commitRef.current = commit;
     addOpenRef.current = addOpen;
   });
 
@@ -1061,14 +1151,37 @@ export function SetEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // A pending autosave flushes when the editor closes any way at all.
+  // A pending autosave flushes when the editor closes any way at all; one
+  // that fails is kept for this tab, like any other (unsaved.ts).
   useEffect(() => {
     return () => {
       if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
       if (!saveTimerRef.current) return;
       clearTimeout(saveTimerRef.current);
-      void saveSetEdit(setId, specRef.current);
+      const copy = specRef.current;
+      const base = savedKeyRef.current;
+      const sentAt = new Date().getTime();
+      saveSetEdit(setId, copy).then(
+        (r) => {
+          if (r.error !== null) keepUnsaved(setId, "edit", copy, base);
+          else dropUnsaved(setId, "edit", sentAt);
+        },
+        () => keepUnsaved(setId, "edit", copy, base),
+      );
     };
+  }, [setId]);
+
+  // A copy the last load of this editor could not save comes back onto the
+  // copy it was made from (unsaved.ts), as an edit: in the history, on the
+  // stage, and saved.
+  useEffect(() => {
+    const id = setTimeout(() => {
+      const kept = takeUnsaved(setId, "edit", savedKeyRef.current);
+      if (kept === null) return;
+      const n = normaliseSetSpec(kept);
+      if (n.ok) commitRef.current({ ok: true, spec: n.spec, notes: [] });
+    }, 0);
+    return () => clearTimeout(id);
   }, [setId]);
 
   // ---- what the panels say ----

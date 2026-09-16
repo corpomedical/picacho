@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.41.1",
+    build: 75,
+    date: "2026-09-16",
+    title: "Helios keeps working when a connection drops or a new version goes live",
+    items: [
+      "Asking Astra to change a set from the conversation could leave the page stuck on \"Astra is changing the set…\" if the connection dropped, and it accepted nothing more until you reloaded. It now stops waiting and says what happened.",
+      "Undo after an Astra change used to show the old set even when saving it failed, while the new one stayed saved. Now the set changes back once the undo is saved; if the save fails, the change stays on screen with Undo still there, and the page says why.",
+      "If a new version of Picacho goes live while a set is open, the page says so and refreshes once. A rig, film or Build change that couldn't be saved at that moment comes back after the refresh and is saved. Checking on a take, the set's card picture and the camera position no longer fail without a word.",
+      "In the Build editor, a save that fails no longer says \"Saving…\" indefinitely. Done tries the save again, and if it still fails, asks before you leave the changes behind. A change you make just before asking Astra is saved first, so Astra's change builds on it.",
+    ],
+  },
+  {
     version: "1.41.0",
     build: 74,
     date: "2026-09-16",

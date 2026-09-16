@@ -116,6 +116,49 @@ Found in the same review and fixed in the next commit: re-rendering a beat alway
 
 **2026-09-16: Helios on a phone, the bar ("Pushed, keep going.", a walk at 375 px).** The set page's Build · Shoot · Film switch was `hidden sm:flex`, set when it held Build and Shoot; Film joined it, so below 640 px a whole mode was reachable only by address (the dock itself had been sized for phones that morning). The switch now shows at every width with Shoot and Film, Build from 640 px (`hidden sm:flex` on the link), and the words that fill the bar give way below 768 px: the back link keeps its arrow (`aria-label` the words), the divider goes, the set's name is `sr-only md:not-sr-only` (at 375 px it had been "Sc…" in English and nothing in Spanish or Italian), the shots count stays hidden, and History reads "Frame n" with the full name as its label; the frame download is `flex-none` (it had shrunk to 16 px). Measured with the switch visible: at 375 px English, Spanish and Portuguese fit exactly; at 640 and 767 px Spanish fits with Build; the full bar, which overflowed by 68 px at 640 px in Spanish before this, starts at 768 px, where it fits. The Build editor — a 48 px rail, the canvas and a 300 px panel — drew its panels over its own canvas at 375 px, and was reachable on a phone only by address; below 640 px it now shows `editorNarrow` (four languages) over everything, with "Done — Shoot" (`done()`, which saves first). Not in this cut: the rest of the set page on a phone — the stage's chips wrap four rows deep over the frame, and the thread gets two lines above the composer — which wants a drawing first. `set-page-bar.test.ts` holds the bar's rules and the notice, mutation-checked.
 
+**2026-09-16: Helios keeps going when a call fails ("Pushed, keep going.").** A client-side audit of every Helios server call. The set page's Astra change (`editSet`) had no catch: a call that threw (a dropped connection, or a deploy landing while the page was open) left `editingSet` true for good, and `send()` refuses every message while it is. Reproduced in the worktree on a59aef0's page: "Astra is changing the set…" stayed, the composer stayed disabled, and the throw surfaced as an unhandled "Failed to fetch". Its Undo never read `saveSetEdit`'s answer, so a failed save showed the old set while the server kept the new one. The rig and film autosaves, the take poll, the card picture and the camera save were `void x().then(…)`. A throw from any of them was an unhandled rejection, which AppErrorReporter filed as a bug, or, for a stale deploy, answered with an instant reload that took the unsaved change with it. In the editor, a thrown save left "Saving…" on screen indefinitely. Done left whether or not the copy had saved, and did nothing when the save threw. A hand edit made less than 1.2 s before asking Astra was lost, because Astra edits the server's copy.
+
+NOW. Stale-tab reloads (both pages):
+- `set-view.tsx leftBehind(err)`: a stale deploy says `refreshNeeded` and calls `stale-deploy.ts reloadForNewDeploy({ delayMs: 1800 })`.
+- That is AppErrorReporter's own guard, now shared: at most one reload per tab per 30 s, so a failure a reload does not cure cannot reload an autosaving page over and over. A timed-out function's page reads as "an unexpected response", which looks stale.
+- Checked in the worktree: within 30 s of a reload, the rig failure said "Couldn't save that — try again." and did not reload.
+
+Set page:
+- `editSet` releases the conversation in `finally`.
+- Undo applies the old set only after `saveSetEdit` lands. A failed save leaves the change and Undo in place and says why.
+- The rig and film autosaves (the film through `saveFilm`, which the render's per-beat `keep` uses too) keep an unsaved change on any failure. A throw goes to `leftBehind`, or else shows `SET_SAVE_FAILED`.
+- The poll, the card picture and the camera send their rejections to `leftBehind`; any other failure waits for the next try.
+
+Keeping the unsaved change, `unsaved.ts`:
+- Kept in sessionStorage per tab, per set and per kind (film, rig, edit), beside `base`: the saved key of what the server held.
+- `savedFilmKey`/`savedRigKey` go through the same normaliser as the save. `savedEditKey` compares the editor's normalised copies; a held copy loads back as the same key, tested on all five fixtures after five kinds of edit.
+- `takeUnsaved` hands it back once, only onto the same base, within ten minutes. Anything else saved in between wins.
+- `dropUnsaved` forgets it when a save sent after it lands, or when the person leaves it behind. Otherwise a change could come back over a copy that only looks like its base (after "Astra's original", say).
+
+Build editor:
+- `saveCopy` never throws and says "Couldn't save…" on a failure. On a stale deploy it keeps the copy and reloads, keeping the copy on screen at the last moment.
+- `done()` saves a copy not yet saved. If that fails it asks `editorLeaveUnsaved` (four languages) and forgets the copy on yes. A tab a deploy left behind stays for its reload.
+- `sendAsk` saves a pending hand edit before Astra is asked.
+- "Astra's original" and the close flush go through the same paths.
+- The kept copy comes back as an edit: in the history, on the stage, and saved.
+
+TESTS. `set-page-failures.test.ts` scans every Helios action call in `components/sets` and fails unless it is awaited inside a try or has a rejection handler. On a59aef0's pages the scan flags exactly the 13 unhandled calls, and none now. The same file holds each rule above. `unsaved.test.ts` and `stale-deploy.test.ts` cover the store and the guard. 24 mutations were tried, and every one failed the tests.
+
+CHECKED in the inert worktree, with an in-page fetch override (a rejected call, and Next 16's stale-action 404) and worktree-only cookie switches in the action copies:
+- The Astra change's failure let go.
+- The stale case reloaded after 1.8 s.
+- A stale rig save kept Flat + Mint Diner and put them back after the reload, and the server log shows them saved.
+- A beat's new words came back after the reload and were saved.
+- A failed Undo left the change and Undo in place. A saved one cleared the line and re-shot the card picture.
+- Three failed take polls stayed quiet, 8 s apart; a stale poll reloaded.
+- In the editor:
+  - A thrown save read "Couldn't save…".
+  - Done tried once more and asked. No stayed, yes left and forgot the copy.
+  - A stale save kept both deletions, including one made during the refresh warning, and saved them after the reload (47 objects in the server log).
+  - A delete made just before an ask was saved (done at 38,425 ms) before the ask went (38,444 ms).
+
+NOT in this cut: a stale Undo is not kept (the edit stays as the server has it), and the camera is not kept across the reload (it goes back to its last save). The composer and the rest of the app are untouched. Vercel's Skew Protection would keep an open tab talking to the deploy it loaded; that is a project setting, the operator's call.
+
 **2026-09-16: the lab on the stage ("No testing for now, we are low on funds. Keep going.").** The rig's panel promises that every choice shows on the stage before a credit moves — true of the frame lines, the field of view, the depth of field, the light and the palettes, and not of the two looks the lab now holds. `lab-preview.ts` is one fragment pass on the live view (a ShaderPass after the composer's output pass, so it works on the picture as shown rather than on linear light), added beside the depth of field and loaded with it. It draws what the eye knows a stock or a lens by: 35 mm's fine grain, 16 mm's softness and coarse grain and vignette, home video's smear, dragged chroma and scanlines, a vintage lens's glow and dark corners, halation's bloom, an anamorphic streak. Costs nothing but a pass; the grain is hashed in screen space at the render's own pixel scale, so a 2× display gets 2× specks.
 
 Two things it deliberately does NOT do, both found on the stage. It stops at the frame lines: the picture is the band, and a viewport full of grain reads as a broken screen. And it draws TEXTURE, NOT TONE: lifted blacks, warmth and washed colour belong to a finished photograph, and on the grey mock — nearly all dark — 16 mm's lifted blacks came out as fog across the whole band. Silver Print is not in the pass either; the palettes already preview themselves as a CSS grade over the canvas, and doing it twice would double the contrast. The sketch the image model sees is untouched, as always: `frame()` and `snapshot()` render straight from the renderer, past the composer. Checked on the real components in the inert worktree: 35 mm, 16 mm and home video, before and after.

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { reportClientError } from "@/lib/generations/reports";
-import { isStaleDeployError } from "@/lib/stale-deploy";
+import { isStaleDeployError, reloadForNewDeploy } from "@/lib/stale-deploy";
 import { describeBrowser } from "@/lib/browser-label";
 
 // Renders nothing — mounted once in the logged-in app shell (app/layout.tsx)
@@ -48,18 +48,10 @@ export function AppErrorReporter() {
         isStaleDeployError(err) ||
         isStaleDeployError(message) ||
         STALE_BUILD_SIGNATURES.some((sig) => message.includes(sig));
-      if (stale) {
-        const KEY = "picacho-stale-build-reload";
-        let last = 0;
-        try { last = Number(sessionStorage.getItem(KEY)) || 0; } catch { /* blocked storage */ }
-        if (Date.now() - last > 30_000) {
-          try { sessionStorage.setItem(KEY, String(Date.now())); } catch { /* blocked storage */ }
-          window.location.reload();
-          return;
-        }
-        // Reloaded under 30s ago and it's STILL throwing — that's a real
-        // problem, not skew; fall through and file it.
-      }
+      // Reloaded under 30s ago and it's STILL throwing — that's a real
+      // problem, not skew; fall through and file it (the guard is shared
+      // with the pages that reload for a new deploy themselves).
+      if (stale && reloadForNewDeploy()) return;
       if (reportCount >= MAX_REPORTS_PER_LOAD) return;
       const key = `${message}::${context}`;
       if (seenMessages.has(key)) return;

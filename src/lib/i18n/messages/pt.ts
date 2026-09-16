@@ -2022,6 +2022,7 @@ const pt = {
     editorSaving: "Salvando…",
     editorSaved: "Salvo na sua cópia",
     editorSaveFailed: "Não foi possível salvar — tentaremos de novo na sua próxima mudança",
+    editorLeaveUnsaved: "Não foi possível salvar suas últimas mudanças. Sair sem elas?",
     editorOriginal: "O original do Astra",
     editorOriginalHint: "Traga o set de volta a como o Astra o construiu no começo — ↺ desfaz isso também",
     editorDone: "Pronto — Fotografar",

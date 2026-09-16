@@ -335,6 +335,7 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "editorAskLeftNone",
     "editorAskLeftTitle",
     "editorNarrow",
+    "editorLeaveUnsaved",
   ] as const;
   const SERVER_KEYS = [
     "setPhotoUnreadable",
