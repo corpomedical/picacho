@@ -2110,6 +2110,8 @@ const pt = {
     filmPlayMove: "Reproduzir o movimento",
     filmPlayFilm: "Reproduzir o filme",
     filmRender: "Renderizar o filme · {n} créditos",
+    filmRenderFrom: "Renderizar a partir do trecho {b} · {n} créditos",
+    filmRenderAgain: "Renderizar o filme de novo · {n} créditos",
     filmRendering: "Trecho {i} de {n} — primeiro o quadro final, depois o clipe…",
     filmBeatStill: "quadro final…",
     filmBeatClip: "clipe renderizando…",

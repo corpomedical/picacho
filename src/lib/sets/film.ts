@@ -13,6 +13,7 @@ import { cleanText } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, SET_TAKE_ENGINES, type SetTakeEngine } from "./take";
 import { isFilmMove, isFilmTexture, type FilmMove, type FilmTexture } from "./moves";
+import type { SetRig } from "./rig";
 
 /** The stage's own camera pose shape (set-view's Pose, held as data). */
 export type FilmPose = { position: Vec3; target: Vec3; fovDeg: number };
@@ -40,6 +41,17 @@ export type SetFilm = {
    * Shorter than the beats when the film is part-rendered or part-stale.
    */
   clips: (string | null)[];
+  /**
+   * The end still each rendered beat closed on, beside its clip — where the
+   * next beat opens when only it renders again (filmRenderFrom).
+   */
+  ends: (string | null)[];
+  /**
+   * What the clips were rendered with besides the move itself: who is in
+   * it, the rig as it reaches the picture, where the figure stands and the
+   * set (filmContextKey). Under another, the film renders from its start.
+   */
+  context: string | null;
 };
 
 /**
@@ -75,7 +87,7 @@ const pose = (v: unknown): FilmPose | null => {
  * at the ceiling. Nothing here throws; an unusable value is an empty film.
  */
 export function normaliseSetFilm(v: unknown): SetFilm {
-  const empty: SetFilm = { engine: SET_TAKE_DEFAULT_ENGINE, startId: null, beats: [], clips: [] };
+  const empty: SetFilm = { engine: SET_TAKE_DEFAULT_ENGINE, startId: null, beats: [], clips: [], ends: [], context: null };
   if (!v || typeof v !== "object") return empty;
   const f = v as Record<string, unknown>;
   const engine = isSetTakeEngine(f.engine) ? f.engine : SET_TAKE_DEFAULT_ENGINE;
@@ -99,15 +111,15 @@ export function normaliseSetFilm(v: unknown): SetFilm {
       beats.push({ words, end, move, textures });
     }
   }
-  const clips: (string | null)[] = [];
-  if (Array.isArray(f.clips)) {
-    for (const c of f.clips) {
-      if (clips.length >= beats.length) break;
-      clips.push(typeof c === "string" && UUID_RE.test(c) ? c.toLowerCase() : null);
-    }
-  }
-  return { engine, startId, beats, clips };
+  const ids = (list: unknown): (string | null)[] =>
+    (Array.isArray(list) ? list : [])
+      .slice(0, beats.length)
+      .map((c) => (typeof c === "string" && UUID_RE.test(c) ? c.toLowerCase() : null));
+  const context = typeof f.context === "string" && CONTEXT_RE.test(f.context) ? f.context : null;
+  return { engine, startId, beats, clips: ids(f.clips), ends: ids(f.ends), context };
 }
+
+const CONTEXT_RE = /^[0-9a-f]{1,16}$/;
 
 /** Two beats as the same beat: every field the take is rendered from. */
 function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
@@ -131,25 +143,22 @@ function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
  * through here, the way normaliseSetFilm is the door for a stored one.
  */
 export function filmAfterEdit(prev: SetFilm, next: SetFilm): SetFilm {
-  if (next.engine !== prev.engine || next.startId !== prev.startId) return { ...next, clips: [] };
-  const clips: (string | null)[] = [];
-  for (let i = 0; i < next.beats.length; i++) {
-    const was = prev.beats[i];
-    if (!was || !sameBeat(was, next.beats[i])) break;
-    clips.push(prev.clips[i] ?? null);
-  }
-  return { ...next, clips };
+  if (next.engine !== prev.engine || next.startId !== prev.startId) return { ...next, clips: [], ends: [] };
+  let kept = 0;
+  while (kept < next.beats.length && prev.beats[kept] && sameBeat(prev.beats[kept], next.beats[kept])) kept++;
+  return { ...next, clips: prev.clips.slice(0, kept), ends: prev.ends.slice(0, kept) };
 }
 
 /**
- * The shots a film stands on, once each: its opening still and the clip each
- * beat rendered as. The set page loads these whatever their age (data.ts) —
- * the reel plays the clips, the dock shows the still, and Play the move
- * starts from the still's camera.
+ * The shots a film stands on, once each: its opening still, the clip each
+ * beat rendered as and the still each closed on. The set page loads these
+ * whatever their age (set-shots.ts) — the reel plays the clips, the dock
+ * shows the opening still, Play the move starts from its camera, and a
+ * render that picks up part-way opens on an end still.
  */
 export function filmShotIds(film: SetFilm | null): string[] {
   if (!film) return [];
-  return [...new Set([film.startId, ...film.clips].filter((id): id is string => id !== null))];
+  return [...new Set([film.startId, ...film.clips, ...film.ends].filter((id): id is string => id !== null))];
 }
 
 /** Whether every beat of this film has a clip: what the reel needs to play. */
@@ -160,4 +169,70 @@ export function filmRendered(film: SetFilm): boolean {
 /** How long the film runs: every beat is its engine's one fixed length. */
 export function filmSeconds(film: SetFilm): number {
   return film.beats.length * SET_TAKE_ENGINES[film.engine].seconds;
+}
+
+// ---------------------------------------------------------------------------
+// Rendering only what changed (2026-09-16).
+// ---------------------------------------------------------------------------
+
+/** A short, stable key for a long text (cyrb53: 53 bits, not cryptographic — it tells films apart and guards nothing). */
+export function textKey(text: string): string {
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
+
+/**
+ * What a film is rendered with besides its own move, as one key: who is in
+ * it, the rig as it reaches the picture, where the figure stands, and the
+ * set (`setKey`, textKey of the drawn spec). Every rig field is named, in a
+ * fixed order, so the key never turns on how an object happened to be
+ * built; the genre (a suggestion, no words) and the stage's grade (the
+ * preview only) never reach the picture and are left out.
+ */
+export function filmContextKey(input: {
+  characterId: string;
+  rig: SetRig;
+  mark: { x: number; z: number; facingDeg: number };
+  setKey: string;
+}): string {
+  const { rig, mark } = input;
+  const light = rig.light ? [rig.light.scheme, rig.light.azimuthDeg, rig.light.elevationDeg] : null;
+  return textKey(
+    JSON.stringify([
+      input.characterId,
+      [rig.format, rig.era, rig.stock, rig.lens, rig.stop, rig.palette, light],
+      [mark.x, mark.z, mark.facingDeg],
+      input.setKey,
+    ]),
+  );
+}
+
+/**
+ * Where a render of this film picks up, and the still that beat opens on.
+ * Each beat opens on the frame the one before it closed on, so the clips
+ * worth keeping are a run from the start: every beat whose clip is still
+ * good (a clip rendering counts — it is on its way), stepped back while the
+ * beat before has no finished end still to open on. A film rendered under
+ * another context starts again from the top. `from` equal to the number of
+ * beats means every beat is rendered already.
+ */
+export function filmRenderFrom(
+  film: SetFilm,
+  context: string,
+  ok: { clip: (id: string) => boolean; end: (id: string) => boolean },
+): { from: number; startId: string | null } {
+  if (film.context !== context) return { from: 0, startId: film.startId };
+  let from = 0;
+  while (from < film.beats.length && film.clips[from] && ok.clip(film.clips[from]!)) from++;
+  if (from === film.beats.length) return { from, startId: null };
+  while (from > 0 && !(film.ends[from - 1] && ok.end(film.ends[from - 1]!))) from--;
+  return { from, startId: from === 0 ? film.startId : film.ends[from - 1] };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { LocalDate } from "@/components/local-date";
 import { useLocale } from "@/lib/i18n/provider";
@@ -20,7 +20,17 @@ import {
   takeQuoteInput,
   type SetTakeEngine,
 } from "@/lib/sets/take";
-import { FILM_MAX_BEATS, filmAfterEdit, filmRendered, filmSeconds, normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
+import {
+  FILM_MAX_BEATS,
+  filmAfterEdit,
+  filmContextKey,
+  filmRendered,
+  filmRenderFrom,
+  filmSeconds,
+  normaliseSetFilm,
+  textKey,
+  type SetFilm,
+} from "@/lib/sets/film";
 import { oversizedSeating } from "@/lib/sets/human-scale";
 import { readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
@@ -341,6 +351,8 @@ export function SetView({
   // camera menus follow the edit; the engine swaps its scene via
   // api.rebuild and keeps its own initial bounds for the drag clamps.
   const [spec, setSpec] = useState<SetSpec>(initialSpec);
+  // The set as one short key, for what a film was rendered in (film.ts).
+  const setKey = useMemo(() => textKey(JSON.stringify(spec)), [spec]);
 
   const startPose: Pose = initialLayout?.camera ?? {
     position: spec.cameras[0].position,
@@ -423,8 +435,15 @@ export function SetView({
    * filmAfterEdit (film.ts) says which rendered clips the change leaves
    * true — so the reel never plays a clip of a film that no longer exists.
    * Only the render writes clips, and it writes them with setFilm itself.
+   * Nothing edits the film while a render runs: its clips are written in
+   * beat order as they come back, and an edit that dropped some under it
+   * would leave the next one in the wrong beat's place (filmBusyRef).
    */
-  const editFilm = useCallback((fn: (f: SetFilm) => SetFilm) => setFilm((f) => filmAfterEdit(f, fn(f))), []);
+  const filmBusyRef = useRef(false);
+  const editFilm = useCallback((fn: (f: SetFilm) => SetFilm) => {
+    if (filmBusyRef.current) return;
+    setFilm((f) => filmAfterEdit(f, fn(f)));
+  }, []);
   /** The reel: which clip is playing on the stage; null when closed. */
   const [reel, setReel] = useState<number | null>(null);
   const [previz, setPreviz] = useState(false);
@@ -1729,8 +1748,9 @@ export function SetView({
    */
   function filmMove(move: FilmMove) {
     const api = apiRef.current;
-    // Not mid-flight: a pick then lays from where the last one is still flying.
-    if (!api || previz) return;
+    // Not mid-flight: a pick then lays from where the last one is still
+    // flying. Not while the film renders either: the move could not be kept.
+    if (!api || previz || filmBusyRef.current) return;
     const at = filmSel !== null && film.beats[filmSel] ? filmSel : film.beats.length < FILM_MAX_BEATS ? film.beats.length : null;
     if (at === null) return;
     // Beat 1 starts where the film starts: the start still's own camera,
@@ -1801,11 +1821,31 @@ export function SetView({
   }
 
   /**
+   * What Render would do now (film.ts filmRenderFrom): the beats from the
+   * first whose clip is gone or stale, opening on the still the beat before
+   * closed on — nothing already paid for is rendered twice. With every beat
+   * rendered, the button renders the whole film again, as a new take of it.
+   * A film rendered with another person, rig, mark or set renders from its
+   * start: its clips are of another film.
+   */
+  function filmPlanNow() {
+    const context = filmContextKey({ characterId, rig, mark, setKey });
+    const shotOf = (id: string) => shots.find((sh) => sh.generationId === id);
+    const plan = filmRenderFrom(film, context, {
+      clip: (id) => (shotOf(id)?.status ?? "failed") !== "failed",
+      end: (id) => shotOf(id)?.status === "succeeded",
+    });
+    return plan.from < film.beats.length
+      ? { ...plan, context, again: false }
+      : { from: 0, startId: film.startId, context, again: true };
+  }
+
+  /**
    * Render the film: one take per beat, back to back — each beat's end
    * frame shot from its saved pose with the previous frame as its look, so
-   * beat n opens on the exact frame beat n-1 closed on. A beat that fails
-   * stops the chain and says so; everything already rendered is kept, in
-   * the filmstrip like any take.
+   * beat n opens on the exact frame beat n-1 closed on. Only from where the
+   * film changed (filmPlanNow). A beat that fails stops the chain and says
+   * so; everything already rendered is kept, in the filmstrip like any take.
    */
   async function renderFilm() {
     const api = apiRef.current;
@@ -1816,13 +1856,15 @@ export function SetView({
     }
     if (film.beats.length === 0) return;
     setFilmError("");
-    // A fresh render starts the reel over: the old clips are of the film
-    // this one replaces, whether or not each beat still matches.
-    setFilm((f) => ({ ...f, clips: [] }));
+    // The clips before the plan's first beat stay the film's; the rest are
+    // rendered again under what the film is rendered with now.
+    const plan = filmPlanNow();
+    filmBusyRef.current = true;
+    setFilm((f) => ({ ...f, context: plan.context, clips: f.clips.slice(0, plan.from), ends: f.ends.slice(0, plan.from) }));
     setReel(null);
     setViewing(null);
-    let startId = film.startId;
-    for (let i = 0; i < film.beats.length; i++) {
+    let startId = plan.startId ?? film.startId;
+    for (let i = plan.from; i < film.beats.length; i++) {
       setFilmBusy({ beat: i });
       const beat = film.beats[i];
       const frame = api.frame({ from: beat.end });
@@ -1895,14 +1937,20 @@ export function SetView({
           ]
         : [endStill];
       setShots((prev) => [...rows, ...prev]);
-      // Kept on the film, so the reel is still there after the page closes.
-      setFilm((f) => ({ ...f, clips: [...f.clips, result.takeGenerationId] }));
+      // Kept on the film, so the reel is still there after the page closes
+      // and a later render can open on this beat's end.
+      setFilm((f) => ({
+        ...f,
+        clips: [...f.clips, result.takeGenerationId],
+        ends: [...f.ends, result.still.succeeded ? result.still.generationId : null],
+      }));
       if (!result.still.succeeded || result.takeGenerationId === null) {
         setFilmError(result.takeError ?? s.filmBeatFailed);
         break;
       }
       startId = result.still.generationId;
     }
+    filmBusyRef.current = false;
     setFilmBusy(null);
   }
 
@@ -2238,9 +2286,10 @@ export function SetView({
   const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
   // A take's whole price: the end still plus the clip, as the server charges them.
   const takeCredits = quote.totalCredits + quoteSend(takeQuoteInput(takeEngine)).totalCredits;
-  // The film's whole price: every beat is one take — an end frame and a
-  // clip — priced by the same quotes the server charges with.
-  const filmCredits = film.beats.length * (quote.totalCredits + quoteSend(takeQuoteInput(film.engine)).totalCredits);
+  // What Render would render now, and its price: every beat is one take —
+  // an end frame and a clip — priced by the same quotes the server charges.
+  const filmPlan = filmPlanNow();
+  const filmCredits = (film.beats.length - filmPlan.from) * (quote.totalCredits + quoteSend(takeQuoteInput(film.engine)).totalCredits);
   // The reel plays the clips the film remembers (film.clips), so a film
   // rendered on an earlier visit can be watched again — the beats' rows are
   // the set's own shots either way.
@@ -3015,6 +3064,7 @@ export function SetView({
                 <button
                   type="button"
                   onClick={() => editFilm((f) => ({ ...f, engine: "omni" }))}
+                  disabled={Boolean(filmBusy)}
                   className={chip(film.engine === "omni")}
                 >
                   {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
@@ -3022,6 +3072,7 @@ export function SetView({
                 <button
                   type="button"
                   onClick={() => editFilm((f) => ({ ...f, engine: "veo" }))}
+                  disabled={Boolean(filmBusy)}
                   className={chip(film.engine === "veo")}
                 >
                   {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
@@ -3041,7 +3092,11 @@ export function SetView({
                 >
                   {filmBusy
                     ? formatMsg(s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
-                    : formatMsg(s.filmRender, { n: filmCredits })}
+                    : filmPlan.again
+                      ? formatMsg(s.filmRenderAgain, { n: filmCredits })
+                      : filmPlan.from > 0
+                        ? formatMsg(s.filmRenderFrom, { b: filmPlan.from + 1, n: filmCredits })
+                        : formatMsg(s.filmRender, { n: filmCredits })}
                 </button>
               </div>
               <div className="flex items-stretch gap-2 overflow-x-auto">
@@ -3049,6 +3104,7 @@ export function SetView({
                   <button
                     type="button"
                     onClick={() => toggleMenu("filmStart")}
+                    disabled={Boolean(filmBusy)}
                     aria-haspopup="listbox"
                     aria-expanded={menu === "filmStart"}
                     title={s.filmStarts}
@@ -3126,8 +3182,9 @@ export function SetView({
                           editFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== i) }));
                           setFilmSel(null);
                         }}
+                        disabled={Boolean(filmBusy)}
                         aria-label={t.common.dismiss}
-                        className="cursor-pointer hover:text-[#ecedf1]"
+                        className="cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
                       >
                         ×
                       </button>
@@ -3141,6 +3198,7 @@ export function SetView({
                         }))
                       }
                       onFocus={() => setFilmSel(i)}
+                      disabled={Boolean(filmBusy)}
                       placeholder={s.filmBeatWords}
                       className="h-7 rounded-[6px] bg-black/40 px-2 text-xs text-[#ecedf1] ring-1 ring-white/[0.08] placeholder:text-[#565a64] focus:outline-none focus:ring-[#e0a468]/60"
                     />
@@ -3150,7 +3208,7 @@ export function SetView({
                   <button
                     type="button"
                     onClick={filmAddKeyframe}
-                    disabled={!ready}
+                    disabled={!ready || Boolean(filmBusy)}
                     className={`${chip(false)} h-auto min-h-[52px] flex-shrink-0 whitespace-nowrap`}
                   >
                     + {s.filmKeyframe}

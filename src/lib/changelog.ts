@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.39.0",
+    build: 58,
+    date: "2026-09-16",
+    title: "A film renders only what changed",
+    items: [
+      "Change one beat of a film and Render used to render every beat again, charging for clips that hadn't changed. It now picks up at the first beat that changed and opens it on the exact frame the beat before it closed on, so the film stays one continuous shot. Change the last beat of a three-beat film and you pay for one beat — 13 credits on Veo 3.1 instead of 39, 3 on Gemini Omni instead of 9.",
+      "The button says what it will do and what it costs: Render the film, Render from beat 2, or Render the film again once every beat is done (a fresh take of the whole film).",
+      "A film is only kept in part when nothing else changed. Switch who is in it, change the rig, move the figure or edit the set, and the next render starts from the top — a beat rendered one way never opens on a frame shot another way.",
+      "While a film renders, its beats, engine and opening still wait until it's done, so nothing you change mid-render gets filed under the wrong beat.",
+    ],
+  },
+  {
     version: "1.38.4",
     build: 57,
     date: "2026-09-16",

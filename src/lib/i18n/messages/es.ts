@@ -2110,6 +2110,8 @@ const es = {
     filmPlayMove: "Reproducir el movimiento",
     filmPlayFilm: "Reproducir la película",
     filmRender: "Renderizar la película · {n} créditos",
+    filmRenderFrom: "Renderizar desde el tramo {b} · {n} créditos",
+    filmRenderAgain: "Renderizar la película de nuevo · {n} créditos",
     filmRendering: "Tramo {i} de {n} — primero el fotograma final, luego el clip…",
     filmBeatStill: "fotograma final…",
     filmBeatClip: "clip en render…",

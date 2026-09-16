@@ -1,5 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { FILM_MAX_BEATS, filmAfterEdit, filmRendered, filmSeconds, filmShotIds, normaliseSetFilm, type FilmPose } from "./film";
+import {
+  FILM_MAX_BEATS,
+  filmAfterEdit,
+  filmContextKey,
+  filmRendered,
+  filmRenderFrom,
+  filmSeconds,
+  filmShotIds,
+  normaliseSetFilm,
+  textKey,
+  type FilmPose,
+  type SetFilm,
+} from "./film";
+import { DEFAULT_SET_RIG, normaliseSetRig, type SetRig } from "./rig";
 import { SET_TAKE_ENGINES, SET_TAKES_PER_10_MIN } from "./take";
 
 // The film's one door: whatever is stored or sent becomes a usable film or
@@ -159,5 +172,136 @@ describe("filmShotIds", () => {
     expect(filmShotIds(again)).toEqual([A, B]);
     expect(filmShotIds(normaliseSetFilm({ beats: [{ end: goodPose }], clips: [null] }))).toEqual([]);
     expect(filmShotIds(null)).toEqual([]);
+  });
+});
+
+// Rendering only what changed (2026-09-16): a film re-rendered after one
+// beat changed renders that beat and the ones after it, opening on the
+// still the beat before closed on — never a mixed film.
+
+const C = "cccccccc-1111-2222-3333-444444444444";
+const D = "dddddddd-1111-2222-3333-444444444444";
+const E1 = "eeeeeee1-1111-2222-3333-444444444444";
+const E2 = "eeeeeee2-1111-2222-3333-444444444444";
+const E3 = "eeeeeee3-1111-2222-3333-444444444444";
+const CTX = "abc123";
+const three = (over: Partial<Pick<SetFilm, "clips" | "ends" | "context">> = {}): SetFilm => ({
+  ...normaliseSetFilm({
+    startId: A,
+    beats: [
+      { words: "one", end: goodPose },
+      { words: "two", end: goodPose },
+      { words: "three", end: goodPose },
+    ],
+  }),
+  clips: [B, C, D],
+  ends: [E1, E2, E3],
+  context: CTX,
+  ...over,
+});
+const all = { clip: () => true, end: () => true };
+
+describe("a film's end stills and context, stored", () => {
+  it("keeps end stills like clips, and a context only as a short key", () => {
+    const f = normaliseSetFilm({ beats: [{ end: goodPose }, { end: goodPose }], ends: [E1, "junk", E3], context: "Deadbeef" });
+    expect(f.ends).toEqual([E1, null]);
+    expect(f.context).toBeNull();
+    expect(normaliseSetFilm({ beats: [{ end: goodPose }], context: "0f1e2d" }).context).toBe("0f1e2d");
+    expect(normaliseSetFilm({ beats: [{ end: goodPose }], context: "x".repeat(40) }).context).toBeNull();
+  });
+
+  it("an edit keeps the end stills in step with the clips, and the context as it was", () => {
+    const f = three();
+    const edited = filmAfterEdit(f, { ...f, beats: [f.beats[0], { ...f.beats[1], words: "two, again" }, f.beats[2]] });
+    expect(edited.clips).toEqual([B]);
+    expect(edited.ends).toEqual([E1]);
+    expect(edited.context).toBe(CTX);
+    expect(filmAfterEdit(f, { ...f, engine: "veo" }).ends).toEqual([]);
+  });
+
+  it("names the end stills among the shots the page must load", () => {
+    expect(filmShotIds(three())).toEqual([A, B, C, D, E1, E2, E3]);
+  });
+});
+
+describe("filmRenderFrom", () => {
+  it("renders the whole film when nothing is rendered", () => {
+    expect(filmRenderFrom(three({ clips: [], ends: [] }), CTX, all)).toEqual({ from: 0, startId: A });
+  });
+
+  it("says so when every beat is rendered", () => {
+    expect(filmRenderFrom(three(), CTX, all)).toEqual({ from: 3, startId: null });
+  });
+
+  it("picks up at the first beat without a clip, opening on the end still before it", () => {
+    expect(filmRenderFrom(three({ clips: [B, C], ends: [E1, E2] }), CTX, all)).toEqual({ from: 2, startId: E2 });
+    expect(filmRenderFrom(three({ clips: [B], ends: [E1] }), CTX, all)).toEqual({ from: 1, startId: E1 });
+  });
+
+  it("renders a beat again when its clip failed or was deleted, but not one still rendering", () => {
+    const failedC = { clip: (id: string) => id !== C, end: () => true };
+    expect(filmRenderFrom(three(), CTX, failedC)).toEqual({ from: 1, startId: E1 });
+    // The page counts a clip still rendering as good: it is on its way.
+    expect(filmRenderFrom(three(), CTX, all).from).toBe(3);
+  });
+
+  it("steps back to the beat whose end still is gone, since the next one has nothing to open on", () => {
+    const noE1 = { clip: () => true, end: (id: string) => id !== E1 };
+    expect(filmRenderFrom(three({ clips: [B, C], ends: [E1, E2] }), CTX, noE1)).toEqual({ from: 2, startId: E2 });
+    expect(filmRenderFrom(three({ clips: [B], ends: [E1] }), CTX, noE1)).toEqual({ from: 0, startId: A });
+    expect(filmRenderFrom(three({ clips: [B, C], ends: [E1, null] }), CTX, all)).toEqual({ from: 1, startId: E1 });
+  });
+
+  it("does not render a finished film's last beat again for want of an end nothing opens on", () => {
+    expect(filmRenderFrom(three({ ends: [E1, E2, null] }), CTX, all)).toEqual({ from: 3, startId: null });
+  });
+
+  it("starts from the top for a film rendered under another context, or none", () => {
+    expect(filmRenderFrom(three(), "other", all)).toEqual({ from: 0, startId: A });
+    expect(filmRenderFrom(three({ context: null }), CTX, all)).toEqual({ from: 0, startId: A });
+  });
+});
+
+describe("filmContextKey", () => {
+  const rig = (over: Partial<SetRig> = {}): SetRig => normaliseSetRig({ ...DEFAULT_SET_RIG, format: "scope", stock: "film35", ...over });
+  const mark = { x: 1, z: 2, facingDeg: 90 };
+  const key = (over: Partial<Parameters<typeof filmContextKey>[0]> = {}) =>
+    filmContextKey({ characterId: A, rig: rig(), mark, setKey: "s1", ...over });
+
+  it("is the same for the same film, however the rig object was put together", () => {
+    const r = rig();
+    const reordered = Object.fromEntries(Object.entries(r).reverse()) as SetRig;
+    expect(key({ rig: reordered })).toBe(key({ rig: r }));
+  });
+
+  it("changes with who is in it, the rig's look, the light, the mark and the set", () => {
+    const base = key();
+    expect(key({ characterId: B })).not.toBe(base);
+    expect(key({ rig: rig({ format: "wide" }) })).not.toBe(base);
+    expect(key({ rig: rig({ palette: "silver-print" }) })).not.toBe(base);
+    expect(key({ rig: rig({ light: { scheme: "moonlight", azimuthDeg: 40, elevationDeg: 30 } }) })).not.toBe(base);
+    expect(key({ mark: { ...mark, facingDeg: 180 } })).not.toBe(base);
+    expect(key({ setKey: "s2" })).not.toBe(base);
+  });
+
+  it("ignores what never reaches the picture: the genre and the stage's grade", () => {
+    expect(key({ rig: rig({ genre: "noir" }) })).toBe(key());
+    expect(key({ rig: rig({ gradeStage: false }) })).toBe(key());
+  });
+
+  it("names every field the rig has, so a new control cannot slip past it", () => {
+    // A new SetRig field must either change the picture — and then join the
+    // key in film.ts — or be added here as one that does not.
+    expect(Object.keys(DEFAULT_SET_RIG).sort()).toEqual(
+      ["era", "format", "genre", "gradeStage", "lens", "light", "palette", "stock", "stop"].sort(),
+    );
+  });
+});
+
+describe("textKey", () => {
+  it("is short, stable and tells texts apart", () => {
+    expect(textKey("the race track")).toBe(textKey("the race track"));
+    expect(textKey("the race track")).not.toBe(textKey("the race track."));
+    expect(textKey("x".repeat(200_000))).toMatch(/^[0-9a-f]{1,14}$/);
   });
 });

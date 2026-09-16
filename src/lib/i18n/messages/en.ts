@@ -2250,6 +2250,8 @@ const en = {
     filmPlayMove: "Play the move",
     filmPlayFilm: "Play the film",
     filmRender: "Render the film · {n} credits",
+    filmRenderFrom: "Render from beat {b} · {n} credits",
+    filmRenderAgain: "Render the film again · {n} credits",
     filmRendering: "Beat {i} of {n} — the end frame, then the clip…",
     filmBeatStill: "end frame…",
     filmBeatClip: "clip rendering…",

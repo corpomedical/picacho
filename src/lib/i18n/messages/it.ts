@@ -2109,6 +2109,8 @@ const it = {
     filmPlayMove: "Riproduci il movimento",
     filmPlayFilm: "Riproduci il film",
     filmRender: "Renderizza il film · {n} crediti",
+    filmRenderFrom: "Renderizza dal tratto {b} · {n} crediti",
+    filmRenderAgain: "Renderizza di nuovo il film · {n} crediti",
     filmRendering: "Tratto {i} di {n} — prima il fotogramma finale, poi la clip…",
     filmBeatStill: "fotogramma finale…",
     filmBeatClip: "clip in rendering…",
