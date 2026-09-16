@@ -1068,7 +1068,9 @@ export async function takeInSet(
 // the person's words and the set itself, because the monthly cap counts
 // builds and a deleted build was still a build (see the header). The takes
 // shot in it stay in History: they are takes, and deleting one is History's
-// decision.
+// decision. What the set kept about them goes (2026-09-16).
+const CLEAR_SET_WORK = { edited_spec: null, film: null, rig: null } as const;
+
 export async function deleteSet(setId: string): Promise<{ error: string | null }> {
   const supabase = await createClient();
   const { data: userData } = await supabase.auth.getUser();
@@ -1135,6 +1137,24 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
     // beside its card at fixed names (set-config.ts setLookCutoutPath), so
     // listing the folder finds them all. Best-effort, like the photo.
     await removeSetLookCutouts(admin, userId, setId);
+    // What later work kept on the row, cleared like the words and the spec
+    // above: the Build editor's working copy (the set itself), the film (the
+    // person's words for each beat, and its camera moves) and the rig. A
+    // write of its own, so the delete above never names a column that may
+    // not exist; a failure is said and the delete stands.
+    const { error: workError } = await admin
+      .from("location_sets")
+      .update(CLEAR_SET_WORK)
+      .eq("id", setId)
+      .eq("user_id", userId);
+    if (workError) console.warn("deleteSet couldn't clear the working copy, film and rig:", workError.message);
+    // And the set's record of each shot — the person's words for it, what a
+    // take was made from, the rig it was shot with and what the check read,
+    // the camera it was framed from. The stills and takes themselves stay in
+    // History; nothing reads these rows once their set is gone (the storage
+    // audit counts only live sets', and the cutouts went above).
+    const { error: shotsError } = await admin.from("location_set_shots").delete().eq("set_id", setId).eq("user_id", userId);
+    if (shotsError) console.warn("deleteSet couldn't remove the set's shot records:", shotsError.message);
     return { error: null };
   }
   return { error: SET_DELETE_FAILED };

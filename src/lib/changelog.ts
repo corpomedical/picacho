@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.9",
+    build: 73,
+    date: "2026-09-16",
+    title: "Deleting a set deletes what it kept",
+    items: [
+      "Deleting a set cleared its description, the set, its card, its photo and its cutouts, but not what later features kept: the Build editor's working copy, the film with your words for each beat, and the rig. It clears those now too.",
+      "It also removes the set's record of each shot: your words for each still, what each take was made from, the rig each was shot with and what the check read. The stills and takes themselves stay in your History, as before.",
+      "A test now fails if a set gains a stored field that deleting doesn't clear, so this can't quietly happen again.",
+    ],
+  },
+  {
     version: "1.40.8",
     build: 72,
     date: "2026-09-16",
