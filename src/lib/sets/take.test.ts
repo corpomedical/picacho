@@ -7,7 +7,9 @@ import {
   retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
+  stillQuoteInput,
   takeQuoteInput,
+  takesCredits,
   type TakeSource,
 } from "./take";
 import { quoteSend } from "../generations/quote";
@@ -186,5 +188,73 @@ describe("what a take keeps (actions.ts, set-view.tsx)", () => {
     expect(retry).not.toContain("film:");
     expect(single).not.toContain("film:");
     expect(view.match(/film: true,/g)).toHaveLength(1);
+  });
+});
+
+// A take is paid for whole or not at all (2026-09-16): its end still was
+// charged before its clip was asked for, so a person who could pay for the
+// still and not the clip got a still they had not asked for alone. The
+// server now asks the balance for both at once, and a film for its whole
+// render, at the prices the buttons show.
+describe("what takes cost together", () => {
+  it("prices a still as the one image the shot action sends", () => {
+    expect(stillQuoteInput().contentType).toBe("image");
+    expect(quoteSend(stillQuoteInput()).totalCredits).toBe(1);
+  });
+
+  it("adds a clip for each take and a still for each one that shoots its end", () => {
+    const still = quoteSend(stillQuoteInput()).totalCredits;
+    for (const engine of ["omni", "veo"] as const) {
+      const clip = quoteSend(takeQuoteInput(engine)).totalCredits;
+      expect(takesCredits(engine, { clips: 1, stills: 1 })).toBe(clip + still);
+      expect(takesCredits(engine, { clips: 1, stills: 0 })).toBe(clip);
+      expect(takesCredits(engine, { clips: 3, stills: 2 })).toBe(3 * clip + 2 * still);
+      expect(takesCredits(engine, { clips: 0, stills: 0 })).toBe(0);
+    }
+  });
+});
+
+describe("a take asks for its whole price first (actions.ts)", () => {
+  const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const take = src.slice(src.indexOf("export async function takeInSet("), src.indexOf("// Delete\n"));
+
+  it("asks for the still and the clip together, before the still is shot or the take counted", () => {
+    const ask = take.indexOf("await checkGenerationAllowance(access.supabase, userId, takesCredits(engineKey, { clips: 1, stills: 1 }), {");
+    expect(ask).toBeGreaterThan(-1);
+    expect(take.slice(ask, take.indexOf("});", ask))).toContain("skipCooldown: true");
+    expect(take).toContain("if (allowance.error) return { error: allowance.error };");
+    expect(ask).toBeLessThan(take.indexOf('rateLimited(userId, "set-take"'));
+    expect(ask).toBeLessThan(take.indexOf("await shootInSet("));
+    // Only when a still is to be shot: a reused end leaves the clip, which runGeneration asks for itself.
+    expect(take).toMatch(/ if \(!reuseId\) \{\s*const allowance = await checkGenerationAllowance\(/);
+    // The engine asked for is the engine the clip is sent on.
+    expect(take.indexOf("const engineKey = isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE;")).toBeLessThan(ask);
+  });
+});
+
+describe("the page prices and asks as the server does (set-view.tsx)", () => {
+  const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+
+  it("shows the prices the server charges", () => {
+    expect(view).toContain("const quote = quoteSend(stillQuoteInput());");
+    expect(view).toContain("const takeCredits = takesCredits(takeEngine, { clips: 1, stills: 1 });");
+    expect(view).toContain("const filmCredits = takesCredits(film.engine, filmJobCount(filmPlan.jobs));");
+    expect(view).toContain("formatMsg(s.takeRetryClip, { n: takesCredits(f.engine, { clips: 1, stills: 0 }) })");
+  });
+
+  it("asks for a film's whole render before touching the film, and lets go when refused", () => {
+    const render = view.slice(view.indexOf("async function renderFilm("), view.indexOf("async function retryClip("));
+    const ask = render.indexOf("await checkFilmCredits(setId, film.engine, filmJobCount(plan.jobs))");
+    expect(ask).toBeGreaterThan(render.indexOf("filmBusyRef.current = true;"));
+    expect(ask).toBeLessThan(render.indexOf("keep(kept);"));
+    expect(ask).toBeLessThan(render.indexOf("for (const job of plan.jobs)"));
+    const refusedAt = render.indexOf("if (refused) {");
+    const refusal = render.slice(refusedAt, render.indexOf("return;", refusedAt));
+    expect(refusal).toContain("filmBusyRef.current = false;");
+    expect(refusal).toContain("setFilmBusy(null);");
+    // The button shows the render begun while the question is out.
+    expect(render.indexOf("if (first) setFilmBusy({ beat: first.beat, clipOnly: first.end !== null });")).toBeLessThan(ask);
+    // A second press while the question is out is ignored.
+    expect(render).toContain("if (!api || filmBusy || filmBusyRef.current || shooting || !ready) return;");
   });
 });

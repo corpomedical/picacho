@@ -18,7 +18,8 @@ import {
   retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
-  takeQuoteInput,
+  stillQuoteInput,
+  takesCredits,
   type SetTakeEngine,
   type TakeSource,
 } from "@/lib/sets/take";
@@ -26,6 +27,7 @@ import {
   FILM_MAX_BEATS,
   filmAfterEdit,
   filmContextKey,
+  filmJobCount,
   filmRendered,
   filmRenderPlan,
   filmSeconds,
@@ -34,7 +36,7 @@ import {
   type SetFilm,
 } from "@/lib/sets/film";
 import { oversizedSeating } from "@/lib/sets/human-scale";
-import { readTakes, saveSetFilm } from "@/lib/sets/film-actions";
+import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, findLook, formatFrame, normaliseSetRig, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
@@ -79,9 +81,9 @@ import type { SetCharacter, SetShot } from "@/lib/sets/types";
 // sentence, in the person's language. A reading that fails takes the
 // message as what happens in the frame and says so.
 //
-// Nothing here touches money. The shot's price comes from quoteSend (the
-// function the server charges with), and shootInSet hands the frame to
-// runGeneration like any other image send. Everything drawn comes from the
+// Nothing here touches money. The prices come from quoteSend (the function
+// the server charges with, through take.ts), and shootInSet hands the frame
+// to runGeneration like any other image send. Everything drawn comes from the
 // normalised spec through build-scene.ts; three.js loads dynamically, only
 // on this route.
 
@@ -1544,18 +1546,7 @@ export function SetView({
   })();
 
   // THE price, from the function the server charges with: one image take.
-  const quote = quoteSend({
-    contentType: "image",
-    videoModelId: "kling",
-    videoDurationSeconds: 5,
-    videoResolution: null,
-    storyboardTotalSeconds: null,
-    referencePhotoCount: 0,
-    framePicked: false,
-    continuationSourceSeconds: null,
-    dialoguePresent: false,
-    renderCount: 1,
-  });
+  const quote = quoteSend(stillQuoteInput());
 
   // ---- what the frame is, in words ----
   const activeLens = nearestLens(fovDeg);
@@ -1989,7 +1980,7 @@ export function SetView({
    */
   async function renderFilm() {
     const api = apiRef.current;
-    if (!api || filmBusy || shooting || !ready) return;
+    if (!api || filmBusy || filmBusyRef.current || shooting || !ready) return;
     if (!characterId || !film.startId) {
       setFilmError(s.filmNeedsStart);
       return;
@@ -1999,6 +1990,27 @@ export function SetView({
     const plan = filmPlanNow();
     if (plan.again && plan.rendering) return;
     filmBusyRef.current = true;
+    // The whole render is paid for, or none of it is started: asked of the
+    // person's balance at the Render button's price before the first beat
+    // (each take still asks for its own). The film is not touched until the
+    // answer is yes; the button says the render has begun meanwhile, as it
+    // has, and is not pressed twice.
+    const first = plan.jobs[0];
+    if (first) setFilmBusy({ beat: first.beat, clipOnly: first.end !== null });
+    let refused: string | null;
+    try {
+      refused = (await checkFilmCredits(setId, film.engine, filmJobCount(plan.jobs))).error;
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      refused = stale ? t.generate.refreshNeeded : t.generate.submitFailed;
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+    }
+    if (refused) {
+      filmBusyRef.current = false;
+      setFilmBusy(null);
+      setFilmError(refused);
+      return;
+    }
     // The film as this render writes it, saved the moment each beat lands
     // rather than after the autosave's pause: a clip already paid for must
     // not be lost to a reload in between, or the next render pays again.
@@ -2215,7 +2227,7 @@ export function SetView({
   }
 
   /** "Try the clip again · n credits": the clip's own price, as the server charges it. */
-  const retryLabel = (f: TakeSource) => formatMsg(s.takeRetryClip, { n: quoteSend(takeQuoteInput(f.engine)).totalCredits });
+  const retryLabel = (f: TakeSource) => formatMsg(s.takeRetryClip, { n: takesCredits(f.engine, { clips: 1, stills: 0 }) });
   // The failed takes whose clip may be rendered again (take.ts): not one
   // that has been tried again already, which would be paid for twice.
   const retryable = retryableTakes(shots);
@@ -2593,12 +2605,11 @@ export function SetView({
   const placedLine = formatMsg(s.placedLine, { name: characterName, mark: markLabel, facing: facingLabel, camera: cameraLabel, lens: lensLabel });
   const credits = quote.totalCredits === 1 ? s.creditsOne : formatMsg(s.creditsMany, { n: quote.totalCredits });
   // A take's whole price: the end still plus the clip, as the server charges them.
-  const takeCredits = quote.totalCredits + quoteSend(takeQuoteInput(takeEngine)).totalCredits;
+  const takeCredits = takesCredits(takeEngine, { clips: 1, stills: 1 });
   // What Render would render now, and its price: every beat is one take —
   // an end frame and a clip — priced by the same quotes the server charges.
   const filmPlan = filmPlanNow();
-  const clipCredits = quoteSend(takeQuoteInput(film.engine)).totalCredits;
-  const filmCredits = filmPlan.jobs.reduce((sum, job) => sum + clipCredits + (job.end ? 0 : quote.totalCredits), 0);
+  const filmCredits = takesCredits(film.engine, filmJobCount(filmPlan.jobs));
   const filmWholeFrom = filmPlan.jobs.every((job) => job.end === null) ? (filmPlan.jobs[0]?.beat ?? 0) : null;
   const filmRenderLabel = filmBusy
     ? formatMsg(filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })

@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.6",
+    build: 70,
+    date: "2026-09-16",
+    title: "A take or a film is paid for whole, or not started",
+    items: [
+      "A take's end frame was charged before its clip was even asked for, so with enough credits for the frame but not the clip — 3 credits for a Gemini Omni take, 13 for Veo 3.1 — you paid 1 for a frame on its own and got no clip. A take now checks you can pay for both before anything is spent.",
+      "A film asks the same question for its whole render before its first beat, at the price on the Render button. A film you couldn't pay for in full used to stop part way, partly paid for; now nothing starts and the dock says why. While it asks, the button already reads Beat 1 and can't be pressed twice.",
+      "The out-of-credits messages people on a plan see — too few credits left this month, all of them used, a failed payment, a plan that has ended, and credits that ran out mid-request — now show in Spanish, Portuguese and Italian too; they were English in every language.",
+    ],
+  },
+  {
     version: "1.40.5",
     build: 69,
     date: "2026-09-16",

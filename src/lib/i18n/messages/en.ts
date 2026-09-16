@@ -2535,6 +2535,17 @@ const en = {
     freeUsedToday: "You've used today's free generation — it comes back tomorrow. Pick a plan or top up credits to keep going — your characters and history stay exactly as they are.",
     insufficientDetail: "That would use {need} credits (some models cost more than 1 per video), but you only have {have} left. Top up or pick a plan to keep going.",
     trialCeiling: "That would use {need} credits (some models cost more than 1 per video) — the free trial only covers generations of up to {cap} credit(s). Top up credits or pick a plan to use this one.",
+    // The allowance check's refusals as a plan's subscriber meets them
+    // (generations/core.ts checkGenerationAllowance), and the guarded
+    // spend's (generations/actions.ts) — English only until 2026-09-16.
+    insufficientPlan: "That would use {need} credits (some models cost more than 1 per video), but you only have {have} left on your {plan} plan this month.",
+    insufficientMonth: "That would use {need} credits (some models cost more than 1 per video), but you only have {have} left this month.",
+    planCreditsUsedUpNamed: "You've used all {limit} credits included in your {plan} plan this month.",
+    givenCreditsUsedUp: "You've used all {limit} credits you've been given this month.",
+    planPaymentFailed: "Your last payment for the {plan} plan failed, so its monthly credits are paused — update your payment method in Settings, or top up credits to keep going.",
+    planInactive: "Your {plan} plan isn't active anymore, so its monthly credits are paused. Pick a plan or top up credits to keep going.",
+    outOfCredits: "You're out of credits — that request couldn't be covered.",
+    freeUsedTodayTopUp: "You've used today's free generation — it comes back tomorrow. Top up credits or pick a plan to keep going.",
     // Angle Stage server strings (lib/generations/angle-stage.ts) — pinned
     // against that source by truth-contracts, same as every entry above.
     stageNotYours: "That take can't be staged — it must be one of your own finished takes.",

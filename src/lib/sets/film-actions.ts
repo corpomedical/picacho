@@ -3,8 +3,10 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { thumbUrl } from "@/lib/media/url";
+import { checkGenerationAllowance } from "@/lib/generations/core";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
-import { normaliseSetFilm } from "@/lib/sets/film";
+import { FILM_MAX_BEATS, normaliseSetFilm } from "@/lib/sets/film";
+import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, takesCredits } from "@/lib/sets/take";
 import { SET_NOT_FOUND, SET_SAVE_FAILED, SET_EDIT_TOO_FAST } from "@/lib/sets/messages";
 
 // The film's actions (Helios Film, 2026-09-15). The move — engine, start
@@ -13,8 +15,9 @@ import { SET_NOT_FOUND, SET_SAVE_FAILED, SET_EDIT_TOO_FAST } from "@/lib/sets/me
 // cannot remember the move between visits until the column exists).
 // Rendering is NOT an action here: a film renders as a chain of takes
 // through takeInSet, one per beat, each already gated, priced and limited
-// on its own — this file only remembers the move and answers how the
-// clips are coming along.
+// on its own — this file only remembers the move, asks whether the person
+// can pay for a render before it starts, and answers how the clips are
+// coming along.
 
 /**
  * Save the person's move on their own ready set. Whatever arrives becomes
@@ -38,6 +41,33 @@ export async function saveSetFilm(setId: string, film: unknown): Promise<{ error
     return { error: SET_SAVE_FAILED };
   }
   return { error: null };
+}
+
+/**
+ * Whether the person can pay for a film render as planned, before its first
+ * beat is shot: `clips` beats, `stills` of them rendered whole (film.ts
+ * filmJobs), on the film's engine — the price on the Render button. The page
+ * renders a film one take at a time, and each take asks for its own price,
+ * so without this a film the person could not pay for in full stopped part
+ * way, paid for in part. Only a question: every take is still checked and
+ * charged on its own, so counts made up by a caller change nothing but this
+ * answer.
+ */
+export async function checkFilmCredits(
+  setId: string,
+  engine: unknown,
+  count: { clips: unknown; stills: unknown },
+): Promise<{ error: string | null }> {
+  const access = await setsAccess();
+  if (access.error !== null) return { error: access.error };
+  if (typeof setId !== "string" || !UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
+  const whole = (v: unknown, max: number) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : null);
+  const clips = whole(count?.clips, FILM_MAX_BEATS);
+  const stills = clips === null ? null : whole(count?.stills, clips);
+  if (clips === null || stills === null || clips === 0) return { error: null };
+  const credits = takesCredits(isSetTakeEngine(engine) ? engine : SET_TAKE_DEFAULT_ENGINE, { clips, stills });
+  const allowance = await checkGenerationAllowance(access.supabase, access.userId, credits, { skipCooldown: true });
+  return { error: allowance.error };
 }
 
 export type TakeStatusRow = {

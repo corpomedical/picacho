@@ -30,6 +30,9 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "This account is suspended.": "suspendedShort",
   "You're generating a bit fast — wait a few seconds and try again.": "tooFast",
   "You've used all the credits included in your plan this month.": "planCreditsUsedUp",
+  "You're out of credits — that request couldn't be covered.": "outOfCredits",
+  "You've used today's free generation — it comes back tomorrow. Top up credits or pick a plan to keep going.":
+    "freeUsedTodayTopUp",
   "Describe what you want first.": "describeFirst",
   'That didn\'t include anything to generate — describe what you want to see, like "a woman walking through a neon-lit street at night".':
     "nothingToGenerate",
@@ -223,6 +226,38 @@ const PATTERNS: {
     re: /^That would use (\d+) credits \(some models cost more than 1 per video\), but you only have (\d+) left\./,
     key: "insufficientDetail",
     params: (m) => ({ need: m[1], have: m[2] }),
+  },
+  // The allowance check's refusals to a plan's subscriber (core.ts): the
+  // plan's name rides as it is, as the catalogs write plan names.
+  {
+    re: /^That would use (\d+) credits \(some models cost more than 1 per video\), but you only have (\d+) left on your (.+) plan this month\.$/,
+    key: "insufficientPlan",
+    params: (m) => ({ need: m[1], have: m[2], plan: m[3] }),
+  },
+  {
+    re: /^That would use (\d+) credits \(some models cost more than 1 per video\), but you only have (\d+) left this month\.$/,
+    key: "insufficientMonth",
+    params: (m) => ({ need: m[1], have: m[2] }),
+  },
+  {
+    re: /^You've used all (\d+) credits included in your (.+) plan this month\.$/,
+    key: "planCreditsUsedUpNamed",
+    params: (m) => ({ limit: m[1], plan: m[2] }),
+  },
+  {
+    re: /^You've used all (\d+) credits you've been given this month\.$/,
+    key: "givenCreditsUsedUp",
+    params: (m) => ({ limit: m[1] }),
+  },
+  {
+    re: /^Your last payment for the (.+) plan failed, so its monthly credits are paused — update your payment method in Settings, or top up credits to keep going\.$/,
+    key: "planPaymentFailed",
+    params: (m) => ({ plan: m[1] }),
+  },
+  {
+    re: /^Your (.+) plan isn't active anymore, so its monthly credits are paused\. Pick a plan or top up credits to keep going\.$/,
+    key: "planInactive",
+    params: (m) => ({ plan: m[1] }),
   },
   {
     re: /^That would use (\d+) credits \(some models cost more than 1 per video\) — the free trial only covers generations of up to (\d+) credits?\./,

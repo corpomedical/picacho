@@ -11,7 +11,7 @@
 // prompt to what the action sends, and the quote to what the server will
 // charge.
 
-import type { SendQuoteInput } from "../generations/quote";
+import { quoteSend, type SendQuoteInput } from "../generations/quote";
 import { cleanText } from "./set-spec";
 import { SET_DIRECTION_MAX_CHARS } from "./set-config";
 import { FILM_MOVE_WORDS, FILM_TEXTURE_WORDS, type FilmMove, type FilmTexture } from "./moves";
@@ -84,6 +84,39 @@ export function takeQuoteInput(engine: SetTakeEngine = SET_TAKE_DEFAULT_ENGINE):
     dialoguePresent: false,
     renderCount: 1,
   };
+}
+
+/**
+ * What a set's still costs, as quoteSend prices it on the server: one image
+ * (the shot action sends content_type image, and an image's weight does not
+ * move with anything a still carries).
+ */
+export function stillQuoteInput(): SendQuoteInput {
+  return {
+    contentType: "image",
+    videoModelId: "kling",
+    videoDurationSeconds: 5,
+    videoResolution: null,
+    storyboardTotalSeconds: null,
+    referencePhotoCount: 0,
+    framePicked: false,
+    continuationSourceSeconds: null,
+    dialoguePresent: false,
+    renderCount: 1,
+  };
+}
+
+/**
+ * What takes cost together, as the server charges them: `clips` clips on
+ * the engine, `stills` of them ending on a still shot for them (a take, or
+ * a film's beat rendered whole) and the rest on a still the set already has
+ * (a clip rendered again). The price on the Take and Render buttons, and
+ * what the server asks the person's balance for before the first is shot.
+ */
+export function takesCredits(engine: SetTakeEngine, count: { clips: number; stills: number }): number {
+  return (
+    count.clips * quoteSend(takeQuoteInput(engine)).totalCredits + count.stills * quoteSend(stillQuoteInput()).totalCredits
+  );
 }
 
 /**

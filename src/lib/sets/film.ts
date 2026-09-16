@@ -222,6 +222,11 @@ export function filmContextKey(input: {
  */
 export type FilmJob = { beat: number; end: string | null };
 
+/** What a render's jobs are, to price: a clip each, and a new end still for each beat rendered whole (take.ts takesCredits). */
+export function filmJobCount(jobs: readonly FilmJob[]): { clips: number; stills: number } {
+  return { clips: jobs.length, stills: jobs.filter((job) => job.end === null).length };
+}
+
 /**
  * What a render of this film must do. Each beat opens on the still the one
  * before it closed on, so a beat whose clip is gone but whose end still is

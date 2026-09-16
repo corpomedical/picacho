@@ -7,6 +7,7 @@ import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-pol
 import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { runGeneration } from "@/lib/generations/actions";
+import { checkGenerationAllowance } from "@/lib/generations/core";
 import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { cancelAstraJob, submitAstraJob } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
@@ -36,6 +37,7 @@ import {
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
   SET_TAKES_PER_10_MIN,
+  takesCredits,
 } from "@/lib/sets/take";
 import { lookStoragePath } from "@/lib/sets/look";
 import {
@@ -935,6 +937,20 @@ export async function takeInSet(
   const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;
   const reusedUrl = reuseId ? await finishedStillUrl(access.supabase, setId, userId, reuseId) : null;
   if (reuseId && !reusedUrl) return { error: SET_TAKE_BAD_END };
+  const engineKey = isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE;
+  // The whole take is paid for, or none of it. The end still is charged
+  // before the clip is asked for, so a person who could pay for the still
+  // but not the clip was left with a still they had not asked for on its
+  // own, and no clip. Both are asked for at once, before anything is spent
+  // or counted — one check on the sum is exact for everyone Helios admits
+  // (plans and admins; the free day's slot never applies). A reused end
+  // leaves only the clip, which runGeneration asks for itself.
+  if (!reuseId) {
+    const allowance = await checkGenerationAllowance(access.supabase, userId, takesCredits(engineKey, { clips: 1, stills: 1 }), {
+      skipCooldown: true,
+    });
+    if (allowance.error) return { error: allowance.error };
+  }
   if (await rateLimited(userId, "set-take", 60 * 10, SET_TAKES_PER_10_MIN)) return { error: SET_SHOOT_TOO_FAST };
 
   let still: Extract<ShootResult, { error: null }>;
@@ -986,7 +1002,6 @@ export async function takeInSet(
   const reusedEnd = reuseId !== null;
   if (!endUrl) return { error: null, still, reusedEnd, takeGenerationId: null, takeError: SET_TAKE_FAILED };
 
-  const engineKey = isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE;
   const engine = SET_TAKE_ENGINES[engineKey];
   const fd = new FormData();
   fd.set("content_type", "video");

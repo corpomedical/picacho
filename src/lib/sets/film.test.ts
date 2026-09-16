@@ -4,6 +4,7 @@ import {
   filmAfterEdit,
   filmContextKey,
   filmRendered,
+  filmJobCount,
   filmJobs,
   filmRenderPlan,
   filmSeconds,
@@ -345,5 +346,18 @@ describe("filmRenderPlan", () => {
   it("counts a clip the page does not hold as gone, and an end still only once it is finished", () => {
     expect(filmRenderPlan(three(), CTX, (id) => (id === D ? null : states(done)(id))).jobs).toEqual([{ beat: 2, end: E3 }]);
     expect(filmRenderPlan(three({ clips: [B] }), CTX, states({ ...done, [E1]: "generating" })).jobs).toEqual(everyBeat);
+  });
+});
+
+describe("filmJobCount", () => {
+  it("counts a clip for every job and a still for every beat rendered whole", () => {
+    expect(filmJobCount([])).toEqual({ clips: 0, stills: 0 });
+    expect(
+      filmJobCount([
+        { beat: 0, end: "00000000-0000-4000-8000-000000000001" },
+        { beat: 1, end: null },
+        { beat: 2, end: null },
+      ]),
+    ).toEqual({ clips: 3, stills: 2 });
   });
 });
