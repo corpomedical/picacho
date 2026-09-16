@@ -122,7 +122,7 @@ const COLUMNS = {
   // rig_check: the rig a still was shot with and what the rig check read
   // (applied/2026-09-15/helios-rig.sql). take: what a take was rendered
   // from, so a failed one can be rendered again after a reload
-  // (pending/helios-take-frames.sql).
+  // (applied/2026-09-16/helios-take-frames.sql).
   location_set_shots: ["set_id", "generation_id", "user_id", "created_at", "camera", "words", "rig", "rig_check", "take"],
 };
 

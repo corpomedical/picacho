@@ -16,12 +16,13 @@
 //
 // THE ONLY MODULE IN src/ THAT NAMES THE COLUMN (shot-take.test.ts scans for
 // it). location_set_shots.take arrives with
-// supabase/pending/helios-take-frames.sql. Written, like shot-rig.ts, to
-// survive its absence: PostgREST fails a whole statement that names a
-// missing column, so no other query names it — it is written in an update
-// of its own whose failure is ignored, and read in a query of its own whose
-// failure reads as "nothing kept". Without the column a take works exactly
-// as before, its frames kept for the visit that started it.
+// supabase/applied/2026-09-16/helios-take-frames.sql (run in production
+// 2026-09-16). Written, like shot-rig.ts, to survive its absence, and still
+// is: PostgREST fails a whole statement that names a missing column, so no
+// other query names it — it is written in an update of its own whose
+// failure is ignored, and read in a query of its own whose failure reads as
+// "nothing kept". Without the column a take works exactly as before, its
+// frames kept for the visit that started it.
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cleanText } from "./set-spec";
