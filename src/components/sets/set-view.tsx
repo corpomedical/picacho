@@ -25,7 +25,7 @@ import {
   filmAfterEdit,
   filmContextKey,
   filmRendered,
-  filmRenderFrom,
+  filmRenderPlan,
   filmSeconds,
   normaliseSetFilm,
   textKey,
@@ -1816,23 +1816,17 @@ export function SetView({
   }
 
   /**
-   * What Render would do now (film.ts filmRenderFrom): the beats from the
+   * What Render would do now (film.ts filmRenderPlan): the beats from the
    * first whose clip is gone or stale, opening on the still the beat before
    * closed on — nothing already paid for is rendered twice. With every beat
-   * rendered, the button renders the whole film again, as a new take of it.
-   * A film rendered with another person, rig, mark or set renders from its
-   * start: its clips are of another film.
+   * rendered, the button renders the whole film again, as a new take of it,
+   * once its clips have landed. A film rendered with another person, rig,
+   * mark or set renders from its start: its clips are of another film.
    */
   function filmPlanNow() {
     const context = filmContextKey({ characterId, rig, mark, setKey });
-    const shotOf = (id: string) => shots.find((sh) => sh.generationId === id);
-    const plan = filmRenderFrom(film, context, {
-      clip: (id) => (shotOf(id)?.status ?? "failed") !== "failed",
-      end: (id) => shotOf(id)?.status === "succeeded",
-    });
-    return plan.from < film.beats.length
-      ? { ...plan, context, again: false }
-      : { from: 0, startId: film.startId, context, again: true };
+    const plan = filmRenderPlan(film, context, (id) => shots.find((sh) => sh.generationId === id)?.status ?? null);
+    return { ...plan, context };
   }
 
   /**
@@ -1854,8 +1848,21 @@ export function SetView({
     // The clips before the plan's first beat stay the film's; the rest are
     // rendered again under what the film is rendered with now.
     const plan = filmPlanNow();
+    if (plan.again && plan.rendering) return;
     filmBusyRef.current = true;
-    setFilm((f) => ({ ...f, context: plan.context, clips: f.clips.slice(0, plan.from), ends: f.ends.slice(0, plan.from) }));
+    // The film as this render writes it, saved the moment each beat lands
+    // rather than after the autosave's pause: a clip already paid for must
+    // not be lost to a reload in between, or the next render pays again.
+    // Nothing else edits the film meanwhile (filmBusyRef), so this copy is it.
+    let kept: SetFilm = { ...film, context: plan.context, clips: film.clips.slice(0, plan.from), ends: film.ends.slice(0, plan.from) };
+    const keep = (next: SetFilm) => {
+      kept = next;
+      setFilm(next);
+      void saveSetFilm(setId, next).then((r) => {
+        if (r.error) setFilmError(r.error);
+      });
+    };
+    keep(kept);
     setReel(null);
     setViewing(null);
     let startId = plan.startId ?? film.startId;
@@ -1934,11 +1941,11 @@ export function SetView({
       setShots((prev) => [...rows, ...prev]);
       // Kept on the film, so the reel is still there after the page closes
       // and a later render can open on this beat's end.
-      setFilm((f) => ({
-        ...f,
-        clips: [...f.clips, result.takeGenerationId],
-        ends: [...f.ends, result.still.succeeded ? result.still.generationId : null],
-      }));
+      keep({
+        ...kept,
+        clips: [...kept.clips, result.takeGenerationId],
+        ends: [...kept.ends, result.still.succeeded ? result.still.generationId : null],
+      });
       if (!result.still.succeeded || result.takeGenerationId === null) {
         setFilmError(result.takeError ?? s.filmBeatFailed);
         break;
@@ -2285,6 +2292,15 @@ export function SetView({
   // an end frame and a clip — priced by the same quotes the server charges.
   const filmPlan = filmPlanNow();
   const filmCredits = (film.beats.length - filmPlan.from) * (quote.totalCredits + quoteSend(takeQuoteInput(film.engine)).totalCredits);
+  const filmRenderLabel = filmBusy
+    ? formatMsg(s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
+    : filmPlan.again
+      ? filmPlan.rendering
+        ? s.filmClipsRendering
+        : formatMsg(s.filmRenderAgain, { n: filmCredits })
+      : filmPlan.from > 0
+        ? formatMsg(s.filmRenderFrom, { b: filmPlan.from + 1, n: filmCredits })
+        : formatMsg(s.filmRender, { n: filmCredits });
   // The reel plays the clips the film remembers (film.clips), so a film
   // rendered on an earlier visit can be watched again — the beats' rows are
   // the set's own shots either way.
@@ -3081,17 +3097,18 @@ export function SetView({
                   type="button"
                   onClick={() => void renderFilm()}
                   disabled={
-                    !ready || Boolean(filmBusy) || shooting || matching || film.beats.length === 0 || !film.startId || !characterId
+                    !ready ||
+                    Boolean(filmBusy) ||
+                    shooting ||
+                    matching ||
+                    film.beats.length === 0 ||
+                    !film.startId ||
+                    !characterId ||
+                    (filmPlan.again && filmPlan.rendering)
                   }
                   className="inline-flex h-8 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-3.5 text-xs font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
                 >
-                  {filmBusy
-                    ? formatMsg(s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
-                    : filmPlan.again
-                      ? formatMsg(s.filmRenderAgain, { n: filmCredits })
-                      : filmPlan.from > 0
-                        ? formatMsg(s.filmRenderFrom, { b: filmPlan.from + 1, n: filmCredits })
-                        : formatMsg(s.filmRender, { n: filmCredits })}
+                  {filmRenderLabel}
                 </button>
               </div>
               <div className="flex items-stretch gap-2 overflow-x-auto">
@@ -3178,7 +3195,8 @@ export function SetView({
                           setFilmSel(null);
                         }}
                         disabled={Boolean(filmBusy)}
-                        aria-label={t.common.dismiss}
+                        aria-label={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
+                        title={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
                         className="cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
                       >
                         ×

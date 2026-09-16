@@ -236,3 +236,30 @@ export function filmRenderFrom(
   while (from > 0 && !(film.ends[from - 1] && ok.end(film.ends[from - 1]!))) from--;
   return { from, startId: from === 0 ? film.startId : film.ends[from - 1] };
 }
+
+/**
+ * What Render does now, from the state of each shot on the page (`stateOf`:
+ * a generation's status, or null when the page does not hold it). A clip is
+ * good unless it failed or is gone — one still rendering is on its way — and
+ * an end still is good only when finished. With every beat rendered the
+ * button renders the whole film again, as a new take of it — except while
+ * its clips are still rendering (`rendering`), when there is nothing to do
+ * but wait: offering it then would pay for the film twice.
+ */
+export function filmRenderPlan(
+  film: SetFilm,
+  context: string,
+  stateOf: (id: string) => string | null,
+): { from: number; startId: string | null; again: boolean; rendering: boolean } {
+  const plan = filmRenderFrom(film, context, {
+    clip: (id) => {
+      const state = stateOf(id);
+      return state !== null && state !== "failed";
+    },
+    end: (id) => stateOf(id) === "succeeded",
+  });
+  const rendering = film.clips.some((id) => id !== null && stateOf(id) === "generating");
+  return plan.from < film.beats.length
+    ? { ...plan, again: false, rendering }
+    : { from: 0, startId: film.startId, again: true, rendering };
+}

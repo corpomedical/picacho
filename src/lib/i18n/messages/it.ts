@@ -2114,6 +2114,8 @@ const it = {
     filmRendering: "Tratto {i} di {n} — prima il fotogramma finale, poi la clip…",
     filmBeatStill: "fotogramma finale…",
     filmBeatClip: "clip in rendering…",
+    filmClipsRendering: "Le clip sono in rendering…",
+    filmRemoveBeat: "Rimuovi il tratto {n}",
     filmBeatDone: "pronto",
     filmBeatFailed: "Quel tratto non si è potuto renderizzare — tutto ciò che viene prima resta.",
     filmClipFailed: "La clip di quel tratto non è partita — ricarica la pagina e premi di nuovo play.",

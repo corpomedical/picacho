@@ -2115,6 +2115,8 @@ const pt = {
     filmRendering: "Trecho {i} de {n} — primeiro o quadro final, depois o clipe…",
     filmBeatStill: "quadro final…",
     filmBeatClip: "clipe renderizando…",
+    filmClipsRendering: "Os clipes estão renderizando…",
+    filmRemoveBeat: "Remover o trecho {n}",
     filmBeatDone: "pronto",
     filmBeatFailed: "Esse trecho não pôde ser renderizado — tudo antes dele fica guardado.",
     filmClipFailed: "O clipe desse trecho não reproduziu — recarregue a página e toque em reproduzir de novo.",

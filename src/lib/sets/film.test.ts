@@ -5,6 +5,7 @@ import {
   filmContextKey,
   filmRendered,
   filmRenderFrom,
+  filmRenderPlan,
   filmSeconds,
   filmShotIds,
   normaliseSetFilm,
@@ -303,5 +304,34 @@ describe("textKey", () => {
     expect(textKey("the race track")).toBe(textKey("the race track"));
     expect(textKey("the race track")).not.toBe(textKey("the race track."));
     expect(textKey("x".repeat(200_000))).toMatch(/^[0-9a-f]{1,14}$/);
+  });
+});
+
+describe("filmRenderPlan", () => {
+  const states = (m: Record<string, string>) => (id: string) => m[id] ?? null;
+  const done = { [B]: "succeeded", [C]: "succeeded", [D]: "succeeded", [E1]: "succeeded", [E2]: "succeeded", [E3]: "succeeded" };
+
+  it("renders the whole film again once every clip has landed", () => {
+    expect(filmRenderPlan(three(), CTX, states(done))).toEqual({ from: 0, startId: A, again: true, rendering: false });
+  });
+
+  it("offers nothing while the clips are still on their way — a second press would pay for the film twice", () => {
+    const plan = filmRenderPlan(three(), CTX, states({ ...done, [C]: "generating", [D]: "generating" }));
+    expect(plan).toEqual({ from: 0, startId: A, again: true, rendering: true });
+  });
+
+  it("still picks up after a failed clip while the others render", () => {
+    const plan = filmRenderPlan(three(), CTX, states({ ...done, [C]: "generating", [D]: "failed" }));
+    expect(plan).toEqual({ from: 2, startId: E2, again: false, rendering: true });
+  });
+
+  it("counts a clip the page does not hold as gone, and an end still only once it is finished", () => {
+    expect(filmRenderPlan(three(), CTX, states({ ...done, [D]: undefined as unknown as string })).from).toBe(2);
+    expect(filmRenderPlan(three({ clips: [B] }), CTX, states({ ...done, [E1]: "generating" }))).toEqual({
+      from: 0,
+      startId: A,
+      again: false,
+      rendering: false,
+    });
   });
 });

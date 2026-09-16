@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.39.2",
+    build: 60,
+    date: "2026-09-16",
+    title: "A film you just rendered can't be paid for twice",
+    items: [
+      "Right after you render a film its clips keep rendering for a minute or two, and the button used to offer Render the film again the whole time — one more press would have paid for the whole film a second time. It now waits and says The clips are rendering… until they land.",
+      "A film now saves the moment each beat's clip is on its way, instead of a second or so later, so reloading right then can't lose a clip you've paid for and charge you for it again.",
+      "The × on a beat tells screen readers it removes that beat, instead of saying Dismiss.",
+    ],
+  },
+  {
     version: "1.39.1",
     build: 59,
     date: "2026-09-16",

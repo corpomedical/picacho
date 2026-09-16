@@ -2115,6 +2115,8 @@ const es = {
     filmRendering: "Tramo {i} de {n} — primero el fotograma final, luego el clip…",
     filmBeatStill: "fotograma final…",
     filmBeatClip: "clip en render…",
+    filmClipsRendering: "Los clips se están renderizando…",
+    filmRemoveBeat: "Quitar el tramo {n}",
     filmBeatDone: "listo",
     filmBeatFailed: "Ese tramo no se pudo renderizar — todo lo anterior se conserva.",
     filmClipFailed: "El clip de ese tramo no se pudo reproducir — recarga la página y vuelve a darle a reproducir.",

@@ -2255,6 +2255,8 @@ const en = {
     filmRendering: "Beat {i} of {n} — the end frame, then the clip…",
     filmBeatStill: "end frame…",
     filmBeatClip: "clip rendering…",
+    filmClipsRendering: "The clips are rendering…",
+    filmRemoveBeat: "Remove beat {n}",
     filmBeatDone: "in",
     filmBeatFailed: "That beat couldn't render — everything before it is kept.",
     filmClipFailed: "That beat's clip couldn't play — reload the page and press play again.",
