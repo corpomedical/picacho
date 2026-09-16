@@ -95,7 +95,7 @@ const SHARED_SCENE_INSTRUCTION =
   // a reason to move off that frame immediately.
   "Write the scene as already in motion at the very first moment — the action is underway, " +
   "not about to begin, and the character is never standing still in a posed portrait.";
-import { FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
+import { advancedVideoPlan, FREE_TIER_VIDEO_MODEL_ID } from "@/lib/plans";
 import {
   getVideoModel,
   getDefaultDurationSeconds,
@@ -1281,7 +1281,7 @@ export async function runGeneration(formData: FormData): Promise<RunResult> {
   // server-side, so this can't be bypassed by a direct call even though the
   // UI already hides the toggle for lower plans. (Moved down from Elite-only
   // on 2026-08-12 — keep in sync with workspace-data.ts and lib/pricing.ts.)
-  if (wantsAdvancedVideoOptions && userPlan !== "studio" && userPlan !== "elite" && !isAdmin) {
+  if (wantsAdvancedVideoOptions && !advancedVideoPlan(userPlan, isAdmin)) {
     return {
       error:
         "Multi-image reference and storyboard are available on the Studio and Elite plans. Upgrade to use them, or turn these options off.",

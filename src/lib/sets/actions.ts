@@ -8,6 +8,7 @@ import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/outp
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { runGeneration } from "@/lib/generations/actions";
 import { checkGenerationAllowance } from "@/lib/generations/core";
+import { advancedVideoPlan } from "@/lib/plans";
 import { withModelWrittenPrompt } from "@/lib/generations/refusal-attribution";
 import { cancelAstraJob, submitAstraJob } from "@/lib/generations/providers/astra";
 import { openAiSafetyId } from "@/lib/openai/safety-id";
@@ -97,6 +98,7 @@ import {
   SET_SHOOT_TOO_FAST,
   SET_TAKE_BAD_END,
   SET_TAKE_BAD_START,
+  SET_TAKE_NEEDS_PLAN,
   SET_TAKE_FAILED,
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
@@ -928,6 +930,10 @@ export async function takeInSet(
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const { userId } = access;
+  // A take is a start-and-end-frame clip, which the video lane gives Studio
+  // and Elite: said here, before its end still is shot and paid for, not by
+  // the clip's own send afterwards in the composer's words.
+  if (!advancedVideoPlan(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
 
   // The start: a finished still of THIS set, the person's own, not deleted.
   const startId = typeof input?.startGenerationId === "string" ? input.startGenerationId : "";

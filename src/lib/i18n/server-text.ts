@@ -183,6 +183,7 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "That still can't start a take — pick another.": "setTakeBadStart",
   "The end frame is in, but the take couldn't start — try the take again in a moment.": "setTakeFailed",
   "That beat's end frame is gone — render again to shoot a new one.": "setTakeBadEnd",
+  "Takes and films are part of the Studio and Elite plans. Upgrade in Settings → Usage & plan.": "setTakeNeedsPlan",
   // The rig check (lib/sets/messages.ts, 2026-09-15, Helios Cinema).
   "The rig check couldn't read this still — the still is kept as it is.": "setRigCheckFailed",
   "You're checking stills quickly — give it a moment.": "setRigCheckTooFast",

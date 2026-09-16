@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FILM_MAX_BEATS } from "./film";
-import { SET_NOT_FOUND } from "./messages";
+import { SET_NOT_FOUND, SET_TAKE_NEEDS_PLAN } from "./messages";
 import { takesCredits } from "./take";
 
 // A film render is asked for in full before its first beat (2026-09-16):
@@ -16,7 +16,9 @@ import { takesCredits } from "./take";
 
 const SET = "22222222-2222-4222-8222-222222222222";
 const asked: { credits: number; options: unknown }[] = [];
-let access: { error: string } | { error: null; supabase: unknown; userId: string } = { error: null, supabase: {}, userId: "u1" };
+type Access = { error: string } | { error: null; supabase: unknown; userId: string; plan: string; isAdmin: boolean };
+const studio: Access = { error: null, supabase: {}, userId: "u1", plan: "studio", isAdmin: false };
+let access: Access = studio;
 let balance: string | null = null;
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -36,6 +38,7 @@ vi.mock("@/lib/sets/access", () => ({
   setsAccess: async () => access,
   UUID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 }));
+vi.mock("@/lib/plans", async () => await import("../plans"));
 vi.mock("@/lib/sets/film", async () => await import("./film"));
 vi.mock("@/lib/sets/take", async () => await import("./take"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
@@ -44,7 +47,7 @@ import { checkFilmCredits } from "./film-actions";
 
 beforeEach(() => {
   asked.length = 0;
-  access = { error: null, supabase: {}, userId: "u1" };
+  access = studio;
   balance = null;
 });
 
@@ -82,6 +85,17 @@ describe("checkFilmCredits", () => {
     }
     expect(await checkFilmCredits(SET, "omni", null as unknown as { clips: number; stills: number })).toEqual({ error: null });
     expect(asked).toEqual([]);
+  });
+
+  it("says a film is Studio and Elite's before asking the balance, and lets admins through", async () => {
+    for (const plan of ["basic", "starter", "growth"]) {
+      access = { ...studio, plan } as Access;
+      expect(await checkFilmCredits(SET, "omni", { clips: 1, stills: 1 })).toEqual({ error: SET_TAKE_NEEDS_PLAN });
+    }
+    expect(asked).toEqual([]);
+    access = { ...studio, plan: "growth", isAdmin: true } as Access;
+    expect(await checkFilmCredits(SET, "omni", { clips: 1, stills: 1 })).toEqual({ error: null });
+    expect(asked).toHaveLength(1);
   });
 
   it("answers only the person signed in, for a set id", async () => {

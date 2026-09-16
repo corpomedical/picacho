@@ -47,7 +47,7 @@ import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
-import { SET_PHOTO_UNREADABLE, SET_TAKE_BAD_END } from "@/lib/sets/messages";
+import { SET_PHOTO_UNREADABLE, SET_TAKE_BAD_END, SET_TAKE_NEEDS_PLAN } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
@@ -321,6 +321,7 @@ export function SetView({
   initialShots,
   identityBar,
   matchOn,
+  takesOn,
   initialAsk = null,
   initialCharacterId = null,
   initialAskFirst = true,
@@ -341,6 +342,12 @@ export function SetView({
   identityBar: number;
   /** Whether "Match a shot" is offered (admins, the photo switch on); the action checks again. */
   matchOn: boolean;
+  /**
+   * Whether this plan takes clips and renders films — start-and-end-frame
+   * clips, Studio and Elite's (plans.ts advancedVideoPlan). Otherwise the
+   * page says so before a take is framed; takeInSet checks again.
+   */
+  takesOn: boolean;
   /** A message the person sent from the Sets home, asked the moment the stage is ready. */
   initialAsk?: string | null;
   /** The character picked on the Sets home. */
@@ -1745,6 +1752,10 @@ export function SetView({
    */
   async function take(directionNow?: string) {
     if (!takeStart || shooting || matching || !characterId || !ready) return;
+    if (!takesOn) {
+      setError(SET_TAKE_NEEDS_PLAN);
+      return;
+    }
     setError("");
     setTakeRetry(null);
     setLastMiss(null);
@@ -1986,6 +1997,10 @@ export function SetView({
       return;
     }
     if (film.beats.length === 0) return;
+    if (!takesOn) {
+      setFilmError(SET_TAKE_NEEDS_PLAN);
+      return;
+    }
     setFilmError("");
     const plan = filmPlanNow();
     if (plan.again && plan.rendering) return;
@@ -2162,7 +2177,7 @@ export function SetView({
    * only the clip is paid for. The failed take stays where it is.
    */
   async function retryClip(f: TakeFrames) {
-    if (shooting || matching || !ready) return;
+    if (shooting || matching || !ready || !takesOn) return;
     setError("");
     setTakeRetry(null);
     setShooting(true);
@@ -2230,7 +2245,7 @@ export function SetView({
   const retryLabel = (f: TakeSource) => formatMsg(s.takeRetryClip, { n: takesCredits(f.engine, { clips: 1, stills: 0 }) });
   // The failed takes whose clip may be rendered again (take.ts): not one
   // that has been tried again already, which would be paid for twice.
-  const retryable = retryableTakes(shots);
+  const retryable = takesOn ? retryableTakes(shots) : new Set<string>();
 
   // ---- the conversation ----
 
@@ -2417,11 +2432,14 @@ export function SetView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, initialAsk]);
 
-  // The thread grows downward; the newest turn is what the person is waiting for.
+  // The thread grows downward; the newest turn is what the person is waiting
+  // for — and an error is said at its end, under the frame, so one raised
+  // with nothing in flight (a take the plan does not include, pressed from a
+  // still far up the thread) is brought into view too.
   useEffect(() => {
-    if (pendingAsks.length === 0 && !shooting) return;
+    if (pendingAsks.length === 0 && !shooting && !error) return;
     threadEndRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [pendingAsks, shooting, shots.length]);
+  }, [pendingAsks, shooting, shots.length, error]);
 
   // Esc steps out, the way 3D Jutsu's Esc leaves a camera view: an open
   // menu first, then the still viewer, back to the frame.
@@ -3368,10 +3386,15 @@ export function SetView({
                     <button
                       type="button"
                       onClick={() => {
+                        if (!takesOn) {
+                          setError(SET_TAKE_NEEDS_PLAN);
+                          return;
+                        }
                         setTakeStart({ id: viewingShot.generationId, n: stillNumber(viewingShot) });
                         setTakeEngine(SET_TAKE_DEFAULT_ENGINE);
                         setViewing(null);
                       }}
+                      title={takesOn ? undefined : localizeServerText(SET_TAKE_NEEDS_PLAN, t)}
                       className={glassBtn}
                     >
                       {s.takeItSomewhere}
@@ -3501,6 +3524,7 @@ export function SetView({
                   onClick={() => void renderFilm()}
                   disabled={
                     !ready ||
+                    !takesOn ||
                     Boolean(filmBusy) ||
                     shooting ||
                     matching ||
@@ -3658,6 +3682,7 @@ export function SetView({
                   </button>
                 )}
               </div>
+              {!takesOn && <p className="px-1 text-xs text-[#9aa0ad]">{localizeServerText(SET_TAKE_NEEDS_PLAN, t)}</p>}
               {filmError && <p className="px-1 text-xs text-red-400">{localizeServerText(filmError, t)}</p>}
             </div>
           )}

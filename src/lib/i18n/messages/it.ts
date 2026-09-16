@@ -2475,6 +2475,7 @@ const it = {
     setTakeBadStart: "Quella foto non può avviare una ripresa — scegline un'altra.",
     setTakeFailed: "L'inquadratura finale è arrivata, ma la ripresa non è partita — riprova la ripresa tra un momento.",
     setTakeBadEnd: "L'inquadratura finale di quel tratto non c'è più — renderizza di nuovo per girarne una nuova.",
+    setTakeNeedsPlan: "Riprese e film fanno parte dei piani Studio ed Elite. Passa a un piano superiore in Impostazioni → Utilizzo e piano.",
   },
   apiKeys: {
     title: "Chiavi API",

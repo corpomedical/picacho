@@ -2476,6 +2476,7 @@ const es = {
     setTakeBadStart: "Esa foto no puede empezar una toma — elige otra.",
     setTakeFailed: "El encuadre final ha llegado, pero la toma no se pudo empezar — vuelve a intentar la toma en un momento.",
     setTakeBadEnd: "El encuadre final de ese tramo ya no está — vuelve a renderizar para rodar uno nuevo.",
+    setTakeNeedsPlan: "Las tomas y las películas forman parte de los planes Studio y Elite. Mejora tu plan en Ajustes → Uso y plan.",
   },
   apiKeys: {
     title: "Claves de API",

@@ -324,6 +324,7 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "setPhotoNeedsDatabase",
     "setPhotoSaveFailed",
     "setPhotoBuildFailed",
+    "setTakeNeedsPlan",
   ] as const;
 
   it("as non-empty strings", () => {

@@ -19,13 +19,13 @@
 // Studio 15 × ~$0.70 ≈ $10.50 against $49; Elite 40 ≈ $28 against $99 —
 // and a staged take that actually renders earns the frames-lane price on
 // top.
-import type { PlanId } from "../plans";
+import { advancedVideoPlan, type PlanId } from "../plans";
 
 // Who can open the stage at all: exactly the plans the start & end frames
-// lane accepts (actions.ts gates frames on studio/elite/admin — a stage
-// whose render button is refused by the server would be a lie).
+// lane accepts (plans.ts advancedVideoPlan, the rule actions.ts gates frames
+// on — a stage whose render button is refused by the server would be a lie).
 export function angleStageEligible(plan: string | null | undefined, isAdmin: boolean): boolean {
-  return isAdmin || plan === "studio" || plan === "elite";
+  return advancedVideoPlan(plan, isAdmin);
 }
 
 // Proxies (= staged takes) per billing month. Zero for plans whose renders

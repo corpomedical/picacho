@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
+import { advancedVideoPlan } from "@/lib/plans";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
@@ -354,6 +355,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // Match this shot rides the photo switch (docs 3.2), admins only; the
     // page hides the chip otherwise, and matchSetShot checks both again.
     matchOn: access.isAdmin && (await isPhotoSetsEnabled(access.supabase)),
+    // Takes and films are start-and-end-frame clips, Studio and Elite's
+    // (plans.ts); the page says so before a take is framed, and takeInSet
+    // checks again.
+    takesOn: advancedVideoPlan(access.plan, access.isAdmin),
     set: {
       id: row.id as string,
       title: (row.title as string) ?? "",

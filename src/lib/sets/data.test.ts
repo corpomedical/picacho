@@ -27,6 +27,7 @@ type Row = Record<string, unknown>;
 type Tables = Record<string, { columns: string[]; rows: Row[] }>;
 
 let db: SupabaseClient;
+let who: { plan: string; isAdmin: boolean } = { plan: "studio", isAdmin: false };
 let reads: { table: string; select: string; filters: [string, string, unknown][] }[] = [];
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -36,11 +37,12 @@ vi.mock("@/lib/supabase/server", () => ({
 }));
 vi.mock("@/lib/generations/core", () => ({ monthlyWindowStart: () => new Date(0) }));
 vi.mock("@/lib/sets/access", () => ({
-  setsAccess: async () => ({ error: null, supabase: db, userId: USER, isAdmin: false, periodStart: null, monthlyLimit: 5 }),
+  setsAccess: async () => ({ error: null, supabase: db, userId: USER, ...who, periodStart: null, monthlyLimit: 5 }),
   UUID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 }));
 vi.mock("@/lib/sets/enabled", () => ({ isPhotoSetsEnabled: async () => false }));
 vi.mock("@/lib/media/url", async () => await import("../media/url"));
+vi.mock("@/lib/plans", async () => await import("../plans"));
 vi.mock("@/lib/generations/identity-gate", async () => await import("../generations/identity-gate"));
 vi.mock("@/lib/sets/photo", async () => await import("./photo"));
 vi.mock("@/lib/sets/set-config", async () => await import("./set-config"));
@@ -163,15 +165,36 @@ function world(items: { gen: Row; shot: Row }[], opts: { takeColumn?: boolean } 
   };
 }
 
-async function load(tables: Tables) {
+async function page(tables: Tables) {
   db = fakeDb(tables);
-  const page = await getSetPage(SET);
-  if (page.error !== null) throw new Error(page.error);
-  return new Map(page.shots.map((sh) => [sh.generationId, sh]));
+  const out = await getSetPage(SET);
+  if (out.error !== null) throw new Error(out.error);
+  return out;
+}
+
+async function load(tables: Tables) {
+  return new Map((await page(tables)).shots.map((sh) => [sh.generationId, sh]));
 }
 
 beforeEach(() => {
   reads = [];
+  who = { plan: "studio", isAdmin: false };
+});
+
+describe("whether the page offers takes", () => {
+  it("offers them to Studio, Elite and admins — the plans the clip's frames are sold with", async () => {
+    for (const [plan, isAdmin, on] of [
+      ["studio", false, true],
+      ["elite", false, true],
+      ["growth", true, true],
+      ["growth", false, false],
+      ["starter", false, false],
+      ["basic", false, false],
+    ] as const) {
+      who = { plan, isAdmin };
+      expect((await page(world([still(1)]))).takesOn, `${plan}${isAdmin ? " (admin)" : ""}`).toBe(on);
+    }
+  });
 });
 
 describe("a take on the set page", () => {

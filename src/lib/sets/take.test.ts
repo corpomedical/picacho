@@ -258,3 +258,30 @@ describe("the page prices and asks as the server does (set-view.tsx)", () => {
     expect(render).toContain("if (!api || filmBusy || filmBusyRef.current || shooting || !ready) return;");
   });
 });
+
+// A plan without start-and-end-frame video (plans.ts advancedVideoPlan) is
+// told before a take is framed or a film asked for, not after a still has
+// been paid for (2026-09-16). The server says it too (takeInSet,
+// checkFilmCredits); the page only saves the person the framing.
+describe("a plan without takes is told first (set-view.tsx)", () => {
+  const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+  const between = (from: string, to: string) => view.slice(view.indexOf(from), view.indexOf(to, view.indexOf(from)));
+
+  it("says so instead of starting a take, a film or a retry", () => {
+    const take = between("async function take(", "setError(\"\");");
+    expect(take).toContain("if (!takesOn) {\n      setError(SET_TAKE_NEEDS_PLAN);\n      return;\n    }");
+    const render = between("async function renderFilm(", "const plan = filmPlanNow();");
+    expect(render).toContain("if (!takesOn) {\n      setFilmError(SET_TAKE_NEEDS_PLAN);\n      return;\n    }");
+    expect(view).toContain("if (shooting || matching || !ready || !takesOn) return;");
+    expect(view).toContain("const retryable = takesOn ? retryableTakes(shots) : new Set<string>();");
+  });
+
+  it("answers Take it somewhere with the plan, and keeps Render shut with the reason beside it", () => {
+    const button = between("if (!takesOn) {\n                          setError(SET_TAKE_NEEDS_PLAN);", "{s.takeItSomewhere}");
+    expect(button.indexOf("return;")).toBeLessThan(button.indexOf("setTakeStart({"));
+    expect(button).toContain("title={takesOn ? undefined : localizeServerText(SET_TAKE_NEEDS_PLAN, t)}");
+    const render = between("onClick={() => void renderFilm()}", "{filmRenderLabel}");
+    expect(render).toContain("!takesOn ||");
+    expect(view).toContain("{!takesOn && <p className=\"px-1 text-xs text-[#9aa0ad]\">{localizeServerText(SET_TAKE_NEEDS_PLAN, t)}</p>}");
+  });
+});

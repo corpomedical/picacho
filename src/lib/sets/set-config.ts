@@ -33,7 +33,10 @@ import type { PlanId } from "../plans";
 // decides who sees it once on. It opens to paid plans only after the
 // operator's eval parts A–D pass (docs/ASTRA_SETS.md, section 4) —
 // a code change on purpose, so widening is a reviewed commit and not a
-// toggle flipped on a hunch.
+// toggle flipped on a hunch. Opened, every paid plan builds sets and shoots
+// stills, but takes and films — start-and-end-frame clips — stay Studio and
+// Elite's (plans.ts advancedVideoPlan, 2026-09-16) unless that rule changes
+// too; the set page says so, and the pricing copy must before this flips.
 export const SETS_OPEN_TO_PLANS = false;
 
 export const SET_BUILDS_MONTHLY_LIMITS = {

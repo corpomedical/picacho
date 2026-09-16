@@ -103,6 +103,7 @@ export default async function SetPage({
         initialShots={data.shots}
         identityBar={data.identityBar}
         matchOn={data.matchOn}
+        takesOn={data.takesOn}
         initialAsk={ask}
         initialCharacterId={character}
         initialAskFirst={askFirst}

@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.7",
+    build: 71,
+    date: "2026-09-16",
+    title: "Takes and films say they're Studio and Elite before anything is charged",
+    items: [
+      "Start and end frames belong to the Studio and Elite plans, and every take and film beat is made of them, but Helios never checked. On any other plan, a take shot and charged its end frame, then had its clip refused — with the composer's advice to turn storyboard options off. Helios is still admin-only, so no one has met this; every Basic, Starter and Growth subscriber would have on the day it opens.",
+      "On those plans the set page now says so up front: Take it somewhere answers with the plan instead of starting a take, Render the film stays off with the reason beside it, and a failed take offers no retry. The server refuses too, before anything is shot.",
+      "The Studio-and-Elite rule is now one piece of code shared by the video generator, the composer's lock, the Angle Stage and Helios, instead of four copies kept in step by hand.",
+      "An error in Helios's conversation now scrolls into view even when nothing was in progress.",
+    ],
+  },
+  {
     version: "1.40.6",
     build: 70,
     date: "2026-09-16",

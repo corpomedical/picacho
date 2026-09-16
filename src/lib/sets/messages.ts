@@ -88,6 +88,12 @@ export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a 
 // Takes (2026-09-15): a clip from one still to a newly shot end frame.
 export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";
 export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start — try the take again in a moment.";
+/**
+ * Takes and films are start-and-end-frame clips, which the video lane gives
+ * Studio and Elite (plans.ts advancedVideoPlan): said before anything is
+ * shot, never after a still has been paid for.
+ */
+export const SET_TAKE_NEEDS_PLAN = "Takes and films are part of the Studio and Elite plans. Upgrade in Settings → Usage & plan.";
 /** A film beat's clip rendered again on its own end still, and that still is gone (film.ts filmJobs). */
 export const SET_TAKE_BAD_END = "That beat's end frame is gone — render again to shoot a new one.";
 

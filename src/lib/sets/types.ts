@@ -120,6 +120,8 @@ export type SetPageData =
       identityBar: number;
       /** Whether this person may match a shot here (admins, flag astra_photo_sets); the action checks again. */
       matchOn: boolean;
+      /** Whether this person's plan takes clips and renders films (plans.ts advancedVideoPlan); takeInSet checks again. */
+      takesOn: boolean;
       set: SetDetail;
       shots: SetShot[];
       characters: SetCharacter[];

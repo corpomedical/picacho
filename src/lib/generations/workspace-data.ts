@@ -3,7 +3,7 @@ import { guardedRead } from "@/lib/supabase/read-guard";
 import { mediaUrl, thumbUrl } from "@/lib/media/url";
 import { isVoiceModeEnabled } from "@/lib/voice/enabled";
 import { isChatAgentEnabled } from "@/lib/agent/enabled";
-import { PLAN_LIMITS, type PlanId } from "@/lib/plans";
+import { advancedVideoPlan, PLAN_LIMITS, type PlanId } from "@/lib/plans";
 import {
   VIDEO_MODELS_BY_PRICE,
   getDefaultDurationSeconds,
@@ -225,12 +225,10 @@ export async function getGenerateWorkspaceData(
   const defaultVideoModelId = resolvedDefaults.videoModelId;
 
   // Storyboard and multi-image reference are Studio-and-up (admins get a
-  // free pass, same as the generation-cap exemption below). Moved down from
-  // Elite-only on 2026-08-12 so the Studio tier has a capability difference,
-  // not just a bigger quota — keep in sync with the server-side check in
-  // generations/actions.ts and the pricing copy in lib/pricing.ts.
-  const advancedPlanActive =
-    profile?.plan === "studio" || profile?.plan === "elite" || profile?.role === "admin";
+  // free pass, same as the generation-cap exemption below): plans.ts
+  // advancedVideoPlan, the same rule the server's check applies — keep the
+  // pricing copy in lib/pricing.ts saying it.
+  const advancedPlanActive = advancedVideoPlan(profile?.plan as string | null | undefined, profile?.role === "admin");
   // Multi-angle is several generations in one click, so it isn't part of the
   // free trial (enforced in runMultiAngleGeneration). Mirrored here so the
   // button is hidden rather than letting someone pick angles, confirm, and

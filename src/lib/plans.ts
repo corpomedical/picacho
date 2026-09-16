@@ -291,6 +291,16 @@ export function onDailyFreeTier(
   return (plan ?? "none") === "none" && (bonusCredits ?? 0) === 0;
 }
 
+// Start & end frames and multi-image reference are Studio-and-up — moved
+// down from Elite-only on 2026-08-12 so Studio has a capability difference,
+// not just a bigger quota — and admins pass. One rule for the server's gate
+// (generations/actions.ts), the composer's lock (workspace-data.ts), the
+// pricing copy (lib/pricing.ts says it in words) and Helios, whose takes
+// and films are start-and-end-frame clips (sets/actions.ts, sets/data.ts).
+export function advancedVideoPlan(plan: string | null | undefined, isAdmin: boolean): boolean {
+  return isAdmin || plan === "studio" || plan === "elite";
+}
+
 // Mirror of the spend RPC's own guard (free_generation_last_at IS NULL OR
 // < date_trunc('day', now()), UTC on Supabase). Reads here are only ever
 // the DECISION — the RPC's guarded UPDATE is what makes the spend atomic

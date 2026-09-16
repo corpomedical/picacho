@@ -4,10 +4,11 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { thumbUrl } from "@/lib/media/url";
 import { checkGenerationAllowance } from "@/lib/generations/core";
+import { advancedVideoPlan } from "@/lib/plans";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { FILM_MAX_BEATS, normaliseSetFilm } from "@/lib/sets/film";
 import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, takesCredits } from "@/lib/sets/take";
-import { SET_NOT_FOUND, SET_SAVE_FAILED, SET_EDIT_TOO_FAST } from "@/lib/sets/messages";
+import { SET_NOT_FOUND, SET_SAVE_FAILED, SET_EDIT_TOO_FAST, SET_TAKE_NEEDS_PLAN } from "@/lib/sets/messages";
 
 // The film's actions (Helios Film, 2026-09-15). The move — engine, start
 // still, beats — lives in `location_sets.film`
@@ -61,6 +62,8 @@ export async function checkFilmCredits(
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   if (typeof setId !== "string" || !UUID_RE.test(setId)) return { error: SET_NOT_FOUND };
+  // Every beat is a start-and-end-frame clip (plans.ts advancedVideoPlan).
+  if (!advancedVideoPlan(access.plan, access.isAdmin)) return { error: SET_TAKE_NEEDS_PLAN };
   const whole = (v: unknown, max: number) => (typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= max ? v : null);
   const clips = whole(count?.clips, FILM_MAX_BEATS);
   const stills = clips === null ? null : whole(count?.stills, clips);

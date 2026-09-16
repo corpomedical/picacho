@@ -2671,6 +2671,7 @@ const en = {
     setTakeBadStart: "That still can't start a take — pick another.",
     setTakeFailed: "The end frame is in, but the take couldn't start — try the take again in a moment.",
     setTakeBadEnd: "That beat's end frame is gone — render again to shoot a new one.",
+    setTakeNeedsPlan: "Takes and films are part of the Studio and Elite plans. Upgrade in Settings → Usage & plan.",
   },
   apiKeys: {
     title: "API keys",

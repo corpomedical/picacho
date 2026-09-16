@@ -2476,6 +2476,7 @@ const pt = {
     setTakeBadStart: "Essa foto não pode começar um take — escolha outra.",
     setTakeFailed: "O quadro final chegou, mas o take não pôde começar — tente o take de novo daqui a pouco.",
     setTakeBadEnd: "O quadro final desse trecho não existe mais — renderize de novo para gravar um novo.",
+    setTakeNeedsPlan: "Takes e filmes fazem parte dos planos Studio e Elite. Faça upgrade em Configurações → Uso e plano.",
   },
   apiKeys: {
     title: "Chaves de API",
