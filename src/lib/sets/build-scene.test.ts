@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn } from "./build-scene";
+import { FULL_STAGE, buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn } from "./build-scene";
 import { normaliseSetSpec, specInstanceCount, type SetSpec } from "./set-spec";
 import rainyMarket from "./fixtures-rainy-market.json";
+import showroomOpen from "./fixtures-showroom-open.json";
 
 // The fixed interpreter, run on three's core in node — no GPU needed to
 // build a scene graph. The fixture is the first real Astra build.
@@ -45,7 +46,8 @@ describe("buildSetScene", () => {
 
   it("carries fog through, and sets the far plane past the sky", () => {
     const built = buildSetScene(THREE, spec);
-    expect(built.fog?.near).toBe(spec.fog?.near);
+    // A night set keeps Astra's near and far (linear fog) on both stages.
+    expect((built.fog as THREE.Fog).near).toBe(spec.fog?.near);
     const sky = built.root.getObjectByName("sky") as THREE.Mesh;
     const radius = (sky.geometry as THREE.SphereGeometry).parameters.radius;
     expect(built.farPlane).toBeGreaterThan(radius);
@@ -176,5 +178,123 @@ describe("lenses", () => {
     for (const mm of [18, 35, 85]) expect(lensForFov(fovForLens(mm))).toBeCloseTo(mm, 6);
     expect(fovForLens(50)).toBeCloseTo(26.99, 1);
     expect(nearestLens(40)).toBe(35);
+  });
+});
+
+describe("the full stage", () => {
+  // Canvas page J, cut 1 (2026-09-17): physical materials from each thing's
+  // word, the sun's balance against the sky, soft shadows from the lamps.
+  // In node there is no Sky and no renderer, so no environment: the gradient
+  // dome stays and the fill keeps its own intensity.
+  const showroom = (() => {
+    const r = normaliseSetSpec(showroomOpen);
+    if (!r.ok) throw new Error("fixture");
+    return r.spec;
+  })();
+
+  it("draws every thing in a physical material carrying its word, and the basic stage in a standard one", () => {
+    const full = buildSetScene(THREE, spec, { quality: "full" });
+    const words = new Set<string>();
+    for (const c of full.root.children) {
+      const m = c as THREE.Mesh;
+      if (!m.isMesh || m.name === "sky" || m.name === "ground") continue;
+      const mat = m.material as THREE.MeshPhysicalMaterial;
+      expect(mat.isMeshPhysicalMaterial).toBe(true);
+      words.add(mat.userData.material);
+    }
+    expect(words.has("brick")).toBe(true);
+    expect(words.has("water")).toBe(true);
+    const ground = full.root.getObjectByName("ground") as THREE.Mesh;
+    expect((ground.material as THREE.MeshPhysicalMaterial).userData.material).toBe("cobbles");
+    expect(full.quality).toBe("full");
+    expect(full.environment).toBeNull();
+    full.dispose();
+
+    const basic = buildSetScene(THREE, spec);
+    for (const c of basic.root.children) {
+      const m = c as THREE.Mesh;
+      if (!m.isMesh || m.name === "sky") continue;
+      expect((m.material as THREE.Material).type).toBe("MeshStandardMaterial");
+    }
+    expect(basic.quality).toBe("basic");
+    basic.dispose();
+  });
+
+  it("turns the sun up by FULL_STAGE.sunGain, with a bigger, softer shadow, and leaves the fill alone without a sky", () => {
+    const sunLit: SetSpec = {
+      ...spec,
+      sky: { kind: "gradient", colors: ["#8fb3d9", "#e8e2d6"] },
+      lights: [
+        { kind: "sun", color: "#ffffff", intensity: 2, position: [5, 10, 5], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 },
+        { kind: "hemisphere", color: "#ffffff", intensity: 1, position: [0, 0, 0], target: [0, 0, 0], groundColor: "#808080", angleDeg: 30, distance: 0 },
+      ],
+    };
+    const full = buildSetScene(THREE, sunLit, { shadows: true, quality: "full" });
+    let sun: THREE.DirectionalLight | null = null;
+    let fill: THREE.HemisphereLight | null = null;
+    full.root.traverse((o) => {
+      if ((o as THREE.DirectionalLight).isDirectionalLight) sun = o as THREE.DirectionalLight;
+      if ((o as THREE.HemisphereLight).isHemisphereLight) fill = o as THREE.HemisphereLight;
+    });
+    const s = sun as unknown as THREE.DirectionalLight;
+    const f = fill as unknown as THREE.HemisphereLight;
+    expect(s.intensity).toBeCloseTo(2 * FULL_STAGE.sunGain, 6);
+    expect(s.shadow.mapSize.x).toBe(FULL_STAGE.sunShadowMap);
+    expect(s.shadow.radius).toBe(2);
+    expect(f.intensity).toBe(1);
+    full.dispose();
+
+    const basic = buildSetScene(THREE, sunLit, { shadows: true });
+    let sun2: THREE.DirectionalLight | null = null;
+    basic.root.traverse((o) => {
+      if ((o as THREE.DirectionalLight).isDirectionalLight) sun2 = o as THREE.DirectionalLight;
+    });
+    const s2 = sun2 as unknown as THREE.DirectionalLight;
+    expect(s2.intensity).toBe(2);
+    expect(s2.shadow.mapSize.x).toBe(2048);
+    basic.dispose();
+  });
+
+  it("lets the first two spots and the first two bulbs cast shadows, and no more", () => {
+    const lamps: SetSpec = {
+      ...showroom,
+      lights: [
+        ...showroom.lights,
+        { kind: "spot", color: "#ffffff", intensity: 10, position: [0, 5, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
+        { kind: "point", color: "#ffffff", intensity: 10, position: [1, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
+        { kind: "point", color: "#ffffff", intensity: 10, position: [2, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
+        { kind: "point", color: "#ffffff", intensity: 10, position: [3, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
+      ],
+    };
+    expect(lamps.lights.filter((l) => l.kind === "spot")).toHaveLength(3);
+    const full = buildSetScene(THREE, lamps, { shadows: true, quality: "full" });
+    let spots = 0;
+    let points = 0;
+    full.root.traverse((o) => {
+      if ((o as THREE.SpotLight).isSpotLight && o.castShadow) spots += 1;
+      if ((o as THREE.PointLight).isPointLight && o.castShadow) points += 1;
+    });
+    expect(spots).toBe(FULL_STAGE.maxSpotShadows);
+    expect(points).toBe(FULL_STAGE.maxPointShadows);
+    full.dispose();
+
+    const basic = buildSetScene(THREE, lamps, { shadows: true });
+    let any = 0;
+    basic.root.traverse((o) => {
+      if (((o as THREE.SpotLight).isSpotLight || (o as THREE.PointLight).isPointLight) && o.castShadow) any += 1;
+    });
+    expect(any).toBe(0);
+    basic.dispose();
+  });
+
+  it("thins daylight fog with distance, and keeps a night set's fog as written", () => {
+    const day = buildSetScene(THREE, { ...showroom, fog: { color: "#bac7d1", near: 110, far: 280 } }, { quality: "full" });
+    expect((day.fog as THREE.FogExp2).isFogExp2).toBe(true);
+    expect((day.fog as THREE.FogExp2).density).toBeCloseTo(FULL_STAGE.fogDensityOverFar / 280, 9);
+    day.dispose();
+    const dark = buildSetScene(THREE, spec, { quality: "full" });
+    expect((dark.fog as THREE.Fog).isFog).toBe(true);
+    expect((dark.fog as THREE.Fog).near).toBe(spec.fog?.near);
+    dark.dispose();
   });
 });

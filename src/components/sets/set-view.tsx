@@ -12,7 +12,7 @@ import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/se
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
-import { fovForLens, nearestLens } from "@/lib/sets/build-scene";
+import { fovForLens, nearestLens, type StageQuality } from "@/lib/sets/build-scene";
 import { clearMarks } from "@/lib/sets/marks";
 import {
   retryableTakes,
@@ -40,7 +40,7 @@ import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-action
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, findLook, formatFrame, normaliseSetRig, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
-import { LAB_PREVIEW_SHADER, labPreviewCodes } from "@/lib/sets/lab-preview";
+import { labPreviewCodes } from "@/lib/sets/lab-preview";
 import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import { planFilmOverlay, type FilmOverlayPlan } from "@/lib/sets/film-overlay";
 import { joinMp4 } from "@/lib/media/mp4-join";
@@ -733,10 +733,17 @@ export function SetView({
         const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
         const { buildSetScene, buildStandIn, moveBuildInto, placeStandIn } = await import("@/lib/sets/build-scene");
         const { BASE_EXPOSURE, NO_LIFT, liftSet } = await import("@/lib/sets/exposure");
+        const { Sky } = await import("three/examples/jsm/objects/Sky.js");
+        const { makeStageTextures } = await import("@/lib/sets/stage-materials");
+        const { loadStagePasses, makeStageComposer } = await import("@/lib/sets/stage-post");
         const { CSS2DObject, CSS2DRenderer } = await import("three/examples/jsm/renderers/CSS2DRenderer.js");
         if (disposed || !hostRef.current) return;
 
         const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
+        // The full stage (build-scene.ts StageQuality): a phone keeps the
+        // basic one, and ?stage=basic shows it anywhere, for comparing.
+        const quality: StageQuality = coarse || new URLSearchParams(window.location.search).get("stage") === "basic" ? "basic" : "full";
+        const full = quality === "full";
         const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -754,10 +761,17 @@ export function SetView({
         host.appendChild(canvas);
 
         const scene = new THREE.Scene();
-        const built = buildSetScene(THREE, spec, { shadows: !coarse });
+        // The full stage's surfaces and sky: textures made once for the page,
+        // and the sky's light baked for the environment by the renderer.
+        const textures = full ? makeStageTextures(THREE) : null;
+        const pmrem = full ? new THREE.PMREMGenerator(renderer) : null;
+        const stageOpts = { shadows: !coarse, quality, textures, sky: pmrem ? { Sky, pmrem } : null };
+        const built = buildSetScene(THREE, spec, stageOpts);
         scene.add(built.root);
         if (built.background) scene.background = built.background;
         if (built.fog) scene.fog = built.fog;
+        scene.environment = built.environment;
+        scene.environmentIntensity = built.environmentIntensity;
         // What frees the CURRENT build's resources. An Astra edit from the
         // conversation rebuilds the scene INSIDE built.root (api.rebuild):
         // the group keeps its identity, so everything aimed at it — the
@@ -990,30 +1004,20 @@ export function SetView({
           composerLoading = true;
           void (async () => {
             try {
-              const [{ EffectComposer }, { RenderPass }, { BokehPass }, { ShaderPass }, { OutputPass }] = await Promise.all([
-                import("three/examples/jsm/postprocessing/EffectComposer.js"),
-                import("three/examples/jsm/postprocessing/RenderPass.js"),
-                import("three/examples/jsm/postprocessing/BokehPass.js"),
-                import("three/examples/jsm/postprocessing/ShaderPass.js"),
-                import("three/examples/jsm/postprocessing/OutputPass.js"),
-              ]);
+              // stage-post.ts: on the full stage the occlusion, the depth of
+              // field, the bloom and the lab, from the first frame; on the
+              // basic stage the depth of field and the lab, when asked for.
+              const passes = await loadStagePasses();
               if (disposed) return;
-              const c = new EffectComposer(renderer);
-              c.addPass(new RenderPass(scene, camera));
-              const b = new BokehPass(scene, camera, { focus: 4, aperture: 0, maxblur: 0 });
-              c.addPass(b);
-              c.addPass(new OutputPass());
-              // The lab last, after the output pass: it works on the picture
-              // as shown, the same values lab-grade.ts grades (lab-preview.ts).
-              const l = new ShaderPass(LAB_PREVIEW_SHADER);
-              l.uniforms.uTexel.value = new THREE.Vector2(1 / Math.max(1, lastW), 1 / Math.max(1, lastH));
-              l.uniforms.uFrame.value = new THREE.Vector4(0, 0, 1, 1);
-              c.addPass(l);
-              c.setPixelRatio(renderer.getPixelRatio());
-              c.setSize(lastW, lastH);
-              composer = c;
-              bokeh = b;
-              labPass = l;
+              const made = makeStageComposer(THREE, passes, renderer, scene, camera, {
+                quality,
+                night: spec.sky.kind === "night",
+                width: lastW,
+                height: lastH,
+              });
+              composer = made.composer;
+              bokeh = made.bokeh;
+              labPass = made.lab;
             } catch (err) {
               // No passes on this device: the stage stays as it is.
               console.warn("SetView post-processing unavailable:", err);
@@ -1023,7 +1027,7 @@ export function SetView({
         // The figure's eyes, where the rig's focus is measured to.
         const eye = new THREE.Vector3();
         const renderLive = () => {
-          if ((depthStop !== null || labOn()) && composer && bokeh) {
+          if ((full || depthStop !== null || labOn()) && composer && bokeh) {
             const p = standIn.group.position;
             eye.set(p.x, 1.5, p.z);
             const s = Math.max(0.3, camera.position.distanceTo(eye));
@@ -1088,6 +1092,7 @@ export function SetView({
           standIn.group.visible = true;
         }
         raf = requestAnimationFrame(loop);
+        if (full) ensureComposer();
 
         const cropSquare = (px: number): string | null => {
           const src = renderer.domElement;
@@ -1325,11 +1330,13 @@ export function SetView({
             // the old build's geometries and materials are freed, its things
             // leave the root (moveBuildInto), and the fresh build's own
             // dispose is kept for the edit after this one.
-            const fresh = buildSetScene(THREE, next, { shadows: !coarse });
+            const fresh = buildSetScene(THREE, next, stageOpts);
             disposeLive();
             disposeLive = moveBuildInto(built.root, fresh);
             scene.background = fresh.background;
             scene.fog = fresh.fog;
+            scene.environment = fresh.environment;
+            scene.environmentIntensity = fresh.environmentIntensity;
             camera.far = fresh.farPlane;
             camera.updateProjectionMatrix();
             placeStandIn(standIn, layoutRef.current.mark);
@@ -1412,6 +1419,8 @@ export function SetView({
           bokeh?.dispose();
           disposeLive();
           standIn.dispose();
+          textures?.dispose();
+          pmrem?.dispose();
           renderer.dispose();
           canvas.remove();
           apiRef.current = null;

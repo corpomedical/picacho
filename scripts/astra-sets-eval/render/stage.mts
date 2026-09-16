@@ -1,5 +1,5 @@
 // The snapshot page's files, served from MEMORY on 127.0.0.1 only: the
-// product's src/lib/sets/{set-spec,marks,build-scene,exposure,compare}.ts
+// product's src/lib/sets/{set-spec,marks,build-scene,stage-materials,exposure,compare}.ts
 // with their types stripped (Node's own stripTypeScriptTypes; once stripped,
 // their only runtime import is set-spec's of marks, since 2026-09-12, and
 // every relative import is rewritten to the served .js), three.js from
@@ -40,7 +40,7 @@ function strip(src: string): string {
 }
 
 /** The product modules the page loads, by name under src/lib/sets/. A module one of them imports at runtime must be here too, or the page never loads. */
-export const STAGE_MODULES = ["set-spec", "marks", "build-scene", "exposure", "compare"] as const;
+export const STAGE_MODULES = ["set-spec", "marks", "build-scene", "stage-materials", "exposure", "compare"] as const;
 
 export function stageFiles(repoRoot: string): Map<string, File> {
   const files = new Map<string, File>();

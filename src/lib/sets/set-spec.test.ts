@@ -281,3 +281,26 @@ describe("the person's arrangement", () => {
     expect(normaliseSetLayout(null, spec)).toBeNull();
   });
 });
+
+describe("the material word", () => {
+  // Canvas page J, cut 1 (2026-09-17): a word per object and one for the
+  // ground; anything else is null, and the stage infers one.
+  const minimal = { objects: [{ shape: "box", size: [1, 1, 1] }] };
+
+  it("is kept when it is one of ours, and null otherwise", () => {
+    const said = normaliseSetSpec({ ...minimal, objects: [{ shape: "box", size: [1, 1, 1], material: "brick" }], ground: { material: "grass" } });
+    if (!said.ok) throw new Error("spec");
+    expect(said.spec.objects[0].material).toBe("brick");
+    expect(said.spec.ground.material).toBe("grass");
+
+    const invented = normaliseSetSpec({ ...minimal, objects: [{ shape: "box", size: [1, 1, 1], material: "unobtainium" }], ground: { material: 7 } });
+    if (!invented.ok) throw new Error("spec");
+    expect(invented.spec.objects[0].material).toBeNull();
+    expect(invented.spec.ground.material).toBeNull();
+
+    const unsaid = normaliseSetSpec(minimal);
+    if (!unsaid.ok) throw new Error("spec");
+    expect(unsaid.spec.objects[0].material).toBeNull();
+    expect(unsaid.spec.ground.material).toBeNull();
+  });
+});

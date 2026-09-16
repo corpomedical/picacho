@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.42.0",
+    build: 80,
+    date: "2026-09-17",
+    title: "Helios draws a real stage",
+    items: [
+      "Sets are drawn under a real sky now. The sky comes from the sun's own height — a low sun warms the horizon, a high one deepens the blue — and its light falls on every surface, so a room reads lit from its windows and a street from the sky. The sun casts a bigger, softer shadow, and the lamps cast shadows of their own.",
+      "Surfaces look like what they are. Every object and the ground carry a material — concrete, asphalt, brick, cobbles, tile, sand, earth, grass, foliage, timber, fabric, paint, metal, chrome, glass, water, rubber, plaster or matte — drawn with texture, gloss or glass as the word says. Astra names one for each thing when it builds or changes a set; in Build, a Material row on any object or on the ground lets you pick one yourself. Sets built before today have theirs read from their colours, and you can correct any of them.",
+      "The live view adds ambient occlusion in the corners and a little bloom on anything that glows. The frame the picture model is shown carries the sky, the surfaces and the shadows, and is still never blurred or grained. A still is still 1 credit.",
+      "Phones keep the previous, lighter stage, which every set page can also show with ?stage=basic for comparing.",
+    ],
+  },
+  {
     version: "1.41.5",
     build: 79,
     date: "2026-09-17",

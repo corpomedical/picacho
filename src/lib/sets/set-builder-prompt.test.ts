@@ -88,11 +88,16 @@ describe("the cached prefix both kinds of build share", () => {
   // on open floor, never inside a car, a desk or a wall (the operator's race
   // track opened with the figure inside the car; marks.ts also moves such a
   // mark). 8,132 → 8,239 characters; one fresh cache write per kind of build.
+  //
+  // Moved again, on purpose, 2026-09-17: every object and the ground carry
+  // a material word (set-spec.ts SET_MATERIALS, drawn by the full stage —
+  // canvas page J, cut 1). 8,239 → 9,147 characters; one fresh cache write
+  // per kind of build.
   it("is byte for byte what it was decided to be", () => {
     const prefix = SET_BUILDER_INSTRUCTIONS + JSON.stringify(SET_SPEC_JSON_SCHEMA);
-    expect(prefix.length).toBe(8239);
+    expect(prefix.length).toBe(9147);
     expect(createHash("sha256").update(prefix).digest("hex")).toBe(
-      "b660e3630fea6dea1d122db824d01e819828678a66b0b823f82a35ee05cc33be",
+      "52ef150f16b13194e4615700e1fe306c819a5991f736dcdeefbbbfbd72af72da",
     );
   });
 });
@@ -134,10 +139,11 @@ describe("the photo rules", () => {
   });
 
   it("stay inside the input-token budget set-config.ts prices", () => {
-    // ≤ 2,400 characters ≈ ≤ 600 tokens, inside SET_PHOTO_BUILD_INPUT_TOKENS.
+    // ≤ 2,500 characters ≈ ≤ 625 tokens, inside SET_PHOTO_BUILD_INPUT_TOKENS
+    // (2,400 until 2026-09-17, when the material line was added: +94).
     // Raised from 2,000 on 2026-09-15, when the rules gained the human
     // ruler (a photo build sized a sofa's seat at 0.84 m — hip height).
-    expect(SET_PHOTO_RULES.length).toBeLessThanOrEqual(2_400);
+    expect(SET_PHOTO_RULES.length).toBeLessThanOrEqual(2_500);
   });
 
   it("carry the human ruler the Cream Corner failure wrote", () => {

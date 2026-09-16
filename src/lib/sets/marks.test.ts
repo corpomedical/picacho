@@ -24,6 +24,7 @@ const obj = (over: Partial<SetObject>): SetObject => ({
   position: [0, 0.5, 0],
   rotation: [0, 0, 0],
   size: [1, 1, 1],
+  material: null,
   color: "#888888",
   roughness: 0.8,
   metalness: 0,

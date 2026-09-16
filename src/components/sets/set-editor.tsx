@@ -35,15 +35,19 @@ import {
 import {
   normaliseSetSpec,
   SET_LIMITS,
+  SET_MATERIALS,
   SET_SHAPES,
   SET_SKY_KINDS,
   specInstanceCount,
   type SetLightKind,
+  type SetMaterial,
   type SetObject,
   type SetShape,
   type SetSpec,
   type Vec3,
 } from "@/lib/sets/set-spec";
+import type { StageQuality } from "@/lib/sets/build-scene";
+import { groundMaterialOf, materialOf } from "@/lib/sets/stage-materials";
 
 // The Set Editor (drawn 2026-09-14, canvas page G): Adobe's grammar in
 // Picacho's skin. The set page's second life — Build beside Shoot — laid out
@@ -325,6 +329,38 @@ function Check({ on, onToggle, children }: { on: boolean; onToggle: () => void; 
       </span>
       {children}
     </button>
+  );
+}
+
+/**
+ * The material word (set-spec.ts SET_MATERIALS): a native select, the one
+ * control here with more than a handful of choices. "From its colour"
+ * (null) shows which word the stage infers, so choosing is a correction.
+ */
+function MaterialPick({
+  value,
+  inferred,
+  onCommit,
+  s,
+}: {
+  value: SetMaterial | null;
+  inferred: SetMaterial;
+  onCommit: (m: SetMaterial | null) => void;
+  s: { editorMaterialAuto: string; editorMaterials: Record<SetMaterial, string> };
+}) {
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onCommit((e.target.value || null) as SetMaterial | null)}
+      className="h-[26px] min-w-0 flex-1 cursor-pointer rounded-[5px] bg-[#111217] px-1.5 text-[12px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
+    >
+      <option value="">{`${s.editorMaterialAuto} · ${s.editorMaterials[inferred]}`}</option>
+      {SET_MATERIALS.map((m) => (
+        <option key={m} value={m}>
+          {s.editorMaterials[m]}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -774,6 +810,8 @@ export function SetEditor({
         const { TransformControls } = await import("three/examples/jsm/controls/TransformControls.js");
         const { buildSetScene, buildStandIn, placeStandIn } = await import("@/lib/sets/build-scene");
         const { BASE_EXPOSURE } = await import("@/lib/sets/exposure");
+        const { Sky } = await import("three/examples/jsm/objects/Sky.js");
+        const { makeStageTextures } = await import("@/lib/sets/stage-materials");
         if (disposed || !hostRef.current) return;
 
         const DEG = Math.PI / 180;
@@ -789,6 +827,13 @@ export function SetEditor({
         renderer.toneMappingExposure = BASE_EXPOSURE;
         renderer.shadowMap.enabled = shadows;
         renderer.shadowMap.type = THREE.PCFShadowMap;
+        // The same stage the shoot draws (build-scene.ts StageQuality), so
+        // what is built here is what is shot: a phone keeps the basic one,
+        // ?stage=basic shows it anywhere.
+        const quality: StageQuality = coarse || new URLSearchParams(window.location.search).get("stage") === "basic" ? "basic" : "full";
+        const textures = quality === "full" ? makeStageTextures(THREE) : null;
+        const pmrem = quality === "full" ? new THREE.PMREMGenerator(renderer) : null;
+        const stageOpts = { shadows, quality, textures, sky: pmrem ? { Sky, pmrem } : null };
         const canvas = renderer.domElement;
         canvas.style.width = "100%";
         canvas.style.height = "100%";
@@ -943,10 +988,12 @@ export function SetEditor({
           clearOutline();
           tc.detach();
           disposeBuilt();
-          built = buildSetScene(THREE, spec, { shadows });
+          built = buildSetScene(THREE, spec, stageOpts);
           scene.add(built.root);
           scene.background = built.background;
           scene.fog = built.fog;
+          scene.environment = built.environment;
+          scene.environmentIntensity = built.environmentIntensity;
           camera.far = built.farPlane;
           camera.updateProjectionMatrix();
           controls.maxDistance = Math.max(spec.bounds.x, spec.bounds.z) * 1.2 + 10;
@@ -1085,6 +1132,8 @@ export function SetEditor({
           camGeo.dispose();
           handleMat.dispose();
           lineMat.dispose();
+          textures?.dispose();
+          pmrem?.dispose();
           renderer.dispose();
           canvas.remove();
           apiRef.current = null;
@@ -1551,6 +1600,14 @@ export function SetEditor({
                 <PRow label={s.editorMetallic}>
                   <Slider value={selObject.metalness} min={0} max={1} step={0.05} onCommit={(v) => commit(patchObject(spec, sel.index, { metalness: v }))} />
                 </PRow>
+                <PRow label={s.editorMaterial}>
+                  <MaterialPick
+                    value={selObject.material}
+                    inferred={materialOf(selObject)}
+                    onCommit={(m) => commit(patchObject(spec, sel.index, { material: m }))}
+                    s={s}
+                  />
+                </PRow>
                 <PRow label={s.editorGlow}>
                   {selObject.emissive ? (
                     <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -1759,6 +1816,14 @@ export function SetEditor({
                     </PRow>
                     <PRow label={s.editorRoughness}>
                       <Slider value={spec.ground.roughness} min={0} max={1} step={0.05} onCommit={(v) => commit(patchGround(spec, { roughness: v }))} />
+                    </PRow>
+                    <PRow label={s.editorMaterial}>
+                      <MaterialPick
+                        value={spec.ground.material}
+                        inferred={groundMaterialOf(spec.ground)}
+                        onCommit={(m) => commit(patchGround(spec, { material: m }))}
+                        s={s}
+                      />
                     </PRow>
                   </>
                 )}

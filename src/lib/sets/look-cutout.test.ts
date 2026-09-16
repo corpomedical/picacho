@@ -57,6 +57,7 @@ const box = (over: Partial<SetObject> & Pick<SetObject, "position" | "size">): S
   shape: "box",
   rotation: [0, 0, 0],
   color: "#808080",
+  material: null,
   roughness: 0.8,
   metalness: 0,
   emissive: null,

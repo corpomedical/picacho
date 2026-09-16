@@ -30,6 +30,35 @@ export type SetLightKind = (typeof SET_LIGHT_KINDS)[number];
 export const SET_SKY_KINDS = ["color", "gradient", "night"] as const;
 export type SetSkyKind = (typeof SET_SKY_KINDS)[number];
 
+/**
+ * What a thing is made of — a WORD, drawn by the stage from a fixed recipe
+ * (stage-materials.ts). Astra names one per object and one for the ground;
+ * null means "not said", and the stage infers one from the colour,
+ * roughness, metalness, shape and size (every set built before 2026-09-17).
+ */
+export const SET_MATERIALS = [
+  "matte",
+  "plaster",
+  "concrete",
+  "asphalt",
+  "brick",
+  "cobbles",
+  "tile",
+  "sand",
+  "earth",
+  "grass",
+  "foliage",
+  "timber",
+  "fabric",
+  "paint",
+  "metal",
+  "chrome",
+  "glass",
+  "water",
+  "rubber",
+] as const;
+export type SetMaterial = (typeof SET_MATERIALS)[number];
+
 export type Vec3 = [number, number, number];
 
 export type SetLight = {
@@ -64,6 +93,8 @@ export type SetObject = {
   castShadow: boolean;
   /** Copies at position + i × offset, for i = 0 … count − 1. */
   repeat: { count: number; offset: Vec3 } | null;
+  /** What it is made of (SET_MATERIALS); null = inferred by the stage. */
+  material: SetMaterial | null;
 };
 
 /** Where a person can stand. Only ever drawn as the neutral stand-in. */
@@ -78,7 +109,7 @@ export type SetSpec = {
   description: string;
   bounds: { x: number; z: number; height: number };
   sky: { kind: SetSkyKind; colors: string[] };
-  ground: { color: string; roughness: number };
+  ground: { color: string; roughness: number; material: SetMaterial | null };
   fog: { color: string; near: number; far: number } | null;
   lights: SetLight[];
   objects: SetObject[];
@@ -187,6 +218,11 @@ function facing(value: unknown): number {
   return d < 0 ? d + 360 : d;
 }
 
+/** A material word, or null for anything that is not one (an old set, a word the model made up). */
+function material(v: unknown): SetMaterial | null {
+  return typeof v === "string" && (SET_MATERIALS as readonly string[]).includes(v) ? (v as SetMaterial) : null;
+}
+
 function pick<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
 }
@@ -276,7 +312,11 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
   const sky = { kind: skyKind, colors: skyColors.length > 0 ? skyColors : [...DEFAULT_SKY[skyKind]] };
 
   const g = obj(root.ground) ?? {};
-  const ground = { color: cleanColor(g.color, DEFAULT_GROUND_COLOR), roughness: num(g.roughness, 0, 1, 0.9) };
+  const ground = {
+    color: cleanColor(g.color, DEFAULT_GROUND_COLOR),
+    roughness: num(g.roughness, 0, 1, 0.9),
+    material: material(g.material),
+  };
 
   const f = obj(root.fog);
   let fog: SetSpec["fog"] = null;
@@ -364,6 +404,7 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
       emissiveIntensity: num(o.emissiveIntensity, 0, 10, 1),
       castShadow: o.castShadow === true,
       repeat,
+      material: material(o.material),
     });
   }
   if (objects.length === 0) return { ok: false, reason: "empty" };

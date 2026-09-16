@@ -128,6 +128,7 @@ export function addObject(spec: SetSpec, shape: SetShape, at: [number, number]):
     emissive: null,
     emissiveIntensity: 1,
     castShadow: true,
+    material: null,
     repeat: null,
   });
   return renormalise(next);

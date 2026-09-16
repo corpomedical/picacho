@@ -12,25 +12,90 @@
 
 import type * as ThreeNS from "three";
 import type { SetLight, SetObject, SetSpec, Vec3 } from "./set-spec";
+import { fitRepeat, groundMaterialOf, materialOf, stageMaterial, type StageTextures } from "./stage-materials";
 
 type Three = typeof ThreeNS;
+
+/**
+ * "full" is the stage as drawn since 2026-09-17 (canvas page J, cut 1):
+ * physical materials with texture from each thing's material word, a
+ * physical sky lighting the set through an environment map, soft shadows
+ * from the sun and the lamps. "basic" is the stage as it was — flat colour
+ * under Astra's lights — kept for phones, and reachable with ?stage=basic.
+ */
+export type StageQuality = "basic" | "full";
+
+/** three's Sky addon, as the page imports it: a mesh whose shader takes the sun. */
+export type SkyLike = ThreeNS.Mesh<ThreeNS.BufferGeometry, ThreeNS.ShaderMaterial>;
+
+export type BuildSetOptions = {
+  shadows?: boolean;
+  quality?: StageQuality;
+  /** The page's procedural textures (stage-materials.ts makeStageTextures); null draws the words without maps. */
+  textures?: StageTextures | null;
+  /**
+   * For the full stage's sky: the Sky class and a PMREM generator on the
+   * page's renderer. Without them (node, the tests) the full stage keeps the
+   * gradient dome and has no environment light.
+   */
+  sky?: { Sky: new () => SkyLike; pmrem: ThreeNS.PMREMGenerator } | null;
+};
 
 export type BuiltSet = {
   /** Everything the set draws; add it to a scene. */
   root: ThreeNS.Group;
   /** For scene.background — null when a sky dome is drawn instead. */
   background: ThreeNS.Color | null;
-  fog: ThreeNS.Fog | null;
+  fog: ThreeNS.Fog | ThreeNS.FogExp2 | null;
+  /** For scene.environment: the sky's light on every surface (the full stage with a sky), else null. */
+  environment: ThreeNS.Texture | null;
+  /** For scene.environmentIntensity. */
+  environmentIntensity: number;
   /** Far enough for the camera to see the sky dome. */
   farPlane: number;
   meshCount: number;
+  quality: StageQuality;
   dispose(): void;
 };
 
 const DEG = Math.PI / 180;
 
-export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boolean } = {}): BuiltSet {
+/**
+ * How the full stage balances Astra's lights against the sky it adds.
+ * Astra writes intensities for the basic stage (a sun of 1–4 under a
+ * hemisphere fill); on the full stage the sky's environment lights every
+ * surface, so the fill comes down and the sun goes up, and a low sun keeps
+ * more of its fill. The numbers are the draft's (canvas page J, rendered
+ * at exposure 0.72 with sun ×3.2, fill ×0.45, environment 0.15), moved to
+ * the stage's own exposure of 1.3, which changes nothing about the picture.
+ * At night the lamps carry the set: they go up, the fill goes up a little,
+ * and the dome lights the rest through the environment.
+ */
+export const FULL_STAGE = {
+  sunGain: 1.8,
+  sunGainLow: 1.55,
+  /** sin of 20°: below this the sun is "low" (sunset, sunrise). */
+  lowSunY: 0.34,
+  fillGain: 0.25,
+  envIntensity: 0.085,
+  envIntensityLow: 0.09,
+  nightEnvIntensity: 1,
+  nightFillGain: 2.2,
+  nightLampGain: 2.4,
+  sunShadowMap: 4096,
+  spotShadowMap: 1024,
+  pointShadowMap: 512,
+  maxSpotShadows: 2,
+  maxPointShadows: 2,
+  /** Daylight fog is exponential: this over the set's far distance. */
+  fogDensityOverFar: 1.6,
+} as const;
+
+export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions = {}): BuiltSet {
   const shadows = opts.shadows === true;
+  const quality: StageQuality = opts.quality === "full" ? "full" : "basic";
+  const full = quality === "full";
+  const textures = full ? (opts.textures ?? null) : null;
   const root = new THREE.Group();
   root.name = "set";
   const disposables: { dispose(): void }[] = [];
@@ -38,14 +103,59 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
     disposables.push(x);
     return x;
   };
+  /** A fitted copy of a material and its maps (stage-materials.ts fitRepeat), freed with the build. */
+  const adopt = (m: ThreeNS.MeshPhysicalMaterial): ThreeNS.MeshPhysicalMaterial => {
+    track(m);
+    for (const k of ["map", "bumpMap", "roughnessMap"] as const) if (m[k]) track(m[k]);
+    return m;
+  };
 
   const span = Math.max(spec.bounds.x, spec.bounds.z, spec.bounds.height);
   const domeRadius = Math.max(150, span * 4);
+  const night = spec.sky.kind === "night";
+
+  // The sun's direction, for the sky and for what counts as a low sun.
+  const sunSpec = spec.lights.find((l) => l.kind === "sun") ?? null;
+  const sunDir = new THREE.Vector3(0.4, 1, 0.3);
+  if (sunSpec) {
+    sunDir.set(sunSpec.position[0] - sunSpec.target[0], sunSpec.position[1] - sunSpec.target[1], sunSpec.position[2] - sunSpec.target[2]);
+    if (sunDir.lengthSq() < 1e-6) sunDir.set(0.4, 1, 0.3);
+  }
+  sunDir.normalize();
+  const lowSun = sunDir.y < FULL_STAGE.lowSunY;
 
   // --- sky ---
   let background: ThreeNS.Color | null = null;
+  let environment: ThreeNS.Texture | null = null;
+  let environmentIntensity = 1;
+  /** The full stage's environment, from whatever draws the sky. */
+  const lightFrom = (skyMesh: ThreeNS.Object3D, intensity: number) => {
+    if (!full || !opts.sky) return;
+    const envScene = new THREE.Scene();
+    envScene.add(skyMesh);
+    const target = track(opts.sky.pmrem.fromScene(envScene, 0.04, 0.1, domeRadius * 3));
+    envScene.remove(skyMesh);
+    environment = target.texture;
+    environmentIntensity = intensity;
+  };
   if (spec.sky.kind === "color") {
     background = new THREE.Color(spec.sky.colors[0]);
+  } else if (full && opts.sky && !night && sunSpec) {
+    // A real sky, from the sun's own height: the horizon warms as the sun
+    // drops, the zenith deepens, and its light falls on every surface.
+    const sky = new opts.sky.Sky();
+    sky.name = "sky";
+    sky.scale.setScalar(domeRadius * 1.8);
+    const u = sky.material.uniforms;
+    u.turbidity.value = lowSun ? 8 : 4;
+    u.rayleigh.value = lowSun ? 3.2 : 1.6;
+    u.mieCoefficient.value = lowSun ? 0.02 : 0.006;
+    u.mieDirectionalG.value = lowSun ? 0.86 : 0.8;
+    (u.sunPosition.value as ThreeNS.Vector3).copy(sunDir);
+    track(sky.material);
+    track(sky.geometry);
+    lightFrom(sky, lowSun ? FULL_STAGE.envIntensityLow : FULL_STAGE.envIntensity);
+    root.add(sky);
   } else {
     const top = new THREE.Color(spec.sky.colors[0]);
     const horizon = new THREE.Color(spec.sky.colors[1] ?? spec.sky.colors[0]);
@@ -67,10 +177,17 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
     const dome = new THREE.Mesh(geo, mat);
     dome.name = "sky";
     dome.renderOrder = -1;
+    lightFrom(dome, night ? FULL_STAGE.nightEnvIntensity : FULL_STAGE.envIntensity);
     root.add(dome);
   }
 
-  const fog = spec.fog ? new THREE.Fog(new THREE.Color(spec.fog.color), spec.fog.near, spec.fog.far) : null;
+  // Daylight fog on the full stage thins with distance the way air does;
+  // a night set keeps Astra's near and far as written (its fog is a look).
+  const fog: BuiltSet["fog"] = !spec.fog
+    ? null
+    : full && !night
+      ? new THREE.FogExp2(new THREE.Color(spec.fog.color), FULL_STAGE.fogDensityOverFar / spec.fog.far)
+      : new THREE.Fog(new THREE.Color(spec.fog.color), spec.fog.near, spec.fog.far);
 
   // --- ground: wider than the set, so no camera inside the bounds sees its edge ---
   {
@@ -78,25 +195,75 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
     const geo = track(new THREE.PlaneGeometry(size, size));
     geo.rotateX(-Math.PI / 2);
     const mat = track(
-      new THREE.MeshStandardMaterial({ color: new THREE.Color(spec.ground.color), roughness: spec.ground.roughness }),
+      full
+        ? stageMaterial(THREE, groundMaterialOf(spec.ground), { color: spec.ground.color, roughness: spec.ground.roughness, metalness: 0 }, textures)
+        : new THREE.MeshStandardMaterial({ color: new THREE.Color(spec.ground.color), roughness: spec.ground.roughness }),
     );
     const ground = new THREE.Mesh(geo, mat);
     ground.name = "ground";
     ground.receiveShadow = shadows;
+    if (full) {
+      // A plane geometry is unit-sized nowhere here (it is built at the
+      // ground's real size), so the repeat is fitted through the scale it
+      // would have had.
+      const fitted = fitRepeat({ scale: { x: size, y: 1, z: size }, material: mat }, true);
+      if (fitted) ground.material = adopt(fitted);
+    }
     root.add(ground);
   }
 
   // --- lights ---
   let shadowCaster = false;
+  let spotShadows = 0;
+  let pointShadows = 0;
+  const skyLit = environment !== null;
   for (const light of spec.lights) {
-    const built = makeLight(THREE, light, spec, shadows && !shadowCaster && light.kind === "sun");
+    const built = makeLight(THREE, light, spec, shadows && !shadowCaster && light.kind === "sun", full);
     if (built.castsShadow) shadowCaster = true;
-    for (const o of built.objects) root.add(o);
+    for (const o of built.objects) {
+      if (full) {
+        // The full stage's balance (FULL_STAGE), and soft shadows from the
+        // lamps too — the first two spots and the first two bulbs.
+        const l = o as ThreeNS.Light;
+        if ((o as ThreeNS.DirectionalLight).isDirectionalLight) l.intensity *= lowSun ? FULL_STAGE.sunGainLow : FULL_STAGE.sunGain;
+        else if ((o as ThreeNS.HemisphereLight).isHemisphereLight || (o as ThreeNS.AmbientLight).isAmbientLight) {
+          if (night) l.intensity *= FULL_STAGE.nightFillGain;
+          else if (skyLit) l.intensity *= FULL_STAGE.fillGain;
+        } else if ((o as ThreeNS.SpotLight).isSpotLight) {
+          const sp = o as ThreeNS.SpotLight;
+          if (night) sp.intensity *= FULL_STAGE.nightLampGain;
+          sp.penumbra = 0.55;
+          if (shadows && spotShadows < FULL_STAGE.maxSpotShadows) {
+            spotShadows += 1;
+            sp.castShadow = true;
+            sp.shadow.mapSize.set(FULL_STAGE.spotShadowMap, FULL_STAGE.spotShadowMap);
+            sp.shadow.radius = 3;
+            sp.shadow.bias = -0.0003;
+            sp.shadow.normalBias = 0.02;
+            sp.shadow.camera.near = 0.3;
+            sp.shadow.camera.far = (sp.distance || 30) + 5;
+          }
+        } else if ((o as ThreeNS.PointLight).isPointLight) {
+          const pt = o as ThreeNS.PointLight;
+          if (night) pt.intensity *= FULL_STAGE.nightLampGain;
+          if (shadows && pointShadows < FULL_STAGE.maxPointShadows) {
+            pointShadows += 1;
+            pt.castShadow = true;
+            pt.shadow.mapSize.set(FULL_STAGE.pointShadowMap, FULL_STAGE.pointShadowMap);
+            pt.shadow.radius = 3;
+            pt.shadow.bias = -0.0005;
+            pt.shadow.normalBias = 0.03;
+            pt.shadow.camera.near = 0.2;
+          }
+        }
+      }
+      root.add(o);
+    }
   }
 
   // --- objects ---
   const geometries = new Map<string, ThreeNS.BufferGeometry>();
-  const materials = new Map<string, ThreeNS.MeshStandardMaterial>();
+  const materials = new Map<string, ThreeNS.MeshStandardMaterial | ThreeNS.MeshPhysicalMaterial>();
   const geometryFor = (o: SetObject): ThreeNS.BufferGeometry => {
     // A torus's ring and tube are independent sizes, so it is built at its
     // real dimensions; every other shape is a unit shape scaled per mesh.
@@ -107,10 +274,23 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
     geometries.set(key, geo);
     return geo;
   };
-  const materialFor = (o: SetObject): ThreeNS.MeshStandardMaterial => {
-    const key = [o.color, o.roughness, o.metalness, o.emissive ?? "", o.emissiveIntensity, o.shape === "plane"].join("|");
+  const materialFor = (o: SetObject): ThreeNS.MeshStandardMaterial | ThreeNS.MeshPhysicalMaterial => {
+    const word = full ? materialOf(o) : "";
+    const key = [word, o.color, o.roughness, o.metalness, o.emissive ?? "", o.emissiveIntensity, o.shape === "plane"].join("|");
     const hit = materials.get(key);
     if (hit) return hit;
+    if (full) {
+      const made = track(
+        stageMaterial(
+          THREE,
+          word as Exclude<typeof word, "">,
+          { color: o.color, roughness: o.roughness, metalness: o.metalness, emissive: o.emissive, emissiveIntensity: o.emissiveIntensity, doubleSided: o.shape === "plane" },
+          textures,
+        ),
+      );
+      materials.set(key, made);
+      return made;
+    }
     const mat = track(
       new THREE.MeshStandardMaterial({
         color: new THREE.Color(o.color),
@@ -140,6 +320,10 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
       mesh.scale.copy(unitScale(o));
       mesh.castShadow = shadows && o.castShadow;
       mesh.receiveShadow = shadows;
+      if (full) {
+        const fitted = fitRepeat(mesh, o.shape === "plane");
+        if (fitted) mesh.material = adopt(fitted);
+      }
       root.add(mesh);
       meshCount += 1;
     }
@@ -149,8 +333,11 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: { shadows?: boo
     root,
     background,
     fog,
+    environment,
+    environmentIntensity,
     farPlane: domeRadius * 2.2,
     meshCount,
+    quality,
     dispose() {
       for (const d of disposables) d.dispose();
       root.clear();
@@ -229,6 +416,7 @@ function makeLight(
   l: SetLight,
   spec: SetSpec,
   castShadow: boolean,
+  full = false,
 ): { objects: ThreeNS.Object3D[]; castsShadow: boolean } {
   const color = new THREE.Color(l.color);
   switch (l.kind) {
@@ -274,15 +462,23 @@ function makeLight(
       if (castShadow) {
         const half = Math.min(120, Math.max(spec.bounds.x, spec.bounds.z) * 0.75 + 2);
         d.castShadow = true;
-        d.shadow.mapSize.set(2048, 2048);
+        d.shadow.mapSize.set(full ? FULL_STAGE.sunShadowMap : 2048, full ? FULL_STAGE.sunShadowMap : 2048);
         d.shadow.camera.left = -half;
         d.shadow.camera.right = half;
         d.shadow.camera.top = half;
         d.shadow.camera.bottom = -half;
         d.shadow.camera.near = 0.5;
         d.shadow.camera.far = dist + span * 1.5 + 10;
-        d.shadow.bias = -0.0004;
-        d.shadow.normalBias = 0.02;
+        if (full) {
+          // Softened 2 px; a low sun grazes every surface, so it needs more
+          // room against its own shadow (acne) than a high one.
+          d.shadow.radius = 2;
+          d.shadow.bias = -0.00015;
+          d.shadow.normalBias = dir.y < FULL_STAGE.lowSunY ? 0.12 : 0.04;
+        } else {
+          d.shadow.bias = -0.0004;
+          d.shadow.normalBias = 0.02;
+        }
       }
       return { objects: [d, d.target], castsShadow: castShadow };
     }

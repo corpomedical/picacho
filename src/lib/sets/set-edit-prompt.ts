@@ -13,6 +13,7 @@ import type { AstraJobRequest } from "../generations/providers/astra";
 import { SET_SPEC_JSON_SCHEMA, SET_SPEC_SCHEMA_NAME } from "./set-builder-prompt";
 import { SET_BUILD_EFFORT, SET_BUILD_MAX_OUTPUT_TOKENS } from "./set-config";
 import type { SetSpec } from "./set-spec";
+import { withMaterials } from "./stage-materials";
 
 export const SET_EDITOR_INSTRUCTIONS = `You edit film sets for a pre-visualisation tool. You are given ONE existing location as JSON and ONE change request. Apply exactly the change asked and return the FULL revised location as JSON matching the schema.
 
@@ -22,12 +23,20 @@ Rules:
 - New things rest on the ground (position y = half their height) unless the request says otherwise, and stay inside the set's bounds.
 - When the request names something loosely ("the barriers", "the red car"), pick the objects that best match it by shape, colour, size and position.
 - A change of light or time of day adjusts the lights and the sky together, so the set still reads clearly.
+- Every object and the ground carry a material word; keep them, and give anything you add one.
 - Update the description only if the change makes it wrong; otherwise return it unchanged.
 - If nothing in the set answers the request, return the set unchanged.`;
 
-/** The one user message: the working spec as data, then the request. */
+/**
+ * The one user message: the working spec as data, then the request. A set
+ * from before the material words is handed with the words the stage has
+ * been drawing it with (withMaterials), so the model keeps them rather than
+ * guessing new ones.
+ */
 export function setEditInput(current: SetSpec, request: string): string {
-  return `The current set:\n${JSON.stringify(current)}\n\nThe change request:\n${request}`;
+  // A bare object (prices.test.ts measures the framing with one) goes as it is.
+  const sent = Array.isArray(current.objects) && current.ground ? withMaterials(current) : current;
+  return `The current set:\n${JSON.stringify(sent)}\n\nThe change request:\n${request}`;
 }
 
 export function setEditRequest(current: SetSpec, request: string, safetyIdentifier: string | undefined): AstraJobRequest {

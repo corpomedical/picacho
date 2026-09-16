@@ -23,7 +23,7 @@
 //   - Repeat instead of copying: output tokens are the whole cost of a
 //     build ($50 per million), and a row of twelve lamps is one object.
 
-import { SET_LIGHT_KINDS, SET_LIMITS, SET_SHAPES, SET_SKY_KINDS } from "./set-spec";
+import { SET_LIGHT_KINDS, SET_LIMITS, SET_MATERIALS, SET_SHAPES, SET_SKY_KINDS } from "./set-spec";
 import type { AstraInput } from "../generations/providers/astra";
 
 export const SET_BUILDER_INSTRUCTIONS = `You build film sets for a pre-visualisation tool. From the brief, build ONE location as simple 3D primitives, as JSON matching the schema.
@@ -44,6 +44,7 @@ What to build
 - Use 30–150 objects. For rows or grids of identical things (columns, lamps, chairs, shelves, windows, trees), write the object ONCE with repeat { count, offset }: copy i sits at position + i × offset. Use repeat: null otherwise. At most ${SET_LIMITS.maxInstances} shapes after repeats.
 - Colours are "#rrggbb". Choose a believable palette for this specific place and time of day; do not default to greens or to flat pastel colours. roughness and metalness are 0–1. emissive (a colour, or null) is for things that glow: lamps, screens, windows at night; emissiveIntensity 0–10.
 - castShadow: true for large or important objects, false for small clutter.
+- material names what each object is made of, one of: ${SET_MATERIALS.join(", ")}. Pick the nearest word (a road is asphalt, a wall is plaster, concrete or brick, a car body is paint, a window is glass, a tyre is rubber, a tree is foliage, a bench is timber, a cushion is fabric); colour, roughness and metalness still describe it. The ground has a material too.
 
 Light and air
 - 2–6 lights. Outdoors: one sun (intensity 1–4) plus a hemisphere or ambient fill (0.2–1.5). Indoors or at night: point or spot lights at the real light sources (intensity roughly 5–60, higher for lights further from what they light), plus a hemisphere or ambient fill of 0.5–1 so every wall a camera can see still reads. The sketch has to show the whole place; the description carries the mood.
@@ -92,8 +93,8 @@ export const SET_SPEC_JSON_SCHEMA = {
     ground: {
       type: "object",
       additionalProperties: false,
-      required: ["color", "roughness"],
-      properties: { color: { type: "string" }, roughness: { type: "number" } },
+      required: ["color", "roughness", "material"],
+      properties: { color: { type: "string" }, roughness: { type: "number" }, material: { type: "string", enum: [...SET_MATERIALS] } },
     },
     fog: nullable({
       type: "object",
@@ -136,6 +137,7 @@ export const SET_SPEC_JSON_SCHEMA = {
           "emissiveIntensity",
           "castShadow",
           "repeat",
+          "material",
         ],
         properties: {
           shape: { type: "string", enum: [...SET_SHAPES] },
@@ -148,6 +150,7 @@ export const SET_SPEC_JSON_SCHEMA = {
           emissive: nullable({ type: "string" }),
           emissiveIntensity: { type: "number" },
           castShadow: { type: "boolean" },
+          material: { type: "string", enum: [...SET_MATERIALS] },
           repeat: nullable({
             type: "object",
             additionalProperties: false,
@@ -235,6 +238,7 @@ export const SET_PHOTO_RULES = `There is no written brief. The attached photogra
 - The axes are right-handed. Put cameras[0] on the +Z side of the set, looking toward -Z: from there +X is on its right and -X on its left. So whatever is on the left of the photo goes at negative x, whatever is on the right at positive x, and whatever is further from the photographer at smaller z. Never mirror the photo.
 - Never model a person. Where someone stands in the photo, or where someone could stand, put a mark facing the way they face. Never identify, name or describe anyone, in the title, the description or any label: a label names the spot ("By the counter"), never who was there.
 - Calibrate every size against a person: a standing adult is 1.70 m, and every mark you place is one. Sofa and chair seats top out 0.40–0.48 m above the floor, coffee tables 0.30–0.45 m, dining tables and desks 0.72–0.78 m. A wide-angle photo makes near furniture loom large: size each thing by what it is, never by how much frame it fills. If a 1.70 m person could not sit on your seats with feet on the floor, the scale is wrong — fix it before answering.
+- Name each object's material as the photo shows it (asphalt, brick, timber, glass, fabric…).
 - Build what the photo shows first. Close every side it does not show with a plausible continuation of the same place, so no camera sees where the set ends.
 - A photo is full of small things; the 400-shape budget is for the whole set. List the floor, walls, ceiling and whatever closes each side first, then furniture, then small props, and repeat small props fewer times rather than leave out anything structural.
 - Signs, posters and screens are blank shapes. Do not copy any text, logo or brand, and do not name the real place, business, street or address, even if you recognise it.

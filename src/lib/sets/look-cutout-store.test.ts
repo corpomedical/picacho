@@ -192,7 +192,7 @@ describe("lookCutout", () => {
       // Two props apart, the figure far down the left of the frame, small and clear of both.
       const prop = (x: number): SetObject => ({
         shape: "box", position: [x, 0.5, 0], size: [1.5, 1, 1], rotation: [0, 0, 0], color: "#808080", roughness: 0.8, metalness: 0,
-        emissive: null, emissiveIntensity: 0, castShadow: true, repeat: null,
+        emissive: null, emissiveIntensity: 0, castShadow: true, repeat: null, material: null,
       });
       const two = { objects: [prop(-2), prop(2)], bounds: { height: 12 } };
       const camera: ShotCamera = { position: [0, 1.6, 8], target: [0, 1, 0], fovDeg: 50, canvasAspect: 16 / 9, figure: { x: -9, z: -30 } };
