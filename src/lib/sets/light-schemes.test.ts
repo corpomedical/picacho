@@ -13,6 +13,7 @@ const lamp = (x: number): SetLight => ({
   position: [x, 3, 0],
   target: [0, 0, 0],
   groundColor: null,
+  size: null,
   angleDeg: 35,
   distance: 12,
 });

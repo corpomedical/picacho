@@ -39,7 +39,8 @@ import { oversizedSeating } from "@/lib/sets/human-scale";
 import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
-import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
+import { bearingDeg } from "@/lib/sets/light-schemes";
+import { stagedSpec } from "@/lib/sets/time-of-day";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
 import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import { planFilmOverlay, type FilmOverlayPlan } from "@/lib/sets/film-overlay";
@@ -190,6 +191,8 @@ type StageApi = {
   setHistogram(canvas: HTMLCanvasElement | null): void;
   /** The focus readout at the figure's eyes while the stop is set: the element, and the words for a distance. */
   setFocusHud(el: HTMLElement | null, words: ((distanceM: number) => string) | null): void;
+  /** The light meter (cut 3): the words for the face's brightness, a share of white in per cent, or null for off. */
+  setMeter(words: ((pct: number) => string) | null): void;
   /** Width ÷ height the recorded frame's field of view is measured against (1: across its height). */
   canvasAspect(): number;
   /**
@@ -745,8 +748,11 @@ export function SetView({
         const { buildSetScene, buildStandIn, moveBuildInto, placeStandIn } = await import("@/lib/sets/build-scene");
         const { BASE_EXPOSURE, NO_LIFT, liftSet } = await import("@/lib/sets/exposure");
         const { Sky } = await import("three/examples/jsm/objects/Sky.js");
+        const { RectAreaLightUniformsLib } = await import("three/examples/jsm/lights/RectAreaLightUniformsLib.js");
         const { makeStageTextures } = await import("@/lib/sets/stage-materials");
         const { loadStagePasses, makeStageComposer } = await import("@/lib/sets/stage-post");
+        // An area light (the light department) needs its lookup tables once per page.
+        RectAreaLightUniformsLib.init();
         const { CSS2DObject, CSS2DRenderer } = await import("three/examples/jsm/renderers/CSS2DRenderer.js");
         if (disposed || !hostRef.current) return;
 
@@ -849,6 +855,22 @@ export function SetView({
         let histogramCanvas: HTMLCanvasElement | null = null;
         let focusHud: HTMLElement | null = null;
         let focusWords: ((distanceM: number) => string) | null = null;
+        let meterWords: ((pct: number) => string) | null = null;
+        let meterLast = "";
+        const meterScratch = document.createElement("canvas");
+        meterScratch.width = 9;
+        meterScratch.height = 9;
+        /** The displayed brightness round a canvas point, 0–100 % of white. */
+        const meterAt = (x: number, y: number): number | null => {
+          const ctx = meterScratch.getContext("2d", { willReadFrequently: true });
+          if (!ctx) return null;
+          const r = renderer.getPixelRatio();
+          ctx.drawImage(renderer.domElement, x * r - 4, y * r - 4, 9, 9, 0, 0, 9, 9);
+          const d = ctx.getImageData(0, 0, 9, 9).data;
+          let sum = 0;
+          for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+          return Math.round((sum / (81 * 255)) * 100);
+        };
         let frameCount = 0;
         const eyeHud = new THREE.Vector3();
         const histoScratch = document.createElement("canvas");
@@ -1131,7 +1153,8 @@ export function SetView({
           // The focus readout: at the figure's eyes on screen, the distance
           // and what the stop holds sharp at it (the words come from the page).
           if (focusHud) {
-            if (depthStop !== null && focusWords) {
+            const focusOn = depthStop !== null && focusWords !== null;
+            if (focusOn || meterWords) {
               const p = standIn.group.position;
               eyeHud.set(p.x, FRAME_EYE_Y, p.z);
               const d = camera.position.distanceTo(eyeHud);
@@ -1142,7 +1165,14 @@ export function SetView({
               focusHud.hidden = off;
               if (!off) {
                 focusHud.style.transform = `translate(${x.toFixed(0)}px, ${(y - 30).toFixed(0)}px)`;
-                const text = focusWords(d);
+                const parts: string[] = [];
+                if (focusOn && focusWords) parts.push(focusWords(d));
+                if (meterWords && frameCount % 4 === 0) {
+                  const pct = meterAt(x, y);
+                  if (pct !== null) meterLast = meterWords(pct);
+                }
+                if (meterWords && meterLast) parts.push(meterLast);
+                const text = parts.join(" · ");
                 if (focusHud.textContent !== text) focusHud.textContent = text;
               }
             } else focusHud.hidden = true;
@@ -1303,7 +1333,12 @@ export function SetView({
           setFocusHud(el, words) {
             focusHud = el;
             focusWords = words;
-            if (el && !words) el.hidden = true;
+            if (el && !words && !meterWords) el.hidden = true;
+          },
+          setMeter(words) {
+            meterWords = words;
+            meterLast = "";
+            if (!words && focusHud && (depthStop === null || !focusWords)) focusHud.hidden = true;
           },
           snapshot(px, opts) {
             // The ring and arrow are for arranging; the image model must
@@ -1675,33 +1710,41 @@ export function SetView({
     apiRef.current?.setFocusHud(el, words);
     return () => apiRef.current?.setFocusHud(el, null);
   }, [ready, rigStop, rigSensor, rigFormat, fovDeg, locale, s]);
+  const meterOn = rig.overlays.meter;
+  useEffect(() => {
+    if (!ready) return;
+    apiRef.current?.setMeter(meterOn ? (pct) => formatMsg(s.rig.hudMeter, { pct }) : null);
+    return () => apiRef.current?.setMeter(null);
+  }, [ready, meterOn, s]);
 
   // A light scheme is a plot in the set (light-schemes.ts): the stage draws
   // a lit copy of the working copy round the figure's mark. Only when the
   // light, the set or the mark's place changed — the first ready of a set
   // with no scheme is the stage exactly as built.
   const litRef = useRef<{ spec: SetSpec; key: string }>({ spec: initialSpec, key: JSON.stringify(null) });
-  const litKey = (light: SetRig["light"], m: { x: number; z: number }) => JSON.stringify(light ? [light, m.x, m.z] : null);
-  /** Draw `next` on the stage now, lit by the rig's scheme — an Astra edit's thumbnail is shot right after. */
+  // The hour (time-of-day.ts) draws with the scheme: the plot first, then the hour where it applies.
+  const litKey = (light: SetRig["light"], time: SetRig["time"], m: { x: number; z: number }) => JSON.stringify(light || time !== null ? [light, time, m.x, m.z] : null);
+  /** Draw `next` on the stage now, lit by the rig's scheme and hour — an Astra edit's thumbnail is shot right after. */
   function drawSet(next: SetSpec) {
     const m = layoutRef.current.mark;
-    litRef.current = { spec: next, key: litKey(rigRef.current.light, m) };
-    apiRef.current?.rebuild(litSpec(next, rigRef.current.light, m));
+    litRef.current = { spec: next, key: litKey(rigRef.current.light, rigRef.current.time, m) };
+    apiRef.current?.rebuild(stagedSpec(next, rigRef.current, m));
   }
+  const rigTime = rig.time;
   useEffect(() => {
     if (!ready) return;
-    const key = litKey(rig.light, mark);
+    const key = litKey(rig.light, rigTime, mark);
     if (litRef.current.spec === spec && litRef.current.key === key) return;
-    // A beat after the last change: dragging the sun round the plot rebuilds
-    // the stage once it rests, not on every step of the drag.
+    // A beat after the last change: dragging the sun round the plot, or the
+    // hour along its slider, rebuilds the stage once it rests, not on every step.
     const id = setTimeout(() => {
       litRef.current = { spec, key };
-      apiRef.current?.rebuild(litSpec(spec, rig.light, mark));
+      apiRef.current?.rebuild(stagedSpec(spec, { light: rig.light, time: rigTime }, mark));
     }, 60);
     return () => clearTimeout(id);
     // mark.facingDeg turns the figure only; the lights stay.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, spec, rig.light, mark.x, mark.z]);
+  }, [ready, spec, rig.light, rigTime, mark.x, mark.z]);
 
   // The rig autosaves like the film — a beat after the hands stop. The
   // first run is the loaded rig itself, not an edit. A rig that does not

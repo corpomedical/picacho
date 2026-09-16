@@ -73,8 +73,8 @@ describe("buildSetScene", () => {
     const twoSuns: SetSpec = {
       ...spec,
       lights: [
-        { kind: "sun", color: "#ffffff", intensity: 2, position: [5, 10, 5], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 },
-        { kind: "sun", color: "#ffffff", intensity: 1, position: [-5, 10, 5], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 },
+        { kind: "sun", color: "#ffffff", intensity: 2, position: [5, 10, 5], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 , size: null },
+        { kind: "sun", color: "#ffffff", intensity: 1, position: [-5, 10, 5], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 , size: null },
       ],
     };
     const lit = buildSetScene(THREE, twoSuns, { shadows: true });
@@ -101,7 +101,7 @@ describe("the sun's shadows", () => {
       ...spec,
       bounds: { x: 30, z: 30, height: 12 },
       lights: [
-        { kind: "sun", color: "#ffffff", intensity: 2, position: [100, 200, 100], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 },
+        { kind: "sun", color: "#ffffff", intensity: 2, position: [100, 200, 100], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 , size: null },
       ],
     };
     const built = buildSetScene(THREE, farSun, { shadows: true });
@@ -225,8 +225,8 @@ describe("the full stage", () => {
       ...spec,
       sky: { kind: "gradient", colors: ["#8fb3d9", "#e8e2d6"] },
       lights: [
-        { kind: "sun", color: "#ffffff", intensity: 2, position: [5, 10, 5], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 },
-        { kind: "hemisphere", color: "#ffffff", intensity: 1, position: [0, 0, 0], target: [0, 0, 0], groundColor: "#808080", angleDeg: 30, distance: 0 },
+        { kind: "sun", color: "#ffffff", intensity: 2, position: [5, 10, 5], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 0 , size: null },
+        { kind: "hemisphere", color: "#ffffff", intensity: 1, position: [0, 0, 0], target: [0, 0, 0], groundColor: "#808080", angleDeg: 30, distance: 0 , size: null },
       ],
     };
     const full = buildSetScene(THREE, sunLit, { shadows: true, quality: "full" });
@@ -260,10 +260,10 @@ describe("the full stage", () => {
       ...showroom,
       lights: [
         ...showroom.lights,
-        { kind: "spot", color: "#ffffff", intensity: 10, position: [0, 5, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
-        { kind: "point", color: "#ffffff", intensity: 10, position: [1, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
-        { kind: "point", color: "#ffffff", intensity: 10, position: [2, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
-        { kind: "point", color: "#ffffff", intensity: 10, position: [3, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 },
+        { kind: "spot", color: "#ffffff", intensity: 10, position: [0, 5, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 , size: null },
+        { kind: "point", color: "#ffffff", intensity: 10, position: [1, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 , size: null },
+        { kind: "point", color: "#ffffff", intensity: 10, position: [2, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 , size: null },
+        { kind: "point", color: "#ffffff", intensity: 10, position: [3, 3, 0], target: [0, 0, 0], groundColor: null, angleDeg: 30, distance: 10 , size: null },
       ],
     };
     expect(lamps.lights.filter((l) => l.kind === "spot")).toHaveLength(3);
@@ -325,5 +325,35 @@ describe("the lens on a sensor (the camera department, cut 2)", () => {
     plain.updateProjectionMatrix();
     squeezeProjection(plain, 1);
     expect(plain.projectionMatrix.elements[0]).toBeCloseTo(x0, 9);
+  });
+});
+
+describe("an area light (the light department, cut 3)", () => {
+  it("is drawn as a rectangle of the spec's size facing its target, and turned up at night on the full stage", () => {
+    const lit: SetSpec = {
+      ...spec,
+      lights: [
+        { kind: "area", color: "#ffffff", intensity: 10, position: [0, 3, 2], target: [0, 1, 0], groundColor: null, angleDeg: 30, distance: 0, size: [2, 1.5] },
+      ],
+    };
+    const basic = buildSetScene(THREE, lit);
+    let area: THREE.RectAreaLight | null = null;
+    basic.root.traverse((o) => {
+      if ((o as THREE.RectAreaLight).isRectAreaLight) area = o as THREE.RectAreaLight;
+    });
+    const a = area as unknown as THREE.RectAreaLight;
+    expect(a).not.toBeNull();
+    expect(a.width).toBe(2);
+    expect(a.height).toBe(1.5);
+    expect(a.intensity).toBe(10);
+    expect(a.position.toArray()).toEqual([0, 3, 2]);
+    basic.dispose();
+    const full = buildSetScene(THREE, lit, { quality: "full" });
+    let gained: THREE.RectAreaLight | null = null;
+    full.root.traverse((o) => {
+      if ((o as THREE.RectAreaLight).isRectAreaLight) gained = o as THREE.RectAreaLight;
+    });
+    expect((gained as unknown as THREE.RectAreaLight).intensity).toBeCloseTo(10 * FULL_STAGE.nightLampGain, 6);
+    full.dispose();
   });
 });

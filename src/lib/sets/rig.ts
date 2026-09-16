@@ -486,10 +486,16 @@ export const RIG_EV_STEP = 1 / 3;
 /** The exposure the stage is lit at: what 0 EV, 180° and ISO 400 mean. */
 export const RIG_REFERENCE_EXPOSURE = { shutterDeg: 180, iso: 400 } as const;
 
-export const RIG_OVERLAY_KEYS = ["thirds", "golden", "safe", "centre", "falseColour", "histogram"] as const;
+/** meter (the light department, cut 3): the figure's face read as a share of white, at the eyes. */
+export const RIG_OVERLAY_KEYS = ["thirds", "golden", "safe", "centre", "falseColour", "histogram", "meter"] as const;
 export type RigOverlayKey = (typeof RIG_OVERLAY_KEYS)[number];
 export type RigOverlays = Record<RigOverlayKey, boolean>;
-export const DEFAULT_RIG_OVERLAYS: RigOverlays = { thirds: false, golden: false, safe: false, centre: false, falseColour: false, histogram: false };
+export const DEFAULT_RIG_OVERLAYS: RigOverlays = { thirds: false, golden: false, safe: false, centre: false, falseColour: false, histogram: false, meter: false };
+
+/** Time of day (time-of-day.ts): hours on the rig, in quarter hours between these; null = the set's own hour, as built. */
+export const RIG_TIME_MIN = 5;
+export const RIG_TIME_MAX = 22;
+export const RIG_TIME_STEP = 0.25;
 
 /**
  * The side of the sensor the lens's field of view spans: the short side
@@ -553,6 +559,8 @@ export type SetRig = {
   /** Exposure compensation, stops, in thirds within ±RIG_EV_RANGE. */
   ev: number;
   overlays: RigOverlays;
+  /** The light department (cut 3): the hour the sun stands at, or null for the set as built. */
+  time: number | null;
 };
 
 export const DEFAULT_SET_RIG: SetRig = {
@@ -571,6 +579,7 @@ export const DEFAULT_SET_RIG: SetRig = {
   iso: RIG_REFERENCE_EXPOSURE.iso,
   ev: 0,
   overlays: { ...DEFAULT_RIG_OVERLAYS },
+  time: null,
 };
 
 const ids = <T extends { id: string }>(list: readonly T[]) => list.map((x) => x.id);
@@ -617,6 +626,10 @@ export function normaliseSetRig(v: unknown): SetRig {
     iso: numberIn(r.iso, RIG_ISOS, RIG_REFERENCE_EXPOSURE.iso),
     ev: Math.round(ev * 1000) / 1000,
     overlays,
+    time:
+      typeof r.time === "number" && Number.isFinite(r.time)
+        ? Math.round(Math.min(RIG_TIME_MAX, Math.max(RIG_TIME_MIN, r.time)) / RIG_TIME_STEP) * RIG_TIME_STEP
+        : null,
   };
 }
 

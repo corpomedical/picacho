@@ -92,12 +92,14 @@ describe("the cached prefix both kinds of build share", () => {
   // Moved again, on purpose, 2026-09-17: every object and the ground carry
   // a material word (set-spec.ts SET_MATERIALS, drawn by the full stage —
   // canvas page J, cut 1). 8,239 → 9,147 characters; one fresh cache write
-  // per kind of build.
+  // per kind of build. And once more the same day, for the light
+  // department (cut 3): a light may be an area — a soft rectangle with a
+  // size. 9,147 → 9,547 characters.
   it("is byte for byte what it was decided to be", () => {
     const prefix = SET_BUILDER_INSTRUCTIONS + JSON.stringify(SET_SPEC_JSON_SCHEMA);
-    expect(prefix.length).toBe(9147);
+    expect(prefix.length).toBe(9547);
     expect(createHash("sha256").update(prefix).digest("hex")).toBe(
-      "52ef150f16b13194e4615700e1fe306c819a5991f736dcdeefbbbfbd72af72da",
+      "6aa74e84bf01e74affd8a57e67f904a7ea7179a673b057f8d6eb2a0c82691c17",
     );
   });
 });

@@ -48,6 +48,7 @@ import {
 } from "@/lib/sets/set-spec";
 import type { StageQuality } from "@/lib/sets/build-scene";
 import { groundMaterialOf, materialOf } from "@/lib/sets/stage-materials";
+import { KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, kelvinToHex, nearestKelvin } from "@/lib/sets/light-kelvin";
 
 // The Set Editor (drawn 2026-09-14, canvas page G): Adobe's grammar in
 // Picacho's skin. The set page's second life — Build beside Shoot — laid out
@@ -652,6 +653,16 @@ export function SetEditor({
     setSel({ kind: "object", index: r.spec.objects.length - 1 });
   }
 
+  function addAnAreaLight() {
+    setAddOpen(false);
+    const r = addLight(specRef.current, "area");
+    if (!r.ok) {
+      flashLine(s.editorFull);
+      return;
+    }
+    commit(r);
+    setSel({ kind: "light", index: r.spec.lights.length - 1 });
+  }
   function addALight() {
     setAddOpen(false);
     const r = addLight(specRef.current, "point");
@@ -811,8 +822,10 @@ export function SetEditor({
         const { buildSetScene, buildStandIn, placeStandIn } = await import("@/lib/sets/build-scene");
         const { BASE_EXPOSURE } = await import("@/lib/sets/exposure");
         const { Sky } = await import("three/examples/jsm/objects/Sky.js");
+        const { RectAreaLightUniformsLib } = await import("three/examples/jsm/lights/RectAreaLightUniformsLib.js");
         const { makeStageTextures } = await import("@/lib/sets/stage-materials");
         if (disposed || !hostRef.current) return;
+        RectAreaLightUniformsLib.init();
 
         const DEG = Math.PI / 180;
         const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -898,7 +911,7 @@ export function SetEditor({
             h.position.set(...l.position);
             h.userData.target = { kind: "light", index: li } satisfies EditTarget;
             handlesGroup.add(h);
-            if (l.kind === "sun" || l.kind === "spot") {
+            if (l.kind === "sun" || l.kind === "spot" || l.kind === "area") {
               const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...l.position), new THREE.Vector3(...l.target)]);
               handleDisposables.push(geo);
               const line = new THREE.Line(geo, lineMat);
@@ -1369,6 +1382,10 @@ export function SetEditor({
                 <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                 {s.editorAddLight}
               </button>
+              <button type="button" onClick={addAnAreaLight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
+                {s.editorAddArea}
+              </button>
               <button type="button" onClick={addAMark} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
                 <Svg d={D.person} className="h-[13px] w-[13px] text-[#8b8f9a]" />
                 {s.editorAddMark}
@@ -1691,11 +1708,21 @@ export function SetEditor({
                 <PRow label={s.editorColor}>
                   <ColorField value={selLight.color} onCommit={(v) => commit(patchLight(spec, sel.index, { color: v }))} />
                 </PRow>
+                {/* Kelvin writes the colour (light-kelvin.ts): a way of choosing one, not new data. */}
+                <PRow label={s.editorKelvin}>
+                  <Slider
+                    value={nearestKelvin(selLight.color)}
+                    min={KELVIN_MIN}
+                    max={KELVIN_MAX}
+                    step={KELVIN_STEP}
+                    onCommit={(v) => commit(patchLight(spec, sel.index, { color: kelvinToHex(v) }))}
+                  />
+                </PRow>
                 <PRow label={s.editorIntensity}>
                   <Slider
                     value={selLight.intensity}
                     min={0}
-                    max={selLight.kind === "ambient" || selLight.kind === "hemisphere" ? 5 : selLight.kind === "sun" ? 10 : 500}
+                    max={selLight.kind === "ambient" || selLight.kind === "hemisphere" ? 5 : selLight.kind === "sun" ? 10 : selLight.kind === "area" ? 200 : 500}
                     step={0.1}
                     onCommit={(v) => commit(patchLight(spec, sel.index, { intensity: v }))}
                   />
@@ -1705,9 +1732,17 @@ export function SetEditor({
                     <Vec3Row value={selLight.position} min={-C} max={C} onCommit={(v) => commit(patchLight(spec, sel.index, { position: v }))} />
                   </PRow>
                 )}
-                {(selLight.kind === "sun" || selLight.kind === "spot") && (
+                {(selLight.kind === "sun" || selLight.kind === "spot" || selLight.kind === "area") && (
                   <PRow label={s.editorPointsAt}>
                     <Vec3Row value={selLight.target} min={-C} max={C} onCommit={(v) => commit(patchLight(spec, sel.index, { target: v }))} />
+                  </PRow>
+                )}
+                {selLight.kind === "area" && selLight.size && (
+                  <PRow label={s.editorAreaSize}>
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <Num ax="W" value={selLight.size[0]} min={0.1} max={30} unit="m" onCommit={(v) => commit(patchLight(spec, sel.index, { size: [v, selLight.size?.[1] ?? 1] }))} />
+                      <Num ax="H" value={selLight.size[1]} min={0.1} max={30} unit="m" onCommit={(v) => commit(patchLight(spec, sel.index, { size: [selLight.size?.[0] ?? 1, v] }))} />
+                    </span>
                   </PRow>
                 )}
                 {selLight.kind === "spot" && (

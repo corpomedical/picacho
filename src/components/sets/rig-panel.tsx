@@ -22,6 +22,9 @@ import {
   RIG_SQUEEZES,
   RIG_STOCKS,
   RIG_STOPS,
+  RIG_TIME_MAX,
+  RIG_TIME_MIN,
+  RIG_TIME_STEP,
   depthOfField,
   exposureStops,
   focalMm,
@@ -43,6 +46,7 @@ import {
   type SetRig,
 } from "@/lib/sets/rig";
 import { moveKeyLight, schemeDefaults, schemeHasSun } from "@/lib/sets/light-schemes";
+import { compassWord, sunAt, timeLabel } from "@/lib/sets/time-of-day";
 import { FILM_MOVES, FILM_TEXTURES, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 
 // The rig (Helios Cinema, 2026-09-15, drawn as canvas page I): the camera
@@ -89,6 +93,7 @@ const OVERLAY_NAMES: Record<RigOverlayKey, (r: Strings["rig"]) => string> = {
   centre: (r) => r.overlayCentre,
   falseColour: (r) => r.overlayFalseColour,
   histogram: (r) => r.overlayHistogram,
+  meter: (r) => r.overlayMeter,
 };
 
 /** A small choice: a shutter angle, an ISO, a squeeze, a viewfinder aid. */
@@ -1200,6 +1205,48 @@ export function RigPanel({
             </>
           ) : (
             <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{lightLine}</p>
+          )}
+        </Section>
+
+        <Section
+          tags={tags}
+          title={r.time}
+          tag="held"
+          right={
+            rig.time !== null ? (
+              <button type="button" onClick={() => set({ time: null })} className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#6b6f7a] hover:text-[#ecedf1]">
+                {r.timeAsBuilt}
+              </button>
+            ) : null
+          }
+        >
+          {rig.light && schemeHasSun(rig.light.scheme) ? (
+            <p className="text-[11.5px] leading-4 text-[#9aa0ad]">{formatMsg(r.timePlotNote, { light: r.lights[rig.light.scheme] })}</p>
+          ) : (
+            <>
+              <div className="mb-1.5 flex items-baseline justify-between text-[11px] text-[#9aa0ad]">
+                <span>{r.time}</span>
+                <span className="text-xs font-medium tabular-nums text-[#ecedf1]">{rig.time === null ? r.timeAsBuilt : timeLabel(rig.time)}</span>
+              </div>
+              <input
+                type="range"
+                min={RIG_TIME_MIN}
+                max={RIG_TIME_MAX}
+                step={RIG_TIME_STEP}
+                value={rig.time ?? 12}
+                onChange={(e) => set({ time: Number(e.target.value) })}
+                aria-label={r.time}
+                className="w-full cursor-pointer accent-[#e0a468]"
+              />
+              <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">
+                {rig.time === null
+                  ? r.timeLine
+                  : (() => {
+                      const sun = sunAt(rig.time);
+                      return sun.night ? r.timeNightLine : formatMsg(r.timeSunLine, { deg: Math.round(sun.elevationDeg), k: sun.kelvin, where: r.compass[compassWord(sun.azimuthDeg)] });
+                    })()}
+              </p>
+            </>
           )}
         </Section>
 

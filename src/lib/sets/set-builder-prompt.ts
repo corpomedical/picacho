@@ -49,6 +49,7 @@ What to build
 Light and air
 - 2–6 lights. Outdoors: one sun (intensity 1–4) plus a hemisphere or ambient fill (0.2–1.5). Indoors or at night: point or spot lights at the real light sources (intensity roughly 5–60, higher for lights further from what they light), plus a hemisphere or ambient fill of 0.5–1 so every wall a camera can see still reads. The sketch has to show the whole place; the description carries the mood.
 - position and target are metres; a sun's position gives its direction. angleDeg is a spot's half-angle (5–80). distance is where a point or spot light fades out, 0 for no cutoff. groundColor is for hemisphere lights, otherwise null.
+- area is a soft rectangular source — a window, a softbox, a lit ceiling panel — at position, facing target, with size [width, height] in metres (0.2–20) and intensity roughly 2–40; it casts no hard shadow. size is null for every other kind.
 - sky.kind is "color" (one colour), "gradient" (top colour, then horizon colour) or "night" (two dark colours). fog is optional (null, or colour plus near and far distances in metres).
 - ground is the floor or terrain colour and roughness.
 
@@ -107,7 +108,7 @@ export const SET_SPEC_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["kind", "color", "intensity", "position", "target", "groundColor", "angleDeg", "distance"],
+        required: ["kind", "color", "intensity", "position", "target", "groundColor", "angleDeg", "distance", "size"],
         properties: {
           kind: { type: "string", enum: [...SET_LIGHT_KINDS] },
           color: { type: "string" },
@@ -117,6 +118,7 @@ export const SET_SPEC_JSON_SCHEMA = {
           groundColor: nullable({ type: "string" }),
           angleDeg: { type: "number" },
           distance: { type: "number" },
+          size: nullable(vec3("Area only: [width, height] metres; null otherwise")),
         },
       },
     },

@@ -167,7 +167,13 @@ export function addLight(spec: SetSpec, kind: SetLightKind): EditResult {
     groundColor: kind === "hemisphere" ? spec.ground.color : null,
     angleDeg: 35,
     distance: 0,
+    size: kind === "area" ? [1.5, 1] : null,
   };
+  if (kind === "area") {
+    base.intensity = 12;
+    base.position = [0, Math.max(2, h * 0.7), Math.max(1, spec.bounds.z * 0.3)];
+    base.target = [0, 1, 0];
+  }
   next.lights.push(base);
   return renormalise(next);
 }

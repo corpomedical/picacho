@@ -197,15 +197,16 @@ export const SET_EDIT_PER_10_MIN = 10;
 //
 //   worst case = the largest input an edit sends (the instructions, the
 //     schema and a working copy at SET_EDIT_MAX_SPEC_CHARS, below, with the
-//     longest request: 21,378 characters ≈ 9,544 tokens at 2.24 characters
-//     per token — 20,855 until the material words, 2026-09-17), all billed
-//     as cache writes, + output to the 10,000-token cap
-//     = 9,544 × $12.50/1M + 10,000 × $50/1M = $0.12 + $0.50 = $0.62
+//     longest request: 21,536 characters ≈ 9,615 tokens at 2.24 characters
+//     per token — 20,855 until the material words and 21,378 until the
+//     area light's size, both 2026-09-17), all billed as cache writes,
+//     + output to the 10,000-token cap
+//     = 9,615 × $12.50/1M + 10,000 × $50/1M = $0.12 + $0.50 = $0.62
 //   the one live edit measured (2026-09-15, a race track): $0.31
 //
 //   At twice the build cap, a month's edits at worst cost:
-//     Basic 2 → $1.24 of $9      Starter 4 → $2.48 of $19   Growth 10 → $6.19 of $79
-//     Studio 20 → $12.39 of $299   Elite 50 → $30.96 of $499
+//     Basic 2 → $1.24 of $9      Starter 4 → $2.48 of $19   Growth 10 → $6.20 of $79
+//     Studio 20 → $12.40 of $299   Elite 50 → $31.01 of $499
 //   — the operator's numbers to move before SETS_OPEN_TO_PLANS flips.
 export const SET_EDITS_MONTHLY_LIMITS = {
   none: 0,

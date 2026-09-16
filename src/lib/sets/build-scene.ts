@@ -243,6 +243,8 @@ export function buildSetScene(THREE: Three, spec: SetSpec, opts: BuildSetOptions
             sp.shadow.camera.near = 0.3;
             sp.shadow.camera.far = (sp.distance || 30) + 5;
           }
+        } else if ((o as ThreeNS.RectAreaLight).isRectAreaLight) {
+          if (night) (o as ThreeNS.Light).intensity *= FULL_STAGE.nightLampGain;
         } else if ((o as ThreeNS.PointLight).isPointLight) {
           const pt = o as ThreeNS.PointLight;
           if (night) pt.intensity *= FULL_STAGE.nightLampGain;
@@ -437,6 +439,16 @@ function makeLight(
       s.position.set(...l.position);
       s.target.position.set(...l.target);
       return { objects: [s, s.target], castsShadow: false };
+    }
+    case "area": {
+      // A soft rectangle facing its target (the light department, cut 3).
+      // three draws it without a shadow; the page initialises the area
+      // light's uniforms once (RectAreaLightUniformsLib) before drawing.
+      const [w, h] = l.size ?? [1, 1];
+      const a = new THREE.RectAreaLight(color, l.intensity, w, h);
+      a.position.set(...l.position);
+      a.lookAt(...l.target);
+      return { objects: [a], castsShadow: false };
     }
     case "sun": {
       // A sun's position says only where it shines FROM — the model is told

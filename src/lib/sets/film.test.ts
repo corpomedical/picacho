@@ -314,7 +314,7 @@ describe("filmContextKey", () => {
       // In the key: format, era, stock, lens, stop, palette, light, sensor,
       // squeeze, shutterDeg, iso, ev. Not in it: genre (suggests only),
       // gradeStage and overlays (the stage's own view, never the sketch).
-      ["era", "ev", "format", "genre", "gradeStage", "iso", "lens", "light", "overlays", "palette", "sensor", "shutterDeg", "squeeze", "stock", "stop"].sort(),
+      ["era", "ev", "format", "genre", "gradeStage", "iso", "lens", "light", "overlays", "palette", "sensor", "shutterDeg", "squeeze", "stock", "stop", "time"].sort(),
     );
   });
 });

@@ -212,6 +212,8 @@ export function filmContextKey(input: {
       // The camera department (cut 2): the body, the squeeze and the exposure
       // are in the sketch; the viewfinder's aids never are.
       [rig.sensor, rig.squeeze, rig.shutterDeg, rig.iso, rig.ev],
+      // The light department (cut 3): the hour moves the sun in the sketch.
+      rig.time,
       [mark.x, mark.z, mark.facingDeg],
       input.setKey,
     ]),

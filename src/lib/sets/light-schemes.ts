@@ -147,6 +147,7 @@ const light = (l: Partial<SetLight> & Pick<SetLight, "kind" | "color" | "intensi
   groundColor: null,
   angleDeg: 35,
   distance: 0,
+  size: null,
   ...l,
 });
 
@@ -242,7 +243,7 @@ export function litSpec(spec: SetSpec, state: RigLightState | null, mark: { x: n
   if (!state) return spec;
   const look = SCHEMES[state.scheme];
   const own = schemeLights(state, spec, mark);
-  const lamps = spec.lights.filter((l) => l.kind === "point" || l.kind === "spot").slice(0, Math.max(0, SET_LIMITS.maxLights - own.length));
+  const lamps = spec.lights.filter((l) => l.kind === "point" || l.kind === "spot" || l.kind === "area").slice(0, Math.max(0, SET_LIMITS.maxLights - own.length));
   return {
     ...spec,
     lights: [...lamps, ...own],

@@ -24,7 +24,8 @@ export const SET_SPEC_VERSION = 1 as const;
 export const SET_SHAPES = ["box", "cylinder", "cone", "sphere", "torus", "capsule", "plane"] as const;
 export type SetShape = (typeof SET_SHAPES)[number];
 
-export const SET_LIGHT_KINDS = ["sun", "point", "spot", "ambient", "hemisphere"] as const;
+/** area (the light department, cut 3, 2026-09-17): a soft rectangle — a window, a softbox, a lit panel — facing its target; no hard shadow. */
+export const SET_LIGHT_KINDS = ["sun", "point", "spot", "ambient", "hemisphere", "area"] as const;
 export type SetLightKind = (typeof SET_LIGHT_KINDS)[number];
 
 export const SET_SKY_KINDS = ["color", "gradient", "night"] as const;
@@ -75,6 +76,8 @@ export type SetLight = {
   angleDeg: number;
   /** Point and spot: where the light fades out, 0 = no cutoff. */
   distance: number;
+  /** Area only: the rectangle's [width, height], metres; null for every other kind. */
+  size: [number, number] | null;
 };
 
 export type SetObject = {
@@ -336,7 +339,9 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
     if (!l) continue;
     const kind = pick(l.kind, SET_LIGHT_KINDS, "point");
     if (typeof l.kind !== "string" || !(SET_LIGHT_KINDS as readonly string[]).includes(l.kind)) continue;
-    const maxIntensity = kind === "ambient" || kind === "hemisphere" ? 5 : kind === "sun" ? 10 : 500;
+    const maxIntensity = kind === "ambient" || kind === "hemisphere" ? 5 : kind === "sun" ? 10 : kind === "area" ? 200 : 500;
+    const sz = list(l.size);
+    const size: SetLight["size"] = kind === "area" ? [num(sz[0], 0.1, 30, 1), num(sz[1], 0.1, 30, 1)] : null;
     lights.push({
       kind,
       color: cleanColor(l.color, "#ffffff"),
@@ -346,6 +351,7 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
       groundColor: kind === "hemisphere" ? cleanColor(l.groundColor, ground.color) : null,
       angleDeg: num(l.angleDeg, 5, 80, 35),
       distance: num(l.distance, 0, 500, 0),
+      size,
     });
   }
   if (lights.length === 0) {
@@ -360,6 +366,7 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
         groundColor: ground.color,
         angleDeg: 35,
         distance: 0,
+        size: null,
       },
       {
         kind: "sun",
@@ -370,6 +377,7 @@ export function normaliseSetSpec(input: unknown): NormaliseResult {
         groundColor: null,
         angleDeg: 35,
         distance: 0,
+        size: null,
       },
     );
   }

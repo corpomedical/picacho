@@ -154,14 +154,15 @@ describe("the Astra-edit ceiling", () => {
     return req.instructions.length + JSON.stringify(req.schema).length + framing + SET_EDIT_MAX_SPEC_CHARS + SET_EDIT_MAX_CHARS;
   };
 
-  it("matches the arithmetic in set-config.ts: 21,378 characters ≈ 9,544 tokens, $0.62 an edit at worst", () => {
+  it("matches the arithmetic in set-config.ts: 21,536 characters ≈ 9,615 tokens, $0.62 an edit at worst", () => {
     // 20,855 characters until 2026-09-17, when every object and the ground
-    // gained a material word (the schema and the edit's instructions grew).
-    expect(longestInputChars()).toBe(21_378);
+    // gained a material word (21,378), then a light gained a size for the
+    // area kind (21,536): the schema and the edit's instructions grew.
+    expect(longestInputChars()).toBe(21_536);
     const tokens = Math.ceil(longestInputChars() / 2.24);
-    expect(tokens).toBe(9_544);
-    // 9,544 × $12.50/1M + 10,000 × $50/1M = $0.1193 + $0.50
-    expect(worstCaseAstraUsd(tokens, SET_BUILD_MAX_OUTPUT_TOKENS)).toBeCloseTo(0.6193, 9);
+    expect(tokens).toBe(9_615);
+    // 9,615 × $12.50/1M + 10,000 × $50/1M = $0.1201875 + $0.50
+    expect(worstCaseAstraUsd(tokens, SET_BUILD_MAX_OUTPUT_TOKENS)).toBeCloseTo(0.6201875, 9);
   });
 
   it("caps a month at twice the builds, and the figures in set-config.ts are what those caps cost", () => {
@@ -169,9 +170,9 @@ describe("the Astra-edit ceiling", () => {
     const written: Record<string, [number, number]> = {
       basic: [1.24, 9],
       starter: [2.48, 19],
-      growth: [6.19, 79],
-      studio: [12.39, 299],
-      elite: [30.96, 499],
+      growth: [6.2, 79],
+      studio: [12.4, 299],
+      elite: [31.01, 499],
     };
     for (const tier of PRICING_TIERS) {
       const id = tier.id as keyof typeof SET_EDITS_MONTHLY_LIMITS;

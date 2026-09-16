@@ -31,6 +31,9 @@ export const RELEASES: Release[] = [
       "Phones keep the previous, lighter stage, which every set page can also show with ?stage=basic for comparing.",
       "The rig has a camera department. Pick the sensor the lens is on — full frame, Super 35, large format, Micro Four Thirds, Super 16 or a phone — and every focal length, every focus distance and every lens label follows it. An anamorphic squeeze of 1.33× or 2× makes the frame see that much wider for the same lens, shown unsqueezed, in the sketch the picture model is given. Shutter angle, ISO and EV set how bright the stage is drawn, over the set's own light; the stop keeps setting what is sharp. A readout over the frame lines says what the camera is set to.",
       "The viewfinder gets its aids — thirds, the golden ratio, safe areas, a centre mark, false colour and a histogram — and, with a stop set, a focus readout at the figure's eyes: the distance and what is sharp at it. Aids are on the stage only, never in the picture.",
+      "The rig has a time of day. Slide the hour and the sun moves — up in the east in the morning, highest and whitest at noon, warm and low in the west by evening, a moon after dark — and the sky, the fill and the fog follow it. The sketch carries the light. A light plot that places its own sun (contre-jour, golden hour, silhouette, hard noon, moonlight) keeps it; the hour draws under the other plots and under the set as built.",
+      "Sets can have area lights: soft rectangles — a window, a softbox, a lit panel — with a width and a height, facing what they light. Astra can build with them; in Build, Add offers an area light, and every light now has a colour-temperature row, from 1,800 to 10,000 K, that writes the light's colour.",
+      "A light meter joins the viewfinder's aids: the figure's face as a share of white, read at the eyes.",
     ],
   },
   {

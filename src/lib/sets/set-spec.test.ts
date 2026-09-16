@@ -304,3 +304,19 @@ describe("the material word", () => {
     expect(unsaid.spec.ground.material).toBeNull();
   });
 });
+
+describe("an area light", () => {
+  // The light department (cut 3): a soft rectangle facing its target.
+  const minimal = { objects: [{ shape: "box", size: [1, 1, 1] }] };
+  it("keeps its size, clamped, and every other kind has none", () => {
+    const r = normaliseSetSpec({ ...minimal, lights: [{ kind: "area", size: [2, 40], intensity: 12 }, { kind: "spot", size: [2, 2] }] });
+    if (!r.ok) throw new Error("spec");
+    expect(r.spec.lights[0].kind).toBe("area");
+    expect(r.spec.lights[0].size).toEqual([2, 30]);
+    expect(r.spec.lights[0].intensity).toBe(12);
+    expect(r.spec.lights[1].size).toBeNull();
+    const bare = normaliseSetSpec({ ...minimal, lights: [{ kind: "area" }] });
+    if (!bare.ok) throw new Error("spec");
+    expect(bare.spec.lights[0].size).toEqual([1, 1]);
+  });
+});
