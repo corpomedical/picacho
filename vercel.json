@@ -15,6 +15,10 @@
     {
       "path": "/api/cron/sets",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/prune",
+      "schedule": "45 4 * * *"
     }
   ]
 }

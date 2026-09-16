@@ -14,6 +14,7 @@ import { rateLimited } from "@/lib/rate-limit";
 // admin/actions.ts' copy already differed in what they could see (neither
 // recursed into the Layers subfolder) — one implementation now serves both.
 import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
+import { removeUserRateHits } from "@/lib/rate-hits";
 
 type ActionResult = { error: string | null };
 
@@ -487,6 +488,8 @@ export async function deleteAccount(formData: FormData) {
   }
 
   await removeAllUserStorage(admin, userId);
+  // The limiter's rows have no foreign key to cascade with (rate-hits.ts).
+  await removeUserRateHits(admin, userId);
 
   await supabase.auth.signOut();
   redirect("/");

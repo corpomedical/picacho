@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { removeAllUserStorage } from "@/lib/profile/storage-buckets";
+import { removeUserRateHits } from "@/lib/rate-hits";
 import { redirect } from "next/navigation";
 import { createAdminClient } from "@/lib/supabase/server";
 import { cancelStripeCustomerBilling } from "@/lib/stripe/cancel-customer";
@@ -190,6 +191,8 @@ export async function deleteUser(formData: FormData) {
   // auth user. THE SAME sweep as account self-deletion, by construction —
   // this used to be a hand-copied loop that had already drifted.
   await removeAllUserStorage(admin, userId);
+  // The limiter's rows have no foreign key to cascade with (rate-hits.ts).
+  await removeUserRateHits(admin, userId);
 
   revalidatePath("/admin/users");
   redirect("/admin/users?message=" + encodeURIComponent("User deleted."));

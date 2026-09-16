@@ -20,6 +20,15 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.41.2",
+    build: 76,
+    date: "2026-09-16",
+    title: "Usage records are no longer kept indefinitely",
+    items: [
+      "To limit how fast a feature can be used (and, in Helios, how many Astra changes a month allows), Picacho records each time you use it. Those records were cleared only when you used the same feature again, so records for features you stopped using stayed indefinitely, and deleting your account didn't remove them. They're now removed when you delete your account, and removed for everyone once they're two months old.",
+    ],
+  },
+  {
     version: "1.41.1",
     build: 75,
     date: "2026-09-16",
