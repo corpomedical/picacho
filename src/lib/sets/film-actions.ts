@@ -2,7 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
-import { thumbUrl } from "@/lib/media/url";
+import { thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { checkGenerationAllowance } from "@/lib/generations/core";
 import { advancedVideoPlan } from "@/lib/plans";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
@@ -108,8 +108,9 @@ export async function readTakes(
     .map((g) => ({
       id: g.id as string,
       status: g.status as string,
-      resultUrl: (g.result_url as string | null) ?? null,
-      posterUrl: thumbUrl(g.poster_url as string | null, 640),
+      // Signed again under today's key, as the page's own loader signs them (data.ts).
+      resultUrl: toMediaUrl(g.result_url as string | null),
+      posterUrl: thumbUrl(toMediaUrl(g.poster_url as string | null), 640),
     }));
   return { error: null, takes };
 }

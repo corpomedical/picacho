@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import raceTrack from "./fixtures-race-track.json";
 import { SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit } from "./set-config";
+import { mediaUrl, thumbUrl } from "../media/url";
 
 // The set page's loader, for what a take was rendered from (2026-09-16). A
 // take whose clip failed on an earlier visit offers "Try the clip again"
@@ -250,6 +251,30 @@ describe("whether the page offers takes", () => {
       who = { plan, isAdmin };
       expect((await page(world([still(1)]))).takesOn, `${plan}${isAdmin ? " (admin)" : ""}`).toBe(on);
     }
+  });
+});
+
+// A stored media link carries the signature it was written under; every
+// page but this one signed it again under today's key (toMediaUrl), so the
+// set page's stills, takes and posters would all stop loading the day the
+// key is changed — and a film could not be downloaded (2026-09-16).
+describe("the set page's pictures and clips", () => {
+  it("are signed again under today's key, whatever key they were stored under", async () => {
+    const old = (bucket: string, path: string) => `/api/media/${bucket}/${path}?v=signed-under-an-old-key`;
+    const expired = "https://abc.supabase.co/storage/v1/object/sign/generated-images/user/s2.png?token=expired";
+    const shots = await load(
+      world([
+        still(1, { result_url: old("generated-images", "user/s1.png") }),
+        still(2, { result_url: expired }),
+        take(3, "succeeded", null, { result_url: old("generated-videos", "user/t3.mp4"), poster_url: old("generated-images", "user/p3.jpg") }),
+      ]),
+    );
+    expect(shots.get(gid(1))?.resultUrl).toBe(thumbUrl(mediaUrl("generated-images", "user/s1.png"), 640));
+    expect(shots.get(gid(1))?.viewUrl).toBe(thumbUrl(mediaUrl("generated-images", "user/s1.png"), 1600));
+    expect(shots.get(gid(2))?.resultUrl).toBe(thumbUrl(mediaUrl("generated-images", "user/s2.png"), 640));
+    expect(shots.get(gid(3))?.resultUrl).toBe(mediaUrl("generated-videos", "user/t3.mp4"));
+    expect(shots.get(gid(3))?.posterUrl).toBe(thumbUrl(mediaUrl("generated-images", "user/p3.jpg"), 640));
+    expect(mediaUrl("generated-videos", "user/t3.mp4")).not.toContain("signed-under-an-old-key");
   });
 });
 

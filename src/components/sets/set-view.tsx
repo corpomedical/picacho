@@ -43,6 +43,7 @@ import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
 import { LAB_PREVIEW_SHADER, labPreviewCodes } from "@/lib/sets/lab-preview";
 import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import { planFilmOverlay, type FilmOverlayPlan } from "@/lib/sets/film-overlay";
+import { joinMp4 } from "@/lib/media/mp4-join";
 import type { RigCheck } from "@/lib/sets/rig-check";
 import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
@@ -581,6 +582,8 @@ export function SetView({
   const reelFailedRef = useRef<Set<number>>(new Set());
   /** The browser would not start a clip by itself: the reel waits for a tap. */
   const [reelWaiting, setReelWaiting] = useState(false);
+  /** The film's one file is being made (downloadFilm). */
+  const [filmFileBusy, setFilmFileBusy] = useState(false);
   const [previz, setPreviz] = useState(false);
 
   // ---- the rig (Helios Cinema, drawn as canvas page I) ----
@@ -2971,6 +2974,50 @@ export function SetView({
     a.click();
   }
 
+  /**
+   * The film as one file (canvas page H, "Download as one file"): the
+   * rendered beats fetched and joined in the browser as they are, with no
+   * re-encode (mp4-join.ts). Beats rendered in different formats, or whose
+   * sound stops short of the picture, cannot be joined that way: the dock
+   * says which, and they stay in History one by one.
+   */
+  async function downloadFilm() {
+    if (filmFileBusy || !reelReady) return;
+    setFilmFileBusy(true);
+    setFilmError("");
+    try {
+      const parts = await Promise.all(
+        reelShots.map(async (shot) => {
+          const res = await fetch(shot.resultUrl!);
+          if (!res.ok) throw new Error(`clip ${res.status}`);
+          return new Uint8Array(await res.arrayBuffer());
+        }),
+      );
+      const joined = joinMp4(parts);
+      if (!joined.ok) {
+        setFilmError(
+          joined.reason === "different"
+            ? s.filmFileDifferent
+            : joined.reason === "short-sound"
+              ? s.filmFileShortSound
+              : s.filmFileFailed,
+        );
+        return;
+      }
+      const href = URL.createObjectURL(new Blob([joined.bytes as Uint8Array<ArrayBuffer>], { type: "video/mp4" }));
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = `${(title || "set").toLowerCase().replace(/[^a-z0-9]+/g, "-")}-film.mp4`;
+      a.click();
+      // Long enough for the browser to take the file.
+      setTimeout(() => URL.revokeObjectURL(href), 60_000);
+    } catch {
+      setFilmError(s.filmFileFailed);
+    } finally {
+      setFilmFileBusy(false);
+    }
+  }
+
   /** Another angle: the set's next camera, in the same frame. */
   function anotherAngle() {
     if (!ready || shooting) return;
@@ -3679,15 +3726,25 @@ export function SetView({
               <span className="absolute left-3.5 top-3.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia tabular-nums">
                 {formatMsg(s.filmBeatLabel, { n: reel + 1 })} · {reel + 1}/{reelShots.length}
               </span>
-              <button
-                type="button"
-                onClick={() => setReel(null)}
-                aria-label={t.common.dismiss}
-                title={t.common.dismiss}
-                className="absolute right-3.5 top-3.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/60 text-onmedia hover:bg-black/80"
-              >
-                ×
-              </button>
+              <div className="absolute right-3.5 top-3.5 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void downloadFilm()}
+                  disabled={filmFileBusy}
+                  className="flex h-8 cursor-pointer items-center rounded-full bg-black/60 px-3 text-xs font-medium text-onmedia hover:bg-black/80 disabled:cursor-default disabled:opacity-70"
+                >
+                  {filmFileBusy ? s.filmDownloading : `↓ ${s.filmDownload}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReel(null)}
+                  aria-label={t.common.dismiss}
+                  title={t.common.dismiss}
+                  className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-black/60 text-onmedia hover:bg-black/80"
+                >
+                  ×
+                </button>
+              </div>
             </div>
           )}
 
@@ -3925,6 +3982,11 @@ export function SetView({
                     className={chip(false)}
                   >
                     ▶ {s.filmPlayFilm}
+                  </button>
+                )}
+                {reelReady && (
+                  <button type="button" onClick={() => void downloadFilm()} disabled={filmFileBusy} className={chip(false)}>
+                    {filmFileBusy ? s.filmDownloading : `↓ ${s.filmDownload}`}
                   </button>
                 )}
                 <button

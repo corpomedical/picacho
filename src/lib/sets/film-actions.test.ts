@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FILM_MAX_BEATS } from "./film";
 import { SET_NOT_FOUND, SET_TAKE_NEEDS_PLAN } from "./messages";
 import { takesCredits } from "./take";
+import { mediaUrl, thumbUrl } from "../media/url";
 
 // A film render is asked for in full before its first beat (2026-09-16):
 // the page renders a film one take at a time, each take priced on its own,
@@ -27,7 +28,8 @@ vi.mock("@/lib/supabase/server", () => ({
   },
 }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimited: async () => false }));
-vi.mock("@/lib/media/url", () => ({ thumbUrl: () => null }));
+vi.stubEnv("MEDIA_SIGNING_SECRET", "test-only");
+vi.mock("@/lib/media/url", async () => await import("../media/url"));
 vi.mock("@/lib/generations/core", () => ({
   checkGenerationAllowance: async (_db: unknown, _user: string, credits: number, options: unknown) => {
     asked.push({ credits, options });
@@ -43,7 +45,7 @@ vi.mock("@/lib/sets/film", async () => await import("./film"));
 vi.mock("@/lib/sets/take", async () => await import("./take"));
 vi.mock("@/lib/sets/messages", async () => await import("./messages"));
 
-import { checkFilmCredits } from "./film-actions";
+import { checkFilmCredits, readTakes } from "./film-actions";
 
 beforeEach(() => {
   asked.length = 0;
@@ -105,3 +107,38 @@ describe("checkFilmCredits", () => {
     expect(asked).toEqual([]);
   });
 });
+
+// The page asks after a take still rendering (readTakes), and plays and
+// downloads what comes back: signed again under today's key, as the page's
+// loader signs it (data.ts).
+describe("readTakes", () => {
+  it("hands back each of the person's takes with its clip and poster signed again", async () => {
+    const rows = [
+      { id: "33333333-3333-4333-8333-333333333333", status: "succeeded", result_url: "/api/media/generated-videos/u1/t.mp4?v=old", poster_url: "/api/media/generated-images/u1/p.jpg?v=old", content_type: "video" },
+      { id: "44444444-4444-4444-8444-444444444444", status: "succeeded", result_url: "/api/media/generated-images/u1/s.png?v=old", poster_url: null, content_type: "image" },
+    ];
+    const asked: unknown[] = [];
+    const builder = {
+      select: (cols: string) => (asked.push(["select", cols]), builder),
+      in: (col: string, ids: string[]) => (asked.push(["in", col, ids]), builder),
+      eq: (col: string, v: string) => (asked.push(["eq", col, v]), Promise.resolve({ data: rows, error: null })),
+    };
+    access = { ...studio, supabase: { from: () => builder } };
+    const out = await readTakes(SET, [rows[0].id, rows[1].id, "not-an-id"]);
+    expect(out).toEqual({
+      error: null,
+      takes: [
+        {
+          id: rows[0].id,
+          status: "succeeded",
+          resultUrl: mediaUrl("generated-videos", "u1/t.mp4"),
+          posterUrl: thumbUrl(mediaUrl("generated-images", "u1/p.jpg"), 640),
+        },
+      ],
+    });
+    // Only the person's own rows, by id.
+    expect(asked).toContainEqual(["eq", "user_id", "u1"]);
+    expect(asked).toContainEqual(["in", "id", [rows[0].id, rows[1].id]]);
+  });
+});
+

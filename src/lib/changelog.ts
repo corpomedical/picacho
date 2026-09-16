@@ -20,6 +20,19 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.41.5",
+    build: 79,
+    date: "2026-09-17",
+    title: "Download a film as one video file",
+    items: [
+      "Once every beat of a film is rendered, \"Download the film\" in the film panel, or over the film while it plays, saves the whole film as one MP4. Your browser joins the beats in order, exactly as they were rendered and without re-encoding, so the download is free and keeps the original quality.",
+      "Each beat's sound starts with its picture, to within 0.02 seconds. Where two beats join, the earlier beat's sound ends where its picture ends, as a cut in an editor would, so the sound can't drift later from beat to beat.",
+      "If the beats can't be joined as they are (rendered in different formats, or a beat's sound stops before its picture ends), the film panel says so, and each beat can still be downloaded from History.",
+      "The downloaded film doesn't carry the content credentials (C2PA) some video engines attach to each clip, because those are tied to each original file.",
+      "Stills, takes and their cover images on a set's page now load through freshly signed links, like the rest of Picacho, so they keep loading if Picacho changes the key that secures its media links.",
+    ],
+  },
+  {
     version: "1.41.4",
     build: 78,
     date: "2026-09-16",

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
-import { mediaUrl, thumbUrl } from "@/lib/media/url";
+import { mediaUrl, thumbUrl, toMediaUrl } from "@/lib/media/url";
 import { monthlyWindowStart } from "@/lib/generations/core";
 import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/lib/generations/identity-gate";
 import { advancedVideoPlan } from "@/lib/plans";
@@ -344,14 +344,18 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
       .filter((g): g is NonNullable<typeof g> => Boolean(g))
       .map((g) => {
         // A take is a video row among the shots (take.ts): its result is the
-        // clip itself, watched raw, with the poster as its picture.
+        // clip itself, watched raw, with the poster as its picture. Every
+        // stored media link is signed again under today's key (toMediaUrl),
+        // as every other page does: a stored one carries the key it was
+        // written under, and would stop loading once that key is changed.
         const isTake = g.content_type === "video";
+        const stored = toMediaUrl(g.result_url as string | null);
         return {
           generationId: g.id as string,
           status: g.status as string,
-          resultUrl: isTake ? ((g.result_url as string | null) ?? null) : thumbUrl(g.result_url as string | null, 640),
-          viewUrl: isTake ? null : thumbUrl(g.result_url as string | null, 1600),
-          posterUrl: isTake ? thumbUrl(g.poster_url as string | null, 640) : null,
+          resultUrl: isTake ? stored : thumbUrl(stored, 640),
+          viewUrl: isTake ? null : thumbUrl(stored, 1600),
+          posterUrl: isTake ? thumbUrl(toMediaUrl(g.poster_url as string | null), 640) : null,
           kind: (isTake ? "take" : "still") as "still" | "take",
           // Takes come in engine lengths since the second engine (take.ts),
           // so the caption reads the row rather than assuming one number.
