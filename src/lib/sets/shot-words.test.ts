@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import raceTrack from "./fixtures-race-track.json";
 import { fovForLens } from "./build-scene";
 import { normaliseSetSpec } from "./set-spec";
@@ -270,5 +272,29 @@ describe("askShotWords", () => {
     expect(
       await askShotWords("i", "w", { fetchFn: (async () => new Response(JSON.stringify({ choices: [{ message: {} }] }))) as typeof fetch }),
     ).toBeNull();
+  });
+});
+
+// The Sets home reads a new place out of the message before it builds
+// (words-actions.ts readSetRequest) — a paid call. At the month's build cap
+// the build is refused whatever the reader says, so the reader is not asked
+// (2026-09-16: Enter at the cap ran it, though the send button was off).
+// A "use server" module cannot load here, so its source is read.
+describe("the Sets home's place reader, at the build cap", () => {
+  const src = readFileSync(join(__dirname, "words-actions.ts"), "utf8");
+  const body = src.slice(src.indexOf("export async function readSetRequest("));
+
+  it("counts the month's builds, against the person's own limit, before it asks the model", () => {
+    const access = body.indexOf("await setsAccess()");
+    const count = body.indexOf("countSetBuildsThisMonth(userId, access.periodStart)");
+    const ask = body.indexOf("askShotWords(");
+    expect(access).toBeGreaterThan(-1);
+    expect(count).toBeGreaterThan(access);
+    expect(ask).toBeGreaterThan(count);
+    expect(body).toContain("if (access.monthlyLimit >= 0) {");
+  });
+
+  it("does not ask when the count cannot be read, or the cap is reached — and lets the build say why", () => {
+    expect(body).toContain("if (used === null || used >= access.monthlyLimit) return { error: null, words: null };");
   });
 });

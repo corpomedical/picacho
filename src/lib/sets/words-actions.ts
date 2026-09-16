@@ -3,6 +3,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
+import { countSetBuildsThisMonth } from "@/lib/sets/data";
 import { SET_NOT_FOUND, SET_NOT_READY } from "@/lib/sets/messages";
 import { cleanText, normaliseSetSpec, type SetSpec } from "@/lib/sets/set-spec";
 import {
@@ -106,6 +107,13 @@ export async function readSetRequest(input: { text: string }): Promise<{ error: 
   const { userId } = access;
   const text = cleanText(typeof input?.text === "string" ? input.text : "", SHOT_WORDS_MAX_CHARS);
   if (text.length === 0) return { error: null, words: null };
+  // The place is read only for a build that can start: at the month's cap
+  // the build is refused whatever the reader says, so the reader — a paid
+  // call — is not asked, and the build answers with the cap's own sentence.
+  if (access.monthlyLimit >= 0) {
+    const used = await countSetBuildsThisMonth(userId, access.periodStart);
+    if (used === null || used >= access.monthlyLimit) return { error: null, words: null };
+  }
   if (await rateLimited(userId, "set-words", 60 * 10, SHOT_WORDS_PER_10_MIN)) return { error: null, words: null };
   const stage = { spec: null, characters: await characterNames(userId), askPlace: true };
   const answer = await askShotWords(shotWordsInstructions(stage), text);

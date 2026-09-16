@@ -294,6 +294,16 @@ export function SetsHome({
     setFailedBody,
   ]);
 
+  // Escape closes an open menu, as a click off it does (and as the set page's menus do).
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [menu]);
+
   /** Where a message goes: the set's page, the message and the choices in the address. */
   function threadHref(setId: string, message: string): string {
     const q = new URLSearchParams();
@@ -311,7 +321,9 @@ export function SetsHome({
    */
   async function send() {
     const message = brief.trim();
-    if (!message || starting || photoStarting) return;
+    // The send button's own rule, for Enter too: at the month's cap a new
+    // place is refused anyway — and only after a paid read of the message.
+    if (!canSend) return;
     setError("");
     if (setPick) {
       router.push(threadHref(setPick, message));

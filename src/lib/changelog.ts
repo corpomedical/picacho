@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.39.5",
+    build: 63,
+    date: "2026-09-16",
+    title: "The Sets home, walked: Enter keeps to the build limit",
+    items: [
+      "At your monthly set-build limit the send button rests, but pressing Enter still sent the message: the place in it was read by a paid model call, and then the build was refused. Enter now keeps the button's rule, and the reader isn't asked at the limit even if something calls it.",
+      "The who and where menus on the Sets home close with Escape, as the set page's menus do.",
+      "A set that stops being yours to wait for while it builds — your session ended, or the set was deleted elsewhere — no longer leaves the building page saying Building forever: the page asks again, and takes you to sign in, or says the set is gone.",
+      "Everything else on the Sets home was walked and works: the who and where menus, Ask before shooting, Recreate, sending to a set you have or a new place, building from a photo, the set cards, Delete, and the no-characters and no-sets states.",
+    ],
+  },
+  {
     version: "1.39.4",
     build: 62,
     date: "2026-09-16",

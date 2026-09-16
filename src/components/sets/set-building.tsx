@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { isStaleDeployError } from "@/lib/stale-deploy";
 import { pollSetBuild } from "@/lib/sets/actions";
+import { SETS_NOT_OPEN, SETS_SESSION_EXPIRED, SETS_SUSPENDED, SETS_UNAVAILABLE, SET_NOT_FOUND } from "@/lib/sets/messages";
 
 // A set still being built, opened from the Sets home with a message
 // (Astra chat, 2026-09-14): the message above, Astra's building step
@@ -19,6 +20,10 @@ import { pollSetBuild } from "@/lib/sets/actions";
 
 const POLL_MS = 5000;
 const POLL_MAX_MS = 30_000;
+// Answers the set page itself knows what to do with — send the person to
+// sign in, say the set is gone, say Sets are closed or the account is
+// suspended — so the page is asked again rather than left saying "building".
+const PAGE_ANSWERS = new Set([SETS_SESSION_EXPIRED, SETS_SUSPENDED, SETS_UNAVAILABLE, SETS_NOT_OPEN, SET_NOT_FOUND]);
 
 export function SetBuilding({ setId, ask, hint }: { setId: string; ask: string | null; hint: string }) {
   const { t } = useLocale();
@@ -34,8 +39,13 @@ export function SetBuilding({ setId, ask, hint }: { setId: string; ask: string |
       try {
         const res = await pollSetBuild(setId);
         if (cancelled) return;
-        if (res.error !== null) threw = true;
-        else if (res.state !== "building") {
+        if (res.error !== null) {
+          threw = true;
+          // Asked again, the page answers for itself and this step leaves
+          // the screen; after a passing blip it is still building, and the
+          // poll carries on, backing off.
+          if (PAGE_ANSWERS.has(res.error)) router.refresh();
+        } else if (res.state !== "building") {
           router.refresh();
           return;
         }
