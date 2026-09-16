@@ -6,7 +6,7 @@ import { DEFAULT_IDENTITY_THRESHOLD, resolveIdentityThresholdSetting } from "@/l
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
-import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_RESERVED_BRIEF, SET_SHOTS_LIMIT } from "@/lib/sets/set-config";
+import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_RESERVED_BRIEF } from "@/lib/sets/set-config";
 import { readShotCameras } from "@/lib/sets/shot-camera";
 import { readShotWords } from "@/lib/sets/shot-words-store";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
@@ -14,6 +14,7 @@ import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/s
 import { normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
 import { normaliseSetRig, RIG_CHECK_ITEMS, type SetRig } from "@/lib/sets/rig";
 import { readShotRigs } from "@/lib/sets/shot-rig";
+import { readSetShotIds } from "@/lib/sets/set-shots";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
 
@@ -241,14 +242,8 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   const fromPhoto = photo !== null;
   const brief = (row.brief as string) ?? "";
 
-  const { data: shotRows } = await db
-    .from("location_set_shots")
-    .select("generation_id, created_at")
-    .eq("set_id", setId)
-    .eq("user_id", access.userId)
-    .order("created_at", { ascending: false })
-    .limit(SET_SHOTS_LIMIT);
-  const ids = (shotRows ?? []).map((s) => s.generation_id as string);
+  // The newest shots, and the film's own however old (set-shots.ts).
+  const ids = await readSetShotIds(db, setId, access.userId, film);
   let shots: SetShot[] = [];
   if (ids.length > 0) {
     const { data: gens } = await db

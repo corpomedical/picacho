@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILM_MAX_BEATS, filmAfterEdit, filmRendered, filmSeconds, normaliseSetFilm, type FilmPose } from "./film";
+import { FILM_MAX_BEATS, filmAfterEdit, filmRendered, filmSeconds, filmShotIds, normaliseSetFilm, type FilmPose } from "./film";
 import { SET_TAKE_ENGINES, SET_TAKES_PER_10_MIN } from "./take";
 
 // The film's one door: whatever is stored or sent becomes a usable film or
@@ -149,5 +149,15 @@ describe("filmAfterEdit", () => {
     const f = two();
     const cut = { ...f, beats: [f.beats[1]] };
     expect(filmAfterEdit(f, cut).clips).toEqual([]);
+  });
+});
+
+describe("filmShotIds", () => {
+  it("names the opening still and every clip, once each, and nothing for a film with neither", () => {
+    expect(filmShotIds(two())).toEqual([A, B]);
+    const again = normaliseSetFilm({ startId: A, beats: [{ end: goodPose }, { end: goodPose }], clips: [B, B] });
+    expect(filmShotIds(again)).toEqual([A, B]);
+    expect(filmShotIds(normaliseSetFilm({ beats: [{ end: goodPose }], clips: [null] }))).toEqual([]);
+    expect(filmShotIds(null)).toEqual([]);
   });
 });

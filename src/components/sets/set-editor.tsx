@@ -23,6 +23,7 @@ import {
   removeLight,
   removeMark,
   removeObject,
+  selectionAfter,
   sizeFromScale,
   type EditResult,
   type EditTarget,
@@ -413,6 +414,7 @@ export function SetEditor({
   const undoRef = useRef<() => void>(() => {});
   const redoRef = useRef<() => void>(() => {});
   const deleteRef = useRef<() => void>(() => {});
+  const addOpenRef = useRef(false);
 
   function flashLine(text: string) {
     setFlash(text);
@@ -462,8 +464,13 @@ export function SetEditor({
   function goTo(index: number) {
     if (index < 0 || index >= history.length) return;
     const next = JSON.parse(history[index]) as SetSpec;
+    // The thing in hand stays in hand, wherever the step left it
+    // (editor-model.ts) — set before the rebuild, which puts the gizmo back
+    // on whatever selRef names.
+    const keep = selectionAfter(sel, specRef.current, next);
+    selRef.current = keep;
+    setSel(keep);
     setAt(index);
-    setSel(null);
     applySpec(next);
     scheduleSave(next);
   }
@@ -990,6 +997,7 @@ export function SetEditor({
     undoRef.current = undo;
     redoRef.current = redo;
     deleteRef.current = removeSelected;
+    addOpenRef.current = addOpen;
   });
 
   useEffect(() => {
@@ -1021,7 +1029,9 @@ export function SetEditor({
         e.preventDefault();
         deleteRef.current();
       } else if (e.key === "Escape") {
-        pickRef.current(null);
+        // The open menu first; the thing in hand on the next press.
+        if (addOpenRef.current) setAddOpen(false);
+        else pickRef.current(null);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1146,6 +1156,8 @@ export function SetEditor({
           <button type="button" onClick={() => setAddOpen((v) => !v)} className={addOpen ? TOOL_ON : TOOL_BTN} title={s.editorAdd} aria-label={s.editorAdd}>
             <Svg d={D.add} />
           </button>
+          {/* A click anywhere off the menu closes it, as the page's other menus do. */}
+          {addOpen && <div aria-hidden className="fixed inset-0 z-10" onClick={() => setAddOpen(false)} />}
           {addOpen && (
             <div className={`absolute left-12 top-40 z-20 flex min-w-[12rem] flex-col gap-0.5 rounded-[10px] border ${HAIR} ${PANEL} p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]`}>
               {SET_SHAPES.map((shape) => (

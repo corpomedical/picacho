@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.38.4",
+    build: 57,
+    date: "2026-09-16",
+    title: "Undo keeps what you're holding, and an older film keeps its reel",
+    items: [
+      "Undo and Redo in the set editor used to drop whatever you had picked up back to The set, so undoing a move meant finding the thing again. What you're holding now stays in your hand, with the arrows still on it — and if the step you undo is the one that added it, it lets go, because it's gone.",
+      "A film kept its Play button only while its clips were among the set's newest 48 shots; shoot more than that and the reel, the opening still's picture and the camera Play the move starts from all went quietly missing. The set page now loads a film's own shots however old they are — and only when they really are that set's shots.",
+      "The editor's Add menu stayed open over the stage until you picked something. A click anywhere off it, or Escape, closes it now, like the page's other menus.",
+    ],
+  },
+  {
     version: "1.38.3",
     build: 56,
     date: "2026-09-16",

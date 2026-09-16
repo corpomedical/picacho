@@ -141,7 +141,11 @@ describe("the set page reads cameras on their own", () => {
   const data = code(read("data.ts"));
   it("in a query of their own, so the contact sheet never names a column that may not exist", () => {
     expect(data).toContain("const cameras = await readShotCameras(db, setId, access.userId, ids);");
-    expect(data).toContain('.select("generation_id, created_at")');
+    // The shot list itself lives in set-shots.ts (2026-09-16), and names
+    // only the columns every row has had since the table was made.
+    expect(data).toContain("const ids = await readSetShotIds(db, setId, access.userId, film);");
+    const list = code(read("set-shots.ts"));
+    expect(list.match(/\.select\("[^"]*"\)/g)).toEqual(['.select("generation_id, created_at")', '.select("generation_id, created_at")']);
   });
 
   it("offers a still as a look only when there is something to cut out of it, from its camera and the set", () => {

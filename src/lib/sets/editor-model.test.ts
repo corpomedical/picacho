@@ -19,6 +19,7 @@ import {
   removeLight,
   removeMark,
   removeObject,
+  selectionAfter,
   sizeFromScale,
 } from "./editor-model";
 
@@ -182,5 +183,60 @@ describe("what an edit touched", () => {
     expect(countSpecChanges(a, b)).toBe(2);
     expect(countSpecChanges(a, okOf(patchSky(a, { kind: "night" })))).toBe(1);
     expect(countSpecChanges(a, a)).toBe(0);
+  });
+});
+
+// Undo and Redo swap the whole set; the thing in hand should stay in hand
+// (2026-09-16: undoing a camera's move dropped the selection to The set).
+describe("the selection across a step of history", () => {
+  it("keeps the thing picked when the step only changed it — the usual undo of a move", () => {
+    const a = base();
+    const b = okOf(patchCamera(a, 0, { position: [0, 2.8, 8] }));
+    expect(selectionAfter({ kind: "camera", index: 0 }, b, a)).toEqual({ kind: "camera", index: 0 });
+    expect(selectionAfter({ kind: "object", index: 1 }, a, okOf(patchObject(a, 1, { color: "#112233" })))).toEqual({
+      kind: "object",
+      index: 1,
+    });
+  });
+
+  it("keeps the set's own facets, which are always there, and nothing when nothing was picked", () => {
+    const a = base();
+    const b = okOf(patchSky(a, { kind: "night" }));
+    expect(selectionAfter({ kind: "sky" }, b, a)).toEqual({ kind: "sky" });
+    expect(selectionAfter({ kind: "fog" }, b, a)).toEqual({ kind: "fog" });
+    expect(selectionAfter(null, b, a)).toBeNull();
+  });
+
+  it("lets go of a thing the step took away: undoing the add of what is in hand", () => {
+    const a = base();
+    const b = okOf(addObject(a, "cone", [5, 5]));
+    expect(selectionAfter({ kind: "object", index: 2 }, b, a)).toBeNull();
+  });
+
+  it("follows a thing the step moved along: undoing a removal before it", () => {
+    const a = base();
+    const b = okOf(removeObject(a, 0));
+    // In b the repeated box is object 0; putting the removed box back makes it object 1 again.
+    expect(selectionAfter({ kind: "object", index: 0 }, b, a)).toEqual({ kind: "object", index: 1 });
+  });
+
+  it("finds a mark again although its id is only its position", () => {
+    const a = okOf(addMark(base(), [4, 4]));
+    const b = okOf(removeMark(a, 0));
+    expect(b.marks[0].id).toBe("m1");
+    // The mark picked in b was m2 in a: Undo puts the first mark back and the pick follows.
+    expect(selectionAfter({ kind: "mark", index: 0 }, b, a)).toEqual({ kind: "mark", index: 1 });
+  });
+
+  it("stays on the original when the step was its duplicate", () => {
+    const a = base();
+    const b = okOf(duplicateObject(a, 0));
+    expect(selectionAfter({ kind: "object", index: 0 }, b, a)).toEqual({ kind: "object", index: 0 });
+    expect(selectionAfter({ kind: "object", index: 1 }, b, a)).toBeNull();
+  });
+
+  it("lets go of an index that names nothing", () => {
+    const a = base();
+    expect(selectionAfter({ kind: "light", index: 7 }, a, okOf(addLight(a, "point")))).toBeNull();
   });
 });

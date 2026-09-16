@@ -210,6 +210,38 @@ export function removeCamera(spec: SetSpec, index: number): EditResult {
 }
 
 // ---------------------------------------------------------------------------
+// The selection across a step of history.
+// ---------------------------------------------------------------------------
+
+const LISTS = { object: "objects", light: "lights", mark: "marks", camera: "cameras" } as const;
+
+/** Two entries as the same thing: everything but the id, which the normaliser hands out by position. */
+function sameEntry(a: unknown, b: unknown): boolean {
+  const bare = (v: unknown) => JSON.stringify(v && typeof v === "object" ? { ...v, id: undefined } : v);
+  return bare(a) === bare(b);
+}
+
+/**
+ * What stays picked up when Undo or Redo swaps the whole set: the same
+ * thing, wherever the step left it. A step that added nothing to the picked
+ * thing's list and took nothing from it — a move, a turn, a colour, the
+ * usual undo — keeps its place; one that did finds the thing again by what
+ * it is, and lets go only of a thing the step took away. The sky, the ground
+ * and the fog are always there.
+ */
+export function selectionAfter(sel: EditTarget | null, from: SetSpec, to: SetSpec): EditTarget | null {
+  if (!sel || !("index" in sel)) return sel;
+  const before: readonly unknown[] = from[LISTS[sel.kind]];
+  const after: readonly unknown[] = to[LISTS[sel.kind]];
+  const was = before[sel.index];
+  if (was === undefined) return null;
+  if (before.length === after.length) return sel;
+  if (after[sel.index] !== undefined && sameEntry(after[sel.index], was)) return sel;
+  const at = after.findIndex((x) => sameEntry(x, was));
+  return at >= 0 ? { ...sel, index: at } : null;
+}
+
+// ---------------------------------------------------------------------------
 // The gizmo's readback: a dragged mesh's transform, back into spec fields.
 // ---------------------------------------------------------------------------
 

@@ -141,6 +141,17 @@ export function filmAfterEdit(prev: SetFilm, next: SetFilm): SetFilm {
   return { ...next, clips };
 }
 
+/**
+ * The shots a film stands on, once each: its opening still and the clip each
+ * beat rendered as. The set page loads these whatever their age (data.ts) —
+ * the reel plays the clips, the dock shows the still, and Play the move
+ * starts from the still's camera.
+ */
+export function filmShotIds(film: SetFilm | null): string[] {
+  if (!film) return [];
+  return [...new Set([film.startId, ...film.clips].filter((id): id is string => id !== null))];
+}
+
 /** Whether every beat of this film has a clip: what the reel needs to play. */
 export function filmRendered(film: SetFilm): boolean {
   return film.beats.length > 0 && film.clips.length === film.beats.length && film.clips.every((c) => c !== null);
