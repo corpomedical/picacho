@@ -139,6 +139,9 @@ const EXACT: Record<string, keyof Messages["serverText"]> = {
   "The set couldn't be started — try again in a moment.": "setBuildCouldntStart",
   "You've built 1 set this billing month — the limit on your plan. It resets with your billing period.":
     "setMonthlyCapOne",
+  "You've asked Astra for 1 change this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.":
+    "setEditMonthlyCapOne",
+  "This set has grown too big for Astra to rewrite in one answer — change it with the editor's own tools.": "setEditTooBig",
   "This set couldn't be built, and the build is back in your allowance. Try describing the place differently.":
     "setBuildFailed",
   "This set couldn't be built from that description. The build is back in your allowance.": "setBuildRefused",
@@ -278,6 +281,11 @@ const PATTERNS: {
   {
     re: /^You've built (\d+) sets this billing month — the limit on your plan\./,
     key: "setMonthlyCap",
+    params: (m) => ({ used: m[1] }),
+  },
+  {
+    re: /^You've asked Astra for (\d+) changes this billing month — the limit on your plan\./,
+    key: "setEditMonthlyCap",
     params: (m) => ({ used: m[1] }),
   },
 ];

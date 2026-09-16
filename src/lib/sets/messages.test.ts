@@ -19,7 +19,10 @@ import {
   SET_PHOTO_TOO_SMALL,
   SET_PHOTO_UNCHECKED,
   SET_PHOTO_UNREADABLE,
+  SET_EDIT_MONTHLY_CAP_ONE,
+  SET_EDIT_TOO_BIG,
   matchFailureMessage,
+  setEditMonthlyCapMessage,
   setFailureMessage,
   setMonthlyCapMessage,
 } from "./messages";
@@ -60,6 +63,20 @@ describe("the monthly cap sentence", () => {
   it("says 1 set, not 1 sets", () => {
     expect(setMonthlyCapMessage(1)).toContain("built 1 set this");
     expect(setMonthlyCapMessage(2)).toContain("built 2 sets this");
+  });
+
+  it("says 1 change, not 1 changes, for Astra's month too, in every language", () => {
+    expect(setEditMonthlyCapMessage(1)).toBe(SET_EDIT_MONTHLY_CAP_ONE);
+    expect(setEditMonthlyCapMessage(20)).toContain("Astra for 20 changes this billing month");
+    for (const t of [es, pt, it_]) {
+      expect(localizeServerText(setEditMonthlyCapMessage(1), t)).toBe(t.serverText.setEditMonthlyCapOne);
+      const twenty = localizeServerText(setEditMonthlyCapMessage(20), t);
+      expect(twenty).toContain("20");
+      expect(twenty).not.toBe(setEditMonthlyCapMessage(20));
+      expect(twenty).not.toMatch(/\{\w+\}/);
+      expect(localizeServerText(SET_EDIT_TOO_BIG, t)).toBe(t.serverText.setEditTooBig);
+    }
+    expect(localizeServerText(setEditMonthlyCapMessage(20), en)).toBe(setEditMonthlyCapMessage(20));
   });
 
   it("reaches every language, singular and plural, with the count carried", () => {
@@ -313,6 +330,10 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "comparePhoto",
     "compareNote",
     "figureMovedOut",
+    "editorAskLeft",
+    "editorAskLeftOne",
+    "editorAskLeftNone",
+    "editorAskLeftTitle",
   ] as const;
   const SERVER_KEYS = [
     "setPhotoUnreadable",
@@ -325,6 +346,9 @@ describe("the catalogs carry every new Sets key in all four languages", () => {
     "setPhotoSaveFailed",
     "setPhotoBuildFailed",
     "setTakeNeedsPlan",
+    "setEditMonthlyCap",
+    "setEditMonthlyCapOne",
+    "setEditTooBig",
   ] as const;
 
   it("as non-empty strings", () => {

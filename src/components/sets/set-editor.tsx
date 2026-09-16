@@ -1,11 +1,14 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useLocale } from "@/lib/i18n/provider";
 import { localizeServerText } from "@/lib/i18n/server-text";
+import { isStaleDeployError } from "@/lib/stale-deploy";
 import { formatMsg } from "@/lib/i18n/format";
 import { clearSetEdit, editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
+import { SET_EDIT_TOO_BIG } from "@/lib/sets/messages";
+import { SET_EDIT_MAX_SPEC_CHARS } from "@/lib/sets/set-config";
 import {
   addCamera,
   addLight,
@@ -373,6 +376,7 @@ export function SetEditor({
   original,
   initialEdited,
   closeHref,
+  astraEditsLeft,
 }: {
   setId: string;
   /** Astra's set as first built — never changed, always restorable. */
@@ -380,6 +384,8 @@ export function SetEditor({
   /** The saved working copy, if the person has edited before. */
   initialEdited: SetSpec | null;
   closeHref: string;
+  /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
+  astraEditsLeft: number | null;
 }) {
   const { t } = useLocale();
   const s = t.sets;
@@ -399,6 +405,11 @@ export function SetEditor({
   const [ask, setAsk] = useState("");
   const [asking, setAsking] = useState(false);
   const [askNote, setAskNote] = useState<number | null>(null);
+  // The month's Astra changes left, as the server last said.
+  const [editsLeft, setEditsLeft] = useState<number | null>(astraEditsLeft);
+  // A set grown past what Astra can answer whole is changed with the tools
+  // alone (set-config.ts SET_EDIT_MAX_SPEC_CHARS); the server refuses it too.
+  const astraTooBig = useMemo(() => JSON.stringify(spec).length > SET_EDIT_MAX_SPEC_CHARS, [spec]);
   const [askError, setAskError] = useState("");
 
   const hostRef = useRef<HTMLDivElement>(null);
@@ -633,12 +644,24 @@ export function SetEditor({
 
   async function sendAsk() {
     const text = ask.trim();
-    if (!text || asking) return;
+    if (!text || asking || astraTooBig) return;
     setAsking(true);
     setAskError("");
     setAskNote(null);
-    const r = await editSetWithAstra(setId, text);
-    setAsking(false);
+    let r: Awaited<ReturnType<typeof editSetWithAstra>>;
+    try {
+      r = await editSetWithAstra(setId, text);
+    } catch (err) {
+      // A dropped connection or a stale deploy: the bar is let go and says
+      // so, rather than saying Astra is still at work for good.
+      const stale = isStaleDeployError(err);
+      setAskError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+      return;
+    } finally {
+      setAsking(false);
+    }
+    if (r.editsLeft !== undefined) setEditsLeft(r.editsLeft);
     if (r.error !== null) {
       setAskError(r.error);
       return;
@@ -1232,12 +1255,14 @@ export function SetEditor({
 
             {/* Astra's prompt bar */}
             <div className="absolute bottom-4 left-1/2 w-[560px] max-w-[calc(100%-2rem)] -translate-x-1/2">
-              {(askNote !== null || askError || asking) && (
+              {(askNote !== null || askError || asking || astraTooBig) && (
                 <div className="mx-auto mb-2 flex w-fit max-w-full items-center gap-2 rounded-[8px] border border-white/[0.11] bg-[rgba(25,26,32,0.94)] px-3 py-1.5 text-[12px] text-[#c6c9d1] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
                   {asking ? (
                     <span>{s.editorAsking}</span>
                   ) : askError ? (
                     <span className="text-red-400">{localizeServerText(askError, t)}</span>
+                  ) : askNote === null ? (
+                    <span className="text-[#9aa0ad]">{localizeServerText(SET_EDIT_TOO_BIG, t)}</span>
                   ) : askNote === 0 ? (
                     <span>{s.editorAskNothing}</span>
                   ) : (
@@ -1267,10 +1292,15 @@ export function SetEditor({
                   disabled={asking}
                   className="h-full min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[#ecedf1] outline-none placeholder:text-[#6b6f7a] disabled:opacity-60"
                 />
+                {editsLeft !== null && (
+                  <span title={s.editorAskLeftTitle} className="flex-none whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a]">
+                    {editsLeft === 0 ? s.editorAskLeftNone : editsLeft === 1 ? s.editorAskLeftOne : formatMsg(s.editorAskLeft, { n: editsLeft })}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => void sendAsk()}
-                  disabled={asking || ask.trim().length === 0}
+                  disabled={asking || ask.trim().length === 0 || editsLeft === 0 || astraTooBig}
                   className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[7px] bg-[#e0a468] text-[#1b1c20] disabled:cursor-default disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
                   aria-label={s.editorAskSend}
                 >

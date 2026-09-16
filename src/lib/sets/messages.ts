@@ -84,6 +84,15 @@ export const SET_EDIT_TOO_FAST = "You're changing the set quickly — give it a 
 export const SET_RIG_CHECK_FAILED = "The rig check couldn't read this still — the still is kept as it is.";
 export const SET_RIG_CHECK_TOO_FAST = "You're checking stills quickly — give it a moment.";
 export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a moment.";
+/** The working copy is past what Astra can answer whole (set-config.ts SET_EDIT_MAX_SPEC_CHARS). */
+export const SET_EDIT_TOO_BIG = "This set has grown too big for Astra to rewrite in one answer — change it with the editor's own tools.";
+/** Pattern: localizeServerText reads the count back out of it (set-config.ts SET_EDITS_MONTHLY_LIMITS). */
+export function setEditMonthlyCapMessage(used: number): string {
+  if (used === 1) return SET_EDIT_MONTHLY_CAP_ONE;
+  return `You've asked Astra for ${used} changes this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.`;
+}
+export const SET_EDIT_MONTHLY_CAP_ONE =
+  "You've asked Astra for 1 change this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.";
 
 // Takes (2026-09-15): a clip from one still to a newly shot end frame.
 export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";

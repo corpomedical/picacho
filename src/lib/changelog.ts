@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.8",
+    build: 72,
+    date: "2026-09-16",
+    title: "Astra's changes to a set, bounded",
+    items: [
+      "Asking Astra to change a set is a real model call — $0.31 measured, up to $1.21 on the largest set — and it is free to you. Until now the only limit was ten every ten minutes, and a set of any size was sent. Before Helios opens to plans, each plan gets a number of Astra changes a month, twice its set builds (2 on Basic up to 50 on Elite, admins without a limit), counted from the start of the billing month. The editor's prompt bar shows how many are left, in all four languages.",
+      "A set grown past what Astra can rewrite in one answer is no longer sent: the answer would have been cut off, failed, paid for and counted. The prompt bar says so; the editor's own tools still work. At the largest set Astra is sent now, a change costs at most $0.62.",
+      "The prompt bar no longer stays on \"Astra is changing the set…\" when the connection drops or the app has been updated: it says what happened and lets you try again.",
+    ],
+  },
+  {
     version: "1.40.7",
     build: 71,
     date: "2026-09-16",

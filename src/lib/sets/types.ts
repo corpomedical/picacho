@@ -122,6 +122,8 @@ export type SetPageData =
       matchOn: boolean;
       /** Whether this person's plan takes clips and renders films (plans.ts advancedVideoPlan); takeInSet checks again. */
       takesOn: boolean;
+      /** Astra changes left this billing month (set-config.ts SET_EDITS_MONTHLY_LIMITS); null when uncapped or unread. */
+      astraEditsLeft: number | null;
       set: SetDetail;
       shots: SetShot[];
       characters: SetCharacter[];

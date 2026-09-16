@@ -7,7 +7,13 @@ import { advancedVideoPlan } from "@/lib/plans";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { isPhotoSetsEnabled } from "@/lib/sets/enabled";
 import { readPhotoSources } from "@/lib/sets/photo";
-import { isCurrentSetThumb, SETS_LIST_LIMIT, SET_RESERVED_BRIEF } from "@/lib/sets/set-config";
+import {
+  isCurrentSetThumb,
+  setEditsMonthlyLimit,
+  SETS_LIST_LIMIT,
+  SET_EDITS_MONTH_SCOPE,
+  SET_RESERVED_BRIEF,
+} from "@/lib/sets/set-config";
 import { readShotCameras } from "@/lib/sets/shot-camera";
 import { readShotWords } from "@/lib/sets/shot-words-store";
 import { seesLookObjects } from "@/lib/sets/look-cutout";
@@ -81,6 +87,34 @@ export async function countSetBuildsThisMonth(
     return null;
   }
   return count ?? 0;
+}
+
+/**
+ * Astra changes asked for this billing month: the limiter's own record of
+ * them (editor-actions.ts counts each in SET_EDITS_MONTH_SCOPE), read with
+ * the service role since the person cannot read it. Null when it cannot be
+ * read — then nothing is shown, and the action still holds the cap.
+ */
+export async function countAstraEditsThisMonth(userId: string, periodStart: string | null): Promise<number | null> {
+  const { count, error } = await createAdminClient()
+    .from("api_rate_hits")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("scope", SET_EDITS_MONTH_SCOPE)
+    .gte("created_at", monthlyWindowStart(periodStart).toISOString());
+  if (error) {
+    console.warn("countAstraEditsThisMonth failed:", error.message);
+    return null;
+  }
+  return count ?? 0;
+}
+
+/** What the editor shows of the month's Astra changes: how many are left, or null for no cap (admins) or no count. */
+export async function astraEditsLeft(access: { userId: string; plan: string; isAdmin: boolean; periodStart: string | null }): Promise<number | null> {
+  const cap = setEditsMonthlyLimit(access.plan, access.isAdmin);
+  if (cap < 0) return null;
+  const used = await countAstraEditsThisMonth(access.userId, access.periodStart);
+  return used === null ? null : Math.max(0, cap - used);
 }
 
 export async function getSetsHome(): Promise<SetsHomeData> {
@@ -359,6 +393,9 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // (plans.ts); the page says so before a take is framed, and takeInSet
     // checks again.
     takesOn: advancedVideoPlan(access.plan, access.isAdmin),
+    // The month's Astra changes left (set-config.ts SET_EDITS_MONTHLY_LIMITS),
+    // shown in the editor's prompt bar; the action holds the cap.
+    astraEditsLeft: spec ? await astraEditsLeft(access) : null,
     set: {
       id: row.id as string,
       title: (row.title as string) ?? "",

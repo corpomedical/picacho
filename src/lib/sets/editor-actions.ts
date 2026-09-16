@@ -2,6 +2,7 @@
 
 import { createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
+import { monthlyWindowStart } from "@/lib/generations/core";
 import { assertPromptAllowed, ContentPolicyRefusal } from "@/lib/generations/content-policy";
 import { gatePrompt, recordPolicyRefusal } from "@/lib/generations/policy-log";
 import { cancelAstraJob, pollAstraJob, submitAstraJob } from "@/lib/generations/providers/astra";
@@ -13,13 +14,24 @@ import {
   SET_EDIT_FAILED,
   SET_EDIT_REFUSED,
   SET_EDIT_TIMED_OUT,
+  SET_EDIT_TOO_BIG,
   SET_EDIT_TOO_FAST,
   SET_NOT_FOUND,
   SET_NOT_READY,
   SET_SAVE_FAILED,
+  setEditMonthlyCapMessage,
 } from "@/lib/sets/messages";
 import { setEditRequest } from "@/lib/sets/set-edit-prompt";
-import { SET_EDIT_DEADLINE_MS, SET_EDIT_MAX_CHARS, SET_EDIT_PER_10_MIN, SET_EDIT_POLL_MS } from "@/lib/sets/set-config";
+import {
+  SET_EDIT_DEADLINE_MS,
+  SET_EDIT_MAX_CHARS,
+  SET_EDIT_MAX_SPEC_CHARS,
+  SET_EDIT_PER_10_MIN,
+  SET_EDIT_POLL_MS,
+  SET_EDITS_MONTH_SCOPE,
+  setEditsMonthlyLimit,
+} from "@/lib/sets/set-config";
+import { countAstraEditsThisMonth } from "@/lib/sets/data";
 import { cleanText, normaliseSetSpec, parseSetSpecText, specTextForGate, type SetSpec } from "@/lib/sets/set-spec";
 
 // The Set Editor's actions (2026-09-14). The working copy lives in
@@ -117,7 +129,10 @@ export async function clearSetEdit(setId: string): Promise<{ error: string | nul
 export async function editSetWithAstra(
   setId: string,
   instruction: string,
-): Promise<{ error: string } | { error: null; spec: SetSpec; changed: number }> {
+): Promise<
+  | { error: string; editsLeft?: number | null }
+  | { error: null; spec: SetSpec; changed: number; editsLeft: number | null }
+> {
   const access = await setsAccess();
   if (access.error !== null) return { error: access.error };
   const { userId } = access;
@@ -125,6 +140,10 @@ export async function editSetWithAstra(
   if (owned.error !== null) return { error: owned.error };
   const text = cleanText(typeof instruction === "string" ? instruction : "", SET_EDIT_MAX_CHARS);
   if (text.length < 3) return { error: SET_BRIEF_TOO_SHORT };
+  // A set Astra cannot answer whole is not sent: the answer would be cut off
+  // and paid for, and counted among the month's changes.
+  const working = owned.edited ?? owned.spec;
+  if (JSON.stringify(working).length > SET_EDIT_MAX_SPEC_CHARS) return { error: SET_EDIT_TOO_BIG };
 
   // The person's own words, judged before anything leaves Picacho — as a
   // brief is (actions.ts submitSetBuild). A refusal answers with the gate's
@@ -136,12 +155,29 @@ export async function editSetWithAstra(
     throw err;
   }
   if (await rateLimited(userId, "set-astra-edit", 60 * 10, SET_EDIT_PER_10_MIN)) return { error: SET_EDIT_TOO_FAST };
+  // The month's Astra changes (set-config.ts SET_EDITS_MONTHLY_LIMITS): the
+  // limiter's window reaches back to the billing month's start, the one
+  // builds are counted from, so each request that gets this far is one of
+  // the month's — Astra's refusals and timeouts cost too. Asked last, so a
+  // request the gate or the pace refused is not one of them.
+  // Every answer from here on says how many are left, for the prompt bar
+  // (null: no cap, or the count could not be read).
+  const monthly = setEditsMonthlyLimit(access.plan, access.isAdmin);
+  let editsLeft: number | null = null;
+  if (monthly >= 0) {
+    const since = monthlyWindowStart(access.periodStart).getTime();
+    const windowSeconds = Math.max(1, Math.ceil((new Date().getTime() - since) / 1000));
+    if (monthly === 0 || (await rateLimited(userId, SET_EDITS_MONTH_SCOPE, windowSeconds, monthly))) {
+      return { error: setEditMonthlyCapMessage(monthly), editsLeft: 0 };
+    }
+    const used = await countAstraEditsThisMonth(userId, access.periodStart);
+    editsLeft = used === null ? null : Math.max(0, monthly - used);
+  }
 
-  const working = owned.edited ?? owned.spec;
   const submitted = await submitAstraJob(setEditRequest(working, text, openAiSafetyId(userId)));
   if (!submitted.ok) {
     console.warn("[sets] edit submit failed:", submitted.kind, submitted.detail);
-    return { error: submitted.kind === "refused" ? SET_EDIT_REFUSED : SET_EDIT_FAILED };
+    return { error: submitted.kind === "refused" ? SET_EDIT_REFUSED : SET_EDIT_FAILED, editsLeft };
   }
 
   // Waited for inside the action, like a match: polls until the deadline,
@@ -155,16 +191,16 @@ export async function editSetWithAstra(
   }
   if (polled.state === "working") {
     await cancelAstraJob(submitted.responseId);
-    return { error: SET_EDIT_TIMED_OUT };
+    return { error: SET_EDIT_TIMED_OUT, editsLeft };
   }
   if (polled.state === "failed") {
     console.warn("[sets] edit failed:", polled.kind, polled.detail);
-    return { error: polled.kind === "refused" ? SET_EDIT_REFUSED : SET_EDIT_FAILED };
+    return { error: polled.kind === "refused" ? SET_EDIT_REFUSED : SET_EDIT_FAILED, editsLeft };
   }
   console.info("[sets] edit usage", { setId, usage: polled.usage, costUsd: polled.costUsd });
 
   const parsed = parseSetSpecText(polled.text);
-  if (!parsed.ok) return { error: SET_EDIT_FAILED };
+  if (!parsed.ok) return { error: SET_EDIT_FAILED, editsLeft };
   const next = parsed.spec;
 
   // Astra's words, judged before anyone reads them — in the strict lane, the
@@ -183,10 +219,10 @@ export async function editSetWithAstra(
       prompt: gateWords,
       provider: "astra",
     });
-    return { error: SET_EDIT_REFUSED };
+    return { error: SET_EDIT_REFUSED, editsLeft };
   }
 
   const saved = await writeEdited(setId, userId, next);
-  if (saved.error !== null) return { error: saved.error };
-  return { error: null, spec: next, changed: countSpecChanges(working, next) };
+  if (saved.error !== null) return { error: saved.error, editsLeft };
+  return { error: null, spec: next, changed: countSpecChanges(working, next), editsLeft };
 }

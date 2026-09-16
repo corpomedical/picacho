@@ -188,6 +188,52 @@ export const SET_EDIT_POLL_MS = 2_500;
 export const SET_EDIT_DEADLINE_MS = 180_000;
 export const SET_EDIT_PER_10_MIN = 10;
 
+// An Astra edit is a build's call without the retry, and like a build it is
+// free to the person, so its spend is bounded the same way: a monthly cap
+// per plan, counted from the billing month's start (2026-09-16 — until then
+// only SET_EDIT_PER_10_MIN held it, and a working copy of any size was sent,
+// up to $1.21 a call at the largest set the normaliser keeps; on the order
+// of $70 an hour for one person). From lib/astra/prices.ts:
+//
+//   worst case = the largest input an edit sends (the instructions, the
+//     schema and a working copy at SET_EDIT_MAX_SPEC_CHARS, below, with the
+//     longest request: 20,855 characters ≈ 9,311 tokens at 2.24 characters
+//     per token), all billed as cache writes, + output to the 10,000-token cap
+//     = 9,311 × $12.50/1M + 10,000 × $50/1M = $0.12 + $0.50 = $0.62
+//   the one live edit measured (2026-09-15, a race track): $0.31
+//
+//   At twice the build cap, a month's edits at worst cost:
+//     Basic 2 → $1.23 of $9      Starter 4 → $2.47 of $19   Growth 10 → $6.16 of $79
+//     Studio 20 → $12.33 of $299  Elite 50 → $30.82 of $499
+//   — the operator's numbers to move before SETS_OPEN_TO_PLANS flips.
+export const SET_EDITS_MONTHLY_LIMITS = {
+  none: 0,
+  basic: 2,
+  starter: 4,
+  growth: 10,
+  studio: 20,
+  elite: 50,
+} as const satisfies Record<PlanId, number>;
+
+/**
+ * The largest working copy Astra is asked to change. An edit answers with the
+ * WHOLE revised set under the build's 10,000-token cap, exactly as a closing
+ * retry's mend does, so it holds the mend's bound (SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS:
+ * ~8,300 answer tokens at 0.52 per character, with room for what the change
+ * adds). Past it the answer is cut off, fails, and is paid for all the same —
+ * a set the editor's own tools grew past this is changed with those tools.
+ */
+export const SET_EDIT_MAX_SPEC_CHARS = SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS;
+
+/** The limiter's bucket the month's Astra changes are counted in (editor-actions.ts, data.ts). */
+export const SET_EDITS_MONTH_SCOPE = "set-astra-edit-month";
+
+/** -1 = unlimited (admin), as setBuildsMonthlyLimit. */
+export function setEditsMonthlyLimit(plan: string | null | undefined, isAdmin: boolean): number {
+  if (isAdmin) return -1;
+  return SET_EDITS_MONTHLY_LIMITS[(plan ?? "none") as PlanId] ?? 0;
+}
+
 // The stage camera's tilt (set-view.tsx). OrbitControls keeps the camera within 0.62π of
 // straight down from what it looks at, so a tilt past ~21° up would move the camera; the aim
 // arrows and a matched shot stop just short of it.

@@ -81,6 +81,7 @@ export default async function SetPage({
         original={data.set.spec}
         initialEdited={data.set.editedSpec}
         closeHref={`/app/sets/${data.set.id}`}
+        astraEditsLeft={data.astraEditsLeft}
       />
     );
   }

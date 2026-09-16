@@ -2230,6 +2230,10 @@ const en = {
     editorAskDone: "Done — {n} pieces of the set changed.",
     editorAskDoneOne: "Done — one piece of the set changed.",
     editorAskNothing: "Astra changed nothing — it read the set as already so.",
+    editorAskLeft: "{n} left this month",
+    editorAskLeftOne: "1 left this month",
+    editorAskLeftNone: "None left this month",
+    editorAskLeftTitle: "Changes you can still ask Astra for this billing month",
     // The workspace as 3D Jutsu has one (2026-09-15): the viewport is the
     // page, the conversation floats inside it, and three modes say how much
     // Astra does on its own.
@@ -2624,6 +2628,9 @@ const en = {
     setBuildCouldntStart: "The set couldn't be started — try again in a moment.",
     setMonthlyCap: "You've built {used} sets this billing month — the limit on your plan. It resets with your billing period.",
     setMonthlyCapOne: "You've built 1 set this billing month — the limit on your plan. It resets with your billing period.",
+    setEditMonthlyCap: "You've asked Astra for {used} changes this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.",
+    setEditMonthlyCapOne: "You've asked Astra for 1 change this billing month — the limit on your plan. It resets with your billing period; the editor's own tools still work.",
+    setEditTooBig: "This set has grown too big for Astra to rewrite in one answer — change it with the editor's own tools.",
     setBuildFailed: "This set couldn't be built, and the build is back in your allowance. Try describing the place differently.",
     setBuildRefused: "This set couldn't be built from that description. The build is back in your allowance.",
     setBuildLost: "This build took too long and was lost. The build is back in your allowance — try again.",

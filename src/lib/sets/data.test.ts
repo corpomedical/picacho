@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import raceTrack from "./fixtures-race-track.json";
+import { SET_EDITS_MONTH_SCOPE, setEditsMonthlyLimit } from "./set-config";
 
 // The set page's loader, for what a take was rendered from (2026-09-16). A
 // take whose clip failed on an earlier visit offers "Try the clip again"
@@ -27,17 +29,37 @@ type Row = Record<string, unknown>;
 type Tables = Record<string, { columns: string[]; rows: Row[] }>;
 
 let db: SupabaseClient;
-let who: { plan: string; isAdmin: boolean } = { plan: "studio", isAdmin: false };
+let who: { plan: string; isAdmin: boolean; periodStart?: string | null } = { plan: "studio", isAdmin: false };
 let reads: { table: string; select: string; filters: [string, string, unknown][] }[] = [];
 
+// The service role reads one thing here: the limiter's record of the
+// month's Astra changes (data.ts countAstraEditsThisMonth).
+let rateHits: { scope: string; created_at: string }[] = [];
+let rateReadFails = false;
 vi.mock("@/lib/supabase/server", () => ({
-  createAdminClient: () => {
-    throw new Error("the page's read runs as the person");
-  },
+  createAdminClient: () => ({
+    from: (table: string) => {
+      if (table !== "api_rate_hits") throw new Error(`the page's read runs as the person, not ${table}`);
+      const f: [string, string, unknown][] = [];
+      const builder = {
+        select: () => builder,
+        eq: (c: string, v: unknown) => (f.push([c, "eq", v]), builder),
+        gte: (c: string, v: unknown) => (f.push([c, "gte", v]), builder),
+        then: (resolve: (v: unknown) => void) => {
+          if (rateReadFails) return resolve({ count: null, error: { message: "boom" } });
+          const scope = f.find(([c]) => c === "scope")?.[2];
+          const since = f.find(([, op]) => op === "gte")?.[2] as string;
+          const userOk = f.some(([c, op, v]) => c === "user_id" && op === "eq" && v === USER);
+          resolve({ count: userOk ? rateHits.filter((h) => h.scope === scope && h.created_at >= since).length : 0, error: null });
+        },
+      };
+      return builder;
+    },
+  }),
 }));
-vi.mock("@/lib/generations/core", () => ({ monthlyWindowStart: () => new Date(0) }));
+vi.mock("@/lib/generations/core", () => ({ monthlyWindowStart: (p: string | null) => new Date(p ?? 0) }));
 vi.mock("@/lib/sets/access", () => ({
-  setsAccess: async () => ({ error: null, supabase: db, userId: USER, ...who, periodStart: null, monthlyLimit: 5 }),
+  setsAccess: async () => ({ error: null, supabase: db, userId: USER, periodStart: null, ...who, monthlyLimit: 5 }),
   UUID_RE: /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
 }));
 vi.mock("@/lib/sets/enabled", () => ({ isPhotoSetsEnabled: async () => false }));
@@ -179,6 +201,40 @@ async function load(tables: Tables) {
 beforeEach(() => {
   reads = [];
   who = { plan: "studio", isAdmin: false };
+  rateHits = [];
+  rateReadFails = false;
+});
+
+describe("the month's Astra changes, for the editor", () => {
+  const ready = (tables: Tables): Tables => {
+    tables.location_sets.rows[0] = { ...tables.location_sets.rows[0], status: "ready", spec: raceTrack };
+    return tables;
+  };
+
+  it("says how many are left since the billing month began", async () => {
+    who = { plan: "growth", isAdmin: false, periodStart: "2026-09-05T00:00:00.000Z" };
+    rateHits = [
+      { scope: SET_EDITS_MONTH_SCOPE, created_at: "2026-09-06T10:00:00.000Z" },
+      { scope: SET_EDITS_MONTH_SCOPE, created_at: "2026-09-15T10:00:00.000Z" },
+      { scope: SET_EDITS_MONTH_SCOPE, created_at: "2026-09-16T10:00:00.000Z" },
+      // Last month's, and another limiter's: not this month's changes.
+      { scope: SET_EDITS_MONTH_SCOPE, created_at: "2026-09-04T23:59:59.000Z" },
+      { scope: "set-astra-edit", created_at: "2026-09-16T10:00:00.000Z" },
+    ];
+    expect((await page(ready(world([still(1)])))).astraEditsLeft).toBe(setEditsMonthlyLimit("growth", false) - 3);
+    rateHits = Array.from({ length: 40 }, () => ({ scope: SET_EDITS_MONTH_SCOPE, created_at: "2026-09-16T10:00:00.000Z" }));
+    expect((await page(ready(world([still(1)])))).astraEditsLeft).toBe(0);
+  });
+
+  it("says nothing for an admin, a count it cannot read, or a set still building", async () => {
+    who = { plan: "growth", isAdmin: true };
+    expect((await page(ready(world([still(1)])))).astraEditsLeft).toBeNull();
+    who = { plan: "growth", isAdmin: false };
+    rateReadFails = true;
+    expect((await page(ready(world([still(1)])))).astraEditsLeft).toBeNull();
+    rateReadFails = false;
+    expect((await page(world([still(1)]))).astraEditsLeft).toBeNull();
+  });
 });
 
 describe("whether the page offers takes", () => {

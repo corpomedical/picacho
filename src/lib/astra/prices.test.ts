@@ -6,10 +6,23 @@ import {
   SET_BUILD_MAX_OUTPUT_TOKENS,
   SET_CLOSE_RETRY_INPUT_TOKENS,
   SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS,
+  SET_BUILDS_MONTHLY_LIMITS,
+  SET_EDIT_MAX_CHARS,
+  SET_EDIT_MAX_SPEC_CHARS,
+  SET_EDITS_MONTHLY_LIMITS,
   SET_PHOTO_BUILD_INPUT_TOKENS,
   SET_PHOTO_BUILD_MAX_OUTPUT_TOKENS,
   SET_PHOTO_CLOSE_RETRY_INPUT_TOKENS,
+  setEditsMonthlyLimit,
 } from "../sets/set-config";
+import { setEditInput, setEditRequest } from "../sets/set-edit-prompt";
+import { normaliseSetSpec } from "../sets/set-spec";
+import { PRICING_TIERS } from "../pricing";
+import beach from "../sets/fixtures-beach.json";
+import raceTrack from "../sets/fixtures-race-track.json";
+import rainyMarket from "../sets/fixtures-rainy-market.json";
+import showroomClosed from "../sets/fixtures-showroom-closed.json";
+import showroomOpen from "../sets/fixtures-showroom-open.json";
 
 // Every figure here is a usage block the API really returned on Picacho's
 // key, with the cost worked by hand from the dated prices.
@@ -126,5 +139,59 @@ describe("the photo-build ceiling (Sets from a photo, 2026-09-11)", () => {
     expect(SET_BUILD_INPUT_TOKENS).toBe(2_400);
     expect(SET_BUILD_MAX_OUTPUT_TOKENS).toBe(10_000);
     expect(SET_CLOSE_RETRY_INPUT_TOKENS).toBe(10_000);
+  });
+});
+
+// An Astra edit (2026-09-16): a build's call, free to the person, bounded by
+// a monthly cap per plan and by the size of the set it may send.
+describe("the Astra-edit ceiling", () => {
+  // The longest input an edit can send: its instructions, the schema, and a
+  // working copy at the bound with the longest request.
+  const longestInputChars = () => {
+    const req = setEditRequest({} as never, "", undefined);
+    // What the input adds around the set and the request.
+    const framing = setEditInput({} as never, "").length - JSON.stringify({}).length;
+    return req.instructions.length + JSON.stringify(req.schema).length + framing + SET_EDIT_MAX_SPEC_CHARS + SET_EDIT_MAX_CHARS;
+  };
+
+  it("matches the arithmetic in set-config.ts: 20,855 characters ≈ 9,311 tokens, $0.62 an edit at worst", () => {
+    expect(longestInputChars()).toBe(20_855);
+    const tokens = Math.ceil(longestInputChars() / 2.24);
+    expect(tokens).toBe(9_311);
+    // 9,311 × $12.50/1M + 10,000 × $50/1M = $0.1163875 + $0.50
+    expect(worstCaseAstraUsd(tokens, SET_BUILD_MAX_OUTPUT_TOKENS)).toBeCloseTo(0.6163875, 9);
+  });
+
+  it("caps a month at twice the builds, and the figures in set-config.ts are what those caps cost", () => {
+    const perEdit = worstCaseAstraUsd(Math.ceil(longestInputChars() / 2.24), SET_BUILD_MAX_OUTPUT_TOKENS);
+    const written: Record<string, [number, number]> = {
+      basic: [1.23, 9],
+      starter: [2.47, 19],
+      growth: [6.16, 79],
+      studio: [12.33, 299],
+      elite: [30.82, 499],
+    };
+    for (const tier of PRICING_TIERS) {
+      const id = tier.id as keyof typeof SET_EDITS_MONTHLY_LIMITS;
+      expect(SET_EDITS_MONTHLY_LIMITS[id], id).toBe(2 * SET_BUILDS_MONTHLY_LIMITS[id]);
+      expect(Math.round(SET_EDITS_MONTHLY_LIMITS[id] * perEdit * 100) / 100, id).toBe(written[id][0]);
+      expect(tier.price, id).toBe(written[id][1]);
+    }
+    expect(SET_EDITS_MONTHLY_LIMITS.none).toBe(0);
+    expect(setEditsMonthlyLimit("growth", true)).toBe(-1);
+    expect(setEditsMonthlyLimit("growth", false)).toBe(SET_EDITS_MONTHLY_LIMITS.growth);
+    expect(setEditsMonthlyLimit("platinum", false)).toBe(0);
+    expect(setEditsMonthlyLimit(null, false)).toBe(0);
+  });
+
+  it("sends only a set Astra can answer whole, and every set Astra has built so far is one", () => {
+    // The mend's own bound: 0.52 answer tokens a character, plus ~1,500 for what the change adds.
+    expect(SET_EDIT_MAX_SPEC_CHARS).toBe(SET_CLOSE_RETRY_MAX_PREVIOUS_CHARS);
+    expect(Math.ceil(SET_EDIT_MAX_SPEC_CHARS * 0.52) + 1_500).toBeLessThanOrEqual(SET_BUILD_MAX_OUTPUT_TOKENS);
+    for (const [name, fixture] of Object.entries({ beach, raceTrack, rainyMarket, showroomClosed, showroomOpen })) {
+      const n = normaliseSetSpec(fixture);
+      expect(n.ok, name).toBe(true);
+      if (n.ok) expect(JSON.stringify(n.spec).length, name).toBeLessThanOrEqual(SET_EDIT_MAX_SPEC_CHARS);
+    }
   });
 });
