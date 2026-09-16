@@ -4,7 +4,7 @@ import {
   filmAfterEdit,
   filmContextKey,
   filmRendered,
-  filmRenderFrom,
+  filmJobs,
   filmRenderPlan,
   filmSeconds,
   filmShotIds,
@@ -225,41 +225,57 @@ describe("a film's end stills and context, stored", () => {
   });
 });
 
-describe("filmRenderFrom", () => {
-  it("renders the whole film when nothing is rendered", () => {
-    expect(filmRenderFrom(three({ clips: [], ends: [] }), CTX, all)).toEqual({ from: 0, startId: A });
+describe("filmJobs", () => {
+  const whole = (...beats: number[]) => beats.map((beat) => ({ beat, end: null }));
+
+  it("renders every beat whole when nothing is rendered, and nothing when all is", () => {
+    expect(filmJobs(three({ clips: [], ends: [] }), CTX, all)).toEqual(whole(0, 1, 2));
+    expect(filmJobs(three(), CTX, all)).toEqual([]);
   });
 
-  it("says so when every beat is rendered", () => {
-    expect(filmRenderFrom(three(), CTX, all)).toEqual({ from: 3, startId: null });
+  it("renders whole from the first beat that needs a new end frame — a changed beat and the ones after it", () => {
+    expect(filmJobs(three({ clips: [B, C], ends: [E1, E2] }), CTX, all)).toEqual(whole(2));
+    expect(filmJobs(three({ clips: [B], ends: [E1] }), CTX, all)).toEqual(whole(1, 2));
+    // A beat whose end still failed, and so whose clip never started.
+    expect(filmJobs(three({ clips: [B, null], ends: [E1, null] }), CTX, all)).toEqual(whole(1, 2));
   });
 
-  it("picks up at the first beat without a clip, opening on the end still before it", () => {
-    expect(filmRenderFrom(three({ clips: [B, C], ends: [E1, E2] }), CTX, all)).toEqual({ from: 2, startId: E2 });
-    expect(filmRenderFrom(three({ clips: [B], ends: [E1] }), CTX, all)).toEqual({ from: 1, startId: E1 });
+  it("renders a failed clip alone on the end frame it has, and leaves the beats after it", () => {
+    const failed = (bad: string[]) => ({ clip: (id: string) => !bad.includes(id), end: () => true });
+    expect(filmJobs(three(), CTX, failed([C]))).toEqual([{ beat: 1, end: E2 }]);
+    expect(filmJobs(three(), CTX, failed([B, D]))).toEqual([
+      { beat: 0, end: E1 },
+      { beat: 2, end: E3 },
+    ]);
+    // A failed first clip and a changed last beat: the clip alone, then the last beat whole.
+    expect(filmJobs(three({ clips: [B, C], ends: [E1, E2] }), CTX, failed([B]))).toEqual([{ beat: 0, end: E1 }, ...whole(2)]);
+    // A clip that never started is as gone as one that failed.
+    expect(filmJobs(three({ clips: [B, null, D] }), CTX, all)).toEqual([{ beat: 1, end: E2 }]);
   });
 
-  it("renders a beat again when its clip failed or was deleted, but not one still rendering", () => {
-    const failedC = { clip: (id: string) => id !== C, end: () => true };
-    expect(filmRenderFrom(three(), CTX, failedC)).toEqual({ from: 1, startId: E1 });
-    // The page counts a clip still rendering as good: it is on its way.
-    expect(filmRenderFrom(three(), CTX, all).from).toBe(3);
+  it("counts a clip still rendering as rendered", () => {
+    expect(filmJobs(three(), CTX, { clip: () => true, end: () => true })).toEqual([]);
   });
 
-  it("steps back to the beat whose end still is gone, since the next one has nothing to open on", () => {
-    const noE1 = { clip: () => true, end: (id: string) => id !== E1 };
-    expect(filmRenderFrom(three({ clips: [B, C], ends: [E1, E2] }), CTX, noE1)).toEqual({ from: 2, startId: E2 });
-    expect(filmRenderFrom(three({ clips: [B], ends: [E1] }), CTX, noE1)).toEqual({ from: 0, startId: A });
-    expect(filmRenderFrom(three({ clips: [B, C], ends: [E1, null] }), CTX, all)).toEqual({ from: 1, startId: E1 });
+  it("renders the beat before whole when a beat that needs work has nothing to open on", () => {
+    const noE1 = (bad: string[]) => ({ clip: (id: string) => !bad.includes(id), end: (id: string) => id !== E1 });
+    // Beat 2's clip failed and beat 1's end still is gone: beat 1 must make a new one.
+    expect(filmJobs(three(), CTX, noE1([C]))).toEqual(whole(0, 1, 2));
+    // …and a clip-alone job planned before that point gives way to the whole run.
+    expect(filmJobs(three(), CTX, { clip: (id) => id !== B && id !== D, end: (id) => id !== E2 })).toEqual([
+      { beat: 0, end: E1 },
+      ...whole(1, 2),
+    ]);
   });
 
-  it("does not render a finished film's last beat again for want of an end nothing opens on", () => {
-    expect(filmRenderFrom(three({ ends: [E1, E2, null] }), CTX, all)).toEqual({ from: 3, startId: null });
+  it("leaves a finished film alone although an end still nothing needs has gone", () => {
+    expect(filmJobs(three(), CTX, { clip: () => true, end: (id) => id !== E1 })).toEqual([]);
+    expect(filmJobs(three({ ends: [E1, null, E3] }), CTX, all)).toEqual([]);
   });
 
-  it("starts from the top for a film rendered under another context, or none", () => {
-    expect(filmRenderFrom(three(), "other", all)).toEqual({ from: 0, startId: A });
-    expect(filmRenderFrom(three({ context: null }), CTX, all)).toEqual({ from: 0, startId: A });
+  it("renders whole from the top for a film rendered under another context, or none", () => {
+    expect(filmJobs(three(), "other", all)).toEqual(whole(0, 1, 2));
+    expect(filmJobs(three({ context: null }), CTX, all)).toEqual(whole(0, 1, 2));
   });
 });
 
@@ -310,28 +326,24 @@ describe("textKey", () => {
 describe("filmRenderPlan", () => {
   const states = (m: Record<string, string>) => (id: string) => m[id] ?? null;
   const done = { [B]: "succeeded", [C]: "succeeded", [D]: "succeeded", [E1]: "succeeded", [E2]: "succeeded", [E3]: "succeeded" };
+  const everyBeat = [0, 1, 2].map((beat) => ({ beat, end: null }));
 
   it("renders the whole film again once every clip has landed", () => {
-    expect(filmRenderPlan(three(), CTX, states(done))).toEqual({ from: 0, startId: A, again: true, rendering: false });
+    expect(filmRenderPlan(three(), CTX, states(done))).toEqual({ jobs: everyBeat, again: true, rendering: false });
   });
 
   it("offers nothing while the clips are still on their way — a second press would pay for the film twice", () => {
     const plan = filmRenderPlan(three(), CTX, states({ ...done, [C]: "generating", [D]: "generating" }));
-    expect(plan).toEqual({ from: 0, startId: A, again: true, rendering: true });
+    expect(plan).toEqual({ jobs: everyBeat, again: true, rendering: true });
   });
 
-  it("still picks up after a failed clip while the others render", () => {
+  it("renders a failed clip alone while the others render", () => {
     const plan = filmRenderPlan(three(), CTX, states({ ...done, [C]: "generating", [D]: "failed" }));
-    expect(plan).toEqual({ from: 2, startId: E2, again: false, rendering: true });
+    expect(plan).toEqual({ jobs: [{ beat: 2, end: E3 }], again: false, rendering: true });
   });
 
   it("counts a clip the page does not hold as gone, and an end still only once it is finished", () => {
-    expect(filmRenderPlan(three(), CTX, states({ ...done, [D]: undefined as unknown as string })).from).toBe(2);
-    expect(filmRenderPlan(three({ clips: [B] }), CTX, states({ ...done, [E1]: "generating" }))).toEqual({
-      from: 0,
-      startId: A,
-      again: false,
-      rendering: false,
-    });
+    expect(filmRenderPlan(three(), CTX, (id) => (id === D ? null : states(done)(id))).jobs).toEqual([{ beat: 2, end: E3 }]);
+    expect(filmRenderPlan(three({ clips: [B] }), CTX, states({ ...done, [E1]: "generating" })).jobs).toEqual(everyBeat);
   });
 });

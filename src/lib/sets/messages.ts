@@ -88,6 +88,8 @@ export const SET_EDIT_TIMED_OUT = "That change took too long — try again in a 
 // Takes (2026-09-15): a clip from one still to a newly shot end frame.
 export const SET_TAKE_BAD_START = "That still can't start a take — pick another.";
 export const SET_TAKE_FAILED = "The end frame is in, but the take couldn't start — try the take again in a moment.";
+/** A film beat's clip rendered again on its own end still, and that still is gone (film.ts filmJobs). */
+export const SET_TAKE_BAD_END = "That beat's end frame is gone — render again to shoot a new one.";
 
 /**
  * A read that did not come back → the sentence shown, by the provider's

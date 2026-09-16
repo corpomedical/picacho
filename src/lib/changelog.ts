@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.39.3",
+    build: 61,
+    date: "2026-09-16",
+    title: "A failed clip is fixed by rendering that clip alone",
+    items: [
+      "When a clip fails after it has started rendering — the usual way a video fails — Render now renders that clip alone, ending on the frame the beat already has, and every beat after it keeps its clip, because it opens on that same frame. Fixing a three-beat film whose first clip failed now costs 2 credits on Gemini Omni instead of 9, and 12 on Veo 3.1 instead of 39.",
+      "The button says Render what's missing when that's what it will do, and while it works it says Beat 1 of 3 — the clip…",
+      "A beat whose clip failed now says clip failed, in red. It used to say clip rendering… forever.",
+    ],
+  },
+  {
     version: "1.39.2",
     build: 60,
     date: "2026-09-16",

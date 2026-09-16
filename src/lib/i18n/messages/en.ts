@@ -2255,6 +2255,9 @@ const en = {
     filmRendering: "Beat {i} of {n} — the end frame, then the clip…",
     filmBeatStill: "end frame…",
     filmBeatClip: "clip rendering…",
+    filmBeatClipFailed: "clip failed",
+    filmRenderingClip: "Beat {i} of {n} — the clip…",
+    filmRenderMissing: "Render what's missing · {n} credits",
     filmClipsRendering: "The clips are rendering…",
     filmRemoveBeat: "Remove beat {n}",
     filmBeatDone: "in",
@@ -2649,6 +2652,7 @@ const en = {
     setEditTimedOut: "That change took too long — try again in a moment.",
     setTakeBadStart: "That still can't start a take — pick another.",
     setTakeFailed: "The end frame is in, but the take couldn't start — try the take again in a moment.",
+    setTakeBadEnd: "That beat's end frame is gone — render again to shoot a new one.",
   },
   apiKeys: {
     title: "API keys",

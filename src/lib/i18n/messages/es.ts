@@ -2115,6 +2115,9 @@ const es = {
     filmRendering: "Tramo {i} de {n} — primero el fotograma final, luego el clip…",
     filmBeatStill: "fotograma final…",
     filmBeatClip: "clip en render…",
+    filmBeatClipFailed: "clip fallido",
+    filmRenderingClip: "Tramo {i} de {n} — el clip…",
+    filmRenderMissing: "Renderizar lo que falta · {n} créditos",
     filmClipsRendering: "Los clips se están renderizando…",
     filmRemoveBeat: "Quitar el tramo {n}",
     filmBeatDone: "listo",
@@ -2457,6 +2460,7 @@ const es = {
     setEditTimedOut: "Ese cambio ha tardado demasiado — inténtalo de nuevo en un momento.",
     setTakeBadStart: "Esa foto no puede empezar una toma — elige otra.",
     setTakeFailed: "El encuadre final ha llegado, pero la toma no se pudo empezar — vuelve a intentar la toma en un momento.",
+    setTakeBadEnd: "El encuadre final de ese tramo ya no está — vuelve a renderizar para rodar uno nuevo.",
   },
   apiKeys: {
     title: "Claves de API",

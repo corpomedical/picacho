@@ -50,7 +50,7 @@ import {
   type RigFormat,
 } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
-import { recordShotRig } from "@/lib/sets/shot-rig";
+import { readShotRigs, recordShotRig } from "@/lib/sets/shot-rig";
 import { isFilmMove, isFilmTexture } from "@/lib/sets/moves";
 
 /** Where the rig's focus is measured to: the figure's eyes (build-scene's stand-in). */
@@ -92,6 +92,7 @@ import {
   SET_PICK_CHARACTER,
   SET_SAVE_FAILED,
   SET_SHOOT_TOO_FAST,
+  SET_TAKE_BAD_END,
   SET_TAKE_BAD_START,
   SET_TAKE_FAILED,
   setMonthlyCapMessage,
@@ -843,6 +844,8 @@ export type TakeResult =
       error: null;
       /** The end frame, shot first — a whole ShootResult of its own. */
       still: Extract<ShootResult, { error: null }>;
+      /** The end frame was a still the set already had (endGenerationId), not one shot for this take: nothing new joins the set. */
+      reusedEnd: boolean;
       /** The clip's row, rendering in the background when it started; null when the video leg could not start. */
       takeGenerationId: string | null;
       /** Said when takeGenerationId is null: the end still is in, the clip is not. */
@@ -861,10 +864,47 @@ export type TakeResult =
  * The clip returns QUEUED: it renders in the background and the page shows
  * it as a take still rendering.
  */
+/**
+ * A finished still of this set — the person's own, succeeded, not deleted,
+ * an image — as its RAW stored url; null for anything else. What a take may
+ * start on, and a film beat rendered again may end on.
+ */
+async function finishedStillUrl(
+  db: Awaited<ReturnType<typeof createClient>>,
+  setId: string,
+  userId: string,
+  generationId: string,
+): Promise<string | null> {
+  if (!UUID_RE.test(generationId)) return null;
+  const { data: shot } = await db
+    .from("location_set_shots")
+    .select("generation_id")
+    .eq("set_id", setId)
+    .eq("generation_id", generationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (!shot) return null;
+  const { data: gen } = await db
+    .from("generations")
+    .select("status, result_url, content_type, deleted_at")
+    .eq("id", generationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+  return gen && gen.status === "succeeded" && !gen.deleted_at && gen.content_type === "image" && typeof gen.result_url === "string"
+    ? gen.result_url
+    : null;
+}
+
 export async function takeInSet(
   setId: string,
   input: {
     startGenerationId: string;
+    /**
+     * A finished still of this set to END on instead of shooting one — a film
+     * beat whose clip is rendered again on the end frame it already has
+     * (film.ts filmJobs). Checked like the start; the frame is then unused.
+     */
+    endGenerationId?: string | null;
     frameDataUri: string;
     characterId: string;
     direction: string;
@@ -886,59 +926,62 @@ export async function takeInSet(
 
   // The start: a finished still of THIS set, the person's own, not deleted.
   const startId = typeof input?.startGenerationId === "string" ? input.startGenerationId : "";
-  if (!UUID_RE.test(startId)) return { error: SET_TAKE_BAD_START };
-  const { data: startShot } = await access.supabase
-    .from("location_set_shots")
-    .select("generation_id")
-    .eq("set_id", setId)
-    .eq("generation_id", startId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  const { data: startGen } = startShot
-    ? await access.supabase
-        .from("generations")
-        .select("status, result_url, content_type, deleted_at")
-        .eq("id", startId)
-        .eq("user_id", userId)
-        .maybeSingle()
-    : { data: null };
-  const startUrl =
-    startGen &&
-    startGen.status === "succeeded" &&
-    !startGen.deleted_at &&
-    startGen.content_type === "image" &&
-    typeof startGen.result_url === "string"
-      ? startGen.result_url
-      : null;
+  const startUrl = await finishedStillUrl(access.supabase, setId, userId, startId);
   if (!startUrl) return { error: SET_TAKE_BAD_START };
+  // An end frame the set already has: the same checks, before a take is counted.
+  const reuseId = typeof input?.endGenerationId === "string" && input.endGenerationId.length > 0 ? input.endGenerationId : null;
+  const reusedUrl = reuseId ? await finishedStillUrl(access.supabase, setId, userId, reuseId) : null;
+  if (reuseId && !reusedUrl) return { error: SET_TAKE_BAD_END };
   if (await rateLimited(userId, "set-take", 60 * 10, SET_TAKES_PER_10_MIN)) return { error: SET_SHOOT_TOO_FAST };
 
-  // The end frame: an ordinary still, every check inside running again,
-  // with the start riding as its look so the two frames share one world.
-  const still = await shootInSet(setId, {
-    frameDataUri: input.frameDataUri,
-    characterId: input.characterId,
-    direction: input.direction,
-    layout: input.layout,
-    lifted: input.lifted,
-    canvasAspect: input.canvasAspect,
-    words: input.words,
-    lookGenerationId: startId,
-    rig: input.rig,
-  });
-  if (still.error !== null) return { error: still.error };
-  if (!still.succeeded) return { error: null, still, takeGenerationId: null, takeError: SET_TAKE_FAILED };
+  let still: Extract<ShootResult, { error: null }>;
+  let endUrl: string | null;
+  if (reuseId && reusedUrl) {
+    // Nothing is shot and nothing is charged for the frame: only the clip
+    // renders, on the frame the beat already ends on, cut as it was cut.
+    const rigs = await readShotRigs(access.supabase, setId, userId, [reuseId]);
+    still = {
+      error: null,
+      generationId: reuseId,
+      succeeded: true,
+      resultUrl: null,
+      score: null,
+      hasLookObjects: false,
+      lookDropped: false,
+      format: rigs.get(reuseId)?.rig?.format ?? "square",
+      checks: [],
+    };
+    endUrl = reusedUrl;
+  } else {
+    // The end frame: an ordinary still, every check inside running again,
+    // with the start riding as its look so the two frames share one world.
+    const shot = await shootInSet(setId, {
+      frameDataUri: input.frameDataUri,
+      characterId: input.characterId,
+      direction: input.direction,
+      layout: input.layout,
+      lifted: input.lifted,
+      canvasAspect: input.canvasAspect,
+      words: input.words,
+      lookGenerationId: startId,
+      rig: input.rig,
+    });
+    if (shot.error !== null) return { error: shot.error };
+    still = shot;
+    if (!still.succeeded) return { error: null, still, reusedEnd: false, takeGenerationId: null, takeError: SET_TAKE_FAILED };
 
-  // The two frames' RAW stored urls — resolveMaybeSignedUrl in the video
-  // lane takes our own /api/media paths, never a thumbnail transform.
-  const { data: endGen } = await access.supabase
-    .from("generations")
-    .select("result_url")
-    .eq("id", still.generationId)
-    .eq("user_id", userId)
-    .maybeSingle();
-  const endUrl = typeof endGen?.result_url === "string" ? endGen.result_url : null;
-  if (!endUrl) return { error: null, still, takeGenerationId: null, takeError: SET_TAKE_FAILED };
+    // The two frames' RAW stored urls — resolveMaybeSignedUrl in the video
+    // lane takes our own /api/media paths, never a thumbnail transform.
+    const { data: endGen } = await access.supabase
+      .from("generations")
+      .select("result_url")
+      .eq("id", still.generationId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    endUrl = typeof endGen?.result_url === "string" ? endGen.result_url : null;
+  }
+  const reusedEnd = reuseId !== null;
+  if (!endUrl) return { error: null, still, reusedEnd, takeGenerationId: null, takeError: SET_TAKE_FAILED };
 
   const engine = SET_TAKE_ENGINES[isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE];
   const fd = new FormData();
@@ -962,7 +1005,7 @@ export async function takeInSet(
   const clip = await runGeneration(fd);
   if (clip.error !== null) {
     console.warn("takeInSet video leg refused:", clip.error);
-    return { error: null, still, takeGenerationId: null, takeError: clip.error };
+    return { error: null, still, reusedEnd, takeGenerationId: null, takeError: clip.error };
   }
 
   // The take joins the set's shots like a still does, with the words that
@@ -977,7 +1020,7 @@ export async function takeInSet(
     if (words.length > 0) await recordShotWords(admin, { setId, generationId: clip.id, userId }, words);
     if (still.format !== "square") await recordShotRig(admin, { setId, generationId: clip.id, userId }, { format: still.format, words: {} });
   }
-  return { error: null, still, takeGenerationId: clip.id, takeError: null };
+  return { error: null, still, reusedEnd, takeGenerationId: clip.id, takeError: null };
 }
 
 // ---------------------------------------------------------------------------

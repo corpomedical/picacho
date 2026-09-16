@@ -43,7 +43,7 @@ import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
 import { canBeLook, newestLook } from "@/lib/sets/look";
 import { matchSummary, placeMatchedCamera, solveMatchPose, type CameraMove, type MatchClamp } from "@/lib/sets/match-shot";
-import { SET_PHOTO_UNREADABLE } from "@/lib/sets/messages";
+import { SET_PHOTO_UNREADABLE, SET_TAKE_BAD_END } from "@/lib/sets/messages";
 import { preparePhoto } from "@/lib/sets/photo-client";
 import { facingFor, hasCameraWords, wordsToMatch, type ShotWords } from "@/lib/sets/shot-words";
 import {
@@ -423,7 +423,7 @@ export function SetView({
   const [film, setFilm] = useState<SetFilm>(() => normaliseSetFilm(savedFilm));
   const [filmSel, setFilmSel] = useState<number | null>(null);
   /** Rendering: which beat the chain is on; null when idle. */
-  const [filmBusy, setFilmBusy] = useState<{ beat: number } | null>(null);
+  const [filmBusy, setFilmBusy] = useState<{ beat: number; clipOnly: boolean } | null>(null);
   const [filmError, setFilmError] = useState("");
   /**
    * Every change to the move goes through here: the film is edited, then
@@ -1832,9 +1832,11 @@ export function SetView({
   /**
    * Render the film: one take per beat, back to back — each beat's end
    * frame shot from its saved pose with the previous frame as its look, so
-   * beat n opens on the exact frame beat n-1 closed on. Only from where the
-   * film changed (filmPlanNow). A beat that fails stops the chain and says
-   * so; everything already rendered is kept, in the filmstrip like any take.
+   * beat n opens on the exact frame beat n-1 closed on. Only what the film
+   * needs (filmPlanNow): a beat whose end frame is finished renders its clip
+   * alone, and from the first beat that needs a new end frame every beat
+   * renders whole. A beat that fails stops the chain and says so;
+   * everything already rendered is kept, in the filmstrip like any take.
    */
   async function renderFilm() {
     const api = apiRef.current;
@@ -1845,16 +1847,23 @@ export function SetView({
     }
     if (film.beats.length === 0) return;
     setFilmError("");
-    // The clips before the plan's first beat stay the film's; the rest are
-    // rendered again under what the film is rendered with now.
     const plan = filmPlanNow();
     if (plan.again && plan.rendering) return;
     filmBusyRef.current = true;
     // The film as this render writes it, saved the moment each beat lands
     // rather than after the autosave's pause: a clip already paid for must
     // not be lost to a reload in between, or the next render pays again.
-    // Nothing else edits the film meanwhile (filmBusyRef), so this copy is it.
-    let kept: SetFilm = { ...film, context: plan.context, clips: film.clips.slice(0, plan.from), ends: film.ends.slice(0, plan.from) };
+    // Nothing else edits the film meanwhile (filmBusyRef), so this copy is
+    // it. From the first beat rendered whole, every beat is written afresh;
+    // before it, the beats keep their end frames, and their clips unless a
+    // job renders one again.
+    const wholeFrom = plan.jobs.find((j) => j.end === null)?.beat ?? film.beats.length;
+    const upTo = <T,>(xs: (T | null)[], n: number): (T | null)[] => {
+      const out = xs.slice(0, n);
+      while (out.length < n) out.push(null);
+      return out;
+    };
+    let kept: SetFilm = { ...film, context: plan.context, clips: film.clips.slice(0, wholeFrom), ends: film.ends.slice(0, wholeFrom) };
     const keep = (next: SetFilm) => {
       kept = next;
       setFilm(next);
@@ -1865,12 +1874,16 @@ export function SetView({
     keep(kept);
     setReel(null);
     setViewing(null);
-    let startId = plan.startId ?? film.startId;
-    for (let i = plan.from; i < film.beats.length; i++) {
-      setFilmBusy({ beat: i });
+    for (const job of plan.jobs) {
+      const i = job.beat;
       const beat = film.beats[i];
-      const frame = api.frame({ from: beat.end });
-      if (!frame) {
+      // A beat opens on the frame the one before it closed on, as this render left it.
+      const startId = i === 0 ? film.startId : kept.ends[i - 1];
+      if (!beat || !startId) break;
+      setFilmBusy({ beat: i, clipOnly: job.end !== null });
+      // Only a beat rendered whole shoots a frame; a clip alone ends on its own.
+      const frame = job.end ? "" : api.frame({ from: beat.end });
+      if (frame === null) {
         setFilmError(s.loadFailed);
         break;
       }
@@ -1878,6 +1891,7 @@ export function SetView({
       try {
         result = await takeInSet(setId, {
           startGenerationId: startId,
+          endGenerationId: job.end,
           frameDataUri: frame,
           characterId,
           direction: beat.words,
@@ -1897,60 +1911,71 @@ export function SetView({
       }
       if (result.error !== null) {
         setFilmError(result.error);
+        // The end frame it would have ended on is gone: the next render
+        // shoots the beat whole.
+        if (job.end && result.error === SET_TAKE_BAD_END) {
+          const ends = [...kept.ends];
+          ends[i] = null;
+          keep({ ...kept, ends });
+        }
         break;
       }
-      const endStill: SetShot = {
-        generationId: result.still.generationId,
-        status: result.still.succeeded ? "succeeded" : "failed",
-        resultUrl: result.still.resultUrl,
-        viewUrl: result.still.resultUrl,
-        posterUrl: null,
-        kind: "still",
-        seconds: null,
-        score: result.still.score,
-        createdAt: new Date().toISOString(),
-        hasLookObjects: result.still.hasLookObjects,
-        words: beat.words || null,
-        format: result.still.format,
-        rigAsked: result.still.checks,
-        rigCheck: null,
-        pose: beat.end,
-      };
-      const rows: SetShot[] = result.takeGenerationId
-        ? [
-            {
-              generationId: result.takeGenerationId,
-              status: "generating",
-              resultUrl: null,
-              viewUrl: null,
-              posterUrl: null,
-              kind: "take",
-              seconds: SET_TAKE_ENGINES[film.engine].seconds,
-              score: null,
-              createdAt: new Date().toISOString(),
-              hasLookObjects: false,
-              words: beat.words || null,
-              format: result.still.format,
-              rigAsked: [],
-              rigCheck: null,
-              pose: null,
-            },
-            endStill,
-          ]
-        : [endStill];
-      setShots((prev) => [...rows, ...prev]);
-      // Kept on the film, so the reel is still there after the page closes
-      // and a later render can open on this beat's end.
-      keep({
-        ...kept,
-        clips: [...kept.clips, result.takeGenerationId],
-        ends: [...kept.ends, result.still.succeeded ? result.still.generationId : null],
-      });
+      const takeRow: SetShot | null = result.takeGenerationId
+        ? {
+            generationId: result.takeGenerationId,
+            status: "generating",
+            resultUrl: null,
+            viewUrl: null,
+            posterUrl: null,
+            kind: "take",
+            seconds: SET_TAKE_ENGINES[film.engine].seconds,
+            score: null,
+            createdAt: new Date().toISOString(),
+            hasLookObjects: false,
+            words: beat.words || null,
+            format: result.still.format,
+            rigAsked: [],
+            rigCheck: null,
+            pose: null,
+          }
+        : null;
+      if (result.reusedEnd) {
+        // The clip alone: its end frame is the beat's own, already in the set.
+        if (takeRow) setShots((prev) => [takeRow, ...prev]);
+        const clips = upTo(kept.clips, Math.max(kept.clips.length, i + 1));
+        clips[i] = result.takeGenerationId;
+        keep({ ...kept, clips });
+      } else {
+        const endStill: SetShot = {
+          generationId: result.still.generationId,
+          status: result.still.succeeded ? "succeeded" : "failed",
+          resultUrl: result.still.resultUrl,
+          viewUrl: result.still.resultUrl,
+          posterUrl: null,
+          kind: "still",
+          seconds: null,
+          score: result.still.score,
+          createdAt: new Date().toISOString(),
+          hasLookObjects: result.still.hasLookObjects,
+          words: beat.words || null,
+          format: result.still.format,
+          rigAsked: result.still.checks,
+          rigCheck: null,
+          pose: beat.end,
+        };
+        setShots((prev) => [...(takeRow ? [takeRow] : []), endStill, ...prev]);
+        // Kept on the film, so the reel is still there after the page closes
+        // and a later render can open on this beat's end.
+        keep({
+          ...kept,
+          clips: [...upTo(kept.clips, i), result.takeGenerationId],
+          ends: [...upTo(kept.ends, i), result.still.succeeded ? result.still.generationId : null],
+        });
+      }
       if (!result.still.succeeded || result.takeGenerationId === null) {
         setFilmError(result.takeError ?? s.filmBeatFailed);
         break;
       }
-      startId = result.still.generationId;
     }
     filmBusyRef.current = false;
     setFilmBusy(null);
@@ -2291,16 +2316,20 @@ export function SetView({
   // What Render would render now, and its price: every beat is one take —
   // an end frame and a clip — priced by the same quotes the server charges.
   const filmPlan = filmPlanNow();
-  const filmCredits = (film.beats.length - filmPlan.from) * (quote.totalCredits + quoteSend(takeQuoteInput(film.engine)).totalCredits);
+  const clipCredits = quoteSend(takeQuoteInput(film.engine)).totalCredits;
+  const filmCredits = filmPlan.jobs.reduce((sum, job) => sum + clipCredits + (job.end ? 0 : quote.totalCredits), 0);
+  const filmWholeFrom = filmPlan.jobs.every((job) => job.end === null) ? (filmPlan.jobs[0]?.beat ?? 0) : null;
   const filmRenderLabel = filmBusy
-    ? formatMsg(s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
+    ? formatMsg(filmBusy.clipOnly ? s.filmRenderingClip : s.filmRendering, { i: filmBusy.beat + 1, n: film.beats.length })
     : filmPlan.again
       ? filmPlan.rendering
         ? s.filmClipsRendering
         : formatMsg(s.filmRenderAgain, { n: filmCredits })
-      : filmPlan.from > 0
-        ? formatMsg(s.filmRenderFrom, { b: filmPlan.from + 1, n: filmCredits })
-        : formatMsg(s.filmRender, { n: filmCredits });
+      : filmWholeFrom === null
+        ? formatMsg(s.filmRenderMissing, { n: filmCredits })
+        : filmWholeFrom > 0
+          ? formatMsg(s.filmRenderFrom, { b: filmWholeFrom + 1, n: filmCredits })
+          : formatMsg(s.filmRender, { n: filmCredits });
   // The reel plays the clips the film remembers (film.clips), so a film
   // rendered on an earlier visit can be watched again — the beats' rows are
   // the set's own shots either way.
@@ -3179,12 +3208,22 @@ export function SetView({
                         </span>
                       )}
                       {filmBusy?.beat === i ? (
-                        <span className="normal-case text-[#e0a468]">{s.filmBeatStill}</span>
+                        <span className="normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
                       ) : filmClipShots[i] ? (
                         <span
-                          className={`normal-case ${filmClipShots[i]!.status === "succeeded" ? "text-[#5f9e6e]" : "text-[#e0a468]"}`}
+                          className={`normal-case ${
+                            filmClipShots[i]!.status === "succeeded"
+                              ? "text-[#5f9e6e]"
+                              : filmClipShots[i]!.status === "failed"
+                                ? "text-red-400"
+                                : "text-[#e0a468]"
+                          }`}
                         >
-                          {filmClipShots[i]!.status === "succeeded" ? s.filmBeatDone : s.filmBeatClip}
+                          {filmClipShots[i]!.status === "succeeded"
+                            ? s.filmBeatDone
+                            : filmClipShots[i]!.status === "failed"
+                              ? s.filmBeatClipFailed
+                              : s.filmBeatClip}
                         </span>
                       ) : null}
                       <span className="flex-1" />

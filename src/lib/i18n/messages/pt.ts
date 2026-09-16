@@ -2115,6 +2115,9 @@ const pt = {
     filmRendering: "Trecho {i} de {n} — primeiro o quadro final, depois o clipe…",
     filmBeatStill: "quadro final…",
     filmBeatClip: "clipe renderizando…",
+    filmBeatClipFailed: "clipe falhou",
+    filmRenderingClip: "Trecho {i} de {n} — o clipe…",
+    filmRenderMissing: "Renderizar o que falta · {n} créditos",
     filmClipsRendering: "Os clipes estão renderizando…",
     filmRemoveBeat: "Remover o trecho {n}",
     filmBeatDone: "pronto",
@@ -2457,6 +2460,7 @@ const pt = {
     setEditTimedOut: "Essa mudança demorou demais — tente de novo daqui a pouco.",
     setTakeBadStart: "Essa foto não pode começar um take — escolha outra.",
     setTakeFailed: "O quadro final chegou, mas o take não pôde começar — tente o take de novo daqui a pouco.",
+    setTakeBadEnd: "O quadro final desse trecho não existe mais — renderize de novo para gravar um novo.",
   },
   apiKeys: {
     title: "Chaves de API",

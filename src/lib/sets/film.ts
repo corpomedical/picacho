@@ -216,42 +216,67 @@ export function filmContextKey(input: {
 }
 
 /**
- * Where a render of this film picks up, and the still that beat opens on.
- * Each beat opens on the frame the one before it closed on, so the clips
- * worth keeping are a run from the start: every beat whose clip is still
- * good (a clip rendering counts — it is on its way), stepped back while the
- * beat before has no finished end still to open on. A film rendered under
- * another context starts again from the top. `from` equal to the number of
- * beats means every beat is rendered already.
+ * One beat of a render. `end` null: the beat renders whole — a new end still,
+ * then its clip. `end` a still: the beat's end still is finished, so only its
+ * clip renders again, ending on that still, and nothing is shot.
  */
-export function filmRenderFrom(
+export type FilmJob = { beat: number; end: string | null };
+
+/**
+ * What a render of this film must do. Each beat opens on the still the one
+ * before it closed on, so a beat whose clip is gone but whose end still is
+ * finished renders its clip alone — the beats after it open on that same
+ * still and keep theirs. A beat that needs a new end still renders whole,
+ * and so does every beat after it: a new end still is a new opening for the
+ * next. A beat that cannot open — the still before it is gone — starts the
+ * whole run one beat earlier. A clip still rendering counts as good (it is
+ * on its way); a film rendered under another context renders whole from the
+ * top. No jobs means every beat is rendered.
+ */
+export function filmJobs(
   film: SetFilm,
   context: string,
   ok: { clip: (id: string) => boolean; end: (id: string) => boolean },
-): { from: number; startId: string | null } {
-  if (film.context !== context) return { from: 0, startId: film.startId };
-  let from = 0;
-  while (from < film.beats.length && film.clips[from] && ok.clip(film.clips[from]!)) from++;
-  if (from === film.beats.length) return { from, startId: null };
-  while (from > 0 && !(film.ends[from - 1] && ok.end(film.ends[from - 1]!))) from--;
-  return { from, startId: from === 0 ? film.startId : film.ends[from - 1] };
+): FilmJob[] {
+  const n = film.beats.length;
+  const whole = (from: number): FilmJob[] => Array.from({ length: n - from }, (_, k) => ({ beat: from + k, end: null }));
+  if (film.context !== context) return whole(0);
+  // Beat -1's end is the film's opening still, which the page checks itself.
+  const endOk = (i: number) => {
+    if (i < 0) return true;
+    const id = film.ends[i];
+    return Boolean(id) && ok.end(id!);
+  };
+  const jobs: FilmJob[] = [];
+  for (let i = 0; i < n; i++) {
+    const clip = film.clips[i];
+    if (clip && ok.clip(clip)) continue;
+    if (endOk(i - 1) && endOk(i)) {
+      jobs.push({ beat: i, end: film.ends[i]! });
+      continue;
+    }
+    let from = i;
+    while (!endOk(from - 1)) from--;
+    return [...jobs.filter((j) => j.beat < from), ...whole(from)];
+  }
+  return jobs;
 }
 
 /**
  * What Render does now, from the state of each shot on the page (`stateOf`:
  * a generation's status, or null when the page does not hold it). A clip is
- * good unless it failed or is gone — one still rendering is on its way — and
- * an end still is good only when finished. With every beat rendered the
- * button renders the whole film again, as a new take of it — except while
- * its clips are still rendering (`rendering`), when there is nothing to do
- * but wait: offering it then would pay for the film twice.
+ * good unless it failed or is gone, an end still only once it is finished.
+ * With nothing to render, the button renders the whole film again as a new
+ * take of it — except while its clips are still rendering (`rendering`),
+ * when there is nothing to do but wait: offering it then would pay for the
+ * film twice.
  */
 export function filmRenderPlan(
   film: SetFilm,
   context: string,
   stateOf: (id: string) => string | null,
-): { from: number; startId: string | null; again: boolean; rendering: boolean } {
-  const plan = filmRenderFrom(film, context, {
+): { jobs: FilmJob[]; again: boolean; rendering: boolean } {
+  const jobs = filmJobs(film, context, {
     clip: (id) => {
       const state = stateOf(id);
       return state !== null && state !== "failed";
@@ -259,7 +284,7 @@ export function filmRenderPlan(
     end: (id) => stateOf(id) === "succeeded",
   });
   const rendering = film.clips.some((id) => id !== null && stateOf(id) === "generating");
-  return plan.from < film.beats.length
-    ? { ...plan, again: false, rendering }
-    : { from: 0, startId: film.startId, again: true, rendering };
+  return jobs.length > 0
+    ? { jobs, again: false, rendering }
+    : { jobs: film.beats.map((_, beat) => ({ beat, end: null })), again: true, rendering };
 }

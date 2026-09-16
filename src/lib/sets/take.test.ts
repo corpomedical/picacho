@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   buildSetTakePrompt,
   isSetTakeEngine,
@@ -86,3 +88,46 @@ describe("the take's words for a film beat's move (Helios Cinema)", () => {
   });
 });
 
+// A film beat whose clip failed renders the clip alone, ending on the frame
+// the beat already has (2026-09-16). takeInSet is a "use server" module and
+// cannot load here, so its source is read: the reused frame is checked
+// exactly like the start, before a take is counted, and nothing is shot.
+describe("a take that ends on a still the set already has (actions.ts)", () => {
+  const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const take = src.slice(src.indexOf("export async function takeInSet("), src.indexOf("// Delete\n"));
+  const check = src.slice(src.indexOf("async function finishedStillUrl("), src.indexOf("export async function takeInSet("));
+
+  it("checks the end frame as it checks the start, and both before the take is counted", () => {
+    const start = take.indexOf("finishedStillUrl(access.supabase, setId, userId, startId)");
+    const end = take.indexOf("finishedStillUrl(access.supabase, setId, userId, reuseId)");
+    const counted = take.indexOf('rateLimited(userId, "set-take"');
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    expect(counted).toBeGreaterThan(end);
+    expect(take).toContain("if (reuseId && !reusedUrl) return { error: SET_TAKE_BAD_END };");
+  });
+
+  it("takes only this set's still, the person's own, finished, an image, not deleted", () => {
+    for (const needle of [
+      '.eq("set_id", setId)',
+      '.eq("generation_id", generationId)',
+      '.eq("user_id", userId)',
+      'gen.status === "succeeded"',
+      "!gen.deleted_at",
+      'gen.content_type === "image"',
+      "UUID_RE.test(generationId)",
+    ]) {
+      expect(check, needle).toContain(needle);
+    }
+  });
+
+  it("shoots a frame only when it does not reuse one", () => {
+    const reuse = take.indexOf("if (reuseId && reusedUrl) {");
+    const otherwise = take.indexOf("} else {", reuse);
+    const shoot = take.indexOf("await shootInSet(");
+    expect(reuse).toBeGreaterThan(-1);
+    expect(shoot).toBeGreaterThan(otherwise);
+    expect(take.slice(reuse, otherwise)).not.toContain("shootInSet");
+    expect(take.match(/shootInSet\(/g)).toHaveLength(1);
+  });
+});
