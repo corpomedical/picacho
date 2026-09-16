@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.3",
+    build: 67,
+    date: "2026-09-16",
+    title: "A film render you can't lose by accident",
+    items: [
+      "A film renders its beats from the open page, one after another, so leaving mid-render stopped it after the beat it was on. While it renders, leaving now asks first — the browser's own prompt for a reload or a closed tab, and a question before any link in the app.",
+      "If something on the page broke mid-render — the stage lost, say — the film stayed locked as rendering until a reload. It's now always released, and the dock says to reload the page.",
+    ],
+  },
+  {
     version: "1.40.2",
     build: 66,
     date: "2026-09-16",

@@ -2125,6 +2125,7 @@ const es = {
     filmRenderMissing: "Renderizar lo que falta · {n} créditos",
     filmClipsRendering: "Los clips se están renderizando…",
     filmRemoveBeat: "Quitar el tramo {n}",
+    filmLeaveConfirm: "La película aún se está renderizando desde esta página: si sales ahora, se detiene tras el tramo en curso. ¿Salir de todos modos?",
     filmSetEnd: "Llevar el final del tramo {n} a esta vista",
     filmBeatDone: "listo",
     filmBeatFailed: "Ese tramo no se pudo renderizar — todo lo anterior se conserva.",

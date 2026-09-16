@@ -2265,6 +2265,7 @@ const en = {
     filmRenderMissing: "Render what's missing · {n} credits",
     filmClipsRendering: "The clips are rendering…",
     filmRemoveBeat: "Remove beat {n}",
+    filmLeaveConfirm: "The film is still rendering from this page — leave now and it stops after the beat it's on. Leave anyway?",
     filmSetEnd: "Set beat {n}'s end to this view",
     filmBeatDone: "in",
     filmBeatFailed: "That beat couldn't render — everything before it is kept.",

@@ -2125,6 +2125,7 @@ const pt = {
     filmRenderMissing: "Renderizar o que falta · {n} créditos",
     filmClipsRendering: "Os clipes estão renderizando…",
     filmRemoveBeat: "Remover o trecho {n}",
+    filmLeaveConfirm: "O filme ainda está sendo renderizado a partir desta página — se sair agora, ele para depois do trecho atual. Sair mesmo assim?",
     filmSetEnd: "Definir o fim do trecho {n} para esta vista",
     filmBeatDone: "pronto",
     filmBeatFailed: "Esse trecho não pôde ser renderizado — tudo antes dele fica guardado.",

@@ -2015,111 +2015,122 @@ export function SetView({
     keep(kept);
     setReel(null);
     setViewing(null);
-    for (const job of plan.jobs) {
-      const i = job.beat;
-      const beat = film.beats[i];
-      // A beat opens on the frame the one before it closed on, as this render left it.
-      const startId = i === 0 ? film.startId : kept.ends[i - 1];
-      if (!beat || !startId) break;
-      setFilmBusy({ beat: i, clipOnly: job.end !== null });
-      // Only a beat rendered whole shoots a frame; a clip alone ends on its own.
-      const frame = job.end ? "" : api.frame({ from: beat.end });
-      if (frame === null) {
-        setFilmError(s.loadFailed);
-        break;
-      }
-      let result: Awaited<ReturnType<typeof takeInSet>>;
-      try {
-        result = await takeInSet(setId, {
-          startGenerationId: startId,
-          endGenerationId: job.end,
-          frameDataUri: frame,
-          characterId,
-          direction: beat.words,
-          layout: { ...layoutRef.current, camera: beat.end },
-          engine: film.engine,
-          lifted: api.lifted === true,
-          canvasAspect: api.canvasAspect(),
-          rig: rigRef.current,
-          move: beat.move,
-          textures: beat.textures,
-        });
-      } catch (err) {
-        const stale = isStaleDeployError(err);
-        setFilmError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
-        if (stale) setTimeout(() => window.location.reload(), 1800);
-        break;
-      }
-      if (result.error !== null) {
-        setFilmError(result.error);
-        // The end frame it would have ended on is gone: the next render
-        // shoots the beat whole.
-        if (job.end && result.error === SET_TAKE_BAD_END) {
-          const ends = [...kept.ends];
-          ends[i] = null;
-          keep({ ...kept, ends });
+    // Whatever stops the chain — a refusal, a lost stage, anything thrown —
+    // the film is let go, or it would stay locked as rendering, and a throw
+    // is said in the dock rather than left to the console.
+    try {
+      for (const job of plan.jobs) {
+        const i = job.beat;
+        const beat = film.beats[i];
+        // A beat opens on the frame the one before it closed on, as this render left it.
+        const startId = i === 0 ? film.startId : kept.ends[i - 1];
+        if (!beat || !startId) break;
+        setFilmBusy({ beat: i, clipOnly: job.end !== null });
+        // Only a beat rendered whole shoots a frame; a clip alone ends on its own.
+        const frame = job.end ? "" : api.frame({ from: beat.end });
+        if (frame === null) {
+          setFilmError(s.loadFailed);
+          break;
         }
-        break;
-      }
-      const takeRow: SetShot | null = result.takeGenerationId
-        ? {
-            generationId: result.takeGenerationId,
-            status: "generating",
-            resultUrl: null,
-            viewUrl: null,
+        let result: Awaited<ReturnType<typeof takeInSet>>;
+        try {
+          result = await takeInSet(setId, {
+            startGenerationId: startId,
+            endGenerationId: job.end,
+            frameDataUri: frame,
+            characterId,
+            direction: beat.words,
+            layout: { ...layoutRef.current, camera: beat.end },
+            engine: film.engine,
+            lifted: api.lifted === true,
+            canvasAspect: api.canvasAspect(),
+            rig: rigRef.current,
+            move: beat.move,
+            textures: beat.textures,
+          });
+        } catch (err) {
+          const stale = isStaleDeployError(err);
+          setFilmError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+          if (stale) setTimeout(() => window.location.reload(), 1800);
+          break;
+        }
+        if (result.error !== null) {
+          setFilmError(result.error);
+          // The end frame it would have ended on is gone: the next render
+          // shoots the beat whole.
+          if (job.end && result.error === SET_TAKE_BAD_END) {
+            const ends = [...kept.ends];
+            ends[i] = null;
+            keep({ ...kept, ends });
+          }
+          break;
+        }
+        const takeRow: SetShot | null = result.takeGenerationId
+          ? {
+              generationId: result.takeGenerationId,
+              status: "generating",
+              resultUrl: null,
+              viewUrl: null,
+              posterUrl: null,
+              kind: "take",
+              seconds: SET_TAKE_ENGINES[film.engine].seconds,
+              score: null,
+              createdAt: new Date().toISOString(),
+              hasLookObjects: false,
+              words: beat.words || null,
+              format: result.still.format,
+              rigAsked: [],
+              rigCheck: null,
+              pose: null,
+            }
+          : null;
+        if (result.reusedEnd) {
+          // The clip alone: its end frame is the beat's own, already in the set.
+          if (takeRow) setShots((prev) => [takeRow, ...prev]);
+          const clips = upTo(kept.clips, Math.max(kept.clips.length, i + 1));
+          clips[i] = result.takeGenerationId;
+          keep({ ...kept, clips });
+        } else {
+          const endStill: SetShot = {
+            generationId: result.still.generationId,
+            status: result.still.succeeded ? "succeeded" : "failed",
+            resultUrl: result.still.resultUrl,
+            viewUrl: result.still.resultUrl,
             posterUrl: null,
-            kind: "take",
-            seconds: SET_TAKE_ENGINES[film.engine].seconds,
-            score: null,
+            kind: "still",
+            seconds: null,
+            score: result.still.score,
             createdAt: new Date().toISOString(),
-            hasLookObjects: false,
+            hasLookObjects: result.still.hasLookObjects,
             words: beat.words || null,
             format: result.still.format,
-            rigAsked: [],
+            rigAsked: result.still.checks,
             rigCheck: null,
-            pose: null,
-          }
-        : null;
-      if (result.reusedEnd) {
-        // The clip alone: its end frame is the beat's own, already in the set.
-        if (takeRow) setShots((prev) => [takeRow, ...prev]);
-        const clips = upTo(kept.clips, Math.max(kept.clips.length, i + 1));
-        clips[i] = result.takeGenerationId;
-        keep({ ...kept, clips });
-      } else {
-        const endStill: SetShot = {
-          generationId: result.still.generationId,
-          status: result.still.succeeded ? "succeeded" : "failed",
-          resultUrl: result.still.resultUrl,
-          viewUrl: result.still.resultUrl,
-          posterUrl: null,
-          kind: "still",
-          seconds: null,
-          score: result.still.score,
-          createdAt: new Date().toISOString(),
-          hasLookObjects: result.still.hasLookObjects,
-          words: beat.words || null,
-          format: result.still.format,
-          rigAsked: result.still.checks,
-          rigCheck: null,
-          pose: beat.end,
-        };
-        setShots((prev) => [...(takeRow ? [takeRow] : []), endStill, ...prev]);
-        // Kept on the film, so the reel is still there after the page closes
-        // and a later render can open on this beat's end.
-        keep({
-          ...kept,
-          clips: [...upTo(kept.clips, i), result.takeGenerationId],
-          ends: [...upTo(kept.ends, i), result.still.succeeded ? result.still.generationId : null],
-        });
+            pose: beat.end,
+          };
+          setShots((prev) => [...(takeRow ? [takeRow] : []), endStill, ...prev]);
+          // Kept on the film, so the reel is still there after the page closes
+          // and a later render can open on this beat's end.
+          keep({
+            ...kept,
+            clips: [...upTo(kept.clips, i), result.takeGenerationId],
+            ends: [...upTo(kept.ends, i), result.still.succeeded ? result.still.generationId : null],
+          });
+        }
+        if (!result.still.succeeded || result.takeGenerationId === null) {
+          setFilmError(result.takeError ?? s.filmBeatFailed);
+          break;
+        }
       }
-      if (!result.still.succeeded || result.takeGenerationId === null) {
-        setFilmError(result.takeError ?? s.filmBeatFailed);
-        break;
-      }
+    } catch (err) {
+      // The take calls catch their own (the connection, a stale deploy): what
+      // reaches here is the page's own — a lost stage — and a reload mends it.
+      console.error("renderFilm stopped:", err);
+      setFilmError(s.loadFailed);
+    } finally {
+      filmBusyRef.current = false;
+      setFilmBusy(null);
     }
-    filmBusyRef.current = false;
-    setFilmBusy(null);
   }
 
   /**
@@ -2421,6 +2432,36 @@ export function SetView({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [filmOpen, editFilm]);
+
+  // Leaving mid-film stops the chain after the beat it is on: this page
+  // renders the beats one after another (each clip then renders on its
+  // own), so it asks first — the browser's own prompt for a reload or a
+  // closed tab, a confirm for the app's links (as character-form.tsx does).
+  const filmRendering = filmBusy !== null;
+  const filmLeaveConfirm = s.filmLeaveConfirm;
+  useEffect(() => {
+    if (!filmRendering) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const anchor = (e.target as Element | null)?.closest?.("a");
+      const href = anchor?.getAttribute("href");
+      if (!href || !href.startsWith("/") || href.startsWith("//")) return;
+      if (!window.confirm(filmLeaveConfirm)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [filmRendering, filmLeaveConfirm]);
 
   // The move autosaves like the editor's working copy — a beat after the
   // hands stop. The first run is the loaded film itself, not an edit.
