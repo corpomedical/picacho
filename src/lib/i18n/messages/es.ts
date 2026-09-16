@@ -1864,6 +1864,8 @@ const es = {
     shotOpen: "Abrir",
     backToCamera: "Volver a esta cámara",
     dragHint: "Arrastra para orbitar · Mayús + arrastrar para desplazar · rueda para acercar · arrastra la figura para moverla, doble clic para encuadrarla",
+    stageUndo: "Deshacer movimiento",
+    stageUndoHint: "Devolver la cámara y la figura a donde estaban — ⌘Z o Ctrl+Z",
     figureMovedOut: "La figura va sobre suelo libre, así que salió de ese objeto.",
     frameHint: "El cuadrado iluminado es el encuadre. Lo que quede fuera no sale en la foto.",
     standInNote:

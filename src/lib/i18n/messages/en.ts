@@ -1981,6 +1981,8 @@ const en = {
     shotOpen: "Open",
     backToCamera: "Back to this camera",
     dragHint: "Drag to orbit · Shift-drag to slide · scroll to dolly · drag the figure to move it, double-click it to frame it",
+    stageUndo: "Undo move",
+    stageUndoHint: "Put the camera and the figure back where they were — ⌘Z or Ctrl+Z",
     figureMovedOut: "The figure stands on open floor, so it moved out of that object.",
     frameHint: "The bright square is the frame. Anything outside it stays out of the still.",
     standInNote:

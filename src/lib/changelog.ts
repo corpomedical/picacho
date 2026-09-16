@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.0",
+    build: 64,
+    date: "2026-09-16",
+    title: "Undo on the stage",
+    items: [
+      "A stray drag after careful framing had no way back: History only keeps the frames you shot or asked for. Now every move you make on the stage can be undone — ⌘Z or Ctrl+Z, or Undo move beside Frame the figure — and Shift with it steps forward again.",
+      "It covers orbiting, sliding and dollying, dragging or double-clicking the figure, turning her, a camera, lens or mark from the menus, Frame the figure, Match a shot, a frame from History, what your words set, jumping to a beat, and Play the move, which leaves the camera on the film's last frame.",
+      "A scroll or a quick run of drags or turns comes back as one move, and ⌘Z while you type in the conversation stays the text's own.",
+    ],
+  },
+  {
     version: "1.39.5",
     build: 63,
     date: "2026-09-16",

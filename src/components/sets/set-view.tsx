@@ -105,6 +105,9 @@ function tweenPose(api: { goTo(p: Pose): void }, a: Pose, b: Pose, ms: number, m
   });
 }
 type Mark = { x: number; z: number; facingDeg: number };
+/** Where the camera and the figure stand: what the stage's Undo steps back to. */
+type StageState = { pose: Pose; cameraId: string | null; markId: string; mark: Mark };
+const sameStage = (a: StageState, b: StageState) => JSON.stringify(a) === JSON.stringify(b);
 
 type StageApi = {
   /** Whether exposure.ts lifted this set's fill light or exposure. */
@@ -203,6 +206,10 @@ const FRAME_EYE_Y = 1.45;
 // keeps a tilt inside the orbit's maxPolarAngle below.
 /** Frames kept to step back to. */
 const REVISIONS_MAX = 12;
+/** How many moves the stage's Undo remembers this visit. */
+const STAGE_UNDO_MAX = 40;
+/** Gestures closer together than this are one move: a scroll's ticks, a quick run of drags or turns. */
+const STAGE_GESTURE_GAP_MS = 700;
 const DEG = Math.PI / 180;
 
 // ---- the workspace's skin (2026-09-14, "make it work exactly like
@@ -533,6 +540,17 @@ export function SetView({
   // The stage calls this when an orbit settles; it points at scheduleSave,
   // which is declared below the stage's effect.
   const settledRef = useRef<(() => void) | null>(null);
+  // Undo for the stage (2026-09-16): where the camera and the figure stood
+  // before each move made by hand, to step back to. The History menu keeps
+  // only the frames that were shot or asked for; a stray drag after careful
+  // framing had no way back. The stage calls stageTouchRef as a gesture
+  // begins; the page calls keepStage before it moves anything itself.
+  const stageUndoRef = useRef<StageState[]>([]);
+  const stageRedoRef = useRef<StageState[]>([]);
+  const stageTouchedAtRef = useRef(0);
+  const stageTouchRef = useRef<(() => void) | null>(null);
+  const stageStepRef = useRef<{ undo: () => void; redo: () => void } | null>(null);
+  const [stageUndoCount, setStageUndoCount] = useState(0);
   // The arrangement last saved (or loaded). Compared, not counted: effects
   // can run twice for one change (React's development double-invoke), and
   // opening a set is not arranging it.
@@ -634,6 +652,7 @@ export function SetView({
         // turns orbiting off before the controls see the same event.
         const onDown = (e: PointerEvent) => {
           if (!overFigure(e)) return;
+          stageTouchRef.current?.();
           dragging = true;
           if (controlsRef) controlsRef.enabled = false;
           canvas.setPointerCapture(e.pointerId);
@@ -684,6 +703,7 @@ export function SetView({
         // Double-click the figure to frame it (the "Frame the figure" button).
         const onDoubleClick = (e: MouseEvent) => {
           if (!overFigure(e as PointerEvent)) return;
+          stageTouchRef.current?.();
           apiRef.current?.frameFigure();
           setCameraId(null);
           settledRef.current?.();
@@ -699,9 +719,16 @@ export function SetView({
         controls.maxPolarAngle = Math.PI * 0.62;
         controls.target.set(...startPose.target);
         controls.update();
-        // A person grabbing the view makes it their own camera.
-        controls.addEventListener("start", () => setCameraId(null));
-        controls.addEventListener("end", () => settledRef.current?.());
+        // A person grabbing the view makes it their own camera — kept first,
+        // for Undo, as it stood before the grab.
+        controls.addEventListener("start", () => {
+          stageTouchRef.current?.();
+          setCameraId(null);
+        });
+        controls.addEventListener("end", () => {
+          stageTouchedAtRef.current = performance.now();
+          settledRef.current?.();
+        });
 
         let raf = 0;
         let lastW = 0;
@@ -1179,6 +1206,29 @@ export function SetView({
     settledRef.current = scheduleSave;
   }, [scheduleSave]);
 
+  // Kept current each render: keepStage and stepStage read the page's state.
+  useEffect(() => {
+    stageTouchRef.current = () => keepStage(true);
+    stageStepRef.current = {
+      undo: () => stepStage(stageUndoRef, stageRedoRef),
+      redo: () => stepStage(stageRedoRef, stageUndoRef),
+    };
+  });
+
+  // ⌘Z / Ctrl+Z steps the stage back, with Shift forward, when no field holds the keyboard.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.key.toLowerCase() !== "z") return;
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable)) return;
+      e.preventDefault();
+      if (e.shiftKey) stageStepRef.current?.redo();
+      else stageStepRef.current?.undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   useEffect(() => {
     layoutRef.current = { markId, mark };
     apiRef.current?.placeMark(mark);
@@ -1302,9 +1352,52 @@ export function SetView({
     }
   }, []);
 
+  /**
+   * The stage as it stands, kept for Undo before a move. A gesture (a drag,
+   * a scroll tick, a turn) close on another's heels is part of the same move
+   * and is not kept again; nor is a state the same as the last one kept.
+   */
+  function keepStage(gesture = false) {
+    const api = apiRef.current;
+    if (!api) return;
+    const now = performance.now();
+    const sameMove = gesture && now - stageTouchedAtRef.current < STAGE_GESTURE_GAP_MS;
+    if (gesture) stageTouchedAtRef.current = now;
+    if (sameMove) return;
+    const state: StageState = { pose: api.pose(), cameraId, markId: layoutRef.current.markId, mark: layoutRef.current.mark };
+    const kept = stageUndoRef.current;
+    if (kept.length > 0 && sameStage(kept[kept.length - 1], state)) return;
+    stageUndoRef.current = [...kept, state].slice(-STAGE_UNDO_MAX);
+    stageRedoRef.current = [];
+    setStageUndoCount(stageUndoRef.current.length);
+  }
+
+  /** One step of Undo (or Redo): the stage put back as it stood, and the step kept the other way. */
+  function stepStage(from: { current: StageState[] }, to: { current: StageState[] }) {
+    const api = apiRef.current;
+    // Not under a still, the reel or a flying previz, and not while a shot is taken from the frame.
+    if (!api || shooting || previz || viewing !== null || reel !== null) return;
+    const here: StageState = { pose: api.pose(), cameraId, markId: layoutRef.current.markId, mark: layoutRef.current.mark };
+    let back = from.current.pop();
+    // A press that moved nothing (a click on the figure) left a step that changes nothing: skip it.
+    while (back && sameStage(back, here)) back = from.current.pop();
+    if (back) {
+      to.current.push(here);
+      api.goTo(back.pose);
+      setFovDeg(back.pose.fovDeg);
+      setPoseNow(back.pose);
+      setCameraId(back.cameraId);
+      setMarkId(back.markId);
+      setMark(back.mark);
+      scheduleSave();
+    }
+    setStageUndoCount(stageUndoRef.current.length);
+  }
+
   function pickCamera(id: string) {
     const cam = spec.cameras.find((c) => c.id === id);
     if (!cam) return;
+    keepStage();
     setCameraId(id);
     setFovDeg(cam.fovDeg);
     apiRef.current?.goTo({ position: cam.position, target: cam.target, fovDeg: cam.fovDeg });
@@ -1312,6 +1405,7 @@ export function SetView({
   }
 
   function pickLens(mm: number) {
+    keepStage();
     const f = fovForLens(mm);
     setFovDeg(f);
     apiRef.current?.setFov(f);
@@ -1321,15 +1415,18 @@ export function SetView({
   function pickMark(id: string) {
     const m = spec.marks.find((x) => x.id === id);
     if (!m) return;
+    keepStage();
     setMarkId(id);
     setMark({ x: m.x, z: m.z, facingDeg: m.facingDeg });
   }
 
   function turn(delta: number) {
+    keepStage(true);
     setMark((m) => ({ ...m, facingDeg: (((m.facingDeg + delta) % 360) + 360) % 360 }));
   }
 
   function frameFigure() {
+    keepStage();
     apiRef.current?.frameFigure();
     setCameraId(null);
     scheduleSave();
@@ -1386,6 +1483,7 @@ export function SetView({
         bounds: spec.bounds,
         canvasAspect: api.canvasAspect(),
       });
+      keepStage();
       const moved = api.matchTo(solved.pose);
       setFovDeg(solved.pose.fovDeg);
       setCameraId(null);
@@ -1496,6 +1594,7 @@ export function SetView({
   function restoreRevision(r: Revision) {
     const api = apiRef.current;
     if (!api || shooting) return;
+    keepStage();
     api.goTo(r.pose);
     setFovDeg(r.pose.fovDeg);
     setCameraId(r.cameraId);
@@ -1758,6 +1857,7 @@ export function SetView({
     if (!api || previz || filmBusyRef.current) return;
     const at = filmSel !== null && film.beats[filmSel] ? filmSel : film.beats.length < FILM_MAX_BEATS ? film.beats.length : null;
     if (at === null) return;
+    keepStage();
     // Beat 1 starts where the film starts: the start still's own camera,
     // when it was recorded — never wherever the stage happens to be.
     const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
@@ -1802,6 +1902,7 @@ export function SetView({
   function filmGoTo(i: number) {
     const b = film.beats[i];
     if (b) {
+      keepStage();
       apiRef.current?.goTo(b.end);
       setFovDeg(b.end.fovDeg);
       setPoseNow(b.end);
@@ -1813,6 +1914,8 @@ export function SetView({
   async function playMove() {
     const api = apiRef.current;
     if (!api || previz || film.beats.length === 0) return;
+    // The previz leaves the camera on the last beat's end: Undo brings it back.
+    keepStage();
     setPreviz(true);
     // The move flies from the start still's camera when it was recorded.
     const start = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
@@ -2003,6 +2106,7 @@ export function SetView({
   function applyWords(words: ShotWords): CameraMove | null {
     const api = apiRef.current;
     if (!api) return null;
+    keepStage();
     let m: Mark = layoutRef.current.mark;
     let mId = layoutRef.current.markId;
     if (words.markId) {
@@ -2801,6 +2905,17 @@ export function SetView({
               <button type="button" onClick={frameFigure} disabled={!ready} className={DCHIP}>
                 {s.frameFigure}
               </button>
+              {stageUndoCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => stageStepRef.current?.undo()}
+                  disabled={!ready || shooting || previz}
+                  title={s.stageUndoHint}
+                  className={DCHIP}
+                >
+                  {s.stageUndo}
+                </button>
+              )}
               {matchOn && (
                 <>
                   <input

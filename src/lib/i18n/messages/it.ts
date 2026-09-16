@@ -1863,6 +1863,8 @@ const it = {
     shotOpen: "Apri",
     backToCamera: "Torna a questa camera",
     dragHint: "Trascina per orbitare · Maiusc + trascina per spostare · scorri per avvicinare · trascina la sagoma per spostarla, doppio clic per inquadrarla",
+    stageUndo: "Annulla spostamento",
+    stageUndoHint: "Riporta la camera e la sagoma dov'erano — ⌘Z o Ctrl+Z",
     figureMovedOut: "La sagoma sta su un pavimento libero, quindi è uscita da quell'oggetto.",
     frameHint: "Il quadrato illuminato è l'inquadratura. Ciò che resta fuori non entra nella foto.",
     standInNote:

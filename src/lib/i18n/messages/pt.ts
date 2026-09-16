@@ -1864,6 +1864,8 @@ const pt = {
     shotOpen: "Abrir",
     backToCamera: "Voltar para esta câmera",
     dragHint: "Arraste para orbitar · Shift + arrastar para deslizar · role para aproximar · arraste o boneco para movê-lo, clique duas vezes para enquadrá-lo",
+    stageUndo: "Desfazer movimento",
+    stageUndoHint: "Voltar a câmera e o boneco para onde estavam — ⌘Z ou Ctrl+Z",
     figureMovedOut: "O boneco fica em chão livre, então saiu de dentro desse objeto.",
     frameHint: "O quadrado iluminado é o enquadramento. O que ficar fora dele não entra na foto.",
     standInNote:
