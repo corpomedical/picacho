@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.2",
+    build: 66,
+    date: "2026-09-16",
+    title: "A failed take says so — and its clip can be tried again",
+    items: [
+      "A take whose clip failed kept saying The take is rendering — it lands here in a few minutes, for good. It now says That take didn't come through, in the conversation and the viewer, and its tile is marked.",
+      "A take you made this visit whose clip failed — or never started — can be tried again between the same two frames: Try the clip again renders only the clip, 2 credits on Gemini Omni or 12 on Veo 3.1, where taking it again meant a new end frame as well. It keeps the take's own person, engine and direction, whatever the page is set to now.",
+    ],
+  },
+  {
     version: "1.40.1",
     build: 65,
     date: "2026-09-16",

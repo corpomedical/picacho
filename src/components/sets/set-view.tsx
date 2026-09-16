@@ -192,6 +192,8 @@ type Revision = {
 
 /** What this visit knows of a still it shot: how long it took and the frame it was shot from. */
 type ShotFacts = { seconds: number; frame: string };
+/** A take's two frames and what rendered between them: enough to render the clip again (takeInSet's end still reused). */
+type TakeFrames = { start: string; end: string; characterId: string; direction: string; engine: SetTakeEngine; words?: string };
 
 type MenuId = "camera" | "figure" | "history" | "mode" | "who" | "filmStart";
 
@@ -492,6 +494,13 @@ export function SetView({
   const [revisions, setRevisions] = useState<Revision[]>([]);
   // What this visit knows of the stills it shot.
   const [shotFacts, setShotFacts] = useState<Record<string, ShotFacts>>({});
+  // The frames of each take started this visit, so a clip that fails can be
+  // rendered again between the same two — only the clip to pay for, and the
+  // frame the person already saw. A film's beats are the film's to render
+  // again (filmJobs), so they are not kept here.
+  const [takeFrames, setTakeFrames] = useState<Record<string, TakeFrames>>({});
+  // A take whose end frame came in and whose clip could not start.
+  const [takeRetry, setTakeRetry] = useState<TakeFrames | null>(null);
   // The look (2026-09-11): the earlier still whose objects the next shot
   // keeps, so the car is the same car. Only its objects ride, cut out onto
   // grey on the server, so the shot keeps its own camera (2026-09-12,
@@ -1615,6 +1624,7 @@ export function SetView({
     // now, from a camera the match is about to move.
     if (shooting || matching || !characterId || !ready) return;
     setError("");
+    setTakeRetry(null);
     setLastMiss(null);
     setLookDropped(false);
     setViewing(null);
@@ -1737,6 +1747,7 @@ export function SetView({
   async function take(directionNow?: string) {
     if (!takeStart || shooting || matching || !characterId || !ready) return;
     setError("");
+    setTakeRetry(null);
     setLastMiss(null);
     setViewing(null);
     setMenu(null);
@@ -1827,6 +1838,10 @@ export function SetView({
     setPendingAsks([]);
     setNote(null);
     setTakeStart(null);
+    const frames: TakeFrames = { start: takeStart.id, end: result.still.generationId, characterId, direction: said, engine: takeEngine, words: asked };
+    const takeId = result.takeGenerationId;
+    if (takeId) setTakeFrames((prev) => ({ ...prev, [takeId]: frames }));
+    else if (result.still.succeeded) setTakeRetry(frames);
     if (result.takeError) setError(result.takeError);
     if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
     if (result.still.succeeded && result.still.checks.length > 0) void runRigCheck(result.still.generationId);
@@ -2106,6 +2121,79 @@ export function SetView({
     filmBusyRef.current = false;
     setFilmBusy(null);
   }
+
+  /**
+   * The clip of a take rendered again between the same two frames — the
+   * end still reused (takeInSet endGenerationId), so nothing is shot and
+   * only the clip is paid for. The failed take stays where it is.
+   */
+  async function retryClip(f: TakeFrames) {
+    if (shooting || matching || !ready) return;
+    setError("");
+    setTakeRetry(null);
+    setShooting(true);
+    let result: Awaited<ReturnType<typeof takeInSet>>;
+    try {
+      result = await takeInSet(setId, {
+        startGenerationId: f.start,
+        endGenerationId: f.end,
+        frameDataUri: "",
+        characterId: f.characterId,
+        direction: f.direction,
+        layout: { ...layoutRef.current, camera: apiRef.current?.pose() ?? null },
+        engine: f.engine,
+        lifted: apiRef.current?.lifted === true,
+        canvasAspect: apiRef.current?.canvasAspect(),
+        words: f.words,
+        rig: rigRef.current,
+      });
+    } catch (err) {
+      const stale = isStaleDeployError(err);
+      setError(stale ? t.generate.refreshNeeded : t.generate.submitFailed);
+      if (stale) setTimeout(() => window.location.reload(), 1800);
+      // The frames stay on offer: nothing was rendered.
+      setTakeRetry(f);
+      return;
+    } finally {
+      setShooting(false);
+    }
+    if (result.error !== null) {
+      setError(result.error);
+      setTakeRetry(f);
+      return;
+    }
+    const id = result.takeGenerationId;
+    if (!id) {
+      setError(result.takeError ?? t.generate.submitFailed);
+      setTakeRetry(f);
+      return;
+    }
+    setShots((prev) => [
+      {
+        generationId: id,
+        status: "generating",
+        resultUrl: null,
+        viewUrl: null,
+        posterUrl: null,
+        kind: "take",
+        seconds: SET_TAKE_ENGINES[f.engine].seconds,
+        score: null,
+        createdAt: new Date().toISOString(),
+        hasLookObjects: false,
+        words: f.words ?? null,
+        format: result.still.format,
+        rigAsked: [],
+        rigCheck: null,
+        pose: null,
+      },
+      ...prev,
+    ]);
+    setTakeFrames((prev) => ({ ...prev, [id]: f }));
+    setViewing(id);
+  }
+
+  /** "Try the clip again · n credits": the clip's own price, as the server charges it. */
+  const retryLabel = (f: TakeFrames) => formatMsg(s.takeRetryClip, { n: quoteSend(takeQuoteInput(f.engine)).totalCredits });
 
   // ---- the conversation ----
 
@@ -3134,6 +3222,21 @@ export function SetView({
                   ) : (
                     <video src={viewingShot.resultUrl} controls autoPlay loop poster={viewingShot.posterUrl ?? undefined} className="h-full w-full object-contain" />
                   )
+                ) : viewingShot.status === "failed" ? (
+                  <div className="flex h-full flex-col items-center justify-center gap-3 px-10 text-center">
+                    <span className="text-sm text-onmedia/80">{s.takeFailedLine}</span>
+                    {takeFrames[viewingShot.generationId] && (
+                      <button
+                        type="button"
+                        onClick={() => void retryClip(takeFrames[viewingShot.generationId])}
+                        disabled={shooting || matching || !ready}
+                        title={s.takeRetryHint}
+                        className={chip(false)}
+                      >
+                        {retryLabel(takeFrames[viewingShot.generationId])}
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <span className="flex h-full items-center justify-center px-10 text-center text-sm text-onmedia/70">{s.takeRendering}</span>
                 )
@@ -3246,6 +3349,8 @@ export function SetView({
                   shot.posterUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={shot.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                  ) : shot.status === "failed" ? (
+                    <span className="flex h-full items-center justify-center text-lg font-semibold text-red-400">!</span>
                   ) : (
                     <span className="flex h-full items-center justify-center text-lg text-onmedia/70">▶</span>
                   )
@@ -3593,7 +3698,9 @@ export function SetView({
                       <div className="flex items-start gap-2.5">
                         <AstraMark />
                         <div className="min-w-0 flex-1 space-y-2.5">
-                          <p className="text-sm leading-relaxed text-[#c6c9d1]">{shot.status === "succeeded" ? stillLine(shot) : s.takeRendering}</p>
+                          <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                            {shot.status === "succeeded" ? stillLine(shot) : shot.status === "failed" ? s.takeFailedLine : s.takeRendering}
+                          </p>
                           <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
                             <div className="flex items-center gap-3">
                               <button
@@ -3605,6 +3712,8 @@ export function SetView({
                                 {shot.posterUrl ? (
                                   // eslint-disable-next-line @next/next/no-img-element
                                   <img src={shot.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                                ) : shot.status === "failed" ? (
+                                  <span className="flex h-full items-center justify-center text-lg font-semibold text-red-400">!</span>
                                 ) : (
                                   <span className="flex h-full items-center justify-center text-lg text-onmedia/70">▶</span>
                                 )}
@@ -3620,6 +3729,17 @@ export function SetView({
                               <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
                                 {s.openTake}
                               </Link>
+                              {shot.status === "failed" && takeFrames[shot.generationId] && (
+                                <button
+                                  type="button"
+                                  onClick={() => void retryClip(takeFrames[shot.generationId])}
+                                  disabled={shooting || matching || !ready}
+                                  title={s.takeRetryHint}
+                                  className={chip(false)}
+                                >
+                                  {retryLabel(takeFrames[shot.generationId])}
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -3812,6 +3932,17 @@ export function SetView({
                           </button>
                         </div>
                         {error && <p className="text-sm text-red-400">{localizeServerText(error, t)}</p>}
+                        {takeRetry && (
+                          <button
+                            type="button"
+                            onClick={() => void retryClip(takeRetry)}
+                            disabled={shooting || matching || !ready}
+                            title={s.takeRetryHint}
+                            className={chip(false)}
+                          >
+                            {retryLabel(takeRetry)}
+                          </button>
+                        )}
                         {rigError && <p className="text-xs text-red-400">{localizeServerText(rigError, t)}</p>}
                         {lastMiss && (
                           <p className="text-sm text-[#9aa0ad]">
