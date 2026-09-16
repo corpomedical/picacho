@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.38.2",
+    build: 55,
+    date: "2026-09-16",
+    title: "A rundown of Helios: the mode menu opens properly, and Just talking really spends nothing",
+    items: [
+      "The mode menu at the foot of the conversation — Ask before shooting, Shoot without asking, Just talking — opened as a 14-pixel sliver with its options scrolled out of sight, so picking one was luck. It opens full height above the chip now. The History menu had the same fault sideways and is fixed with it.",
+      "Just talking promised that nothing is spent, but pressing send with nothing written shot anyway. Now it waits for your words, and the credit chip stays out of the way while the mode is on.",
+      "The who menu — the @ chip — stayed open until you picked someone. A click anywhere off it, or on the chip again, closes it like every other menu.",
+      "The Look chip said \"Look · Turn off\" when there was no look on. It says \"Look · Off\".",
+    ],
+  },
+  {
     version: "1.38.1",
     build: 54,
     date: "2026-09-16",

@@ -1843,7 +1843,7 @@ const it = {
     aimDown: "Inclina in giù",
     lookLabel: "Aspetto",
     lookOn: "Mantiene gli oggetti di questa foto. Vengono ritagliati da lì, così la nuova conserva la propria inquadratura.",
-    lookOff: "Disattiva",
+    lookOff: "Nessuno",
     lookOffNote: "Disattivato: ogni foto ridisegna gli oggetti del set.",
     lookUseLatest: "Abbina l'ultima foto",
     lookFirst: "La prossima foto in cui compaiono gli oggetti del set definisce l'aspetto: le successive li mantengono.",

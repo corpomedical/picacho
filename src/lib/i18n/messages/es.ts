@@ -1844,7 +1844,7 @@ const es = {
     aimDown: "Inclinar hacia abajo",
     lookLabel: "Aspecto",
     lookOn: "Mantiene los objetos de esta foto. Se recortan de ella, así que la nueva conserva su propia cámara.",
-    lookOff: "Desactivar",
+    lookOff: "Sin aspecto",
     lookOffNote: "Desactivado: cada foto diseña de nuevo los objetos del set.",
     lookUseLatest: "Igualar la última foto",
     lookFirst: "La próxima foto en la que se vean los objetos del set define el aspecto: las siguientes los mantienen.",

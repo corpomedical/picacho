@@ -1844,7 +1844,7 @@ const pt = {
     aimDown: "Inclinar para baixo",
     lookLabel: "Visual",
     lookOn: "Mantém os objetos desta foto. Eles são recortados dela, então a nova mantém a própria câmera.",
-    lookOff: "Desativar",
+    lookOff: "Sem visual",
     lookOffNote: "Desativado: cada foto cria de novo os objetos do set.",
     lookUseLatest: "Igualar a última foto",
     lookFirst: "A próxima foto em que apareçam os objetos do set define o visual: as seguintes mantêm esses objetos.",

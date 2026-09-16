@@ -1961,7 +1961,7 @@ const en = {
     // The look sends only the objects, cut out of the still on grey
     // (2026-09-12): the new shot never takes the earlier one's framing.
     lookOn: "Keeps the objects in this still. They're cut out of it, so this shot keeps its own camera.",
-    lookOff: "Turn off",
+    lookOff: "Off",
     lookOffNote: "Off: each still designs the set's objects afresh.",
     lookUseLatest: "Match the latest still",
     lookFirst: "The next still that shows the set's objects sets the look: the ones after it keep them.",

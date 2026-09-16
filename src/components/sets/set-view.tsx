@@ -204,9 +204,19 @@ const DCHIP =
 /** The same chip, lit ochre — the kept look. */
 const DCHIP_ON =
   "inline-flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-full border border-transparent bg-black/60 px-3 text-xs font-medium text-[#f0cda6] backdrop-blur shadow-[inset_0_0_0_1.5px_rgba(240,196,142,0.75)]";
+// A menu's surface, dark, WITHOUT where it sits: the placement belongs to
+// the menu itself. Tailwind classes do not override by the order they are
+// written — `top-auto` after DMENU's `top-full` left both edges pinned, and
+// the mode menu at the composer's foot collapsed to a 14 px sliver with its
+// three options scrolled out of sight (found on the stage, 2026-09-16).
+const DMENU_BASE =
+  "absolute z-40 flex max-h-80 min-w-[11rem] flex-col gap-0.5 overflow-y-auto rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]";
 /** A menu opened downward from a chip, dark. */
-const DMENU =
-  "absolute left-0 top-full z-40 mt-2 flex max-h-80 min-w-[11rem] flex-col gap-0.5 overflow-y-auto rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]";
+const DMENU = `${DMENU_BASE} left-0 top-full mt-2`;
+/** The same menu opened upward, for a chip at the foot of the panel. */
+const DMENU_UP = `${DMENU_BASE} left-0 bottom-full mb-2`;
+/** The same menu, hung from the right edge of a chip near the window's. */
+const DMENU_RIGHT = `${DMENU_BASE} right-0 top-full mt-2`;
 /** The conversation panel's surface. */
 const PANEL_BG = "border border-white/[0.11] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
 
@@ -2449,7 +2459,16 @@ export function SetView({
 
   return (
     <div data-set-workspace className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#101116] text-[#c6c9d1]">
-      {menu && <div className="fixed inset-0 z-20" onClick={() => setMenu(null)} aria-hidden />}
+      {(menu || mentionForced) && (
+        <div
+          className="fixed inset-0 z-20"
+          onClick={() => {
+            setMenu(null);
+            setMentionForced(false);
+          }}
+          aria-hidden
+        />
+      )}
 
       {/* The workspace's own bar: where you are, the set's two lives, History and the frame on disk. */}
       <div className="flex h-12 flex-none items-center gap-3 border-b border-white/[0.07] bg-[#191a20] px-3.5">
@@ -2481,6 +2500,7 @@ export function SetView({
                 ? "flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
                 : "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
             }
+            aria-current={filmOpen ? undefined : "page"}
           >
             {s.editorShootTab}
           </button>
@@ -2497,6 +2517,7 @@ export function SetView({
                 ? "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
                 : "flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
             }
+            aria-current={filmOpen ? "page" : undefined}
           >
             {s.filmTab}
           </button>
@@ -2515,7 +2536,7 @@ export function SetView({
             <Chevron />
           </button>
           {menu === "history" && (
-            <div role="listbox" aria-label={s.historyLabel} className={`${DMENU} left-auto right-0`}>
+            <div role="listbox" aria-label={s.historyLabel} className={DMENU_RIGHT}>
               {historyOptions}
             </div>
           )}
@@ -3016,7 +3037,7 @@ export function SetView({
                     <div
                       role="listbox"
                       aria-label={s.filmStarts}
-                      className="absolute bottom-full left-0 z-40 mb-2 flex max-h-80 min-w-[11rem] flex-col gap-0.5 overflow-y-auto rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
+                      className={DMENU_UP}
                     >
                       {filmStartOptions.length === 0 ? (
                         <span className="block px-3 py-2 text-xs text-[#9aa0ad]">{s.filmPickStill}</span>
@@ -3471,7 +3492,10 @@ export function SetView({
                 e.preventDefault();
                 if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
                 else if (draft.trim()) void send(draft);
-                else void (takeStart ? take() : shoot());
+                // Just talking is the mode that spends nothing: with nothing
+                // written there is nothing to answer, and an empty send used
+                // to shoot anyway (found in the rundown, 2026-09-16).
+                else if (!justTalk) void (takeStart ? take() : shoot());
               }}
               className="relative border-t border-white/[0.07] px-3.5 pb-3.5 pt-3"
             >
@@ -3531,7 +3555,15 @@ export function SetView({
                 className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#6b6f7a] disabled:opacity-60"
               />
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <button type="button" onClick={() => setMentionForced(true)} disabled={characters.length === 0} className={chip(false)} title={s.mentionHint}>
+                <button
+                  type="button"
+                  onClick={() => setMentionForced((open) => !open)}
+                  aria-haspopup="listbox"
+                  aria-expanded={mentionOpen}
+                  disabled={characters.length === 0}
+                  className={chip(false)}
+                  title={s.mentionHint}
+                >
                   @ {character?.name || s.characterLabel}
                 </button>
                 <div className="relative">
@@ -3540,20 +3572,22 @@ export function SetView({
                     <Chevron />
                   </button>
                   {menu === "mode" && (
-                    <div role="listbox" aria-label={s.modeHint} className={`${DMENU} bottom-full top-auto mb-2 mt-0`}>
+                    <div role="listbox" aria-label={s.modeHint} className={DMENU_UP}>
                       {modeOptions}
                     </div>
                   )}
                 </div>
-                <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#9aa0ad] tabular-nums">
-                  {s.engineChip} · {credits}
-                </span>
+                {!justTalk && (
+                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#9aa0ad] tabular-nums">
+                    {s.engineChip} · {credits}
+                  </span>
+                )}
                 <span className="flex-1" />
                 <button
                   type="submit"
-                  disabled={reading || shooting || editingSet || !ready || (!draft.trim() && !characterId)}
-                  title={draft.trim() ? s.threadPlaceholder : shootLabel}
-                  aria-label={draft.trim() ? s.threadPlaceholder : shootLabel}
+                  disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
+                  title={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
+                  aria-label={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
                   className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
                 >
                   {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
