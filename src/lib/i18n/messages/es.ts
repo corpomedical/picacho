@@ -2121,6 +2121,7 @@ const es = {
     filmPlayMove: "Reproducir el movimiento",
     filmHint: "Arrastra para orbitar · K guarda esta vista como fotograma clave · la barra espaciadora reproduce el movimiento",
     filmHintMoves: "Pasa el ratón por un movimiento para verlo aquí, gratis · la barra espaciadora reproduce el movimiento",
+    filmKeyLabel: "{n} · {lens} · {m} m",
     filmPlayFilm: "Reproducir la película",
     filmRender: "Renderizar la película · {n} créditos",
     filmRenderFrom: "Renderizar desde el tramo {b} · {n} créditos",

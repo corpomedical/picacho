@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.41.4",
+    build: 78,
+    date: "2026-09-16",
+    title: "Film draws the camera's path through the set",
+    items: [
+      "With the film panel open, the stage now draws the move: a dashed path through the set that follows each beat's own move, and a marker at every keyframe with its number, lens and distance to your character, such as \"2 · 85 mm · 8.5 m\". Keyframe 1 is where the film starts, and each beat ends on the next one.",
+      "Select a beat to see what its two keyframes' lenses frame, each drawn out to the picture it takes: the beat's end in amber, its start dashed. Orbit the view to see the move from any side.",
+      "The path is only there to help you: it's never part of the picture sent for rendering, and it's hidden while the move plays or while you preview a move by hovering over it.",
+    ],
+  },
+  {
     version: "1.41.3",
     build: 77,
     date: "2026-09-16",

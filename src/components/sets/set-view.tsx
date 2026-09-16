@@ -42,6 +42,7 @@ import { RIG_PALETTES, findLook, formatFrame, normaliseSetRig, type RigCheckItem
 import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
 import { LAB_PREVIEW_SHADER, labPreviewCodes } from "@/lib/sets/lab-preview";
 import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
+import { planFilmOverlay, type FilmOverlayPlan } from "@/lib/sets/film-overlay";
 import type { RigCheck } from "@/lib/sets/rig-check";
 import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
@@ -188,7 +189,38 @@ type StageApi = {
    * the figure stay where they are.
    */
   rebuild(next: SetSpec): void;
+  /**
+   * Film's overlay (film-overlay.ts): the move's path, its keyframes named
+   * (`names`, in order), the selected beat's lenses. Drawn over the live
+   * view for the person alone, as a scene of its own: no frame or snapshot
+   * draws it. Null clears it.
+   */
+  setFilmOverlay(plan: FilmOverlayPlan | null, names: string[]): void;
+  /** The overlay steps aside while the camera flies (the previz, a hover's flight): the view is then the path's own camera. */
+  holdFilmOverlay(reason: "previz" | "hover", on: boolean): void;
 };
+
+/** The overlay's inks (canvas pages H and I): the path and a lens in light, the selected lens in the accent. */
+const OVERLAY_INK = "#ecedf1";
+const OVERLAY_ACCENT = "#e0a468";
+
+/** A keyframe on the path: a diamond on the point, its name beside it. Built from text nodes only. */
+function overlayKeyLabel(name: string, selected: boolean): HTMLDivElement {
+  const el = document.createElement("div");
+  el.style.cssText = "position:relative;width:0;height:0;pointer-events:none";
+  const size = selected ? 13 : 10;
+  const diamond = document.createElement("span");
+  diamond.style.cssText = `position:absolute;left:${-size / 2}px;top:${-size / 2}px;width:${size}px;height:${size}px;transform:rotate(45deg);border-radius:2px;background:${
+    selected ? OVERLAY_ACCENT : OVERLAY_INK
+  };box-shadow:0 0 0 1px rgba(0,0,0,0.5)`;
+  const text = document.createElement("span");
+  text.textContent = name;
+  text.style.cssText = `position:absolute;left:12px;top:-9px;white-space:nowrap;border-radius:999px;background:rgba(0,0,0,0.55);padding:1px 7px;font-size:11px;line-height:16px;font-weight:${
+    selected ? 600 : 500
+  };color:${selected ? "#f0cda6" : "#c6c9d1"}`;
+  el.append(diamond, text);
+  return el;
+}
 
 /** What Astra did with the last message, said above the frame. */
 type FrameNote = {
@@ -628,6 +660,9 @@ export function SetView({
 
   const hostRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
+  // Film's keyframe labels: a layer of their own over the canvas, outside
+  // the host so the palette's grade preview never tints them.
+  const overlayHostRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<StageApi | null>(null);
   // A move under the pointer in the rig flies on the stage, free (canvas
   // page I: "hover a move to fly it here"). Nothing is kept: the stage goes
@@ -646,6 +681,7 @@ export function SetView({
     p.timer = null;
     if (p.home) apiRef.current?.goTo(p.home);
     p.home = null;
+    apiRef.current?.holdFilmOverlay("hover", false);
   }, []);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A figure dropped inside something built moved to open floor: the hint
@@ -694,6 +730,7 @@ export function SetView({
         const { OrbitControls } = await import("three/examples/jsm/controls/OrbitControls.js");
         const { buildSetScene, buildStandIn, moveBuildInto, placeStandIn } = await import("@/lib/sets/build-scene");
         const { BASE_EXPOSURE, NO_LIFT, liftSet } = await import("@/lib/sets/exposure");
+        const { CSS2DObject, CSS2DRenderer } = await import("three/examples/jsm/renderers/CSS2DRenderer.js");
         if (disposed || !hostRef.current) return;
 
         const coarse = window.matchMedia?.("(pointer: coarse)").matches ?? false;
@@ -727,6 +764,32 @@ export function SetView({
         const standIn = buildStandIn(THREE, ACCENT);
         placeStandIn(standIn, layoutRef.current.mark);
         scene.add(standIn.group);
+
+        // Film's overlay: a scene of its own, drawn over the live view after
+        // everything else — so the depth of field never blurs it, and no
+        // frame or snapshot, which draw `scene`, can hold it — with the
+        // keyframes as labels in a layer over the canvas.
+        const overlayScene = new THREE.Scene();
+        const overlayRoot = new THREE.Group();
+        overlayScene.add(overlayRoot);
+        const labelLayer = new CSS2DRenderer();
+        labelLayer.domElement.style.position = "absolute";
+        labelLayer.domElement.style.inset = "0";
+        overlayHostRef.current?.appendChild(labelLayer.domElement);
+        const overlayHolds = new Set<string>();
+        let overlayOn = false;
+        const showOverlay = () => {
+          overlayRoot.visible = overlayOn && overlayHolds.size === 0;
+        };
+        const clearOverlay = () => {
+          overlayRoot.traverse((o) => {
+            const drawn = o as { geometry?: { dispose(): void }; material?: { dispose(): void } };
+            drawn.geometry?.dispose();
+            drawn.material?.dispose();
+            if (o instanceof CSS2DObject) o.element.remove();
+          });
+          overlayRoot.clear();
+        };
 
         const camera = new THREE.PerspectiveCamera(startPose.fovDeg, 1, 0.05, built.farPlane);
         camera.position.set(...startPose.position);
@@ -872,6 +935,7 @@ export function SetView({
           if (w !== lastW || h !== lastH) {
             renderer.setSize(w, h, false);
             composer?.setSize(w, h);
+            labelLayer.setSize(w, h);
           }
           lastKey = key;
           lastW = w;
@@ -987,6 +1051,12 @@ export function SetView({
           } else {
             renderer.render(scene, camera);
           }
+          if (overlayRoot.visible) {
+            renderer.autoClear = false;
+            renderer.render(overlayScene, camera);
+            renderer.autoClear = true;
+          }
+          labelLayer.render(overlayScene, camera);
         };
         const loop = () => {
           raf = requestAnimationFrame(loop);
@@ -1261,6 +1331,53 @@ export function SetView({
             camera.updateProjectionMatrix();
             placeStandIn(standIn, layoutRef.current.mark);
           },
+          setFilmOverlay(plan, names) {
+            clearOverlay();
+            overlayOn = plan !== null;
+            if (plan) {
+              const v = (p: Vec3) => new THREE.Vector3(p[0], p[1], p[2]);
+              const flat = { transparent: true, depthTest: false, depthWrite: false, toneMapped: false } as const;
+              if (plan.path.length > 1) {
+                const line = new THREE.Line(
+                  new THREE.BufferGeometry().setFromPoints(plan.path.map(v)),
+                  new THREE.LineDashedMaterial({ ...flat, color: OVERLAY_INK, opacity: 0.6, dashSize: 0.3, gapSize: 0.22 }),
+                );
+                line.computeLineDistances();
+                overlayRoot.add(line);
+              }
+              for (const cone of plan.cones) {
+                const a = v(cone.apex);
+                const [c0, c1, c2, c3] = cone.corners.map(v);
+                const color = cone.selected ? OVERLAY_ACCENT : OVERLAY_INK;
+                overlayRoot.add(
+                  new THREE.Mesh(
+                    new THREE.BufferGeometry().setFromPoints([a, c0, c1, a, c1, c2, a, c2, c3, a, c3, c0]),
+                    new THREE.MeshBasicMaterial({ ...flat, color, opacity: cone.selected ? 0.1 : 0.05, side: THREE.DoubleSide }),
+                  ),
+                );
+                const edges = new THREE.LineSegments(
+                  new THREE.BufferGeometry().setFromPoints([a, c0, a, c1, a, c2, a, c3, c0, c1, c1, c2, c2, c3, c3, c0]),
+                  cone.selected
+                    ? new THREE.LineBasicMaterial({ ...flat, color, opacity: 0.65 })
+                    : new THREE.LineDashedMaterial({ ...flat, color, opacity: 0.35, dashSize: 0.2, gapSize: 0.16 }),
+                );
+                if (!cone.selected) edges.computeLineDistances();
+                overlayRoot.add(edges);
+              }
+              plan.keys.forEach((key, i) => {
+                const label = new CSS2DObject(overlayKeyLabel(names[i] ?? String(key.number), key.selected));
+                label.center.set(0, 0);
+                label.position.copy(v(key.at));
+                overlayRoot.add(label);
+              });
+            }
+            showOverlay();
+          },
+          holdFilmOverlay(reason, on) {
+            if (on) overlayHolds.add(reason);
+            else overlayHolds.delete(reason);
+            showOverlay();
+          },
         };
 
         setReady(true);
@@ -1280,6 +1397,8 @@ export function SetView({
 
         cleanup = () => {
           cancelAnimationFrame(raf);
+          clearOverlay();
+          labelLayer.domElement.remove();
           canvas.removeEventListener("pointerdown", onDown);
           canvas.removeEventListener("pointermove", onMove);
           canvas.removeEventListener("pointerup", onUp);
@@ -2098,6 +2217,7 @@ export function SetView({
       p.timer = null;
       if (!alive()) return;
       p.home = home;
+      api.holdFilmOverlay("hover", true);
       if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
         api.goTo(laid.end);
         return;
@@ -2713,6 +2833,34 @@ export function SetView({
     return () => window.removeEventListener("keydown", onKey);
   }, [filmOpen]);
 
+  // Film's overlay (canvas pages H and I): the move's path through the set,
+  // its keyframes named with their lens and distance, and the selected
+  // beat's two lenses, while the film dock is open.
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api || !ready) return;
+    if (!filmOpen) {
+      api.setFilmOverlay(null, []);
+      return;
+    }
+    const fr = formatFrame(rig.format);
+    const plan = planFilmOverlay({
+      start: shots.find((sh) => sh.generationId === film.startId)?.pose ?? null,
+      beats: film.beats,
+      selected: filmSel,
+      mark,
+      frame: { bandAspect: fr.bandAspect, heightShare: fr.bandH / fr.renderH },
+    });
+    const metres = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    api.setFilmOverlay(
+      plan,
+      plan.keys.map((k) => formatMsg(s.filmKeyLabel, { n: k.number, lens: formatMsg(s.lensMm, { mm: k.lensMm }), m: metres.format(k.distanceM) })),
+    );
+  }, [ready, filmOpen, film.beats, film.startId, filmSel, mark, rig.format, shots, locale, s]);
+  useEffect(() => {
+    apiRef.current?.holdFilmOverlay("previz", previz);
+  }, [ready, previz]);
+
   // The moves closing, or the page going, ends a hover's flight.
   useEffect(() => {
     if (!filmOpen || !rigOpen) stopMovePreview();
@@ -3243,6 +3391,8 @@ export function SetView({
             aria-hidden
             className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-white/45 ${viewingShot ? "hidden" : ""}`}
           />
+          {/* Film's keyframes, named on the path (the path itself is in the canvas) */}
+          <div ref={overlayHostRef} aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${viewingShot ? "hidden" : ""}`} />
           {loadFailed && !viewingShot && (
             <div className="absolute inset-0 flex items-center justify-center bg-[#101116]/90 p-6 text-center text-sm text-onmedia/80">{s.loadFailed}</div>
           )}

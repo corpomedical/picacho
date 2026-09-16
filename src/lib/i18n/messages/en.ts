@@ -2261,6 +2261,7 @@ const en = {
     filmPlayMove: "Play the move",
     filmHint: "Drag to orbit · K keyframes this view · Space plays the move",
     filmHintMoves: "Hover a move to fly it here — free · Space plays the move",
+    filmKeyLabel: "{n} · {lens} · {m} m",
     filmPlayFilm: "Play the film",
     filmRender: "Render the film · {n} credits",
     filmRenderFrom: "Render from beat {b} · {n} credits",
