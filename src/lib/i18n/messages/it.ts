@@ -2121,6 +2121,7 @@ const it = {
     filmRenderMissing: "Renderizza ciò che manca · {n} crediti",
     filmClipsRendering: "Le clip sono in rendering…",
     filmRemoveBeat: "Rimuovi il tratto {n}",
+    filmSetEnd: "Imposta la fine del tratto {n} su questa vista",
     filmBeatDone: "pronto",
     filmBeatFailed: "Quel tratto non si è potuto renderizzare — tutto ciò che viene prima resta.",
     filmClipFailed: "La clip di quel tratto non è partita — ricarica la pagina e premi di nuovo play.",

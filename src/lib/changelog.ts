@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.1",
+    build: 65,
+    date: "2026-09-16",
+    title: "Adjust a film's beat by hand",
+    items: [
+      "A beat's end could be laid by a move, or added as a new beat with Keyframe from this view — but never adjusted: K always adds a beat, and with three beats it did nothing. Each beat now has a viewfinder button that sets its end to the view on the stage. Jump to the beat, nudge the camera, press it.",
+      "The beat's move label goes when you do, since the move's words described a different path; the beat's clip and the ones after it are rendered again, and Render says from which beat.",
+      "On a phone, a beat's header no longer breaks onto two lines; a long move name ends in an ellipsis, with the full name on hover.",
+    ],
+  },
+  {
     version: "1.40.0",
     build: 64,
     date: "2026-09-16",

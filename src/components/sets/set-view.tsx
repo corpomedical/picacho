@@ -1845,6 +1845,19 @@ export function SetView({
   }
 
   /**
+   * The view on the stage becomes this beat's end — a keyframe adjusted by
+   * hand, the way Build's camera takes "Set to this view". The beat's move
+   * is dropped: its words said a path to an end that is no longer there.
+   * The clips from this beat on go with it (filmAfterEdit).
+   */
+  function filmSetBeatEnd(i: number) {
+    const pose = apiRef.current?.pose();
+    if (!pose || previz) return;
+    editFilm((f) => ({ ...f, beats: f.beats.map((b, j) => (j === i ? { ...b, end: pose, move: null } : b)) }));
+    setFilmSel(i);
+  }
+
+  /**
    * A move from the rig's library (moves.ts): the selected beat's end is
    * laid round the figure from where the beat starts — the keyframe before
    * it, or the stage as it stands for the first — and the stage flies it at
@@ -3381,27 +3394,30 @@ export function SetView({
                 {film.beats.map((b, i) => (
                   <div
                     key={i}
-                    className={`flex min-w-[190px] max-w-[280px] flex-1 flex-col gap-1.5 rounded-[10px] bg-white/[0.04] p-2 ring-1 ${
+                    className={`flex min-w-[210px] max-w-[280px] flex-1 flex-col gap-1.5 rounded-[10px] bg-white/[0.04] p-2 ring-1 ${
                       filmSel === i ? "ring-[#e0a468]" : "ring-white/[0.08]"
                     }`}
                   >
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-[#6b6f7a]">
-                      <button type="button" onClick={() => filmGoTo(i)} className="cursor-pointer hover:text-[#e0a468]">
+                      <button type="button" onClick={() => filmGoTo(i)} className="cursor-pointer whitespace-nowrap hover:text-[#e0a468]">
                         {formatMsg(s.filmBeatLabel, { n: i + 1 })}
                       </button>
-                      <span className="normal-case tabular-nums">
+                      <span className="whitespace-nowrap normal-case tabular-nums">
                         {formatMsg(s.takeSeconds, { s: SET_TAKE_ENGINES[film.engine].seconds })}
                       </span>
                       {b.move && (
-                        <span className="rounded-[4px] bg-[rgba(224,164,104,0.14)] px-1.5 text-[10px] font-semibold normal-case tracking-[0.02em] text-[#f0cda6]">
+                        <span
+                          title={s.rig.moves[b.move]}
+                          className="min-w-0 truncate whitespace-nowrap rounded-[4px] bg-[rgba(224,164,104,0.14)] px-1.5 text-[10px] font-semibold normal-case tracking-[0.02em] text-[#f0cda6]"
+                        >
                           {s.rig.moves[b.move]}
                         </span>
                       )}
                       {filmBusy?.beat === i ? (
-                        <span className="normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
+                        <span className="whitespace-nowrap normal-case text-[#e0a468]">{filmBusy.clipOnly ? s.filmBeatClip : s.filmBeatStill}</span>
                       ) : filmClipShots[i] ? (
                         <span
-                          className={`normal-case ${
+                          className={`whitespace-nowrap normal-case ${
                             filmClipShots[i]!.status === "succeeded"
                               ? "text-[#5f9e6e]"
                               : filmClipShots[i]!.status === "failed"
@@ -3419,6 +3435,20 @@ export function SetView({
                       <span className="flex-1" />
                       <button
                         type="button"
+                        onClick={() => filmSetBeatEnd(i)}
+                        disabled={Boolean(filmBusy) || previz || !ready}
+                        aria-label={formatMsg(s.filmSetEnd, { n: i + 1 })}
+                        title={formatMsg(s.filmSetEnd, { n: i + 1 })}
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+                      >
+                        {/* a viewfinder: this view, as the beat's end */}
+                        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="h-3.5 w-3.5" aria-hidden>
+                          <path d="M2 5V2h3M11 2h3v3M14 11v3h-3M5 14H2v-3" />
+                          <circle cx="8" cy="8" r="1.4" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => {
                           editFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== i) }));
                           setFilmSel(null);
@@ -3426,7 +3456,7 @@ export function SetView({
                         disabled={Boolean(filmBusy)}
                         aria-label={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
                         title={formatMsg(s.filmRemoveBeat, { n: i + 1 })}
-                        className="cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+                        className="flex-shrink-0 cursor-pointer hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
                       >
                         ×
                       </button>
