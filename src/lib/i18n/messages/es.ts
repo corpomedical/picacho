@@ -2115,6 +2115,7 @@ const es = {
     filmBeatClip: "clip en render…",
     filmBeatDone: "listo",
     filmBeatFailed: "Ese tramo no se pudo renderizar — todo lo anterior se conserva.",
+    filmClipFailed: "El clip de ese tramo no se pudo reproducir — recarga la página y vuelve a darle a reproducir.",
     filmNeedsStart: "La película necesita un inicio: elige un fotograma terminado y quién sale en ella.",
     scaleWarnLine: "Los muebles se ven enormes junto a una persona — una construcción desde foto puede errar la escala.",
     scaleWarnFix: "Que Astra lo reescale",

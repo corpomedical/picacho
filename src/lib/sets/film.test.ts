@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FILM_MAX_BEATS, filmSeconds, normaliseSetFilm } from "./film";
+import { FILM_MAX_BEATS, filmAfterEdit, filmRendered, filmSeconds, normaliseSetFilm, type FilmPose } from "./film";
 import { SET_TAKE_ENGINES, SET_TAKES_PER_10_MIN } from "./take";
 
 // The film's one door: whatever is stored or sent becomes a usable film or
@@ -82,3 +82,72 @@ describe("a beat's move (Helios Cinema)", () => {
   });
 });
 
+
+// The reel's clips (2026-09-16): a film the person paid to render is kept on
+// the film itself, so it can be watched again after the page closes — and
+// dropped the moment an edit makes it a clip of a different film.
+
+const A = "aaaaaaaa-1111-2222-3333-444444444444";
+const B = "bbbbbbbb-1111-2222-3333-444444444444";
+const pose = (x: number): FilmPose => ({ position: [x, 2, 3], target: [0, 1, 0], fovDeg: 40 });
+const two = () => normaliseSetFilm({ startId: A, beats: [{ words: "one", end: goodPose }, { words: "two", end: goodPose }], clips: [A, B] });
+
+describe("a film's clips", () => {
+  it("keeps the clips a stored film remembers, as uuids", () => {
+    expect(two().clips).toEqual([A, B]);
+    expect(normaliseSetFilm({ beats: [{ end: goodPose }], clips: ["nope"] }).clips).toEqual([null]);
+  });
+
+  it("never keeps more clips than there are beats", () => {
+    const f = normaliseSetFilm({ beats: [{ end: goodPose }], clips: [A, B] });
+    expect(f.clips).toEqual([A]);
+  });
+
+  it("is rendered only when every beat has a clip", () => {
+    expect(filmRendered(two())).toBe(true);
+    expect(filmRendered(normaliseSetFilm({ beats: [{ end: goodPose }, { end: goodPose }], clips: [A] }))).toBe(false);
+    expect(filmRendered(normaliseSetFilm({ beats: [{ end: goodPose }], clips: [null] }))).toBe(false);
+    expect(filmRendered(normaliseSetFilm(null))).toBe(false);
+  });
+});
+
+describe("filmAfterEdit", () => {
+  it("leaves the clips alone when nothing about the beats changed", () => {
+    const f = two();
+    expect(filmAfterEdit(f, { ...f }).clips).toEqual([A, B]);
+  });
+
+  it("drops the changed beat's clip and every clip after it", () => {
+    const f = two();
+    const edited = { ...f, beats: [f.beats[0], { ...f.beats[1], words: "two, differently" }] };
+    expect(filmAfterEdit(f, edited).clips).toEqual([A]);
+    const first = { ...f, beats: [{ ...f.beats[0], move: "push-in" as const }, f.beats[1]] };
+    expect(filmAfterEdit(f, first).clips).toEqual([]);
+  });
+
+  it("drops a clip when the beat is reframed, not only reworded", () => {
+    const f = two();
+    const moved = { ...f, beats: [{ ...f.beats[0], end: pose(9) }, f.beats[1]] };
+    expect(filmAfterEdit(f, moved).clips).toEqual([]);
+  });
+
+  it("drops every clip when the engine or the opening still changes: a different film", () => {
+    const f = two();
+    expect(filmAfterEdit(f, { ...f, engine: "veo" }).clips).toEqual([]);
+    expect(filmAfterEdit(f, { ...f, startId: B }).clips).toEqual([]);
+  });
+
+  it("keeps the clips of the beats before a new one, and the film is no longer rendered", () => {
+    const f = two();
+    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [] }] };
+    const next = filmAfterEdit(f, added);
+    expect(next.clips).toEqual([A, B]);
+    expect(filmRendered(next)).toBe(false);
+  });
+
+  it("drops the clip of a beat that was removed from the middle", () => {
+    const f = two();
+    const cut = { ...f, beats: [f.beats[1]] };
+    expect(filmAfterEdit(f, cut).clips).toEqual([]);
+  });
+});

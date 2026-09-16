@@ -2114,6 +2114,7 @@ const it = {
     filmBeatClip: "clip in rendering…",
     filmBeatDone: "pronto",
     filmBeatFailed: "Quel tratto non si è potuto renderizzare — tutto ciò che viene prima resta.",
+    filmClipFailed: "La clip di quel tratto non è partita — ricarica la pagina e premi di nuovo play.",
     filmNeedsStart: "Il film ha bisogno di un inizio: scegli uno still finito e chi c'è dentro.",
     scaleWarnLine: "I mobili sembrano enormi accanto a una persona — una costruzione da foto può sbagliare la scala.",
     scaleWarnFix: "Fai riscalare ad Astra",

@@ -33,6 +33,13 @@ export type SetFilm = {
   /** The finished still the film opens on — frame one, and the first beat's look. */
   startId: string | null;
   beats: FilmBeat[];
+  /**
+   * The clip each beat rendered as, in beat order — what the reel plays.
+   * Kept with the move so a film the person paid for can be watched again
+   * after they close the page, not only in the session that rendered it.
+   * Shorter than the beats when the film is part-rendered or part-stale.
+   */
+  clips: (string | null)[];
 };
 
 /**
@@ -68,7 +75,7 @@ const pose = (v: unknown): FilmPose | null => {
  * at the ceiling. Nothing here throws; an unusable value is an empty film.
  */
 export function normaliseSetFilm(v: unknown): SetFilm {
-  const empty: SetFilm = { engine: SET_TAKE_DEFAULT_ENGINE, startId: null, beats: [] };
+  const empty: SetFilm = { engine: SET_TAKE_DEFAULT_ENGINE, startId: null, beats: [], clips: [] };
   if (!v || typeof v !== "object") return empty;
   const f = v as Record<string, unknown>;
   const engine = isSetTakeEngine(f.engine) ? f.engine : SET_TAKE_DEFAULT_ENGINE;
@@ -92,7 +99,51 @@ export function normaliseSetFilm(v: unknown): SetFilm {
       beats.push({ words, end, move, textures });
     }
   }
-  return { engine, startId, beats };
+  const clips: (string | null)[] = [];
+  if (Array.isArray(f.clips)) {
+    for (const c of f.clips) {
+      if (clips.length >= beats.length) break;
+      clips.push(typeof c === "string" && UUID_RE.test(c) ? c.toLowerCase() : null);
+    }
+  }
+  return { engine, startId, beats, clips };
+}
+
+/** Two beats as the same beat: every field the take is rendered from. */
+function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
+  return (
+    a.words === b.words &&
+    a.move === b.move &&
+    a.textures.length === b.textures.length &&
+    a.textures.every((t, i) => t === b.textures[i]) &&
+    a.end.fovDeg === b.end.fovDeg &&
+    a.end.position.every((n, i) => n === b.end.position[i]) &&
+    a.end.target.every((n, i) => n === b.end.target[i])
+  );
+}
+
+/**
+ * The film after an edit, keeping only the clips the edit leaves true. A
+ * rendered clip belongs to a beat AND to every beat before it — beat n opens
+ * on the exact frame beat n-1 closed on — so the first beat that changes ends
+ * the run of clips that still show this film, and a different engine or a
+ * different opening still ends it at once. Every change to a film goes
+ * through here, the way normaliseSetFilm is the door for a stored one.
+ */
+export function filmAfterEdit(prev: SetFilm, next: SetFilm): SetFilm {
+  if (next.engine !== prev.engine || next.startId !== prev.startId) return { ...next, clips: [] };
+  const clips: (string | null)[] = [];
+  for (let i = 0; i < next.beats.length; i++) {
+    const was = prev.beats[i];
+    if (!was || !sameBeat(was, next.beats[i])) break;
+    clips.push(prev.clips[i] ?? null);
+  }
+  return { ...next, clips };
+}
+
+/** Whether every beat of this film has a clip: what the reel needs to play. */
+export function filmRendered(film: SetFilm): boolean {
+  return film.beats.length > 0 && film.clips.length === film.beats.length && film.clips.every((c) => c !== null);
 }
 
 /** How long the film runs: every beat is its engine's one fixed length. */

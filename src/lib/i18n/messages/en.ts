@@ -2255,6 +2255,7 @@ const en = {
     filmBeatClip: "clip rendering…",
     filmBeatDone: "in",
     filmBeatFailed: "That beat couldn't render — everything before it is kept.",
+    filmClipFailed: "That beat's clip couldn't play — reload the page and press play again.",
     filmNeedsStart: "The film needs a start: pick a finished still, and who is in it.",
     scaleWarnLine: "The furniture here looks oversized against a person — a photo build can misread scale.",
     scaleWarnFix: "Have Astra rescale it",

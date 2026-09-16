@@ -20,6 +20,18 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.38.3",
+    build: 56,
+    date: "2026-09-16",
+    title: "A film you rendered can be watched again, and the frame you download is the frame you framed",
+    items: [
+      "A film you paid to render could only be played in the session that rendered it: come back to the set later and Play the film was gone, though every beat was still in the filmstrip. The film now remembers its clips, so the reel is there whenever you open the set — and a beat you change drops its clip and the ones after it, because each beat opens on the frame the one before it closed on.",
+      "A clip that will not load used to leave the reel on black with nothing to say. It now tells you and gives the stage back.",
+      "Download the frame handed back the whole 3:2 frame the model draws rather than the picture inside the frame lines: on Scope you framed 2.39 : 1 and got a file a third taller. It downloads as the picture now — the same cut the still comes back with. The square is unchanged, because the square is its own picture.",
+      "The rest of the stage was walked by hand this session and works: drag to orbit, scroll to dolly, drag the figure, double-click to frame it, and the Build editor's gizmo with undo behind it.",
+    ],
+  },
+  {
     version: "1.38.2",
     build: 55,
     date: "2026-09-16",

@@ -20,7 +20,7 @@ import {
   takeQuoteInput,
   type SetTakeEngine,
 } from "@/lib/sets/take";
-import { FILM_MAX_BEATS, filmSeconds, normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
+import { FILM_MAX_BEATS, filmAfterEdit, filmRendered, filmSeconds, normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
 import { oversizedSeating } from "@/lib/sets/human-scale";
 import { readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
@@ -128,8 +128,14 @@ type StageApi = {
    * The still's frame (Helios Cinema): the scene from `from` — or the camera
    * as it stands — rendered at the rig format's render size with the pose's
    * own field of view across its height. What the frame lines show, exactly.
+   *
+   * `cut` cuts it to the band the frame lines draw, the way the server cuts
+   * the still that comes back (frame-cut.ts): the picture, not the frame it
+   * is shot in. The sketch the model is sent NEVER asks for this — it is
+   * rendered whole at 3:2, with the cut asked for in words and made on the
+   * server, which is what a set shot is priced and proved at.
    */
-  frame(opts?: { from?: Pose; hideFigure?: boolean }): string | null;
+  frame(opts?: { from?: Pose; hideFigure?: boolean; cut?: boolean }): string | null;
   /** The frame lines follow the rig's format and the panels round the stage. */
   relayout(): void;
   /**
@@ -412,8 +418,13 @@ export function SetView({
   /** Rendering: which beat the chain is on; null when idle. */
   const [filmBusy, setFilmBusy] = useState<{ beat: number } | null>(null);
   const [filmError, setFilmError] = useState("");
-  /** The last render's clip ids in beat order (null where a beat's clip never started). */
-  const [filmClips, setFilmClips] = useState<(string | null)[]>([]);
+  /**
+   * Every change to the move goes through here: the film is edited, then
+   * filmAfterEdit (film.ts) says which rendered clips the change leaves
+   * true — so the reel never plays a clip of a film that no longer exists.
+   * Only the render writes clips, and it writes them with setFilm itself.
+   */
+  const editFilm = useCallback((fn: (f: SetFilm) => SetFilm) => setFilm((f) => filmAfterEdit(f, fn(f))), []);
   /** The reel: which clip is playing on the stage; null when closed. */
   const [reel, setReel] = useState<number | null>(null);
   const [previz, setPreviz] = useState(false);
@@ -901,13 +912,16 @@ export function SetView({
             renderer.setPixelRatio(1);
             renderer.setSize(fr.renderW, fr.renderH, false);
             renderer.render(scene, cam);
+            // The band the frame lines draw, centred, when the picture is
+            // asked for rather than the frame it is shot in.
+            const band = opts?.cut && fr.cut;
             const out = document.createElement("canvas");
-            out.width = fr.renderW;
-            out.height = fr.renderH;
+            out.width = band ? fr.bandW : fr.renderW;
+            out.height = band ? fr.bandH : fr.renderH;
             const ctx = out.getContext("2d");
             let url: string | null = null;
             if (ctx) {
-              ctx.drawImage(renderer.domElement, 0, 0);
+              ctx.drawImage(renderer.domElement, band ? -Math.floor((fr.renderW - fr.bandW) / 2) : 0, band ? -Math.floor((fr.renderH - fr.bandH) / 2) : 0);
               url = out.toDataURL("image/jpeg", 0.9);
             }
             renderer.setPixelRatio(ratio);
@@ -1701,7 +1715,7 @@ export function SetView({
   function filmAddKeyframe() {
     const pose = apiRef.current?.pose();
     if (!pose) return;
-    setFilm((f) =>
+    editFilm((f) =>
       f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [] }] },
     );
     setFilmSel((n) => n ?? null);
@@ -1735,7 +1749,7 @@ export function SetView({
         end = { ...end, fovDeg: Math.round(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minLayoutFovDeg, fov)) * 100) / 100 };
       }
     }
-    setFilm((f) => {
+    editFilm((f) => {
       const beats = [...f.beats];
       beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [] };
       return { ...f, beats };
@@ -1752,7 +1766,7 @@ export function SetView({
 
   function filmTexture(texture: FilmTexture) {
     if (filmSel === null) return;
-    setFilm((f) => ({
+    editFilm((f) => ({
       ...f,
       beats: f.beats.map((b, i) =>
         i === filmSel ? { ...b, textures: b.textures.includes(texture) ? b.textures.filter((t) => t !== texture) : [...b.textures, texture] } : b,
@@ -1802,7 +1816,9 @@ export function SetView({
     }
     if (film.beats.length === 0) return;
     setFilmError("");
-    setFilmClips([]);
+    // A fresh render starts the reel over: the old clips are of the film
+    // this one replaces, whether or not each beat still matches.
+    setFilm((f) => ({ ...f, clips: [] }));
     setReel(null);
     setViewing(null);
     let startId = film.startId;
@@ -1879,7 +1895,8 @@ export function SetView({
           ]
         : [endStill];
       setShots((prev) => [...rows, ...prev]);
-      setFilmClips((prev) => [...prev, result.takeGenerationId]);
+      // Kept on the film, so the reel is still there after the page closes.
+      setFilm((f) => ({ ...f, clips: [...f.clips, result.takeGenerationId] }));
       if (!result.still.succeeded || result.takeGenerationId === null) {
         setFilmError(result.takeError ?? s.filmBeatFailed);
         break;
@@ -2107,13 +2124,13 @@ export function SetView({
       if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
       const pose = apiRef.current?.pose();
       if (!pose) return;
-      setFilm((f) =>
+      editFilm((f) =>
         f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [] }] },
       );
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filmOpen]);
+  }, [filmOpen, editFilm]);
 
   // The move autosaves like the editor's working copy — a beat after the
   // hands stop. The first run is the loaded film itself, not an edit.
@@ -2158,9 +2175,14 @@ export function SetView({
     return () => clearInterval(timer);
   }, [generatingKey, setId]);
 
-  /** The frame as a picture on disk — 3D Jutsu's static-frame export, for the frame the still would be shot from. */
+  /**
+   * The frame as a picture on disk — 3D Jutsu's static-frame export. Cut to
+   * the frame lines, because the frame lines are the picture: the still that
+   * comes back is cut there too (frame-cut.ts), so a Scope frame downloads
+   * as the 2.39 : 1 band it was composed in and not the 3:2 the model draws.
+   */
   function downloadFrame() {
-    const shot = apiRef.current?.frame();
+    const shot = apiRef.current?.frame({ cut: true });
     if (!shot) return;
     const a = document.createElement("a");
     a.href = shot;
@@ -2219,11 +2241,11 @@ export function SetView({
   // The film's whole price: every beat is one take — an end frame and a
   // clip — priced by the same quotes the server charges with.
   const filmCredits = film.beats.length * (quote.totalCredits + quoteSend(takeQuoteInput(film.engine)).totalCredits);
-  const filmClipShots = filmClips.map((id) => (id ? (shots.find((sh) => sh.generationId === id) ?? null) : null));
-  const reelReady =
-    film.beats.length > 0 &&
-    filmClips.length === film.beats.length &&
-    filmClipShots.every((sh) => sh !== null && sh.status === "succeeded" && Boolean(sh.resultUrl));
+  // The reel plays the clips the film remembers (film.clips), so a film
+  // rendered on an earlier visit can be watched again — the beats' rows are
+  // the set's own shots either way.
+  const filmClipShots = film.clips.map((id) => (id ? (shots.find((sh) => sh.generationId === id) ?? null) : null));
+  const reelReady = filmRendered(film) && filmClipShots.every((sh) => sh !== null && sh.status === "succeeded" && Boolean(sh.resultUrl));
   const reelShots = reelReady ? (filmClipShots as SetShot[]) : [];
   const filmStartShot = film.startId ? (shots.find((sh) => sh.generationId === film.startId) ?? null) : null;
   const filmStartOptions = shots.filter((sh) => sh.kind === "still" && sh.status === "succeeded");
@@ -2786,6 +2808,12 @@ export function SetView({
                 autoPlay
                 playsInline
                 onEnded={() => setReel((r) => (r !== null && r + 1 < reelShots.length ? r + 1 : null))}
+                // A clip that will not load leaves black where the film was:
+                // say so and give the stage back, rather than wait forever.
+                onError={() => {
+                  setFilmError(s.filmClipFailed);
+                  setReel(null);
+                }}
                 className="h-full w-full object-contain"
               />
               <span className="absolute left-3.5 top-3.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia tabular-nums">
@@ -2986,14 +3014,14 @@ export function SetView({
                 <span className="flex-1" />
                 <button
                   type="button"
-                  onClick={() => setFilm((f) => ({ ...f, engine: "omni" }))}
+                  onClick={() => editFilm((f) => ({ ...f, engine: "omni" }))}
                   className={chip(film.engine === "omni")}
                 >
                   {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFilm((f) => ({ ...f, engine: "veo" }))}
+                  onClick={() => editFilm((f) => ({ ...f, engine: "veo" }))}
                   className={chip(film.engine === "veo")}
                 >
                   {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
@@ -3049,7 +3077,7 @@ export function SetView({
                             role="option"
                             aria-selected={film.startId === shot.generationId}
                             onClick={() => {
-                              setFilm((f) => ({ ...f, startId: shot.generationId }));
+                              editFilm((f) => ({ ...f, startId: shot.generationId }));
                               setMenu(null);
                             }}
                             className={`flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-3 py-1.5 text-left text-xs hover:bg-white/[0.06] ${
@@ -3095,7 +3123,7 @@ export function SetView({
                       <button
                         type="button"
                         onClick={() => {
-                          setFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== i) }));
+                          editFilm((f) => ({ ...f, beats: f.beats.filter((_, j) => j !== i) }));
                           setFilmSel(null);
                         }}
                         aria-label={t.common.dismiss}
@@ -3107,7 +3135,7 @@ export function SetView({
                     <input
                       value={b.words}
                       onChange={(e) =>
-                        setFilm((f) => ({
+                        editFilm((f) => ({
                           ...f,
                           beats: f.beats.map((bb, j) => (j === i ? { ...bb, words: e.target.value } : bb)),
                         }))

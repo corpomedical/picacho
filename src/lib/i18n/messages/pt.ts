@@ -2115,6 +2115,7 @@ const pt = {
     filmBeatClip: "clipe renderizando…",
     filmBeatDone: "pronto",
     filmBeatFailed: "Esse trecho não pôde ser renderizado — tudo antes dele fica guardado.",
+    filmClipFailed: "O clipe desse trecho não reproduziu — recarregue a página e toque em reproduzir de novo.",
     filmNeedsStart: "O filme precisa de um começo: escolha um still pronto e quem aparece nele.",
     scaleWarnLine: "Os móveis parecem enormes perto de uma pessoa — uma construção a partir de foto pode errar a escala.",
     scaleWarnFix: "Deixar a Astra redimensionar",
