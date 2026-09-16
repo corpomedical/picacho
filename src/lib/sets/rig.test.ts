@@ -1,32 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  DEFAULT_SET_RIG,
-  RIG_ERAS,
-  RIG_FIXED_SENTENCES,
-  RIG_FORMAT_ORDER,
-  RIG_FORMATS,
-  RIG_GENRE_SUGGESTS,
-  RIG_GENRES,
-  RIG_LENSES,
-  RIG_LIGHTS,
-  RIG_NUMBERED_SENTENCE,
-  RIG_PALETTES,
-  RIG_STOCKS,
-  depthOfField,
-  focalMm,
-  formatFrame,
-  isLabPalette,
-  labLooksOf,
-  lightDirectionWords,
-  lookStill,
-  normaliseSetRig,
-  rigCheckItems,
-  rigSentences,
-  rigWordsByItem,
-  type SetRig,
-} from "./rig";
+import { DEFAULT_RIG_OVERLAYS, DEFAULT_SET_RIG, RIG_ERAS, RIG_FIXED_SENTENCES, RIG_FORMATS, RIG_FORMAT_ORDER, RIG_GENRES, RIG_GENRE_SUGGESTS, RIG_LENSES, RIG_LIGHTS, RIG_NUMBERED_SENTENCE, RIG_PALETTES, RIG_STOCKS, depthOfField, exposureGain, exposureStops, focalMm, formatFrame, isLabPalette, labLooksOf, lightDirectionWords, lookStill, normaliseSetRig, rigCheckItems, rigSentences, rigWordsByItem, sensorCocMm, sensorHeightMm, shutterFraction, type SetRig } from "./rig";
+import { fovForLens } from "./build-scene";
 import { FILM_MOVES } from "./moves";
 
 // The rig (Helios Cinema, canvas page I): one door in, real optics, and
@@ -254,5 +230,86 @@ describe("the proof rule", () => {
       expect(RIG_PALETTES.map((p) => p.id)).toContain(sug.palette);
       for (const m of sug.moves) expect(FILM_MOVES as readonly string[]).toContain(m);
     }
+  });
+});
+
+describe("the camera department (cut 2)", () => {
+  // Canvas page J, 2026-09-17: the body the lens rule reads, the squeeze,
+  // the exposure and the viewfinder's aids — held by the stage, saved on
+  // the rig with everything else.
+  it("defaults to full frame, no squeeze, 180° at ISO 400 and 0 EV, every aid off", () => {
+    expect(DEFAULT_SET_RIG.sensor).toBe("fullframe");
+    expect(DEFAULT_SET_RIG.squeeze).toBe(1);
+    expect(DEFAULT_SET_RIG.shutterDeg).toBe(180);
+    expect(DEFAULT_SET_RIG.iso).toBe(400);
+    expect(DEFAULT_SET_RIG.ev).toBe(0);
+    expect(Object.values(DEFAULT_SET_RIG.overlays).every((v) => v === false)).toBe(true);
+    expect(normaliseSetRig({})).toEqual(DEFAULT_SET_RIG);
+  });
+
+  it("keeps what it knows and drops the rest, rounding EV to thirds within ±3", () => {
+    const r = normaliseSetRig({ sensor: "super35", squeeze: 2, shutterDeg: 90, iso: 1600, ev: 1.25, overlays: { thirds: true, histogram: "yes" } });
+    expect(r.sensor).toBe("super35");
+    expect(r.squeeze).toBe(2);
+    expect(r.shutterDeg).toBe(90);
+    expect(r.iso).toBe(1600);
+    expect(r.ev).toBeCloseTo(1.333, 3);
+    expect(r.overlays).toEqual({ ...DEFAULT_RIG_OVERLAYS, thirds: true });
+    const junk = normaliseSetRig({ sensor: "imax", squeeze: 1.5, shutterDeg: 100, iso: 640, ev: 9, overlays: [] });
+    expect(junk.sensor).toBe("fullframe");
+    expect(junk.squeeze).toBe(1);
+    expect(junk.shutterDeg).toBe(180);
+    expect(junk.iso).toBe(400);
+    expect(junk.ev).toBe(3);
+    expect(junk.overlays).toEqual(DEFAULT_RIG_OVERLAYS);
+    expect(normaliseSetRig({ ev: "bright" }).ev).toBe(0);
+    expect(normaliseSetRig({ ev: -7 }).ev).toBe(-3);
+  });
+
+  it("reads the lens on the sensor's side that spans the render: the short one under a landscape, the long one under a portrait", () => {
+    expect(sensorHeightMm("fullframe", "square")).toBe(24);
+    expect(sensorHeightMm("super35", "scope")).toBe(18.7);
+    expect(sensorHeightMm("super35", "vertical")).toBe(24.9);
+    expect(sensorHeightMm("phone", "wide")).toBe(7.3);
+  });
+
+  it("judges sharpness by the sensor's own circle of confusion", () => {
+    expect(sensorCocMm("fullframe")).toBeCloseTo(0.03, 9);
+    expect(sensorCocMm("super16")).toBeCloseTo((0.03 * Math.hypot(12.5, 7.4)) / Math.hypot(36, 24), 9);
+    expect(sensorCocMm("large")).toBeGreaterThan(0.03);
+  });
+
+  it("is a stop brighter per EV, per doubling of ISO, and by the shutter's share of 180°; the stop is not in it", () => {
+    const at = (over: Partial<SetRig>) => exposureGain({ ...DEFAULT_SET_RIG, ...over });
+    expect(at({})).toBe(1);
+    expect(at({ ev: 1 })).toBe(2);
+    expect(at({ ev: -1 })).toBe(0.5);
+    expect(at({ iso: 800 })).toBe(2);
+    expect(at({ iso: 100 })).toBe(0.25);
+    expect(at({ shutterDeg: 90 })).toBe(0.5);
+    expect(at({ shutterDeg: 360 })).toBe(2);
+    expect(at({ ev: 1, iso: 800, shutterDeg: 90 })).toBe(2);
+    expect(at({ stop: 1.4 })).toBe(1);
+    expect(exposureStops({ ...DEFAULT_SET_RIG, ev: 1 / 3, iso: 800 })).toBeCloseTo(1.33, 2);
+  });
+
+  it("names the shutter's time at 24 fps", () => {
+    expect(shutterFraction(180)).toBe("1/48");
+    expect(shutterFraction(90)).toBe("1/96");
+    expect(shutterFraction(45)).toBe("1/192");
+    expect(shutterFraction(270)).toBe("1/32");
+    expect(shutterFraction(360)).toBe("1/24");
+  });
+
+  it("sends focus numbers worked out on the rig's own sensor", () => {
+    const ctx = { distanceM: 4, fovDeg: fovForLens(35), cameraBearingDeg: 0 };
+    const full = rigWordsByItem({ ...DEFAULT_SET_RIG, stop: 2 }, ctx).focus;
+    const s35 = rigWordsByItem({ ...DEFAULT_SET_RIG, stop: 2, sensor: "super35" }, ctx).focus;
+    expect(full).toContain("from 3.3 to 5.0 m");
+    expect(s35).toBeDefined();
+    expect(s35).not.toBe(full);
+    // The same field of view is a shorter lens on Super 35, judged by a
+    // smaller circle: more is sharp, and the far limit moves out.
+    expect(Number(/to ([\d.]+) m/.exec(s35 ?? "")?.[1])).toBeGreaterThan(5.0);
   });
 });

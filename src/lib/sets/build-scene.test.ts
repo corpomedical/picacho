@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
-import { FULL_STAGE, buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn } from "./build-scene";
+import { FULL_STAGE, buildSetScene, buildStandIn, fovForLens, lensForFov, moveBuildInto, nearestLens, placeStandIn, squeezeProjection } from "./build-scene";
 import { normaliseSetSpec, specInstanceCount, type SetSpec } from "./set-spec";
 import rainyMarket from "./fixtures-rainy-market.json";
 import showroomOpen from "./fixtures-showroom-open.json";
@@ -296,5 +296,34 @@ describe("the full stage", () => {
     expect((dark.fog as THREE.Fog).isFog).toBe(true);
     expect((dark.fog as THREE.Fog).near).toBe(spec.fog?.near);
     dark.dispose();
+  });
+});
+
+describe("the lens on a sensor (the camera department, cut 2)", () => {
+  it("sees less on a smaller sensor and more on a larger one, and reads back as the same lens", () => {
+    const full = fovForLens(35);
+    const s35 = fovForLens(35, 18.7);
+    const large = fovForLens(35, 25.5);
+    expect(full).toBeCloseTo(37.85, 1);
+    expect(s35).toBeLessThan(full);
+    expect(large).toBeGreaterThan(full);
+    expect(lensForFov(s35, 18.7)).toBeCloseTo(35, 9);
+    expect(nearestLens(s35, 18.7)).toBe(35);
+    // Read as full frame, the same field of view is a longer lens.
+    expect(nearestLens(s35)).toBe(50);
+  });
+
+  it("squeezes the projection: the same frame sees wider, and the inverse follows", () => {
+    const cam = new THREE.PerspectiveCamera(40, 1.5, 0.1, 100);
+    cam.updateProjectionMatrix();
+    const x0 = cam.projectionMatrix.elements[0];
+    squeezeProjection(cam, 2);
+    expect(cam.projectionMatrix.elements[0]).toBeCloseTo(x0 / 2, 9);
+    const check = cam.projectionMatrix.clone().multiply(cam.projectionMatrixInverse);
+    for (let i = 0; i < 16; i++) expect(check.elements[i]).toBeCloseTo(i % 5 === 0 ? 1 : 0, 6);
+    const plain = new THREE.PerspectiveCamera(40, 1.5, 0.1, 100);
+    plain.updateProjectionMatrix();
+    squeezeProjection(plain, 1);
+    expect(plain.projectionMatrix.elements[0]).toBeCloseTo(x0, 9);
   });
 });

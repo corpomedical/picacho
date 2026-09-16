@@ -61,10 +61,52 @@ export const STAGE_AO = {
   night: { radius: 0.35, blend: 0.9 },
 } as const;
 
+/**
+ * False colour (the camera department, cut 2): the picture's brightness as
+ * bands, the way a monitor's false colour reads exposure — purple and blue
+ * for what is crushed, green at middle grey (18 %), pink where skin sits,
+ * yellow and red for what is clipping; everything else stays grey at its
+ * own brightness. Bands are of the DISPLAYED picture (after the output
+ * pass), in the units a waveform reads (IRE-like, 0–100 %).
+ */
+export const FALSE_COLOUR_BANDS: readonly { upTo: number; rgb: readonly [number, number, number] | null }[] = [
+  { upTo: 0.025, rgb: [0.45, 0.15, 0.75] },
+  { upTo: 0.04, rgb: [0.15, 0.3, 0.95] },
+  { upTo: 0.38, rgb: null },
+  { upTo: 0.42, rgb: [0.2, 0.75, 0.25] },
+  { upTo: 0.52, rgb: null },
+  { upTo: 0.56, rgb: [0.95, 0.55, 0.75] },
+  { upTo: 0.97, rgb: null },
+  { upTo: 0.99, rgb: [0.95, 0.9, 0.2] },
+  { upTo: 1.01, rgb: [0.95, 0.2, 0.15] },
+];
+
+export const FALSE_COLOUR_SHADER = {
+  uniforms: { tDiffuse: { value: null as unknown }, uOn: { value: 0 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uOn;
+    varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      if (uOn < 0.5) { gl_FragColor = c; return; }
+      float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+      vec3 o = vec3(l);
+      ${FALSE_COLOUR_BANDS.map((b, i) => {
+        const lo = i === 0 ? 0 : FALSE_COLOUR_BANDS[i - 1].upTo;
+        return b.rgb ? `if (l >= ${lo.toFixed(3)} && l < ${b.upTo.toFixed(3)}) o = vec3(${b.rgb.map((v) => v.toFixed(2)).join(", ")});` : "";
+      }).join("\n      ")}
+      gl_FragColor = vec4(o, c.a);
+    }`,
+};
+
 export type StageComposer = {
   composer: EffectComposer;
   bokeh: BokehPass;
   lab: ShaderPass;
+  /** The viewfinder's false colour, last in the chain; off unless the rig asks. */
+  falseColour: ShaderPass;
   ao: GTAOPass | null;
   bloom: UnrealBloomPass | null;
 };
@@ -110,7 +152,9 @@ export function makeStageComposer(
   lab.uniforms.uTexel.value = new THREE.Vector2(1 / w, 1 / h);
   lab.uniforms.uFrame.value = new THREE.Vector4(0, 0, 1, 1);
   c.addPass(lab);
+  const falseColour = new P.ShaderPass(FALSE_COLOUR_SHADER);
+  c.addPass(falseColour);
   c.setPixelRatio(renderer.getPixelRatio());
   c.setSize(w, h);
-  return { composer: c, bokeh, lab, ao, bloom };
+  return { composer: c, bokeh, lab, falseColour, ao, bloom };
 }

@@ -581,22 +581,37 @@ export function placeStandIn(standIn: StandIn, mark: { x: number; z: number; fac
 
 // ---------------------------------------------------------------------------
 // Lenses. The picker speaks millimetres; three.js speaks vertical field of
-// view. Full-frame equivalents (24 mm sensor height), which is what a
-// photographer means by "a 35".
+// view. On full frame (24 mm sensor height, the default) a "35" is what a
+// photographer means by one; the rig's sensor (rig.ts sensorHeightMm) makes
+// the same 35 see less on Super 35 and more on a large format — the camera
+// department, cut 2 (2026-09-17).
 // ---------------------------------------------------------------------------
 
 export const LENSES_MM = [18, 24, 35, 50, 85, 135] as const;
+export const FULL_FRAME_HEIGHT_MM = 24;
 
-export function fovForLens(mm: number): number {
-  return (2 * Math.atan(12 / mm)) / DEG;
+export function fovForLens(mm: number, sensorHeightMm = FULL_FRAME_HEIGHT_MM): number {
+  return (2 * Math.atan(sensorHeightMm / 2 / mm)) / DEG;
 }
 
-export function lensForFov(fovDeg: number): number {
-  return 12 / Math.tan((fovDeg * DEG) / 2);
+export function lensForFov(fovDeg: number, sensorHeightMm = FULL_FRAME_HEIGHT_MM): number {
+  return sensorHeightMm / 2 / Math.tan((fovDeg * DEG) / 2);
 }
 
 /** The listed lens nearest to a field of view. */
-export function nearestLens(fovDeg: number): (typeof LENSES_MM)[number] {
-  const mm = lensForFov(fovDeg);
+export function nearestLens(fovDeg: number, sensorHeightMm = FULL_FRAME_HEIGHT_MM): (typeof LENSES_MM)[number] {
+  const mm = lensForFov(fovDeg, sensorHeightMm);
   return LENSES_MM.reduce((best, l) => (Math.abs(l - mm) < Math.abs(best - mm) ? l : best), LENSES_MM[0]);
+}
+
+/**
+ * An anamorphic squeeze: the same lens sees `squeeze` times wider across
+ * the frame, drawn unsqueezed. Applied to the projection after
+ * updateProjectionMatrix (which resets it), so a raycast through the camera
+ * sees the same picture the person does. 1 leaves the camera alone.
+ */
+export function squeezeProjection(camera: ThreeNS.PerspectiveCamera, squeeze: number): void {
+  if (!(squeeze > 1)) return;
+  camera.projectionMatrix.elements[0] /= squeeze;
+  camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert();
 }

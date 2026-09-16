@@ -209,6 +209,9 @@ export function filmContextKey(input: {
     JSON.stringify([
       input.characterId,
       [rig.format, rig.era, rig.stock, rig.lens, rig.stop, rig.palette, light],
+      // The camera department (cut 2): the body, the squeeze and the exposure
+      // are in the sketch; the viewfinder's aids never are.
+      [rig.sensor, rig.squeeze, rig.shutterDeg, rig.iso, rig.ev],
       [mark.x, mark.z, mark.facingDeg],
       input.setKey,
     ]),

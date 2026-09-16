@@ -311,7 +311,10 @@ describe("filmContextKey", () => {
     // A new SetRig field must either change the picture — and then join the
     // key in film.ts — or be added here as one that does not.
     expect(Object.keys(DEFAULT_SET_RIG).sort()).toEqual(
-      ["era", "format", "genre", "gradeStage", "lens", "light", "palette", "stock", "stop"].sort(),
+      // In the key: format, era, stock, lens, stop, palette, light, sensor,
+      // squeeze, shutterDeg, iso, ev. Not in it: genre (suggests only),
+      // gradeStage and overlays (the stage's own view, never the sketch).
+      ["era", "ev", "format", "genre", "gradeStage", "iso", "lens", "light", "overlays", "palette", "sensor", "shutterDeg", "squeeze", "stock", "stop"].sort(),
     );
   });
 });

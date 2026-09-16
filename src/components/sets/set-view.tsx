@@ -12,7 +12,7 @@ import { saveSetLayout, saveSetThumbnail, shootInSet, takeInSet } from "@/lib/se
 import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
-import { fovForLens, nearestLens, type StageQuality } from "@/lib/sets/build-scene";
+import { fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@/lib/sets/build-scene";
 import { clearMarks } from "@/lib/sets/marks";
 import {
   retryableTakes,
@@ -38,7 +38,7 @@ import {
 import { oversizedSeating } from "@/lib/sets/human-scale";
 import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
-import { RIG_PALETTES, findLook, formatFrame, normaliseSetRig, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
+import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
 import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
@@ -182,6 +182,14 @@ type StageApi = {
   setDepth(stop: number | null): void;
   /** What the lab will make of the still, previewed on the live view (lab-preview.ts); 0 and 0 draws it as it is. */
   setLab(stock: number, lens: number): void;
+  /** The camera department (cut 2): how bright the stage is drawn, over the lift — the sketch carries it. */
+  setExposureGain(gain: number): void;
+  /** The viewfinder's false colour, on the live view only. */
+  setFalseColour(on: boolean): void;
+  /** Where the viewfinder's histogram is drawn, or null for none. */
+  setHistogram(canvas: HTMLCanvasElement | null): void;
+  /** The focus readout at the figure's eyes while the stop is set: the element, and the words for a distance. */
+  setFocusHud(el: HTMLElement | null, words: ((distanceM: number) => string) | null): void;
   /** Width ÷ height the recorded frame's field of view is measured against (1: across its height). */
   canvasAspect(): number;
   /**
@@ -663,6 +671,9 @@ export function SetView({
 
   const hostRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
+  // The viewfinder's histogram and the focus readout (the camera department, cut 2).
+  const histogramRef = useRef<HTMLCanvasElement>(null);
+  const focusHudRef = useRef<HTMLDivElement>(null);
   // Film's keyframe labels: a layer of their own over the canvas, outside
   // the host so the palette's grade preview never tints them.
   const overlayHostRef = useRef<HTMLDivElement>(null);
@@ -830,6 +841,45 @@ export function SetView({
         // the renderer, past the composer.
         let lab = { stock: 0, lens: 0 };
         const labOn = () => lab.stock > 0 || lab.lens > 0;
+        // The camera department (cut 2): the exposure over the lift, the
+        // viewfinder's false colour and histogram, the focus readout.
+        let exposureGainNow = 1;
+        let falseColourOn = false;
+        let falsePass: import("three/examples/jsm/postprocessing/ShaderPass.js").ShaderPass | null = null;
+        let histogramCanvas: HTMLCanvasElement | null = null;
+        let focusHud: HTMLElement | null = null;
+        let focusWords: ((distanceM: number) => string) | null = null;
+        let frameCount = 0;
+        const eyeHud = new THREE.Vector3();
+        const histoScratch = document.createElement("canvas");
+        histoScratch.width = 96;
+        histoScratch.height = 54;
+        /** The picture inside the frame lines as 32 bins of brightness, drawn as bars; the ends in amber. */
+        const drawHistogram = (out: HTMLCanvasElement) => {
+          const sctx = histoScratch.getContext("2d", { willReadFrequently: true });
+          const octx = out.getContext("2d");
+          if (!sctx || !octx) return;
+          const src = renderer.domElement;
+          const sx = frameUv.x * src.width;
+          const sw = Math.max(1, (frameUv.z - frameUv.x) * src.width);
+          const sy = (1 - frameUv.w) * src.height;
+          const sh = Math.max(1, (frameUv.w - frameUv.y) * src.height);
+          sctx.drawImage(src, sx, sy, sw, sh, 0, 0, histoScratch.width, histoScratch.height);
+          const d = sctx.getImageData(0, 0, histoScratch.width, histoScratch.height).data;
+          const bins = new Uint32Array(32);
+          for (let i = 0; i < d.length; i += 4) bins[Math.min(31, ((0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 8) | 0)] += 1;
+          let max = 1;
+          for (const b of bins) if (b > max) max = b;
+          const W = out.width;
+          const H = out.height;
+          octx.clearRect(0, 0, W, H);
+          const bw = W / 32;
+          for (let i = 0; i < 32; i++) {
+            const h = Math.round((bins[i] / max) * (H - 2));
+            octx.fillStyle = i < 2 || i > 29 ? "rgba(224,164,104,0.95)" : "rgba(236,237,241,0.85)";
+            octx.fillRect(i * bw, H - h, Math.max(1, bw - 1), h);
+          }
+        };
         const frameUv = new THREE.Vector4(0, 0, 1, 1);
 
         const halfX = spec.bounds.x / 2;
@@ -941,6 +991,10 @@ export function SetView({
         const applyFov = () => {
           camera.fov = widenFovDeg(poseFov, fullH / Math.max(1, renderPx));
           camera.updateProjectionMatrix();
+          // The rig's anamorphic squeeze (build-scene.ts squeezeProjection),
+          // on every projection the person sees or shoots — never on the
+          // snapshot, which the matcher and the compare read as spherical.
+          squeezeProjection(camera, rigRef.current.squeeze);
         };
         const fit = () => {
           const w = host.clientWidth;
@@ -1018,6 +1072,7 @@ export function SetView({
               composer = made.composer;
               bokeh = made.bokeh;
               labPass = made.lab;
+              falsePass = made.falseColour;
             } catch (err) {
               // No passes on this device: the stage stays as it is.
               console.warn("SetView post-processing unavailable:", err);
@@ -1027,7 +1082,8 @@ export function SetView({
         // The figure's eyes, where the rig's focus is measured to.
         const eye = new THREE.Vector3();
         const renderLive = () => {
-          if ((full || depthStop !== null || labOn()) && composer && bokeh) {
+          if ((full || falseColourOn || depthStop !== null || labOn()) && composer && bokeh) {
+            if (falsePass) falsePass.uniforms.uOn.value = falseColourOn ? 1 : 0;
             const p = standIn.group.position;
             eye.set(p.x, 1.5, p.z);
             const s = Math.max(0.3, camera.position.distanceTo(eye));
@@ -1071,6 +1127,27 @@ export function SetView({
           controls.update();
           if (camera.position.y < 0.1) camera.position.y = 0.1;
           renderLive();
+          frameCount += 1;
+          // The focus readout: at the figure's eyes on screen, the distance
+          // and what the stop holds sharp at it (the words come from the page).
+          if (focusHud) {
+            if (depthStop !== null && focusWords) {
+              const p = standIn.group.position;
+              eyeHud.set(p.x, FRAME_EYE_Y, p.z);
+              const d = camera.position.distanceTo(eyeHud);
+              eyeHud.project(camera);
+              const x = ((eyeHud.x + 1) / 2) * lastW;
+              const y = ((1 - eyeHud.y) / 2) * lastH;
+              const off = eyeHud.z > 1 || x < 0 || x > lastW || y < 0 || y > lastH;
+              focusHud.hidden = off;
+              if (!off) {
+                focusHud.style.transform = `translate(${x.toFixed(0)}px, ${(y - 30).toFixed(0)}px)`;
+                const text = focusWords(d);
+                if (focusHud.textContent !== text) focusHud.textContent = text;
+              }
+            } else focusHud.hidden = true;
+          }
+          if (histogramCanvas && frameCount % 6 === 0) drawHistogram(histogramCanvas);
         };
         // One lift for the whole set, measured before the first frame is
         // shown (exposure.ts): a dark set gets more fill light, then more
@@ -1157,6 +1234,7 @@ export function SetView({
             cam.position.set(...from.position);
             cam.lookAt(new THREE.Vector3(...from.target));
             cam.updateProjectionMatrix();
+            squeezeProjection(cam, rigRef.current.squeeze);
             // Drawn at the render's own size, then the canvas goes back as it
             // was before the browser shows a frame.
             const ratio = renderer.getPixelRatio();
@@ -1210,6 +1288,22 @@ export function SetView({
           setLab(stock, lens) {
             lab = coarse ? { stock: 0, lens: 0 } : { stock, lens };
             if (labOn()) ensureComposer();
+          },
+          setExposureGain(gain) {
+            exposureGainNow = Math.max(1 / 16, Math.min(16, gain));
+            renderer.toneMappingExposure = lift.exposure * exposureGainNow;
+          },
+          setFalseColour(on) {
+            falseColourOn = on;
+            if (on) ensureComposer();
+          },
+          setHistogram(c) {
+            histogramCanvas = c;
+          },
+          setFocusHud(el, words) {
+            focusHud = el;
+            focusWords = words;
+            if (el && !words) el.hidden = true;
           },
           snapshot(px, opts) {
             // The ring and arrow are for arranging; the image model must
@@ -1339,6 +1433,7 @@ export function SetView({
             scene.environmentIntensity = fresh.environmentIntensity;
             camera.far = fresh.farPlane;
             camera.updateProjectionMatrix();
+            squeezeProjection(camera, rigRef.current.squeeze);
             placeStandIn(standIn, layoutRef.current.mark);
           },
           setFilmOverlay(plan, names) {
@@ -1535,6 +1630,52 @@ export function SetView({
     apiRef.current?.setLab(stock, lens);
   }, [ready, rigStock, rigLens]);
 
+  // The camera department (cut 2). The exposure is drawn over the lift, so
+  // the sketch carries it; the squeeze re-fits the projection; the
+  // viewfinder's aids are the live view's only.
+  const rigEv = rig.ev;
+  const rigIso = rig.iso;
+  const rigShutter = rig.shutterDeg;
+  useEffect(() => {
+    if (ready) apiRef.current?.setExposureGain(exposureGain({ ev: rigEv, iso: rigIso, shutterDeg: rigShutter }));
+  }, [ready, rigEv, rigIso, rigShutter]);
+  const rigSqueeze = rig.squeeze;
+  useEffect(() => {
+    if (ready) apiRef.current?.relayout();
+  }, [ready, rigSqueeze]);
+  const falseColourOn = rig.overlays.falseColour;
+  useEffect(() => {
+    if (ready) apiRef.current?.setFalseColour(falseColourOn);
+  }, [ready, falseColourOn]);
+  const histogramOn = rig.overlays.histogram;
+  useEffect(() => {
+    if (!ready) return;
+    apiRef.current?.setHistogram(histogramOn ? histogramRef.current : null);
+    return () => apiRef.current?.setHistogram(null);
+  }, [ready, histogramOn]);
+  const rigStop = rig.stop;
+  const rigSensor = rig.sensor;
+  const rigFormat = rig.format;
+  useEffect(() => {
+    if (!ready) return;
+    const el = focusHudRef.current;
+    if (rigStop === null) {
+      apiRef.current?.setFocusHud(el, null);
+      return;
+    }
+    const nf = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const focal = focalMm(fovDeg, sensorHeightMm(rigSensor, rigFormat));
+    const coc = sensorCocMm(rigSensor);
+    const words = (d: number) => {
+      const { nearM, farM } = depthOfField(focal, rigStop, d, coc);
+      return Number.isFinite(farM)
+        ? formatMsg(s.rig.hudFocus, { d: nf.format(d), near: nf.format(nearM), far: nf.format(farM) })
+        : formatMsg(s.rig.hudFocusDeep, { d: nf.format(d), near: nf.format(nearM) });
+    };
+    apiRef.current?.setFocusHud(el, words);
+    return () => apiRef.current?.setFocusHud(el, null);
+  }, [ready, rigStop, rigSensor, rigFormat, fovDeg, locale, s]);
+
   // A light scheme is a plot in the set (light-schemes.ts): the stage draws
   // a lit copy of the working copy round the figure's mark. Only when the
   // light, the set or the mark's place changed — the first ready of a set
@@ -1692,7 +1833,7 @@ export function SetView({
 
   function pickLens(mm: number) {
     keepStage();
-    const f = fovForLens(mm);
+    const f = fovForLens(mm, sensorHeightMm(rig.sensor, rig.format));
     setFovDeg(f);
     apiRef.current?.setFov(f);
     scheduleSave();
@@ -1817,7 +1958,8 @@ export function SetView({
   const quote = quoteSend(stillQuoteInput());
 
   // ---- what the frame is, in words ----
-  const activeLens = nearestLens(fovDeg);
+  const sensorH = sensorHeightMm(rig.sensor, rig.format);
+  const activeLens = nearestLens(fovDeg, sensorH);
   const character = characters.find((c) => c.id === characterId) ?? null;
   const characterName = character?.name || s.exampleCharacter;
   const labelOfMark = (id: string) => {
@@ -1832,6 +1974,11 @@ export function SetView({
   const markLabel = labelOfMark(markId);
   const cameraLabel = labelOfCamera(cameraId);
   const lensLabel = formatMsg(s.lensMm, { mm: activeLens });
+  // The camera department's readout over the frame lines (cut 2).
+  const hudLeft = `${s.rig.formats[rig.format]} · ${s.rig.sensors[rig.sensor]}${rig.squeeze > 1 ? ` · ${rig.squeeze}×` : ""}`;
+  const hudRight = [lensLabel, rig.stop !== null ? `f/${rig.stop}` : null, shutterFraction(rig.shutterDeg), `ISO ${rig.iso}`, `EV ${rig.ev > 0 ? "+" : ""}${rig.ev.toFixed(1)}`]
+    .filter(Boolean)
+    .join(" · ");
 
   const lookShot = shots.find((shot) => shot.generationId === lookId && canBeLook(shot)) ?? null;
   const latestStill = newestLook(shots);
@@ -1849,7 +1996,7 @@ export function SetView({
     if (!api) return;
     const pose = api.pose();
     const { markId: mId, mark: m } = layoutRef.current;
-    const label = `${labelOfCamera(cameraNow)} · ${formatMsg(s.lensMm, { mm: nearestLens(pose.fovDeg) })}`;
+    const label = `${labelOfCamera(cameraNow)} · ${formatMsg(s.lensMm, { mm: nearestLens(pose.fovDeg, sensorHeightMm(rigRef.current.sensor, rigRef.current.format)) })}`;
     setRevisions((prev) => {
       const last = prev[prev.length - 1];
       if (
@@ -2862,13 +3009,14 @@ export function SetView({
       selected: filmSel,
       mark,
       frame: { bandAspect: fr.bandAspect, heightShare: fr.bandH / fr.renderH },
+      sensorHeightMm: sensorHeightMm(rig.sensor, rig.format),
     });
     const metres = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     api.setFilmOverlay(
       plan,
       plan.keys.map((k) => formatMsg(s.filmKeyLabel, { n: k.number, lens: formatMsg(s.lensMm, { mm: k.lensMm }), m: metres.format(k.distanceM) })),
     );
-  }, [ready, filmOpen, film.beats, film.startId, filmSel, mark, rig.format, shots, locale, s]);
+  }, [ready, filmOpen, film.beats, film.startId, filmSel, mark, rig.format, rig.sensor, shots, locale, s]);
   useEffect(() => {
     apiRef.current?.holdFilmOverlay("previz", previz);
   }, [ready, previz]);
@@ -3446,6 +3594,45 @@ export function SetView({
             ref={guideRef}
             aria-hidden
             className={`pointer-events-none absolute rounded-[2px] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)] outline outline-1 outline-white/45 ${viewingShot ? "hidden" : ""}`}
+          >
+            {/* The camera department's readout, and the viewfinder's aids (cut 2): on the stage only, never in the picture. */}
+            <div className="absolute -top-[18px] left-0 right-0 flex justify-between gap-3 whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.06em] text-[#9aa0ad]">
+              <span className="min-w-0 truncate">{hudLeft}</span>
+              <span className="tabular-nums">{hudRight}</span>
+            </div>
+            {(rig.overlays.thirds || rig.overlays.golden || rig.overlays.safe || rig.overlays.centre) && (
+              <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                {rig.overlays.thirds &&
+                  [33.333, 66.667].flatMap((t) => [
+                    <line key={`tx${t}`} x1={t} y1="0" x2={t} y2="100" stroke="rgba(255,255,255,0.28)" vectorEffect="non-scaling-stroke" />,
+                    <line key={`ty${t}`} x1="0" y1={t} x2="100" y2={t} stroke="rgba(255,255,255,0.28)" vectorEffect="non-scaling-stroke" />,
+                  ])}
+                {rig.overlays.golden &&
+                  [38.197, 61.803].flatMap((t) => [
+                    <line key={`gx${t}`} x1={t} y1="0" x2={t} y2="100" stroke="rgba(224,164,104,0.35)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />,
+                    <line key={`gy${t}`} x1="0" y1={t} x2="100" y2={t} stroke="rgba(224,164,104,0.35)" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" />,
+                  ])}
+                {rig.overlays.safe && (
+                  <>
+                    <rect x="5" y="5" width="90" height="90" fill="none" stroke="rgba(255,255,255,0.3)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                    <rect x="10" y="10" width="80" height="80" fill="none" stroke="rgba(255,255,255,0.18)" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                  </>
+                )}
+                {rig.overlays.centre && (
+                  <>
+                    <line x1="48" y1="50" x2="52" y2="50" stroke="rgba(255,255,255,0.55)" vectorEffect="non-scaling-stroke" />
+                    <line x1="50" y1="47" x2="50" y2="53" stroke="rgba(255,255,255,0.55)" vectorEffect="non-scaling-stroke" />
+                  </>
+                )}
+              </svg>
+            )}
+            {rig.overlays.histogram && <canvas ref={histogramRef} width={128} height={40} className="absolute right-2 top-2 rounded-[4px] bg-black/50" />}
+          </div>
+          <div
+            ref={focusHudRef}
+            hidden
+            aria-hidden
+            className={`pointer-events-none absolute left-0 top-0 z-20 -translate-x-1/2 whitespace-nowrap rounded-full border border-white/10 bg-black/60 px-2 py-0.5 text-[10.5px] font-medium tabular-nums text-white ${viewingShot ? "hidden" : ""}`}
           />
           {/* Film's keyframes, named on the path (the path itself is in the canvas) */}
           <div ref={overlayHostRef} aria-hidden className={`pointer-events-none absolute inset-0 overflow-hidden ${viewingShot ? "hidden" : ""}`} />

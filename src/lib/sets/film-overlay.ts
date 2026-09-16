@@ -91,13 +91,15 @@ export function planFilmOverlay(input: {
   selected: number | null;
   mark: { x: number; z: number };
   frame: { bandAspect: number; heightShare: number };
+  /** The rig's sensor, for the lens each keyframe is named as (rig.ts sensorHeightMm); full frame when absent. */
+  sensorHeightMm?: number;
 }): FilmOverlayPlan {
   const { start, beats, selected, mark, frame } = input;
   const keyOf = (pose: FilmPose, number: number, isSelected: boolean): FilmOverlayKey => ({
     at: pose.position,
     number,
     selected: isSelected,
-    lensMm: nearestLens(pose.fovDeg),
+    lensMm: nearestLens(pose.fovDeg, input.sensorHeightMm),
     distanceM: Math.hypot(pose.position[0] - mark.x, pose.position[1] - FILM_EYE_M, pose.position[2] - mark.z),
   });
 

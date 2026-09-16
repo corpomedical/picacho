@@ -446,6 +446,87 @@ export type RigStop = (typeof RIG_STOPS)[number];
 export const RIG_GENRES = ["drama", "action", "thriller", "noir", "horror", "comedy", "romance"] as const;
 export type RigGenre = (typeof RIG_GENRES)[number];
 
+// ---------------------------------------------------------------------------
+// The camera department (canvas page J, cut 2, 2026-09-17): the body, the
+// squeeze and the exposure, all HELD BY THE STAGE. The sensor sets what a
+// focal length sees, the squeeze how much wider the frame sees for it, the
+// shutter, ISO and EV how bright the sketch is drawn — geometry and
+// brightness the picture model is shown, never hoped for in words. The stop
+// keeps setting what is sharp (the lift already sets the picture's
+// brightness, so a stop is not a brightness here). The viewfinder's aids
+// are on the stage only and never in the picture.
+// ---------------------------------------------------------------------------
+
+/** Sensors, millimetres, long side then short side. */
+export const RIG_SENSORS = {
+  fullframe: { w: 36, h: 24 },
+  super35: { w: 24.9, h: 18.7 },
+  large: { w: 36.7, h: 25.5 },
+  mft: { w: 17.3, h: 13 },
+  super16: { w: 12.5, h: 7.4 },
+  phone: { w: 9.8, h: 7.3 },
+} as const satisfies Record<string, { w: number; h: number }>;
+export type RigSensor = keyof typeof RIG_SENSORS;
+export const RIG_SENSOR_ORDER: readonly RigSensor[] = ["fullframe", "super35", "large", "mft", "super16", "phone"];
+export const DEFAULT_RIG_SENSOR: RigSensor = "fullframe";
+
+/** Anamorphic squeezes: how many times wider the frame sees for the same lens. */
+export const RIG_SQUEEZES = [1, 1.33, 2] as const;
+export type RigSqueeze = (typeof RIG_SQUEEZES)[number];
+
+/** Shutter angles; the time each is at RIG_FRAME_RATE (shutterFraction). */
+export const RIG_SHUTTERS_DEG = [45, 90, 180, 270, 360] as const;
+export type RigShutter = (typeof RIG_SHUTTERS_DEG)[number];
+export const RIG_FRAME_RATE = 24;
+export const RIG_ISOS = [100, 200, 400, 800, 1600, 3200] as const;
+export type RigIso = (typeof RIG_ISOS)[number];
+/** Exposure compensation, stops, in thirds, either way. */
+export const RIG_EV_RANGE = 3;
+export const RIG_EV_STEP = 1 / 3;
+/** The exposure the stage is lit at: what 0 EV, 180° and ISO 400 mean. */
+export const RIG_REFERENCE_EXPOSURE = { shutterDeg: 180, iso: 400 } as const;
+
+export const RIG_OVERLAY_KEYS = ["thirds", "golden", "safe", "centre", "falseColour", "histogram"] as const;
+export type RigOverlayKey = (typeof RIG_OVERLAY_KEYS)[number];
+export type RigOverlays = Record<RigOverlayKey, boolean>;
+export const DEFAULT_RIG_OVERLAYS: RigOverlays = { thirds: false, golden: false, safe: false, centre: false, falseColour: false, histogram: false };
+
+/**
+ * The side of the sensor the lens's field of view spans: the short side
+ * under a landscape render, the long side under a portrait one (the
+ * vertical format turns the camera on its side).
+ */
+export function sensorHeightMm(sensor: RigSensor, format: RigFormat): number {
+  const s = RIG_SENSORS[sensor] ?? RIG_SENSORS.fullframe;
+  return formatFrame(format).renderAspect >= 1 ? s.h : s.w;
+}
+
+/** The circle of confusion a sensor is judged sharp by: 0.03 mm on full frame, in proportion to the diagonal elsewhere. */
+export function sensorCocMm(sensor: RigSensor): number {
+  const s = RIG_SENSORS[sensor] ?? RIG_SENSORS.fullframe;
+  const full = RIG_SENSORS.fullframe;
+  return (RIG_COC_MM * Math.hypot(s.w, s.h)) / Math.hypot(full.w, full.h);
+}
+
+/** A shutter angle as the time it is at 24 fps: 180° is "1/48". */
+export function shutterFraction(deg: RigShutter): string {
+  return `1/${Math.round((360 / deg) * RIG_FRAME_RATE)}`;
+}
+
+/**
+ * How much brighter the stage is drawn than the set as lit: a stop per EV,
+ * a stop per doubling of the ISO, and the shutter's share of 180°. The
+ * stop is not in it — see the department's note above.
+ */
+export function exposureGain(rig: Pick<SetRig, "ev" | "iso" | "shutterDeg">): number {
+  return Math.pow(2, rig.ev) * (rig.iso / RIG_REFERENCE_EXPOSURE.iso) * (rig.shutterDeg / RIG_REFERENCE_EXPOSURE.shutterDeg);
+}
+
+/** The same, in stops, for the readout (0 at the reference). */
+export function exposureStops(rig: Pick<SetRig, "ev" | "iso" | "shutterDeg">): number {
+  return Math.round(Math.log2(exposureGain(rig)) * 100) / 100;
+}
+
 /** Where a scheme's key light stands: a world bearing from the subject (0° = +Z, 90° = +X, as a mark faces) and a height above the horizon. */
 export type RigLightState = { scheme: RigLightScheme; azimuthDeg: number; elevationDeg: number };
 
@@ -464,6 +545,14 @@ export type SetRig = {
   palette: RigPalette | null;
   /** Whether the stage previews the palette's grade (the sketch is never graded). */
   gradeStage: boolean;
+  /** The camera department (cut 2): the body the lens rule reads, the squeeze, the exposure, the viewfinder's aids. */
+  sensor: RigSensor;
+  squeeze: RigSqueeze;
+  shutterDeg: RigShutter;
+  iso: RigIso;
+  /** Exposure compensation, stops, in thirds within ±RIG_EV_RANGE. */
+  ev: number;
+  overlays: RigOverlays;
 };
 
 export const DEFAULT_SET_RIG: SetRig = {
@@ -476,6 +565,12 @@ export const DEFAULT_SET_RIG: SetRig = {
   light: null,
   palette: null,
   gradeStage: true,
+  sensor: DEFAULT_RIG_SENSOR,
+  squeeze: 1,
+  shutterDeg: RIG_REFERENCE_EXPOSURE.shutterDeg,
+  iso: RIG_REFERENCE_EXPOSURE.iso,
+  ev: 0,
+  overlays: { ...DEFAULT_RIG_OVERLAYS },
 };
 
 const ids = <T extends { id: string }>(list: readonly T[]) => list.map((x) => x.id);
@@ -501,6 +596,11 @@ export function normaliseSetRig(v: unknown): SetRig {
     const el = typeof l.elevationDeg === "number" && Number.isFinite(l.elevationDeg) ? l.elevationDeg : 10;
     light = { scheme, azimuthDeg: Math.round(az * 10) / 10, elevationDeg: Math.round(Math.min(89, Math.max(1, el)) * 10) / 10 };
   }
+  const numberIn = <T extends number>(v: unknown, list: readonly T[], fallback: T): T =>
+    typeof v === "number" && (list as readonly number[]).includes(v) ? (v as T) : fallback;
+  const ev = typeof r.ev === "number" && Number.isFinite(r.ev) ? Math.round(Math.min(RIG_EV_RANGE, Math.max(-RIG_EV_RANGE, r.ev)) / RIG_EV_STEP) * RIG_EV_STEP : 0;
+  const o = r.overlays && typeof r.overlays === "object" && !Array.isArray(r.overlays) ? (r.overlays as Record<string, unknown>) : {};
+  const overlays = Object.fromEntries(RIG_OVERLAY_KEYS.map((k) => [k, o[k] === true])) as RigOverlays;
   return {
     genre: oneOf(r.genre, RIG_GENRES),
     era: oneOf(r.era, ids(RIG_ERAS) as RigEra[]),
@@ -511,6 +611,12 @@ export function normaliseSetRig(v: unknown): SetRig {
     light,
     palette: oneOf(r.palette, ids(RIG_PALETTES) as RigPalette[]),
     gradeStage: r.gradeStage !== false,
+    sensor: oneOf(r.sensor, RIG_SENSOR_ORDER) ?? DEFAULT_RIG_SENSOR,
+    squeeze: numberIn(r.squeeze, RIG_SQUEEZES, 1),
+    shutterDeg: numberIn(r.shutterDeg, RIG_SHUTTERS_DEG, RIG_REFERENCE_EXPOSURE.shutterDeg),
+    iso: numberIn(r.iso, RIG_ISOS, RIG_REFERENCE_EXPOSURE.iso),
+    ev: Math.round(ev * 1000) / 1000,
+    overlays,
   };
 }
 
@@ -647,8 +753,9 @@ export function rigWordsByItem(rig: SetRig, ctx: RigShotContext): Partial<Record
   const light = rig.light ? findLook(RIG_LIGHTS, rig.light.scheme) : null;
   if (rig.light && light) out.light = `${say("light", light)} ${lightDirectionWords(rig.light, ctx.cameraBearingDeg)}`;
   if (rig.stop !== null && ctx.distanceM > 0) {
-    const f = focalMm(ctx.fovDeg, frame.renderAspect >= 1 ? 24 : 36);
-    const { nearM, farM } = depthOfField(f, rig.stop, ctx.distanceM);
+    // The lens on the rig's own sensor, judged sharp by that sensor's circle.
+    const f = focalMm(ctx.fovDeg, sensorHeightMm(rig.sensor, rig.format));
+    const { nearM, farM } = depthOfField(f, rig.stop, ctx.distanceM, sensorCocMm(rig.sensor));
     const d = m1(ctx.distanceM);
     if (push.has("focus")) {
       out.focus = Number.isFinite(farM)

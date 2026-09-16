@@ -6,17 +6,29 @@ import type { Messages } from "@/lib/i18n/messages/en";
 import { LENSES_MM, nearestLens } from "@/lib/sets/build-scene";
 import {
   RIG_ERAS,
+  RIG_EV_RANGE,
+  RIG_EV_STEP,
   RIG_FORMAT_ORDER,
   RIG_GENRE_SUGGESTS,
   RIG_GENRES,
+  RIG_ISOS,
   RIG_LENSES,
   RIG_LIGHTS,
+  RIG_OVERLAY_KEYS,
   RIG_PALETTES,
+  RIG_REFERENCE_EXPOSURE,
+  RIG_SENSOR_ORDER,
+  RIG_SHUTTERS_DEG,
+  RIG_SQUEEZES,
   RIG_STOCKS,
   RIG_STOPS,
   depthOfField,
+  exposureStops,
   focalMm,
   formatFrame,
+  sensorCocMm,
+  sensorHeightMm,
+  shutterFraction,
   isLabPalette,
   labLooksOf,
   lookStill,
@@ -27,6 +39,7 @@ import {
   type RigLook,
   type RigStock,
   type RigStop,
+  type RigOverlayKey,
   type SetRig,
 } from "@/lib/sets/rig";
 import { moveKeyLight, schemeDefaults, schemeHasSun } from "@/lib/sets/light-schemes";
@@ -63,6 +76,38 @@ const PREVIEW_LEAVE_MS = 150;
 const PANEL_BG = "border border-white/[0.11] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
 
 type TagStrings = { held: string; checked: string; lab: string };
+
+const SELECT =
+  "h-7 min-w-0 flex-1 cursor-pointer rounded-[6px] bg-[#111217] px-2 text-[12px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]";
+const STEP_BTN =
+  "flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-[6px] bg-white/[0.05] text-[14px] leading-none text-[#c6c9d1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40";
+
+const OVERLAY_NAMES: Record<RigOverlayKey, (r: Strings["rig"]) => string> = {
+  thirds: (r) => r.overlayThirds,
+  golden: (r) => r.overlayGolden,
+  safe: (r) => r.overlaySafe,
+  centre: (r) => r.overlayCentre,
+  falseColour: (r) => r.overlayFalseColour,
+  histogram: (r) => r.overlayHistogram,
+};
+
+/** A small choice: a shutter angle, an ISO, a squeeze, a viewfinder aid. */
+function Pill({ on, onClick, role, title, children }: { on: boolean; onClick: () => void; role: "radio" | "checkbox"; title?: string; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role={role}
+      aria-checked={on}
+      title={title}
+      onClick={onClick}
+      className={`h-6 cursor-pointer rounded-full px-2.5 text-[11px] font-medium tabular-nums transition-colors ${
+        on ? "bg-[rgba(224,164,104,0.13)] text-[#e0a468] shadow-[inset_0_0_0_1px_rgba(224,164,104,0.45)]" : "bg-white/[0.05] text-[#9aa0ad] hover:text-[#ecedf1]"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
 function Section({
   title,
@@ -689,8 +734,14 @@ export function RigPanel({
   const toggle = <K extends keyof SetRig>(key: K, value: SetRig[K]) => set({ [key]: rig[key] === value ? null : value } as Partial<SetRig>);
   const nf = new Intl.NumberFormat(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const frame = formatFrame(rig.format);
-  const focal = focalMm(fovDeg, frame.renderAspect >= 1 ? 24 : 36);
-  const dof = rig.stop !== null && distanceM > 0 ? depthOfField(focal, rig.stop, distanceM) : null;
+  // The lens on the rig's own sensor (the camera department, cut 2).
+  const sensorH = sensorHeightMm(rig.sensor, rig.format);
+  const focal = focalMm(fovDeg, sensorH);
+  const dof = rig.stop !== null && distanceM > 0 ? depthOfField(focal, rig.stop, distanceM, sensorCocMm(rig.sensor)) : null;
+  const stops = exposureStops(rig);
+  const stopsLabel = `${stops > 0 ? "+" : ""}${nf.format(stops)}`;
+  const evLabel = `${rig.ev > 0 ? "+" : ""}${nf.format(rig.ev)}`;
+  const atReference = rig.ev === 0 && rig.iso === RIG_REFERENCE_EXPOSURE.iso && rig.shutterDeg === RIG_REFERENCE_EXPOSURE.shutterDeg;
   const suggestion = rig.genre ? RIG_GENRE_SUGGESTS[rig.genre] : null;
   const suggestionInUse = Boolean(suggestion && rig.light?.scheme === suggestion.light && rig.palette === suggestion.palette);
   const lightLine = rig.light ? null : r.asBuiltLine;
@@ -899,9 +950,30 @@ export function RigPanel({
           {frame.cut && <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{r.formatNote}</p>}
           <div className="mb-1.5 mt-3 flex items-baseline justify-between text-[11px] text-[#9aa0ad]">
             <span>{r.focal}</span>
-            <span className="text-xs font-medium tabular-nums text-[#ecedf1]">{formatMsg(s.lensMm, { mm: nearestLens(fovDeg) })}</span>
+            <span className="text-xs font-medium tabular-nums text-[#ecedf1]">{formatMsg(s.lensMm, { mm: nearestLens(fovDeg, sensorH) })}</span>
           </div>
-          <Ring values={LENSES_MM} value={nearestLens(fovDeg)} onPick={onLens} label={r.focal} format={(v) => String(v)} />
+          <Ring values={LENSES_MM} value={nearestLens(fovDeg, sensorH)} onPick={onLens} label={r.focal} format={(v) => String(v)} />
+          <div className="mt-3 flex items-center gap-2">
+            <span className="w-14 flex-none text-[11px] text-[#9aa0ad]">{r.sensor}</span>
+            <select value={rig.sensor} onChange={(e) => set({ sensor: e.target.value as SetRig["sensor"] })} aria-label={r.sensor} className={SELECT}>
+              {RIG_SENSOR_ORDER.map((id) => (
+                <option key={id} value={id}>
+                  {r.sensors[id]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="w-14 flex-none text-[11px] text-[#9aa0ad]">{r.squeeze}</span>
+            <div className="flex gap-1" role="radiogroup" aria-label={r.squeeze}>
+              {RIG_SQUEEZES.map((q) => (
+                <Pill key={q} on={rig.squeeze === q} onClick={() => set({ squeeze: q })} role="radio">
+                  {q}×
+                </Pill>
+              ))}
+            </div>
+          </div>
+          <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{rig.squeeze > 1 ? formatMsg(r.squeezeLine, { n: String(rig.squeeze) }) : r.sensorLine}</p>
         </Section>
 
         <Section tags={tags} title={r.stock} tag="lab">
@@ -991,6 +1063,78 @@ export function RigPanel({
           ) : (
             <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{r.focusOff}</p>
           )}
+        </Section>
+
+        <Section
+          tags={tags}
+          title={r.exposure}
+          tag="held"
+          right={
+            atReference ? null : (
+              <button
+                type="button"
+                onClick={() => set({ ev: 0, iso: RIG_REFERENCE_EXPOSURE.iso, shutterDeg: RIG_REFERENCE_EXPOSURE.shutterDeg })}
+                className="ml-auto mr-2 cursor-pointer text-[11px] font-medium text-[#6b6f7a] hover:text-[#ecedf1]"
+              >
+                {r.exposureReset}
+              </button>
+            )
+          }
+        >
+          <div className="flex items-center gap-2">
+            <span className="w-14 flex-none text-[11px] text-[#9aa0ad]">{r.shutter}</span>
+            <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={r.shutter}>
+              {RIG_SHUTTERS_DEG.map((deg) => (
+                <Pill key={deg} on={rig.shutterDeg === deg} onClick={() => set({ shutterDeg: deg })} role="radio" title={shutterFraction(deg)}>
+                  {deg}°
+                </Pill>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="w-14 flex-none text-[11px] text-[#9aa0ad]">{r.iso}</span>
+            <div className="flex flex-wrap gap-1" role="radiogroup" aria-label={r.iso}>
+              {RIG_ISOS.map((iso) => (
+                <Pill key={iso} on={rig.iso === iso} onClick={() => set({ iso })} role="radio">
+                  {iso}
+                </Pill>
+              ))}
+            </div>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="w-14 flex-none text-[11px] text-[#9aa0ad]">{r.ev}</span>
+            <button
+              type="button"
+              onClick={() => set({ ev: Math.max(-RIG_EV_RANGE, Math.round((rig.ev - RIG_EV_STEP) * 1000) / 1000) })}
+              disabled={rig.ev <= -RIG_EV_RANGE}
+              className={STEP_BTN}
+              aria-label={`${r.ev} −`}
+            >
+              −
+            </button>
+            <span className="w-12 text-center text-xs font-medium tabular-nums text-[#ecedf1]">{evLabel}</span>
+            <button
+              type="button"
+              onClick={() => set({ ev: Math.min(RIG_EV_RANGE, Math.round((rig.ev + RIG_EV_STEP) * 1000) / 1000) })}
+              disabled={rig.ev >= RIG_EV_RANGE}
+              className={STEP_BTN}
+              aria-label={`${r.ev} +`}
+            >
+              +
+            </button>
+          </div>
+          <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{formatMsg(r.exposureLine, { stops: `${stopsLabel} EV` })}</p>
+        </Section>
+
+        <Section tags={tags} title={r.viewfinder}>
+          <div className="flex flex-wrap gap-1">
+            {RIG_OVERLAY_KEYS.map((k) => (
+              <Pill key={k} on={rig.overlays[k]} onClick={() => set({ overlays: { ...rig.overlays, [k]: !rig.overlays[k] } })} role="checkbox">
+                {OVERLAY_NAMES[k](r)}
+              </Pill>
+            ))}
+          </div>
+          <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{r.viewfinderNote}</p>
         </Section>
 
         <Section
