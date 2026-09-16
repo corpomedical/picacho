@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { develop, labLine, negativePathFor, normaliseLabLooks } from "./lab";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { isReferenced } from "../../../scripts/lib/storage-references.mjs";
 
 // The lab's darkroom: one door for what a request names, the negative's
 // place beside its still, and a develop that returns the print and the frame
@@ -58,5 +61,27 @@ describe.skipIf(!sharp)("develop", () => {
     const neg = await sharp!(negative).raw().toBuffer();
     expect(neg[0]).toBeGreaterThan(170);
     expect(neg[1]).toBeLessThan(80);
+  });
+});
+
+// A negative lives and dies with its still (2026-09-16): the storage audit
+// counts it as the still's, and every place a still's file is removed takes
+// the negative with it — or it would sit in the bucket, unreferenced.
+describe("a negative, kept and cleared with its still", () => {
+  const still = "u1/0c797549-d63c-49d6-a1b8-de896bcec023.png";
+
+  it("is referenced exactly when its still is, by the audit's own rule", () => {
+    const negative = negativePathFor(still)!;
+    expect(isReferenced(new Set([still]), negative)).toBe(true);
+    expect(isReferenced(new Set(["u1/another.png"]), negative)).toBe(false);
+    expect(isReferenced(new Set([still]), "u1/negatives/another.jpg")).toBe(false);
+  });
+
+  it("goes with its still when the likeness gate throws a render away, and when a still is deleted", () => {
+    const actions = readFileSync(join(__dirname, "..", "generations", "actions.ts"), "utf8");
+    expect(actions).toContain("const loserNegative = negativePathFor(loserPath);");
+    expect(actions).toContain(".remove(loserNegative ? [loserPath, loserNegative] : [loserPath]);");
+    expect(actions).toContain("const negativePaths = imagePaths.map(negativePathFor).filter((p): p is string => Boolean(p));");
+    expect(actions).toContain('await supabase.storage.from("generated-images").remove([...imagePaths, ...negativePaths]);');
   });
 });

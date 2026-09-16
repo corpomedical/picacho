@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.4",
+    build: 68,
+    date: "2026-09-16",
+    title: "The lab's likeness path, under test before its first real still",
+    items: [
+      "Nothing changes on screen. The first still shot with a film stock, a lens character or Silver Print will run a path no real render has run yet, and a mistake in it would re-render, and charge for, every such still. So it is now tested: the likeness check judges a lab still by its frame before the lab, a re-render is stored through the same cut and lab and judged the same way, and a still without that frame is judged as it is.",
+      "Also tested: the frame before the lab is counted by the storage audit as its still's, and goes with its still when a render is thrown away or a still is deleted.",
+    ],
+  },
+  {
     version: "1.40.3",
     build: 67,
     date: "2026-09-16",
