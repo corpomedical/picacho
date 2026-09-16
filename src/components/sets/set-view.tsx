@@ -441,6 +441,16 @@ export function SetView({
   }, []);
   /** The reel: which clip is playing on the stage; null when closed. */
   const [reel, setReel] = useState<number | null>(null);
+  /**
+   * The reel's clips, one element each and all loading from the moment the
+   * reel opens: when a clip ends the next is already there, so the film cuts
+   * straight on instead of going black while a new player fetches it.
+   */
+  const reelVideosRef = useRef<(HTMLVideoElement | null)[]>([]);
+  /** Clips that would not load while an earlier one played: said when the film reaches them. */
+  const reelFailedRef = useRef<Set<number>>(new Set());
+  /** The browser would not start a clip by itself: the reel waits for a tap. */
+  const [reelWaiting, setReelWaiting] = useState(false);
   const [previz, setPreviz] = useState(false);
 
   // ---- the rig (Helios Cinema, drawn as canvas page I) ----
@@ -2223,6 +2233,17 @@ export function SetView({
     return () => clearTimeout(id);
   }, [film, setId]);
 
+  // The reel: the clip whose turn it is plays, the others wait, loaded. A
+  // browser that will not start a clip by itself gets a tap to go on.
+  useEffect(() => {
+    if (reel === null) return;
+    reelVideosRef.current.forEach((video, i) => {
+      if (!video) return;
+      if (i === reel) void video.play().catch(() => setReelWaiting(true));
+      else video.pause();
+    });
+  }, [reel]);
+
   // A take still rendering is watched, not waited on: while any kind:"take"
   // row is generating — a film's beat or an ordinary take — the page asks
   // after it every few seconds and the row turns into the clip in place.
@@ -2888,23 +2909,69 @@ export function SetView({
             </div>
           )}
 
-          {/* The reel: the film's beats playing as one, where the viewport was. */}
+          {/* The reel: the film's beats playing as one, where the viewport was.
+              Every clip is on the page and loading while the first plays, and
+              each plays inside its frame lines, as a take does in the viewer. */}
           {reel !== null && reelReady && reelShots[reel] && (
-            <div className="absolute inset-0 z-20 bg-black">
-              <video
-                key={reelShots[reel].generationId}
-                src={reelShots[reel].resultUrl ?? undefined}
-                autoPlay
-                playsInline
-                onEnded={() => setReel((r) => (r !== null && r + 1 < reelShots.length ? r + 1 : null))}
-                // A clip that will not load leaves black where the film was:
-                // say so and give the stage back, rather than wait forever.
-                onError={() => {
-                  setFilmError(s.filmClipFailed);
-                  setReel(null);
-                }}
-                className="h-full w-full object-contain"
-              />
+            <div className="absolute inset-0 z-20 bg-black" style={{ containerType: "size" }}>
+              {reelShots.map((shot, i) => {
+                const band = takeBand(shot);
+                return (
+                  <div
+                    key={shot.generationId}
+                    aria-hidden={i !== reel}
+                    className={`absolute inset-0 flex items-center justify-center ${i === reel ? "" : "pointer-events-none opacity-0"}`}
+                  >
+                    <div
+                      className="overflow-hidden"
+                      style={band ? { aspectRatio: String(band), width: `min(100cqw, ${band} * 100cqh)` } : { width: "100%", height: "100%" }}
+                    >
+                      <video
+                        ref={(el) => {
+                          reelVideosRef.current[i] = el;
+                        }}
+                        src={shot.resultUrl ?? undefined}
+                        preload="auto"
+                        playsInline
+                        onPlaying={() => setReelWaiting(false)}
+                        onEnded={() => {
+                          // The next clip would not load: say so where the film would have cut to it.
+                          if (reelFailedRef.current.has(i + 1)) {
+                            setFilmError(s.filmClipFailed);
+                            setReel(null);
+                            return;
+                          }
+                          setReel((r) => (r === i ? (i + 1 < reelShots.length ? i + 1 : null) : r));
+                        }}
+                        // A clip that will not load leaves black where the film was:
+                        // say so and give the stage back, rather than wait forever —
+                        // at once for the clip playing, at its turn for a later one.
+                        onError={() => {
+                          if (i === reel) {
+                            setFilmError(s.filmClipFailed);
+                            setReel(null);
+                          } else {
+                            reelFailedRef.current.add(i);
+                          }
+                        }}
+                        className={`h-full w-full ${band ? "object-cover" : "object-contain"}`}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+              {reelWaiting && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReelWaiting(false);
+                    void reelVideosRef.current[reel]?.play().catch(() => setReelWaiting(true));
+                  }}
+                  className="absolute inset-0 flex cursor-pointer items-center justify-center"
+                >
+                  <span className="rounded-full bg-black/60 px-5 py-3 text-sm font-medium text-onmedia">▶ {s.filmPlayFilm}</span>
+                </button>
+              )}
               <span className="absolute left-3.5 top-3.5 rounded-full bg-black/60 px-3 py-1.5 text-xs font-medium text-onmedia tabular-nums">
                 {formatMsg(s.filmBeatLabel, { n: reel + 1 })} · {reel + 1}/{reelShots.length}
               </span>
@@ -3118,7 +3185,15 @@ export function SetView({
                   {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
                 </button>
                 {reelReady && (
-                  <button type="button" onClick={() => setReel(0)} className={chip(false)}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      reelFailedRef.current = new Set();
+                      setReelWaiting(false);
+                      setReel(0);
+                    }}
+                    className={chip(false)}
+                  >
                     ▶ {s.filmPlayFilm}
                   </button>
                 )}

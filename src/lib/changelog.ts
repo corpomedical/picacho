@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.39.4",
+    build: 62,
+    date: "2026-09-16",
+    title: "The film plays as one shot, inside its frame lines",
+    items: [
+      "Play the film loaded each beat only when its turn came, so every cut went black while the next clip arrived — in a film that's meant to be one continuous shot. Every beat now loads as soon as the film starts, and the cut is immediate.",
+      "A Scope, Flat or Classic film played at the full 16:9 its clips are rendered at, showing what lies outside the frame lines. It now plays inside them, as a single take already does.",
+      "If a later beat won't load, the earlier beats still play through, and the film stops at that cut with a message. If your browser won't start a beat by itself, you get a Play button instead of a still frame.",
+    ],
+  },
+  {
     version: "1.39.3",
     build: 61,
     date: "2026-09-16",
