@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.40.5",
+    build: 69,
+    date: "2026-09-16",
+    title: "A failed take can still be tried again after you leave the page",
+    items: [
+      "Try the clip again only worked in the visit that made the take: a take didn't keep its two frames, so after a reload a failed take just said it failed. A take now keeps them, so a take that failed while you were away offers the same button — the clip alone, 2 credits on Gemini Omni or 12 on Veo 3.1, with the take's own person, engine and direction.",
+      "It's offered only while it can work: both frames still in your History and the person still ready to shoot. And once a take has been tried again, the failed one stops offering it while the new clip renders or after it lands, so the same clip is never paid for twice.",
+      "A film's beats aren't offered this way: Render in the Film dock renders a failed beat's clip again and puts it back in the film.",
+    ],
+  },
+  {
     version: "1.40.4",
     build: 68,
     date: "2026-09-16",

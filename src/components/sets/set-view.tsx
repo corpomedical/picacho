@@ -15,10 +15,12 @@ import { readShotWords } from "@/lib/sets/words-actions";
 import { fovForLens, nearestLens } from "@/lib/sets/build-scene";
 import { clearMarks } from "@/lib/sets/marks";
 import {
+  retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
   takeQuoteInput,
   type SetTakeEngine,
+  type TakeSource,
 } from "@/lib/sets/take";
 import {
   FILM_MAX_BEATS,
@@ -192,8 +194,12 @@ type Revision = {
 
 /** What this visit knows of a still it shot: how long it took and the frame it was shot from. */
 type ShotFacts = { seconds: number; frame: string };
-/** A take's two frames and what rendered between them: enough to render the clip again (takeInSet's end still reused). */
-type TakeFrames = { start: string; end: string; characterId: string; direction: string; engine: SetTakeEngine; words?: string };
+/** A take's two frames and what rendered between them (take.ts), with the words that asked for it: enough to render the clip again. */
+type TakeFrames = TakeSource & { words?: string };
+
+const sourceOf = (f: TakeFrames): TakeSource => ({ start: f.start, end: f.end, characterId: f.characterId, direction: f.direction, engine: f.engine });
+/** A take's frames as the retry sends them: what it was rendered from (SetShot.takeFrom) and the words kept with it. */
+const framesOf = (source: TakeSource, shot: SetShot): TakeFrames => ({ ...source, words: shot.words ?? undefined });
 
 type MenuId = "camera" | "figure" | "history" | "mode" | "who" | "filmStart";
 
@@ -494,11 +500,12 @@ export function SetView({
   const [revisions, setRevisions] = useState<Revision[]>([]);
   // What this visit knows of the stills it shot.
   const [shotFacts, setShotFacts] = useState<Record<string, ShotFacts>>({});
-  // The frames of each take started this visit, so a clip that fails can be
-  // rendered again between the same two — only the clip to pay for, and the
-  // frame the person already saw. A film's beats are the film's to render
-  // again (filmJobs), so they are not kept here.
-  const [takeFrames, setTakeFrames] = useState<Record<string, TakeFrames>>({});
+  // What each take was rendered from rides on its row (SetShot.takeFrom:
+  // the server's for takes of earlier visits, shot-take.ts; the page's own
+  // for takes started now), so a clip that fails can be rendered again
+  // between the same two frames — only the clip to pay for, and the frame
+  // the person already saw. A film's beats are the film's to render again
+  // (filmJobs), so they carry none.
   // A take whose end frame came in and whose clip could not start.
   const [takeRetry, setTakeRetry] = useState<TakeFrames | null>(null);
   // The look (2026-09-11): the earlier still whose objects the next shot
@@ -1691,6 +1698,7 @@ export function SetView({
       rigAsked: result.checks,
       rigCheck: null,
       pose,
+      takeFrom: null,
     };
     setShots((prev) => [shot, ...prev]);
     setShotFacts((prev) => ({ ...prev, [shot.generationId]: { seconds: Math.round((new Date().getTime() - startedAt) / 1000), frame: frameLabel } }));
@@ -1806,7 +1814,9 @@ export function SetView({
       rigAsked: result.still.checks,
       rigCheck: null,
       pose,
+      takeFrom: null,
     };
+    const frames: TakeFrames = { start: takeStart.id, end: result.still.generationId, characterId, direction: said, engine: takeEngine, words: asked };
     const rows: SetShot[] = result.takeGenerationId
       ? [
           {
@@ -1825,6 +1835,7 @@ export function SetView({
             rigAsked: [],
             rigCheck: null,
             pose: null,
+            takeFrom: sourceOf(frames),
           },
           endStill,
         ]
@@ -1838,10 +1849,7 @@ export function SetView({
     setPendingAsks([]);
     setNote(null);
     setTakeStart(null);
-    const frames: TakeFrames = { start: takeStart.id, end: result.still.generationId, characterId, direction: said, engine: takeEngine, words: asked };
-    const takeId = result.takeGenerationId;
-    if (takeId) setTakeFrames((prev) => ({ ...prev, [takeId]: frames }));
-    else if (result.still.succeeded) setTakeRetry(frames);
+    if (!result.takeGenerationId && result.still.succeeded) setTakeRetry(frames);
     if (result.takeError) setError(result.takeError);
     if (result.still.succeeded) setViewing(result.takeGenerationId ?? result.still.generationId);
     if (result.still.succeeded && result.still.checks.length > 0) void runRigCheck(result.still.generationId);
@@ -2047,6 +2055,7 @@ export function SetView({
             rig: rigRef.current,
             move: beat.move,
             textures: beat.textures,
+            film: true,
           });
         } catch (err) {
           const stale = isStaleDeployError(err);
@@ -2082,6 +2091,7 @@ export function SetView({
               rigAsked: [],
               rigCheck: null,
               pose: null,
+              takeFrom: null,
             }
           : null;
         if (result.reusedEnd) {
@@ -2107,6 +2117,7 @@ export function SetView({
             rigAsked: result.still.checks,
             rigCheck: null,
             pose: beat.end,
+            takeFrom: null,
           };
           setShots((prev) => [...(takeRow ? [takeRow] : []), endStill, ...prev]);
           // Kept on the film, so the reel is still there after the page closes
@@ -2196,15 +2207,18 @@ export function SetView({
         rigAsked: [],
         rigCheck: null,
         pose: null,
+        takeFrom: sourceOf(f),
       },
       ...prev,
     ]);
-    setTakeFrames((prev) => ({ ...prev, [id]: f }));
     setViewing(id);
   }
 
   /** "Try the clip again · n credits": the clip's own price, as the server charges it. */
-  const retryLabel = (f: TakeFrames) => formatMsg(s.takeRetryClip, { n: quoteSend(takeQuoteInput(f.engine)).totalCredits });
+  const retryLabel = (f: TakeSource) => formatMsg(s.takeRetryClip, { n: quoteSend(takeQuoteInput(f.engine)).totalCredits });
+  // The failed takes whose clip may be rendered again (take.ts): not one
+  // that has been tried again already, which would be paid for twice.
+  const retryable = retryableTakes(shots);
 
   // ---- the conversation ----
 
@@ -3266,15 +3280,15 @@ export function SetView({
                 ) : viewingShot.status === "failed" ? (
                   <div className="flex h-full flex-col items-center justify-center gap-3 px-10 text-center">
                     <span className="text-sm text-onmedia/80">{s.takeFailedLine}</span>
-                    {takeFrames[viewingShot.generationId] && (
+                    {viewingShot.takeFrom && retryable.has(viewingShot.generationId) && (
                       <button
                         type="button"
-                        onClick={() => void retryClip(takeFrames[viewingShot.generationId])}
+                        onClick={() => viewingShot.takeFrom && void retryClip(framesOf(viewingShot.takeFrom, viewingShot))}
                         disabled={shooting || matching || !ready}
                         title={s.takeRetryHint}
                         className={chip(false)}
                       >
-                        {retryLabel(takeFrames[viewingShot.generationId])}
+                        {retryLabel(viewingShot.takeFrom)}
                       </button>
                     )}
                   </div>
@@ -3770,15 +3784,15 @@ export function SetView({
                               <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
                                 {s.openTake}
                               </Link>
-                              {shot.status === "failed" && takeFrames[shot.generationId] && (
+                              {shot.takeFrom && retryable.has(shot.generationId) && (
                                 <button
                                   type="button"
-                                  onClick={() => void retryClip(takeFrames[shot.generationId])}
+                                  onClick={() => shot.takeFrom && void retryClip(framesOf(shot.takeFrom, shot))}
                                   disabled={shooting || matching || !ready}
                                   title={s.takeRetryHint}
                                   className={chip(false)}
                                 >
-                                  {retryLabel(takeFrames[shot.generationId])}
+                                  {retryLabel(shot.takeFrom)}
                                 </button>
                               )}
                             </div>

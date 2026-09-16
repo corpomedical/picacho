@@ -51,6 +51,7 @@ import {
 } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { readShotRigs, recordShotRig } from "@/lib/sets/shot-rig";
+import { recordShotTake } from "@/lib/sets/shot-take";
 import { isFilmMove, isFilmTexture } from "@/lib/sets/moves";
 
 /** Where the rig's focus is measured to: the figure's eyes (build-scene's stand-in). */
@@ -918,6 +919,8 @@ export async function takeInSet(
     /** A film beat's move and textures (moves.ts): words for the path between the frames. */
     move?: unknown;
     textures?: unknown;
+    /** A film's beat (renderFilm): kept as the film's, which renders it again itself (shot-take.ts). */
+    film?: boolean;
   },
 ): Promise<TakeResult> {
   const access = await setsAccess();
@@ -983,7 +986,8 @@ export async function takeInSet(
   const reusedEnd = reuseId !== null;
   if (!endUrl) return { error: null, still, reusedEnd, takeGenerationId: null, takeError: SET_TAKE_FAILED };
 
-  const engine = SET_TAKE_ENGINES[isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE];
+  const engineKey = isSetTakeEngine(input.engine) ? input.engine : SET_TAKE_DEFAULT_ENGINE;
+  const engine = SET_TAKE_ENGINES[engineKey];
   const fd = new FormData();
   fd.set("content_type", "video");
   fd.set("video_model_id", engine.model);
@@ -1016,9 +1020,20 @@ export async function takeInSet(
     .insert({ set_id: setId, generation_id: clip.id, user_id: userId });
   if (takeRowError) console.error("takeInSet couldn't record the take:", takeRowError.message);
   else {
+    const key = { setId, generationId: clip.id, userId };
     const words = cleanText(typeof input.words === "string" ? input.words : "", SHOT_WORDS_STORED_MAX_CHARS);
-    if (words.length > 0) await recordShotWords(admin, { setId, generationId: clip.id, userId }, words);
-    if (still.format !== "square") await recordShotRig(admin, { setId, generationId: clip.id, userId }, { format: still.format, words: {} });
+    if (words.length > 0) await recordShotWords(admin, key, words);
+    if (still.format !== "square") await recordShotRig(admin, key, { format: still.format, words: {} });
+    // What the clip was rendered from, so a clip that fails can be rendered
+    // again between the same two stills on a later visit too (shot-take.ts).
+    // Its own update, failure ignored, like the rig's.
+    await recordShotTake(admin, key, {
+      start: startId,
+      end: still.generationId,
+      engine: engineKey,
+      direction: typeof input.direction === "string" ? input.direction : "",
+      film: input.film === true,
+    });
   }
   return { error: null, still, reusedEnd, takeGenerationId: clip.id, takeError: null };
 }

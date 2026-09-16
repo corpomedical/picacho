@@ -14,6 +14,7 @@ import { normaliseSetLayout, normaliseSetSpec, type SetSpec } from "@/lib/sets/s
 import { normaliseSetFilm, type SetFilm } from "@/lib/sets/film";
 import { normaliseSetRig, RIG_CHECK_ITEMS, type SetRig } from "@/lib/sets/rig";
 import { readShotRigs } from "@/lib/sets/shot-rig";
+import { readShotTakes, takeSourceOf } from "@/lib/sets/shot-take";
 import { readSetShotIds } from "@/lib/sets/set-shots";
 import { SET_NOT_FOUND, setFailureMessage } from "@/lib/sets/messages";
 import type { SetCharacter, SetPageData, SetShot, SetsHomeData, SetStatus, SetSummary } from "@/lib/sets/types";
@@ -242,13 +243,15 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
   const fromPhoto = photo !== null;
   const brief = (row.brief as string) ?? "";
 
+  const characters = await shootableCharacters(db, access.userId);
+
   // The newest shots, and the film's own however old (set-shots.ts).
   const ids = await readSetShotIds(db, setId, access.userId, film);
   let shots: SetShot[] = [];
   if (ids.length > 0) {
     const { data: gens } = await db
       .from("generations")
-      .select("id, status, result_url, poster_url, content_type, video_duration_seconds, match_score, created_at")
+      .select("id, status, result_url, poster_url, content_type, video_duration_seconds, match_score, created_at, character_profile_id")
       .in("id", ids)
       .eq("user_id", access.userId)
       .is("deleted_at", null);
@@ -264,6 +267,33 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
     // The rig each was shot with and its check (shot-rig.ts): a read of its
     // own again; a read that fails shows every shot square and unchecked.
     const rigs = await readShotRigs(db, setId, access.userId, ids);
+    // What each take not yet in was rendered from (shot-take.ts), so a clip
+    // that failed on an earlier visit can be rendered again between the
+    // same two stills: a read of its own again, and a read that fails
+    // offers nothing, as before. Offered only while both stills are still
+    // finished and the person can still be shot — takeInSet checks the
+    // stills again when asked.
+    const takes = await readShotTakes(
+      db,
+      setId,
+      access.userId,
+      (gens ?? []).filter((g) => g.content_type === "video" && g.status !== "succeeded").map((g) => g.id as string),
+    );
+    const frameIds = [...new Set([...takes.values()].filter((tk) => !tk.film).flatMap((tk) => [tk.start, tk.end]))];
+    const finished = new Set<string>();
+    if (frameIds.length > 0) {
+      const { data: stills, error: stillsError } = await db
+        .from("generations")
+        .select("id")
+        .in("id", frameIds)
+        .eq("user_id", access.userId)
+        .eq("status", "succeeded")
+        .eq("content_type", "image")
+        .is("deleted_at", null);
+      if (stillsError) console.warn("getSetPage could not read the takes' stills:", stillsError.message);
+      for (const still of stills ?? []) finished.add(still.id as string);
+    }
+    const canShoot = (id: string) => characters.some((c) => c.id === id);
     // A still is offered as a look only when there is something to cut out
     // of it clear of its person: a camera that saw only structure, or a
     // figure out of frame, would fail every shot that took it. The answer
@@ -302,11 +332,10 @@ export async function getSetPage(setId: string): Promise<SetPageData> {
             const c = cameras.get(g.id as string);
             return c ? { position: c.position, target: c.target, fovDeg: c.fovDeg } : null;
           })(),
+          takeFrom: isTake ? takeSourceOf(takes.get(g.id as string), g.character_profile_id, canShoot, finished) : null,
         };
       });
   }
-
-  const characters = await shootableCharacters(db, access.userId);
 
   // The bar the contact sheet flags a still against: the identity gate's
   // live threshold, or its default while the gate is off (0) — a score is

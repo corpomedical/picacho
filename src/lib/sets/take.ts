@@ -85,3 +85,36 @@ export function takeQuoteInput(engine: SetTakeEngine = SET_TAKE_DEFAULT_ENGINE):
     renderCount: 1,
   };
 }
+
+/**
+ * What a take was rendered from: the still it starts on, the still it ends
+ * on, its person, engine and direction — enough to render its clip again
+ * between the same two frames (takeInSet's endGenerationId), paying for the
+ * clip alone. Kept on the take's row (shot-take.ts), so a take that failed
+ * on an earlier visit offers it too.
+ */
+export type TakeSource = { start: string; end: string; characterId: string; direction: string; engine: SetTakeEngine };
+
+/**
+ * The takes whose clip may be rendered again: failed, with their frames
+ * known — and not tried again already. Another take between the same two
+ * stills that has not failed is that clip rendering or rendered, and a
+ * second press would pay for it twice.
+ */
+export function retryableTakes(
+  shots: readonly { generationId: string; kind: string; status: string; takeFrom: TakeSource | null }[],
+): Set<string> {
+  const pairOf = (f: TakeSource | null) => (f ? `${f.start} ${f.end}` : null);
+  const tried = new Set<string>();
+  for (const sh of shots) {
+    const pair = sh.kind === "take" && sh.status !== "failed" ? pairOf(sh.takeFrom) : null;
+    if (pair) tried.add(pair);
+  }
+  const out = new Set<string>();
+  for (const sh of shots) {
+    if (sh.kind !== "take" || sh.status !== "failed") continue;
+    const pair = pairOf(sh.takeFrom);
+    if (pair && !tried.has(pair)) out.add(sh.generationId);
+  }
+  return out;
+}

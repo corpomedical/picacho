@@ -4,9 +4,11 @@ import { join } from "node:path";
 import {
   buildSetTakePrompt,
   isSetTakeEngine,
+  retryableTakes,
   SET_TAKE_DEFAULT_ENGINE,
   SET_TAKE_ENGINES,
   takeQuoteInput,
+  type TakeSource,
 } from "./take";
 import { quoteSend } from "../generations/quote";
 import { FILM_MOVE_WORDS, FILM_TEXTURE_WORDS } from "./moves";
@@ -129,5 +131,60 @@ describe("a take that ends on a still the set already has (actions.ts)", () => {
     expect(shoot).toBeGreaterThan(otherwise);
     expect(take.slice(reuse, otherwise)).not.toContain("shootInSet");
     expect(take.match(/shootInSet\(/g)).toHaveLength(1);
+  });
+});
+
+// A failed take's clip rendered again between the same two stills
+// (2026-09-16), on this visit or a later one: offered once per pair of
+// stills, since a second press while the first retry renders — or after it
+// came in — would pay for the same clip twice.
+describe("retryableTakes", () => {
+  const from = (start: string, end: string): TakeSource => ({ start, end, characterId: "p", direction: "", engine: "omni" });
+  const takeRow = (id: string, status: string, takeFrom: TakeSource | null) => ({ generationId: id, kind: "take", status, takeFrom });
+
+  it("offers a failed take whose stills are known", () => {
+    const shots = [takeRow("t1", "failed", from("a", "b")), takeRow("t2", "failed", null), takeRow("t3", "succeeded", from("c", "d"))];
+    expect([...retryableTakes(shots)]).toEqual(["t1"]);
+  });
+
+  it("stops offering it once the same clip is rendering or rendered, and offers it again if that fails too", () => {
+    const failed = takeRow("t1", "failed", from("a", "b"));
+    expect(retryableTakes([takeRow("t2", "generating", from("a", "b")), failed]).size).toBe(0);
+    expect(retryableTakes([takeRow("t2", "succeeded", from("a", "b")), failed]).size).toBe(0);
+    expect([...retryableTakes([takeRow("t2", "failed", from("a", "b")), failed])].sort()).toEqual(["t1", "t2"]);
+    // Another pair of stills is another clip; a still is never a take.
+    expect([...retryableTakes([takeRow("t2", "generating", from("a", "c")), failed])]).toEqual(["t1"]);
+    expect([...retryableTakes([{ generationId: "s1", kind: "still", status: "failed", takeFrom: from("a", "b") }])]).toEqual([]);
+  });
+});
+
+// And the take's row keeps what it was rendered from (shot-take.ts),
+// marked as a film's when the film rendered it.
+describe("what a take keeps (actions.ts, set-view.tsx)", () => {
+  const src = readFileSync(join(__dirname, "actions.ts"), "utf8");
+  const take = src.slice(src.indexOf("export async function takeInSet("), src.indexOf("// Delete\n"));
+  const view = readFileSync(join(__dirname, "../../components/sets/set-view.tsx"), "utf8");
+
+  it("keeps the two stills, the engine sent, the direction and the film mark, once the take's row is in", () => {
+    const recorded = take.indexOf("await recordShotTake(admin, key, {");
+    expect(recorded).toBeGreaterThan(take.indexOf('if (takeRowError) console.error("takeInSet couldn\'t record the take:"'));
+    expect(take.slice(take.indexOf("else {", take.indexOf("if (takeRowError)")), recorded)).toContain("const key = { setId, generationId: clip.id, userId };");
+    const kept = take.slice(recorded, take.indexOf("});", recorded));
+    for (const needle of ["start: startId,", "end: still.generationId,", "engine: engineKey,", "film: input.film === true,"]) {
+      expect(kept, needle).toContain(needle);
+    }
+    // The engine kept is the engine the clip was sent on.
+    expect(take).toContain("const engine = SET_TAKE_ENGINES[engineKey];");
+    expect(take).toContain('fd.set("video_model_id", engine.model);');
+  });
+
+  it("marks a film's beats as the film's, and nothing else", () => {
+    const render = view.slice(view.indexOf("async function renderFilm("), view.indexOf("async function retryClip("));
+    const retry = view.slice(view.indexOf("async function retryClip("), view.indexOf("const retryLabel ="));
+    const single = view.slice(view.indexOf("async function take("), view.indexOf("function filmAddKeyframe("));
+    expect(render).toContain("film: true,");
+    expect(retry).not.toContain("film:");
+    expect(single).not.toContain("film:");
+    expect(view.match(/film: true,/g)).toHaveLength(1);
   });
 });

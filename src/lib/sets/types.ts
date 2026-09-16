@@ -2,6 +2,7 @@ import type { SetLayout, SetSpec, Vec3 } from "./set-spec";
 import type { SetFilm } from "./film";
 import type { RigCheckItem, RigFormat, SetRig } from "./rig";
 import type { RigCheck } from "./rig-check";
+import type { TakeSource } from "./take";
 
 // What the Sets pages hand their client components. Plain data only — every
 // value crosses the server→client boundary.
@@ -58,6 +59,13 @@ export type SetShot = {
   rigCheck: RigCheck | null;
   /** The stage camera it was shot from (shot-camera.ts), when recorded — where a film that starts on it starts. */
   pose: { position: Vec3; target: Vec3; fovDeg: number } | null;
+  /**
+   * A take of its own: what it was rendered from, while both stills and its
+   * person are still there (shot-take.ts) — what "Try the clip again"
+   * renders between. Null for stills, a film's beats, and takes that kept
+   * nothing.
+   */
+  takeFrom: TakeSource | null;
 };
 
 export type SetCharacter = {
