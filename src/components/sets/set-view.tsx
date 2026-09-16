@@ -41,6 +41,8 @@ import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { stagedSpec } from "@/lib/sets/time-of-day";
+import { shootCommands } from "@/lib/sets/commands";
+import { CommandPalette } from "./command-palette";
 import { labPreviewCodes } from "@/lib/sets/lab-preview";
 import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import { planFilmOverlay, type FilmOverlayPlan } from "@/lib/sets/film-overlay";
@@ -609,6 +611,8 @@ export function SetView({
   const [loadedRigKey] = useState(() => savedRigKey(savedRig));
   const rigSavedRef = useRef(loadedRigKey);
   const [rigOpen, setRigOpen] = useState(false);
+  // The command palette (the studio, cut 4): ⌘K, or the pill in the bar.
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [rigError, setRigError] = useState("");
   // The rig check, per still, while it reads or when it could not.
   const [rigChecking, setRigChecking] = useState<Record<string, "checking" | "failed">>({});
@@ -1608,6 +1612,42 @@ export function SetView({
       e.preventDefault();
       if (e.shiftKey) stageStepRef.current?.redo();
       else stageStepRef.current?.undo();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // The studio's keys (cut 4): F frames the figure, R shows or hides the
+  // rig, ⌘K opens the commands — when no field holds the keyboard. Kept
+  // current each render, so each key does what the page would do now.
+  const studioKeysRef = useRef<{ frame(): void; rig(): void; palette(): void }>({ frame() {}, rig() {}, palette() {} });
+  useEffect(() => {
+    studioKeysRef.current = {
+      frame: () => {
+        if (ready) frameFigure();
+      },
+      rig: () => setRigOpen((v) => !v),
+      palette: () => setPaletteOpen((v) => !v),
+    };
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.tagName === "SELECT" || el.isContentEditable)) return;
+      const k = e.key.toLowerCase();
+      if ((e.metaKey || e.ctrlKey) && k === "k") {
+        e.preventDefault();
+        studioKeysRef.current.palette();
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      if (k === "f") {
+        e.preventDefault();
+        studioKeysRef.current.frame();
+      } else if (k === "r") {
+        e.preventDefault();
+        studioKeysRef.current.rig();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -3520,6 +3560,76 @@ export function SetView({
     </>
   );
 
+  // The commands the palette lists (commands.ts), from this render's handlers and words — built only while it is open.
+  const paletteCommands = paletteOpen
+    ? shootCommands({
+        words: {
+          build: s.editorBuildTab,
+          shoot: s.editorShootTab,
+          film: s.filmTab,
+          rigShow: s.palette.rigShow,
+          rigHide: s.palette.rigHide,
+          chatShow: s.palette.chatShow,
+          chatHide: s.chatHide,
+          formats: s.rig.formats,
+          frame: s.rig.frame,
+          squeeze: s.rig.squeeze,
+          lensMm: (mm) => formatMsg(s.lensMm, { mm }),
+          focus: s.rig.focus,
+          stop: s.rig.stop,
+          off: s.rig.off,
+          light: s.rig.light,
+          lights: s.rig.lights,
+          asBuilt: s.rig.asBuilt,
+          time: s.rig.time,
+          timePresets: s.palette.timePresets,
+          stock: s.rig.stock,
+          stocks: s.rig.stocks,
+          lensCharacter: s.rig.lens,
+          lenses: s.rig.lenses,
+          palette: s.rig.palette,
+          palettes: s.rig.palettes,
+          overlays: {
+            thirds: s.rig.overlayThirds,
+            golden: s.rig.overlayGolden,
+            safe: s.rig.overlaySafe,
+            centre: s.rig.overlayCentre,
+            falseColour: s.rig.overlayFalseColour,
+            histogram: s.rig.overlayHistogram,
+            meter: s.rig.overlayMeter,
+          },
+          frameFigure: s.frameFigure,
+          undoStage: s.palette.undoStage,
+          downloadFrame: s.downloadFrame,
+          camera: (label) => formatMsg(s.palette.camera, { label }),
+          mark: (label) => formatMsg(s.palette.mark, { label }),
+          shootNow: shootLabel,
+        },
+        rig,
+        setRig: (patch) => setRig((r) => ({ ...r, ...patch })),
+        filmOpen,
+        setFilmOpen,
+        rigOpen,
+        setRigOpen,
+        chatOpen,
+        setChatOpen,
+        cameraBearingDeg: cameraBearing,
+        cameras: spec.cameras.map((c) => ({ id: c.id, label: labelOfCamera(c.id) })),
+        pickCamera,
+        marks: spec.marks.map((m) => ({ id: m.id, label: labelOfMark(m.id) })),
+        pickMark,
+        pickLens,
+        frameFigure,
+        undoStage: () => stepStage(stageUndoRef, stageRedoRef),
+        downloadFrame,
+        openBuild: () => {
+          window.location.href = `/app/sets/${setId}?build=1`;
+        },
+        canShoot: !(shooting || matching || !characterId || loadFailed || !ready),
+        shoot: () => void shoot(),
+      })
+    : [];
+
   return (
     <div data-set-workspace className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#101116] text-[#c6c9d1]">
       {(menu || mentionForced) && (
@@ -3591,6 +3701,15 @@ export function SetView({
           </button>
         </span>
         <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          title={s.palette.title}
+          aria-label={s.palette.title}
+          className="hidden h-7 cursor-pointer items-center rounded-[6px] px-2 text-[#6b6f7a] hover:text-[#ecedf1] md:flex"
+        >
+          <kbd className="rounded-[4px] bg-white/[0.06] px-1.5 py-0.5 font-sans text-[10px] font-semibold">{s.palette.open}</kbd>
+        </button>
         <div className="relative">
           <button
             type="button"
@@ -3626,6 +3745,13 @@ export function SetView({
           </svg>
         </button>
       </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={paletteCommands}
+        words={{ title: s.palette.title, placeholder: s.palette.placeholder, empty: s.palette.empty, hint: s.palette.hint, groups: s.palette.groups }}
+      />
 
       {/* The viewport, with everything floating on it. */}
       <div className="relative flex min-h-0 flex-1 flex-col">

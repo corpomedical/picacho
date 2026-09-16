@@ -49,6 +49,7 @@ import {
 import type { StageQuality } from "@/lib/sets/build-scene";
 import { groundMaterialOf, materialOf } from "@/lib/sets/stage-materials";
 import { KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, kelvinToHex, nearestKelvin } from "@/lib/sets/light-kelvin";
+import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 
 // The Set Editor (drawn 2026-09-14, canvas page G): Adobe's grammar in
 // Picacho's skin. The set page's second life — Build beside Shoot — laid out
@@ -83,6 +84,8 @@ type EditorApi = {
   applySelection(sel: EditTarget | null): void;
   applyTool(tool: Tool): void;
   applySnap(on: boolean): void;
+  /** Build's viewport mode (view-modes.ts): the scene's override material. */
+  setViewMode(mode: ViewMode): void;
   viewCenter(): [number, number];
   viewPose(): { position: Vec3; target: Vec3; fovDeg: number };
 };
@@ -433,6 +436,10 @@ export function SetEditor({
   const [spec, setSpec] = useState<SetSpec>(initialEdited ?? original);
   const [sel, setSel] = useState<EditTarget | null>(null);
   const [tool, setTool] = useState<Tool>("move");
+  // Build's viewport mode (the studio, cut 4): Lit, Clay, Wire or Depth — this page's only.
+  const [view, setView] = useState<ViewMode>("lit");
+  // The scene tree's search (the outliner): rows whose name holds the words.
+  const [find, setFind] = useState("");
   const [snap, setSnap] = useState(true);
   const [history, setHistory] = useState<string[]>(() => [JSON.stringify(initialEdited ?? original)]);
   const [at, setAt] = useState(0);
@@ -448,6 +455,9 @@ export function SetEditor({
   const staleRef = useRef(false);
   const [flash, setFlash] = useState("");
   const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (ready) apiRef.current?.setViewMode(view);
+  }, [ready, view]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [ask, setAsk] = useState("");
@@ -1110,6 +1120,11 @@ export function SetEditor({
           applySelection,
           applyTool,
           applySnap,
+          setViewMode(mode) {
+            const prev = scene.overrideMaterial;
+            scene.overrideMaterial = viewModeMaterial(THREE, mode);
+            prev?.dispose();
+          },
           viewCenter() {
             const cur = specRef.current;
             return [
@@ -1207,6 +1222,17 @@ export function SetEditor({
         // The open menu first; the thing in hand on the next press.
         if (addOpenRef.current) setAddOpen(false);
         else pickRef.current(null);
+      } else if (!meta && !e.altKey && !e.shiftKey) {
+        // The studio's keys (cut 4): V G R S pick the tool, 1–4 the view.
+        const k = e.key.toLowerCase();
+        const tool: Tool | null = k === "v" ? "select" : k === "g" ? "move" : k === "r" ? "rotate" : k === "s" ? "scale" : null;
+        if (tool) {
+          e.preventDefault();
+          setTool(tool);
+        } else if (k >= "1" && k <= "4") {
+          e.preventDefault();
+          setView(VIEW_MODES[Number(k) - 1]);
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1250,6 +1276,9 @@ export function SetEditor({
   const r1 = (n: number) => Math.round(n * 10) / 10;
   const shapeName = (shape: SetShape) => s.editorShapes[shape];
   const lightKindName = (kind: SetLightKind) => s.editorLights[kind];
+  const viewName = (m: ViewMode) => (m === "lit" ? s.editorViewLit : m === "clay" ? s.editorViewClay : m === "wire" ? s.editorViewWire : s.editorViewDepth);
+  const findQuery = find.trim().toLowerCase();
+  const hit = (name: string) => !findQuery || name.toLowerCase().includes(findQuery);
   const lightName = (li: number) => {
     const kind = spec.lights[li].kind;
     const before = spec.lights.slice(0, li).filter((l) => l.kind === kind).length;
@@ -1321,6 +1350,25 @@ export function SetEditor({
             {s.editorShootTab}
           </button>
         </span>
+        <span role="radiogroup" aria-label={s.editorViewLit} className="ml-2 hidden h-7 items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] md:flex">
+          {VIEW_MODES.map((m, i) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={view === m}
+              onClick={() => setView(m)}
+              title={`${viewName(m)} · ${i + 1}`}
+              className={
+                view === m
+                  ? "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[11.5px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
+                  : "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[11.5px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+              }
+            >
+              {viewName(m)}
+            </button>
+          ))}
+        </span>
         <span className="flex-1" />
         <button type="button" onClick={undo} disabled={at === 0} className={ICON_BTN} title={s.editorUndo} aria-label={s.editorUndo}>
           <Svg d={D.undo} className="h-[15px] w-[15px]" />
@@ -1353,13 +1401,13 @@ export function SetEditor({
         <div className={`${PANEL} relative flex w-12 flex-none flex-col items-center gap-1 border-r ${HAIR} py-2.5`}>
           {(
             [
-              ["select", D.select, s.editorToolSelect],
-              ["move", D.move, s.editorToolMove],
-              ["rotate", D.rotate, s.editorToolRotate],
-              ["scale", D.scale, s.editorToolScale],
+              ["select", D.select, s.editorToolSelect, "V"],
+              ["move", D.move, s.editorToolMove, "G"],
+              ["rotate", D.rotate, s.editorToolRotate, "R"],
+              ["scale", D.scale, s.editorToolScale, "S"],
             ] as const
-          ).map(([id, d, name]) => (
-            <button key={id} type="button" onClick={() => setTool(id)} className={tool === id ? TOOL_ON : TOOL_BTN} title={name} aria-label={name}>
+          ).map(([id, d, name, key]) => (
+            <button key={id} type="button" onClick={() => setTool(id)} className={tool === id ? TOOL_ON : TOOL_BTN} title={`${name} · ${key}`} aria-label={name}>
               <Svg d={d} />
             </button>
           ))}
@@ -1512,19 +1560,30 @@ export function SetEditor({
 
         {/* scene + properties */}
         <div className={`${PANEL} flex w-[300px] flex-none flex-col border-l ${HAIR} min-h-0`}>
-          <div className={`${PHEAD} border-b ${HAIR}`}>{s.editorScene}</div>
-          <div className="min-h-0 flex-[0_0_auto] max-h-[44%] overflow-y-auto py-1">
-            <TreeRow icon="sun" name={s.editorEnvironment} selected={false} onPick={() => setSel(null)} />
-            <TreeRow icon="sky" child name={`${s.editorSky} — ${s.editorSkyKinds[spec.sky.kind]}`} selected={sel?.kind === "sky"} onPick={() => setSel({ kind: "sky" })} />
-            <TreeRow dot={spec.ground.color} child name={s.editorGround} selected={sel?.kind === "ground"} onPick={() => setSel({ kind: "ground" })} />
-            <TreeRow
-              icon="sky"
-              child
-              name={`${s.editorFog}${spec.fog ? "" : ` — ${s.editorNone}`}`}
-              selected={sel?.kind === "fog"}
-              onPick={() => setSel({ kind: "fog" })}
+          <div className={`${PHEAD} flex items-center gap-2 border-b ${HAIR}`}>
+            <span>{s.editorScene}</span>
+            <input
+              value={find}
+              onChange={(e) => setFind(e.target.value)}
+              placeholder={s.editorFind}
+              aria-label={s.editorFind}
+              className="ml-auto h-6 w-[150px] min-w-0 rounded-[5px] bg-[#111217] px-2 text-[11px] font-normal normal-case tracking-normal text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
             />
-            {spec.lights.map((l, li) => (
+          </div>
+          <div className="min-h-0 flex-[0_0_auto] max-h-[44%] overflow-y-auto py-1">
+            {!findQuery && <TreeRow icon="sun" name={s.editorEnvironment} selected={false} onPick={() => setSel(null)} />}
+            {hit(s.editorSky) && <TreeRow icon="sky" child name={`${s.editorSky} — ${s.editorSkyKinds[spec.sky.kind]}`} selected={sel?.kind === "sky"} onPick={() => setSel({ kind: "sky" })} />}
+            {hit(s.editorGround) && <TreeRow dot={spec.ground.color} child name={s.editorGround} selected={sel?.kind === "ground"} onPick={() => setSel({ kind: "ground" })} />}
+            {hit(s.editorFog) && (
+              <TreeRow
+                icon="sky"
+                child
+                name={`${s.editorFog}${spec.fog ? "" : ` — ${s.editorNone}`}`}
+                selected={sel?.kind === "fog"}
+                onPick={() => setSel({ kind: "fog" })}
+              />
+            )}
+            {spec.lights.map((l, li) => hit(lightName(li)) && (
               <TreeRow
                 key={`l${li}`}
                 icon={l.kind === "sun" ? "sun" : "bulb"}
@@ -1536,7 +1595,7 @@ export function SetEditor({
               />
             ))}
             <div className={SHEAD}>{s.editorThings}</div>
-            {spec.objects.map((o, oi) => (
+            {spec.objects.map((o, oi) => hit(objectName(o)) && (
               <TreeRow
                 key={`o${oi}`}
                 dot={o.color}
@@ -1548,7 +1607,7 @@ export function SetEditor({
               />
             ))}
             <div className={SHEAD}>{s.editorMarks}</div>
-            {spec.marks.map((m, mi) => (
+            {spec.marks.map((m, mi) => hit(markName(mi)) && (
               <TreeRow
                 key={`m${mi}`}
                 icon="person"
@@ -1559,7 +1618,7 @@ export function SetEditor({
               />
             ))}
             <div className={SHEAD}>{s.editorCameras}</div>
-            {spec.cameras.map((c, ci) => (
+            {spec.cameras.map((c, ci) => hit(cameraName(ci)) && (
               <TreeRow
                 key={`c${ci}`}
                 icon="camera"

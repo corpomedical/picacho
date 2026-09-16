@@ -34,6 +34,9 @@ export const RELEASES: Release[] = [
       "The rig has a time of day. Slide the hour and the sun moves — up in the east in the morning, highest and whitest at noon, warm and low in the west by evening, a moon after dark — and the sky, the fill and the fog follow it. The sketch carries the light. A light plot that places its own sun (contre-jour, golden hour, silhouette, hard noon, moonlight) keeps it; the hour draws under the other plots and under the set as built.",
       "Sets can have area lights: soft rectangles — a window, a softbox, a lit panel — with a width and a height, facing what they light. Astra can build with them; in Build, Add offers an area light, and every light now has a colour-temperature row, from 1,800 to 10,000 K, that writes the light's colour.",
       "A light meter joins the viewfinder's aids: the figure's face as a share of white, read at the eyes.",
+      "The rig is a dock with tabs — Camera, Light, Look, and Film while the film is open — so each department is a glance rather than a scroll.",
+      "A command palette: press ⌘K (Ctrl+K), or the ⌘K pill in the bar, and type — a frame, a lens, a stop, a light plot, an hour, a look, a viewfinder aid, a camera, a mark, Frame the figure, Shoot. Enter runs it. On the set page, F frames the figure and R shows or hides the rig; in Build, V G R S pick the tool and 1–4 the view.",
+      "Build has viewport modes — Lit, Clay, Wire and Depth — and a search box over the scene tree. The modes are Build's only: what you shoot, and what the picture model is shown, stays lit.",
     ],
   },
   {

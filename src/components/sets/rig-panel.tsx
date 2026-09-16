@@ -47,6 +47,7 @@ import {
 } from "@/lib/sets/rig";
 import { moveKeyLight, schemeDefaults, schemeHasSun } from "@/lib/sets/light-schemes";
 import { compassWord, sunAt, timeLabel } from "@/lib/sets/time-of-day";
+import { RIG_TAB_SECTIONS, tabAfterFilm, tabsFor, type RigSection, type RigTab } from "@/lib/sets/rig-dock";
 import { FILM_MOVES, FILM_TEXTURES, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 
 // The rig (Helios Cinema, 2026-09-15, drawn as canvas page I): the camera
@@ -120,13 +121,17 @@ function Section({
   tags,
   children,
   right,
+  hidden,
 }: {
   title: string;
   tag?: TagKind;
   tags: TagStrings;
   children: ReactNode;
   right?: ReactNode;
+  /** In another tab of the dock (rig-dock.ts). */
+  hidden?: boolean;
 }) {
+  if (hidden) return null;
   return (
     <section className="border-b border-white/[0.07] px-3.5 pb-3.5 pt-3">
       <div className="mb-2.5 flex h-[18px] items-center justify-between gap-2">
@@ -751,6 +756,18 @@ export function RigPanel({
   const suggestionInUse = Boolean(suggestion && rig.light?.scheme === suggestion.light && rig.palette === suggestion.palette);
   const lightLine = rig.light ? null : r.asBuiltLine;
 
+  // The dock's tabs (rig-dock.ts): Film joins while the film is open and
+  // takes the front; closing the film on it goes back to Camera.
+  const filmOn = film !== null;
+  const [tab, setTab] = useState<RigTab>("camera");
+  const [filmWas, setFilmWas] = useState(filmOn);
+  if (filmWas !== filmOn) {
+    setFilmWas(filmOn);
+    setTab(tabAfterFilm(tab, filmOn));
+  }
+  const tabName: Record<RigTab, string> = { camera: r.tabCamera, light: r.tabLight, look: r.tabLook, film: r.tabFilm };
+  const show = (section: RigSection) => RIG_TAB_SECTIONS[tab].includes(section);
+
   // The move under the pointer: its line shows in place of the chosen one's,
   // and the stage flies it (film.onPreview). Leaving waits a moment for the
   // next tile, so a sweep across the moves does not put the stage back
@@ -811,10 +828,26 @@ export function RigPanel({
         </span>
       </div>
 
+      <div role="tablist" aria-label={r.title} className="flex items-stretch border-b border-white/[0.07] px-2">
+        {tabsFor(filmOn).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`flex h-9 flex-1 cursor-pointer items-center justify-center border-b-2 text-[11.5px] font-medium ${
+              tab === t ? "border-[#e0a468] text-[#f0cda6]" : "border-transparent text-[#6b6f7a] hover:text-[#ecedf1]"
+            }`}
+          >
+            {tabName[t]}
+          </button>
+        ))}
+      </div>
       <RigDefs />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {film && (
-          <Section tags={tags} title={film.beat ? formatMsg(r.move, { n: film.beat }) : r.moveTitle} tag="held">
+          <Section tags={tags} title={film.beat ? formatMsg(r.move, { n: film.beat }) : r.moveTitle} hidden={!show("move")} tag="held">
             {film.beat === null && <p className="mb-2 text-[11.5px] leading-4 text-[#9aa0ad]">{r.movePick}</p>}
             {rig.genre && (
               <p className="mb-2 flex items-center gap-1.5 text-[11.5px] leading-4 text-[#9aa0ad]">
@@ -872,7 +905,7 @@ export function RigPanel({
           </Section>
         )}
 
-        <Section tags={tags} title={r.story}>
+        <Section tags={tags} title={r.story} hidden={!show("story")}>
           <div className="flex gap-1.5">
             <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-[8px] bg-[#141519] px-2.5 text-xs text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]">
               <span className="text-[11px] font-medium text-[#6b6f7a]">{r.genre}</span>
@@ -923,7 +956,7 @@ export function RigPanel({
           )}
         </Section>
 
-        <Section tags={tags} title={r.frame} tag="held">
+        <Section tags={tags} title={r.frame} hidden={!show("frame")} tag="held">
           <div className="flex gap-1.5" role="radiogroup" aria-label={r.frame}>
             {RIG_FORMAT_ORDER.map((f: RigFormat) => {
               const ff = formatFrame(f);
@@ -981,7 +1014,7 @@ export function RigPanel({
           <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{rig.squeeze > 1 ? formatMsg(r.squeezeLine, { n: String(rig.squeeze) }) : r.sensorLine}</p>
         </Section>
 
-        <Section tags={tags} title={r.stock} tag="lab">
+        <Section tags={tags} title={r.stock} hidden={!show("stock")} tag="lab">
           <div className="grid grid-cols-4 gap-1.5">
             {RIG_STOCKS.map((st) => {
               const still = lookStill("stock", st.id);
@@ -1010,7 +1043,7 @@ export function RigPanel({
           </p>
         </Section>
 
-        <Section tags={tags} title={r.lens} tag="lab">
+        <Section tags={tags} title={r.lens} hidden={!show("lens")} tag="lab">
           <div className="grid grid-cols-4 gap-1.5">
             {RIG_LENSES.map((l) => {
               const still = lookStill("lens", l.id);
@@ -1041,7 +1074,7 @@ export function RigPanel({
 
         <Section
           tags={tags}
-          title={r.focus}
+          title={r.focus} hidden={!show("focus")}
           tag="checked"
           right={
             rig.stop !== null ? (
@@ -1072,7 +1105,7 @@ export function RigPanel({
 
         <Section
           tags={tags}
-          title={r.exposure}
+          title={r.exposure} hidden={!show("exposure")}
           tag="held"
           right={
             atReference ? null : (
@@ -1131,7 +1164,7 @@ export function RigPanel({
           <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">{formatMsg(r.exposureLine, { stops: `${stopsLabel} EV` })}</p>
         </Section>
 
-        <Section tags={tags} title={r.viewfinder}>
+        <Section tags={tags} title={r.viewfinder} hidden={!show("viewfinder")}>
           <div className="flex flex-wrap gap-1">
             {RIG_OVERLAY_KEYS.map((k) => (
               <Pill key={k} on={rig.overlays[k]} onClick={() => set({ overlays: { ...rig.overlays, [k]: !rig.overlays[k] } })} role="checkbox">
@@ -1144,7 +1177,7 @@ export function RigPanel({
 
         <Section
           tags={tags}
-          title={r.light}
+          title={r.light} hidden={!show("light")}
           tag="checked"
           right={
             rig.light !== null ? (
@@ -1210,7 +1243,7 @@ export function RigPanel({
 
         <Section
           tags={tags}
-          title={r.time}
+          title={r.time} hidden={!show("time")}
           tag="held"
           right={
             rig.time !== null ? (
@@ -1252,7 +1285,7 @@ export function RigPanel({
 
         <Section
           tags={tags}
-          title={r.palette}
+          title={r.palette} hidden={!show("palette")}
           tag="checked"
           right={
             <label className="ml-auto mr-2 flex cursor-pointer items-center gap-1.5 text-[11px] text-[#9aa0ad]">
