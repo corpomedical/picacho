@@ -20,6 +20,16 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.41.3",
+    build: 77,
+    date: "2026-09-16",
+    title: "Film: preview a move by hovering, play it with Space",
+    items: [
+      "In Film, resting the mouse on a move in the rig now flies it on the stage, from where its beat starts, again and again, for free. Move the mouse away and the camera goes back to where it was. Nothing is added to the film until you pick the move, and the move's description shows while you hover.",
+      "Space plays the move while the film panel is open, unless you're typing or a button has the focus. A hint above the film panel lists the keys: K keeps the view as a keyframe, and Space plays the move.",
+    ],
+  },
+  {
     version: "1.41.2",
     build: 76,
     date: "2026-09-16",

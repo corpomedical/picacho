@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { formatMsg } from "@/lib/i18n/format";
 import type { Messages } from "@/lib/i18n/messages/en";
 import { LENSES_MM, nearestLens } from "@/lib/sets/build-scene";
@@ -52,8 +52,13 @@ export type RigFilmContext = {
   move: FilmMove | null;
   textures: FilmTexture[];
   onMove: (move: FilmMove) => void;
+  /** A move under the pointer, to fly on the stage for free (canvas page I); null when the pointer has left the moves. */
+  onPreview: (move: FilmMove | null) => void;
   onTexture: (texture: FilmTexture) => void;
 };
+
+/** How long the pointer rests between two tiles before the stage is put back: a sweep across the moves is one preview. */
+const PREVIEW_LEAVE_MS = 150;
 
 const PANEL_BG = "border border-white/[0.11] bg-[rgba(25,26,32,0.96)] shadow-[0_24px_56px_-16px_rgba(0,0,0,0.6)]";
 
@@ -128,6 +133,7 @@ function Tag({ kind, tags }: { kind: TagKind; tags: TagStrings }) {
 function Tile({
   on,
   onPick,
+  onHover,
   label,
   children,
   dot,
@@ -136,6 +142,8 @@ function Tile({
 }: {
   on: boolean;
   onPick: () => void;
+  /** A mouse resting on the tile, and leaving it (a touch never hovers). */
+  onHover?: (over: boolean) => void;
   label: string;
   children: ReactNode;
   dot?: boolean;
@@ -148,6 +156,8 @@ function Tile({
       type="button"
       aria-pressed={on}
       onClick={onPick}
+      onPointerEnter={onHover ? (e) => e.pointerType === "mouse" && onHover(true) : undefined}
+      onPointerLeave={onHover ? (e) => e.pointerType === "mouse" && onHover(false) : undefined}
       className={`relative cursor-pointer rounded-[8px] px-1 pb-1.5 pt-1 text-center text-[10.5px] leading-[13px] transition-colors ${
         on
           ? "bg-[rgba(224,164,104,0.1)] text-[#f0cda6] shadow-[inset_0_0_0_1.5px_#e0a468]"
@@ -685,6 +695,39 @@ export function RigPanel({
   const suggestionInUse = Boolean(suggestion && rig.light?.scheme === suggestion.light && rig.palette === suggestion.palette);
   const lightLine = rig.light ? null : r.asBuiltLine;
 
+  // The move under the pointer: its line shows in place of the chosen one's,
+  // and the stage flies it (film.onPreview). Leaving waits a moment for the
+  // next tile, so a sweep across the moves does not put the stage back
+  // between them; closing the panel ends it.
+  const [hovered, setHovered] = useState<FilmMove | null>(null);
+  const leaveRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewRef = useRef<RigFilmContext["onPreview"] | null>(null);
+  useEffect(() => {
+    previewRef.current = film ? film.onPreview : null;
+  });
+  const hoverMove = (move: FilmMove, over: boolean) => {
+    if (leaveRef.current) clearTimeout(leaveRef.current);
+    leaveRef.current = null;
+    if (over) {
+      setHovered(move);
+      film?.onPreview(move);
+      return;
+    }
+    leaveRef.current = setTimeout(() => {
+      leaveRef.current = null;
+      setHovered(null);
+      previewRef.current?.(null);
+    }, PREVIEW_LEAVE_MS);
+  };
+  useEffect(
+    () => () => {
+      if (leaveRef.current) clearTimeout(leaveRef.current);
+      previewRef.current?.(null);
+    },
+    [],
+  );
+  const lineMove = film ? (hovered ?? film.move) : null;
+
   const pickScheme = (scheme: RigLightScheme | null) => {
     if (!scheme) return set({ light: null });
     // Picking the scheme it already has re-aims it to the camera as it stands.
@@ -725,14 +768,21 @@ export function RigPanel({
             )}
             <div className="grid grid-cols-3 gap-1.5">
               {FILM_MOVES.map((m) => (
-                <Tile key={m} on={film.move === m} onPick={() => film.onMove(m)} label={r.moves[m]} dot={Boolean(suggestion?.moves.includes(m))}>
+                <Tile
+                  key={m}
+                  on={film.move === m}
+                  onPick={() => film.onMove(m)}
+                  onHover={(over) => hoverMove(m, over)}
+                  label={r.moves[m]}
+                  dot={Boolean(suggestion?.moves.includes(m))}
+                >
                   <MoveGlyph move={m} on={film.move === m} />
                 </Tile>
               ))}
             </div>
-            {film.move && (
+            {lineMove && (
               <p className="mt-2 text-[11.5px] leading-4 text-[#9aa0ad]">
-                <span className="text-[#ecedf1]">{r.moves[film.move]}</span> — {r.moveLines[film.move]}
+                <span className="text-[#ecedf1]">{r.moves[lineMove]}</span> — {r.moveLines[lineMove]}
               </p>
             )}
             {film.beat !== null && (

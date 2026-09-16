@@ -2118,6 +2118,8 @@ const it = {
     filmBeatLabel: "Tratto {n}",
     filmLength: "{s} s · {n} tratti · un piano sequenza",
     filmPlayMove: "Riproduci il movimento",
+    filmHint: "Trascina per orbitare · K salva questa vista come fotogramma chiave · la barra spaziatrice riproduce il movimento",
+    filmHintMoves: "Passa il mouse su un movimento per vederlo qui, gratis · la barra spaziatrice riproduce il movimento",
     filmPlayFilm: "Riproduci il film",
     filmRender: "Renderizza il film · {n} crediti",
     filmRenderFrom: "Renderizza dal tratto {b} · {n} crediti",

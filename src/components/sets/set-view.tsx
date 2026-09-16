@@ -91,15 +91,34 @@ import { dropUnsaved, keepUnsaved, savedFilmKey, savedRigKey, takeUnsaved } from
 type Pose = { position: Vec3; target: Vec3; fovDeg: number };
 
 
+/** How long the stage takes to fly one beat's move. */
+const MOVE_FLIGHT_MS = 1400;
+/** A pointer rests this long on a move before the stage flies it: a sweep across the moves flies nothing. */
+const MOVE_PREVIEW_REST_MS = 200;
+/** A hovered move holds its end this long before it flies again. */
+const MOVE_PREVIEW_HOLD_MS = 700;
+
 /**
  * Fly the stage camera from one pose to another — the film's previz, free —
  * along the beat's own move (moves.ts poseAlong): round the person for an
  * arc or an orbit, her size held for a dolly zoom, straight for the rest.
+ * A flight whose `alive` turns false lands where it is, at once.
  */
-function tweenPose(api: { goTo(p: Pose): void }, a: Pose, b: Pose, ms: number, move: FilmMove | null = null): Promise<void> {
+function tweenPose(
+  api: { goTo(p: Pose): void },
+  a: Pose,
+  b: Pose,
+  ms: number,
+  move: FilmMove | null = null,
+  alive: () => boolean = () => true,
+): Promise<void> {
   return new Promise((resolve) => {
     const t0 = performance.now();
     const step = (now: number) => {
+      if (!alive()) {
+        resolve();
+        return;
+      }
       const k = Math.min(1, (now - t0) / ms);
       const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
       api.goTo(poseAlong(move, a, b, e));
@@ -610,6 +629,24 @@ export function SetView({
   const hostRef = useRef<HTMLDivElement>(null);
   const guideRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<StageApi | null>(null);
+  // A move under the pointer in the rig flies on the stage, free (canvas
+  // page I: "hover a move to fly it here"). Nothing is kept: the stage goes
+  // back to where it stood (home) when the pointer leaves, a pick or a play
+  // takes over, or the moves close. token: the flight in the air; a newer
+  // preview or a stop grounds it.
+  const movePreviewRef = useRef<{ home: Pose | null; token: number; timer: ReturnType<typeof setTimeout> | null }>({
+    home: null,
+    token: 0,
+    timer: null,
+  });
+  const stopMovePreview = useCallback(() => {
+    const p = movePreviewRef.current;
+    p.token += 1;
+    if (p.timer) clearTimeout(p.timer);
+    p.timer = null;
+    if (p.home) apiRef.current?.goTo(p.home);
+    p.home = null;
+  }, []);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // A figure dropped inside something built moved to open floor: the hint
   // says so for a few seconds, in place of the drag hint.
@@ -1969,6 +2006,7 @@ export function SetView({
    * The clips from this beat on go with it (filmAfterEdit).
    */
   function filmSetBeatEnd(i: number) {
+    stopMovePreview();
     const pose = apiRef.current?.pose();
     if (!pose || previz) return;
     editFilm((f) => ({ ...f, beats: f.beats.map((b, j) => (j === i ? { ...b, end: pose, move: null } : b)) }));
@@ -1976,23 +2014,19 @@ export function SetView({
   }
 
   /**
-   * A move from the rig's library (moves.ts): the selected beat's end is
-   * laid round the figure from where the beat starts — the keyframe before
-   * it, or the stage as it stands for the first — and the stage flies it at
-   * once, free. With no beat selected, the move becomes a new beat.
+   * Where a move from the rig's library goes (moves.ts): onto the selected
+   * beat, or a new one while there is room, its end laid round the figure
+   * from where that beat starts — the keyframe before it, or for the first
+   * the start still's own camera when it was recorded, else `here`, the
+   * stage as it stands. Null when no beat can take a move.
    */
-  function filmMove(move: FilmMove) {
-    const api = apiRef.current;
-    // Not mid-flight: a pick then lays from where the last one is still
-    // flying. Not while the film renders either: the move could not be kept.
-    if (!api || previz || filmBusyRef.current) return;
+  function layFilmMove(api: StageApi, move: FilmMove, here: Pose): { at: number; from: Pose; end: Pose } | null {
     const at = filmSel !== null && film.beats[filmSel] ? filmSel : film.beats.length < FILM_MAX_BEATS ? film.beats.length : null;
-    if (at === null) return;
-    keepStage();
+    if (at === null) return null;
     // Beat 1 starts where the film starts: the start still's own camera,
     // when it was recorded — never wherever the stage happens to be.
     const startPose = shots.find((sh) => sh.generationId === film.startId)?.pose ?? null;
-    const from = at > 0 ? film.beats[at - 1].end : (startPose ?? api.pose());
+    const from = at > 0 ? film.beats[at - 1].end : (startPose ?? here);
     const m = layoutRef.current.mark;
     let end = api.roomFor(layMove(move, from, m, spec.bounds));
     // A dolly zoom stopped short by a wall re-solves its lens, so she still
@@ -2005,6 +2039,25 @@ export function SetView({
         end = { ...end, fovDeg: Math.round(Math.min(SET_LIMITS.maxFovDeg, Math.max(SET_LIMITS.minLayoutFovDeg, fov)) * 100) / 100 };
       }
     }
+    return { at, from, end };
+  }
+
+  /**
+   * A move from the rig's library, picked: laid on its beat (layFilmMove),
+   * and the stage flies it at once, free. With no beat selected, the move
+   * becomes a new beat.
+   */
+  function filmMove(move: FilmMove) {
+    const api = apiRef.current;
+    // Not mid-flight: a pick then lays from where the last one is still
+    // flying. Not while the film renders either: the move could not be kept.
+    if (!api || previz || filmBusyRef.current) return;
+    // A hover's flight lands first, the stage back where it stood.
+    stopMovePreview();
+    const laid = layFilmMove(api, move, api.pose());
+    if (!laid) return;
+    const { at, from, end } = laid;
+    keepStage();
     editFilm((f) => {
       const beats = [...f.beats];
       beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [] };
@@ -2012,12 +2065,51 @@ export function SetView({
     });
     setFilmSel(at);
     setPreviz(true);
-    void tweenPose(api, from, end, 1400, move).then(() => {
+    void tweenPose(api, from, end, MOVE_FLIGHT_MS, move).then(() => {
       setPreviz(false);
       // The lens and the frame's words follow the stage to the beat's end.
       setFovDeg(end.fovDeg);
       setPoseNow(end);
     });
+  }
+
+  /**
+   * A move under the pointer in the rig (null: the pointer has left the
+   * moves). After a moment's rest the stage flies it from its beat's start,
+   * over and over, and is put back when the pointer leaves. Free, and
+   * nothing is kept. With reduced motion, the stage shows the move's end.
+   */
+  function previewFilmMove(move: FilmMove | null) {
+    if (move === null) {
+      stopMovePreview();
+      return;
+    }
+    const api = apiRef.current;
+    const p = movePreviewRef.current;
+    if (!api || !ready || previz || filmBusyRef.current) return;
+    const home = p.home ?? api.pose();
+    const laid = layFilmMove(api, move, home);
+    if (!laid) return;
+    p.token += 1;
+    const token = p.token;
+    const alive = () => movePreviewRef.current.token === token;
+    if (p.timer) clearTimeout(p.timer);
+    p.timer = setTimeout(() => {
+      p.timer = null;
+      if (!alive()) return;
+      p.home = home;
+      if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+        api.goTo(laid.end);
+        return;
+      }
+      void (async () => {
+        while (alive()) {
+          api.goTo(laid.from);
+          await tweenPose(api, laid.from, laid.end, MOVE_FLIGHT_MS, move, alive);
+          await new Promise((resolve) => setTimeout(resolve, MOVE_PREVIEW_HOLD_MS));
+        }
+      })();
+    }, MOVE_PREVIEW_REST_MS);
   }
 
   function filmTexture(texture: FilmTexture) {
@@ -2031,6 +2123,7 @@ export function SetView({
   }
 
   function filmGoTo(i: number) {
+    stopMovePreview();
     const b = film.beats[i];
     if (b) {
       keepStage();
@@ -2045,6 +2138,7 @@ export function SetView({
   async function playMove() {
     const api = apiRef.current;
     if (!api || previz || film.beats.length === 0) return;
+    stopMovePreview();
     // The previz leaves the camera on the last beat's end: Undo brings it back.
     keepStage();
     setPreviz(true);
@@ -2053,7 +2147,7 @@ export function SetView({
     let from = start ?? api.pose();
     if (start) api.goTo(start);
     for (const beat of film.beats) {
-      await tweenPose(api, from, beat.end, 1400, beat.move);
+      await tweenPose(api, from, beat.end, MOVE_FLIGHT_MS, beat.move);
       from = beat.end;
     }
     setPreviz(false);
@@ -2587,6 +2681,8 @@ export function SetView({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement as HTMLElement | null;
       if (el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) return;
+      // The view kept is the stage's own, not a hover's flight.
+      stopMovePreview();
       const pose = apiRef.current?.pose();
       if (!pose) return;
       editFilm((f) =>
@@ -2595,7 +2691,33 @@ export function SetView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [filmOpen, editFilm]);
+  }, [filmOpen, editFilm, stopMovePreview]);
+
+  // Space plays the move while the film dock is open (canvas page H), when
+  // nothing in particular has the focus: a focused control keeps Space for
+  // itself, and a field for typing.
+  const playMoveRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    playMoveRef.current = () => void playMove();
+  });
+  useEffect(() => {
+    if (!filmOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== " " || e.repeat || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      const el = document.activeElement;
+      if (el && el !== document.body && el.tagName !== "CANVAS") return;
+      e.preventDefault();
+      playMoveRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filmOpen]);
+
+  // The moves closing, or the page going, ends a hover's flight.
+  useEffect(() => {
+    if (!filmOpen || !rigOpen) stopMovePreview();
+  }, [filmOpen, rigOpen, stopMovePreview]);
+  useEffect(() => stopMovePreview, [stopMovePreview]);
 
   // Leaving mid-film stops the chain after the beat it is on: this page
   // renders the beats one after another (each clip then renders on its
@@ -3609,6 +3731,10 @@ export function SetView({
                 chatOpen ? "md:right-[404px]" : "md:right-24"
               } ${rigOpen ? "md:left-[356px]" : ""} ${viewingShot ? "hidden md:flex" : ""}`}
             >
+              {/* the stage's keys, above the dock (canvas pages H and I); a touch has neither hover nor keys */}
+              <span className="pointer-events-none absolute bottom-full left-0 mb-2 hidden max-w-full rounded-[12px] border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] leading-4 text-onmedia/80 md:pointer-fine:block">
+                {rigOpen ? s.filmHintMoves : s.filmHint}
+              </span>
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -3881,6 +4007,7 @@ export function SetView({
                     move: filmSel !== null ? (film.beats[filmSel]?.move ?? null) : null,
                     textures: filmSel !== null ? (film.beats[filmSel]?.textures ?? []) : [],
                     onMove: filmMove,
+                    onPreview: previewFilmMove,
                     onTexture: filmTexture,
                   }
                 : null

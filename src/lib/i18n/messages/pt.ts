@@ -2119,6 +2119,8 @@ const pt = {
     filmBeatLabel: "Trecho {n}",
     filmLength: "{s} s · {n} trechos · um plano contínuo",
     filmPlayMove: "Reproduzir o movimento",
+    filmHint: "Arraste para orbitar · K salva esta vista como quadro-chave · a barra de espaço reproduz o movimento",
+    filmHintMoves: "Passe o mouse sobre um movimento para vê-lo aqui, de graça · a barra de espaço reproduz o movimento",
     filmPlayFilm: "Reproduzir o filme",
     filmRender: "Renderizar o filme · {n} créditos",
     filmRenderFrom: "Renderizar a partir do trecho {b} · {n} créditos",
