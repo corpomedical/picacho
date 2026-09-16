@@ -173,6 +173,55 @@ export function layMove(
   }
 }
 
+const lerp = (x: number, y: number, t: number) => x + (y - x) * t;
+const lerpV = (p: Vec3, q: Vec3, t: number): Vec3 => [lerp(p[0], q[0], t), lerp(p[1], q[1], t), lerp(p[2], q[2], t)];
+const TAU = Math.PI * 2;
+
+/**
+ * The camera part-way through a beat's move, `e` from 0 (where it starts)
+ * to 1 (where it ends) — the path Play the move flies. A straight line is
+ * the move for most of them, not for all. An arc and an orbit go ROUND the
+ * person, turning about the point the move aims at: a straight line cuts
+ * the chord instead, and halfway through a quarter orbit that passes 29%
+ * closer, so she swells and shrinks where the camera should circle her. A
+ * dolly zoom HOLDS her size the whole way (distance × tan(fov / 2), as
+ * layMove lays it), which a lens and a distance eased on their own do not.
+ * Both ends are exactly the beat's, whatever the move, and a pose too close
+ * to the point it turns about keeps the straight line.
+ */
+export function poseAlong(move: FilmMove | null, a: FilmPose, b: FilmPose, e: number): FilmPose {
+  const straight: FilmPose = {
+    position: lerpV(a.position, b.position, e),
+    target: lerpV(a.target, b.target, e),
+    fovDeg: lerp(a.fovDeg, b.fovDeg, e),
+  };
+  const cx = b.target[0];
+  const cz = b.target[2];
+  const ground = (p: Vec3) => Math.hypot(p[0] - cx, p[2] - cz);
+  if (move === "arc-left" || move === "arc-right" || move === "orbit-90") {
+    const r0 = ground(a.position);
+    const r1 = ground(b.position);
+    if (r0 < 0.05 || r1 < 0.05) return straight;
+    const t0 = Math.atan2(a.position[0] - cx, a.position[2] - cz);
+    const t1 = Math.atan2(b.position[0] - cx, b.position[2] - cz);
+    // The short way round: every arc in the library turns less than half a circle.
+    const turn = ((((t1 - t0 + Math.PI) % TAU) + TAU) % TAU) - Math.PI;
+    const th = t0 + turn * e;
+    const r = lerp(r0, r1, e);
+    return { ...straight, position: [cx + Math.sin(th) * r, straight.position[1], cz + Math.cos(th) * r] };
+  }
+  if (move === "dolly-zoom") {
+    const d0 = ground(a.position);
+    const d1 = ground(b.position);
+    const d = ground(straight.position);
+    if (d0 < 0.05 || d1 < 0.05 || d < 0.05) return straight;
+    const half = (fov: number) => Math.tan((fov * DEG) / 2);
+    const size = lerp(half(a.fovDeg) * d0, half(b.fovDeg) * d1, e);
+    return { ...straight, fovDeg: (2 * Math.atan(size / d)) / DEG };
+  }
+  return straight;
+}
+
 /** How far a pose stands from the mark on the ground, metres — what the rig's focus reads. */
 export function groundDistance(pose: FilmPose, mark: { x: number; z: number }): number {
   return Math.hypot(pose.position[0] - mark.x, pose.position[2] - mark.z);

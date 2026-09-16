@@ -37,7 +37,7 @@ import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
 import { RIG_PALETTES, findLook, formatFrame, normaliseSetRig, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg, litSpec } from "@/lib/sets/light-schemes";
 import { LAB_PREVIEW_SHADER, labPreviewCodes } from "@/lib/sets/lab-preview";
-import { layMove, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
+import { layMove, poseAlong, type FilmMove, type FilmTexture } from "@/lib/sets/moves";
 import type { RigCheck } from "@/lib/sets/rig-check";
 import { RigPanel } from "@/components/sets/rig-panel";
 import { compareCrop, compareOutputSize, widenFovDeg, type CompareCrop } from "@/lib/sets/compare";
@@ -85,24 +85,19 @@ import type { SetCharacter, SetShot } from "@/lib/sets/types";
 
 type Pose = { position: Vec3; target: Vec3; fovDeg: number };
 
-const lerp3 = (a: Vec3, b: Vec3, k: number): Vec3 => [
-  a[0] + (b[0] - a[0]) * k,
-  a[1] + (b[1] - a[1]) * k,
-  a[2] + (b[2] - a[2]) * k,
-];
 
-/** Fly the stage camera from one pose to another — the film's previz, free. */
-function tweenPose(api: { goTo(p: Pose): void }, a: Pose, b: Pose, ms: number): Promise<void> {
+/**
+ * Fly the stage camera from one pose to another — the film's previz, free —
+ * along the beat's own move (moves.ts poseAlong): round the person for an
+ * arc or an orbit, her size held for a dolly zoom, straight for the rest.
+ */
+function tweenPose(api: { goTo(p: Pose): void }, a: Pose, b: Pose, ms: number, move: FilmMove | null = null): Promise<void> {
   return new Promise((resolve) => {
     const t0 = performance.now();
     const step = (now: number) => {
       const k = Math.min(1, (now - t0) / ms);
       const e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
-      api.goTo({
-        position: lerp3(a.position, b.position, e),
-        target: lerp3(a.target, b.target, e),
-        fovDeg: a.fovDeg + (b.fovDeg - a.fovDeg) * e,
-      });
+      api.goTo(poseAlong(move, a, b, e));
       if (k < 1) requestAnimationFrame(step);
       else resolve();
     };
@@ -1776,7 +1771,7 @@ export function SetView({
     });
     setFilmSel(at);
     setPreviz(true);
-    void tweenPose(api, from, end, 1400).then(() => {
+    void tweenPose(api, from, end, 1400, move).then(() => {
       setPreviz(false);
       // The lens and the frame's words follow the stage to the beat's end.
       setFovDeg(end.fovDeg);
@@ -1814,7 +1809,7 @@ export function SetView({
     let from = start ?? api.pose();
     if (start) api.goTo(start);
     for (const beat of film.beats) {
-      await tweenPose(api, from, beat.end, 1400);
+      await tweenPose(api, from, beat.end, 1400, beat.move);
       from = beat.end;
     }
     setPreviz(false);

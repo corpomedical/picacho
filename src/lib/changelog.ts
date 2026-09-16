@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.39.1",
+    build: 59,
+    date: "2026-09-16",
+    title: "Play the move flies the moves you'll get",
+    items: [
+      "Play the move flew the camera in a straight line between a beat's two frames. That was right for a push-in, and wrong for the moves whose point is their path. An orbit cut across toward the person, so she swelled and shrank halfway round: on a set with a 20-metre orbit the straight line passed 13 metres from her. The stage now flies arcs and orbits round her.",
+      "A dolly zoom's whole point is that the person keeps her size while the background changes. The preview used to ease the lens and the distance separately, so she grew mid-move. Now she holds her size from the first frame to the last.",
+      "Both ends of every beat are exactly where they were; only the path between them changed, and it's free as ever.",
+    ],
+  },
+  {
     version: "1.39.0",
     build: 58,
     date: "2026-09-16",
