@@ -2161,6 +2161,7 @@ const en = {
     editorOriginal: "Astra's original",
     editorOriginalHint: "Bring the set back as Astra first built it — ↺ undoes this too",
     editorDone: "Done — Shoot",
+    editorNarrow: "The Build editor needs a wider screen — turn your phone sideways, or open this set on a computer.",
     editorEditN: "Edit {n}",
     editorUndo: "Undo",
     editorRedo: "Redo",

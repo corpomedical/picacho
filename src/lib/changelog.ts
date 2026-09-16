@@ -20,6 +20,17 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.41.0",
+    build: 74,
+    date: "2026-09-16",
+    title: "Helios on a phone: Shoot and Film in reach",
+    items: [
+      "On a phone the set page's Build · Shoot · Film switch was hidden, so Film could only be reached by typing its address. Shoot and Film now show at every width; the bar keeps the back arrow, the switch and the frame, and the set's name and the longer labels return on wider screens (in Spanish the full bar used to overflow below about 720 px).",
+      "The Build editor needs room for its tools, the view and the side panel. On a phone held upright it now says so, with the way back to shooting, instead of covering its own view; turned sideways, most phones fit it, and Build shows from 640 px.",
+      "The frame download keeps its full size in a tight bar.",
+    ],
+  },
+  {
     version: "1.40.9",
     build: 73,
     date: "2026-09-16",

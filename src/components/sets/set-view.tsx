@@ -2892,20 +2892,25 @@ export function SetView({
       )}
 
       {/* The workspace's own bar: where you are, the set's two lives, History and the frame on disk. */}
-      <div className="flex h-12 flex-none items-center gap-3 border-b border-white/[0.07] bg-[#191a20] px-3.5">
-        <Link href="/app/sets" className="whitespace-nowrap text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1]">
-          ← {s.back}
+      <div className="flex h-12 flex-none items-center gap-2 border-b border-white/[0.07] bg-[#191a20] px-3.5 md:gap-3">
+        {/* Below a tablet's width the bar keeps the arrow, the switch and the
+            frame; the set's name (a sliver there, in any language) and the
+            words that name the others are kept for screen readers and wider
+            screens — the full bar needs ~720 px in Spanish. */}
+        <Link href="/app/sets" aria-label={s.back} className="whitespace-nowrap text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1]">
+          ←<span className="hidden md:inline"> {s.back}</span>
         </Link>
-        <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
-        <h1 className="min-w-0 truncate font-display text-[14px] font-semibold text-[#ecedf1]">{title || s.untitled}</h1>
-        <span className="hidden whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a] sm:inline">
+        <span aria-hidden className="hidden h-5 w-px bg-white/[0.09] md:block" />
+        <h1 className="sr-only min-w-0 truncate font-display text-[14px] font-semibold text-[#ecedf1] md:not-sr-only">{title || s.untitled}</h1>
+        <span className="hidden whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a] md:inline">
           {shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })}
         </span>
         <span className="flex-1" />
-        <span className="hidden h-7 items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] sm:flex">
+        {/* Shoot and Film at every width; Build from 640 px, where the editor fits (set-editor.tsx says so below it). */}
+        <span className="flex h-7 flex-none items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
           <Link
             href={`/app/sets/${setId}?build=1`}
-            className="flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+            className="hidden h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] sm:flex md:px-3.5"
           >
             {s.editorBuildTab}
           </Link>
@@ -2918,8 +2923,8 @@ export function SetView({
             }}
             className={
               filmOpen
-                ? "flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
-                : "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
+                ? "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] md:px-3.5"
+                : "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] md:px-3.5"
             }
             aria-current={filmOpen ? undefined : "page"}
           >
@@ -2935,8 +2940,8 @@ export function SetView({
             }}
             className={
               filmOpen
-                ? "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
-                : "flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
+                ? "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] md:px-3.5"
+                : "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] md:px-3.5"
             }
             aria-current={filmOpen ? "page" : undefined}
           >
@@ -2951,9 +2956,11 @@ export function SetView({
             aria-haspopup="listbox"
             aria-expanded={menu === "history"}
             disabled={revisions.length < 2}
-            className="flex h-8 cursor-pointer items-center gap-1.5 rounded-[6px] px-2.5 text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+            aria-label={`${s.historyLabel} · ${formatMsg(s.revisionN, { n: frameNumber })}`}
+            className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40 md:px-2.5"
           >
-            {s.historyLabel} · {formatMsg(s.revisionN, { n: frameNumber })}
+            <span className="hidden md:inline">{s.historyLabel} · </span>
+            {formatMsg(s.revisionN, { n: frameNumber })}
             <Chevron />
           </button>
           {menu === "history" && (
@@ -2968,7 +2975,7 @@ export function SetView({
           disabled={!ready}
           title={s.downloadFrame}
           aria-label={s.downloadFrame}
-          className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
+          className="flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-[6px] text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden>
             <path d="M12 3v12" />

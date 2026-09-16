@@ -2025,6 +2025,7 @@ const es = {
     editorOriginal: "El original de Astra",
     editorOriginalHint: "Devuelve el set tal como Astra lo construyó al principio — ↺ también deshace esto",
     editorDone: "Listo — Fotografiar",
+    editorNarrow: "El editor de Construir necesita una pantalla más ancha — gira el móvil o abre este set en un ordenador.",
     editorEditN: "Edición {n}",
     editorUndo: "Deshacer",
     editorRedo: "Rehacer",

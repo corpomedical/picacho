@@ -2024,6 +2024,7 @@ const it = {
     editorOriginal: "L'originale di Astra",
     editorOriginalHint: "Riporta il set com'era quando Astra l'ha costruito — ↺ annulla anche questo",
     editorDone: "Fatto — Scatta",
+    editorNarrow: "L'editor di Costruisci ha bisogno di uno schermo più largo — gira il telefono in orizzontale o apri questo set su un computer.",
     editorEditN: "Modifica {n}",
     editorUndo: "Annulla",
     editorRedo: "Ripeti",

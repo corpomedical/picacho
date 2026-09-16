@@ -1116,6 +1116,19 @@ export function SetEditor({
 
   return (
     <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#141519] font-sans text-[13px] leading-[18px] text-[#c6c9d1]" data-set-editor>
+      {/* A phone held upright has no room for a rail, a canvas and a 300 px
+          panel: it is told so, with the way back, rather than handed an
+          editor it cannot see. Turned sideways, most phones clear it. */}
+      <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-[#141519] px-8 text-center sm:hidden">
+        <p className="max-w-xs text-[14px] leading-[21px] text-[#c6c9d1]">{s.editorNarrow}</p>
+        <button
+          type="button"
+          onClick={() => void done()}
+          className="flex h-9 cursor-pointer items-center rounded-[8px] bg-[#e0a468] px-4 text-[13px] font-semibold text-[#1b1c20]"
+        >
+          {s.editorDone}
+        </button>
+      </div>
       {/* app bar */}
       <div className={`${BAR} flex h-12 flex-none items-center gap-3 border-b ${HAIR} px-3.5`}>
         <span className="relative font-display text-[16px] font-bold text-[#ecedf1]">
