@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useLocale } from "@/lib/i18n/provider";
-import type { RecastMode } from "@/lib/recast/recast";
+import type { RecastJob } from "@/lib/recast/recast";
 
 // The before/after viewer. Two films, one clock: the TAKE is the master
 // (it carries the sound and the loop); the person's own clip follows it,
@@ -21,18 +21,23 @@ const DRIFT_S = 0.2;
 const chip = "rounded-full border border-white/10 bg-black/60 px-3 py-[5px] text-xs font-medium text-white/90";
 
 export function TakeViewer({
-  mode,
+  job,
   resultUrl,
   sourceUrl,
   title,
   historyHref,
+  canReuse,
+  onReuse,
   onClose,
 }: {
-  mode: RecastMode;
+  job: RecastJob;
   resultUrl: string;
   sourceUrl: string | null;
   title: string;
   historyHref: string;
+  /** This take remembers how it was made, so it can be run again. */
+  canReuse: boolean;
+  onReuse: () => void;
   onClose: () => void;
 }) {
   const { t } = useLocale();
@@ -44,7 +49,10 @@ export function TakeViewer({
   const [muted, setMuted] = useState(false);
   const [split, setSplit] = useState(50);
   const [aspect, setAspect] = useState<number | null>(null);
-  const wipe = mode === "scene" && sourceUrl !== null;
+  // Only the job that keeps the clip's own frame can be wiped between: the
+  // others hand back a different picture, and a wipe would be comparing two
+  // unrelated ones.
+  const wipe = job === "scene" && sourceUrl !== null;
 
   function follow() {
     const take = takeRef.current;
@@ -215,6 +223,11 @@ export function TakeViewer({
           {muted ? m.soundOff : m.soundOn}
         </button>
         <p className="min-w-0 flex-1 basis-48 text-xs text-[#6b6f7a]">{sourceUrl === null ? m.sourceGone : wipe ? m.wipeHint : ""}</p>
+        {canReuse && (
+          <button type="button" onClick={onReuse} className={button}>
+            {m.recreate}
+          </button>
+        )}
         <a href={resultUrl} download className={button}>
           {m.download}
         </a>

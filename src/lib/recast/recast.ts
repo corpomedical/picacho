@@ -1,55 +1,89 @@
-// Recast — "Mystique" on the door (the operator's working title,
-// 2026-09-17; the name lives in the dictionary and the route, nowhere
-// else, so changing it never touches a stored id).
+// Recast — "Mystique" on the door (the operator's working title, 2026-09-17;
+// the name lives in the route and the dictionary, nowhere else, so changing
+// it never touches a stored id).
 //
-// THE JOB: a clip of someone performing goes in, the same performance
-// comes out with a saved character in their place — the acting, the
-// timing and the sound kept. It is the answer to Higgsfield's Genjutsu,
-// whose point the Recce missed: the performance is the product.
+// THE JOB: a clip of someone performing goes in, the same performance comes
+// out with a saved character in their place — the acting, the timing and the
+// sound kept. It is the answer to Higgsfield's Genjutsu, whose point the
+// Recce missed: the performance is the product.
 //
-// TWO JOBS, NOT TWO RIVAL ENGINES. The 2026-09-17 probe put one photo of
-// Eva through the same 3 s performance on both engines and they did
-// different things — the same two things Genjutsu sells as its two modes:
+// THREE JOBS, not one. Two were found by the 2026-09-17 probe (one photo of
+// Eva through the same 3 s performance on both engines, which did different
+// things), the third by the 2026-09-18 probe:
 //
-//   "scene"   Wan 2.2 Animate Replace. The character stands INSIDE the
-//             clip: its room, its light, its framing, its sound. Out came
-//             720×1280 at the clip's 24 fps, sound kept, in 304 s.
-//   "motion"  Kling V3 Motion Control. The character's PHOTO comes alive
-//             with the clip's performance: the photo's world and framing
-//             are kept, the clip's scene is gone. Out came 1936×1072 (the
-//             photo's shape, not the clip's), sound kept, in 152 s.
+//   scene   The character stands INSIDE the clip: its room, its light, its
+//           framing, its sound. Wan 2.2 Animate Replace.
+//   motion  The character's PHOTO comes alive with the clip's performance;
+//           the photo's world and shape are kept, the clip's are left
+//           behind. Kling V3 Motion Control.
+//   world   The performance is kept and EVERYTHING ELSE is redrawn from
+//           words — the same moves on a rainy neon street, or as a painting.
+//           Luma Ray 3.2.
+//
+//           What this job does NOT do, measured rather than assumed: it does
+//           not hold the performer's face. The same clip and the same words
+//           were sent at flex_2, adhere_2 and adhere_3 on 2026-09-18 and all
+//           three came back with the motion, the timing and the framing
+//           intact and a DIFFERENT person in them. So it is sold as what it
+//           is — the style swap, where a new look is the point — and never
+//           as "your character, restyled". A job that promised a face it
+//           cannot keep would be the exact lie this door exists to avoid.
+//
+// HOW LONG A TAKE ACTUALLY TAKES, measured on one 3.0 s / 72-frame clip
+// (2026-09-17/18), because it is what sets each job's ceiling: the runner
+// writes a job off at 45 minutes, so an engine may only be offered for
+// lengths whose worst case lands well inside that.
+//
+//   Kling V3 MC Pro            152 s   ≈ 50 s per clip-second → 30 s ≈ 25 min
+//   Luma Ray 3.2 v2v           153 s   fixed 5 s / 10 s slots
+//   Wan 2.2 Animate Replace    304 s   ≈ 100 s per clip-second → 10 s ≈ 17 min
+//   Wan 2.2 Animate Move       792 s   NOT OFFERED — 10 s would be ~55 min
+//   DreamActor v2            >1200 s   NOT OFFERED — cheapest of all at
+//     $0.05/s and it held Eva well, but over twenty minutes for three
+//     seconds cannot be sold at any length here. It is the only engine on
+//     the list that also animates animals and drawings, so it is worth
+//     coming back to behind a cap of its own once its real curve is known.
 //
 // Pure and alias-free on purpose: the door quotes with this, the action
 // charges with it, and recast.test.ts audits both against the prices read
-// at source.
+// at source. Change a price and its test together.
 //
-// MONEY, read from fal's model pages 2026-09-17 (their words):
-//   Kling V3 Motion Control Pro       "Your request will cost $0.168 per second."
-//   Kling V3 Motion Control Standard  "Your request will cost $0.126 per second."
-//   Wan 2.2 Animate Replace           "720p: $0.08 per video second … 480p:
-//     $0.04 per video second" and "Video seconds (billed) = total frames ÷ 16"
-// and CHECKED against fal's own ledger for the probe's two requests the
-// same day: Wan billed 4.5 units for the 72-frame clip (72 ÷ 16), Kling
-// billed 3 units for the 3.0 s clip — the clip's length once, not input
-// plus output the way Seedance bills a video reference.
+// MONEY, read from fal's model pages 2026-09-17/18 (their words):
+//   Kling V3 Motion Control Pro   "Your request will cost $0.168 per second."
+//   Kling V3 Motion Control Std   "Your request will cost $0.126 per second."
+//   DreamActor v2                 "Your request will cost $0.05 per second."
+//   Wan 2.2 Animate Replace/Move  "720p: $0.08 per video second … 580p: $0.06
+//     … 480p: $0.04" and "Video seconds (billed) = total frames ÷ 16"
+//   Luma Ray 3.2 video-to-video   "For 5s video your request will cost $0.72
+//     for 540p, $1.08 for 720p … For 10s, $1.44 at 540p, $2.16 at 720p"
 //
-// So Wan's price follows the clip's FRAMES, not its length: ten seconds of
-// 30 fps footage bills 18.75 "video seconds". The frame count is read from
-// the file (mp4-probe.ts); a file that will not give one is priced at
-// 60 fps, the safe direction to be wrong in.
+// and CHECKED against fal's own ledger for the probe's requests: Wan billed
+// 4.5 units for a 72-frame clip (72 ÷ 16) and Kling billed 3 for the same
+// 3.0 s clip — the clip's length once, not input plus output the way
+// Seedance bills a video reference. So there are three ways to be billed
+// here, and each engine says which one it is.
 //
-// Credits are the catalogue's own rule — provider cost over the $0.28
-// basis, rounded up (video-models.ts) — restated here as a number because
-// that module pulls the whole catalogue in; the test pins the two equal.
+// Credits are the catalogue's own rule — provider cost over the $0.28 basis,
+// rounded up (video-models.ts) — restated here as a number because that
+// module pulls the whole catalogue in; the test pins the two equal.
 
 export const RECAST_COST_BASIS_USD_PER_CREDIT = 0.28;
 
-export type RecastMode = "scene" | "motion";
-export type RecastEngine = "wan-720" | "wan-480" | "kling-pro" | "kling-std";
+/** How tightly the world job holds the source. See recastRequestBody. */
+export const RECAST_WORLD_EDIT_STRENGTH = "adhere_2";
+
+export type RecastJob = "scene" | "motion" | "world";
+export type RecastEngine =
+  | "wan-scene-720"
+  | "wan-scene-480"
+  | "kling-pro"
+  | "kling-std"
+  | "luma-720"
+  | "luma-540";
 
 export type RecastEngineSpec = {
-  mode: RecastMode;
-  /** The mode's first choice, or its cheaper pass. */
+  job: RecastJob;
+  /** The job's first choice, or its cheaper pass. */
   tier: "full" | "lite";
   /** What generations.video_model_id / model_id record. Never renamed once rows exist. */
   modelId: string;
@@ -57,15 +91,28 @@ export type RecastEngineSpec = {
   label: string;
   endpoint: string;
   usdPerBilledSecond: number;
-  /** Kling bills the clip's seconds; Wan bills frames ÷ 16. */
-  billedBy: "seconds" | "frames16";
-  /** Wan's output size; Kling takes none. */
-  resolution?: "480p" | "720p";
+  /**
+   * seconds   the clip's length, rounded up (Kling, DreamActor)
+   * frames16  the clip's frames ÷ 16 (Wan — 30 fps footage bills ~1.9× its length)
+   * bucket    a 5 s or 10 s slot, whatever the clip's length (Luma)
+   */
+  billedBy: "seconds" | "frames16" | "bucket";
+  /** Wan's and Luma's output size; the others take none. */
+  resolution?: "480p" | "540p" | "720p";
+  /** Takes a written brief. Kling and Luma do; Wan and DreamActor have no prompt field. */
+  takesDirection: boolean;
+  /**
+   * Takes extra photos of the character for identity (Kling's `elements`:
+   * one frontal image plus 1–3 more angles). The rest see one photo.
+   */
+  takesMorePhotos: boolean;
+  /** Carries the clip's own sound through. */
+  keepsSound: boolean;
 };
 
 export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
-  "wan-720": {
-    mode: "scene",
+  "wan-scene-720": {
+    job: "scene",
     tier: "full",
     modelId: "recast-wan-720",
     label: "Wan 2.2 Animate Replace 720p",
@@ -73,9 +120,12 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     usdPerBilledSecond: 0.08,
     billedBy: "frames16",
     resolution: "720p",
+    takesDirection: false,
+    takesMorePhotos: false,
+    keepsSound: true,
   },
-  "wan-480": {
-    mode: "scene",
+  "wan-scene-480": {
+    job: "scene",
     tier: "lite",
     modelId: "recast-wan-480",
     label: "Wan 2.2 Animate Replace 480p",
@@ -83,33 +133,84 @@ export const RECAST_ENGINES: Record<RecastEngine, RecastEngineSpec> = {
     usdPerBilledSecond: 0.04,
     billedBy: "frames16",
     resolution: "480p",
+    takesDirection: false,
+    takesMorePhotos: false,
+    keepsSound: true,
   },
   "kling-pro": {
-    mode: "motion",
+    job: "motion",
     tier: "full",
     modelId: "recast-kling-pro",
     label: "Kling V3 Motion Control Pro",
     endpoint: "fal-ai/kling-video/v3/pro/motion-control",
     usdPerBilledSecond: 0.168,
     billedBy: "seconds",
+    takesDirection: true,
+    takesMorePhotos: true,
+    keepsSound: true,
   },
   "kling-std": {
-    mode: "motion",
+    job: "motion",
     tier: "lite",
     modelId: "recast-kling-std",
     label: "Kling V3 Motion Control",
     endpoint: "fal-ai/kling-video/v3/standard/motion-control",
     usdPerBilledSecond: 0.126,
     billedBy: "seconds",
+    takesDirection: true,
+    takesMorePhotos: true,
+    keepsSound: true,
+  },
+  "luma-720": {
+    job: "world",
+    tier: "full",
+    modelId: "recast-luma-720",
+    label: "Luma Ray 3.2 720p",
+    endpoint: "luma/agent/ray/v3.2/video-to-video",
+    usdPerBilledSecond: 0.216,
+    billedBy: "bucket",
+    resolution: "720p",
+    takesDirection: true,
+    takesMorePhotos: false,
+    keepsSound: false,
+  },
+  "luma-540": {
+    job: "world",
+    tier: "lite",
+    modelId: "recast-luma-540",
+    label: "Luma Ray 3.2 540p",
+    endpoint: "luma/agent/ray/v3.2/video-to-video",
+    usdPerBilledSecond: 0.144,
+    billedBy: "bucket",
+    resolution: "540p",
+    takesDirection: true,
+    takesMorePhotos: false,
+    keepsSound: false,
   },
 };
 
-export const RECAST_ENGINE_ORDER: RecastEngine[] = ["wan-720", "wan-480", "kling-pro", "kling-std"];
-export const RECAST_MODE_ORDER: RecastMode[] = ["scene", "motion"];
+export const RECAST_ENGINE_ORDER: RecastEngine[] = [
+  "wan-scene-720",
+  "wan-scene-480",
+  "kling-pro",
+  "kling-std",
+  "luma-720",
+  "luma-540",
+];
+export const RECAST_JOB_ORDER: RecastJob[] = ["scene", "motion", "world"];
 export const RECAST_MODEL_IDS: string[] = RECAST_ENGINE_ORDER.map((e) => RECAST_ENGINES[e].modelId);
 
-export function recastEnginesOf(mode: RecastMode): RecastEngine[] {
-  return RECAST_ENGINE_ORDER.filter((e) => RECAST_ENGINES[e].mode === mode);
+/** The one job that recasts nobody — it rewrites the world around the performance. */
+export function recastNeedsCharacter(job: RecastJob): boolean {
+  return job !== "world";
+}
+
+export function recastEnginesOf(job: RecastJob): RecastEngine[] {
+  return RECAST_ENGINE_ORDER.filter((e) => RECAST_ENGINES[e].job === job);
+}
+
+export function recastEngineFor(job: RecastJob, tier: "full" | "lite"): RecastEngine {
+  return recastEnginesOf(job).find((e) => RECAST_ENGINES[e].tier === tier) ?? recastEnginesOf(job)[0];
 }
 
 export function parseRecastEngine(raw: unknown): RecastEngine | null {
@@ -127,23 +228,26 @@ export function recastEngineLabel(modelId: string | null | undefined): string | 
 }
 
 // The clip. Kling's schema (read 2026-09-17): 3.0–30.05 s in video
-// orientation, 340–3850 px a side, 100 MB. Ours is the tighter of theirs
-// and the storage bucket's 50 MB; Wan documents no limits, so it rides the
-// same ones — except length:
-//
-// SCENE TAKES STOP AT 10 s FOR NOW. Wan took 304 s for 72 frames. If that
-// scales with frames, 30 s of phone footage is past the job runner's 45
-// minute write-off — a take abandoned on our side while the provider
-// finishes and bills it. Ten seconds keeps the worst case near twenty
-// minutes. It is a guess until a longer real take is timed; then this is
-// one number to change.
+// orientation, 340–3850 px a side, 100 MB; DreamActor's: 30 s, 200–2048 px.
+// Ours is the tighter of theirs and the storage bucket's 50 MB.
 export const RECAST_MIN_SECONDS = 3;
 export const RECAST_MAX_SECONDS = 30;
-export const RECAST_MODE_MAX_SECONDS: Record<RecastMode, number> = { scene: 10, motion: 30 };
 export const RECAST_MAX_BYTES = 50 * 1024 * 1024;
 export const RECAST_MIN_SIDE_PX = 340;
 export const RECAST_MAX_SIDE_PX = 3850;
 export const RECAST_BUCKET = "recast-sources";
+
+// What each job will take.
+//
+// SCENE STOPS AT 10 s FOR NOW. Wan took 304 s for 72 frames (2026-09-17
+// probe). If that scales with frames, 30 s of phone footage is past the job
+// runner's 45 minute write-off — a take abandoned on our side while the
+// provider finishes and bills it. Ten seconds keeps the worst case near
+// twenty minutes. A guess until a longer real take is timed; then it is one
+// number to change.
+//
+// WORLD STOPS AT 10 s because Luma's own duration is a 5 s or 10 s slot.
+export const RECAST_JOB_MAX_SECONDS: Record<RecastJob, number> = { scene: 10, motion: 30, world: 10 };
 
 export type RecastClip = { seconds: number; frames: number | null; width: number; height: number; bytes: number };
 
@@ -152,7 +256,7 @@ export type RecastClipProblem = "too-short" | "too-long" | "too-big" | "too-smal
 // A hair of tolerance: a "3 second" phone clip is often 2.97.
 const SLACK = 0.05;
 
-/** Limits every take shares, whatever the mode. */
+/** Limits every take shares, whatever the job. */
 export function recastClipProblem(clip: RecastClip): RecastClipProblem | null {
   if (!(clip.seconds >= RECAST_MIN_SECONDS - SLACK)) return "too-short";
   if (clip.seconds > RECAST_MAX_SECONDS + SLACK) return "too-long";
@@ -162,16 +266,23 @@ export function recastClipProblem(clip: RecastClip): RecastClipProblem | null {
   return null;
 }
 
-/** Whether this engine's mode takes a clip of this length. */
+/** Whether this engine's job takes a clip of this length. */
 export function recastEngineFits(engine: RecastEngine, clip: Pick<RecastClip, "seconds">): boolean {
-  return clip.seconds <= RECAST_MODE_MAX_SECONDS[RECAST_ENGINES[engine].mode] + SLACK;
+  return clip.seconds <= RECAST_JOB_MAX_SECONDS[RECAST_ENGINES[engine].job] + SLACK;
 }
 
 const UNKNOWN_FPS_CEILING = 60;
 
+/** Luma's slot for a clip: the 5 s one, or the 10 s one. */
+export function recastLumaDuration(clip: Pick<RecastClip, "seconds">): "5s" | "10s" {
+  return clip.seconds > 5 + SLACK ? "10s" : "5s";
+}
+
 /** What the provider will bill this clip as, in its own unit of seconds. */
 export function recastBilledSeconds(engine: RecastEngine, clip: Pick<RecastClip, "seconds" | "frames">): number {
-  if (RECAST_ENGINES[engine].billedBy === "seconds") return Math.ceil(clip.seconds - SLACK);
+  const spec = RECAST_ENGINES[engine];
+  if (spec.billedBy === "seconds") return Math.ceil(clip.seconds - SLACK);
+  if (spec.billedBy === "bucket") return recastLumaDuration(clip) === "10s" ? 10 : 5;
   const frames = clip.frames ?? Math.ceil(clip.seconds * UNKNOWN_FPS_CEILING);
   return frames / 16;
 }
@@ -187,9 +298,11 @@ export function recastCreditCost(engine: RecastEngine, clip: Pick<RecastClip, "s
 }
 
 // The source clip's home: one object per take, named by the take — so the
-// before/after viewer finds a take's footage from its id alone and no
-// column is needed. The id is minted when the upload is reserved and
-// becomes the generation's id when the take starts.
+// before/after viewer finds a take's footage from its id alone and no column
+// is needed. The id is minted when the upload is reserved and becomes the
+// generation's id when the take starts. A take made from ANOTHER take's
+// footage (the motion library) stores no clip of its own and reads the
+// source take's video instead.
 export type RecastContainer = "mp4" | "mov";
 
 export function recastSourcePath(userId: string, takeId: string, container: RecastContainer): string {
@@ -211,20 +324,60 @@ export function recastContainerOf(mimeType: string): RecastContainer | null {
 }
 
 /**
- * The request each engine receives — the bodies the 2026-09-17 probe sent,
- * unchanged. Kling: the character's orientation follows the VIDEO (the mode
- * that takes 30 s and complex motion) and the clip's own sound rides. Wan
- * takes no sound switch and kept the sound anyway.
+ * The request each engine receives — the bodies the probes sent, unchanged.
+ *
+ * Kling: the character's orientation follows the VIDEO (the mode that takes
+ * 30 s and complex motion), the clip's own sound rides, the brief goes in the
+ * prompt, and `elements` binds identity to up to four of the character's own
+ * photos — one frontal plus three more angles — which is the one place a
+ * Picacho character beats a stranger's single reference.
+ *
+ * Wan takes no prompt and no sound switch, and kept the sound anyway.
+ * DreamActor trims its own one-second lead-in.
+ * Luma edits the world from the brief and keeps the performance; its slot is
+ * 5 s or 10 s. `edit_strength` is how tightly it holds the source, and the
+ * 2026-09-18 probe settled two things about it: fal REFUSES the request when
+ * `auto_controls` rides alongside it ("auto_controls=true cannot be combined
+ * with edit_strength"), and at `flex_2` the edit rewrote the performer as
+ * well as the street — the one thing this job may not do. So the strength is
+ * sent alone, and it adheres.
  */
-export function recastRequestBody(engine: RecastEngine, input: { characterImageUrl: string; clipUrl: string }): Record<string, unknown> {
+export function recastRequestBody(
+  engine: RecastEngine,
+  input: {
+    clipUrl: string;
+    characterImageUrl?: string;
+    /** More angles of the same character, for the engines that bind identity. */
+    morePhotoUrls?: string[];
+    brief?: string;
+    clip?: Pick<RecastClip, "seconds">;
+  },
+): Record<string, unknown> {
   const spec = RECAST_ENGINES[engine];
-  if (spec.mode === "motion") {
+  if (spec.job === "world") {
     return {
-      image_url: input.characterImageUrl,
       video_url: input.clipUrl,
-      character_orientation: "video",
-      keep_original_sound: true,
+      prompt: input.brief ?? "",
+      resolution: spec.resolution,
+      duration: input.clip ? recastLumaDuration(input.clip) : "5s",
+      edit_strength: RECAST_WORLD_EDIT_STRENGTH,
     };
   }
-  return { image_url: input.characterImageUrl, video_url: input.clipUrl, resolution: spec.resolution };
+  if (spec.job === "scene") {
+    return { image_url: input.characterImageUrl, video_url: input.clipUrl, resolution: spec.resolution };
+  }
+  const more = (input.morePhotoUrls ?? []).slice(0, 3);
+  return {
+    image_url: input.characterImageUrl,
+    video_url: input.clipUrl,
+    character_orientation: "video",
+    keep_original_sound: true,
+    ...(input.brief ? { prompt: input.brief.slice(0, 2500) } : {}),
+    // Only when there are more angles to bind: with one photo the element
+    // would say nothing the image_url does not already say. Kling allows one
+    // element, and only in video orientation.
+    ...(input.characterImageUrl && more.length > 0
+      ? { elements: [{ frontal_image_url: input.characterImageUrl, reference_image_urls: more }] }
+      : {}),
+  };
 }

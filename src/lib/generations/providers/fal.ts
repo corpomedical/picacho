@@ -189,7 +189,13 @@ async function reframeImage(
 //
 // Cost is negligible — fal bills this at $0.0002 per second of input, so a
 // 5s clip is $0.001, about a third of one percent of the cheapest render.
-export async function extractVideoFrame(videoUrl: string): Promise<string | null> {
+export async function extractVideoFrame(
+  videoUrl: string,
+  // Which frame. The default is the one the scorer and the poster have
+  // always used and the only one anything relied on before 2026-09-18; a
+  // caller that wants to judge a whole clip asks for the others by name.
+  frameType: "first" | "middle" | "last" = IDENTITY_FRAME_TYPE,
+): Promise<string | null> {
   const apiKey = process.env.FAL_KEY;
   if (!apiKey) return null;
   if (!canExtractFrameFrom(videoUrl)) return null;
@@ -202,7 +208,7 @@ export async function extractVideoFrame(videoUrl: string): Promise<string | null
           "content-type": "application/json",
           authorization: `Key ${apiKey}`,
         },
-        body: JSON.stringify({ video_url: videoUrl, frame_type: IDENTITY_FRAME_TYPE }),
+        body: JSON.stringify({ video_url: videoUrl, frame_type: frameType }),
       },
       // Deliberately tight. This runs inside finish(), which the fal webhook
       // and the poll loop both await, so the ceiling here is latency added
@@ -1223,14 +1229,14 @@ export async function submitUpscaleJob(videoUrl: string, upscaleFactor: number):
   );
 }
 
-// Recast (2026-09-17): a saved character performs an uploaded clip. The
-// request bodies live with the engines' contract (lib/recast/recast.ts —
-// the ones the day's probe sent); the output is { video: { url } } like
-// every video model, so fetchQueuedVideoUrl and the ordinary video stage
-// collect it unmodified.
+// Recast (2026-09-17): a saved character performs a clip, or a clip's world
+// is rewritten around the performance. The request bodies live with the
+// engines' contract (lib/recast/recast.ts — the ones the probes sent); every
+// one of them answers { video: { url } } like every other video model, so
+// fetchQueuedVideoUrl and the ordinary video stage collect them unmodified.
 export async function submitRecastJob(
   engine: RecastEngine,
-  input: { characterImageUrl: string; clipUrl: string },
+  input: Parameters<typeof recastRequestBody>[1],
 ): Promise<QueuedJob> {
   const spec = RECAST_ENGINES[engine];
   return submitToQueue(spec.endpoint, recastRequestBody(engine, input), spec.label, requireApiKey());

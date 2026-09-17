@@ -120,6 +120,20 @@ type JobRow = {
     // submit time (2026-09-10), so finish() judges the picture in the same
     // lane. Rows that predate it fall back to the recorded attachments.
     strictLane?: boolean;
+    // THE IDENTITY LOCK (2026-09-18). A lane may ask for the whole clip to
+    // be judged rather than one frame of it: the character's face is scored
+    // at the START, the MIDDLE and the END, and the lowest of the three is
+    // what the row records — "the face held all the way through" is a
+    // promise about the worst frame, not the luckiest one.
+    //
+    // `refund` says what a miss costs the person. With it on, a take whose
+    // worst frame falls under `threshold` is still delivered and is NOT
+    // charged for — deliberately breaking the house rule that we charge
+    // when the provider charged us, in the customer's favour, because a
+    // clip whose face wanders is not the thing they asked for. It is a
+    // business decision, so it rides the payload rather than being assumed
+    // here, and the lane that sets it reads its own switch.
+    identityLock?: { threshold: number; refund: boolean };
   };
   resume: ResumeState;
   started_at: string;
@@ -837,6 +851,8 @@ export async function saveVideoJob(params: {
   attempts: AttemptLog[];
   /** The prompt gate's lane for this render — see JobRow.payload.strictLane. */
   strictLane?: boolean;
+  /** Judge the whole clip, not one frame of it — see JobRow.payload.identityLock. */
+  identityLock?: { threshold: number; refund: boolean };
 }): Promise<void> {
   const admin = createAdminClient();
   const { error: upsertError } = await admin.from("generation_jobs").upsert({
@@ -854,7 +870,12 @@ export async function saveVideoJob(params: {
     // jobHandle so poll/webhook-side provider errors are attributed to the
     // right model. provider: which service is holding it, so the poll,
     // collect and cancel verbs go back to the same place the submit went.
-    payload: { label: params.job.label, provider: params.job.provider, strictLane: params.strictLane === true },
+    payload: {
+      label: params.job.label,
+      provider: params.job.provider,
+      strictLane: params.strictLane === true,
+      ...(params.identityLock ? { identityLock: params.identityLock } : {}),
+    },
     resume: {
       dialogueText: params.dialogueText,
       dialogueVoiceId: params.dialogueVoiceId ?? undefined,
@@ -1267,7 +1288,31 @@ async function finish(
             .filter(Boolean)
             .join("; ");
 
-          const verdict = await scoreIdentityMatch(frameUrl, signedIdentity.signedUrl, traitSummary);
+          // THE LOCK (2026-09-18). Without it, one frame speaks for the
+          // clip — fine for a render from a prompt, useless for a clip
+          // whose whole claim is that the face holds from end to end. When
+          // a lane asks for it, the start and the end are pulled and scored
+          // too, in parallel so the webhook waits no longer than it already
+          // does for one, and the LOWEST of the three is the row's score.
+          const lock = jobRow?.payload?.identityLock ?? null;
+          const [firstFrameUrl, lastFrameUrl] = lock
+            ? await Promise.all([
+                extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "first"),
+                extractVideoFrame(providerDownloadUrl(outcome.resultUrl), "last"),
+              ])
+            : [null, null];
+          const [verdict, firstVerdict, lastVerdict] = await Promise.all([
+            scoreIdentityMatch(frameUrl, signedIdentity.signedUrl, traitSummary),
+            firstFrameUrl ? scoreIdentityMatch(firstFrameUrl, signedIdentity.signedUrl, traitSummary) : Promise.resolve(null),
+            lastFrameUrl ? scoreIdentityMatch(lastFrameUrl, signedIdentity.signedUrl, traitSummary) : Promise.resolve(null),
+          ]);
+          // An unusable frame says nothing about the face: a clip may open
+          // or close on black by design, so it is dropped rather than
+          // counted as a miss.
+          const lockScores = [firstVerdict, verdict, lastVerdict]
+            .filter((v): v is NonNullable<typeof v> => v !== null && !v.unusable)
+            .map((v) => v.score);
+          const worstScore = lockScores.length > 0 ? Math.min(...lockScores) : null;
           if (verdict) {
             // Provenance goes where the image lane's goes — pipeline_log — so
             // there is ONE place to look for "which scorer produced this",
@@ -1290,8 +1335,12 @@ async function finish(
                 stampedLog[stampedLog.length - 1] = {
                   ...stampedLog[stampedLog.length - 1],
                   scorerVersion: verdict.scorerVersion,
+                  // Every frame that was read, in the clip's own order — the
+                  // labelled data the lock produces for free.
                   identityAttempts: [
+                    ...(firstVerdict ? [{ score: firstVerdict.score, notes: firstVerdict.notes || null, delivered: true }] : []),
                     { score: verdict.score, notes: verdict.notes || null, delivered: true },
+                    ...(lastVerdict ? [{ score: lastVerdict.score, notes: lastVerdict.notes || null, delivered: true }] : []),
                   ],
                 };
               }
@@ -1303,18 +1352,39 @@ async function finish(
             // would be reading one still and condemning a whole clip on it —
             // a mid-clip cut to black is a real thing a prompt can ask for.
             // Recorded in the notes so it is visible without being acted on.
+            // Under a lock the row records the WORST frame, because that is
+            // what the promise is about; without one it records the middle
+            // frame exactly as it always has.
+            const recorded = lock && worstScore !== null ? worstScore : verdict.score;
+            const missed = lock !== null && worstScore !== null && worstScore < lock.threshold;
             const { error: scoreError } = await admin
               .from("generations")
               .update({
-                match_score: verdict.score,
+                match_score: recorded,
                 match_notes: verdict.unusable
                   ? `${verdict.notes || "Scored from the middle frame."} (Frame read as blank or unusable.)`.slice(0, 500)
-                  : verdict.notes || null,
+                  : lock
+                    ? `Lowest of ${lockScores.length} frames. ${verdict.notes || ""}`.trim().slice(0, 500)
+                    : verdict.notes || null,
                 ...(stampedLog ? { pipeline_log: stampedLog } : {}),
               })
               .eq("id", generationId);
             if (scoreError) {
               console.warn("Couldn't save video identity score:", scoreError.message);
+            }
+
+            // The miss. The clip is DELIVERED either way — it may still be
+            // wanted, and withholding something already paid for to the
+            // provider helps nobody — but when the lane asked for it, it is
+            // not charged for. Forced past the automatic_refunds switch,
+            // because this refund is a promise the lane printed on the door
+            // rather than a fault we are absorbing.
+            if (missed && lock.refund) {
+              try {
+                await refundGenerationCosts(generationId, { force: true });
+              } catch (refundErr) {
+                console.error(`identity-lock refund failed for ${generationId}:`, refundErr);
+              }
             }
           }
         }

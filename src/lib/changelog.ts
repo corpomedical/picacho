@@ -20,6 +20,25 @@ export type Release = {
 
 export const RELEASES: Release[] = [
   {
+    version: "1.47.0",
+    build: 86,
+    date: "2026-09-18",
+    title: "Mystique understands the clip",
+    items: [
+      "Mystique now reads the clip before anything is spent. Drop one — or pick one of your own finished videos — and it comes back understood: what the performance is, how many people are in frame, where it cuts, whether anyone speaks, and what is in the shot that ought to survive a recast. All of it shows as chips you can change.",
+      "The motion library. Every video you have ever made is now a performance someone else can give. Pick one from the strip, cast a different character, and the walk, the turn or the line to camera happens again with them in it. No footage of your own needed, and it is something a tool without your back catalogue cannot do.",
+      "Keep list. The read finds the things a replacement usually destroys — a wristwatch, a logo, a burned-in caption — and each becomes a tick. What stays ticked is written into the order that gets sent.",
+      "The brief, and you can read it. What the machine is told is composed from the read, the casting, the keep list and your own direction — a task, the character, what the source does shot by shot, and a list headed \"keep exactly\" ending in \"everything else stays exactly as it is\". It is shown on the door, word for word, before you press. Rivals keep theirs hidden.",
+      "Cast several at once. Tick two or three characters and one press makes one take each, priced and shown as a set. Either all of them start or none does.",
+      "A third job: Restyle everything. The performance, the timing and the camera stay; the place and the people are redrawn from your words. Said plainly on the door, because it was measured: nobody's face survives that one — a new look is the point of it.",
+      "Better identity. The full-quality recast is now given up to four of the character's saved photos, not one — a front view plus other angles — which is the one advantage a saved character has over a stranger's single reference.",
+      "The lock. A recast's face is now scored at the start, the middle and the end, and the take records the worst of the three rather than the luckiest frame. With the lock switched on, a take whose face does not hold is still delivered and is not charged for. The scores are recorded either way.",
+      "Use these settings. Every take remembers how it was made — the clip, the job, the brief, the keeps — so a finished one can be run again on another character or another clip without retyping anything.",
+      "Honest about what did not make it: the cheapest motion engine held the face well but took over twenty minutes on a three-second clip, so it is not offered at any length yet; a second engine was dropped for the same reason. Each job's ceiling is set from how long the slowest engine behind it actually took.",
+      "Admins only, behind its own switch. The database update (recast.sql) adds one column, the private bucket and two switches, both off.",
+    ],
+  },
+  {
     version: "1.46.0",
     build: 85,
     date: "2026-09-18",

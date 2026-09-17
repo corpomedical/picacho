@@ -34,15 +34,15 @@ describe("the Mystique door", () => {
     expect(page).toContain("isRecastEnabled");
   });
 
-  it("keeps the machinery off the wall: its words name no engine, model or provider", () => {
-    const spoken = [...section("en").matchAll(/: "([^"]+)"/g)].map((m) => m[1]).join(" ");
+  it("keeps the machinery off the wall: its words name no engine, model or rival", () => {
+    const spoken = [...section("en").matchAll(/: "([^"]+)"/g)].map((mm) => mm[1]).join(" ");
     expect(spoken.length).toBeGreaterThan(400);
-    expect(spoken).not.toMatch(/kling|wan\b|fal\b|engine|model|provider|genjutsu|higgsfield/i);
+    expect(spoken).not.toMatch(/kling|wan\b|luma|dreamactor|fal\b|engine|model|provider|genjutsu|higgsfield/i);
   });
 
   it("says the same keys in all four languages", () => {
     const en = keysOf(section("en"));
-    expect(en.length).toBeGreaterThan(40);
+    expect(en.length).toBeGreaterThan(60);
     for (const lang of ["es", "it", "pt"]) expect(keysOf(section(lang)), lang).toEqual(en);
   });
 
@@ -54,16 +54,36 @@ describe("the Mystique door", () => {
   });
 
   it("quotes from the uploaded file and charges what it quoted", () => {
-    expect(door).toContain("inspectRecastUpload(");
-    expect(door).toContain("startRecastTake(");
+    expect(door).toContain("inspectRecastClip(");
+    expect(door).toContain("startRecastTakes(");
     // The button's number is the server's quote, never a browser estimate.
     expect(door).not.toContain("recastCreditCost");
-    expect(door).toContain("!rights");
+    expect(door).toContain("!canTake");
+  });
+
+  it("offers the person's own finished videos as performances", () => {
+    expect(door).toContain("motions.map");
+    expect(door).toContain("pickMotion");
+    // The library reads through our own media route, so a canvas can sample
+    // frames from it without being tainted.
+    const data = readFileSync(join(root, "lib", "recast", "data.ts"), "utf8");
+    expect(data).toContain("videoUrl: url");
+    expect(data).toContain("toMediaUrl");
+  });
+
+  it("shows the brief it is about to send, composed the way the server composes it", () => {
+    expect(door).toContain("composeRecastBrief");
+    expect(door).toContain("briefShow");
   });
 
   it("wipes only where the two films share a frame", () => {
-    expect(viewer).toContain('mode === "scene" && sourceUrl !== null');
+    expect(viewer).toContain('job === "scene" && sourceUrl !== null');
     expect(viewer).toContain("clipPath");
+  });
+
+  it("promises the lock only when the lock is actually on", () => {
+    expect(door).toContain("{lockOn && <p");
+    expect(page).toContain("isRecastLockOn");
   });
 
   it("the working title lives in the route and the dictionary — never in the lane", () => {
@@ -73,8 +93,7 @@ describe("the Mystique door", () => {
       const text = readFileSync(join(laneDir, file), "utf8");
       // Comments may say what the door is called; identifiers and strings may not.
       const code = text.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
-      const allowed = code.replace(/revalidatePath\("\/app\/mystique"\)/g, "");
-      expect(allowed, file).not.toMatch(/mystique/i);
+      expect(code.replace(/revalidatePath\("\/app\/mystique"\)/g, ""), file).not.toMatch(/mystique/i);
     }
     expect(existsSync(join(root, "app", "app", "mystique", "page.tsx"))).toBe(true);
   });

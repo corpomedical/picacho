@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getServerMessages } from "@/lib/i18n/server";
 import { isNativeApp } from "@/lib/native/server";
 import { getRecastHome, sweepRecastOrphans } from "@/lib/recast/data";
-import { isRecastEnabled } from "@/lib/recast/enabled";
+import { isRecastEnabled, isRecastLockOn } from "@/lib/recast/enabled";
 import { MystiqueDoor } from "@/components/mystique/mystique-door";
 
 // The Mystique door (working title, "Lets go with Mystique for now",
@@ -42,7 +42,11 @@ export default async function MystiquePage() {
   }
 
   // Clips that never became a take are cleared on the way in (best-effort).
-  const [home] = await Promise.all([getRecastHome(supabase, userData.user.id), sweepRecastOrphans(userData.user.id)]);
+  const [home, lockOn] = await Promise.all([
+    getRecastHome(supabase, userData.user.id),
+    isRecastLockOn(supabase),
+    sweepRecastOrphans(supabase, userData.user.id),
+  ]);
 
-  return <MystiqueDoor characters={home.characters} initialTakes={home.takes} />;
+  return <MystiqueDoor characters={home.characters} motions={home.motions} initialTakes={home.takes} lockOn={lockOn} />;
 }
