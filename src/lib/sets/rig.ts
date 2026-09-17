@@ -94,6 +94,38 @@ export function formatFrame(format: RigFormat): FormatFrame {
 }
 
 /**
+ * The strips of the render outside the band (2026-09-17, the operator's two
+ * stills with the head cut off): the model composed for the whole 3:2 and
+ * the band cut took the top of it. The sketch it reads now has these strips
+ * painted dark, and the prompt says the picture is what lies between them.
+ * Two strips across the top and bottom when the band is wider than the
+ * render, down the sides when it is narrower; none for the square.
+ */
+export function letterbox(fr: Pick<FormatFrame, "renderW" | "renderH" | "bandW" | "bandH" | "cut">): { x: number; y: number; w: number; h: number }[] {
+  if (!fr.cut) return [];
+  if (fr.bandH < fr.renderH) {
+    const top = Math.floor((fr.renderH - fr.bandH) / 2);
+    const bottom = fr.renderH - top - fr.bandH;
+    return [
+      { x: 0, y: 0, w: fr.renderW, h: top },
+      { x: 0, y: fr.renderH - bottom, w: fr.renderW, h: bottom },
+    ];
+  }
+  const left = Math.floor((fr.renderW - fr.bandW) / 2);
+  const right = fr.renderW - left - fr.bandW;
+  return [
+    { x: 0, y: 0, w: left, h: fr.renderH },
+    { x: fr.renderW - right, y: 0, w: right, h: fr.renderH },
+  ];
+}
+
+/** Which way the band's strips run, for the prompt's sentence: across the top and bottom, or down the sides; null for an uncut frame. */
+export function bandSide(fr: Pick<FormatFrame, "renderH" | "bandH" | "cut">): "rows" | "columns" | null {
+  if (!fr.cut) return null;
+  return fr.bandH < fr.renderH ? "rows" : "columns";
+}
+
+/**
  * The frame the page may ask the server to cut to: a known format, else the
  * square. The server trusts nothing else about the cut — it works out the
  * band itself from the format's name.

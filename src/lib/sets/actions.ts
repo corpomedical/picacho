@@ -43,6 +43,7 @@ import {
 import { lookStoragePath } from "@/lib/sets/look";
 import {
   formatFrame,
+  bandSide,
   isRigCheckItem,
   normaliseSetRig,
   labLooksOf,
@@ -748,6 +749,8 @@ export async function shootInSet(
     sourcePhoto: sourcePhotoUrl !== null,
     rig: rigSentences(rig, rigCtx),
     rigLight: rig.light !== null,
+    // The band's strips on the sketch (rig.ts letterbox): the picture is what lies between them.
+    band: bandSide(rigFrame),
   };
   fd.set("prompt", buildSetShotPrompt({ ...shot, direction }));
   fd.set("set_format", rig.format);

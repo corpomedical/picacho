@@ -47,7 +47,7 @@ import {
 import { oversizedSeating } from "@/lib/sets/human-scale";
 import { checkFilmCredits, readTakes, saveSetFilm } from "@/lib/sets/film-actions";
 import { checkShotRig, saveSetRig } from "@/lib/sets/rig-actions";
-import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
+import { RIG_PALETTES, depthOfField, exposureGain, findLook, focalMm, formatFrame, letterbox, normaliseSetRig, sensorCocMm, sensorHeightMm, shutterFraction, type RigCheckItem, type SetRig } from "@/lib/sets/rig";
 import { bearingDeg } from "@/lib/sets/light-schemes";
 import { stagedSpec, timeLabel, sunAt } from "@/lib/sets/time-of-day";
 import { shootCommands } from "@/lib/sets/commands";
@@ -1733,6 +1733,13 @@ export function SetView({
             let url: string | null = null;
             if (ctx) {
               ctx.drawImage(renderer.domElement, band ? -Math.floor((fr.renderW - fr.bandW) / 2) : 0, band ? -Math.floor((fr.renderH - fr.bandH) / 2) : 0);
+              // The strips outside the band, painted dark on the frame the
+              // model reads (rig.ts letterbox): the picture is the band, and
+              // the prompt says so. The band picture has none to paint.
+              if (!band) {
+                ctx.fillStyle = "#0a0a0a";
+                for (const r of letterbox(fr)) ctx.fillRect(r.x, r.y, r.w, r.h);
+              }
               url = out.toDataURL("image/jpeg", 0.9);
             }
             renderer.setPixelRatio(ratio);

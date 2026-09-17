@@ -111,6 +111,16 @@ const SKETCH_SENTENCES = [
   "Match its camera position, lens, framing, horizon and the direction of its light exactly.",
   "Every object in it is a rough stand-in built from simple blocks: keep each one's place, size and orientation, but draw the real thing it stands for, with its true shape, detail and materials, at full size. Never reproduce the blocky shapes; nothing may look like a toy, a model or a miniature.",
 ];
+// The band (rig.ts letterbox, 2026-09-17): in a rig format other than the
+// square, the model draws a 3:2 (or 2:3) picture and the server cuts the
+// centred band out of it (frame-cut.ts). The model used to compose for the
+// whole render, knowing nothing of the band, and the operator's two stills
+// came back with the head in the strip that was cut away. The sketch now
+// carries the strips painted dark, and this says what they are.
+const BAND_ROWS_SENTENCE =
+  "The sketch has a plain dark band across its top and another across its bottom: those bands lie outside the picture. Compose the whole shot inside the lit band between them — the whole person, head to feet as the sketch places them, and everything that matters — and draw the two bands exactly as they are, plain dark and the same size, with nothing in them.";
+const BAND_COLUMNS_SENTENCE =
+  "The sketch has a plain dark band down its left side and another down its right: those bands lie outside the picture. Compose the whole shot inside the lit band between them — the whole person, head to feet as the sketch places them, and everything that matters — and draw the two bands exactly as they are, plain dark and the same size, with nothing in them.";
 // Only when exposure.ts lifted this set's sketch so its layout reads: the
 // scene itself is not brighter for it. For a daylit set it would be false.
 const LIFTED_SENTENCE =
@@ -129,6 +139,8 @@ const NO_TEXT_SENTENCE = "No text, logos or brand names anywhere in the picture.
 /** Every fixed sentence a Set shot's prompt is built from: Picacho's words, never the person's or Astra's. */
 export const SET_SHOT_FIXED_SENTENCES: readonly string[] = [
   ...SKETCH_SENTENCES,
+  BAND_ROWS_SENTENCE,
+  BAND_COLUMNS_SENTENCE,
   LIFTED_SENTENCE,
   `${RENDER_PREFIX}:`,
   `${RENDER_PREFIX}.`,
@@ -184,12 +196,15 @@ export function buildSetShotPrompt(input: {
   rigLight?: boolean;
   /** The eye-line (cut D, people.ts gazeWords): where the person looks; "" says nothing. */
   gaze?: string;
+  /** The band's strips on the sketch (rig.ts bandSide): across the top and bottom, down the sides, or none. */
+  band?: "rows" | "columns" | null;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
   const facing = describeFacing(input.layout ?? null);
   return [
     ...SKETCH_SENTENCES,
+    input.band === "rows" ? BAND_ROWS_SENTENCE : input.band === "columns" ? BAND_COLUMNS_SENTENCE : "",
     input.lifted ? (input.rigLight ? LIFTED_RIG_SENTENCE : LIFTED_SENTENCE) : "",
     description ? `${RENDER_PREFIX}: ${description}` : `${RENDER_PREFIX}.`,
     input.rigLight && !input.lifted ? LIGHT_WINS_SENTENCE : "",

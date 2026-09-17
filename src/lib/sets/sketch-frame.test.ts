@@ -28,6 +28,14 @@ describe("the frame the image model reads (set-view.tsx frame)", () => {
     expect(frame.slice(render, off)).toContain("finally");
   });
 
+  it("paints the band's strips dark on the frame the model reads, and not on the band picture", () => {
+    expect(frame).toContain("for (const r of letterbox(fr)) ctx.fillRect(r.x, r.y, r.w, r.h);");
+    expect(frame.slice(frame.indexOf("if (!band) {"), frame.indexOf("for (const r of letterbox(fr))"))).toContain('ctx.fillStyle = "#0a0a0a";');
+    // And the shot's words say what they are (actions.ts → set-shot-prompt.ts).
+    const actions = readFileSync(join(__dirname, "actions.ts"), "utf8");
+    expect(actions).toContain("band: bandSide(rigFrame),");
+  });
+
   it("measures the sketch's lift on the sketch, before the stage's own", () => {
     const start = view.indexOf("let sketchLift = NO_LIFT;");
     const lifts = view.slice(start, view.indexOf("raf = requestAnimationFrame(loop);", start));

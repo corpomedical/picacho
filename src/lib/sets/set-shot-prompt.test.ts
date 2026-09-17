@@ -48,6 +48,19 @@ describe("buildSetShotPrompt", () => {
     expect(longest.length).toBeLessThan(2600);
   });
 
+  it("says what the dark bands on the sketch are, only in a cut format, and is stripped with the rest", () => {
+    expect(p).not.toMatch(/dark band/);
+    const rows = buildSetShotPrompt({ description: "A road.", direction: "", band: "rows" });
+    expect(rows).toContain("a plain dark band across its top and another across its bottom: those bands lie outside the picture.");
+    expect(rows).toContain("the whole person, head to feet as the sketch places them");
+    // Right after the sketch's own sentences, before the place is described.
+    expect(rows.indexOf("plain dark band")).toBeLessThan(rows.indexOf("Render the location"));
+    const cols = buildSetShotPrompt({ description: "A road.", direction: "", band: "columns" });
+    expect(cols).toContain("down its left side and another down its right");
+    expect(stripSetShotScaffold(rows)).toBe("A road.");
+    expect(stripSetShotScaffold(cols)).toBe("A road.");
+  });
+
   it("says the sketch's objects are block stand-ins for real things, never toys", () => {
     expect(p).toContain("rough stand-in built from simple blocks");
     expect(p).toContain("draw the real thing it stands for");
@@ -159,14 +172,9 @@ describe("stripSetShotScaffold", () => {
   });
 
   it("every fixed sentence is one the prompt is built from", () => {
-    const full = buildSetShotPrompt({
-      description: "d",
-      direction: "x",
-      lifted: true,
-      layout: null,
-      look: {},
-      sourcePhoto: true,
-    });
+    const shot = { description: "d", direction: "x", lifted: true, layout: null, look: {}, sourcePhoto: true } as const;
+    // The band's two sentences are one or the other: a frame is cut across or down, never both.
+    const full = buildSetShotPrompt({ ...shot, band: "rows" }) + " " + buildSetShotPrompt({ ...shot, band: "columns" });
     for (const fixed of SET_SHOT_FIXED_SENTENCES) {
       if (fixed.endsWith("looks:") || fixed.endsWith("looks.")) continue;
       expect(full, fixed.slice(0, 40)).toContain(fixed);

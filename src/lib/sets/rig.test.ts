@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_RIG_OVERLAYS, DEFAULT_SET_RIG, RIG_ERAS, RIG_FIXED_SENTENCES, RIG_FORMATS, RIG_FORMAT_ORDER, RIG_GENRES, RIG_GENRE_SUGGESTS, RIG_LENSES, RIG_LIGHTS, RIG_NUMBERED_SENTENCE, RIG_PALETTES, RIG_STOCKS, depthOfField, exposureGain, exposureStops, focalMm, formatFrame, isLabPalette, labLooksOf, lightDirectionWords, lookStill, normaliseSetRig, rigCheckItems, rigSentences, rigWordsByItem, sensorCocMm, sensorHeightMm, shutterFraction, type SetRig } from "./rig";
+import { DEFAULT_RIG_OVERLAYS, DEFAULT_SET_RIG, RIG_ERAS, RIG_FIXED_SENTENCES, RIG_FORMATS, RIG_FORMAT_ORDER, RIG_GENRES, RIG_GENRE_SUGGESTS, RIG_LENSES, RIG_LIGHTS, RIG_NUMBERED_SENTENCE, RIG_PALETTES, RIG_STOCKS, depthOfField, exposureGain, exposureStops, focalMm, formatFrame, isLabPalette, labLooksOf, lightDirectionWords, lookStill, normaliseSetRig, rigCheckItems, rigSentences, rigWordsByItem, sensorCocMm, sensorHeightMm, shutterFraction, type SetRig, letterbox, bandSide } from "./rig";
 import { fovForLens } from "./build-scene";
 import { FILM_MOVES } from "./moves";
 
@@ -33,6 +33,29 @@ describe("formats: the render asked for, and the band cut from it", () => {
     expect(px("wide")).toEqual([1536, 1024, 1536, 864, "1536x1024", true]);
     expect(px("classic")).toEqual([1536, 1024, 1365, 1024, "1536x1024", true]);
     expect(px("vertical")).toEqual([1024, 1536, 864, 1536, "1024x1536", true]);
+  });
+
+  it("paints the strips outside the band on the model's frame, and names which way they run", () => {
+    expect(letterbox(formatFrame("square"))).toEqual([]);
+    expect(bandSide(formatFrame("square"))).toBeNull();
+    // Scope: 1024 − 643 = 381 px of height, split 190 above and 191 below.
+    expect(letterbox(formatFrame("scope"))).toEqual([
+      { x: 0, y: 0, w: 1536, h: 190 },
+      { x: 0, y: 833, w: 1536, h: 191 },
+    ]);
+    expect(bandSide(formatFrame("scope"))).toBe("rows");
+    // Vertical: 1024 − 864 = 160 px of width, 80 a side.
+    expect(letterbox(formatFrame("vertical"))).toEqual([
+      { x: 0, y: 0, w: 80, h: 1536 },
+      { x: 944, y: 0, w: 80, h: 1536 },
+    ]);
+    expect(bandSide(formatFrame("vertical"))).toBe("columns");
+    // The strips and the band together are the whole render, every time.
+    for (const f of RIG_FORMAT_ORDER) {
+      const fr = formatFrame(f);
+      const strips = letterbox(fr).reduce((a, r) => a + r.w * r.h, 0);
+      expect(strips + fr.bandW * fr.bandH).toBe(fr.renderW * fr.renderH);
+    }
   });
 
   it("offers every format, square first", () => {
