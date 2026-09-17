@@ -154,7 +154,7 @@ describe("filmAfterEdit", () => {
 
   it("keeps the clips of the beats before a new one, and the film is no longer rendered", () => {
     const f = two();
-    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [], figure: null, time: null, rack: null }] };
+    const added = { ...f, beats: [...f.beats, { words: "three", end: pose(1), move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] }] };
     const next = filmAfterEdit(f, added);
     expect(next.clips).toEqual([A, B]);
     expect(filmRendered(next)).toBe(false);

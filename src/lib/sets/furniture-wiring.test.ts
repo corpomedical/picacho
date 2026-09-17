@@ -44,7 +44,7 @@ describe("the viewport's furniture", () => {
   it("measures on both pages: a press on the ground is a point, two make the line, Escape clears it", () => {
     expect(view).toContain('if (tool === "measure") {');
     expect(view).toContain("measureAddRef.current({ x: Math.round(hit.x * 100) / 100, z: Math.round(hit.z * 100) / 100 });");
-    expect(view).toContain("escape: () => setMeasurePts([]),");
+    expect(view).toContain("escape: () => {\n        setMeasurePts([]);");
     expect(editor).toContain('if (toolRef.current === "measure") {');
     expect(editor).toContain("measureAddRef.current({ x: Math.round(groundHit.x * 100) / 100, z: Math.round(groundHit.z * 100) / 100 });");
     expect(editor).toContain("setMeasurePts([]);");

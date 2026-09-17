@@ -48,7 +48,7 @@ export function buildSetTakePrompt(
   // A film beat's move and textures (moves.ts, Helios Cinema 2026-09-15):
   // the frames hold where the move starts and ends; these words say the path
   // between, and what no path can hold. Picacho's own fixed sentences.
-  motion: { move?: FilmMove | null; textures?: readonly FilmTexture[]; rack?: string } = {},
+  motion: { move?: FilmMove | null; textures?: readonly FilmTexture[]; rack?: string; gaze?: string } = {},
 ): string {
   const said = cleanText(direction, SET_DIRECTION_MAX_CHARS);
   return [
@@ -57,6 +57,8 @@ export function buildSetTakePrompt(
     ...(motion.textures ?? []).map((t) => FILM_TEXTURE_WORDS[t]),
     // The rack of focus (cut C, furniture.ts rackWords): where the focus travels during the move.
     motion.rack ?? "",
+    // The eye-line at the end (cut D, people.ts gazeWords): where the person looks by the last frame.
+    motion.gaze ?? "",
     said.length > 0 ? said : "The person carries the moment naturally.",
     "Keep the person, the clothes and the place exactly as the frames show them.",
   ]

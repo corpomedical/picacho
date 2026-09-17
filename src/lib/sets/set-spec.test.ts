@@ -251,7 +251,11 @@ describe("the person's arrangement", () => {
       mark: { x: 5, z: -5, facingDeg: 90 },
       camera: null,
       pose: "stand",
+      gaze: null,
     });
+    // The eye-line (cut D) rides the arrangement; a thing it names must exist.
+    expect(normaliseSetLayout({ markId: "m2", gaze: { at: "camera" } }, spec)?.gaze).toEqual({ at: "camera" });
+    expect(normaliseSetLayout({ markId: "m2", gaze: { at: "object", index: 99 } }, spec)?.gaze).toBeNull();
   });
 
   it("falls back to the first mark for an unknown id", () => {

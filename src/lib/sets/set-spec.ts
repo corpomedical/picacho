@@ -18,6 +18,7 @@
 // Relative imports only: vitest has no "@/" alias.
 
 import { clearMarks } from "./marks";
+import { normaliseGaze, type Gaze } from "./people";
 
 export const SET_SPEC_VERSION = 1 as const;
 
@@ -542,6 +543,8 @@ export type SetLayout = {
   mark: { x: number; z: number; facingDeg: number };
   camera: { position: Vec3; target: Vec3; fovDeg: number } | null;
   pose: StandPose;
+  /** The eye-line (cut D, people.ts): where the figure looks; null says nothing. */
+  gaze: Gaze | null;
 };
 
 export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | null {
@@ -583,5 +586,6 @@ export function normaliseSetLayout(input: unknown, spec: SetSpec): SetLayout | n
     }
   }
   const pose = pick(root.pose, STAND_POSES, "stand");
-  return { markId, mark, camera, pose };
+  const gaze = normaliseGaze(root.gaze, spec.objects.length);
+  return { markId, mark, camera, pose, gaze };
 }

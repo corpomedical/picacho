@@ -103,6 +103,7 @@ import {
   setMonthlyCapMessage,
 } from "@/lib/sets/messages";
 import { normaliseRack, rackWords } from "@/lib/sets/furniture";
+import { gazeWords, normaliseGaze } from "@/lib/sets/people";
 
 // Sets' server actions (Astra Sets, Phase 1, 2026-09-10).
 //
@@ -741,6 +742,8 @@ export async function shootInSet(
     description: owned.spec.description,
     lifted: input.lifted === true,
     layout,
+    // The eye-line (cut D): the layout's gaze, read against the set, in Picacho's words.
+    gaze: layout ? gazeWords(layout.gaze, owned.spec, layout.mark) : "",
     look,
     sourcePhoto: sourcePhotoUrl !== null,
     rig: rigSentences(rig, rigCtx),
@@ -926,6 +929,8 @@ export async function takeInSet(
     textures?: unknown;
     /** A film beat's rack of focus (furniture.ts): read against the set's things here, never trusted. */
     rack?: unknown;
+    /** A film beat's eye-line at its end (people.ts): read against the set's things here, never trusted. */
+    gaze?: unknown;
     /** A film's beat (renderFilm): kept as the film's, which renders it again itself (shot-take.ts). */
     film?: boolean;
   },
@@ -1021,12 +1026,16 @@ export async function takeInSet(
   fd.set("video_duration_seconds", String(engine.seconds));
   fd.set("character_id", input.characterId);
   const textures = Array.isArray(input.textures) ? [...new Set(input.textures.filter(isFilmTexture))] : [];
+  // Where the figure ends (the take's own layout), for the eye-line's side words.
+  const endLayout = normaliseSetLayout(input.layout, owned.spec);
+  const endMark = endLayout?.mark ?? { x: owned.spec.marks[0].x, z: owned.spec.marks[0].z, facingDeg: owned.spec.marks[0].facingDeg };
   fd.set(
     "prompt",
     buildSetTakePrompt(typeof input.direction === "string" ? input.direction : "", {
       move: isFilmMove(input.move) ? input.move : null,
       textures,
       rack: rackWords(normaliseRack(input.rack, owned.spec.objects.length), owned.spec),
+      gaze: gazeWords(normaliseGaze(input.gaze, owned.spec.objects.length), owned.spec, endMark, "take"),
     }),
   );
   // A tall frame renders a tall clip; every other rig format renders 16:9

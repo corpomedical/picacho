@@ -14,6 +14,8 @@ const beat = (over: Partial<FilmBeat> = {}): FilmBeat => ({
   figure: null,
   time: null,
   rack: null,
+  gaze: null,
+  path: [],
   ...over,
 });
 const film = (engine: SetFilm["engine"], beats: FilmBeat[]): SetFilm => normaliseSetFilm({ engine, startId: null, beats, clips: [], ends: [], context: null });

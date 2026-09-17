@@ -33,6 +33,8 @@ describe("the snapshot page's product modules", () => {
       expect(js, name).not.toMatch(/\bfrom\s+"\.\/[\w-]+"/);
     }
     expect(String(files.get("/set-spec.js")?.body)).toContain('from "./marks.js"');
+    // The eye-line (cut D, 2026-09-17): the layout reads its gaze through people.ts.
+    expect(String(files.get("/set-spec.js")?.body)).toContain('from "./people.js"');
   });
 
   it("the page's set-spec.js loads with its marks and normalises a set as the product does", async () => {

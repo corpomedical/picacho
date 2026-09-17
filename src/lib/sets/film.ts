@@ -16,6 +16,7 @@ import { isSetTakeEngine, SET_TAKE_DEFAULT_ENGINE, SET_TAKE_ENGINES, type SetTak
 import { isFilmMove, isFilmTexture, type FilmMove, type FilmTexture } from "./moves";
 import type { SetRig } from "./rig";
 import { normaliseRack, type FilmRack } from "./furniture";
+import { normaliseGaze, normalisePath, type Gaze, type Path } from "./people";
 
 /** The stage's own camera pose shape (set-view's Pose, held as data). */
 export type FilmPose = { position: Vec3; target: Vec3; fovDeg: number };
@@ -35,6 +36,10 @@ export type FilmBeat = {
   time: number | null;
   /** The rack of focus (cut C, furniture.ts): where the focus travels during the move; null keeps it on the person. */
   rack: FilmRack | null;
+  /** The eye-line at the beat's end (cut D, people.ts): where the figure looks in the end frame and by the end of the clip; null says nothing. */
+  gaze: Gaze | null;
+  /** The path (cut D): the points the figure walks through from where the beat opens to its figure; empty walks straight. */
+  path: Path;
 };
 
 export type FilmFigure = { x: number; z: number; facingDeg: number; pose: StandPose };
@@ -118,7 +123,17 @@ export function normaliseSetFilm(v: unknown): SetFilm {
       const textures = Array.isArray(raw.textures)
         ? [...new Set(raw.textures.filter((t): t is FilmTexture => isFilmTexture(t)))]
         : [];
-      beats.push({ words, end, move, textures, figure: figureOf(raw.figure), time: hourOf(raw.time), rack: normaliseRack(raw.rack, Number.MAX_SAFE_INTEGER) });
+      beats.push({
+        words,
+        end,
+        move,
+        textures,
+        figure: figureOf(raw.figure),
+        time: hourOf(raw.time),
+        rack: normaliseRack(raw.rack, Number.MAX_SAFE_INTEGER),
+        gaze: normaliseGaze(raw.gaze, Number.MAX_SAFE_INTEGER),
+        path: normalisePath(raw.path),
+      });
     }
   }
   const ids = (list: unknown): (string | null)[] =>
@@ -158,6 +173,7 @@ function sameBeat(a: FilmBeat, b: FilmBeat): boolean {
     a.end.target.every((n, i) => n === b.end.target[i]) &&
     a.time === b.time &&
     JSON.stringify(a.rack) === JSON.stringify(b.rack) &&
+    JSON.stringify(a.gaze) === JSON.stringify(b.gaze) &&
     (a.figure === null) === (b.figure === null) &&
     (a.figure === null || (a.figure.x === b.figure!.x && a.figure.z === b.figure!.z && a.figure.facingDeg === b.figure!.facingDeg && a.figure.pose === b.figure!.pose))
   );

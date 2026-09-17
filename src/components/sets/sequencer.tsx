@@ -50,6 +50,8 @@ export type SequencerProps = {
   startDisabled: boolean;
   onStartMenu(): void;
   poseName(pose: StandPose): string;
+  /** What else the figure bar says of a beat (cut D): the walk and the eye-line, or "". */
+  figureNote?(index: number): string;
   onSelect(index: number): void;
   onSeek(seconds: number): void;
   onPlay(): void;
@@ -291,6 +293,7 @@ export function Sequencer(p: SequencerProps) {
                   style={{ left: pct(sp.start), width: pct(sp.end - sp.start), background: "rgba(216,179,124,0.22)", boxShadow: "inset 0 0 0 1px rgba(216,179,124,0.4)" }}
                 >
                   {formatMsg(w.figureBar, { pose: p.poseName(f.pose), x: f.x.toFixed(1), z: f.z.toFixed(1) })}
+                  {p.figureNote?.(sp.index) ?? ""}
                 </button>
               );
             })}

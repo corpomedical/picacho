@@ -160,6 +160,8 @@ export function stripSetShotScaffold(prompt: string): string {
   for (const fixed of [...SET_SHOT_FIXED_SENTENCES, ...SET_SHOT_RIG_SENTENCES]) out = out.split(fixed).join(" ");
   out = out.replace(RIG_NUMBERED_SENTENCE, " ");
   out = out.replace(/The person stands where the grey figure stands, at its scale(?:; their body [^.]*|, facing the same way)\./g, " ");
+  // The eye-line (people.ts gazeWords): Picacho's sentence, with a thing's size in it.
+  out = out.replace(/(?:By the end of the shot they|They) look .*?(?<!\d)\.(?!\d)/g, " ");
   return out.replace(/\s+/g, " ").trim();
 }
 
@@ -180,6 +182,8 @@ export function buildSetShotPrompt(input: {
   rig?: readonly string[];
   /** Whether the rig re-lights the frame (a light scheme is on). */
   rigLight?: boolean;
+  /** The eye-line (cut D, people.ts gazeWords): where the person looks; "" says nothing. */
+  gaze?: string;
 }): string {
   const description = cleanText(input.description, 300);
   const direction = cleanText(input.direction, SET_DIRECTION_MAX_CHARS);
@@ -195,6 +199,7 @@ export function buildSetShotPrompt(input: {
     facing
       ? `The person stands where the grey figure stands, at its scale; their body ${facing}.`
       : "The person stands where the grey figure stands, at its scale, facing the same way.",
+    input.gaze ?? "",
     // Closed with a full stop when it has none: the words reader hands its
     // direction back bare, and be0a3eaa's prompt read "a helmet on her hand
     // Wherever they are looking" as one sentence (2026-09-15).

@@ -16,6 +16,7 @@ import { fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@
 import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem, type StudioMode } from "@/lib/sets/studio";
 import { viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
 import { azimuthOf, hourFromAzimuth, measureMetres, scaleBar, sunDirection, type MeasurePoint } from "@/lib/sets/furniture";
+import { PATH_MAX_POINTS, alongPath, pathLength, type Gaze } from "@/lib/sets/people";
 import type { RigTab } from "@/lib/sets/rig-dock";
 import { SceneTree, sceneNames, type SceneTarget } from "./scene-tree";
 import { Sequencer } from "./sequencer";
@@ -159,6 +160,15 @@ type Furniture = {
   measure: SVGSVGElement | null;
   measureWords: (metres: number) => string;
   points: readonly MeasurePoint[];
+  /** The eye-line (cut D): where the figure looks, as a line from the eyes, with its words. */
+  eyeline: SVGSVGElement | null;
+  gazeTarget: { x: number; y: number; z: number } | "camera" | null;
+  gazeText: string;
+  /** The path (cut D): the selected beat's walk, from where it opens through its points to its figure. */
+  pathSvg: SVGSVGElement | null;
+  pathFrom: MeasurePoint | null;
+  pathPoints: readonly MeasurePoint[];
+  pathTo: MeasurePoint | null;
 };
 
 type StageApi = {
@@ -300,7 +310,7 @@ const sourceOf = (f: TakeFrames): TakeSource => ({ start: f.start, end: f.end, c
 /** A take's frames as the retry sends them: what it was rendered from (SetShot.takeFrom) and the words kept with it. */
 const framesOf = (source: TakeSource, shot: SetShot): TakeFrames => ({ ...source, words: shot.words ?? undefined });
 
-type MenuId = "camera" | "figure" | "pose" | "history" | "mode" | "who" | "filmStart";
+type MenuId = "camera" | "figure" | "pose" | "gaze" | "history" | "mode" | "who" | "filmStart";
 
 const ACCENT = "#c8923a";
 const TURN_STEP = 30;
@@ -687,6 +697,21 @@ export function SetView({
   const gizmoRef = useRef<SVGSVGElement>(null);
   const scaleRef = useRef<HTMLDivElement>(null);
   const measureRef = useRef<SVGSVGElement>(null);
+  // The people (cut D, people.ts): where the figure looks, saved with the
+  // arrangement; and a laying mode, when the next press on the ground is
+  // the gaze's point or a point of the selected beat's path.
+  const [gaze, setGaze] = useState<Gaze | null>(initialLayout?.gaze ?? null);
+  useEffect(() => {
+    layoutRef.current = { ...layoutRef.current, gaze };
+  }, [gaze]);
+  const [laying, setLaying] = useState<"path" | "gaze" | null>(null);
+  const layingRef = useRef<"path" | "gaze" | null>(null);
+  useEffect(() => {
+    layingRef.current = laying;
+  }, [laying]);
+  const layAddRef = useRef<(kind: "path" | "gaze", p: MeasurePoint) => void>(() => {});
+  const eyelineRef = useRef<SVGSVGElement>(null);
+  const pathRef = useRef<SVGSVGElement>(null);
   const [rigError, setRigError] = useState("");
   // The rig check, per still, while it reads or when it could not.
   const [rigChecking, setRigChecking] = useState<Record<string, "checking" | "failed">>({});
@@ -783,7 +808,7 @@ export function SetView({
   // says so for a few seconds, in place of the drag hint.
   const [figureMoved, setFigureMoved] = useState(false);
   const figureMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const layoutRef = useRef({ markId: startMarkId, mark: startMark, pose: initialLayout?.pose ?? "stand" });
+  const layoutRef = useRef({ markId: startMarkId, mark: startMark, pose: initialLayout?.pose ?? "stand", gaze: initialLayout?.gaze ?? null });
   // The open menu, for the Esc handler (a ref is not read during render).
   const menuRef = useRef<MenuId | null>(null);
   // The set as it stood before the last Astra edit, for the changed line's
@@ -1030,6 +1055,18 @@ export function SetView({
         // turns orbiting off before the controls see the same event.
         const onDown = (e: PointerEvent) => {
           const tool = stageToolRef.current;
+          // Laying (cut D): the press on the ground is the gaze's point, or the next point of the beat's path.
+          const laying = layingRef.current;
+          if (laying) {
+            if (e.button !== 0) return;
+            toNdc(e);
+            if (raycaster.ray.intersectPlane(ground, hit)) layAddRef.current(laying, { x: Math.round(hit.x * 100) / 100, z: Math.round(hit.z * 100) / 100 });
+            measuring = true;
+            if (controlsRef) controlsRef.enabled = false;
+            canvas.setPointerCapture(e.pointerId);
+            e.preventDefault();
+            return;
+          }
           // Measure (cut C): a press on the ground is a point; two make the line.
           if (tool === "measure") {
             if (e.button !== 0) return;
@@ -1426,6 +1463,78 @@ export function SetView({
               const text = f.scaleWords(bar.metres);
               if (label && label.textContent !== text) label.textContent = text;
               f.scale.hidden = bar.px < 8;
+            }
+            // The eye-line (cut D): from the eyes to what the figure looks at.
+            if (f.eyeline) {
+              const svg = f.eyeline;
+              const target = f.gazeTarget;
+              svg.style.display = target === null ? "none" : "";
+              if (target !== null) {
+                const p = standIn.group.position;
+                const eye = project(ptV.set(p.x, FRAME_EYE_Y, p.z));
+                const line = svg.querySelector<SVGLineElement>("line");
+                const label = svg.querySelector<SVGTextElement>("text");
+                const dot = svg.querySelector<SVGCircleElement>("circle");
+                if (target === "camera") {
+                  // Into the lens: a short line toward the viewer, and the words.
+                  if (line) {
+                    line.setAttribute("x1", eye.x.toFixed(1));
+                    line.setAttribute("y1", eye.y.toFixed(1));
+                    line.setAttribute("x2", eye.x.toFixed(1));
+                    line.setAttribute("y2", (eye.y + 26).toFixed(1));
+                  }
+                  if (dot) {
+                    dot.setAttribute("cx", eye.x.toFixed(1));
+                    dot.setAttribute("cy", (eye.y + 26).toFixed(1));
+                  }
+                  if (label) {
+                    label.setAttribute("x", eye.x.toFixed(1));
+                    label.setAttribute("y", (eye.y + 42).toFixed(1));
+                  }
+                } else {
+                  const t = project(ptV.set(target.x, target.y, target.z));
+                  if (line) {
+                    line.setAttribute("x1", eye.x.toFixed(1));
+                    line.setAttribute("y1", eye.y.toFixed(1));
+                    line.setAttribute("x2", t.x.toFixed(1));
+                    line.setAttribute("y2", t.y.toFixed(1));
+                  }
+                  if (dot) {
+                    dot.setAttribute("cx", t.x.toFixed(1));
+                    dot.setAttribute("cy", t.y.toFixed(1));
+                  }
+                  if (label) {
+                    label.setAttribute("x", ((eye.x + t.x) / 2).toFixed(1));
+                    label.setAttribute("y", ((eye.y + t.y) / 2 - 8).toFixed(1));
+                  }
+                }
+                if (label && label.textContent !== f.gazeText) label.textContent = f.gazeText;
+                svg.style.opacity = eye.behind ? "0" : "1";
+              }
+            }
+            // The path (cut D): the selected beat's walk, on the ground.
+            if (f.pathSvg) {
+              const svg = f.pathSvg;
+              const on = f.pathFrom !== null && f.pathTo !== null;
+              svg.style.display = on ? "none" : "none";
+              if (on && f.pathFrom && f.pathTo) {
+                svg.style.display = "";
+                const stops = [f.pathFrom, ...f.pathPoints, f.pathTo];
+                const pts = stops.map((q) => project(ptV.set(q.x, 0.02, q.z)));
+                const poly = svg.querySelector<SVGPolylineElement>("polyline");
+                if (poly) poly.setAttribute("points", pts.map((q) => `${q.x.toFixed(1)},${q.y.toFixed(1)}`).join(" "));
+                const dots = svg.querySelectorAll<SVGCircleElement>("circle");
+                dots.forEach((c, i) => {
+                  const q = pts[i + 1];
+                  if (!q || i + 1 >= pts.length - 1) {
+                    c.style.display = "none";
+                    return;
+                  }
+                  c.style.display = "";
+                  c.setAttribute("cx", q.x.toFixed(1));
+                  c.setAttribute("cy", q.y.toFixed(1));
+                });
+              }
             }
             // The measure line, between the points on the ground.
             if (f.measure) {
@@ -1981,7 +2090,10 @@ export function SetView({
         if (ready) frameFigure();
       },
       palette: () => setPaletteOpen((v) => !v),
-      escape: () => setMeasurePts([]),
+      escape: () => {
+        setMeasurePts([]);
+        setLaying(null);
+      },
       tool: (id) => {
         if (id === "select" || id === "move" || id === "turn" || id === "measure") setStageTool(id);
         else if (id === "camera" || id === "light") {
@@ -2026,6 +2138,7 @@ export function SetView({
   }, [viewMode, ready]);
 
   // The viewport's furniture (cut C): the elements and their words, handed to the loop.
+  const names = sceneNames(spec, s);
   useEffect(() => {
     if (!ready) return;
     apiRef.current?.setFurniture({
@@ -2043,12 +2156,53 @@ export function SetView({
       measure: measureRef.current,
       measureWords: (m) => formatMsg(s.studio.measure, { m }),
       points: measurePts,
+      eyeline: eyelineRef.current,
+      gazeTarget:
+        gaze === null
+          ? null
+          : gaze.at === "camera"
+            ? "camera"
+            : gaze.at === "object"
+              ? (() => {
+                  const o = spec.objects[gaze.index];
+                  return o ? { x: o.position[0], y: o.position[1], z: o.position[2] } : null;
+                })()
+              : { x: gaze.x, y: 0.02, z: gaze.z },
+      gazeText:
+        gaze === null
+          ? ""
+          : gaze.at === "camera"
+            ? s.studio.lookAtCamera
+            : gaze.at === "object"
+              ? formatMsg(s.studio.lookAtThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })
+              : s.studio.lookAtPoint,
+      pathSvg: pathRef.current,
+      pathFrom: filmOpen && filmSel !== null && film.beats[filmSel]?.figure ? (filmSel > 0 && film.beats[filmSel - 1].figure ? film.beats[filmSel - 1].figure : { x: mark.x, z: mark.z }) : null,
+      pathPoints: filmOpen && filmSel !== null ? (film.beats[filmSel]?.path ?? []) : [],
+      pathTo: filmOpen && filmSel !== null && film.beats[filmSel]?.figure ? film.beats[filmSel].figure : null,
     });
     return () => apiRef.current?.setFurniture(null);
-  }, [ready, s, measurePts]);
+  }, [ready, s, measurePts, gaze, spec, names, filmOpen, filmSel, film, mark]);
+
+  // What a laid point becomes (cut D): the gaze's point, or the next point of the beat's path.
+  useEffect(() => {
+    layAddRef.current = (kind, p) => {
+      if (kind === "gaze") {
+        setGaze({ at: "point", x: p.x, z: p.z });
+        setLaying(null);
+        return;
+      }
+      const at = filmSel;
+      if (at === null) return;
+      editFilm((f) => ({
+        ...f,
+        beats: f.beats.map((bb, j) => (j === at && bb.path.length < PATH_MAX_POINTS ? { ...bb, path: [...bb.path, p] } : bb)),
+      }));
+    };
+  });
 
   useEffect(() => {
-    layoutRef.current = { markId, mark, pose: layoutRef.current.pose };
+    layoutRef.current = { markId, mark, pose: layoutRef.current.pose, gaze: layoutRef.current.gaze };
     apiRef.current?.placeMark(mark);
     const key = JSON.stringify({ markId, mark });
     if (key === savedMarkRef.current) return;
@@ -2758,7 +2912,7 @@ export function SetView({
     const pose = apiRef.current?.pose();
     if (!pose) return;
     editFilm((f) =>
-      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null }] },
+      f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] }] },
     );
     setFilmSel((n) => n ?? null);
   }
@@ -2824,7 +2978,7 @@ export function SetView({
     keepStage();
     editFilm((f) => {
       const beats = [...f.beats];
-      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [], figure: null, time: null, rack: null };
+      beats[at] = beats[at] ? { ...beats[at], end, move } : { words: "", end, move, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] };
       return { ...f, beats };
     });
     setFilmSel(at);
@@ -2935,7 +3089,11 @@ export function SetView({
       const walkFrom = figureFrom;
       await tweenPose(api, from, beat.end, MOVE_FLIGHT_MS, beat.move, alive, (e) => {
         setPlayhead(timeOf(spans, bi, e));
-        if (to) api.placeMark({ x: walkFrom.x + (to.x - walkFrom.x) * e, z: walkFrom.z + (to.z - walkFrom.z) * e, facingDeg: to.facingDeg });
+        if (to) {
+          // Along the beat's path (people.ts), facing the way it walks, then the way it ends.
+          const at = alongPath(walkFrom, beat.path, to, e);
+          api.placeMark({ x: at.x, z: at.z, facingDeg: e >= 0.97 || at.facingDeg === null ? to.facingDeg : at.facingDeg });
+        }
       });
       if (to) {
         figureFrom = { x: to.x, z: to.z, facingDeg: to.facingDeg };
@@ -3135,6 +3293,7 @@ export function SetView({
             move: beat.move,
             textures: beat.textures,
             rack: beat.rack,
+            gaze: beat.gaze,
             film: true,
           });
         } catch (err) {
@@ -3362,7 +3521,7 @@ export function SetView({
     if (words.direction) setDirection(words.direction);
     // The frame Astra set, kept to step back to: the mark as it will be
     // after the render, the camera as it stands now.
-    layoutRef.current = { markId: mId, mark: m, pose: layoutRef.current.pose };
+    layoutRef.current = { markId: mId, mark: m, pose: layoutRef.current.pose, gaze: layoutRef.current.gaze };
     keepRevision(directionNow, cameraNow);
     return moved;
   }
@@ -3558,7 +3717,7 @@ export function SetView({
       const pose = apiRef.current?.pose();
       if (!pose) return;
       editFilm((f) =>
-        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null }] },
+        f.beats.length >= FILM_MAX_BEATS ? f : { ...f, beats: [...f.beats, { words: "", end: pose, move: null, textures: [], figure: null, time: null, rack: null, gaze: null, path: [] }] },
       );
     };
     window.addEventListener("keydown", onKey);
@@ -4143,7 +4302,6 @@ export function SetView({
   // ---- the studio's frame (cut A): what the bar, the dock and the status bar show ----
   const studioMode: StudioMode = cutOpen ? "cut" : filmOpen ? "film" : "shoot";
   const dockTabs = dockTabsFor(studioMode, filmOpen);
-  const names = sceneNames(spec, s);
   const canShootNow = !(shooting || matching || !characterId || loadFailed || !ready);
   const renderingCount = (shooting ? 1 : 0) + (matching ? 1 : 0) + shots.filter((sh) => sh.status === "generating").length;
   const statusWords = (items: readonly StatusItem[]) => items.map((i) => s.studio.status.items[i]);
@@ -4848,6 +5006,25 @@ export function SetView({
             <circle data-end="b" r="4" fill="#f0cda6" />
             <text fill="#ffffff" fontSize="11" fontWeight="600" textAnchor="middle" paintOrder="stroke" stroke="rgba(0,0,0,0.7)" strokeWidth="3" />
           </svg>
+          <svg ref={eyelineRef} style={{ display: "none" }} aria-hidden data-eyeline className={`pointer-events-none absolute inset-0 z-10 h-full w-full ${viewingShot ? "hidden" : ""}`}>
+            <line stroke="#ffffff" strokeWidth="1.2" strokeDasharray="2 3" opacity="0.9" />
+            <circle r="3" fill="#ffffff" />
+            <text fill="#ffffff" fontSize="10.5" fontWeight="600" textAnchor="middle" paintOrder="stroke" stroke="rgba(0,0,0,0.7)" strokeWidth="3" />
+          </svg>
+          <svg ref={pathRef} style={{ display: "none" }} aria-hidden data-path className={`pointer-events-none absolute inset-0 z-10 h-full w-full ${viewingShot ? "hidden" : ""}`}>
+            <polyline fill="none" stroke="#d8b37c" strokeWidth="1.5" strokeDasharray="5 4" />
+            <circle r="3.5" fill="#d8b37c" />
+            <circle r="3.5" fill="#d8b37c" />
+            <circle r="3.5" fill="#d8b37c" />
+            <circle r="3.5" fill="#d8b37c" />
+            <circle r="3.5" fill="#d8b37c" />
+            <circle r="3.5" fill="#d8b37c" />
+          </svg>
+          {laying && (
+            <span className="pointer-events-none absolute left-3.5 top-[116px] z-20 rounded-full border border-onmedia/10 bg-black/70 px-3 py-1 text-[11px] text-[#f0cda6]" data-laying>
+              {laying === "path" ? s.studio.pathLaying : s.studio.gazePick}
+            </span>
+          )}
           <div className={`pointer-events-none absolute right-3.5 z-10 hidden items-end gap-2.5 md:flex ${viewingShot ? "md:hidden" : ""} ${filmOpen || cutOpen ? "bottom-3.5" : "bottom-[104px]"}`}>
             <div ref={scaleRef} data-scale className="flex items-center gap-1.5 rounded-[6px] border border-white/10 bg-black/50 px-2 py-1 text-[10.5px] text-[#c6c9d1]">
               <i className="block h-px bg-[#c6c9d1]" style={{ width: 60 }} />
@@ -4978,6 +5155,61 @@ export function SetView({
                         }}
                       >
                         {s.poses[p]}
+                      </Option>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="relative">
+                <button type="button" onClick={() => toggleMenu("gaze")} aria-haspopup="listbox" aria-expanded={menu === "gaze"} disabled={!ready} className={gaze ? DCHIP_ON : DCHIP} data-gaze-chip>
+                  {gaze === null
+                    ? s.studio.gazeNone
+                    : gaze.at === "camera"
+                      ? `${s.studio.gaze} · ${s.studio.gazeCamera}`
+                      : gaze.at === "object"
+                        ? `${s.studio.gaze} · ${formatMsg(s.studio.gazeThing, { thing: spec.objects[gaze.index] ? names.objectName(spec.objects[gaze.index]) : "" })}`
+                        : `${s.studio.gaze} · ${formatMsg(s.studio.gazePointSet, { x: gaze.x.toFixed(1), z: gaze.z.toFixed(1) })}`}
+                  <Chevron />
+                </button>
+                {menu === "gaze" && (
+                  <div role="listbox" aria-label={s.studio.gaze} className={`${DMENU} max-h-[320px] overflow-y-auto`}>
+                    <Option
+                      active={gaze === null}
+                      onPick={() => {
+                        setGaze(null);
+                        setMenu(null);
+                      }}
+                    >
+                      {s.studio.gazeNone}
+                    </Option>
+                    <Option
+                      active={gaze?.at === "camera"}
+                      onPick={() => {
+                        setGaze({ at: "camera" });
+                        setMenu(null);
+                      }}
+                    >
+                      {s.studio.gazeCamera}
+                    </Option>
+                    <Option
+                      active={gaze?.at === "point"}
+                      onPick={() => {
+                        setLaying("gaze");
+                        setMenu(null);
+                      }}
+                    >
+                      {s.studio.gazePoint}
+                    </Option>
+                    {spec.objects.map((o, oi) => (
+                      <Option
+                        key={oi}
+                        active={gaze?.at === "object" && gaze.index === oi}
+                        onPick={() => {
+                          setGaze({ at: "object", index: oi });
+                          setMenu(null);
+                        }}
+                      >
+                        {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
                       </Option>
                     ))}
                   </div>
@@ -5688,6 +5920,26 @@ export function SetView({
             startDisabled={Boolean(filmBusy)}
             onStartMenu={() => toggleMenu("filmStart")}
             poseName={(pz) => s.poses[pz]}
+            figureNote={(i) => {
+              // The walk and the eye-line of a beat (cut D), after its pose and place.
+              const b = film.beats[i];
+              if (!b?.figure) return "";
+              const parts: string[] = [];
+              if (b.path.length) {
+                const from = i > 0 && film.beats[i - 1].figure ? film.beats[i - 1].figure! : mark;
+                parts.push(formatMsg(s.studio.pathWalks, { d: pathLength(from, b.path, b.figure), n: b.path.length }));
+              }
+              if (b.gaze) {
+                parts.push(
+                  b.gaze.at === "camera"
+                    ? s.studio.lookAtCamera
+                    : b.gaze.at === "object"
+                      ? formatMsg(s.studio.lookAtThing, { thing: spec.objects[b.gaze.index] ? names.objectName(spec.objects[b.gaze.index]) : "" })
+                      : s.studio.lookAtPoint,
+                );
+              }
+              return parts.length ? ` · ${parts.join(" · ")}` : "";
+            }}
             onSelect={filmGoTo}
             onSeek={filmSeek}
             onPlay={() => void playMove()}
@@ -5981,7 +6233,61 @@ export function SetView({
                           </option>
                         ))}
                       </select>
+                      {/* The eye-line at the beat's end (cut D, people.ts): where the figure looks in the end frame and by the end of the clip. */}
+                      <select
+                        value={film.beats[filmSel].gaze ? (film.beats[filmSel].gaze.at === "camera" ? "camera" : film.beats[filmSel].gaze.at === "object" ? `o${film.beats[filmSel].gaze.index}` : "point") : ""}
+                        onChange={(e) => {
+                          const at = filmSel;
+                          const v = e.target.value;
+                          if (v === "point") return;
+                          const g: Gaze | null = v === "" ? null : v === "camera" ? { at: "camera" } : { at: "object", index: Number(v.slice(1)) };
+                          editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, gaze: g } : bb)) }));
+                        }}
+                        disabled={Boolean(filmBusy)}
+                        aria-label={s.studio.eyeline}
+                        title={s.studio.eyeline}
+                        className="h-7 max-w-[170px] cursor-pointer rounded-[6px] bg-black/40 px-2 text-[11px] text-[#c6c9d1] ring-1 ring-white/[0.08] outline-none"
+                      >
+                        <option value="">{s.studio.eyeline} · {s.studio.gazeNone}</option>
+                        <option value="camera">{s.studio.gazeCamera}</option>
+                        {film.beats[filmSel].gaze?.at === "point" && <option value="point">{s.studio.gazePoint}</option>}
+                        {spec.objects.map((o, oi) => (
+                          <option key={oi} value={`o${oi}`}>
+                            {formatMsg(s.studio.gazeThing, { thing: names.objectName(o) })}
+                          </option>
+                        ))}
+                      </select>
                     </div>
+                    {/* The path (cut D): the points the figure walks through to this beat's figure, laid on the ground. */}
+                    {film.beats[filmSel].figure && (
+                      <div className="flex flex-wrap items-center gap-1" data-path-row>
+                        <span className="text-[10px] font-semibold uppercase tracking-[0.07em] text-[#6b6f7a]">{s.studio.path}</span>
+                        <span className="text-[11px] text-[#9aa0ad]">
+                          {film.beats[filmSel].path.length
+                            ? formatMsg(s.studio.pathWalks, {
+                                d: pathLength(filmSel > 0 && film.beats[filmSel - 1].figure ? film.beats[filmSel - 1].figure! : mark, film.beats[filmSel].path, film.beats[filmSel].figure!),
+                                n: film.beats[filmSel].path.length,
+                              })
+                            : s.studio.pathStraight}
+                        </span>
+                        <button type="button" onClick={() => setLaying((l) => (l === "path" ? null : "path"))} disabled={Boolean(filmBusy)} className={chip(laying === "path")}>
+                          {laying === "path" ? s.studio.pathLaying : s.studio.pathLay}
+                        </button>
+                        {film.beats[filmSel].path.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const at = filmSel;
+                              editFilm((f) => ({ ...f, beats: f.beats.map((bb, j) => (j === at ? { ...bb, path: [] } : bb)) }));
+                            }}
+                            disabled={Boolean(filmBusy)}
+                            className={chip(false)}
+                          >
+                            {s.studio.pathClear}
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <p className="text-[11.5px] leading-snug text-[#9aa0ad]">{film.beats.length === 0 ? s.sequencer.noBeats : s.rig.movePick}</p>
