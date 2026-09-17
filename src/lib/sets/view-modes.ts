@@ -2,8 +2,9 @@
 // stage as it is; Clay draws every surface in one matte grey, so the light
 // and the forms read without the colours; Wire draws the edges; Depth draws
 // distance. A mode is the scene's override material — three draws every
-// mesh with it and nothing else changes — and it is Build's only: the
-// shoot's stage, and every frame the picture model is shown, stays lit.
+// mesh with it and nothing else changes. Since the studio's frame (cut A)
+// every mode of the page has it, on the live view only: every frame the
+// picture model is shown stays lit (set-view.tsx renderLive, frame).
 
 import type * as ThreeNS from "three";
 

@@ -51,6 +51,9 @@ import type { StageQuality } from "@/lib/sets/build-scene";
 import { groundMaterialOf, materialOf } from "@/lib/sets/stage-materials";
 import { KELVIN_MAX, KELVIN_MIN, KELVIN_STEP, kelvinToHex, nearestKelvin } from "@/lib/sets/light-kelvin";
 import { VIEW_MODES, viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
+import { dockTabsFor, railToolForKey, type DockTab, type RailTool } from "@/lib/sets/studio";
+import { SceneTree } from "./scene-tree";
+import { StudioBar, StudioDock, StudioRail, StudioStatus } from "./studio-frame";
 import { KIT_KINDS, type KitKind } from "@/lib/sets/kit";
 import { checkSet, type SetFinding } from "@/lib/sets/set-check";
 
@@ -75,6 +78,8 @@ import { checkSet, type SetFinding } from "@/lib/sets/set-check";
 // server-side, gated whole like a build (editSetWithAstra).
 
 type Tool = "select" | "move" | "rotate" | "scale";
+/** The rail's name for the editor's tool (studio.ts): Turn is rotate, Size is scale. */
+const RAIL_OF_TOOL: Record<Tool, RailTool> = { select: "select", move: "move", rotate: "turn", scale: "size" };
 
 type GizmoChange = {
   position?: Vec3;
@@ -380,42 +385,6 @@ function PRow({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function TreeRow({
-  icon,
-  dot,
-  name,
-  badge,
-  child,
-  selected,
-  onPick,
-}: {
-  icon?: keyof typeof D;
-  dot?: string;
-  name: string;
-  badge?: string;
-  child?: boolean;
-  selected: boolean;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onPick}
-      className={`flex h-6 w-full cursor-pointer items-center gap-1.5 pr-2.5 text-left text-[12px] ${child ? "pl-7" : "pl-3"} ${
-        selected ? "bg-[rgba(224,164,104,0.12)] text-[#e0a468] shadow-[inset_2px_0_0_#e0a468]" : "text-[#c6c9d1] hover:bg-white/[0.04]"
-      }`}
-    >
-      {dot ? (
-        <span className="h-2.5 w-2.5 flex-none rounded-[3px] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.2)]" style={{ background: dot }} />
-      ) : icon ? (
-        <Svg d={D[icon]} className={`h-[13px] w-[13px] flex-none ${selected ? "" : "text-[#8b8f9a]"}`} />
-      ) : null}
-      <span className="min-w-0 flex-1 truncate">{name}</span>
-      {badge && <span className="flex-none text-[11px] tabular-nums text-[#6b6f7a]">{badge}</span>}
-    </button>
-  );
-}
-
 export function SetEditor({
   setId,
   original,
@@ -464,6 +433,13 @@ export function SetEditor({
   }, [ready, view]);
   const [loadFailed, setLoadFailed] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  // The studio's frame (studio.ts, studio-frame.tsx; cut A): the dock's
+  // tab, the rail's Kit menu, the Find field's focus, the rail's actions
+  // kept current for the keys.
+  const [dockTab, setDockTab] = useState<DockTab>("scene");
+  const [kitOpen, setKitOpen] = useState(false);
+  const findRef = useRef<HTMLInputElement>(null);
+  const railRef = useRef<(id: RailTool) => void>(() => {});
   const [ask, setAsk] = useState("");
   const [asking, setAsking] = useState(false);
   const [askNote, setAskNote] = useState<number | null>(null);
@@ -787,7 +763,7 @@ export function SetEditor({
    * Shoot side would show the set without it): the person decides, and a
    * tab a deploy left behind stays for its reload.
    */
-  async function done() {
+  async function done(to: string = closeHref) {
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
@@ -797,7 +773,7 @@ export function SetEditor({
       // Left behind on purpose: it does not come back.
       dropUnsaved(setId, "edit");
     }
-    router.push(closeHref);
+    router.push(to);
     router.refresh();
   }
 
@@ -1233,6 +1209,23 @@ export function SetEditor({
     apiRef.current?.applySnap(snap);
   }, [snap, ready]);
 
+  useEffect(() => {
+    railRef.current = (id) => {
+      if (id === "select" || id === "move") setTool(id);
+      else if (id === "turn") setTool("rotate");
+      else if (id === "size") setTool("scale");
+      else if (id === "camera") addACamera();
+      else if (id === "light") addALight();
+      else if (id === "mark") addAMark();
+      else if (id === "kit") setKitOpen((v) => !v);
+    };
+  });
+  /** Find anything (the bar, ⌘K): the dock's Scene tab with its filter in hand. */
+  function openFind() {
+    setDockTab("scene");
+    setTimeout(() => findRef.current?.focus(), 0);
+  }
+
   // ⌘Z / ⇧⌘Z / Delete / Escape, when no field holds the keyboard.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1243,20 +1236,26 @@ export function SetEditor({
         e.preventDefault();
         if (e.shiftKey) redoRef.current();
         else undoRef.current();
+      } else if (meta && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        openFind();
       } else if (e.key === "Backspace" || e.key === "Delete") {
         e.preventDefault();
         deleteRef.current();
       } else if (e.key === "Escape") {
         // The open menu first; the thing in hand on the next press.
+        setKitOpen(false);
         if (addOpenRef.current) setAddOpen(false);
         else pickRef.current(null);
       } else if (!meta && !e.altKey && !e.shiftKey) {
-        // The studio's keys (cut 4): V G R S pick the tool, 1–4 the view.
+        // The studio's keys (cut 4, then the rail in cut A — studio.ts
+        // railToolForKey): V G R S pick the tool, C L M K place a camera,
+        // a light, a mark, a prop; 1–4 the view.
         const k = e.key.toLowerCase();
-        const tool: Tool | null = k === "v" ? "select" : k === "g" ? "move" : k === "r" ? "rotate" : k === "s" ? "scale" : null;
-        if (tool) {
+        const railTool = railToolForKey("build", k);
+        if (railTool) {
           e.preventDefault();
-          setTool(tool);
+          railRef.current(railTool);
         } else if (k >= "1" && k <= "4") {
           e.preventDefault();
           setView(VIEW_MODES[Number(k) - 1]);
@@ -1304,9 +1303,6 @@ export function SetEditor({
   const r1 = (n: number) => Math.round(n * 10) / 10;
   const shapeName = (shape: SetShape) => s.editorShapes[shape];
   const lightKindName = (kind: SetLightKind) => s.editorLights[kind];
-  const viewName = (m: ViewMode) => (m === "lit" ? s.editorViewLit : m === "clay" ? s.editorViewClay : m === "wire" ? s.editorViewWire : s.editorViewDepth);
-  const findQuery = find.trim().toLowerCase();
-  const hit = (name: string) => !findQuery || name.toLowerCase().includes(findQuery);
   const findings = useMemo(() => checkSet(spec), [spec]);
   const findingTarget = (f: SetFinding): EditTarget =>
     f.kind === "through" ? { kind: "object", index: f.big } : f.kind === "camera-inside" ? { kind: "camera", index: f.camera } : f.kind === "mark-inside" ? { kind: "mark", index: f.mark } : { kind: "object", index: f.object };
@@ -1347,8 +1343,6 @@ export function SetEditor({
               : sel.kind === "ground"
                 ? s.editorGround
                 : s.editorFog;
-  const isSame = (a: EditTarget | null, b: EditTarget) =>
-    a !== null && a.kind === b.kind && ("index" in a ? a.index : -1) === ("index" in b ? b.index : -1);
   const saveLine =
     saveState === "saving" ? s.editorSaving : saveState === "failed" ? s.editorSaveFailed : saveState === "saved" ? s.editorSaved : "";
   const toolName =
@@ -1362,197 +1356,9 @@ export function SetEditor({
   const fogNow = spec.fog;
   const C = SET_LIMITS.maxCoordinate;
 
-  return (
-    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#141519] font-sans text-[13px] leading-[18px] text-[#c6c9d1]" data-set-editor>
-      {/* A phone held upright has no room for a rail, a canvas and a 300 px
-          panel: it is told so, with the way back, rather than handed an
-          editor it cannot see. Turned sideways, most phones clear it. */}
-      <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-[#141519] px-8 text-center sm:hidden">
-        <p className="max-w-xs text-[14px] leading-[21px] text-[#c6c9d1]">{s.editorNarrow}</p>
-        <button
-          type="button"
-          onClick={() => void done()}
-          className="flex h-9 cursor-pointer items-center rounded-[8px] bg-[#e0a468] px-4 text-[13px] font-semibold text-[#1b1c20]"
-        >
-          {s.editorDone}
-        </button>
-      </div>
-      {/* app bar */}
-      <div className={`${BAR} flex h-12 flex-none items-center gap-3 border-b ${HAIR} px-3.5`}>
-        <span className="relative font-display text-[16px] font-bold text-[#ecedf1]">
-          P<span aria-hidden className="absolute -bottom-0.5 left-px right-px h-[2px] bg-atelier-accent" />
-        </span>
-        <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
-        <span className="text-[12px] text-[#6b6f7a]">{s.eyebrow}</span>
-        <h1 className="min-w-0 truncate font-display text-[14px] font-semibold text-[#ecedf1]">{spec.title || s.untitled}</h1>
-        <span className="flex-1" />
-        <span className="flex h-7 items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
-          <span className="flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-3.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]">
-            {s.editorBuildTab}
-          </span>
-          <button type="button" onClick={() => void done()} className="flex h-6 cursor-pointer items-center rounded-[4px] px-3.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]">
-            {s.editorShootTab}
-          </button>
-        </span>
-        <span role="radiogroup" aria-label={s.editorViewLit} className="ml-2 hidden h-7 items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)] md:flex">
-          {VIEW_MODES.map((m, i) => (
-            <button
-              key={m}
-              type="button"
-              role="radio"
-              aria-checked={view === m}
-              onClick={() => setView(m)}
-              title={`${viewName(m)} · ${i + 1}`}
-              className={
-                view === m
-                  ? "flex h-6 cursor-default items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[11.5px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)]"
-                  : "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[11.5px] font-medium text-[#9aa0ad] hover:text-[#ecedf1]"
-              }
-            >
-              {viewName(m)}
-            </button>
-          ))}
-        </span>
-        <span className="flex-1" />
-        <button type="button" onClick={undo} disabled={at === 0} className={ICON_BTN} title={s.editorUndo} aria-label={s.editorUndo}>
-          <Svg d={D.undo} className="h-[15px] w-[15px]" />
-        </button>
-        <button type="button" onClick={redo} disabled={at >= history.length - 1} className={ICON_BTN} title={s.editorRedo} aria-label={s.editorRedo}>
-          <Svg d={D.redo} className="h-[15px] w-[15px]" />
-        </button>
-        <span className="text-[12px] tabular-nums text-[#9aa0ad]">{formatMsg(s.editorEditN, { n: at })}</span>
-        <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
-        <span className="text-[12px] text-[#6b6f7a]">{saveLine}</span>
-        <button
-          type="button"
-          onClick={() => void restoreOriginal()}
-          className="cursor-pointer text-[12px] text-[#9aa0ad] hover:text-[#ecedf1]"
-          title={s.editorOriginalHint}
-        >
-          {s.editorOriginal}
-        </button>
-        <button type="button" onClick={exportJson} className={ICON_BTN} title={s.editorExport} aria-label={s.editorExport}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" aria-hidden>
-            <path d="M12 3v12" />
-            <path d="m7 10 5 5 5-5" />
-            <path d="M4 19h16" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          onClick={() => void done()}
-          className="flex h-7 cursor-pointer items-center rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20]"
-        >
-          {s.editorDone}
-        </button>
-      </div>
-
-      <div className="flex min-h-0 flex-1 items-stretch">
-        {/* tool rail */}
-        <div className={`${PANEL} relative flex w-12 flex-none flex-col items-center gap-1 border-r ${HAIR} py-2.5`}>
-          {(
-            [
-              ["select", D.select, s.editorToolSelect, "V"],
-              ["move", D.move, s.editorToolMove, "G"],
-              ["rotate", D.rotate, s.editorToolRotate, "R"],
-              ["scale", D.scale, s.editorToolScale, "S"],
-            ] as const
-          ).map(([id, d, name, key]) => (
-            <button key={id} type="button" onClick={() => setTool(id)} className={tool === id ? TOOL_ON : TOOL_BTN} title={`${name} · ${key}`} aria-label={name}>
-              <Svg d={d} />
-            </button>
-          ))}
-          <span aria-hidden className="my-1 h-px w-6 bg-white/[0.08]" />
-          <button type="button" onClick={() => setAddOpen((v) => !v)} className={addOpen ? TOOL_ON : TOOL_BTN} title={s.editorAdd} aria-label={s.editorAdd}>
-            <Svg d={D.add} />
-          </button>
-          {/* A click anywhere off the menu closes it, as the page's other menus do. */}
-          {addOpen && <div aria-hidden className="fixed inset-0 z-10" onClick={() => setAddOpen(false)} />}
-          {addOpen && (
-            <div className={`absolute left-12 top-40 z-20 flex min-w-[12rem] flex-col gap-0.5 rounded-[10px] border ${HAIR} ${PANEL} p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]`}>
-              {SET_SHAPES.map((shape) => (
-                <button key={shape} type="button" onClick={() => addThing(shape)} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
-                  <Svg d={D.cube} className="h-[13px] w-[13px] text-[#8b8f9a]" />
-                  {shapeName(shape)}
-                </button>
-              ))}
-              <span aria-hidden className="mx-2 my-1 h-px bg-white/[0.08]" />
-              <button type="button" onClick={addALight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
-                <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
-                {s.editorAddLight}
-              </button>
-              <button type="button" onClick={addAnAreaLight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
-                <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
-                {s.editorAddArea}
-              </button>
-              <div className={SHEAD}>{s.editorAddKit}</div>
-              {KIT_KINDS.map((kind) => (
-                <button key={kind} type="button" onClick={() => addAProp(kind)} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
-                  <Svg d={D.add} className="h-[13px] w-[13px] text-[#8b8f9a]" />
-                  {s.editorKits[kind]}
-                </button>
-              ))}
-              <button type="button" onClick={addAMark} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
-                <Svg d={D.person} className="h-[13px] w-[13px] text-[#8b8f9a]" />
-                {s.editorAddMark}
-              </button>
-              <button type="button" onClick={addACamera} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
-                <Svg d={D.camera} className="h-[13px] w-[13px] text-[#8b8f9a]" />
-                {s.editorAddCamera}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* canvas column */}
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* context bar */}
-          <div className={`${BAR} flex h-9 flex-none items-center gap-2 border-b ${HAIR} px-3`}>
-            <span className="text-[12px] font-semibold text-[#ecedf1]">{toolName}</span>
-            <span className="min-w-0 truncate text-[11px] text-[#6b6f7a]">{selName}</span>
-            {selObject && sel?.kind === "object" && (
-              <>
-                <span aria-hidden className="mx-1 h-[18px] w-px bg-white/[0.09]" />
-                <span className="w-72 flex-none">
-                  <Vec3Row value={selObject.position} min={-C} max={C} onCommit={(v) => commit(patchObject(spec, sel.index, { position: v }))} />
-                </span>
-                <button
-                  type="button"
-                  onClick={() => commit(patchObject(spec, sel.index, { position: [selObject.position[0], selObject.size[1] / 2, selObject.position[2]] }))}
-                  className="cursor-pointer whitespace-nowrap text-[11px] text-[#9aa0ad] hover:text-[#ecedf1]"
-                >
-                  {s.editorRestGround}
-                </button>
-              </>
-            )}
-            <span aria-hidden className="mx-1 h-[18px] w-px bg-white/[0.09]" />
-            <Check on={snap} onToggle={() => setSnap((v) => !v)}>
-              {s.editorSnap}
-            </Check>
-            <span className="flex-1" />
-            {flash && <span className="min-w-0 truncate text-[11px] text-[#e0a468]">{flash}</span>}
-            <span className="whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a]">
-              {formatMsg(s.editorCounts, { things: spec.objects.length, shapes: specInstanceCount(spec), max: SET_LIMITS.maxInstances })}
-            </span>
-          </div>
-
-          {/* the stage */}
-          <div className="relative min-h-0 flex-1 overflow-hidden bg-[#101116]">
-            <div ref={hostRef} className="absolute inset-0" />
-            {!ready && !loadFailed && (
-              <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-[#6b6f7a]">{s.editorLoading}</p>
-            )}
-            {loadFailed && (
-              <p className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 text-center text-[12px] text-[#9aa0ad]">
-                {s.editorLoadFailed}
-              </p>
-            )}
-            <span className="pointer-events-none absolute bottom-4 left-3 rounded-[6px] border border-white/[0.09] bg-[rgba(20,21,25,0.85)] px-2.5 py-1 text-[11px] text-[#9aa0ad]">
-              {s.editorOrbitHint}
-            </span>
-
-            {/* Astra's prompt bar */}
-            <div className="absolute bottom-4 left-1/2 w-[560px] max-w-[calc(100%-2rem)] -translate-x-1/2">
+  // Astra's prompt bar, at the dock's foot whatever the tab (the studio's frame, cut A).
+  const promptBar = (
+            <div className="p-3">
               {(askNote !== null || askError || asking || astraTooBig) && (
                 <div className="mx-auto mb-2 flex w-fit max-w-full items-center gap-2 rounded-[8px] border border-white/[0.11] bg-[rgba(25,26,32,0.94)] px-3 py-1.5 text-[12px] text-[#c6c9d1] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.5)]">
                   {asking ? (
@@ -1613,82 +1419,192 @@ export function SetEditor({
                 </button>
               </div>
             </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden bg-[#141519] font-sans text-[13px] leading-[18px] text-[#c6c9d1]" data-set-editor>
+      {/* A phone held upright has no room for a rail, a canvas and a 300 px
+          panel: it is told so, with the way back, rather than handed an
+          editor it cannot see. Turned sideways, most phones clear it. */}
+      <div className="absolute inset-0 z-[90] flex flex-col items-center justify-center gap-4 bg-[#141519] px-8 text-center sm:hidden">
+        <p className="max-w-xs text-[14px] leading-[21px] text-[#c6c9d1]">{s.editorNarrow}</p>
+        <button
+          type="button"
+          onClick={() => void done()}
+          className="flex h-9 cursor-pointer items-center rounded-[8px] bg-[#e0a468] px-4 text-[13px] font-semibold text-[#1b1c20]"
+        >
+          {s.editorDone}
+        </button>
+      </div>
+      {/* The studio's frame (canvas page J, board J1; cut A): the bar across the top, the same in every mode. */}
+      <StudioBar
+        back={{ href: "/app/sets", label: s.back }}
+        title={spec.title || s.untitled}
+        mode="build"
+        modes={{
+          build: { label: s.editorBuildTab },
+          shoot: { label: s.editorShootTab, onClick: () => void done() },
+          film: { label: s.filmTab, onClick: () => void done(`${closeHref}?film=1`) },
+        }}
+        view={{ mode: view, onChange: setView, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
+        find={{ label: s.studio.find, kbd: s.palette.open, onOpen: openFind }}
+        primary={
+          <button
+            type="button"
+            onClick={() => void done()}
+            className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20]"
+          >
+            {s.editorDone}
+          </button>
+        }
+      >
+        <button type="button" onClick={undo} disabled={at === 0} className={ICON_BTN} title={s.editorUndo} aria-label={s.editorUndo}>
+          <Svg d={D.undo} className="h-[15px] w-[15px]" />
+        </button>
+        <button type="button" onClick={redo} disabled={at >= history.length - 1} className={ICON_BTN} title={s.editorRedo} aria-label={s.editorRedo}>
+          <Svg d={D.redo} className="h-[15px] w-[15px]" />
+        </button>
+        <span className="text-[12px] tabular-nums text-[#9aa0ad]">{formatMsg(s.editorEditN, { n: at })}</span>
+        <span aria-hidden className="h-5 w-px bg-white/[0.09]" />
+        <span className="text-[12px] text-[#6b6f7a]">{saveLine}</span>
+        <button
+          type="button"
+          onClick={() => void restoreOriginal()}
+          className="cursor-pointer text-[12px] text-[#9aa0ad] hover:text-[#ecedf1]"
+          title={s.editorOriginalHint}
+        >
+          {s.editorOriginal}
+        </button>
+        <button type="button" onClick={exportJson} className={ICON_BTN} title={s.editorExport} aria-label={s.editorExport}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" className="h-[15px] w-[15px]" aria-hidden>
+            <path d="M12 3v12" />
+            <path d="m7 10 5 5 5-5" />
+            <path d="M4 19h16" />
+          </svg>
+        </button>
+      </StudioBar>
+
+      <div className="flex min-h-0 flex-1 items-stretch">
+        {/* The rail (studio-frame.tsx): the nine drawn tools on single keys, then Add for the shapes and the lights. */}
+        <StudioRail mode="build" tool={RAIL_OF_TOOL[tool]} onTool={(id) => railRef.current(id)} names={s.studio.tools} notes={s.studio.toolNotes}>
+          <span aria-hidden className="my-1 h-px w-6 bg-white/[0.08]" />
+          <button type="button" onClick={() => setAddOpen((v) => !v)} className={addOpen ? TOOL_ON : TOOL_BTN} title={s.editorAdd} aria-label={s.editorAdd}>
+            <Svg d={D.add} />
+          </button>
+          {/* A click anywhere off a menu closes it, as the page's other menus do. */}
+          {(addOpen || kitOpen) && (
+            <div
+              aria-hidden
+              className="fixed inset-0 z-10"
+              onClick={() => {
+                setAddOpen(false);
+                setKitOpen(false);
+              }}
+            />
+          )}
+          {addOpen && (
+            <div className={`absolute left-12 top-[352px] z-20 flex min-w-[12rem] flex-col gap-0.5 rounded-[10px] border ${HAIR} ${PANEL} p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]`}>
+              {SET_SHAPES.map((shape) => (
+                <button key={shape} type="button" onClick={() => addThing(shape)} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                  <Svg d={D.cube} className="h-[13px] w-[13px] text-[#8b8f9a]" />
+                  {shapeName(shape)}
+                </button>
+              ))}
+              <span aria-hidden className="mx-2 my-1 h-px bg-white/[0.08]" />
+              <button type="button" onClick={addALight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
+                {s.editorAddLight}
+              </button>
+              <button type="button" onClick={addAnAreaLight} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                <Svg d={D.bulb} className="h-[13px] w-[13px] text-[#8b8f9a]" />
+                {s.editorAddArea}
+              </button>
+            </div>
+          )}
+          {kitOpen && (
+            <div className={`absolute left-12 top-[296px] z-20 flex min-w-[12rem] flex-col gap-0.5 rounded-[10px] border ${HAIR} ${PANEL} p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]`}>
+              <div className={SHEAD}>{s.editorAddKit}</div>
+              {KIT_KINDS.map((kind) => (
+                <button key={kind} type="button" onClick={() => {
+                    setKitOpen(false);
+                    addAProp(kind);
+                  }} className="flex h-8 cursor-pointer items-center gap-2 rounded-[6px] px-2.5 text-left text-[12.5px] text-[#c6c9d1] hover:bg-white/[0.05]">
+                  <Svg d={D.add} className="h-[13px] w-[13px] text-[#8b8f9a]" />
+                  {s.editorKits[kind]}
+                </button>
+              ))}
+            </div>
+          )}
+        </StudioRail>
+
+        {/* canvas column */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* context bar */}
+          <div className={`${BAR} flex h-9 flex-none items-center gap-2 border-b ${HAIR} px-3`}>
+            <span className="text-[12px] font-semibold text-[#ecedf1]">{toolName}</span>
+            <span className="min-w-0 truncate text-[11px] text-[#6b6f7a]">{selName}</span>
+            {selObject && sel?.kind === "object" && (
+              <>
+                <span aria-hidden className="mx-1 h-[18px] w-px bg-white/[0.09]" />
+                <span className="w-72 flex-none">
+                  <Vec3Row value={selObject.position} min={-C} max={C} onCommit={(v) => commit(patchObject(spec, sel.index, { position: v }))} />
+                </span>
+                <button
+                  type="button"
+                  onClick={() => commit(patchObject(spec, sel.index, { position: [selObject.position[0], selObject.size[1] / 2, selObject.position[2]] }))}
+                  className="cursor-pointer whitespace-nowrap text-[11px] text-[#9aa0ad] hover:text-[#ecedf1]"
+                >
+                  {s.editorRestGround}
+                </button>
+              </>
+            )}
+            <span aria-hidden className="mx-1 h-[18px] w-px bg-white/[0.09]" />
+            <Check on={snap} onToggle={() => setSnap((v) => !v)}>
+              {s.editorSnap}
+            </Check>
+            <span className="flex-1" />
+            {flash && <span className="min-w-0 truncate text-[11px] text-[#e0a468]">{flash}</span>}
+            <span className="whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a]">
+              {formatMsg(s.editorCounts, { things: spec.objects.length, shapes: specInstanceCount(spec), max: SET_LIMITS.maxInstances })}
+            </span>
+          </div>
+
+          {/* the stage */}
+          <div className="relative min-h-0 flex-1 overflow-hidden bg-[#101116]">
+            <div ref={hostRef} className="absolute inset-0" />
+            {!ready && !loadFailed && (
+              <p className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[12px] text-[#6b6f7a]">{s.editorLoading}</p>
+            )}
+            {loadFailed && (
+              <p className="absolute left-1/2 top-1/2 w-72 -translate-x-1/2 -translate-y-1/2 text-center text-[12px] text-[#9aa0ad]">
+                {s.editorLoadFailed}
+              </p>
+            )}
+            <span className="pointer-events-none absolute bottom-4 left-3 rounded-[6px] border border-white/[0.09] bg-[rgba(20,21,25,0.85)] px-2.5 py-1 text-[11px] text-[#9aa0ad]">
+              {s.editorOrbitHint}
+            </span>
+
           </div>
         </div>
 
-        {/* scene + properties */}
-        <div className={`${PANEL} flex w-[300px] flex-none flex-col border-l ${HAIR} min-h-0`}>
-          <div className={`${PHEAD} flex items-center gap-2 border-b ${HAIR}`}>
-            <span>{s.editorScene}</span>
-            <input
-              value={find}
-              onChange={(e) => setFind(e.target.value)}
-              placeholder={s.editorFind}
-              aria-label={s.editorFind}
-              className="ml-auto h-6 w-[150px] min-w-0 rounded-[5px] bg-[#111217] px-2 text-[11px] font-normal normal-case tracking-normal text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
-            />
-          </div>
-          <div className="min-h-0 flex-[0_0_auto] max-h-[44%] overflow-y-auto py-1">
-            {!findQuery && <TreeRow icon="sun" name={s.editorEnvironment} selected={false} onPick={() => setSel(null)} />}
-            {hit(s.editorSky) && <TreeRow icon="sky" child name={`${s.editorSky} — ${s.editorSkyKinds[spec.sky.kind]}`} selected={sel?.kind === "sky"} onPick={() => setSel({ kind: "sky" })} />}
-            {hit(s.editorGround) && <TreeRow dot={spec.ground.color} child name={s.editorGround} selected={sel?.kind === "ground"} onPick={() => setSel({ kind: "ground" })} />}
-            {hit(s.editorFog) && (
-              <TreeRow
-                icon="sky"
-                child
-                name={`${s.editorFog}${spec.fog ? "" : ` — ${s.editorNone}`}`}
-                selected={sel?.kind === "fog"}
-                onPick={() => setSel({ kind: "fog" })}
-              />
-            )}
-            {spec.lights.map((l, li) => hit(lightName(li)) && (
-              <TreeRow
-                key={`l${li}`}
-                icon={l.kind === "sun" ? "sun" : "bulb"}
-                child
-                name={lightName(li)}
-                badge={String(r1(l.intensity))}
-                selected={isSame(sel, { kind: "light", index: li })}
-                onPick={() => setSel({ kind: "light", index: li })}
-              />
-            ))}
-            <div className={SHEAD}>{s.editorThings}</div>
-            {spec.objects.map((o, oi) => hit(objectName(o)) && (
-              <TreeRow
-                key={`o${oi}`}
-                dot={o.color}
-                child
-                name={objectName(o)}
-                badge={o.repeat ? `×${o.repeat.count}` : undefined}
-                selected={isSame(sel, { kind: "object", index: oi })}
-                onPick={() => setSel({ kind: "object", index: oi })}
-              />
-            ))}
-            <div className={SHEAD}>{s.editorMarks}</div>
-            {spec.marks.map((m, mi) => hit(markName(mi)) && (
-              <TreeRow
-                key={`m${mi}`}
-                icon="person"
-                child
-                name={markName(mi)}
-                selected={isSame(sel, { kind: "mark", index: mi })}
-                onPick={() => setSel({ kind: "mark", index: mi })}
-              />
-            ))}
-            <div className={SHEAD}>{s.editorCameras}</div>
-            {spec.cameras.map((c, ci) => hit(cameraName(ci)) && (
-              <TreeRow
-                key={`c${ci}`}
-                icon="camera"
-                child
-                name={cameraName(ci)}
-                badge={`${Math.round(c.fovDeg)}°`}
-                selected={isSame(sel, { kind: "camera", index: ci })}
-                onPick={() => setSel({ kind: "camera", index: ci })}
-              />
-            ))}
-          </div>
-
+        {/* The dock (studio-frame.tsx): the scene and its properties, the edits, Astra — with Astra's prompt at its foot whatever the tab. */}
+        <StudioDock label={s.editorScene} tabs={dockTabsFor("build", false)} names={s.studio.dock} tab={dockTab} onTab={setDockTab} foot={promptBar}>
+          {dockTab === "scene" && (
+            <div className="flex h-full min-h-0 flex-col">
+              <div className={`flex flex-none items-center gap-2 border-b ${HAIR} px-3 py-2`}>
+                <input
+                  ref={findRef}
+                  value={find}
+                  onChange={(e) => setFind(e.target.value)}
+                  placeholder={s.editorFind}
+                  aria-label={s.editorFind}
+                  className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
+                />
+                <span className="text-[11px] tabular-nums text-[#6b6f7a]">{spec.objects.length}</span>
+              </div>
+              <div className="min-h-0 max-h-[44%] flex-[0_0_auto] overflow-y-auto">
+                <SceneTree spec={spec} s={s} selected={sel} onPick={setSel} onRoot={() => setSel(null)} query={find} />
+              </div>
           <div className={`${PHEAD} border-b border-t ${HAIR}`}>{s.editorProperties}</div>
           <div className="min-h-0 flex-1 overflow-y-auto pb-3">
             <div className="flex items-center gap-2 px-3 pb-1 pt-2.5">
@@ -2023,11 +1939,41 @@ export function SetEditor({
               </>
             )}
           </div>
-        </div>
+            </div>
+          )}
+          {dockTab === "history" && (
+            <div className="p-2">
+              <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b6f7a]">{s.studio.historyEdits}</div>
+              <div role="listbox" aria-label={s.studio.historyEdits} className="flex flex-col gap-0.5">
+                {history.map((_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    role="option"
+                    aria-selected={i === at}
+                    onClick={() => goTo(i)}
+                    className={`flex h-8 w-full cursor-pointer items-center justify-between rounded-[6px] px-2.5 text-left text-[12px] ${
+                      i === at ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+                    }`}
+                  >
+                    <span>{i === 0 ? s.editorOriginal : formatMsg(s.editorEditN, { n: i })}</span>
+                    {i === at && <span aria-hidden>✓</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {dockTab === "astra" && (
+            <div className="flex flex-col gap-3 p-3 text-[12px] leading-relaxed text-[#9aa0ad]">
+              <p>{s.studio.threadHint}</p>
+              <p>{s.editorRules}</p>
+            </div>
+          )}
+        </StudioDock>
       </div>
 
-      {/* status bar */}
-      <div className={`${BAR} relative flex h-6 flex-none items-center gap-4 border-t ${HAIR} px-3.5 text-[11px] text-[#6b6f7a]`}>
+      {/* status bar (studio-frame.tsx) */}
+      <StudioStatus>
         <span className="tabular-nums">{formatMsg(s.editorBoundsTall, { x: r1(spec.bounds.x), z: r1(spec.bounds.z), h: r1(spec.bounds.height) })}</span>
         <span className="hidden sm:inline">{s.editorYourCopy}</span>
         {/* The set check (set-check.ts): what stands through what, read off the working copy after every edit. */}
@@ -2060,7 +2006,7 @@ export function SetEditor({
         )}
         <span className="flex-1" />
         <span className="hidden md:inline">{s.editorRules}</span>
-      </div>
+      </StudioStatus>
     </div>
   );
 }

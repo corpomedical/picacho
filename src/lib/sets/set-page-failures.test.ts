@@ -209,12 +209,12 @@ describe("the Build editor", () => {
   });
 
   it("does not leave a copy behind unasked, and stays for a reload", () => {
-    const done = between(editor, "async function done() {", "\n  }\n");
+    const done = between(editor, "async function done(to: string = closeHref) {", "\n  }\n");
     // Left behind on purpose, a copy is forgotten rather than put back later.
     expect(done).toMatch(
       /if \(dirtyRef\.current && !\(await saveCopy\(specRef\.current\)\)\) \{\s*if \(staleRef\.current \|\| !window\.confirm\(s\.editorLeaveUnsaved\)\) return;\s*\/\/ Left behind on purpose: it does not come back\.\s*dropUnsaved\(setId, "edit"\);\s*\}/,
     );
-    expect(done.indexOf("await saveCopy(")).toBeLessThan(done.indexOf("router.push(closeHref);"));
+    expect(done.indexOf("await saveCopy(")).toBeLessThan(done.indexOf("router.push(to);"));
   });
 
   it("saves a change made by hand before Astra is asked", () => {

@@ -13,6 +13,11 @@ import { editSetWithAstra, saveSetEdit } from "@/lib/sets/editor-actions";
 import { matchSetShot } from "@/lib/sets/match-actions";
 import { readShotWords } from "@/lib/sets/words-actions";
 import { fovForLens, nearestLens, squeezeProjection, type StageQuality } from "@/lib/sets/build-scene";
+import { dockTabAfter, dockTabsFor, railToolForKey, studioChecked, studioHeld, studioLab, type DockTab, type RailTool, type StatusItem } from "@/lib/sets/studio";
+import { viewModeMaterial, type ViewMode } from "@/lib/sets/view-modes";
+import type { RigTab } from "@/lib/sets/rig-dock";
+import { SceneTree, type SceneTarget } from "./scene-tree";
+import { StatusList, StudioBar, StudioDock, StudioRail, StudioStatus, useWide } from "./studio-frame";
 import { clearMarks } from "@/lib/sets/marks";
 import {
   retryableTakes,
@@ -61,7 +66,7 @@ import {
   SET_MAX_TILT_UP_DEG,
   SET_THUMB_PX,
 } from "@/lib/sets/set-config";
-import { SET_LIMITS, STAND_POSES, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
+import { SET_LIMITS, STAND_POSES, specInstanceCount, type SetLayout, type SetSpec, type StandPose, type Vec3 } from "@/lib/sets/set-spec";
 import type { SetCharacter, SetShot } from "@/lib/sets/types";
 import { dropUnsaved, keepUnsaved, savedFilmKey, savedRigKey, takeUnsaved } from "@/lib/sets/unsaved";
 
@@ -149,6 +154,8 @@ type StageApi = {
   /** How the figure stands (cut 5): the stand-in's pose, in every frame shot from here on. */
   setPose(pose: StandPose): void;
   pose(): Pose;
+  /** The viewport's mode (view-modes.ts): Lit, Clay, Wire or Depth, on the live view only — never the sketch. */
+  setViewMode(mode: ViewMode): void;
   /**
    * A JPEG of the view. Square by default (the still's frame); with `from`
    * and `aspect`, the view from that pose at the given width/height ratio,
@@ -619,6 +626,26 @@ export function SetView({
   const [rigOpen, setRigOpen] = useState(false);
   // The command palette (the studio, cut 4): ⌘K, or the pill in the bar.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // The studio's frame (studio.ts, studio-frame.tsx; cut A, 2026-09-17):
+  // the dock's tab, the rail's tool, the viewport's mode, the frame rate
+  // for the status bar. Film opening takes the dock to its tab; closing on
+  // it goes back to Camera (adjust-state-during-render, as the rig did).
+  const wide = useWide();
+  const [dockTab, setDockTab] = useState<DockTab>("astra");
+  const [dockFilmWas, setDockFilmWas] = useState(filmOpen);
+  if (dockFilmWas !== filmOpen) {
+    setDockFilmWas(filmOpen);
+    setDockTab(dockTabAfter(dockTab, "shoot", filmOpen, filmOpen));
+  }
+  const [stageTool, setStageTool] = useState<RailTool>("select");
+  const stageToolRef = useRef<RailTool>("select");
+  useEffect(() => {
+    stageToolRef.current = stageTool;
+  }, [stageTool]);
+  const [viewMode, setViewMode] = useState<ViewMode>("lit");
+  const [fps, setFps] = useState(0);
+  const [sceneQuery, setSceneQuery] = useState("");
+  const composerFormRef = useRef<HTMLFormElement>(null);
   const [rigError, setRigError] = useState("");
   // The rig check, per still, while it reads or when it could not.
   const [rigChecking, setRigChecking] = useState<Record<string, "checking" | "failed">>({});
@@ -856,6 +883,10 @@ export function SetView({
         // sketch the model sees — frame() and snapshot() render straight from
         // the renderer, past the composer.
         let lab = { stock: 0, lens: 0 };
+        // The viewport's mode (view-modes.ts): the scene's override material
+        // for the live draw only — set just before it, cleared right after,
+        // so frame() and snapshot() never see it.
+        let viewOverride: import("three").Material | null = null;
         const labOn = () => lab.stock > 0 || lab.lens > 0;
         // The camera department (cut 2): the exposure over the lift, the
         // viewfinder's false colour and histogram, the focus readout.
@@ -882,6 +913,8 @@ export function SetView({
           return Math.round((sum / (81 * 255)) * 100);
         };
         let frameCount = 0;
+        let fpsFrames = 0;
+        let fpsAt = performance.now();
         const eyeHud = new THREE.Vector3();
         const histoScratch = document.createElement("canvas");
         histoScratch.width = 96;
@@ -932,10 +965,32 @@ export function SetView({
           toNdc(e);
           return raycaster.intersectObject(standIn.figure, true).length > 0;
         };
+        // The rail's tools (studio.ts): Select drags the figure only when
+        // pressed on it; Move takes it wherever the press lands and follows
+        // the drag; Turn faces it toward the press and every drag after.
+        const moveTo = (p: { x: number; z: number }) => {
+          standIn.group.position.set(Math.min(halfX, Math.max(-halfX, p.x)), 0, Math.min(halfZ, Math.max(-halfZ, p.z)));
+        };
+        let turnedDeg: number | null = null;
+        const turnTo = (p: { x: number; z: number }) => {
+          const g = standIn.group.position;
+          const dx = p.x - g.x;
+          const dz = p.z - g.z;
+          if (Math.hypot(dx, dz) < 0.05) return;
+          turnedDeg = Math.round((((Math.atan2(dx, dz) * 180) / Math.PI) % 360) + 360) % 360;
+          standIn.group.rotation.set(0, (turnedDeg * Math.PI) / 180, 0);
+        };
         // Registered BEFORE the orbit controls, so a press on the figure
         // turns orbiting off before the controls see the same event.
         const onDown = (e: PointerEvent) => {
-          if (!overFigure(e)) return;
+          const tool = stageToolRef.current;
+          if (tool === "select" ? !overFigure(e) : e.button !== 0) return;
+          if (tool !== "select") {
+            toNdc(e);
+            if (!raycaster.ray.intersectPlane(ground, hit)) return;
+            if (tool === "turn") turnTo(hit);
+            else moveTo(hit);
+          }
           stageTouchRef.current?.();
           dragging = true;
           if (controlsRef) controlsRef.enabled = false;
@@ -950,11 +1005,8 @@ export function SetView({
           }
           toNdc(e);
           if (!raycaster.ray.intersectPlane(ground, hit)) return;
-          standIn.group.position.set(
-            Math.min(halfX, Math.max(-halfX, hit.x)),
-            0,
-            Math.min(halfZ, Math.max(-halfZ, hit.z)),
-          );
+          if (stageToolRef.current === "turn") turnTo(hit);
+          else moveTo(hit);
         };
         const onUp = (e: PointerEvent) => {
           if (!dragging) return;
@@ -962,6 +1014,11 @@ export function SetView({
           if (controlsRef) controlsRef.enabled = true;
           if (canvas.hasPointerCapture(e.pointerId)) canvas.releasePointerCapture(e.pointerId);
           canvas.style.cursor = "";
+          if (stageToolRef.current === "turn") {
+            if (turnedDeg !== null) setMark({ ...layoutRef.current.mark, facingDeg: turnedDeg });
+            turnedDeg = null;
+            return;
+          }
           const p = standIn.group.position;
           // On open floor, as the server keeps it (normaliseSetLayout): a
           // figure inside a car or a wall is hidden in the sketch. It steps
@@ -1114,6 +1171,7 @@ export function SetView({
         // The figure's eyes, where the rig's focus is measured to.
         const eye = new THREE.Vector3();
         const renderLive = () => {
+          scene.overrideMaterial = viewOverride;
           if ((full || falseColourOn || depthStop !== null || labOn()) && composer && bokeh) {
             if (falsePass) falsePass.uniforms.uOn.value = falseColourOn ? 1 : 0;
             const p = standIn.group.position;
@@ -1146,6 +1204,7 @@ export function SetView({
           } else {
             renderer.render(scene, camera);
           }
+          scene.overrideMaterial = null;
           if (overlayRoot.visible) {
             renderer.autoClear = false;
             renderer.render(overlayScene, camera);
@@ -1160,6 +1219,14 @@ export function SetView({
           if (camera.position.y < 0.1) camera.position.y = 0.1;
           renderLive();
           frameCount += 1;
+          // The frame rate, for the status bar, once a second.
+          fpsFrames += 1;
+          const nowMs = performance.now();
+          if (nowMs - fpsAt >= 1000) {
+            setFps(Math.round((fpsFrames * 1000) / (nowMs - fpsAt)));
+            fpsFrames = 0;
+            fpsAt = nowMs;
+          }
           // The focus readout: at the figure's eyes on screen, the distance
           // and what the stop holds sharp at it (the words come from the page).
           if (focusHud) {
@@ -1289,6 +1356,10 @@ export function SetView({
               target: [r(controls.target.x), r(controls.target.y), r(controls.target.z)],
               fovDeg: Math.round(poseFov * 100) / 100,
             };
+          },
+          setViewMode(mode) {
+            viewOverride?.dispose();
+            viewOverride = viewModeMaterial(THREE, mode);
           },
           frame(opts) {
             const fr = formatFrame(rigRef.current.format);
@@ -1603,6 +1674,7 @@ export function SetView({
           canvas.removeEventListener("dblclick", onDoubleClick);
           controls.dispose();
           composer?.dispose();
+          viewOverride?.dispose();
           bokeh?.dispose();
           disposeLive();
           standIn.dispose();
@@ -1670,17 +1742,26 @@ export function SetView({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // The studio's keys (cut 4): F frames the figure, R shows or hides the
-  // rig, ⌘K opens the commands — when no field holds the keyboard. Kept
-  // current each render, so each key does what the page would do now.
-  const studioKeysRef = useRef<{ frame(): void; rig(): void; palette(): void }>({ frame() {}, rig() {}, palette() {} });
+  // The studio's keys (cut 4, then the frame's rail in cut A): F frames
+  // the figure, ⌘K opens the commands, and the rail's own keys (studio.ts
+  // railToolForKey) — V G R pick Select, Move, Turn; C and L open the
+  // dock's Camera and Light; M the marks — when no field holds the
+  // keyboard. Kept current each render, so each key does what the page
+  // would do now.
+  const studioKeysRef = useRef<{ frame(): void; palette(): void; tool(id: RailTool): void }>({ frame() {}, palette() {}, tool() {} });
   useEffect(() => {
     studioKeysRef.current = {
       frame: () => {
         if (ready) frameFigure();
       },
-      rig: () => setRigOpen((v) => !v),
       palette: () => setPaletteOpen((v) => !v),
+      tool: (id) => {
+        if (id === "select" || id === "move" || id === "turn") setStageTool(id);
+        else if (id === "camera" || id === "light") {
+          if (wide) setDockTab(id);
+          else setRigOpen(true);
+        } else if (id === "mark") setMenu((m) => (m === "figure" ? null : "figure"));
+      },
     };
   });
   useEffect(() => {
@@ -1697,14 +1778,21 @@ export function SetView({
       if (k === "f") {
         e.preventDefault();
         studioKeysRef.current.frame();
-      } else if (k === "r") {
+        return;
+      }
+      const tool = railToolForKey("shoot", k);
+      if (tool) {
         e.preventDefault();
-        studioKeysRef.current.rig();
+        studioKeysRef.current.tool(tool);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  useEffect(() => {
+    apiRef.current?.setViewMode(viewMode);
+  }, [viewMode, ready]);
 
   useEffect(() => {
     layoutRef.current = { markId, mark, pose: layoutRef.current.pose };
@@ -3724,10 +3812,10 @@ export function SetView({
         setRig: (patch) => setRig((r) => ({ ...r, ...patch })),
         filmOpen,
         setFilmOpen,
-        rigOpen,
-        setRigOpen,
-        chatOpen,
-        setChatOpen,
+        rigOpen: wide ? dockTab === "camera" || dockTab === "light" || dockTab === "look" : rigOpen,
+        setRigOpen: (open) => (wide ? setDockTab(open ? "camera" : "astra") : setRigOpen(open)),
+        chatOpen: wide ? dockTab === "astra" : chatOpen,
+        setChatOpen: (open) => (wide ? setDockTab(open ? "astra" : "camera") : setChatOpen(open)),
         cameraBearingDeg: cameraBearing,
         cameras: spec.cameras.map((c) => ({ id: c.id, label: labelOfCamera(c.id) })),
         pickCamera,
@@ -3745,6 +3833,474 @@ export function SetView({
       })
     : [];
 
+  // ---- the studio's frame (cut A): what the bar, the dock and the status bar show ----
+  const studioMode = filmOpen ? "film" : "shoot";
+  const dockTabs = dockTabsFor("shoot", filmOpen);
+  const canShootNow = !(shooting || matching || !characterId || loadFailed || !ready);
+  const renderingCount = (shooting ? 1 : 0) + (matching ? 1 : 0) + shots.filter((sh) => sh.status === "generating").length;
+  const statusWords = (items: readonly StatusItem[]) => items.map((i) => s.studio.status.items[i]);
+  const heldItems = statusWords(studioHeld(rig, { move: filmOpen && filmSel !== null && Boolean(film.beats[filmSel]?.move), pose: pose !== "stand" }));
+  const checkedItems = statusWords(studioChecked(rig));
+  const labItems = statusWords(studioLab(rig));
+  /** The dock's Scene tab: a camera or a mark takes the figure there; a thing or a light turns the view to it. */
+  const lookAt = (at: Vec3) => {
+    const p = apiRef.current?.pose();
+    if (!p) return;
+    stageTouchRef.current?.();
+    apiRef.current?.goTo({ position: p.position, target: at, fovDeg: p.fovDeg });
+  };
+  const pickSceneTarget = (t: SceneTarget) => {
+    if (t.kind === "camera") pickCamera(spec.cameras[t.index].id);
+    else if (t.kind === "mark") pickMark(spec.marks[t.index].id);
+    else if (t.kind === "object") lookAt(spec.objects[t.index].position);
+    else if (t.kind === "light") lookAt(spec.lights[t.index].position);
+  };
+
+  // ---- the studio's frame (studio.ts, cut A): the rig as the dock's departments, the conversation as its Astra tab ----
+  const rigPanel = (docked: RigTab | null) => (
+    <RigPanel
+            rig={rig}
+            onChange={setRig}
+            s={s}
+            locale={locale}
+            fovDeg={fovDeg}
+            onLens={pickLens}
+            distanceM={eyeDistance}
+            figureName={characterName}
+            cameraBearingDeg={cameraBearing}
+            film={
+              filmOpen
+                ? {
+                    beat: filmSel !== null && film.beats[filmSel] ? filmSel + 1 : null,
+                    move: filmSel !== null ? (film.beats[filmSel]?.move ?? null) : null,
+                    textures: filmSel !== null ? (film.beats[filmSel]?.textures ?? []) : [],
+                    onMove: filmMove,
+                    onPreview: previewFilmMove,
+                    onTexture: filmTexture,
+                  }
+                : null
+            }
+            onClose={() => setRigOpen(false)}
+      docked={docked ? { tab: docked } : null}
+    />
+  );
+  const chatHeader = (
+            <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
+              <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.astraLabel}</span>
+              <span className="flex items-center gap-2">
+                <span className="text-[11px] text-[#6b6f7a]">{s.panelMeta}</span>
+                <button
+                  type="button"
+                  onClick={() => setChatOpen(false)}
+                  title={s.chatHide}
+                  aria-label={s.chatHide}
+                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#6b6f7a] hover:text-[#ecedf1] md:flex"
+                >
+                  ›
+                </button>
+              </span>
+            </div>
+  );
+  const chatThread = (
+            <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
+              {thread.map((shot) => {
+                if (shot.kind === "take") {
+                  return (
+                    <Fragment key={shot.generationId}>
+                      <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                        {shot.words ?? s.shootWord}
+                      </div>
+                      <div className="flex items-start gap-2.5">
+                        <AstraMark />
+                        <div className="min-w-0 flex-1 space-y-2.5">
+                          <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                            {shot.status === "succeeded" ? stillLine(shot) : shot.status === "failed" ? s.takeFailedLine : s.takeRendering}
+                          </p>
+                          <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
+                            <div className="flex items-center gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setViewing(shot.generationId)}
+                                title={formatMsg(s.takeTile, { n: stillNumber(shot) })}
+                                className="relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ring-1 ring-white/15"
+                              >
+                                {shot.posterUrl ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={shot.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                                ) : shot.status === "failed" ? (
+                                  <span className="flex h-full items-center justify-center text-lg font-semibold text-red-400">!</span>
+                                ) : (
+                                  <span className="flex h-full items-center justify-center text-lg text-onmedia/70">▶</span>
+                                )}
+                              </button>
+                              <div className="min-w-0 flex flex-col gap-1">
+                                <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.takeTile, { n: stillNumber(shot) })}</span>
+                                <span className="text-xs text-[#9aa0ad] tabular-nums">
+                                  {formatMsg(s.takeSeconds, { s: shot.seconds ?? SET_TAKE_ENGINES[SET_TAKE_DEFAULT_ENGINE].seconds })} · <LocalDate date={shot.createdAt} />
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
+                                {s.openTake}
+                              </Link>
+                              {shot.takeFrom && retryable.has(shot.generationId) && (
+                                <button
+                                  type="button"
+                                  onClick={() => shot.takeFrom && void retryClip(framesOf(shot.takeFrom, shot))}
+                                  disabled={shooting || matching || !ready}
+                                  title={s.takeRetryHint}
+                                  className={chip(false)}
+                                >
+                                  {retryLabel(shot.takeFrom)}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </Fragment>
+                  );
+                }
+                // A still with no recorded camera, or nothing to cut out of it
+                // clear of its people, offers no look (look.ts).
+                const lookable = canBeLook(shot);
+                const isLook = lookable && shot.generationId === lookShot?.generationId;
+                const facts = shotFacts[shot.generationId];
+                return (
+                  <Fragment key={shot.generationId}>
+                    <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                      {shot.words ?? s.shootWord}
+                    </div>
+                    <div className="flex items-start gap-2.5">
+                      <AstraMark />
+                      <div className="min-w-0 flex-1 space-y-2.5">
+                        <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                          {facts ? `${formatMsg(s.shotInSeconds, { s: facts.seconds })} ` : ""}
+                          {stillLine(shot)}
+                          {isLook ? ` ${s.lookOnLine}` : ""}
+                          {shot.rigCheck ? ` ${rigCheckedLine(shot.rigCheck)}` : ""}
+                        </p>
+                        <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setViewing(shot.generationId)}
+                              title={formatMsg(s.stillTile, { n: stillNumber(shot) })}
+                              className={`relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ${
+                                isLook ? "ring-2 ring-[#e0a468]" : "ring-1 ring-white/15"
+                              }`}
+                            >
+                              {shot.resultUrl ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+                              ) : (
+                                <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{s.openTake}</span>
+                              )}
+                            </button>
+                            <div className="min-w-0 flex flex-col gap-1">
+                              <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.stillTile, { n: stillNumber(shot) })}</span>
+                              <span className="text-xs text-[#9aa0ad] tabular-nums">
+                                {shot.score !== null ? `${formatMsg(s.identityScore, { score: shot.score })} · ` : ""}
+                                <LocalDate date={shot.createdAt} />
+                              </span>
+                              {facts && <span className="text-xs text-[#9aa0ad]">{facts.frame}</span>}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {isLook ? (
+                              <span className="inline-flex h-8 items-center rounded-full bg-[#e0a468] px-3 text-[11px] font-semibold text-black">{s.lookKept}</span>
+                            ) : lookable ? (
+                              <button type="button" onClick={() => pickLook(shot.generationId)} className={chip(false)}>
+                                {s.keepLook}
+                              </button>
+                            ) : null}
+                            <button type="button" onClick={anotherAngle} disabled={!ready || shooting} className={chip(false)}>
+                              {s.anotherAngle}
+                            </button>
+                            <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
+                              {s.openTake}
+                            </Link>
+                          </div>
+                        </div>
+                        {rigCheckCard(shot, facts?.frame ?? null)}
+                      </div>
+                    </div>
+                  </Fragment>
+                );
+              })}
+
+              {pendingAsks.map((ask, i) => (
+                <div key={`ask-${i}`} className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
+                  {ask}
+                </div>
+              ))}
+
+              {/* An Astra edit of the set, landed: how much of it changed. */}
+              {setChanged !== null && (
+                <div className="flex items-start gap-2.5">
+                  <AstraMark />
+                  <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                    {setChanged === 0 ? s.editorAskNothing : setChanged === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: setChanged })}{" "}
+                    {setChanged > 0 && (
+                      <button type="button" onClick={() => void undoSetEdit()} className="cursor-pointer font-medium text-[#e0a468]">
+                        {s.editorUndo}
+                      </button>
+                    )}
+                  </p>
+                </div>
+              )}
+
+              {/* Astra's turn: the frame in a sentence, then as a card, and Shoot to approve it */}
+              <div className="flex items-start gap-2.5">
+                <AstraMark />
+                <div className="min-w-0 flex-1 space-y-2.5">
+                  {characters.length === 0 ? (
+                    <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                      {s.noCharacters}{" "}
+                      <Link href="/app/character/new" className="font-medium text-[#e0a468] underline underline-offset-2">
+                        {s.createCharacter}
+                      </Link>
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm leading-relaxed text-[#c6c9d1]">
+                        {frameLead ? `${frameLead} ` : ""}
+                        {placedLine} {s.frameProse}
+                      </p>
+                      <div className="rounded-[14px] bg-white/[0.05] p-4 ring-1 ring-white/[0.07] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.frameCard}</span>
+                          <span className="text-xs text-[#6b6f7a] tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
+                        </div>
+                        <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px] leading-[18px]">
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowWho}</dt>
+                          <dd className="flex items-center gap-1.5 text-[#ecedf1]">
+                            {character?.thumbUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={character.thumbUrl} alt="" className="h-[18px] w-[18px] rounded-full object-cover" />
+                            ) : (
+                              <span className="h-[18px] w-[18px] rounded-full bg-white/15" />
+                            )}
+                            {characterName}
+                          </dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowWhere}</dt>
+                          <dd className="text-[#ecedf1]">
+                            {markLabel} · {facingLabel}
+                          </dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCamera}</dt>
+                          <dd className="text-[#ecedf1] tabular-nums">
+                            {cameraLabel} · {lensLabel}
+                            {rig.format !== "square" ? ` · ${s.rig.formats[rig.format]}` : ""}
+                          </dd>
+                          {rigLooksLine && (
+                            <>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowRig}</dt>
+                              <dd className="text-[#f0cda6] tabular-nums">{rigLooksLine}</dd>
+                            </>
+                          )}
+                          {rig.light && (
+                            <>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowLight}</dt>
+                              <dd className="text-[#f0cda6] tabular-nums">
+                                {s.rig.lights[rig.light.scheme]} · {formatMsg(s.rig.lightHeight, { deg: Math.round(rig.light.elevationDeg) })}
+                              </dd>
+                            </>
+                          )}
+                          {rig.palette && (
+                            <>
+                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowPalette}</dt>
+                              <dd className="text-[#f0cda6]">{s.rig.palettes[rig.palette]}</dd>
+                            </>
+                          )}
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowHappens}</dt>
+                          <dd className={direction ? "text-[#ecedf1]" : "text-[#6b6f7a]"}>{direction || "—"}</dd>
+                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCost}</dt>
+                          <dd className="text-[#ecedf1] tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
+                        </dl>
+                        {takeStart && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            <button type="button" onClick={() => setTakeEngine("omni")} className={chip(takeEngine === "omni")}>
+                              {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
+                            </button>
+                            <button type="button" onClick={() => setTakeEngine("veo")} className={chip(takeEngine === "veo")}>
+                              {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
+                            </button>
+                          </div>
+                        )}
+                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => void (takeStart ? take() : shoot())}
+                            disabled={shooting || matching || !characterId || loadFailed || !ready}
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
+                          >
+                            {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={anotherAngle}
+                            disabled={!ready || shooting}
+                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
+                          >
+                            {s.anotherAngle}
+                          </button>
+                        </div>
+                        {error && <p className="text-sm text-red-400">{localizeServerText(error, t)}</p>}
+                        {takeRetry && (
+                          <button
+                            type="button"
+                            onClick={() => void retryClip(takeRetry)}
+                            disabled={shooting || matching || !ready}
+                            title={s.takeRetryHint}
+                            className={chip(false)}
+                          >
+                            {retryLabel(takeRetry)}
+                          </button>
+                        )}
+                        {rigError && <p className="text-xs text-red-400">{localizeServerText(rigError, t)}</p>}
+                        {lastMiss && (
+                          <p className="text-sm text-[#9aa0ad]">
+                            {s.shotDidNotFinish}{" "}
+                            <Link href={`/app/history/${lastMiss}`} className="font-medium text-[#e0a468] underline underline-offset-2">
+                              {s.openTake}
+                            </Link>
+                          </p>
+                        )}
+                        {lookDropped && (
+                          <p className="text-xs text-[#9aa0ad]" aria-live="polite">
+                            {s.lookDropped}
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {(reading || shooting || editingSet) && (
+                <div className="flex items-center gap-2.5">
+                  <AstraMark />
+                  <p className="flex items-center gap-2 text-sm text-[#9aa0ad]">
+                    <Spinner className="h-4 w-4 flex-shrink-0" />
+                    {editingSet ? s.editorAsking : shooting ? `${s.shooting} ${s.shootingLine}` : s.threadReading}
+                  </p>
+                </div>
+              )}
+              <div ref={threadEndRef} aria-hidden />
+            </div>
+  );
+  const chatComposer = (
+            <form
+              ref={composerFormRef}
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+                else if (draft.trim()) void send(draft);
+                // Just talking is the mode that spends nothing: with nothing
+                // written there is nothing to answer, and an empty send used
+                // to shoot anyway (found in the rundown, 2026-09-16).
+                else if (!justTalk) void (takeStart ? take() : shoot());
+              }}
+              className="relative border-t border-white/[0.07] px-3.5 pb-3.5 pt-3"
+            >
+              {mentionOpen && (
+                <div
+                  role="listbox"
+                  aria-label={s.mentionTitle}
+                  className="absolute bottom-full left-3.5 z-30 mb-2 w-max min-w-[13rem] rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
+                >
+                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.mentionTitle}</p>
+                  {mentionList.length === 0 ? (
+                    <p className="px-2.5 py-1.5 text-xs text-[#9aa0ad]">{s.mentionHint}</p>
+                  ) : (
+                    mentionList.map((c) => (
+                      <button
+                        key={c.id}
+                        type="button"
+                        role="option"
+                        aria-selected={characterId === c.id}
+                        onClick={() => pickMention(c)}
+                        className={`flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
+                          characterId === c.id ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
+                        }`}
+                      >
+                        {c.thumbUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={c.thumbUrl} alt="" className="h-[22px] w-[22px] rounded-full object-cover" />
+                        ) : (
+                          <span className="h-[22px] w-[22px] rounded-full bg-white/15" />
+                        )}
+                        {c.name}
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+              <textarea
+                ref={draftRef}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && mentionOpen) {
+                    e.preventDefault();
+                    setMentionForced(false);
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
+                    else if (draft.trim()) void send(draft);
+                  }
+                }}
+                rows={2}
+                aria-label={s.threadPlaceholder}
+                placeholder={reading ? s.threadReading : s.threadPlaceholder}
+                disabled={reading || shooting || editingSet}
+                className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#6b6f7a] disabled:opacity-60"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setMentionForced((open) => !open)}
+                  aria-haspopup="listbox"
+                  aria-expanded={mentionOpen}
+                  disabled={characters.length === 0}
+                  className={chip(false)}
+                  title={s.mentionHint}
+                >
+                  @ {character?.name || s.characterLabel}
+                </button>
+                <div className="relative">
+                  <button type="button" onClick={() => toggleMenu("mode")} aria-haspopup="listbox" aria-expanded={menu === "mode"} title={s.modeHint} className={chip(justTalk)}>
+                    {justTalk ? s.justTalking : askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
+                    <Chevron />
+                  </button>
+                  {menu === "mode" && (
+                    <div role="listbox" aria-label={s.modeHint} className={DMENU_UP}>
+                      {modeOptions}
+                    </div>
+                  )}
+                </div>
+                {!justTalk && (
+                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#9aa0ad] tabular-nums">
+                    {s.engineChip} · {credits}
+                  </span>
+                )}
+                <span className="flex-1" />
+                <button
+                  type="submit"
+                  disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
+                  title={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
+                  aria-label={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
+                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
+                >
+                  {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
+                </button>
+              </div>
+            </form>
+  );
+
   return (
     <div data-set-workspace className="fixed inset-0 z-40 flex flex-col overflow-hidden bg-[#101116] text-[#c6c9d1]">
       {(menu || mentionForced) && (
@@ -3758,73 +4314,46 @@ export function SetView({
         />
       )}
 
-      {/* The workspace's own bar: where you are, the set's two lives, History and the frame on disk. */}
-      <div className="flex h-12 flex-none items-center gap-2 border-b border-white/[0.07] bg-[#191a20] px-3.5 md:gap-3">
-        {/* Below a tablet's width the bar keeps the arrow, the switch and the
-            frame; the set's name (a sliver there, in any language) and the
-            words that name the others are kept for screen readers and wider
-            screens — the full bar needs ~720 px in Spanish. */}
-        <Link href="/app/sets" aria-label={s.back} className="whitespace-nowrap text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1]">
-          ←<span className="hidden md:inline"> {s.back}</span>
-        </Link>
-        <span aria-hidden className="hidden h-5 w-px bg-white/[0.09] md:block" />
-        <h1 className="sr-only min-w-0 truncate font-display text-[14px] font-semibold text-[#ecedf1] md:not-sr-only">{title || s.untitled}</h1>
-        <span className="hidden whitespace-nowrap text-[11px] tabular-nums text-[#6b6f7a] md:inline">
-          {shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })}
-        </span>
-        <span className="flex-1" />
-        {/* Shoot and Film at every width; Build from 640 px, where the editor fits (set-editor.tsx says so below it). */}
-        <span className="flex h-7 flex-none items-center gap-0.5 rounded-[6px] bg-white/[0.05] p-0.5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.07)]">
-          <Link
-            href={`/app/sets/${setId}?build=1`}
-            className="hidden h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] sm:flex md:px-3.5"
-          >
-            {s.editorBuildTab}
-          </Link>
-          <button
-            type="button"
-            onClick={() => {
+      {/* The studio's frame (canvas page J, board J1; cut A): the bar across the top, the same in every mode. */}
+      <StudioBar
+        back={{ href: "/app/sets", label: s.back }}
+        title={title || s.untitled}
+        meta={shots.length === 1 ? s.shotsOne : formatMsg(s.shotsMany, { n: shots.length })}
+        mode={studioMode}
+        modes={{
+          build: { label: s.editorBuildTab, href: `/app/sets/${setId}?build=1` },
+          shoot: {
+            label: s.editorShootTab,
+            onClick: () => {
               setFilmOpen(false);
               setReel(null);
               window.history.replaceState(null, "", `/app/sets/${setId}`);
-            }}
-            className={
-              filmOpen
-                ? "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] md:px-3.5"
-                : "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] md:px-3.5"
-            }
-            aria-current={filmOpen ? undefined : "page"}
-          >
-            {s.editorShootTab}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
+            },
+          },
+          film: {
+            label: s.filmTab,
+            onClick: () => {
               setFilmOpen(true);
               setTakeStart(null);
               setViewing(null);
               window.history.replaceState(null, "", `/app/sets/${setId}?film=1`);
-            }}
-            className={
-              filmOpen
-                ? "flex h-6 items-center rounded-[4px] bg-[#2a2b33] px-2.5 text-[12px] font-medium text-[#e0a468] shadow-[0_1px_2px_rgba(0,0,0,0.3)] md:px-3.5"
-                : "flex h-6 cursor-pointer items-center rounded-[4px] px-2.5 text-[12px] font-medium text-[#9aa0ad] hover:text-[#ecedf1] md:px-3.5"
-            }
-            aria-current={filmOpen ? "page" : undefined}
+            },
+          },
+        }}
+        view={{ mode: viewMode, onChange: setViewMode, names: { lit: s.editorViewLit, clay: s.editorViewClay, wire: s.editorViewWire, depth: s.editorViewDepth } }}
+        find={{ label: s.studio.find, kbd: s.palette.open, onOpen: () => setPaletteOpen(true) }}
+        rendering={renderingCount > 0 ? { label: renderingCount === 1 ? s.studio.renderingOne : formatMsg(s.studio.rendering, { n: renderingCount }) } : null}
+        primary={
+          <button
+            type="button"
+            onClick={() => composerFormRef.current?.requestSubmit()}
+            disabled={!canShootNow}
+            className="flex h-7 flex-none cursor-pointer items-center whitespace-nowrap rounded-[6px] bg-[#e0a468] px-3.5 text-[12px] font-semibold text-[#1b1c20] disabled:cursor-default disabled:opacity-40"
           >
-            {s.filmTab}
+            {s.studio.shootCredit}
           </button>
-        </span>
-        <span className="flex-1" />
-        <button
-          type="button"
-          onClick={() => setPaletteOpen(true)}
-          title={s.palette.title}
-          aria-label={s.palette.title}
-          className="hidden h-7 cursor-pointer items-center rounded-[6px] px-2 text-[#6b6f7a] hover:text-[#ecedf1] md:flex"
-        >
-          <kbd className="rounded-[4px] bg-white/[0.06] px-1.5 py-0.5 font-sans text-[10px] font-semibold">{s.palette.open}</kbd>
-        </button>
+        }
+      >
         <div className="relative">
           <button
             type="button"
@@ -3835,7 +4364,7 @@ export function SetView({
             aria-label={`${s.historyLabel} · ${formatMsg(s.revisionN, { n: frameNumber })}`}
             className="flex h-8 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-[6px] px-2 text-xs font-medium text-[#9aa0ad] hover:text-[#ecedf1] disabled:cursor-default disabled:opacity-40 md:px-2.5"
           >
-            <span className="hidden md:inline">{s.historyLabel} · </span>
+            <span className="hidden xl:inline">{s.historyLabel} · </span>
             {formatMsg(s.revisionN, { n: frameNumber })}
             <Chevron />
           </button>
@@ -3859,7 +4388,7 @@ export function SetView({
             <path d="M4 19h16" />
           </svg>
         </button>
-      </div>
+      </StudioBar>
 
       <CommandPalette
         open={paletteOpen}
@@ -3868,8 +4397,10 @@ export function SetView({
         words={{ title: s.palette.title, placeholder: s.palette.placeholder, empty: s.palette.empty, hint: s.palette.hint, groups: s.palette.groups }}
       />
 
-      {/* The viewport, with everything floating on it. */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
+      {/* The frame's row: the rail, the viewport with everything floating on it, the dock. */}
+      <div className="flex min-h-0 flex-1 items-stretch">
+        {wide && <StudioRail mode={studioMode} tool={stageTool} onTool={(id) => studioKeysRef.current.tool(id)} names={s.studio.tools} notes={s.studio.toolNotes} />}
+      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="relative min-h-0 flex-1">
           <div ref={hostRef} className="absolute inset-0" style={gradeFilter ? { filter: gradeFilter } : undefined} />
           {/* the palette's grade, previewed over the stage (never the sketch) */}
@@ -3927,7 +4458,7 @@ export function SetView({
           {/* The setup, as chips on the picture itself. */}
           {!viewingShot && (
             <div
-              className={`absolute left-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2 right-3.5 ${rigOpen ? "md:left-[356px]" : ""} ${
+              className={`absolute left-3.5 top-3.5 z-20 flex flex-wrap items-center gap-2 right-3.5  ${
                 chatOpen ? "md:right-[404px]" : "md:right-24"
               }`}
             >
@@ -4124,9 +4655,7 @@ export function SetView({
           {!viewingShot && !loadFailed && !filmOpen && (
             <span
               aria-live="polite"
-              className={`pointer-events-none absolute bottom-[104px] left-3.5 z-10 max-w-[60%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 ${
-                rigOpen ? "md:left-[356px]" : ""
-              }`}
+              className={`pointer-events-none absolute bottom-[104px] left-3.5 z-10 max-w-[60%] rounded-full border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] text-onmedia/80 `}
             >
               {figureMoved ? s.figureMovedOut : s.dragHint}
             </span>
@@ -4376,7 +4905,7 @@ export function SetView({
           <div
             className={`absolute bottom-3.5 left-3.5 z-10 flex items-center gap-2 overflow-x-auto rounded-[14px] border border-white/[0.08] bg-black/40 p-1.5 backdrop-blur right-3.5 ${
               chatOpen ? "md:right-[404px]" : "md:right-24"
-            } ${rigOpen ? "md:left-[356px]" : ""} ${viewingShot ? "hidden md:flex" : ""}`}
+            }  ${viewingShot ? "hidden md:flex" : ""}`}
           >
             <button
               type="button"
@@ -4438,7 +4967,7 @@ export function SetView({
             <div
               className={`absolute bottom-3.5 left-3.5 z-10 flex flex-col gap-2 rounded-[14px] border border-white/[0.08] bg-black/40 p-2 backdrop-blur right-3.5 ${
                 chatOpen ? "md:right-[404px]" : "md:right-24"
-              } ${rigOpen ? "md:left-[356px]" : ""} ${viewingShot ? "hidden md:flex" : ""}`}
+              }  ${viewingShot ? "hidden md:flex" : ""}`}
             >
               {/* the stage's keys, above the dock (canvas pages H and I); a touch has neither hover nor keys */}
               <span className="pointer-events-none absolute bottom-full left-0 mb-2 hidden max-w-full rounded-[12px] border border-onmedia/10 bg-black/60 px-3 py-1 text-[11px] leading-4 text-onmedia/80 md:pointer-fine:block">
@@ -4733,459 +5262,75 @@ export function SetView({
           )}
         </div>
 
-        {/* The rig: the camera department, docked left of the stage (canvas page I). */}
-        {rigOpen && (
-          <RigPanel
-            rig={rig}
-            onChange={setRig}
-            s={s}
-            locale={locale}
-            fovDeg={fovDeg}
-            onLens={pickLens}
-            distanceM={eyeDistance}
-            figureName={characterName}
-            cameraBearingDeg={cameraBearing}
-            film={
-              filmOpen
-                ? {
-                    beat: filmSel !== null && film.beats[filmSel] ? filmSel + 1 : null,
-                    move: filmSel !== null ? (film.beats[filmSel]?.move ?? null) : null,
-                    textures: filmSel !== null ? (film.beats[filmSel]?.textures ?? []) : [],
-                    onMove: filmMove,
-                    onPreview: previewFilmMove,
-                    onTexture: filmTexture,
-                  }
-                : null
-            }
-            onClose={() => setRigOpen(false)}
-          />
-        )}
+        {/* On a phone the rig is its own panel over the stage (canvas page I); on the frame it is the dock's departments. */}
+        {!wide && rigOpen && rigPanel(null)}
 
-        {/* The conversation, floating in the viewport — 3D Jutsu's chat panel, ours. */}
-        {chatOpen ? (
-          <aside
-            className={`z-30 flex min-h-0 flex-col overflow-hidden max-md:h-[42%] max-md:flex-none max-md:border-t max-md:border-white/[0.11] max-md:bg-[#16171c] md:absolute md:bottom-3.5 md:right-3.5 md:top-3.5 md:w-[392px] md:rounded-[16px] ${PANEL_BG} max-md:border-x-0 max-md:border-b-0 max-md:shadow-none`}
-          >
-            <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
-              <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.astraLabel}</span>
-              <span className="flex items-center gap-2">
-                <span className="text-[11px] text-[#6b6f7a]">{s.panelMeta}</span>
-                <button
-                  type="button"
-                  onClick={() => setChatOpen(false)}
-                  title={s.chatHide}
-                  aria-label={s.chatHide}
-                  className="hidden h-6 w-6 cursor-pointer items-center justify-center rounded text-[#6b6f7a] hover:text-[#ecedf1] md:flex"
-                >
-                  ›
-                </button>
-              </span>
-            </div>
+        {/* On a phone the conversation sits under the stage; on the frame it is the dock's Astra tab, with the composer at the dock's foot. */}
+        {!wide &&
+          (chatOpen ? (
+            <aside className={`z-30 flex h-[42%] min-h-0 flex-none flex-col overflow-hidden border-t border-white/[0.11] bg-[#16171c] ${PANEL_BG} border-x-0 border-b-0 shadow-none`}>
+              {chatHeader}
+              {chatThread}
+              {chatComposer}
+            </aside>
+          ) : (
+            <button type="button" onClick={() => setChatOpen(true)} className={`absolute bottom-3.5 right-3.5 z-30 ${DCHIP} h-10 pl-1.5`}>
+              <AstraMark />
+              {s.astraLabel}
+            </button>
+          ))}
+      </div>
 
-            <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4">
-              {thread.map((shot) => {
-                if (shot.kind === "take") {
-                  return (
-                    <Fragment key={shot.generationId}>
-                      <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
-                        {shot.words ?? s.shootWord}
-                      </div>
-                      <div className="flex items-start gap-2.5">
-                        <AstraMark />
-                        <div className="min-w-0 flex-1 space-y-2.5">
-                          <p className="text-sm leading-relaxed text-[#c6c9d1]">
-                            {shot.status === "succeeded" ? stillLine(shot) : shot.status === "failed" ? s.takeFailedLine : s.takeRendering}
-                          </p>
-                          <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
-                            <div className="flex items-center gap-3">
-                              <button
-                                type="button"
-                                onClick={() => setViewing(shot.generationId)}
-                                title={formatMsg(s.takeTile, { n: stillNumber(shot) })}
-                                className="relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ring-1 ring-white/15"
-                              >
-                                {shot.posterUrl ? (
-                                  // eslint-disable-next-line @next/next/no-img-element
-                                  <img src={shot.posterUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-                                ) : shot.status === "failed" ? (
-                                  <span className="flex h-full items-center justify-center text-lg font-semibold text-red-400">!</span>
-                                ) : (
-                                  <span className="flex h-full items-center justify-center text-lg text-onmedia/70">▶</span>
-                                )}
-                              </button>
-                              <div className="min-w-0 flex flex-col gap-1">
-                                <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.takeTile, { n: stillNumber(shot) })}</span>
-                                <span className="text-xs text-[#9aa0ad] tabular-nums">
-                                  {formatMsg(s.takeSeconds, { s: shot.seconds ?? SET_TAKE_ENGINES[SET_TAKE_DEFAULT_ENGINE].seconds })} · <LocalDate date={shot.createdAt} />
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
-                                {s.openTake}
-                              </Link>
-                              {shot.takeFrom && retryable.has(shot.generationId) && (
-                                <button
-                                  type="button"
-                                  onClick={() => shot.takeFrom && void retryClip(framesOf(shot.takeFrom, shot))}
-                                  disabled={shooting || matching || !ready}
-                                  title={s.takeRetryHint}
-                                  className={chip(false)}
-                                >
-                                  {retryLabel(shot.takeFrom)}
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </Fragment>
-                  );
-                }
-                // A still with no recorded camera, or nothing to cut out of it
-                // clear of its people, offers no look (look.ts).
-                const lookable = canBeLook(shot);
-                const isLook = lookable && shot.generationId === lookShot?.generationId;
-                const facts = shotFacts[shot.generationId];
-                return (
-                  <Fragment key={shot.generationId}>
-                    <div className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
-                      {shot.words ?? s.shootWord}
-                    </div>
-                    <div className="flex items-start gap-2.5">
-                      <AstraMark />
-                      <div className="min-w-0 flex-1 space-y-2.5">
-                        <p className="text-sm leading-relaxed text-[#c6c9d1]">
-                          {facts ? `${formatMsg(s.shotInSeconds, { s: facts.seconds })} ` : ""}
-                          {stillLine(shot)}
-                          {isLook ? ` ${s.lookOnLine}` : ""}
-                          {shot.rigCheck ? ` ${rigCheckedLine(shot.rigCheck)}` : ""}
-                        </p>
-                        <div className="rounded-[14px] bg-white/[0.05] p-3 ring-1 ring-white/[0.07] space-y-3">
-                          <div className="flex items-center gap-3">
-                            <button
-                              type="button"
-                              onClick={() => setViewing(shot.generationId)}
-                              title={formatMsg(s.stillTile, { n: stillNumber(shot) })}
-                              className={`relative h-24 w-24 flex-shrink-0 cursor-pointer overflow-hidden rounded-[10px] bg-black/60 ${
-                                isLook ? "ring-2 ring-[#e0a468]" : "ring-1 ring-white/15"
-                              }`}
-                            >
-                              {shot.resultUrl ? (
-                                // eslint-disable-next-line @next/next/no-img-element
-                                <img src={shot.resultUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
-                              ) : (
-                                <span className="flex h-full items-center justify-center text-[10px] text-onmedia/60">{s.openTake}</span>
-                              )}
-                            </button>
-                            <div className="min-w-0 flex flex-col gap-1">
-                              <span className="text-[13px] font-medium text-[#ecedf1]">{formatMsg(s.stillTile, { n: stillNumber(shot) })}</span>
-                              <span className="text-xs text-[#9aa0ad] tabular-nums">
-                                {shot.score !== null ? `${formatMsg(s.identityScore, { score: shot.score })} · ` : ""}
-                                <LocalDate date={shot.createdAt} />
-                              </span>
-                              {facts && <span className="text-xs text-[#9aa0ad]">{facts.frame}</span>}
-                            </div>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {isLook ? (
-                              <span className="inline-flex h-8 items-center rounded-full bg-[#e0a468] px-3 text-[11px] font-semibold text-black">{s.lookKept}</span>
-                            ) : lookable ? (
-                              <button type="button" onClick={() => pickLook(shot.generationId)} className={chip(false)}>
-                                {s.keepLook}
-                              </button>
-                            ) : null}
-                            <button type="button" onClick={anotherAngle} disabled={!ready || shooting} className={chip(false)}>
-                              {s.anotherAngle}
-                            </button>
-                            <Link href={`/app/history/${shot.generationId}`} className={chip(false)}>
-                              {s.openTake}
-                            </Link>
-                          </div>
-                        </div>
-                        {rigCheckCard(shot, facts?.frame ?? null)}
-                      </div>
-                    </div>
-                  </Fragment>
-                );
-              })}
-
-              {pendingAsks.map((ask, i) => (
-                <div key={`ask-${i}`} className="max-w-[86%] self-end whitespace-pre-wrap rounded-[16px] rounded-br-[4px] bg-[#ecedf1] px-3.5 py-2.5 text-sm leading-relaxed text-[#1b1c20]">
-                  {ask}
+        {wide && (
+          <StudioDock label={s.studio.dock.astra} tabs={dockTabs} names={s.studio.dock} tab={dockTab} onTab={setDockTab} foot={chatComposer}>
+            {dockTab === "scene" && (
+              <div className="flex flex-col">
+                <div className="flex items-center gap-2 border-b border-white/[0.07] px-3 py-2">
+                  <input
+                    value={sceneQuery}
+                    onChange={(e) => setSceneQuery(e.target.value)}
+                    placeholder={s.editorFind}
+                    aria-label={s.editorFind}
+                    className="h-6 min-w-0 flex-1 rounded-[5px] bg-[#111217] px-2 text-[11px] text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)] outline-none placeholder:text-[#6b6f7a] focus:shadow-[inset_0_0_0_1px_rgba(224,164,104,0.6)]"
+                  />
+                  <span className="text-[11px] tabular-nums text-[#6b6f7a]">{spec.objects.length}</span>
                 </div>
-              ))}
-
-              {/* An Astra edit of the set, landed: how much of it changed. */}
-              {setChanged !== null && (
-                <div className="flex items-start gap-2.5">
-                  <AstraMark />
-                  <p className="text-sm leading-relaxed text-[#c6c9d1]">
-                    {setChanged === 0 ? s.editorAskNothing : setChanged === 1 ? s.editorAskDoneOne : formatMsg(s.editorAskDone, { n: setChanged })}{" "}
-                    {setChanged > 0 && (
-                      <button type="button" onClick={() => void undoSetEdit()} className="cursor-pointer font-medium text-[#e0a468]">
-                        {s.editorUndo}
-                      </button>
-                    )}
-                  </p>
-                </div>
-              )}
-
-              {/* Astra's turn: the frame in a sentence, then as a card, and Shoot to approve it */}
-              <div className="flex items-start gap-2.5">
-                <AstraMark />
-                <div className="min-w-0 flex-1 space-y-2.5">
-                  {characters.length === 0 ? (
-                    <p className="text-sm leading-relaxed text-[#c6c9d1]">
-                      {s.noCharacters}{" "}
-                      <Link href="/app/character/new" className="font-medium text-[#e0a468] underline underline-offset-2">
-                        {s.createCharacter}
-                      </Link>
-                    </p>
-                  ) : (
-                    <>
-                      <p className="text-sm leading-relaxed text-[#c6c9d1]">
-                        {frameLead ? `${frameLead} ` : ""}
-                        {placedLine} {s.frameProse}
-                      </p>
-                      <div className="rounded-[14px] bg-white/[0.05] p-4 ring-1 ring-white/[0.07] space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.frameCard}</span>
-                          <span className="text-xs text-[#6b6f7a] tabular-nums">{formatMsg(s.revisionN, { n: frameNumber })}</span>
-                        </div>
-                        <dl className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-[13px] leading-[18px]">
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowWho}</dt>
-                          <dd className="flex items-center gap-1.5 text-[#ecedf1]">
-                            {character?.thumbUrl ? (
-                              // eslint-disable-next-line @next/next/no-img-element
-                              <img src={character.thumbUrl} alt="" className="h-[18px] w-[18px] rounded-full object-cover" />
-                            ) : (
-                              <span className="h-[18px] w-[18px] rounded-full bg-white/15" />
-                            )}
-                            {characterName}
-                          </dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowWhere}</dt>
-                          <dd className="text-[#ecedf1]">
-                            {markLabel} · {facingLabel}
-                          </dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCamera}</dt>
-                          <dd className="text-[#ecedf1] tabular-nums">
-                            {cameraLabel} · {lensLabel}
-                            {rig.format !== "square" ? ` · ${s.rig.formats[rig.format]}` : ""}
-                          </dd>
-                          {rigLooksLine && (
-                            <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowRig}</dt>
-                              <dd className="text-[#f0cda6] tabular-nums">{rigLooksLine}</dd>
-                            </>
-                          )}
-                          {rig.light && (
-                            <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowLight}</dt>
-                              <dd className="text-[#f0cda6] tabular-nums">
-                                {s.rig.lights[rig.light.scheme]} · {formatMsg(s.rig.lightHeight, { deg: Math.round(rig.light.elevationDeg) })}
-                              </dd>
-                            </>
-                          )}
-                          {rig.palette && (
-                            <>
-                              <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rig.rowPalette}</dt>
-                              <dd className="text-[#f0cda6]">{s.rig.palettes[rig.palette]}</dd>
-                            </>
-                          )}
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowHappens}</dt>
-                          <dd className={direction ? "text-[#ecedf1]" : "text-[#6b6f7a]"}>{direction || "—"}</dd>
-                          <dt className="text-[11px] font-medium uppercase tracking-[0.08em] text-[#6b6f7a]">{s.rowCost}</dt>
-                          <dd className="text-[#ecedf1] tabular-nums">{formatMsg(s.costLine, { credits })}</dd>
-                        </dl>
-                        {takeStart && (
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            <button type="button" onClick={() => setTakeEngine("omni")} className={chip(takeEngine === "omni")}>
-                              {formatMsg(s.takeEngineOmni, { s: SET_TAKE_ENGINES.omni.seconds })}
-                            </button>
-                            <button type="button" onClick={() => setTakeEngine("veo")} className={chip(takeEngine === "veo")}>
-                              {formatMsg(s.takeEngineVeo, { s: SET_TAKE_ENGINES.veo.seconds })}
-                            </button>
-                          </div>
-                        )}
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => void (takeStart ? take() : shoot())}
-                            disabled={shooting || matching || !characterId || loadFailed || !ready}
-                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-[#e0a468] px-[18px] text-sm font-semibold text-[#1b1c20] transition-opacity hover:opacity-90 disabled:opacity-40"
-                          >
-                            {takeStart ? formatMsg(s.takeButton, { n: takeCredits }) : shootLabel}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={anotherAngle}
-                            disabled={!ready || shooting}
-                            className="inline-flex h-10 cursor-pointer items-center justify-center rounded-[8px] bg-white/[0.06] px-4 text-sm font-medium text-[#ecedf1] shadow-[inset_0_0_0_1px_rgba(255,255,255,0.1)] transition-colors hover:bg-white/[0.1] disabled:opacity-40"
-                          >
-                            {s.anotherAngle}
-                          </button>
-                        </div>
-                        {error && <p className="text-sm text-red-400">{localizeServerText(error, t)}</p>}
-                        {takeRetry && (
-                          <button
-                            type="button"
-                            onClick={() => void retryClip(takeRetry)}
-                            disabled={shooting || matching || !ready}
-                            title={s.takeRetryHint}
-                            className={chip(false)}
-                          >
-                            {retryLabel(takeRetry)}
-                          </button>
-                        )}
-                        {rigError && <p className="text-xs text-red-400">{localizeServerText(rigError, t)}</p>}
-                        {lastMiss && (
-                          <p className="text-sm text-[#9aa0ad]">
-                            {s.shotDidNotFinish}{" "}
-                            <Link href={`/app/history/${lastMiss}`} className="font-medium text-[#e0a468] underline underline-offset-2">
-                              {s.openTake}
-                            </Link>
-                          </p>
-                        )}
-                        {lookDropped && (
-                          <p className="text-xs text-[#9aa0ad]" aria-live="polite">
-                            {s.lookDropped}
-                          </p>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </div>
+                <p className="px-3 pt-2 text-[11px] leading-snug text-[#6b6f7a]">{s.studio.sceneHint}</p>
+                <SceneTree spec={spec} s={s} selected={null} query={sceneQuery} onPick={pickSceneTarget} />
               </div>
-
-              {(reading || shooting || editingSet) && (
-                <div className="flex items-center gap-2.5">
-                  <AstraMark />
-                  <p className="flex items-center gap-2 text-sm text-[#9aa0ad]">
-                    <Spinner className="h-4 w-4 flex-shrink-0" />
-                    {editingSet ? s.editorAsking : shooting ? `${s.shooting} ${s.shootingLine}` : s.threadReading}
-                  </p>
-                </div>
-              )}
-              <div ref={threadEndRef} aria-hidden />
-            </div>
-
-            {/* The composer at the panel's foot: the words, then who, the mode and the price */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
-                else if (draft.trim()) void send(draft);
-                // Just talking is the mode that spends nothing: with nothing
-                // written there is nothing to answer, and an empty send used
-                // to shoot anyway (found in the rundown, 2026-09-16).
-                else if (!justTalk) void (takeStart ? take() : shoot());
-              }}
-              className="relative border-t border-white/[0.07] px-3.5 pb-3.5 pt-3"
-            >
-              {mentionOpen && (
-                <div
-                  role="listbox"
-                  aria-label={s.mentionTitle}
-                  className="absolute bottom-full left-3.5 z-30 mb-2 w-max min-w-[13rem] rounded-[12px] border border-white/[0.11] bg-[#1d1e24] p-1.5 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.6)]"
-                >
-                  <p className="px-2.5 pb-1 pt-1 text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{s.mentionTitle}</p>
-                  {mentionList.length === 0 ? (
-                    <p className="px-2.5 py-1.5 text-xs text-[#9aa0ad]">{s.mentionHint}</p>
-                  ) : (
-                    mentionList.map((c) => (
-                      <button
-                        key={c.id}
-                        type="button"
-                        role="option"
-                        aria-selected={characterId === c.id}
-                        onClick={() => pickMention(c)}
-                        className={`flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-[7px] px-2.5 text-left text-[13px] transition-colors ${
-                          characterId === c.id ? "bg-white/[0.08] font-medium text-[#ecedf1]" : "text-[#9aa0ad] hover:bg-white/[0.05] hover:text-[#ecedf1]"
-                        }`}
-                      >
-                        {c.thumbUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={c.thumbUrl} alt="" className="h-[22px] w-[22px] rounded-full object-cover" />
-                        ) : (
-                          <span className="h-[22px] w-[22px] rounded-full bg-white/15" />
-                        )}
-                        {c.name}
-                      </button>
-                    ))
-                  )}
-                </div>
-              )}
-              <textarea
-                ref={draftRef}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape" && mentionOpen) {
-                    e.preventDefault();
-                    setMentionForced(false);
-                    return;
-                  }
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    if (mentionOpen && mentionList[0]) pickMention(mentionList[0]);
-                    else if (draft.trim()) void send(draft);
-                  }
-                }}
-                rows={2}
-                aria-label={s.threadPlaceholder}
-                placeholder={reading ? s.threadReading : s.threadPlaceholder}
-                disabled={reading || shooting || editingSet}
-                className="block min-h-[44px] w-full resize-none border-none bg-transparent px-2 py-1.5 text-sm text-[#ecedf1] outline-none placeholder:text-[#6b6f7a] disabled:opacity-60"
-              />
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setMentionForced((open) => !open)}
-                  aria-haspopup="listbox"
-                  aria-expanded={mentionOpen}
-                  disabled={characters.length === 0}
-                  className={chip(false)}
-                  title={s.mentionHint}
-                >
-                  @ {character?.name || s.characterLabel}
-                </button>
-                <div className="relative">
-                  <button type="button" onClick={() => toggleMenu("mode")} aria-haspopup="listbox" aria-expanded={menu === "mode"} title={s.modeHint} className={chip(justTalk)}>
-                    {justTalk ? s.justTalking : askFirst ? s.askBeforeShooting : s.shootWithoutAsking}
-                    <Chevron />
-                  </button>
-                  {menu === "mode" && (
-                    <div role="listbox" aria-label={s.modeHint} className={DMENU_UP}>
-                      {modeOptions}
-                    </div>
-                  )}
-                </div>
-                {!justTalk && (
-                  <span className="flex h-8 items-center whitespace-nowrap rounded-full bg-white/[0.06] px-3 text-xs text-[#9aa0ad] tabular-nums">
-                    {s.engineChip} · {credits}
-                  </span>
+            )}
+            {(dockTab === "camera" || dockTab === "light" || dockTab === "look" || dockTab === "film") && rigPanel(dockTab)}
+            {dockTab === "history" && (
+              <div className="p-2">
+                <div className="flex h-6 items-center px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-[#6b6f7a]">{s.studio.historyFrames}</div>
+                {revisions.length < 2 ? (
+                  <p className="px-1 py-1 text-[11px] leading-snug text-[#6b6f7a]">{s.studio.historyEmpty}</p>
+                ) : (
+                  <div role="listbox" aria-label={s.historyLabel} className="flex flex-col gap-0.5">
+                    {historyOptions}
+                  </div>
                 )}
-                <span className="flex-1" />
-                <button
-                  type="submit"
-                  disabled={reading || shooting || editingSet || !ready || (!draft.trim() && (!characterId || justTalk))}
-                  title={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
-                  aria-label={draft.trim() || justTalk ? s.threadPlaceholder : shootLabel}
-                  className="flex h-9 w-9 flex-shrink-0 cursor-pointer items-center justify-center rounded-full bg-[#e0a468] text-[#1b1c20] transition-opacity hover:opacity-90 disabled:bg-white/[0.06] disabled:text-[#9aa0ad]"
-                >
-                  {reading || shooting || editingSet ? <Spinner className="h-4 w-4" /> : <SendIcon className="h-4 w-4" />}
-                </button>
               </div>
-            </form>
-          </aside>
-        ) : (
-          <button type="button" onClick={() => setChatOpen(true)} className={`absolute bottom-3.5 right-3.5 z-30 ${DCHIP} h-10 pl-1.5`}>
-            <AstraMark />
-            {s.astraLabel}
-          </button>
+            )}
+            {dockTab === "astra" && chatThread}
+          </StudioDock>
         )}
       </div>
+
+      {wide && (
+        <StudioStatus>
+          <span className="tabular-nums">
+            {spec.objects.length === 1 ? s.studio.status.thingsOne : formatMsg(s.studio.status.things, { n: spec.objects.length })} ·{" "}
+            {formatMsg(s.studio.status.shapes, { n: specInstanceCount(spec), max: SET_LIMITS.maxInstances })}
+            {fps > 0 ? ` · ${formatMsg(s.studio.status.fps, { n: fps })}` : ""}
+          </span>
+          <span className="hidden xl:inline">{s.rig.saved}</span>
+          <span className="flex-1" />
+          <StatusList label={s.studio.status.held} items={heldItems} none={s.studio.status.none} className="hidden lg:inline" />
+          <StatusList label={s.studio.status.checked} items={checkedItems} none={s.studio.status.none} className="hidden lg:inline" />
+          <StatusList label={s.studio.status.lab} items={labItems} none={s.studio.status.none} className="hidden xl:inline" />
+        </StudioStatus>
+      )}
     </div>
   );
 }

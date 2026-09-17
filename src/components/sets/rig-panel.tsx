@@ -722,6 +722,7 @@ export function RigPanel({
   cameraBearingDeg,
   film,
   onClose,
+  docked = null,
 }: {
   rig: SetRig;
   onChange: (next: SetRig) => void;
@@ -737,6 +738,8 @@ export function RigPanel({
   cameraBearingDeg: number;
   film: RigFilmContext | null;
   onClose: () => void;
+  /** In the studio's dock (studio-frame.tsx, cut A): the sections of this tab alone, the dock's own tab bar above them. */
+  docked?: { tab: RigTab } | null;
 }) {
   const r = s.rig;
   const tags: TagStrings = { held: r.held, checked: r.checked, lab: r.lab };
@@ -759,12 +762,13 @@ export function RigPanel({
   // The dock's tabs (rig-dock.ts): Film joins while the film is open and
   // takes the front; closing the film on it goes back to Camera.
   const filmOn = film !== null;
-  const [tab, setTab] = useState<RigTab>("camera");
+  const [tabOwn, setTabOwn] = useState<RigTab>("camera");
   const [filmWas, setFilmWas] = useState(filmOn);
-  if (filmWas !== filmOn) {
+  if (!docked && filmWas !== filmOn) {
     setFilmWas(filmOn);
-    setTab(tabAfterFilm(tab, filmOn));
+    setTabOwn(tabAfterFilm(tabOwn, filmOn));
   }
+  const tab: RigTab = docked ? docked.tab : tabOwn;
   const tabName: Record<RigTab, string> = { camera: r.tabCamera, light: r.tabLight, look: r.tabLook, film: r.tabFilm };
   const show = (section: RigSection) => RIG_TAB_SECTIONS[tab].includes(section);
 
@@ -807,11 +811,8 @@ export function RigPanel({
     set({ light: schemeDefaults(scheme, cameraBearingDeg) });
   };
 
-  return (
-    <aside
-      aria-label={r.title}
-      className={`z-30 flex min-h-0 flex-col overflow-hidden rounded-[16px] ${PANEL_BG} max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:top-16 max-md:z-40 md:absolute md:bottom-3.5 md:left-3.5 md:top-3.5 md:w-[328px]`}
-    >
+  const chrome = (
+    <>
       <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3">
         <span className="text-[11px] font-medium uppercase tracking-widest text-[#9aa0ad]">{r.title}</span>
         <span className="flex items-center gap-2">
@@ -835,7 +836,7 @@ export function RigPanel({
             type="button"
             role="tab"
             aria-selected={tab === t}
-            onClick={() => setTab(t)}
+            onClick={() => setTabOwn(t)}
             className={`flex h-9 flex-1 cursor-pointer items-center justify-center border-b-2 text-[11.5px] font-medium ${
               tab === t ? "border-[#e0a468] text-[#f0cda6]" : "border-transparent text-[#6b6f7a] hover:text-[#ecedf1]"
             }`}
@@ -844,6 +845,10 @@ export function RigPanel({
           </button>
         ))}
       </div>
+    </>
+  );
+  const body = (
+    <>
       <RigDefs />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {film && (
@@ -1336,6 +1341,17 @@ export function RigPanel({
 
         {ANY_UNTESTED && <p className="px-3.5 py-3 text-[11px] leading-[15px] text-[#6b6f7a]">{r.untested}</p>}
       </div>
+    </>
+  );
+  // Docked in the studio's frame (cut A): the sections alone; the dock draws the tabs.
+  if (docked) return <div className="flex min-h-0 flex-1 flex-col">{body}</div>;
+  return (
+    <aside
+      aria-label={r.title}
+      className={`z-30 flex min-h-0 flex-col overflow-hidden rounded-[16px] ${PANEL_BG} max-md:fixed max-md:inset-x-2 max-md:bottom-2 max-md:top-16 max-md:z-40 md:absolute md:bottom-3.5 md:left-3.5 md:top-3.5 md:w-[328px]`}
+    >
+      {chrome}
+      {body}
     </aside>
   );
 }
