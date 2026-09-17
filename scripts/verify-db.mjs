@@ -113,6 +113,8 @@ const COLUMNS = {
     "response_id", "attempts", "failure", "cost_usd", "thumb_path", "updated_at", "deleted_at",
     "source_photo_path", "source_photo_sha256",
     "edited_spec", "film", "rig",
+    // The Recce's reading of a clip (astra-recce.sql), cleared with the set.
+    "recce_read",
   ],
   // camera: the camera a still was framed from
   // (applied/2026-09-14/set-shot-camera.sql): without it no still is ever a

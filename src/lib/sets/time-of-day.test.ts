@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SET_RIG, normaliseSetRig } from "./rig";
-import { normaliseSetSpec } from "./set-spec";
+import { SET_LIMITS, normaliseSetSpec } from "./set-spec";
 import { compassWord, lookAt, stagedSpec, sunAt, sunLight, timeApplies, timeLabel, timedSpec } from "./time-of-day";
 import { schemeDefaults } from "./light-schemes";
 import { nearestKelvin } from "./light-kelvin";
@@ -114,5 +114,34 @@ describe("the readout", () => {
     expect(compassWord(0)).toBe("north");
     expect(compassWord(225)).toBe("south-west");
     expect(compassWord(359)).toBe("north");
+  });
+});
+
+describe("an hour over a lamp plot", () => {
+  it("keeps the plot's own key light, not only the set's lamps", () => {
+    // The hour's sun and fill take two of the set's light slots, and
+    // timedSpec keeps as many of the rest as fit. The plot's own lights are
+    // first, so what its words describe is what the stage draws (found
+    // reviewing Helios, 2026-09-17: a window plot lost its window at 12:00).
+    const lamps = Array.from({ length: SET_LIMITS.maxLights }, (_, i) => ({
+      kind: "point" as const,
+      color: "#ffffff",
+      intensity: 1,
+      position: [i, 2, 0] as [number, number, number],
+      target: [0, 0, 0] as [number, number, number],
+      groundColor: null,
+      angleDeg: 30,
+      distance: 0,
+      size: null,
+    }));
+    const set = { ...room, lights: lamps };
+    const staged = stagedSpec(set, { light: { scheme: "window", azimuthDeg: 90, elevationDeg: 20 }, time: 12 }, { x: 0, z: 0 });
+    // The window's own light — a spot in the plot's own colour — survives the hour.
+    const lit = stagedSpec(set, { light: { scheme: "window", azimuthDeg: 90, elevationDeg: 20 }, time: null }, { x: 0, z: 0 });
+    const key = lit.lights.find((l) => l.kind === "spot");
+    expect(key).toBeDefined();
+    expect(staged.lights.some((l) => l.kind === "spot" && l.color === key!.color)).toBe(true);
+    // And the hour's own sun and fill are there too.
+    expect(staged.lights.some((l) => l.kind === "sun")).toBe(true);
   });
 });

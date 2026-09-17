@@ -246,7 +246,11 @@ export function litSpec(spec: SetSpec, state: RigLightState | null, mark: { x: n
   const lamps = spec.lights.filter((l) => l.kind === "point" || l.kind === "spot" || l.kind === "area").slice(0, Math.max(0, SET_LIMITS.maxLights - own.length));
   return {
     ...spec,
-    lights: [...lamps, ...own],
+    // The plot's own lights first: an hour keeps only as many lamps as the
+    // sun and its fill leave room for (time-of-day.ts timedSpec), and it
+    // was dropping the plot's key light while its words still described it
+    // (found reviewing Helios, 2026-09-17).
+    lights: [...own, ...lamps],
     sky: look.sky ? { kind: look.sky.kind, colors: [...look.sky.colors] } : spec.sky,
     // A night scheme under a day fog would glow: the fog takes the sky's last colour.
     fog: spec.fog && look.sky ? { ...spec.fog, color: look.sky.colors[look.sky.colors.length - 1] } : spec.fog,

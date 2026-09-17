@@ -8,6 +8,7 @@ import {
   RIG_ERAS,
   RIG_EV_RANGE,
   RIG_EV_STEP,
+  stepEv,
   RIG_FORMAT_ORDER,
   RIG_GENRE_SUGGESTS,
   RIG_GENRES,
@@ -1161,7 +1162,7 @@ export function RigPanel({
             <span className="w-14 flex-none text-[11px] text-[#9aa0ad]">{r.ev}</span>
             <button
               type="button"
-              onClick={() => set({ ev: Math.max(-RIG_EV_RANGE, Math.round((rig.ev - RIG_EV_STEP) * 1000) / 1000) })}
+              onClick={() => set({ ev: stepEv(rig.ev, -1) })}
               disabled={rig.ev <= -RIG_EV_RANGE}
               className={STEP_BTN}
               aria-label={`${r.ev} −`}
@@ -1171,7 +1172,7 @@ export function RigPanel({
             <span className="w-12 text-center text-xs font-medium tabular-nums text-[#ecedf1]">{evLabel}</span>
             <button
               type="button"
-              onClick={() => set({ ev: Math.min(RIG_EV_RANGE, Math.round((rig.ev + RIG_EV_STEP) * 1000) / 1000) })}
+              onClick={() => set({ ev: stepEv(rig.ev, 1) })}
               disabled={rig.ev >= RIG_EV_RANGE}
               className={STEP_BTN}
               aria-label={`${r.ev} +`}

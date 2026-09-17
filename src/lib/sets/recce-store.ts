@@ -84,3 +84,15 @@ export async function readSetRecce(db: SupabaseClient, setId: string, userId: st
     return null;
   }
 }
+
+/**
+ * What a clip's reading leaves on a set, cleared: the place sentences, the
+ * camera words, where the person walked and what the light did are the
+ * person's, and `astra-recce.sql` says they go with the set. Its own write,
+ * so a database without the column cannot fail a delete, and a failure is
+ * said rather than raised (deleteSet, 2026-09-17).
+ */
+export async function clearSetRecce(admin: SupabaseClient, setId: string, userId: string): Promise<void> {
+  const { error } = await admin.from("location_sets").update({ recce_read: null }).eq("id", setId).eq("user_id", userId);
+  if (error) console.warn("[sets] could not clear the clip's reading:", error.message);
+}

@@ -33,5 +33,12 @@ describe("viewModeMaterial", () => {
     expect(frame).not.toContain("overrideMaterial");
     expect(view).toContain("viewOverride = viewModeMaterial(THREE, mode);");
     expect(editor).toContain("scene.overrideMaterial = viewModeMaterial(THREE, mode)");
+    // And the tools keep their own colour: three overrides every material
+    // that allows it, gizmo, outline and handles included (2026-09-17).
+    expect(editor).toContain("one.allowOverride = false;");
+    expect(editor).toContain("keepOwnColour(gizmoHelper);");
+    expect(editor).toContain("keepOwnColour(handlesGroup);");
+    expect(editor).toContain("keepOwnColour(outline);");
+    expect(editor).toContain("handleMat.allowOverride = false;");
   });
 });

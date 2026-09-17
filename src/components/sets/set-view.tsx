@@ -2233,7 +2233,7 @@ export function SetView({
       pathTo: filmOpen && filmSel !== null && film.beats[filmSel]?.figure ? film.beats[filmSel].figure : null,
     });
     return () => apiRef.current?.setFurniture(null);
-  }, [ready, s, measurePts, gaze, spec, names, filmOpen, filmSel, film, mark]);
+  }, [ready, s, measurePts, gaze, spec, names, filmOpen, filmSel, film, mark, pose, rig.time]);
 
   // What a laid point becomes (cut D): the gaze's point, or the next point of the beat's path.
   useEffect(() => {
@@ -6217,7 +6217,21 @@ export function SetView({
       </div>
 
         {wide && (
-          <StudioDock label={s.studio.dock.astra} tabs={dockTabs} names={s.studio.dock} tab={dockTab} onTab={setDockTab} foot={chatComposer}>
+          <StudioDock
+            label={s.studio.dock.astra}
+            tabs={dockTabs}
+            names={s.studio.dock}
+            tab={dockTab}
+            onTab={setDockTab}
+            foot={
+              <>
+                {dockTab !== "astra" && (error || rigError) && (
+                  <p className="border-t border-white/[0.07] px-3.5 py-2 text-[12px] text-red-400">{localizeServerText(error || rigError, t)}</p>
+                )}
+                {chatComposer}
+              </>
+            }
+          >
             {dockTab === "scene" && (
               <div className="flex flex-col">
                 <div className="flex items-center gap-2 border-b border-white/[0.07] px-3 py-2">

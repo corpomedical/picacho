@@ -2,7 +2,8 @@
 
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { rateLimited } from "@/lib/rate-limit";
-import { mediaUrl } from "@/lib/media/url";
+import { mediaUrl, toMediaUrl } from "@/lib/media/url";
+import { clearSetRecce } from "@/lib/sets/recce-store";
 import { ContentPolicyRefusal, type Scores } from "@/lib/generations/content-policy";
 import { assertOutputAllowed, OutputPolicyRefusal } from "@/lib/generations/output-policy";
 import { gatePrompt, recentRefusalCount, recordPolicyRefusal } from "@/lib/generations/policy-log";
@@ -934,7 +935,10 @@ async function finishedStillUrl(
     .eq("user_id", userId)
     .maybeSingle();
   return gen && gen.status === "succeeded" && !gen.deleted_at && gen.content_type === "image" && typeof gen.result_url === "string"
-    ? gen.result_url
+    ? // Signed again under today's key, as every other reader of a stored
+      // link does (media/url.ts toMediaUrl): the frames go to the video
+      // lane, which fetches them over the open internet.
+      toMediaUrl(gen.result_url)
     : null;
 }
 
@@ -1049,7 +1053,7 @@ export async function takeInSet(
       .eq("id", still.generationId)
       .eq("user_id", userId)
       .maybeSingle();
-    endUrl = typeof endGen?.result_url === "string" ? endGen.result_url : null;
+    endUrl = typeof endGen?.result_url === "string" ? toMediaUrl(endGen.result_url) : null;
   }
   const reusedEnd = reuseId !== null;
   if (!endUrl) return { error: null, still, reusedEnd, takeGenerationId: null, takeError: SET_TAKE_FAILED };
@@ -1199,6 +1203,9 @@ export async function deleteSet(setId: string): Promise<{ error: string | null }
       .eq("id", setId)
       .eq("user_id", userId);
     if (workError) console.warn("deleteSet couldn't clear the working copy, film and rig:", workError.message);
+    // And what the Recce read from a clip (recce-store.ts, which is the only
+    // module that names its column), in a write of its own.
+    await clearSetRecce(admin, setId, userId);
     // And the set's record of each shot — the person's words for it, what a
     // take was made from, the rig it was shot with and what the check read,
     // the camera it was framed from. The stills and takes themselves stay in

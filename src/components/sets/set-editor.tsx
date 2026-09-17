@@ -926,12 +926,28 @@ export function SetEditor({
 
         const handleMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(ACCENT) });
         const lineMat = new THREE.LineDashedMaterial({ color: new THREE.Color(ACCENT), dashSize: 0.5, gapSize: 0.5, transparent: true, opacity: 0.7 });
+        handleMat.allowOverride = false;
+        lineMat.allowOverride = false;
         const handleGeo = new THREE.SphereGeometry(0.22, 16, 12);
         const camGeo = new THREE.BoxGeometry(0.4, 0.26, 0.55);
 
         const tc = new TransformControls(camera, canvas);
         tc.setSize(0.85);
-        scene.add(tc.getHelper());
+        const gizmoHelper = tc.getHelper();
+        scene.add(gizmoHelper);
+        /**
+         * The viewport's modes draw the SET, not the tools: three hands its
+         * override material to every material that allows one, so Clay,
+         * Wire and Depth painted the gizmo's axes, the outline and the
+         * handles one grey and hid them inside the thing in hand (found
+         * reviewing Helios, 2026-09-17).
+         */
+        const keepOwnColour = (root: InstanceType<typeof THREE.Object3D>) => {
+          root.traverse((o) => {
+            const m = (o as InstanceType<typeof THREE.Mesh>).material;
+            for (const one of Array.isArray(m) ? m : m ? [m] : []) one.allowOverride = false;
+          });
+        };
 
         const clearOutline = () => {
           if (!outline) return;
@@ -951,6 +967,8 @@ export function SetEditor({
 
         const rebuildHandles = (spec: SetSpec) => {
           clearHandles();
+          // The gizmo builds its axes lazily, so it is asked again here.
+          keepOwnColour(gizmoHelper);
           spec.lights.forEach((l, li) => {
             if (l.kind === "ambient" || l.kind === "hemisphere") return;
             const h = new THREE.Mesh(handleGeo, handleMat);
@@ -979,6 +997,7 @@ export function SetEditor({
             box.userData.target = { kind: "camera", index: ci } satisfies EditTarget;
             handlesGroup.add(box);
           });
+          keepOwnColour(handlesGroup);
         };
 
         const meshFor = (target: EditTarget | null): InstanceType<typeof THREE.Object3D> | null => {
@@ -1025,6 +1044,7 @@ export function SetEditor({
           if (!obj) return;
           const box = new THREE.Box3().setFromObject(obj);
           outline = new THREE.Box3Helper(box, new THREE.Color(ACCENT));
+          keepOwnColour(outline);
           scene.add(outline);
           applyTool(toolRef.current);
         };
@@ -1961,7 +1981,7 @@ export function SetEditor({
                   <Vec3Row value={selCamera.target} min={-C} max={C} onCommit={(v) => commit(patchCamera(spec, sel.index, { target: v }))} />
                 </PRow>
                 <PRow label={s.editorFieldOfView}>
-                  <Slider value={selCamera.fovDeg} min={SET_LIMITS.minLayoutFovDeg} max={SET_LIMITS.maxFovDeg} step={1} onCommit={(v) => commit(patchCamera(spec, sel.index, { fovDeg: v }))} />
+                  <Slider value={selCamera.fovDeg} min={SET_LIMITS.minFovDeg} max={SET_LIMITS.maxFovDeg} step={1} onCommit={(v) => commit(patchCamera(spec, sel.index, { fovDeg: v }))} />
                 </PRow>
                 <div className="px-3 py-1.5">
                   <button

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { KIT_KINDS, kitObjects, kitSize } from "./kit";
+import * as THREE from "three";
+import { KIT_KINDS, kitObjects, kitSize, turnedRotation } from "./kit";
 import { addKit } from "./editor-model";
 import { normaliseSetSpec, SET_LIMITS, SET_MATERIALS } from "./set-spec";
 import { checkSet } from "./set-check";
@@ -47,5 +48,30 @@ describe("kitObjects", () => {
     expect(checkSet(added.spec).filter((f) => f.kind === "through")).toEqual([]);
     const full = { ...r.spec, objects: Array.from({ length: SET_LIMITS.maxObjects - 1 }, () => r.spec.objects[0]) };
     expect(addKit(full, "car", [0, 0]).ok).toBe(false);
+  });
+});
+
+describe("a kit part's turn", () => {
+  it("is the same rotation three would build: the facing about the world's Y, then the part's own tilt", () => {
+    // Adding the facing to the Y of an XYZ euler is not that turn once the
+    // part is tilted about anything else — a bench's backrest leaned over
+    // its seat at 180° (found reviewing Helios, 2026-09-17).
+    const DEG = Math.PI / 180;
+    for (const tilt of [[-8, 0, 0], [0, 0, 12], [-8, 20, 12], [0, 35, 0]] as const) {
+      for (const facing of [0, 45, 90, 135, 180, 225, 270, 315]) {
+        const want = new THREE.Matrix4()
+          .makeRotationY(facing * DEG)
+          .multiply(new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(tilt[0] * DEG, tilt[1] * DEG, tilt[2] * DEG, "XYZ")));
+        const got = new THREE.Matrix4().makeRotationFromEuler(
+          new THREE.Euler(...(turnedRotation([...tilt] as [number, number, number], facing).map((d) => d * DEG) as [number, number, number]), "XYZ"),
+        );
+        for (let i = 0; i < 16; i++) expect(got.elements[i], `${tilt} at ${facing}`).toBeCloseTo(want.elements[i], 4);
+      }
+    }
+  });
+
+  it("keeps a plain turn plain", () => {
+    expect(turnedRotation([0, 10, 0], 180)).toEqual([0, 190, 0]);
+    expect(turnedRotation([0, 0, 0], 270)).toEqual([0, 270, 0]);
   });
 });

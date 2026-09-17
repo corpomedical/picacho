@@ -5,6 +5,7 @@ import { rateLimited } from "@/lib/rate-limit";
 import { getLocale } from "@/lib/i18n/server";
 import { setsAccess, UUID_RE } from "@/lib/sets/access";
 import { lookStoragePath } from "@/lib/sets/look";
+import { negativePathFor } from "@/lib/sets/lab";
 import { normaliseSetRig, RIG_CHECK_ITEMS, type RigCheckItem } from "@/lib/sets/rig";
 import { checkRig, type RigCheck } from "@/lib/sets/rig-check";
 import { readShotRigs, recordRigCheck } from "@/lib/sets/shot-rig";
@@ -79,10 +80,24 @@ export async function checkShotRig(
   if (await rateLimited(userId, "set-rig-check", 60 * 10, 30)) return { error: SET_RIG_CHECK_TOO_FAST };
 
   const admin = createAdminClient();
-  const { data: blob, error: downloadError } = await admin.storage.from("generated-images").download(path);
-  if (downloadError || !blob) {
-    console.warn("[sets] rig check could not read the still:", downloadError?.message ?? "no body");
-    return { error: SET_RIG_CHECK_FAILED };
+  // A still the lab developed is READ AS ITS NEGATIVE — the frame the image
+  // model actually drew (lab.ts), as the look cutout reads it. The print is
+  // what the lab made of it: Silver Print turns it black and white, and the
+  // check would then read every era's colour block as "missed" and offer a
+  // pushed reshoot that cannot land (found reviewing Helios, 2026-09-17).
+  const negative = negativePathFor(path);
+  let blob: Blob | null = null;
+  if (negative) {
+    const kept = await admin.storage.from("generated-images").download(negative);
+    if (!kept.error && kept.data) blob = kept.data;
+  }
+  if (!blob) {
+    const { data, error: downloadError } = await admin.storage.from("generated-images").download(path);
+    if (downloadError || !data) {
+      console.warn("[sets] rig check could not read the still:", downloadError?.message ?? "no body");
+      return { error: SET_RIG_CHECK_FAILED };
+    }
+    blob = data;
   }
   const bytes = Buffer.from(await blob.arrayBuffer());
   const verdicts = await checkRig(bytes, blob.type || "image/png", asks, await getLocale());

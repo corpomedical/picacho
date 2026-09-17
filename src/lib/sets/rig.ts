@@ -547,6 +547,18 @@ export function sensorCocMm(sensor: RigSensor): number {
   return (RIG_COC_MM * Math.hypot(s.w, s.h)) / Math.hypot(full.w, full.h);
 }
 
+/**
+ * The exposure compensation one step up or down, rounded exactly as the
+ * stored value is (normaliseSetRig): the panel stepped by a rounded third
+ * and drifted a thousandth from what the server kept, which changed a
+ * film's context key and offered every beat for re-render after a reload
+ * (found reviewing Helios, 2026-09-17).
+ */
+export function stepEv(ev: number, steps: number): number {
+  const next = Math.min(RIG_EV_RANGE, Math.max(-RIG_EV_RANGE, ev + steps * RIG_EV_STEP));
+  return Math.round(Math.round(next / RIG_EV_STEP) * RIG_EV_STEP * 1000) / 1000;
+}
+
 /** A shutter angle as the time it is at 24 fps: 180° is "1/48". */
 export function shutterFraction(deg: RigShutter): string {
   return `1/${Math.round((360 / deg) * RIG_FRAME_RATE)}`;

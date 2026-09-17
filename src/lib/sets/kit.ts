@@ -13,6 +13,46 @@ export type KitKind = (typeof KIT_KINDS)[number];
 
 const DEG = Math.PI / 180;
 
+type M3 = [number, number, number, number, number, number, number, number, number];
+
+/** Three's XYZ euler as a rotation matrix, row-major (Matrix4.makeRotationFromEuler). */
+function eulerMatrix(x: number, y: number, z: number): M3 {
+  const a = Math.cos(x), b = Math.sin(x), c = Math.cos(y), d = Math.sin(y), e = Math.cos(z), f = Math.sin(z);
+  const ae = a * e, af = a * f, be = b * e, bf = b * f;
+  return [c * e, -c * f, d, af + be * d, ae - bf * d, -b * c, bf - ae * d, be + af * d, a * c];
+}
+
+/** A turn about the world's Y, times a rotation (row-major 3×3). */
+function turnY(deg: number, m: M3): M3 {
+  const c = Math.cos(deg * DEG), s = Math.sin(deg * DEG);
+  const r: M3 = [c, 0, s, 0, 1, 0, -s, 0, c];
+  const out = [0, 0, 0, 0, 0, 0, 0, 0, 0] as unknown as M3;
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) out[i * 3 + j] = r[i * 3] * m[j] + r[i * 3 + 1] * m[3 + j] + r[i * 3 + 2] * m[6 + j];
+  return out;
+}
+
+/** A rotation matrix back to three's XYZ euler, degrees (Euler.setFromRotationMatrix). */
+function matrixEuler(m: M3): Vec3 {
+  const clamp = (v: number) => Math.min(1, Math.max(-1, v));
+  const y = Math.asin(clamp(m[2]));
+  const near = Math.abs(m[2]) < 0.9999999;
+  const x = near ? Math.atan2(-m[5], m[8]) : Math.atan2(m[7], m[4]);
+  const z = near ? Math.atan2(-m[1], m[0]) : 0;
+  const deg = (v: number) => Math.round((v / DEG) * 1000) / 1000;
+  return [deg(x), deg(y), deg(z)];
+}
+
+/**
+ * A part's own tilt, turned to face `facingDeg` about the world's Y. Adding
+ * the facing to the Y of an XYZ euler is not that turn once the part is
+ * tilted about anything else: a bench's backrest leaned over its own seat at
+ * 180° and rolled sideways at 90° (found reviewing Helios, 2026-09-17).
+ */
+export function turnedRotation(rotation: Vec3, facingDeg: number): Vec3 {
+  if (rotation[0] === 0 && rotation[2] === 0) return [0, ((rotation[1] + facingDeg) % 360 + 360) % 360, 0];
+  return matrixEuler(turnY(facingDeg, eulerMatrix(rotation[0] * DEG, rotation[1] * DEG, rotation[2] * DEG)));
+}
+
 type Part = {
   shape: SetShape;
   /** Offset from the prop's own origin, metres, before it is turned to face `facingDeg`: x right, y up, z forward. */
@@ -91,7 +131,7 @@ export function kitObjects(kind: KitKind, at: [number, number], facingDeg = 0, c
   return PARTS[kind](color).map((p) => ({
     shape: p.shape,
     position: [r3(at[0] + p.at[0] * cos + p.at[2] * sin), r3(p.at[1]), r3(at[1] - p.at[0] * sin + p.at[2] * cos)],
-    rotation: [p.rotation?.[0] ?? 0, r3(((p.rotation?.[1] ?? 0) + facingDeg) % 360), p.rotation?.[2] ?? 0],
+    rotation: turnedRotation([p.rotation?.[0] ?? 0, p.rotation?.[1] ?? 0, p.rotation?.[2] ?? 0], facingDeg),
     size: [...p.size] as Vec3,
     color: p.color,
     roughness: p.roughness ?? 0.8,

@@ -112,9 +112,12 @@ export function SceneTree({
   return (
     <div className="py-1">
       {!q && onRoot && <TreeRow icon="sun" name={s.editorEnvironment} selected={false} onPick={onRoot} />}
-      {hit(s.editorSky) && <TreeRow icon="sky" child name={`${s.editorSky} — ${s.editorSkyKinds[spec.sky.kind]}`} selected={selected?.kind === "sky"} onPick={() => onPick({ kind: "sky" })} />}
+      {/* The row's whole name, its kind included: "gradient" found the sky (2026-09-17). */}
+      {hit(`${s.editorSky} — ${s.editorSkyKinds[spec.sky.kind]}`) && (
+        <TreeRow icon="sky" child name={`${s.editorSky} — ${s.editorSkyKinds[spec.sky.kind]}`} selected={selected?.kind === "sky"} onPick={() => onPick({ kind: "sky" })} />
+      )}
       {hit(s.editorGround) && <TreeRow dot={spec.ground.color} child name={s.editorGround} selected={selected?.kind === "ground"} onPick={() => onPick({ kind: "ground" })} />}
-      {hit(s.editorFog) && (
+      {hit(`${s.editorFog}${spec.fog ? "" : ` — ${s.editorNone}`}`) && (
         <TreeRow icon="sky" child name={`${s.editorFog}${spec.fog ? "" : ` — ${s.editorNone}`}`} selected={selected?.kind === "fog"} onPick={() => onPick({ kind: "fog" })} />
       )}
       {spec.lights.map(

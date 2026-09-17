@@ -36,7 +36,13 @@ describe("deleting a set", () => {
 
     const main = literalKeys(del, del.indexOf(".update({"));
     const work = literalKeys(actions, actions.indexOf("const CLEAR_SET_WORK = "));
-    const cleared = new Set([...main, ...Object.keys(CLEAR_PHOTO_SOURCE), ...work]);
+    // The clip's reading (astra-recce.sql) is cleared through recce-store.ts,
+    // the one module that names its column, in a write of its own (2026-09-17).
+    const store = readFileSync(join(__dirname, "recce-store.ts"), "utf8");
+    const recce = literalKeys(store, store.indexOf(".update({", store.indexOf("export async function clearSetRecce(")));
+    expect(recce).toEqual(["recce_read"]);
+    expect(del).toContain("await clearSetRecce(admin, setId, userId);");
+    const cleared = new Set([...main, ...Object.keys(CLEAR_PHOTO_SOURCE), ...work, ...recce]);
     // Kept on purpose: whose it was, and the build's own bookkeeping — the
     // monthly cap counts a deleted build that did not fail, and what it cost
     // stays on the record. None of it is the person's words or the set.

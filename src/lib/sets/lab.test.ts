@@ -85,3 +85,17 @@ describe("a negative, kept and cleared with its still", () => {
     expect(actions).toContain('await supabase.storage.from("generated-images").remove([...imagePaths, ...negativePaths]);');
   });
 });
+
+describe("what the rig check reads", () => {
+  it("is the negative, as the look cutout reads it", () => {
+    // A still the lab developed is judged on the frame the image model drew,
+    // not on the print the lab made of it: Silver Print turns the print
+    // black and white, and every era's colour block would read "missed",
+    // with a pushed reshoot that cannot land (2026-09-17).
+    const actions = readFileSync(join(__dirname, "rig-actions.ts"), "utf8");
+    expect(actions).toContain("const negative = negativePathFor(path);");
+    expect(actions.indexOf("download(negative)")).toBeLessThan(actions.indexOf("download(path)"));
+    // And the print is still read when there is no negative (a still shot before the lab).
+    expect(actions).toContain("if (!blob) {");
+  });
+});
