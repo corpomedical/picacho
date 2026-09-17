@@ -623,7 +623,11 @@ Worst case (3,300 cache-write tokens + 2,500 output cap):
 
 ### 3.2b The Recce, cut 1: a set from a clip (board K, 2026-09-17)
 
-A 3–30 s clip on the Sets home becomes a set. The browser samples 12 frames
+A 3–30 s clip becomes a set, through its own door: the Recce page at
+/app/recce (board K door A "the theatre" — its own nav word, no set/build/
+Astra in its copy; the entry lived on the Sets home for one deploy on
+2026-09-17 and moved the same day after "Who said I wanted it in Sets?").
+The browser samples 12 frames
 (recce-client.ts — the clip itself never uploads); the words reader
 (recce-read.ts, the shot-words model) returns shots, one person's start and
 end in metres from the camera, the light, and which frame shows the place

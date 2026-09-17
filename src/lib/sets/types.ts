@@ -108,8 +108,6 @@ export type SetsHomeData =
       shotsThisMonth: number;
       /** Whether this person may build a set from a photo (admins, flag astra_photo_sets). */
       photoSetsOn: boolean;
-      /** Whether this person may build a set from a clip (admins, flag astra_recce; board K cut 1). */
-      recceOn: boolean;
       /** Their characters with a saved photo: who the home's composer can shoot (Astra chat, 2026-09-14). */
       characters: SetCharacter[];
     };

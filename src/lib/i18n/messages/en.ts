@@ -42,6 +42,7 @@ const en = {
     upscale: "Upscale video",
     layers: "Layers",
     sets: "Helios",
+    recce: "Recce",
     tools: "Tools",
     newBadge: "New",
     templates: "Templates",
@@ -1889,6 +1890,33 @@ const en = {
   // and what it sees is only what is given here to build it from: the
   // description typed here, or a photo of the place and the notes beside it
   // (Sets from a photo, 2026-09-11) — never the character.
+  // The Recce door (board K, "Build A as Recce", 2026-09-17): the theatre
+  // page at /app/recce. No machinery on the wall: the copy never says set,
+  // build or Astra — the promise, not the how.
+  recce: {
+    headline: "Footage in. A place out.",
+    sub: "Film 3–30 seconds of anywhere. It is read on this device — the clip itself never uploads — and comes back as a place you can walk a camera through.",
+    dropTitle: "Drop a clip of a place",
+    dropOr: "or",
+    demoLabel: "the place it becomes",
+    demoChipPlace: "An ornate ballroom, candlelit",
+    demoChipPerson: "One person walks 2 m → 8 m",
+    demoChipCamera: "The camera follows her",
+    demoStatus: "Gilded Candlelit Salon · 12×16 m · 56 things · 2 marks",
+    yourClip: "your clip",
+    privacyLine: "Read on this device. No one in your footage is modelled or described.",
+    notesLabel: "Anything the clip doesn't show (optional)",
+    readButton: "Read the clip",
+    meta: "About 2–5 minutes · keep this page open",
+    metaFinishes: "About 2–5 minutes · you can leave — it finishes on its own",
+    priceLine: "A read comes off your monthly allowance.",
+    readsLabel: "Your reads",
+    readingNow: "Reading now · 2–5 min",
+    readMeta: "{seconds} s read",
+    open: "Open the place",
+    notOpen: "Recce is in private testing.",
+    empty: "Your reads will gather here.",
+  },
   sets: {
     eyebrow: "Helios · built by GPT-6 Astra",
     title: "Helios",
@@ -1926,7 +1954,6 @@ const en = {
     // The Recce (board K cut 1, 2026-09-17): a set from a clip. The frames
     // are sampled on the device; the clip itself never uploads, and the
     // hint says so.
-    fromClip: "From a clip",
     clipPick: "Choose a clip",
     clipChange: "Choose another clip",
     clipHint:

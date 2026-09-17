@@ -23,12 +23,12 @@ export const RELEASES: Release[] = [
     version: "1.43.0",
     build: 81,
     date: "2026-09-17",
-    title: "The Recce: a clip becomes a set",
+    title: "Recce: film a place, direct what it becomes",
     items: [
-      "Helios can read a clip. On the Sets home, next to describing a place or handing Astra a photo, admins can drop 3 to 30 seconds of footage — a walk through a room, a street filmed from a corner. The frames are sampled on the device; the clip itself never uploads.",
-      "A small reader takes the clip apart: the place, the light, the one person it follows and where their walk begins and ends, and which frame shows the place broadest. That frame becomes the set's photograph and the build runs as a photo build — camera 1 where you filmed, the photograph riding every shot as pixels — with the read handed to Astra so mark 1 and mark 2 land where the person's path starts and ends.",
-      "No one in the footage is described to Astra: it is told one person moved from here to there, nothing else, and the same picture check that judges a photo judges the chosen frame before anything is stored or sent. What the reader saw is kept with the set for the Film work to come.",
-      "Off by default behind its own switch (astra_recce, with both Sets switches under it), admins only, and the database wants supabase/pending/astra-recce.sql before the first clip.",
+      "A new door in the sidebar: Recce. Drop 3 to 30 seconds of footage — a walk through a room, a street filmed from a corner — on its own page, built like a theatre: your clip on the left, the place it becomes on the right, the reading between them. The frames are sampled on the device; the clip itself never uploads. (It opened first as a chip on the Sets home earlier today, and moved the same day to its own page.)",
+      "A small reader takes the clip apart: the place, the light, the one person it follows and where their walk begins and ends, and which frame shows the place broadest. That frame becomes the place's photograph and the build runs exactly as a photo build — camera 1 where you filmed, the photograph riding every shot as pixels — with the read handed onward so mark 1 and mark 2 land where the person's path starts and ends.",
+      "No one in the footage is described onward: the builder is told one person moved from here to there, nothing else, and the same picture check that judges a photo judges the chosen frame before anything is stored or sent. What the reader saw is kept with the place for the Film work to come.",
+      "A finished read opens in the studio like any set; the door lists your reads and watches the ones still reading. Admins only, behind its own switch (astra_recce, with both Sets switches under it); the database update (astra-recce.sql) has run.",
     ],
   },
   {

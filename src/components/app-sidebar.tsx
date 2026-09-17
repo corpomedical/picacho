@@ -198,6 +198,18 @@ function LayersIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function RecceIcon(props: SVGProps<SVGSVGElement>) {
+  // A frame of footage and the place it becomes: a screen with a scan line.
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" {...props}>
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M12 5v14" />
+      <path d="M6.5 9.5 9 12l-2.5 2.5" />
+      <circle cx="16.5" cy="12" r="1.4" />
+    </svg>
+  );
+}
+
 function SetsIcon(props: SVGProps<SVGSVGElement>) {
   // A floor, a back wall and a figure on its mark — a set, not a cube.
   return (
@@ -377,6 +389,7 @@ export function AppSidebar({
   skipAiRefinement,
   voiceModeEnabled,
   setsVisible = false,
+  recceVisible = false,
 }: {
   isAdmin: boolean;
   username: string;
@@ -389,6 +402,8 @@ export function AppSidebar({
   skipAiRefinement: boolean;
   /** Sets (Astra) — shown only when the flag is on and the account may open it. */
   setsVisible?: boolean;
+  /** The Recce door (board K) — admins only, behind astra_recce. */
+  recceVisible?: boolean;
 }) {
   const pathname = usePathname();
   const router = useRouter();
@@ -850,6 +865,7 @@ export function AppSidebar({
             drop the badge from the previous one here — one edit. */}
         {[
           ...(setsVisible ? [{ href: "/app/sets", label: t.nav.sets, Icon: SetsIcon, badge: t.nav.newBadge }] : []),
+          ...(recceVisible ? [{ href: "/app/recce", label: t.nav.recce, Icon: RecceIcon, badge: t.nav.newBadge }] : []),
           { href: "/app/upscale", label: t.nav.upscale, Icon: UpscaleIcon, badge: t.nav.newBadge },
           { href: "/app/layers", label: t.nav.layers, Icon: LayersIcon, badge: t.nav.newBadge },
         ].map((tool) => (

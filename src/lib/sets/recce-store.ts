@@ -31,6 +31,34 @@ export function recceColumns(read: RecceRead, seconds: number, times: number[]) 
 }
 
 /**
+ * Which of these sets are recces, and each clip's length — the door's list
+ * (board K, "Its own door"). Every failure, the missing column included,
+ * reads as "none": the door then shows no reads, and nothing breaks.
+ */
+export async function readRecceSeconds(db: SupabaseClient, ids: string[], userId: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (ids.length === 0) return out;
+  try {
+    const { data, error } = await db
+      .from("location_sets")
+      .select("id, recce_read")
+      .in("id", ids)
+      .eq("user_id", userId)
+      .not("recce_read", "is", null);
+    if (error || !data) return out;
+    for (const row of data as { id?: unknown; recce_read?: unknown }[]) {
+      if (typeof row.id !== "string") continue;
+      const r = row.recce_read as { v?: unknown; seconds?: unknown } | null;
+      if (typeof r !== "object" || r === null || r.v !== 1 || typeof r.seconds !== "number") continue;
+      out.set(row.id, r.seconds);
+    }
+    return out;
+  } catch {
+    return out;
+  }
+}
+
+/**
  * A set's stored read, or null: not a recce, not the caller's set, the
  * column not there yet, or a shape this build of the app does not know —
  * every failure reads as "no read", never an error, because nothing that
